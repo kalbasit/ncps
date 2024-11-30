@@ -40,7 +40,7 @@ func New(hostname, path string, ucs []upstreamcache.UpstreamCache) (Cache, error
 // PublicKey returns the public key of the server
 func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 
-func (c Cache) GetNarInfo(hash string) (io.ReadCloser, os.FileInfo, error) {
+func (c Cache) GetNarInfo(hash string) (int64, io.ReadCloser, error) {
 	storePath := fmt.Sprintf("%s.narinfo", hash)
 	if c.hasInStore(storePath) {
 		return c.getFromStore(storePath)
@@ -49,9 +49,9 @@ func (c Cache) GetNarInfo(hash string) (io.ReadCloser, os.FileInfo, error) {
 	return c.getNarInfoFromUpstream(hash)
 }
 
-func (c Cache) getNarInfoFromUpstream(hash string) (io.ReadCloser, os.FileInfo, error) {
+func (c Cache) getNarInfoFromUpstream(hash string) (int64, io.ReadCloser, error) {
 	// TODO: Implement!
-	return nil, nil, errors.New("not implemented")
+	return 0, nil, errors.New("not implemented")
 }
 
 func (c Cache) hasInStore(key string) bool {
@@ -61,18 +61,18 @@ func (c Cache) hasInStore(key string) bool {
 
 // GetFile retuns the file define by its key
 // NOTE: It's the caller responsability to close the file after using it
-func (c Cache) getFromStore(key string) (io.ReadCloser, os.FileInfo, error) {
+func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
 	f, err := os.Open(path.Join(c.storePath(), key))
 	if err != nil {
-		return nil, nil, fmt.Errorf("error opening the file %q: %w", key, err)
+		return 0, nil, fmt.Errorf("error opening the file %q: %w", key, err)
 	}
 
-	stat, err := f.Stat()
+	info, err := f.Stat()
 	if err != nil {
-		return nil, nil, fmt.Errorf("error getting the file stat %q: %w", key, err)
+		return 0, nil, fmt.Errorf("error getting the file stat %q: %w", key, err)
 	}
 
-	return f, stat, nil
+	return info.Size(), f, nil
 }
 
 func (c Cache) configPath() string   { return path.Join(c.path, "config") }
