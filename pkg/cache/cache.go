@@ -40,10 +40,29 @@ func New(hostname, path string, ucs []upstreamcache.UpstreamCache) (Cache, error
 // PublicKey returns the public key of the server
 func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 
+func (c Cache) GetNarInfo(hash string) (io.ReadCloser, os.FileInfo, error) {
+	storePath := fmt.Sprintf("%s.narinfo", hash)
+	if c.hasInStore(storePath) {
+		return c.getFromStore(storePath)
+	}
+
+	return c.getNarInfoFromUpstream(hash)
+}
+
+func (c Cache) getNarInfoFromUpstream(hash string) (io.ReadCloser, os.FileInfo, error) {
+	// TODO: Implement!
+	return nil, nil, nil
+}
+
+func (c Cache) hasInStore(key string) bool {
+	_, err := os.Stat(path.Join(c.storePath(), key))
+	return err == nil
+}
+
 // GetFile retuns the file define by its key
 // NOTE: It's the caller responsability to close the file after using it
-func (c Cache) GetFile(key string) (io.ReadCloser, os.FileInfo, error) {
-	f, err := os.Open(path.Join(c.path, key))
+func (c Cache) getFromStore(key string) (io.ReadCloser, os.FileInfo, error) {
+	f, err := os.Open(path.Join(c.storePath(), key))
 	if err != nil {
 		return nil, nil, fmt.Errorf("error opening the file %q: %w", key, err)
 	}
