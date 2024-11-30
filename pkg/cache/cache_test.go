@@ -2,7 +2,10 @@ package cache
 
 import (
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
 func TestNew(t *testing.T) {
@@ -81,13 +84,28 @@ func TestNew(t *testing.T) {
 	})
 }
 
-// func TestPublicKey(t *testing.T) {
-// 	c, err := New("cache.example.com", "/tmp")
-// 	if err != nil {
-// 		t.Fatalf("error not expected, got an error: %s", err)
-// 	}
-//
-// 	if want, got := "cache.example.com:7ZN4u/26neOAo/bJnSPD3yGXeLbicArUs71ZNjdZ5I8=", c.PublicKey(); want != got {
-// 		t.Errorf("want %q, got %q", want, got)
-// 	}
-// }
+func TestPublicKey(t *testing.T) {
+	c, err := New("cache.example.com", "/tmp")
+	if err != nil {
+		t.Fatalf("error not expected, got an error: %s", err)
+	}
+
+	pubKey := c.PublicKey()
+
+	t.Run("should return a public key with the correct prefix", func(t *testing.T) {
+		if !strings.HasPrefix(pubKey, "cache.example.com:") {
+			t.Errorf("public key should start with cache.example.com: but it does not: %s", pubKey)
+		}
+	})
+
+	t.Run("should return a valid public key", func(t *testing.T) {
+		pk, err := signature.ParsePublicKey(pubKey)
+		if err != nil {
+			t.Fatalf("error is not expected: %s", err)
+		}
+
+		if want, got := pubKey, pk.String(); want != got {
+			t.Errorf("want %q got %q", want, got)
+		}
+	})
+}
