@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/kalbasit/ncps/upstreamcache"
+	"github.com/kalbasit/ncps/pkg/upstreamcache"
 	"github.com/urfave/cli/v2"
 )
 
