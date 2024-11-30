@@ -85,13 +85,13 @@ func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 }
 
 func (c Cache) createNewKey() (signature.SecretKey, error) {
+	if err := os.MkdirAll(path.Dir(c.cacheKeyPath()), 0700); err != nil {
+		return signature.SecretKey{}, fmt.Errorf("error creating the parent directories for %q: %w", c.cacheKeyPath(), err)
+	}
+
 	secretKey, _, err := signature.GenerateKeypair(c.hostname, nil)
 	if err != nil {
 		return secretKey, fmt.Errorf("error generating a new secret key: %w", err)
-	}
-
-	if err := os.MkdirAll(path.Dir(c.cacheKeyPath()), 0700); err != nil {
-		return secretKey, fmt.Errorf("error creating the parent directories for %q: %w", c.cacheKeyPath(), err)
 	}
 
 	f, err := os.Create(c.cacheKeyPath())
