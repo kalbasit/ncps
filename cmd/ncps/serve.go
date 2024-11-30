@@ -84,7 +84,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]upstreamcache.UpstreamCache, error) {
+func getUpstreamCaches(_ context.Context, cmd *cli.Command) ([]upstreamcache.UpstreamCache, error) {
 	var ucs []upstreamcache.UpstreamCache
 
 	for _, host := range cmd.StringSlice("upstream-cache") {
@@ -105,6 +105,4 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]upstreamcache.U
 	}
 
 	return ucs, nil
-
-	return nil, nil
 }
