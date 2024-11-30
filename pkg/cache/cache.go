@@ -15,32 +15,32 @@ import (
 )
 
 var (
-	// ErrPathMustBeAbsolute is returned if the given path to New was not absolute
+	// ErrPathMustBeAbsolute is returned if the given path to New was not absolute.
 	ErrPathMustBeAbsolute = errors.New("path must be absolute")
 
-	// ErrPathMustExist is returned if the given path to New did not exist
+	// ErrPathMustExist is returned if the given path to New did not exist.
 	ErrPathMustExist = errors.New("path must exist")
 
-	// ErrPathMustBeADirectory is returned if the given path to New is not a directory
+	// ErrPathMustBeADirectory is returned if the given path to New is not a directory.
 	ErrPathMustBeADirectory = errors.New("path must be a directory")
 
-	// ErrPathMustBeWritable is returned if the given path to New is not writable
+	// ErrPathMustBeWritable is returned if the given path to New is not writable.
 	ErrPathMustBeWritable = errors.New("path must be writable")
 
-	// ErrHostnameRequired is returned if the given hostName to New is not given
+	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
 
-	// ErrHostnameMustNotContainScheme is returned if the given hostName to New contained a scheme
+	// ErrHostnameMustNotContainScheme is returned if the given hostName to New contained a scheme.
 	ErrHostnameMustNotContainScheme = errors.New("hostName must not contain scheme")
 
-	// ErrHostnameNotValid is returned if the given hostName to New is not valid
+	// ErrHostnameNotValid is returned if the given hostName to New is not valid.
 	ErrHostnameNotValid = errors.New("hostName is not valid")
 
-	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path
+	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
 	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
 )
 
-// Cache represents the main cache service
+// Cache represents the main cache service.
 type Cache struct {
 	hostName  string
 	logger    log15.Logger
@@ -48,7 +48,7 @@ type Cache struct {
 	secretKey signature.SecretKey
 }
 
-// New returns a new Cache
+// New returns a new Cache.
 func New(logger log15.Logger, hostName, cachePath string) (Cache, error) {
 	c := Cache{logger: logger}
 
@@ -133,7 +133,7 @@ func (c Cache) isWritable(cachePath string) bool {
 	return true
 }
 
-// PublicKey returns the public key of the server
+// PublicKey returns the public key of the server.
 func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 
 func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }

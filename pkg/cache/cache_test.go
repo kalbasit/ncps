@@ -11,6 +11,7 @@ import (
 
 var logger = log15.New()
 
+//nolint:gochecknoinits
 func init() {
 	logger.SetHandler(log15.DiscardHandler())
 }
