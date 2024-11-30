@@ -2,6 +2,9 @@ package cache
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"path"
 
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
@@ -12,6 +15,7 @@ type Cache struct {
 	secretKey signature.SecretKey
 }
 
+// New returns a new Cache
 func New(hostname, path, secretKey string) (Cache, error) {
 	c := Cache{
 		hostname: hostname,
@@ -26,6 +30,9 @@ func New(hostname, path, secretKey string) (Cache, error) {
 	return c, nil
 }
 
-func (c Cache) PublicKey() string {
-	return c.secretKey.ToPublicKey().String()
-}
+// PublicKey returns the public key of the server
+func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
+
+// GetFile retuns the file define by its key
+// NOTE: It's the caller responsability to close the file after using it
+func (c Cache) GetFile(key string) (io.ReadCloser, error) { return os.Open(path.Join(c.path, key)) }
