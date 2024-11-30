@@ -76,20 +76,24 @@ func New(logger log15.Logger, hostName, cachePath string) (Cache, error) {
 func (c Cache) validateHostname(hostName string) error {
 	if hostName == "" {
 		c.logger.Error("given hostname is empty", "hostName", hostName)
+
 		return ErrHostnameRequired
 	}
 
 	u, err := url.Parse(hostName)
 	if err != nil {
 		c.logger.Error("failed to parse the hostname", "hostName", hostName, "error", err)
+
 		return fmt.Errorf("error parsing the hostName %q: %w", hostName, err)
 	}
 	if u.Scheme != "" {
 		c.logger.Error("hostname should not contain a scheme", "hostName", hostName, "scheme", u.Scheme)
+
 		return ErrHostnameMustNotContainScheme
 	}
 	if strings.Contains(hostName, "/") {
 		c.logger.Error("hostname should not contain a path", "hostName", hostName)
+
 		return ErrHostnameMustNotContainPath
 	}
 
@@ -99,17 +103,20 @@ func (c Cache) validateHostname(hostName string) error {
 func (c Cache) validatePath(cachePath string) error {
 	if !filepath.IsAbs(cachePath) {
 		c.logger.Error("path is not absolute", "path", cachePath)
+
 		return ErrPathMustBeAbsolute
 	}
 
 	info, err := os.Stat(cachePath)
 	if errors.Is(err, fs.ErrNotExist) {
 		c.logger.Error("path does not exist", "path", cachePath)
+
 		return ErrPathMustExist
 	}
 
 	if !info.IsDir() {
 		c.logger.Error("path is not a directory", "path", cachePath)
+
 		return ErrPathMustBeADirectory
 	}
 
@@ -124,6 +131,7 @@ func (c Cache) isWritable(cachePath string) bool {
 	tmpFile, err := os.CreateTemp(cachePath, "write_test")
 	if err != nil {
 		c.logger.Error("error writing a temp file in the path", "path", cachePath, "error", err)
+
 		return false
 	}
 
@@ -164,7 +172,7 @@ func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 }
 
 func (c Cache) createNewKey() (signature.SecretKey, error) {
-	if err := os.MkdirAll(filepath.Dir(c.secretKeyPath()), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(c.secretKeyPath()), 0o700); err != nil {
 		return signature.SecretKey{}, fmt.Errorf("error creating the parent directories for %q: %w", c.secretKeyPath(), err)
 	}
 
