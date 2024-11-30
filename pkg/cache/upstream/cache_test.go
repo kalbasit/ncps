@@ -59,4 +59,15 @@ func TestNew(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("priority is extracted and stored", func(t *testing.T) {
+		c, err := New(logger, "cache.nixos.org", []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="})
+		if err != nil {
+			t.Fatalf("expected no error, got %s", err)
+		}
+
+		if want, got := 30, c.GetPriority(); want != got {
+			t.Errorf("want %d got %d", want, got)
+		}
+	})
 }
