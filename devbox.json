@@ -1,6 +1,10 @@
 {
-  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.13.4/.schema/devbox.schema.json",
-  "packages": [
-    "go@1.23"
-  ]
+  "$schema":  "https://raw.githubusercontent.com/jetify-com/devbox/0.13.4/.schema/devbox.schema.json",
+  "packages": ["go@1.23"],
+  "shell": {
+    "init_hook": [
+      "export _GO_VERSION=$(go version | sed -e 's:^go version go\\([0-9.]*\\) .*$:\\1:')",
+      "sed -e \"s:^\\(ARG GO_VERSION=\\).*$:\\1${_GO_VERSION}:\" -i Dockerfile"
+    ]
+  }
 }
