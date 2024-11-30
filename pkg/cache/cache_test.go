@@ -1,4 +1,4 @@
-package cache
+package cache_test
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -25,42 +26,42 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("path is required", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com", "hello")
-			if want, got := ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "cache.example.com", "hello")
+			if want, got := cache.ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path is not absolute", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com", "hello")
-			if want, got := ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "cache.example.com", "hello")
+			if want, got := cache.ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path must exist", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com", "/non-existing")
-			if want, got := ErrPathMustExist, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "cache.example.com", "/non-existing")
+			if want, got := cache.ErrPathMustExist, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path must be a directory", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com", "/proc/cpuinfo")
-			if want, got := ErrPathMustBeADirectory, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo")
+			if want, got := cache.ErrPathMustBeADirectory, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path must be writable", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com", "/root")
-			if want, got := ErrPathMustBeWritable, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "cache.example.com", "/root")
+			if want, got := cache.ErrPathMustBeWritable, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("valid path must return no error", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com", os.TempDir())
+			_, err := cache.New(logger, "cache.example.com", os.TempDir())
 			if err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
@@ -71,28 +72,28 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := New(logger, "", os.TempDir())
-			if want, got := ErrHostnameRequired, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "", os.TempDir())
+			if want, got := cache.ErrHostnameRequired, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := New(logger, "https://cache.example.com", os.TempDir())
-			if want, got := ErrHostnameMustNotContainScheme, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "https://cache.example.com", os.TempDir())
+			if want, got := cache.ErrHostnameMustNotContainScheme, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com/path/to", os.TempDir())
-			if want, got := ErrHostnameMustNotContainPath, err; !errors.Is(got, want) {
+			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir())
+			if want, got := cache.ErrHostnameMustNotContainPath, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := New(logger, "cache.example.com", os.TempDir())
+			_, err := cache.New(logger, "cache.example.com", os.TempDir())
 			if err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
@@ -103,7 +104,7 @@ func TestNew(t *testing.T) {
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
-	c, err := New(logger, "cache.example.com", "/tmp")
+	c, err := cache.New(logger, "cache.example.com", "/tmp")
 	if err != nil {
 		t.Fatalf("error not expected, got an error: %s", err)
 	}
