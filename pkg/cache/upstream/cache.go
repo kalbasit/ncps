@@ -1,4 +1,4 @@
-package upstreamcache
+package upstream
 
 import (
 	"fmt"
@@ -6,13 +6,13 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
-type UpstreamCache struct {
+type Cache struct {
 	Host       string
 	PublicKeys []signature.PublicKey
 }
 
-func New(host string, pubKeys []string) (UpstreamCache, error) {
-	uc := UpstreamCache{Host: host}
+func New(host string, pubKeys []string) (Cache, error) {
+	uc := Cache{Host: host}
 
 	for _, pubKey := range pubKeys {
 		pk, err := signature.ParsePublicKey(pubKey)

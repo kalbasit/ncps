@@ -7,8 +7,8 @@ import (
 	"regexp"
 
 	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/server"
-	"github.com/kalbasit/ncps/pkg/upstreamcache"
 	"github.com/urfave/cli/v3"
 )
 
@@ -73,8 +73,8 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func getUpstreamCaches(_ context.Context, cmd *cli.Command) ([]upstreamcache.UpstreamCache, error) {
-	var ucs []upstreamcache.UpstreamCache
+func getUpstreamCaches(_ context.Context, cmd *cli.Command) ([]upstream.Cache, error) {
+	var ucs []upstream.Cache
 
 	for _, host := range cmd.StringSlice("upstream-cache") {
 		var pubKeys []string
@@ -85,7 +85,7 @@ func getUpstreamCaches(_ context.Context, cmd *cli.Command) ([]upstreamcache.Ups
 			}
 		}
 
-		uc, err := upstreamcache.New(host, pubKeys)
+		uc, err := upstream.New(host, pubKeys)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a new upstream cache: %w", err)
 		}

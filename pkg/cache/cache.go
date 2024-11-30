@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/inconshreveable/log15/v3"
-	"github.com/kalbasit/ncps/pkg/upstreamcache"
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -48,11 +48,11 @@ type Cache struct {
 	logger         log15.Logger
 	path           string
 	secretKey      signature.SecretKey
-	upstreamCaches []upstreamcache.UpstreamCache
+	upstreamCaches []upstream.Cache
 }
 
 // New returns a new Cache
-func New(logger log15.Logger, hostName, cachePath string, ucs []upstreamcache.UpstreamCache) (Cache, error) {
+func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (Cache, error) {
 	c := Cache{logger: logger, upstreamCaches: ucs}
 
 	if err := c.validateHostname(hostName); err != nil {
