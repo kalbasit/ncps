@@ -113,10 +113,9 @@ func (s Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		f, info, err := s.cache.GetFile(r.URL.Path)
+		f, info, err := s.cache.GetNarInfo(chi.URLParam(r, "hash"))
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				// TODO: we don't have it, so we should cache it from upstream caches
 				w.WriteHeader(http.StatusNotFound)
 				w.Write([]byte(http.StatusText(http.StatusNotFound)))
 				return
