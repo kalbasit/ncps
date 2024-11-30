@@ -14,6 +14,24 @@ var serveCommand = &cli.Command{
 	Usage:   "serve the nix binary cache over http",
 	Action:  serveAction,
 	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:     "cache-hostname",
+			Usage:    "The hostname of the cache server",
+			EnvVars:  []string{"CACHE_HOSTNAME"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "cache-path",
+			Usage:    "The local path for cache storage",
+			EnvVars:  []string{"CACHE_PATH"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "cache-secret-key",
+			Usage:    "The secret key of the cache server",
+			EnvVars:  []string{"CACHE_SECRET_KEY"},
+			Required: true,
+		},
 		&cli.StringSliceFlag{
 			Name:     "upstream-cache",
 			Usage:    "Set to host for each upstream cache",
