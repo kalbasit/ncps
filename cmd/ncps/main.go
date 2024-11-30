@@ -1,10 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 func main() {
@@ -12,7 +13,7 @@ func main() {
 }
 
 func realMain() int {
-	app := &cli.App{
+	cmd := &cli.Command{
 		Name:  "ncps",
 		Usage: "Nix Binary Cache Proxy Service",
 		Commands: []*cli.Command{
@@ -20,7 +21,7 @@ func realMain() int {
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Printf("error running the application: %s", err)
 		return 1
 	}
