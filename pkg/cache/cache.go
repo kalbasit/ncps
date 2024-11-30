@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/inconshreveable/log15/v3"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -42,19 +43,20 @@ var (
 // Cache represents the main cache service
 type Cache struct {
 	hostName  string
+	logger    log15.Logger
 	path      string
 	secretKey signature.SecretKey
 }
 
 // New returns a new Cache
-func New(hostName, cachePath string) (Cache, error) {
-	c := Cache{}
+func New(logger log15.Logger, hostName, cachePath string) (Cache, error) {
+	c := Cache{logger: logger}
 
-	if err := validateHostname(hostName); err != nil {
+	if err := c.validateHostname(hostName); err != nil {
 		return c, err
 	}
 
-	if err := validatePath(cachePath); err != nil {
+	if err := c.validatePath(cachePath); err != nil {
 		return c, err
 	}
 
@@ -71,49 +73,57 @@ func New(hostName, cachePath string) (Cache, error) {
 	return c, nil
 }
 
-func validateHostname(hostName string) error {
+func (c Cache) validateHostname(hostName string) error {
 	if hostName == "" {
+		c.logger.Error("given hostname is empty", "hostName", hostName)
 		return ErrHostnameRequired
 	}
 
 	u, err := url.Parse(hostName)
 	if err != nil {
+		c.logger.Error("failed to parse the hostname", "hostName", hostName, "error", err)
 		return fmt.Errorf("error parsing the hostName %q: %w", hostName, err)
 	}
 	if u.Scheme != "" {
+		c.logger.Error("hostname should not contain a scheme", "hostName", hostName, "scheme", u.Scheme)
 		return ErrHostnameMustNotContainScheme
 	}
 	if strings.Contains(hostName, "/") {
+		c.logger.Error("hostname should not contain a path", "hostName", hostName)
 		return ErrHostnameMustNotContainPath
 	}
 
 	return nil
 }
 
-func validatePath(cachePath string) error {
+func (c Cache) validatePath(cachePath string) error {
 	if !filepath.IsAbs(cachePath) {
+		c.logger.Error("path is not absolute", "path", cachePath)
 		return ErrPathMustBeAbsolute
 	}
 
 	info, err := os.Stat(cachePath)
 	if errors.Is(err, fs.ErrNotExist) {
+		c.logger.Error("path does not exist", "path", cachePath)
 		return ErrPathMustExist
 	}
 
 	if !info.IsDir() {
+		c.logger.Error("path is not a directory", "path", cachePath)
 		return ErrPathMustBeADirectory
 	}
 
-	if !isWritable(cachePath) {
+	if !c.isWritable(cachePath) {
 		return ErrPathMustBeWritable
 	}
 
 	return nil
 }
 
-func isWritable(cachePath string) bool {
+func (c Cache) isWritable(cachePath string) bool {
 	tmpFile, err := os.CreateTemp(cachePath, "write_test")
 	if err != nil {
+		c.logger.Error("error writing a temp file in the path", "path", cachePath, "error", err)
 		return false
 	}
 
