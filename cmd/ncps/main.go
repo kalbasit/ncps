@@ -8,14 +8,17 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+var Version string = "dev"
+
 func main() {
 	os.Exit(realMain())
 }
 
 func realMain() int {
 	cmd := &cli.Command{
-		Name:  "ncps",
-		Usage: "Nix Binary Cache Proxy Service",
+		Name:    "ncps",
+		Usage:   "Nix Binary Cache Proxy Service",
+		Version: Version,
 		Commands: []*cli.Command{
 			serveCommand,
 		},
