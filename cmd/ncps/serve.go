@@ -2,8 +2,13 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	"os"
 	"regexp"
 
+	"github.com/inconshreveable/log15/v3"
+	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/upstreamcache"
 	"github.com/urfave/cli/v2"
 )
@@ -32,6 +37,12 @@ var serveCommand = &cli.Command{
 			EnvVars:  []string{"CACHE_SECRET_KEY"},
 			Required: true,
 		},
+		&cli.StringFlag{
+			Name:    "server-addr",
+			Usage:   "The address of the server",
+			EnvVars: []string{"SERVER_ADDR"},
+			Value:   ":8501",
+		},
 		&cli.StringSliceFlag{
 			Name:     "upstream-cache",
 			Usage:    "Set to host for each upstream cache",
@@ -48,14 +59,26 @@ var serveCommand = &cli.Command{
 }
 
 func serveAction(ctx *cli.Context) error {
+	logger := log15.New()
+	logger.SetHandler(log15.StreamHandler(os.Stdout, log15.JsonFormat()))
+
 	ucs, err := getUpstreamCaches(ctx)
 	if err != nil {
 		return fmt.Errorf("error computing the upstream caches: %w", err)
 	}
 
-	for _, uc := range ucs {
-		fmt.Printf("%s has %d keys\n", uc.Host, len(uc.PublicKeys))
+	cache, err := cache.New(ctx.String("cache-hostname"), ctx.String("cache-path"), ctx.String("cache-secret-key"))
+	if err != nil {
+		return fmt.Errorf("error creating a new cache: %w", err)
 	}
+
+	srv, err := server.New(logger, cache, ucs)
+	if err != nil {
+		return fmt.Errorf("error creating a new server: %w", err)
+	}
+
+	logger.Info("Server started", "server-addr", ctx.String("server-addr"))
+	http.ListenAndServe(ctx.String("server-addr"), srv)
 
 	return nil
 }
