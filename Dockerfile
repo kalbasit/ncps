@@ -20,6 +20,6 @@ COPY --from=builder /app/ncps /app/ncps
 
 WORKDIR /app
 
-EXPOSE 8105
+EXPOSE 8501
 
 CMD ["/app/ncps"]
