@@ -51,7 +51,7 @@ func (c Cache) GetNarInfo(hash string) (io.ReadCloser, os.FileInfo, error) {
 
 func (c Cache) getNarInfoFromUpstream(hash string) (io.ReadCloser, os.FileInfo, error) {
 	// TODO: Implement!
-	return nil, nil, nil
+	return nil, nil, errors.New("not implemented")
 }
 
 func (c Cache) hasInStore(key string) bool {

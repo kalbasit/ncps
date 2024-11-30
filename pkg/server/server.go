@@ -113,7 +113,8 @@ func (s Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		f, info, err := s.cache.GetNarInfo(chi.URLParam(r, "hash"))
+		hash := chi.URLParam(r, "hash")
+		f, info, err := s.cache.GetNarInfo(hash)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				w.WriteHeader(http.StatusNotFound)
@@ -121,6 +122,7 @@ func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 				return
 			}
 
+			s.logger.Error("error fetching the narinfo", "hash", hash, "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(http.StatusText(http.StatusInternalServerError)))
 			return

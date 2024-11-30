@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 
-	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/upstreamcache"
@@ -54,9 +52,6 @@ var serveCommand = &cli.Command{
 }
 
 func serveAction(ctx context.Context, cmd *cli.Command) error {
-	logger := log15.New()
-	logger.SetHandler(log15.StreamHandler(os.Stdout, log15.JsonFormat()))
-
 	ucs, err := getUpstreamCaches(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("error computing the upstream caches: %w", err)
