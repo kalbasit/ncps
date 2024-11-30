@@ -1,8 +1,12 @@
 package server
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -63,8 +67,8 @@ func createRouter(s Server) (*chi.Mux, error) {
 
 	router.Get(routeCacheInfo, s.getNixCacheInfo)
 
-	// router.Head(routeNarInfo, s.getNarInfo(false))
-	// router.Get(routeNarInfo, s.getNarInfo(true))
+	router.Head(routeNarInfo, s.getNarInfo(false))
+	router.Get(routeNarInfo, s.getNarInfo(true))
 	// router.Put(routeNarInfo, s.putNarInfo())
 	//
 	// router.Head(routeNar, s.getNar(false))
@@ -108,4 +112,36 @@ func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler 
 
 func (s Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(nixCacheInfo))
+}
+
+func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		f, info, err := s.cache.GetFile(r.URL.Path)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				// TODO: we don't have it, so we should cache it from upstream caches
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(http.StatusText(http.StatusNotFound)))
+				return
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(http.StatusText(http.StatusInternalServerError)))
+			return
+		}
+
+		h := w.Header()
+		h.Set(contentType, contentTypeNarInfo)
+		h.Set(contentLength, strconv.FormatInt(info.Size(), 10))
+
+		if !withBody {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		written, err := io.CopyN(w, f, int64(info.Size()))
+		if written != info.Size() {
+			s.logger.Error("Bytes copied does not match object size", "expected", info.Size(), "written", written)
+		}
+	}
 }

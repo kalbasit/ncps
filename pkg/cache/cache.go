@@ -35,4 +35,16 @@ func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 
 // GetFile retuns the file define by its key
 // NOTE: It's the caller responsability to close the file after using it
-func (c Cache) GetFile(key string) (io.ReadCloser, error) { return os.Open(path.Join(c.path, key)) }
+func (c Cache) GetFile(key string) (io.ReadCloser, os.FileInfo, error) {
+	f, err := os.Open(path.Join(c.path, key))
+	if err != nil {
+		return nil, nil, fmt.Errorf("error opening the file %q: %w", key, err)
+	}
+
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting the file stat %q: %w", key, err)
+	}
+
+	return f, stat, nil
+}
