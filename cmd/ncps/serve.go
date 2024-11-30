@@ -33,12 +33,6 @@ var serveCommand = &cli.Command{
 			Required: true,
 		},
 		&cli.StringFlag{
-			Name:     "cache-secret-key",
-			Usage:    "The secret key of the cache server",
-			Sources:  cli.EnvVars("CACHE_SECRET_KEY"),
-			Required: true,
-		},
-		&cli.StringFlag{
 			Name:    "server-addr",
 			Usage:   "The address of the server",
 			Sources: cli.EnvVars("SERVER_ADDR"),
@@ -68,7 +62,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("error computing the upstream caches: %w", err)
 	}
 
-	cache, err := cache.New(cmd.String("cache-hostname"), cmd.String("cache-data-path"), cmd.String("cache-secret-key"), ucs)
+	cache, err := cache.New(cmd.String("cache-hostname"), cmd.String("cache-data-path"), ucs)
 	if err != nil {
 		return fmt.Errorf("error creating a new cache: %w", err)
 	}

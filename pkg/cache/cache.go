@@ -1,8 +1,10 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 
@@ -18,16 +20,18 @@ type Cache struct {
 }
 
 // New returns a new Cache
-func New(hostname, path, secretKey string, ucs []upstreamcache.UpstreamCache) (Cache, error) {
+func New(hostname, path string, ucs []upstreamcache.UpstreamCache) (Cache, error) {
 	c := Cache{
 		hostname:       hostname,
 		path:           path,
 		upstreamCaches: ucs,
 	}
-	sk, err := signature.LoadSecretKey(secretKey)
+
+	sk, err := c.setupSecretKey()
 	if err != nil {
-		return c, fmt.Errorf("error loading the secret key: %w", err)
+		return c, fmt.Errorf("error setting up the secret key: %w", err)
 	}
+
 	c.secretKey = sk
 
 	return c, nil
@@ -50,4 +54,56 @@ func (c Cache) GetFile(key string) (io.ReadCloser, os.FileInfo, error) {
 	}
 
 	return f, stat, nil
+}
+
+func (c Cache) configPath() string   { return path.Join(c.path, "config") }
+func (c Cache) storePath() string    { return path.Join(c.path, "store") }
+func (c Cache) cacheKeyPath() string { return path.Join(c.configPath(), "cache.key") }
+
+func (c Cache) setupSecretKey() (signature.SecretKey, error) {
+	f, err := os.Open(c.cacheKeyPath())
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return c.createNewKey()
+		}
+
+		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", err)
+	}
+	defer f.Close()
+
+	skc, err := io.ReadAll(f)
+	if err != nil {
+		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", err)
+	}
+
+	sk, err := signature.LoadSecretKey(string(skc))
+	if err != nil {
+		return signature.SecretKey{}, fmt.Errorf("error loading the secret key: %w", err)
+	}
+
+	return sk, nil
+}
+
+func (c Cache) createNewKey() (signature.SecretKey, error) {
+	secretKey, _, err := signature.GenerateKeypair(c.hostname, nil)
+	if err != nil {
+		return secretKey, fmt.Errorf("error generating a new secret key: %w", err)
+	}
+
+	if err := os.MkdirAll(path.Dir(c.cacheKeyPath()), 0700); err != nil {
+		return secretKey, fmt.Errorf("error creating the parent directories for %q: %w", c.cacheKeyPath(), err)
+	}
+
+	f, err := os.Create(c.cacheKeyPath())
+	if err != nil {
+		return secretKey, fmt.Errorf("error creating the cache key file %q: %w", c.cacheKeyPath(), err)
+	}
+
+	defer f.Close()
+
+	if _, err := f.WriteString(secretKey.String()); err != nil {
+		return secretKey, fmt.Errorf("error writing the secret key to %q: %w", c.cacheKeyPath(), err)
+	}
+
+	return secretKey, nil
 }
