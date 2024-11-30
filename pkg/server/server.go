@@ -13,7 +13,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache"
-	"github.com/kalbasit/ncps/pkg/upstreamcache"
 )
 
 const (
@@ -33,17 +32,15 @@ Priority: 10
 )
 
 type Server struct {
-	cache          cache.Cache
-	logger         log15.Logger
-	router         *chi.Mux
-	upstreamCaches []upstreamcache.UpstreamCache
+	cache  cache.Cache
+	logger log15.Logger
+	router *chi.Mux
 }
 
-func New(logger log15.Logger, cache cache.Cache, ucs []upstreamcache.UpstreamCache) (Server, error) {
+func New(logger log15.Logger, cache cache.Cache) (Server, error) {
 	s := Server{
-		cache:          cache,
-		logger:         logger,
-		upstreamCaches: ucs,
+		cache:  cache,
+		logger: logger,
 	}
 
 	router, err := createRouter(s)

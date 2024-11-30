@@ -6,20 +6,23 @@ import (
 	"os"
 	"path"
 
+	"github.com/kalbasit/ncps/pkg/upstreamcache"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
 type Cache struct {
-	hostname  string
-	path      string
-	secretKey signature.SecretKey
+	hostname       string
+	path           string
+	secretKey      signature.SecretKey
+	upstreamCaches []upstreamcache.UpstreamCache
 }
 
 // New returns a new Cache
-func New(hostname, path, secretKey string) (Cache, error) {
+func New(hostname, path, secretKey string, ucs []upstreamcache.UpstreamCache) (Cache, error) {
 	c := Cache{
-		hostname: hostname,
-		path:     path,
+		hostname:       hostname,
+		path:           path,
+		upstreamCaches: ucs,
 	}
 	sk, err := signature.LoadSecretKey(secretKey)
 	if err != nil {

@@ -27,9 +27,9 @@ var serveCommand = &cli.Command{
 			Required: true,
 		},
 		&cli.StringFlag{
-			Name:     "cache-path",
-			Usage:    "The local path for cache storage",
-			Sources:  cli.EnvVars("CACHE_PATH"),
+			Name:     "cache-data-path",
+			Usage:    "The local data path used for configuration and cache storage",
+			Sources:  cli.EnvVars("CACHE_DATA_PATH"),
 			Required: true,
 		},
 		&cli.StringFlag{
@@ -68,12 +68,12 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("error computing the upstream caches: %w", err)
 	}
 
-	cache, err := cache.New(cmd.String("cache-hostname"), cmd.String("cache-path"), cmd.String("cache-secret-key"))
+	cache, err := cache.New(cmd.String("cache-hostname"), cmd.String("cache-data-path"), cmd.String("cache-secret-key"), ucs)
 	if err != nil {
 		return fmt.Errorf("error creating a new cache: %w", err)
 	}
 
-	srv, err := server.New(logger, cache, ucs)
+	srv, err := server.New(logger, cache)
 	if err != nil {
 		return fmt.Errorf("error creating a new server: %w", err)
 	}
