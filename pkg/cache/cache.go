@@ -5,24 +5,61 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
-	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
+var (
+	// ErrPathMustBeAbsolute is returned if the given path to New was not absolute
+	ErrPathMustBeAbsolute = errors.New("path must be absolute")
+
+	// ErrPathMustExist is returned if the given path to New did not exist
+	ErrPathMustExist = errors.New("path must exist")
+
+	// ErrPathMustBeADirectory is returned if the given path to New is not a directory
+	ErrPathMustBeADirectory = errors.New("path must be a directory")
+
+	// ErrPathMustBeWritable is returned if the given path to New is not writable
+	ErrPathMustBeWritable = errors.New("path must be writable")
+
+	// ErrHostnameRequired is returned if the given hostName to New is not given
+	ErrHostnameRequired = errors.New("hostName is required")
+
+	// ErrHostnameMustNotContainScheme is returned if the given hostName to New contained a scheme
+	ErrHostnameMustNotContainScheme = errors.New("hostName must not contain scheme")
+
+	// ErrHostnameNotValid is returned if the given hostName to New is not valid
+	ErrHostnameNotValid = errors.New("hostName is not valid")
+
+	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path
+	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
+)
+
+// Cache represents the main cache service
 type Cache struct {
-	hostname  string
+	hostName  string
 	path      string
 	secretKey signature.SecretKey
 }
 
 // New returns a new Cache
-func New(hostname, path string) (Cache, error) {
-	c := Cache{
-		hostname: hostname,
-		path:     path,
+func New(hostName, cachePath string) (Cache, error) {
+	c := Cache{}
+
+	if err := validateHostname(hostName); err != nil {
+		return c, err
 	}
+
+	if err := validatePath(cachePath); err != nil {
+		return c, err
+	}
+
+	c.hostName = hostName
+	c.path = cachePath
 
 	sk, err := c.setupSecretKey()
 	if err != nil {
@@ -34,11 +71,63 @@ func New(hostname, path string) (Cache, error) {
 	return c, nil
 }
 
+func validateHostname(hostName string) error {
+	if hostName == "" {
+		return ErrHostnameRequired
+	}
+
+	u, err := url.Parse(hostName)
+	if err != nil {
+		return fmt.Errorf("error parsing the hostName %q: %w", hostName, err)
+	}
+	if u.Scheme != "" {
+		return ErrHostnameMustNotContainScheme
+	}
+	if strings.Contains(hostName, "/") {
+		return ErrHostnameMustNotContainPath
+	}
+
+	return nil
+}
+
+func validatePath(cachePath string) error {
+	if !filepath.IsAbs(cachePath) {
+		return ErrPathMustBeAbsolute
+	}
+
+	info, err := os.Stat(cachePath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ErrPathMustExist
+	}
+
+	if !info.IsDir() {
+		return ErrPathMustBeADirectory
+	}
+
+	if !isWritable(cachePath) {
+		return ErrPathMustBeWritable
+	}
+
+	return nil
+}
+
+func isWritable(cachePath string) bool {
+	tmpFile, err := os.CreateTemp(cachePath, "write_test")
+	if err != nil {
+		return false
+	}
+
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	return true
+}
+
 // PublicKey returns the public key of the server
 func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 
-func (c Cache) configPath() string    { return path.Join(c.path, "config") }
-func (c Cache) secretKeyPath() string { return path.Join(c.configPath(), "cache.key") }
+func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }
+func (c Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
 
 func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 	f, err := os.Open(c.secretKeyPath())
@@ -47,13 +136,13 @@ func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 			return c.createNewKey()
 		}
 
-		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", err)
+		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", c.secretKeyPath(), err)
 	}
 	defer f.Close()
 
 	skc, err := io.ReadAll(f)
 	if err != nil {
-		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", err)
+		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", c.secretKeyPath(), err)
 	}
 
 	sk, err := signature.LoadSecretKey(string(skc))
@@ -65,11 +154,11 @@ func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 }
 
 func (c Cache) createNewKey() (signature.SecretKey, error) {
-	if err := os.MkdirAll(path.Dir(c.secretKeyPath()), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(c.secretKeyPath()), 0700); err != nil {
 		return signature.SecretKey{}, fmt.Errorf("error creating the parent directories for %q: %w", c.secretKeyPath(), err)
 	}
 
-	secretKey, _, err := signature.GenerateKeypair(c.hostname, nil)
+	secretKey, _, err := signature.GenerateKeypair(c.hostName, nil)
 	if err != nil {
 		return secretKey, fmt.Errorf("error generating a new secret key: %w", err)
 	}
