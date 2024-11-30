@@ -57,7 +57,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("error computing the upstream caches: %w", err)
 	}
 
-	cache, err := cache.New(cmd.String("cache-hostname"), cmd.String("cache-data-path"), ucs)
+	cache, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"), ucs)
 	if err != nil {
 		return fmt.Errorf("error creating a new cache: %w", err)
 	}

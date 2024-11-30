@@ -114,7 +114,7 @@ func (s Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
-		f, info, err := s.cache.GetNarInfo(hash)
+		size, f, err := s.cache.GetNarInfo(hash)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				w.WriteHeader(http.StatusNotFound)
@@ -130,16 +130,16 @@ func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 		h := w.Header()
 		h.Set(contentType, contentTypeNarInfo)
-		h.Set(contentLength, strconv.FormatInt(info.Size(), 10))
+		h.Set(contentLength, strconv.FormatInt(size, 10))
 
 		if !withBody {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		written, err := io.CopyN(w, f, int64(info.Size()))
-		if written != info.Size() {
-			s.logger.Error("Bytes copied does not match object size", "expected", info.Size(), "written", written)
+		written, err := io.CopyN(w, f, size)
+		if written != size {
+			s.logger.Error("Bytes copied does not match object size", "expected", size, "written", written)
 		}
 	}
 }
