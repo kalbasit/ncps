@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -34,6 +33,9 @@ var (
 
 	// ErrUnexpectedHTTPStatusCode is returned if the response has an unexpected status code.
 	ErrUnexpectedHTTPStatusCode = errors.New("unexpected HTTP status code")
+
+	// ErrSignatureValidationFailed is returned if the signature validation of the narinfo has failed.
+	ErrSignatureValidationFailed = errors.New("signature validation has failed")
 )
 
 // Cache represents the upstream cache service.
@@ -72,7 +74,7 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	r, err := http.NewRequestWithContext(ctx, "GET", "https://"+c.hostName+"/"+hash+".narinfo", nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+"/"+hash+".narinfo", nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -102,11 +104,28 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		return nil, fmt.Errorf("error parsing the nix-cache-info: %w", err)
 	}
 
+	if err := ni.Check(); err != nil {
+		return ni, fmt.Errorf("error while checking the narInfo: %w", err)
+	}
+
+	if !signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, c.publicKeys) {
+		return ni, ErrSignatureValidationFailed
+	}
+
 	return ni, nil
 }
 
 // GetPriority returns the priority of this upstream cache.
 func (c Cache) GetPriority() uint64 { return c.priority }
+
+func (c Cache) getHostnameWithScheme() string {
+	scheme := "https"
+	if strings.HasPrefix(c.hostName, "127.0.0.1") {
+		scheme = "http"
+	}
+
+	return scheme + "://" + c.hostName
+}
 
 func (c Cache) parsePriority() (uint64, error) {
 	// TODO: Should probably pass context around and have things like logger in the context
@@ -115,7 +134,7 @@ func (c Cache) parsePriority() (uint64, error) {
 	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFn()
 
-	r, err := http.NewRequestWithContext(ctx, "GET", "https://"+c.hostName+"/nix-cache-info", nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+"/nix-cache-info", nil)
 	if err != nil {
 		return 0, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -148,15 +167,8 @@ func (c Cache) validateHostname(hostName string) error {
 		return ErrHostnameRequired
 	}
 
-	u, err := url.Parse(hostName)
-	if err != nil {
-		c.logger.Error("failed to parse the hostname", "hostName", hostName, "error", err)
-
-		return fmt.Errorf("error parsing the hostName %q: %w", hostName, err)
-	}
-
-	if u.Scheme != "" {
-		c.logger.Error("hostname should not contain a scheme", "hostName", hostName, "scheme", u.Scheme)
+	if strings.Contains(hostName, "://") {
+		c.logger.Error("hostname should not contain a scheme", "hostName", hostName)
 
 		return ErrHostnameMustNotContainScheme
 	}
