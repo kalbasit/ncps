@@ -134,8 +134,6 @@ func (c Cache) GetNar(ctx context.Context, hash, compression string) (uint64, io
 		return 0, nil, fmt.Errorf("error performing the request: %w", err)
 	}
 
-	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		//nolint:errcheck
 		io.Copy(io.Discard, resp.Body)
