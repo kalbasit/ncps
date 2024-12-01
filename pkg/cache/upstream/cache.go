@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
@@ -75,7 +76,7 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+"/"+hash+".narinfo", nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+helper.NarInfoPath(hash), nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -119,12 +120,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, hash, compression string) (uint64, io.ReadCloser, error) {
-	u := c.getHostnameWithScheme() + "/nar/" + hash + ".nar"
-	if compression != "" {
-		u += "." + compression
-	}
-
-	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+helper.NarPath(hash, compression), nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
 	}

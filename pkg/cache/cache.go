@@ -8,9 +8,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -42,15 +46,16 @@ var (
 
 // Cache represents the main cache service.
 type Cache struct {
-	hostName  string
-	logger    log15.Logger
-	path      string
-	secretKey signature.SecretKey
+	hostName       string
+	logger         log15.Logger
+	path           string
+	secretKey      signature.SecretKey
+	upstreamCaches []upstream.Cache
 }
 
 // New returns a new Cache.
-func New(logger log15.Logger, hostName, cachePath string) (Cache, error) {
-	c := Cache{logger: logger}
+func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (Cache, error) {
+	c := Cache{logger: logger, upstreamCaches: ucs}
 
 	if err := c.validateHostname(hostName); err != nil {
 		return c, err
@@ -69,6 +74,10 @@ func New(logger log15.Logger, hostName, cachePath string) (Cache, error) {
 	}
 
 	c.secretKey = sk
+
+	slices.SortFunc(c.upstreamCaches, func(a, b upstream.Cache) int {
+		return int(a.GetPriority() - b.GetPriority())
+	})
 
 	return c, nil
 }
