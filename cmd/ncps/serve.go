@@ -62,10 +62,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("error creating a new cache: %w", err)
 	}
 
-	srv, err := server.New(logger, cache)
-	if err != nil {
-		return fmt.Errorf("error creating a new server: %w", err)
-	}
+	srv := server.New(logger, cache)
 
 	logger.Info("Server started", "server-addr", cmd.String("server-addr"))
 	http.ListenAndServe(cmd.String("server-addr"), srv)
