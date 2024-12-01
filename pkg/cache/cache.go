@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/inconshreveable/log15/v3"
@@ -73,6 +74,10 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 	}
 
 	c.secretKey = sk
+
+	slices.SortFunc(c.upstreamCaches, func(a, b upstream.Cache) int {
+		return int(a.GetPriority() - b.GetPriority())
+	})
 
 	return c, nil
 }
