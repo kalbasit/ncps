@@ -7,10 +7,12 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -42,15 +44,16 @@ var (
 
 // Cache represents the main cache service.
 type Cache struct {
-	hostName  string
-	logger    log15.Logger
-	path      string
-	secretKey signature.SecretKey
+	hostName       string
+	logger         log15.Logger
+	path           string
+	secretKey      signature.SecretKey
+	upstreamCaches []upstream.Cache
 }
 
 // New returns a new Cache.
-func New(logger log15.Logger, hostName, cachePath string) (Cache, error) {
-	c := Cache{logger: logger}
+func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (Cache, error) {
+	c := Cache{logger: logger, upstreamCaches: ucs}
 
 	if err := c.validateHostname(hostName); err != nil {
 		return c, err
@@ -146,6 +149,42 @@ func (c Cache) isWritable(cachePath string) bool {
 // PublicKey returns the public key of the server.
 func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 
+func (c Cache) GetNarInfo(hash string) (int64, io.ReadCloser, error) {
+	storePath := fmt.Sprintf("%s.narinfo", hash)
+	if c.hasInStore(storePath) {
+		return c.getFromStore(storePath)
+	}
+
+	return c.getNarInfoFromUpstream(hash)
+}
+
+func (c Cache) getNarInfoFromUpstream(hash string) (int64, io.ReadCloser, error) {
+	// TODO: Implement!
+	return 0, nil, errors.New("not implemented")
+}
+
+func (c Cache) hasInStore(key string) bool {
+	_, err := os.Stat(path.Join(c.storePath(), key))
+	return err == nil
+}
+
+// GetFile retuns the file define by its key
+// NOTE: It's the caller responsability to close the file after using it
+func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
+	f, err := os.Open(path.Join(c.storePath(), key))
+	if err != nil {
+		return 0, nil, fmt.Errorf("error opening the file %q: %w", key, err)
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		return 0, nil, fmt.Errorf("error getting the file stat %q: %w", key, err)
+	}
+
+	return info.Size(), f, nil
+}
+
+func (c Cache) storePath() string     { return path.Join(c.path, "store") }
 func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }
 func (c Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
 
