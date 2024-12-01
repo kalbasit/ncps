@@ -26,3 +26,25 @@ func TestNarInfoPath(t *testing.T) {
 		})
 	}
 }
+
+func TestNarPath(t *testing.T) {
+	tests := []struct {
+		hash        string
+		compression string
+		path        string
+	}{
+		{hash: "", compression: "", path: "/nar/.nar"}, // not really valid but it is what it is
+		{hash: "abc123", compression: "", path: "/nar/abc123.nar"},
+		{hash: "def456", compression: "xz", path: "/nar/def456.nar.xz"},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("NarPath(%q, %q) -> %q", test.hash, test.compression, test.path), func(t *testing.T) {
+			t.Parallel()
+
+			if want, got := test.path, helper.NarPath(test.hash, test.compression); want != got {
+				t.Errorf("want %q got %q", want, got)
+			}
+		})
+	}
+}
