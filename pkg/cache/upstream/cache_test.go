@@ -227,7 +227,7 @@ func TestGetNar(t *testing.T) {
 			body.Close()
 		}()
 
-		if want, got := uint64(132228), cl; want != got {
+		if want, got := int64(132228), cl; want != got {
 			t.Errorf("want %d got %d", want, got)
 		}
 	})
