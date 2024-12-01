@@ -31,21 +31,21 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := upstream.New(logger, "https://cache.example.com", nil)
+			_, err := upstream.New(logger, "https://cache.nixos.org", nil)
 			if want, got := upstream.ErrHostnameMustNotContainScheme, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := upstream.New(logger, "cache.example.com/path/to", nil)
+			_, err := upstream.New(logger, "cache.nixos.org/path/to", nil)
 			if want, got := upstream.ErrHostnameMustNotContainPath, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := upstream.New(logger, "cache.example.com", nil)
+			_, err := upstream.New(logger, "cache.nixos.org", nil)
 			if err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
@@ -56,7 +56,7 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("invalid public keys", func(t *testing.T) {
-			_, err := upstream.New(logger, "cache.example.com", []string{"invalid"})
+			_, err := upstream.New(logger, "cache.nixos.org", []string{"invalid"})
 			if !strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:") {
 				t.Errorf("expected error to say public key is corrupt, got %q", err)
 			}
@@ -65,12 +65,29 @@ func TestNew(t *testing.T) {
 		t.Run("valid public keys", func(t *testing.T) {
 			_, err := upstream.New(
 				logger,
-				"cache.example.com",
-				[]string{"cache.example.com:qG7MkB/k0JsR/jlI5HNuaKQLd3AKILQIuwUEAwZ/6LQ="},
+				"cache.nixos.org",
+				[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
 			)
 			if err != nil {
 				t.Errorf("expected no error, got %s", err)
 			}
 		})
+	})
+
+	t.Run("priority parsed", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := upstream.New(
+			logger,
+			"cache.nixos.org",
+			[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+		)
+		if err != nil {
+			t.Errorf("expected no error, got %s", err)
+		}
+
+		if want, got := uint64(40), c.GetPriority(); want != got {
+			t.Errorf("want %d got %d", want, got)
+		}
 	})
 }
