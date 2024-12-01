@@ -84,7 +84,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 		return int(a.GetPriority() - b.GetPriority())
 	})
 
-	return c, nil
+	return c, c.createAllDirs()
 }
 
 // PublicKey returns the public key of the server.
@@ -143,7 +143,11 @@ func (c Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinf
 }
 
 func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
-	narInfoPath := helper.NarInfoPath(hash)
+	// narInfoPath := helper.NarInfoPath(hash)
+	//
+	// f, err := os.Create()
+
+	return nil
 }
 
 func (c Cache) hasInStore(key string) bool {
@@ -231,6 +235,22 @@ func (c Cache) isWritable(cachePath string) bool {
 	defer tmpFile.Close()
 
 	return true
+}
+
+func (c Cache) createAllDirs() error {
+	allPaths := []string{
+		c.configPath(),
+		c.storePath(),
+		filepath.Join(c.storePath(), "nar"),
+	}
+
+	for _, p := range allPaths {
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			return fmt.Errorf("error creating the directory %q: %w", p, err)
+		}
+	}
+
+	return nil
 }
 
 func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }

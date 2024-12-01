@@ -3,6 +3,7 @@ package cache_test
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -64,6 +65,32 @@ func TestNew(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", os.TempDir(), nil)
 			if err != nil {
 				t.Errorf("expected no error, got %q", err)
+			}
+		})
+
+		t.Run("config/ and store/nar were created", func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "cache-path")
+			if err != nil {
+				t.Fatalf("expected no error, got: %q", err)
+			}
+			defer os.RemoveAll(dir) // clean up
+
+			_, err = cache.New(logger, "cache.example.com", dir, nil)
+			if err != nil {
+				t.Errorf("expected no error, got %q", err)
+			}
+
+			for _, p := range []string{"config", "store", filepath.Join("store", "nar")} {
+				t.Run("Checking that "+p+" exists", func(t *testing.T) {
+					info, err := os.Stat(filepath.Join(dir, p))
+					if err != nil {
+						t.Fatalf("expected no error, got: %s", err)
+					}
+
+					if want, got := true, info.IsDir(); want != got {
+						t.Errorf("want %t got %t", want, got)
+					}
+				})
 			}
 		})
 	})
