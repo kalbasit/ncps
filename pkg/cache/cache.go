@@ -86,11 +86,13 @@ func (c Cache) validateHostname(hostName string) error {
 
 		return fmt.Errorf("error parsing the hostName %q: %w", hostName, err)
 	}
+
 	if u.Scheme != "" {
 		c.logger.Error("hostname should not contain a scheme", "hostName", hostName, "scheme", u.Scheme)
 
 		return ErrHostnameMustNotContainScheme
 	}
+
 	if strings.Contains(hostName, "/") {
 		c.logger.Error("hostname should not contain a path", "hostName", hostName)
 
