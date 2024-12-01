@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -26,6 +28,9 @@ var (
 
 	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
 	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
+
+	// ErrNotFound is returned if the nar or narinfo were not found.
+	ErrNotFound = errors.New("not found")
 
 	// ErrUnexpectedHTTPStatusCode is returned if the response has an unexpected status code.
 	ErrUnexpectedHTTPStatusCode = errors.New("unexpected HTTP status code")
@@ -65,6 +70,41 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 	return c, nil
 }
 
+// GetNarInfo returns a parsed NarInfo from the cache server.
+func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	r, err := http.NewRequestWithContext(ctx, "GET", "https://"+c.hostName+"/"+hash+".narinfo", nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating a new request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return nil, fmt.Errorf("error performing the request: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, ErrNotFound
+		}
+
+		c.logger.Error(ErrUnexpectedHTTPStatusCode.Error(), "status_code", resp.StatusCode)
+
+		return nil, ErrUnexpectedHTTPStatusCode
+	}
+
+	ni, err := narinfo.Parse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the nix-cache-info: %w", err)
+	}
+
+	return ni, nil
+}
+
 // GetPriority returns the priority of this upstream cache.
 func (c Cache) GetPriority() uint64 { return c.priority }
 
@@ -85,9 +125,11 @@ func (c Cache) parsePriority() (uint64, error) {
 		return 0, fmt.Errorf("error performing the request: %w", err)
 	}
 
-	// defer resp.Body.Close()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		c.logger.Error(ErrUnexpectedHTTPStatusCode.Error(), "status_code", resp.StatusCode)
+
 		return 0, ErrUnexpectedHTTPStatusCode
 	}
 

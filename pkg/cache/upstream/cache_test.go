@@ -1,6 +1,7 @@
 package upstream_test
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -88,6 +89,41 @@ func TestNew(t *testing.T) {
 
 		if want, got := uint64(40), c.GetPriority(); want != got {
 			t.Errorf("want %d got %d", want, got)
+		}
+	})
+}
+
+func TestGetNarInfo(t *testing.T) {
+	c, err := upstream.New(
+		logger,
+		"cache.nixos.org",
+		[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+	)
+	if err != nil {
+		t.Errorf("expected no error, got %s", err)
+	}
+
+	t.Run("hash not found", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := c.GetNarInfo(context.Background(), "abc123")
+		if want, got := upstream.ErrNotFound, err; !errors.Is(got, want) {
+			t.Errorf("want %q got %q", want, got)
+		}
+	})
+
+	t.Run("hash is found", func(t *testing.T) {
+		t.Parallel()
+
+		hash := "wckka8fxv4h5hp74cbkhaw3fw7kbvcs1"
+
+		ni, err := c.GetNarInfo(context.Background(), hash)
+		if err != nil {
+			t.Fatalf("expected no error, got %s", err)
+		}
+
+		if want, got := "/nix/store/wckka8fxv4h5hp74cbkhaw3fw7kbvcs1-bash-5.2p26", ni.StorePath; want != got {
+			t.Errorf("want %q got %q", want, got)
 		}
 	})
 }
