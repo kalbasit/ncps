@@ -320,7 +320,7 @@ func TestGetNar(t *testing.T) {
 	defer r.Close()
 
 	t.Run("size is correct", func(t *testing.T) {
-		if want, got := uint64(len(narText)), size; want != got {
+		if want, got := int64(len(narText)), size; want != got {
 			t.Errorf("want %d got %d", want, got)
 		}
 	})

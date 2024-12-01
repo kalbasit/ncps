@@ -94,7 +94,7 @@ func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 // the nar is not found in the store, it's pulled from an upstream, stored in
 // the stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
-func (c Cache) GetNar(ctx context.Context, hash, compression string) (uint64, io.ReadCloser, error) {
+func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
 	if c.hasNarInStore(hash, compression) {
 		return c.getNarFromStore(hash, compression)
 	}
@@ -104,22 +104,29 @@ func (c Cache) GetNar(ctx context.Context, hash, compression string) (uint64, io
 		return 0, nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
 
-	if err := c.putNarInStore(hash, compression, r); err != nil {
+	defer r.Close()
+
+	written, err := c.putNarInStore(hash, compression, r)
+	if err != nil {
 		return 0, nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
 	}
 
-	return size, r, nil
+	if size > 0 && written != size {
+		c.logger.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
+	}
+
+	return c.getNarFromStore(hash, compression)
 }
 
 func (c Cache) hasNarInStore(hash, compression string) bool {
 	return c.hasInStore(helper.NarPath(hash, compression))
 }
 
-func (c Cache) getNarFromStore(hash, compression string) (uint64, io.ReadCloser, error) {
+func (c Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser, error) {
 	return c.getFromStore(helper.NarPath(hash, compression))
 }
 
-func (c Cache) getNarFromUpstream(ctx context.Context, hash, compression string) (uint64, io.ReadCloser, error) {
+func (c Cache) getNarFromUpstream(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
 	for _, uc := range c.upstreamCaches {
 		size, nar, err := uc.GetNar(ctx, hash, compression)
 		if err != nil {
@@ -136,19 +143,17 @@ func (c Cache) getNarFromUpstream(ctx context.Context, hash, compression string)
 	return 0, nil, ErrNotFound
 }
 
-func (c Cache) putNarInStore(hash, compression string, r io.ReadCloser) error {
+func (c Cache) putNarInStore(hash, compression string, r io.ReadCloser) (int64, error) {
 	narPath := filepath.Join(c.storePath(), helper.NarPath(hash, compression))
 
 	f, err := os.OpenFile(narPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400)
 	if err != nil {
-		return fmt.Errorf("error creating the narinfo file %q: %w", narPath, err)
+		return 0, fmt.Errorf("error creating the narinfo file %q: %w", narPath, err)
 	}
 
 	defer f.Close()
 
-	_, err = io.Copy(f, r)
-
-	return err
+	return io.Copy(f, r)
 }
 
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
@@ -226,7 +231,7 @@ func (c Cache) hasInStore(key string) bool {
 
 // GetFile returns the file define by its key
 // NOTE: It's the caller responsibility to close the file after using it.
-func (c Cache) getFromStore(key string) (uint64, io.ReadCloser, error) {
+func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
 	p := filepath.Join(c.storePath(), key)
 	f, err := os.Open(p)
 	if err != nil {
@@ -238,7 +243,7 @@ func (c Cache) getFromStore(key string) (uint64, io.ReadCloser, error) {
 		return 0, nil, fmt.Errorf("error getting the stat for path %q: %w", p, err)
 	}
 
-	return uint64(info.Size()), f, nil
+	return info.Size(), f, nil
 }
 
 func (c Cache) validateHostname(hostName string) error {
