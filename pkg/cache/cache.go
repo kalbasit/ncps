@@ -7,12 +7,13 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -74,6 +75,68 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 	c.secretKey = sk
 
 	return c, nil
+}
+
+// PublicKey returns the public key of the server.
+func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
+
+// GetNarInfo returns the narInfo given a hash from the store. If the narInfo
+// is not found in the store, it's pulled from an upstream, stored in the
+// stored and finally returned.
+func (c Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
+	if c.hasNarInfoInStore(hash) {
+		return c.getNarInfoFromStore(hash)
+	}
+
+	narInfo, err := c.getNarInfoFromUpstream(hash)
+	if err != nil {
+		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+	}
+
+	if err := c.putNarInfoInStore(hash, narInfo); err != nil {
+		return nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
+	}
+
+	return narInfo, nil
+}
+
+func (c Cache) hasNarInfoInStore(hash string) bool {
+	return c.hasInStore(helper.NarInfoPath(hash))
+}
+
+func (c Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
+	r, err := c.getFromStore(helper.NarInfoPath(hash))
+	if err != nil {
+		return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
+	}
+
+	defer r.Close()
+
+	return narinfo.Parse(r)
+}
+
+func (c Cache) getNarInfoFromUpstream(hash string) (*narinfo.NarInfo, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
+	return errors.New("not implemented")
+}
+
+func (c Cache) hasInStore(key string) bool {
+	_, err := os.Stat(filepath.Join(c.storePath(), key))
+	return err == nil
+}
+
+// GetFile retuns the file define by its key
+// NOTE: It's the caller responsability to close the file after using it
+func (c Cache) getFromStore(key string) (io.ReadCloser, error) {
+	f, err := os.Open(filepath.Join(c.storePath(), key))
+	if err != nil {
+		return nil, fmt.Errorf("error opening the file %q: %w", key, err)
+	}
+
+	return f, nil
 }
 
 func (c Cache) validateHostname(hostName string) error {
@@ -146,45 +209,7 @@ func (c Cache) isWritable(cachePath string) bool {
 	return true
 }
 
-// PublicKey returns the public key of the server.
-func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
-
-func (c Cache) GetNarInfo(hash string) (int64, io.ReadCloser, error) {
-	storePath := fmt.Sprintf("%s.narinfo", hash)
-	if c.hasInStore(storePath) {
-		return c.getFromStore(storePath)
-	}
-
-	return c.getNarInfoFromUpstream(hash)
-}
-
-func (c Cache) getNarInfoFromUpstream(hash string) (int64, io.ReadCloser, error) {
-	// TODO: Implement!
-	return 0, nil, errors.New("not implemented")
-}
-
-func (c Cache) hasInStore(key string) bool {
-	_, err := os.Stat(path.Join(c.storePath(), key))
-	return err == nil
-}
-
-// GetFile retuns the file define by its key
-// NOTE: It's the caller responsability to close the file after using it
-func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
-	f, err := os.Open(path.Join(c.storePath(), key))
-	if err != nil {
-		return 0, nil, fmt.Errorf("error opening the file %q: %w", key, err)
-	}
-
-	info, err := f.Stat()
-	if err != nil {
-		return 0, nil, fmt.Errorf("error getting the file stat %q: %w", key, err)
-	}
-
-	return info.Size(), f, nil
-}
-
-func (c Cache) storePath() string     { return path.Join(c.path, "store") }
+func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }
 func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }
 func (c Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
 
