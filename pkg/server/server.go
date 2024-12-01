@@ -38,25 +38,21 @@ type Server struct {
 }
 
 // New returns a new server.
-func New(logger log15.Logger, cache cache.Cache) (Server, error) {
+func New(logger log15.Logger, cache cache.Cache) Server {
 	s := Server{
 		cache:  cache,
 		logger: logger,
 	}
 
-	router, err := createRouter(s)
-	if err != nil {
-		return s, fmt.Errorf("error creating the router: %w", err)
-	}
-	s.router = router
+	s.router = createRouter(s)
 
-	return s, nil
+	return s
 }
 
 // ServeHTTP implements http.Handler and turns the Server type into a handler.
 func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
 
-func createRouter(s Server) (*chi.Mux, error) {
+func createRouter(s Server) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(middleware.RequestID)
@@ -75,14 +71,14 @@ func createRouter(s Server) (*chi.Mux, error) {
 	router.Head(routeNar, s.getNar(false))
 	router.Get(routeNar, s.getNar(true))
 
-	return router, nil
+	return router
 }
 
 func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			startedAt := time.Now()
-			reqId := middleware.GetReqID(r.Context())
+			reqID := middleware.GetReqID(r.Context())
 
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
@@ -91,7 +87,7 @@ func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler 
 					"status", ww.Status(),
 					"elapsed", time.Since(startedAt),
 					"from", r.RemoteAddr,
-					"reqId", reqId,
+					"reqID", reqID,
 				}
 
 				switch r.Method {
@@ -106,28 +102,40 @@ func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler 
 
 			next.ServeHTTP(ww, r)
 		}
+
 		return http.HandlerFunc(fn)
 	}
 }
 
-func (s Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte(nixCacheInfo))
+func (s Server) getNixCacheInfo(w http.ResponseWriter, _ *http.Request) {
+	if _, err := w.Write([]byte(nixCacheInfo)); err != nil {
+		s.logger.Error("error writing the response", "error", err)
+	}
 }
 
 func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
+
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
-				w.Write([]byte(http.StatusText(http.StatusNotFound)))
+
+				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
+					s.logger.Error("error writing the response", "error", err)
+				}
+
 				return
 			}
 
 			s.logger.Error("error fetching the narinfo", "hash", hash, "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(http.StatusText(http.StatusInternalServerError)))
+
+			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+				s.logger.Error("error writing the response", "error", err)
+			}
+
 			return
 		}
 
@@ -139,6 +147,7 @@ func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 		if !withBody {
 			w.WriteHeader(http.StatusNoContent)
+
 			return
 		}
 
@@ -157,13 +166,21 @@ func (s Server) getNar(withBody bool) http.HandlerFunc {
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
-				w.Write([]byte(http.StatusText(http.StatusNotFound)))
+
+				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
+					s.logger.Error("error writing the response", "error", err)
+				}
+
 				return
 			}
 
 			s.logger.Error("error fetching the nar", "hash", hash, "compression", compression, "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(http.StatusText(http.StatusInternalServerError)))
+
+			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+				s.logger.Error("error writing the response", "error", err)
+			}
+
 			return
 		}
 
@@ -173,10 +190,15 @@ func (s Server) getNar(withBody bool) http.HandlerFunc {
 
 		if !withBody {
 			w.WriteHeader(http.StatusNoContent)
+
 			return
 		}
 
 		written, err := io.Copy(w, reader)
+		if err != nil {
+			s.logger.Error("error writing the response", "error", err)
+		}
+
 		if written != size {
 			s.logger.Error("Bytes copied does not match object size", "expected", size, "written", written)
 		}

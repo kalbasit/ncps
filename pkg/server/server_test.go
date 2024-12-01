@@ -107,10 +107,7 @@ func TestServeHTTP(t *testing.T) {
 		t.Fatalf("expected no error, got %q", err)
 	}
 
-	s, err := server.New(logger, c)
-	if err != nil {
-		t.Fatalf("expected no error, got %q", err)
-	}
+	s := server.New(logger, c)
 
 	t.Run("narinfo", func(t *testing.T) {
 		t.Run("narfile does not exist upstream", func(t *testing.T) {
