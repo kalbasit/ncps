@@ -1,4 +1,4 @@
-name: Run all Go tests
+name: CI
 on:
   pull_request:
 jobs:
@@ -10,7 +10,7 @@ jobs:
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.11.0
         with:
-          enable-cache: 'true'
+          enable-cache: "true"
 
       - name: Prepare Go build cache
         id: go-cache-paths
@@ -34,4 +34,4 @@ jobs:
 
       - name: Run the tests
         if: success()
-        run: devbox run -- go test -v ./...
+        run: devbox run -- go test -race -bench='.+' -v ./...
