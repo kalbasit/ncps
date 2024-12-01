@@ -60,6 +60,7 @@ Priority: ` + strconv.Itoa(priority)
 
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
+
 			u, err := url.Parse(ts.URL)
 			if err != nil {
 				t.Fatalf("error parsing the test server url: %s", err)
@@ -81,6 +82,7 @@ Priority: ` + strconv.Itoa(priority)
 		}
 
 		for idx, uc := range c.upstreamCaches {
+			//nolint:gosec
 			if want, got := uint64(idx+1), uc.GetPriority(); want != got {
 				t.Errorf("expected the priority at index %d to be %d but got %d", idx, want, got)
 			}

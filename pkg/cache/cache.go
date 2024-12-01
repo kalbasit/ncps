@@ -74,6 +74,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 	c.secretKey = sk
 
 	slices.SortFunc(c.upstreamCaches, func(a, b upstream.Cache) int {
+		//nolint:gosec
 		return int(a.GetPriority() - b.GetPriority())
 	})
 
