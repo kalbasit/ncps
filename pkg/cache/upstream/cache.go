@@ -157,7 +157,7 @@ func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.
 	}
 
 	// TODO: Pull the narInfo and validate that narInfo.FileSize == cl
-	return int64(cl), resp.Body, nil
+	return cl, resp.Body, nil
 }
 
 // GetPriority returns the priority of this upstream cache.

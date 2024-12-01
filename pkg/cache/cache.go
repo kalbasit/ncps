@@ -233,6 +233,7 @@ func (c Cache) hasInStore(key string) bool {
 // NOTE: It's the caller responsibility to close the file after using it.
 func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
 	p := filepath.Join(c.storePath(), key)
+
 	f, err := os.Open(p)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error opening the file %q: %w", key, err)
