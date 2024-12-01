@@ -66,7 +66,7 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 
 	priority, err := c.parsePriority()
 	if err != nil {
-		return c, fmt.Errorf("error parsing the priority: %w", err)
+		return c, fmt.Errorf("error parsing the priority for %q: %w", hostName, err)
 	}
 
 	c.priority = priority

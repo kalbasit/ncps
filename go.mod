@@ -6,6 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/inconshreveable/log15/v3 v3.0.0-testing.5
 	github.com/nix-community/go-nix v0.0.0-20241014105048-0327d78224c2
+	github.com/urfave/cli/v3 v3.0.0-alpha9.10
 )
 
 require (

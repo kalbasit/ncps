@@ -84,6 +84,12 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 		return int(a.GetPriority() - b.GetPriority())
 	})
 
+	logger.Info("the order of upstream caches has been determined by priority to be")
+
+	for idx, uc := range c.upstreamCaches {
+		logger.Info("upstream cache", "idx", idx, "priority", uc.GetPriority())
+	}
+
 	return c, c.createAllDirs()
 }
 
