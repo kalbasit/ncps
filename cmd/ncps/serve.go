@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -12,6 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+//nolint:gochecknoglobals
 var serveCommand = &cli.Command{
 	Name:    "serve",
 	Aliases: []string{"s"},
@@ -65,17 +67,30 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	srv := server.New(logger, cache)
 
 	logger.Info("Server started", "server-addr", cmd.String("server-addr"))
-	http.ListenAndServe(cmd.String("server-addr"), srv)
+
+	server := &http.Server{
+		Addr:              cmd.String("server-addr"),
+		Handler:           srv,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
+		return fmt.Errorf("error starting the HTTP listener: %w", err)
+	}
 
 	return nil
 }
 
 func getUpstreamCaches(_ context.Context, cmd *cli.Command) ([]upstream.Cache, error) {
-	var ucs []upstream.Cache
+	ucSlice := cmd.StringSlice("upstream-cache")
 
-	for _, host := range cmd.StringSlice("upstream-cache") {
+	ucs := make([]upstream.Cache, 0, len(ucSlice))
+
+	for _, host := range ucSlice {
 		var pubKeys []string
+
 		rx := regexp.MustCompile(fmt.Sprintf(`^%s-[0-9]+:[A-Za-z0-9+/=]+$`, regexp.QuoteMeta(host)))
+
 		for _, pubKey := range cmd.StringSlice("upstream-public-key") {
 			if rx.MatchString(pubKey) {
 				pubKeys = append(pubKeys, pubKey)
