@@ -143,11 +143,18 @@ func (c Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinf
 }
 
 func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
-	// narInfoPath := helper.NarInfoPath(hash)
-	//
-	// f, err := os.Create()
+	narInfoPath := filepath.Join(c.storePath(), helper.NarInfoPath(hash))
 
-	return nil
+	f, err := os.OpenFile(narInfoPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400)
+	if err != nil {
+		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
+	}
+
+	defer f.Close()
+
+	_, err = f.WriteString(narInfo.String())
+
+	return err
 }
 
 func (c Cache) hasInStore(key string) bool {
