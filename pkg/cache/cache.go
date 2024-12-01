@@ -90,7 +90,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 		logger.Info("upstream cache", "idx", idx, "priority", uc.GetPriority())
 	}
 
-	return c, c.createAllDirs()
+	return c, c.setupDirs()
 }
 
 // PublicKey returns the public key of the server.
@@ -323,11 +323,16 @@ func (c Cache) isWritable(cachePath string) bool {
 	return true
 }
 
-func (c Cache) createAllDirs() error {
+func (c Cache) setupDirs() error {
+	if err := os.RemoveAll(c.storeTMPPath()); err != nil {
+		return fmt.Errorf("error removing the temporary download directory: %w", err)
+	}
+
 	allPaths := []string{
 		c.configPath(),
 		c.storePath(),
-		filepath.Join(c.storePath(), "nar"),
+		c.storeNarPath(),
+		c.storeTMPPath(),
 	}
 
 	for _, p := range allPaths {
@@ -339,9 +344,11 @@ func (c Cache) createAllDirs() error {
 	return nil
 }
 
-func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }
 func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }
 func (c Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
+func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }
+func (c Cache) storeNarPath() string  { return filepath.Join(c.storePath(), "nar") }
+func (c Cache) storeTMPPath() string  { return filepath.Join(c.storePath(), "tmp") }
 
 func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 	f, err := os.Open(c.secretKeyPath())
