@@ -3,6 +3,7 @@ package upstream_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -187,6 +188,47 @@ Sig: cache.nixos.org-1:WzhkqDdkgPz2qU/0QyEA6wUIm7EMR5MY8nTb5jAmmoh5b80ACIp/+Zpgi
 		_, err = c.GetNarInfo(context.Background(), hash)
 		if want, got := "error while checking the narInfo: invalid Reference[0]: notfound-path", err.Error(); want != got {
 			t.Errorf("want %q got %q", want, got)
+		}
+	})
+}
+
+func TestGetNar(t *testing.T) {
+	c, err := upstream.New(
+		logger,
+		"cache.nixos.org",
+		[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+	)
+	if err != nil {
+		t.Fatalf("expected no error, got %s", err)
+	}
+
+	t.Run("not found", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := c.GetNar(context.Background(), "abc123", "")
+		if want, got := upstream.ErrNotFound, err; !errors.Is(got, want) {
+			t.Errorf("want %q got %q", want, got)
+		}
+	})
+
+	t.Run("hash is found", func(t *testing.T) {
+		t.Parallel()
+
+		hash := "136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00"
+
+		cl, body, err := c.GetNar(context.Background(), hash, "xz")
+		if err != nil {
+			t.Fatalf("expected no error, got %s", err)
+		}
+
+		defer func() {
+			//nolint:errcheck
+			io.Copy(io.Discard, body)
+			body.Close()
+		}()
+
+		if want, got := uint64(132228), cl; want != got {
+			t.Errorf("want %d got %d", want, got)
 		}
 	})
 }

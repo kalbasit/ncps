@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,6 +114,51 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 	}
 
 	return ni, nil
+}
+
+// GetNar returns the NAR archive from the cache server.
+// NOTE: It's the caller responsibility to close the body.
+func (c Cache) GetNar(ctx context.Context, hash, compression string) (uint64, io.ReadCloser, error) {
+	u := c.getHostnameWithScheme() + "/nar/" + hash + ".nar"
+	if compression != "" {
+		u += "." + compression
+	}
+
+	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error performing the request: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+
+		if resp.StatusCode == http.StatusNotFound {
+			return 0, nil, ErrNotFound
+		}
+
+		c.logger.Error(ErrUnexpectedHTTPStatusCode.Error(), "status_code", resp.StatusCode)
+
+		return 0, nil, ErrUnexpectedHTTPStatusCode
+	}
+
+	cls := resp.Header.Get("Content-Length")
+
+	cl, err := strconv.ParseUint(cls, 10, 0)
+	if err != nil {
+		c.logger.Error("error computing the content-length", "Content-Length", cls, "error", err)
+
+		return 0, resp.Body, nil
+	}
+
+	return cl, resp.Body, nil
 }
 
 // GetPriority returns the priority of this upstream cache.
