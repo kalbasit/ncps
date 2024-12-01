@@ -13,8 +13,6 @@ import (
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/kalbasit/ncps/pkg/helper"
-	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
