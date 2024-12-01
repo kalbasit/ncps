@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -40,6 +43,9 @@ var (
 
 	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
 	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
+
+	// ErrNotFound is returned if the nar or narinfo were not found.
+	ErrNotFound = errors.New("not found")
 )
 
 // Cache represents the main cache service.
@@ -78,7 +84,167 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 		return int(a.GetPriority() - b.GetPriority())
 	})
 
-	return c, nil
+	return c, c.createAllDirs()
+}
+
+// PublicKey returns the public key of the server.
+func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
+
+// GetNarInfo returns the nar given a hash and compression from the store. If
+// the nar is not found in the store, it's pulled from an upstream, stored in
+// the stored and finally returned.
+// NOTE: It's the caller responsibility to close the body.
+func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
+	if c.hasNarInStore(hash, compression) {
+		return c.getNarFromStore(hash, compression)
+	}
+
+	size, r, err := c.getNarFromUpstream(ctx, hash, compression)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+	}
+
+	defer r.Close()
+
+	written, err := c.putNarInStore(hash, compression, r)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
+	}
+
+	if size > 0 && written != size {
+		c.logger.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
+	}
+
+	return c.getNarFromStore(hash, compression)
+}
+
+func (c Cache) hasNarInStore(hash, compression string) bool {
+	return c.hasInStore(helper.NarPath(hash, compression))
+}
+
+func (c Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser, error) {
+	return c.getFromStore(helper.NarPath(hash, compression))
+}
+
+func (c Cache) getNarFromUpstream(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
+	for _, uc := range c.upstreamCaches {
+		size, nar, err := uc.GetNar(ctx, hash, compression)
+		if err != nil {
+			if !errors.Is(err, upstream.ErrNotFound) {
+				c.logger.Error("error fetching the narInfo from upstream", "hostname", uc.GetHostname(), "error", err)
+			}
+
+			continue
+		}
+
+		return size, nar, nil
+	}
+
+	return 0, nil, ErrNotFound
+}
+
+func (c Cache) putNarInStore(hash, compression string, r io.ReadCloser) (int64, error) {
+	narPath := filepath.Join(c.storePath(), helper.NarPath(hash, compression))
+
+	f, err := os.OpenFile(narPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400)
+	if err != nil {
+		return 0, fmt.Errorf("error creating the narinfo file %q: %w", narPath, err)
+	}
+
+	defer f.Close()
+
+	return io.Copy(f, r)
+}
+
+// GetNarInfo returns the narInfo given a hash from the store. If the narInfo
+// is not found in the store, it's pulled from an upstream, stored in the
+// stored and finally returned.
+func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	if c.hasNarInfoInStore(hash) {
+		return c.getNarInfoFromStore(hash)
+	}
+
+	narInfo, err := c.getNarInfoFromUpstream(ctx, hash)
+	if err != nil {
+		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+	}
+
+	if err := c.putNarInfoInStore(hash, narInfo); err != nil {
+		return nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
+	}
+
+	return narInfo, nil
+}
+
+func (c Cache) hasNarInfoInStore(hash string) bool {
+	return c.hasInStore(helper.NarInfoPath(hash))
+}
+
+func (c Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
+	_, r, err := c.getFromStore(helper.NarInfoPath(hash))
+	if err != nil {
+		return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
+	}
+
+	defer r.Close()
+
+	return narinfo.Parse(r)
+}
+
+func (c Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	for _, uc := range c.upstreamCaches {
+		narInfo, err := uc.GetNarInfo(ctx, hash)
+		if err != nil {
+			if !errors.Is(err, upstream.ErrNotFound) {
+				c.logger.Error("error fetching the narInfo from upstream", "hostname", uc.GetHostname(), "error", err)
+			}
+
+			continue
+		}
+
+		return narInfo, nil
+	}
+
+	return nil, ErrNotFound
+}
+
+func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
+	narInfoPath := filepath.Join(c.storePath(), helper.NarInfoPath(hash))
+
+	f, err := os.OpenFile(narInfoPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400)
+	if err != nil {
+		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
+	}
+
+	defer f.Close()
+
+	_, err = f.WriteString(narInfo.String())
+
+	return err
+}
+
+func (c Cache) hasInStore(key string) bool {
+	_, err := os.Stat(filepath.Join(c.storePath(), key))
+
+	return err == nil
+}
+
+// GetFile returns the file define by its key
+// NOTE: It's the caller responsibility to close the file after using it.
+func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
+	p := filepath.Join(c.storePath(), key)
+
+	f, err := os.Open(p)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error opening the file %q: %w", key, err)
+	}
+
+	info, err := os.Stat(p)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error getting the stat for path %q: %w", p, err)
+	}
+
+	return info.Size(), f, nil
 }
 
 func (c Cache) validateHostname(hostName string) error {
@@ -151,9 +317,23 @@ func (c Cache) isWritable(cachePath string) bool {
 	return true
 }
 
-// PublicKey returns the public key of the server.
-func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
+func (c Cache) createAllDirs() error {
+	allPaths := []string{
+		c.configPath(),
+		c.storePath(),
+		filepath.Join(c.storePath(), "nar"),
+	}
 
+	for _, p := range allPaths {
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			return fmt.Errorf("error creating the directory %q: %w", p, err)
+		}
+	}
+
+	return nil
+}
+
+func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }
 func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }
 func (c Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
 
