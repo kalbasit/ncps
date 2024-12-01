@@ -85,7 +85,7 @@ func getUpstreamCaches(_ context.Context, cmd *cli.Command) ([]upstream.Cache, e
 			}
 		}
 
-		uc, err := upstream.New(host, pubKeys)
+		uc, err := upstream.New(logger, host, pubKeys)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a new upstream cache: %w", err)
 		}
