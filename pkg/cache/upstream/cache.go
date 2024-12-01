@@ -11,20 +11,20 @@ import (
 )
 
 var (
-	// ErrHostnameRequired is returned if the given hostName to New is not given
+	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
 
-	// ErrHostnameMustNotContainScheme is returned if the given hostName to New contained a scheme
+	// ErrHostnameMustNotContainScheme is returned if the given hostName to New contained a scheme.
 	ErrHostnameMustNotContainScheme = errors.New("hostName must not contain scheme")
 
-	// ErrHostnameNotValid is returned if the given hostName to New is not valid
+	// ErrHostnameNotValid is returned if the given hostName to New is not valid.
 	ErrHostnameNotValid = errors.New("hostName is not valid")
 
-	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path
+	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
 	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
 )
 
-// Cache represents the upstream cache service
+// Cache represents the upstream cache service.
 type Cache struct {
 	hostName   string
 	logger     log15.Logger
@@ -43,6 +43,7 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 		if err != nil {
 			return c, fmt.Errorf("error parsing the public key: %w", err)
 		}
+
 		c.publicKeys = append(c.publicKeys, pk)
 	}
 
@@ -52,20 +53,26 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 func (c Cache) validateHostname(hostName string) error {
 	if hostName == "" {
 		c.logger.Error("given hostname is empty", "hostName", hostName)
+
 		return ErrHostnameRequired
 	}
 
 	u, err := url.Parse(hostName)
 	if err != nil {
 		c.logger.Error("failed to parse the hostname", "hostName", hostName, "error", err)
+
 		return fmt.Errorf("error parsing the hostName %q: %w", hostName, err)
 	}
+
 	if u.Scheme != "" {
 		c.logger.Error("hostname should not contain a scheme", "hostName", hostName, "scheme", u.Scheme)
+
 		return ErrHostnameMustNotContainScheme
 	}
+
 	if strings.Contains(hostName, "/") {
 		c.logger.Error("hostname should not contain a path", "hostName", hostName)
+
 		return ErrHostnameMustNotContainPath
 	}
 
