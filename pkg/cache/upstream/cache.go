@@ -74,6 +74,9 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 	return c, nil
 }
 
+// GetHostname returns the hostname.
+func (c Cache) GetHostname() string { return c.hostName }
+
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+helper.NarInfoPath(hash), nil)

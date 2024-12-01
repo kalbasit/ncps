@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +43,9 @@ var (
 
 	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
 	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
+
+	// ErrNotFound is returned if the nar or narinfo were not found.
+	ErrNotFound = errors.New("not found")
 )
 
 // Cache represents the main cache service.
@@ -89,12 +93,12 @@ func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
-func (c Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
+func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	if c.hasNarInfoInStore(hash) {
 		return c.getNarInfoFromStore(hash)
 	}
 
-	narInfo, err := c.getNarInfoFromUpstream(hash)
+	narInfo, err := c.getNarInfoFromUpstream(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
@@ -121,12 +125,25 @@ func (c Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 	return narinfo.Parse(r)
 }
 
-func (c Cache) getNarInfoFromUpstream(hash string) (*narinfo.NarInfo, error) {
-	return nil, errors.New("not implemented")
+func (c Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	for _, uc := range c.upstreamCaches {
+		narInfo, err := uc.GetNarInfo(ctx, hash)
+		if err != nil {
+			if !errors.Is(err, upstream.ErrNotFound) {
+				c.logger.Error("error fetching the narInfo from upstream", "hostname", uc.GetHostname(), "error", err)
+			}
+
+			continue
+		}
+
+		return narInfo, nil
+	}
+
+	return nil, ErrNotFound
 }
 
 func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
-	return errors.New("not implemented")
+	narInfoPath := helper.NarInfoPath(hash)
 }
 
 func (c Cache) hasInStore(key string) bool {
