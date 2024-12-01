@@ -125,11 +125,12 @@ func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 
 func (c Cache) hasInStore(key string) bool {
 	_, err := os.Stat(filepath.Join(c.storePath(), key))
+
 	return err == nil
 }
 
-// GetFile retuns the file define by its key
-// NOTE: It's the caller responsability to close the file after using it
+// GetFile returns the file define by its key
+// NOTE: It's the caller responsibility to close the file after using it.
 func (c Cache) getFromStore(key string) (io.ReadCloser, error) {
 	f, err := os.Open(filepath.Join(c.storePath(), key))
 	if err != nil {

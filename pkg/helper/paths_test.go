@@ -8,6 +8,8 @@ import (
 )
 
 func TestNarInfoPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		hash string
 		path string
@@ -28,6 +30,8 @@ func TestNarInfoPath(t *testing.T) {
 }
 
 func TestNarPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		hash        string
 		compression string
