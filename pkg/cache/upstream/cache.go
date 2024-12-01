@@ -153,9 +153,11 @@ func (c Cache) GetNar(ctx context.Context, hash, compression string) (uint64, io
 	if err != nil {
 		c.logger.Error("error computing the content-length", "Content-Length", cls, "error", err)
 
+		// TODO: Compute narinfo, pull it and return narInfo.FileSize
 		return 0, resp.Body, nil
 	}
 
+	// TODO: Pull the narInfo and validate that narInfo.FileSize == cl
 	return cl, resp.Body, nil
 }
 
