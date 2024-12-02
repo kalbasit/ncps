@@ -93,6 +93,9 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 	return c, c.setupDirs()
 }
 
+// GetHostname returns the hostname.
+func (c Cache) GetHostname() string { return c.hostName }
+
 // PublicKey returns the public key of the server.
 func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
 
