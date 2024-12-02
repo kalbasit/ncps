@@ -298,11 +298,12 @@ func TestGetNarInfo(t *testing.T) {
 
 		t.Run("it should be signed by our server", func(t *testing.T) {
 			var found bool
-			var sig signature.Signature
 
+			var sig signature.Signature
 			for _, sig = range ni.Signatures {
 				if sig.Name == "cache.example.com" {
 					found = true
+
 					break
 				}
 			}
