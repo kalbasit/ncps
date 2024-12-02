@@ -98,7 +98,7 @@ func TestNew(t *testing.T) {
 			}
 		})
 
-		t.Run("config/ and store/nar were created", func(t *testing.T) {
+		t.Run("config/, store/nar and store/tmp were created", func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "cache-path")
 			if err != nil {
 				t.Fatalf("expected no error, got: %q", err)
@@ -110,7 +110,9 @@ func TestNew(t *testing.T) {
 				t.Errorf("expected no error, got %q", err)
 			}
 
-			for _, p := range []string{"config", "store", filepath.Join("store", "nar")} {
+			dirs := []string{"config", "store", filepath.Join("store", "nar"), filepath.Join("store", "tmp")}
+
+			for _, p := range dirs {
 				t.Run("Checking that "+p+" exists", func(t *testing.T) {
 					info, err := os.Stat(filepath.Join(dir, p))
 					if err != nil {
@@ -121,6 +123,33 @@ func TestNew(t *testing.T) {
 						t.Errorf("want %t got %t", want, got)
 					}
 				})
+			}
+		})
+
+		t.Run("store/tmp is removed on boot", func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "cache-path")
+			if err != nil {
+				t.Fatalf("expected no error, got: %q", err)
+			}
+			defer os.RemoveAll(dir) // clean up
+
+			// create the directory tmp and add a file inside of it
+			if err := os.MkdirAll(filepath.Join(dir, "store", "tmp"), 0o700); err != nil {
+				t.Fatalf("expected no error but got %s", err)
+			}
+
+			f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "hello")
+			if err != nil {
+				t.Fatalf("expected no error but got %s", err)
+			}
+
+			_, err = cache.New(logger, "cache.example.com", dir, nil)
+			if err != nil {
+				t.Errorf("expected no error, got %q", err)
+			}
+
+			if _, err := os.Stat(f.Name()); !os.IsNotExist(err) {
+				t.Errorf("expected %q to not exist but it does", f.Name())
 			}
 		})
 	})

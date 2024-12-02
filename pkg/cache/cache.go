@@ -87,10 +87,10 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 	logger.Info("the order of upstream caches has been determined by priority to be")
 
 	for idx, uc := range c.upstreamCaches {
-		logger.Info("upstream cache", "idx", idx, "priority", uc.GetPriority())
+		logger.Info("upstream cache", "idx", idx, "hostname", hostName, "priority", uc.GetPriority())
 	}
 
-	return c, c.createAllDirs()
+	return c, c.setupDirs()
 }
 
 // GetHostname returns the hostname.
@@ -153,16 +153,35 @@ func (c Cache) getNarFromUpstream(ctx context.Context, hash, compression string)
 }
 
 func (c Cache) putNarInStore(hash, compression string, r io.ReadCloser) (int64, error) {
-	narPath := filepath.Join(c.storePath(), helper.NarPath(hash, compression))
-
-	f, err := os.OpenFile(narPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400)
-	if err != nil {
-		return 0, fmt.Errorf("error creating the narinfo file %q: %w", narPath, err)
+	pattern := hash + "-*.nar"
+	if compression != "" {
+		pattern += "." + compression
 	}
 
-	defer f.Close()
+	f, err := os.CreateTemp(c.storeTMPPath(), pattern)
+	if err != nil {
+		return 0, fmt.Errorf("error creating the temporary directory: %w", err)
+	}
 
-	return io.Copy(f, r)
+	written, err := io.Copy(f, r)
+	if err != nil {
+		f.Close()
+		os.Remove(f.Name())
+
+		return 0, fmt.Errorf("error writing the nar to the temporary file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return 0, fmt.Errorf("error closing the temporary file: %w", err)
+	}
+
+	narPath := filepath.Join(c.storePath(), helper.NarPath(hash, compression))
+
+	if err := os.Rename(f.Name(), narPath); err != nil {
+		return 0, fmt.Errorf("error creating the nar file %q: %w", narPath, err)
+	}
+
+	return written, nil
 }
 
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
@@ -218,18 +237,29 @@ func (c Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinf
 }
 
 func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
+	f, err := os.CreateTemp(c.storeTMPPath(), hash+"-*.narinfo")
+	if err != nil {
+		return fmt.Errorf("error creating the temporary directory: %w", err)
+	}
+
+	if _, err := f.WriteString(narInfo.String()); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+
+		return fmt.Errorf("error writing the narinfo to the temporary file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing the temporary file: %w", err)
+	}
+
 	narInfoPath := filepath.Join(c.storePath(), helper.NarInfoPath(hash))
 
-	f, err := os.OpenFile(narInfoPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400)
-	if err != nil {
+	if err := os.Rename(f.Name(), narInfoPath); err != nil {
 		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
 	}
 
-	defer f.Close()
-
-	_, err = f.WriteString(narInfo.String())
-
-	return err
+	return nil
 }
 
 func (c Cache) hasInStore(key string) bool {
@@ -326,11 +356,16 @@ func (c Cache) isWritable(cachePath string) bool {
 	return true
 }
 
-func (c Cache) createAllDirs() error {
+func (c Cache) setupDirs() error {
+	if err := os.RemoveAll(c.storeTMPPath()); err != nil {
+		return fmt.Errorf("error removing the temporary download directory: %w", err)
+	}
+
 	allPaths := []string{
 		c.configPath(),
 		c.storePath(),
-		filepath.Join(c.storePath(), "nar"),
+		c.storeNarPath(),
+		c.storeTMPPath(),
 	}
 
 	for _, p := range allPaths {
@@ -342,9 +377,11 @@ func (c Cache) createAllDirs() error {
 	return nil
 }
 
-func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }
 func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }
 func (c Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
+func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }
+func (c Cache) storeNarPath() string  { return filepath.Join(c.storePath(), "nar") }
+func (c Cache) storeTMPPath() string  { return filepath.Join(c.storePath(), "tmp") }
 
 func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 	f, err := os.Open(c.secretKeyPath())
