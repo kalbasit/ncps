@@ -112,13 +112,13 @@ func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler 
 	}
 }
 
-func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
+func (s *Server) getIndex(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Add(contentType, contentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 
 	body := struct {
 		Hostname  string `json:"hostname"`
-		Publickey string `json:"public_key"`
+		Publickey string `json:"publicKey"`
 	}{
 		Hostname:  s.cache.GetHostname(),
 		Publickey: s.cache.PublicKey(),
