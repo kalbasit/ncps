@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 )
 
 const (
+	routeIndex          = "/"
 	routeNar            = "/nar/{hash:[a-z0-9]+}.nar"
 	routeNarCompression = "/nar/{hash:[a-z0-9]+}.nar.{compression:*}"
 	routeNarInfo        = "/{hash:[a-z0-9]+}.narinfo"
@@ -24,6 +26,7 @@ const (
 	contentType        = "Content-Type"
 	contentTypeNar     = "application/x-nix-nar"
 	contentTypeNarInfo = "text/x-nix-narinfo"
+	contentTypeJSON    = "application/json"
 
 	nixCacheInfo = `StoreDir: /nix/store
 WantMassQuery: 1
@@ -59,6 +62,8 @@ func createRouter(s Server) *chi.Mux {
 	router.Use(middleware.RealIP)
 	router.Use(requestLogger(s.logger))
 	router.Use(middleware.Recoverer)
+
+	router.Get(routeIndex, s.getIndex)
 
 	router.Get(routeCacheInfo, s.getNixCacheInfo)
 
@@ -104,6 +109,23 @@ func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler 
 		}
 
 		return http.HandlerFunc(fn)
+	}
+}
+
+func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add(contentType, contentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+
+	body := struct {
+		Hostname  string `json:"hostname"`
+		Publickey string `json:"public_key"`
+	}{
+		Hostname:  s.cache.GetHostname(),
+		Publickey: s.cache.PublicKey(),
+	}
+
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		s.logger.Error("error writing the body to the response", "error", err)
 	}
 }
 
