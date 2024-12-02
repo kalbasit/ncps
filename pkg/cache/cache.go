@@ -97,7 +97,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 func (c Cache) GetHostname() string { return c.hostName }
 
 // PublicKey returns the public key of the server.
-func (c Cache) PublicKey() string { return c.secretKey.ToPublicKey().String() }
+func (c Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey() }
 
 // GetNarInfo returns the nar given a hash and compression from the store. If
 // the nar is not found in the store, it's pulled from an upstream, stored in
@@ -197,11 +197,26 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
 
+	if err := c.signNarInfo(narInfo); err != nil {
+		return nil, fmt.Errorf("error signing the narinfo: %w", err)
+	}
+
 	if err := c.putNarInfoInStore(hash, narInfo); err != nil {
 		return nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
 	}
 
 	return narInfo, nil
+}
+
+func (c Cache) signNarInfo(narInfo *narinfo.NarInfo) error {
+	sig, err := c.secretKey.Sign(nil, narInfo.Fingerprint())
+	if err != nil {
+		return fmt.Errorf("error signing the fingerprint: %w", err)
+	}
+
+	narInfo.Signatures = append(narInfo.Signatures, sig)
+
+	return nil
 }
 
 func (c Cache) hasNarInfoInStore(hash string) bool {

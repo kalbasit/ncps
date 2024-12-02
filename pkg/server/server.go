@@ -121,7 +121,7 @@ func (s *Server) getIndex(w http.ResponseWriter, _ *http.Request) {
 		Publickey string `json:"publicKey"`
 	}{
 		Hostname:  s.cache.GetHostname(),
-		Publickey: s.cache.PublicKey(),
+		Publickey: s.cache.PublicKey().String(),
 	}
 
 	if err := json.NewEncoder(w).Encode(body); err != nil {

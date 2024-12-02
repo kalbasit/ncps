@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/inconshreveable/log15/v3"
@@ -139,8 +140,9 @@ func TestServeHTTP(t *testing.T) {
 				t.Fatalf("expected no error got %s", err)
 			}
 
-			if want, got := narInfoText, string(body); want != got {
-				t.Errorf("want %q got %q", want, got)
+			// NOTE: HasPrefix instead equality because we add our signature to the narInfo.
+			if !strings.HasPrefix(string(body), narInfoText) {
+				t.Error("expected the body to start with narInfo but it did not")
 			}
 		})
 	})
