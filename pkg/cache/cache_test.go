@@ -195,7 +195,7 @@ func TestPublicKey(t *testing.T) {
 		t.Fatalf("error not expected, got an error: %s", err)
 	}
 
-	pubKey := c.PublicKey()
+	pubKey := c.PublicKey().String()
 
 	t.Run("should return a public key with the correct prefix", func(t *testing.T) {
 		t.Parallel()
@@ -293,6 +293,28 @@ func TestGetNarInfo(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, "store", narInfoHash+".narinfo"))
 			if err != nil {
 				t.Fatalf("expected no error got %s", err)
+			}
+		})
+
+		t.Run("it should be signed by our server", func(t *testing.T) {
+			var found bool
+			var sig signature.Signature
+
+			for _, sig = range ni.Signatures {
+				if sig.Name == "cache.example.com" {
+					found = true
+					break
+				}
+			}
+
+			if want, got := true, found; want != got {
+				t.Errorf("want %t got %t", want, got)
+			}
+
+			validSig := signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()})
+
+			if want, got := true, validSig; want != got {
+				t.Errorf("want %t got %t", want, got)
 			}
 		})
 	})
