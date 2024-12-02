@@ -33,16 +33,15 @@ ncps addresses these issues by acting as a central cache on your local network.
 ncps can be installed in several ways:
 
 - **Build from source:**
-
   - Ensure you have Go installed and configured.
   - Clone the repository: `git clone https://github.com/kalbasit/ncps.git`
   - Navigate to the root directory of ncps: `cd ncps`
   - Build the binary: `go build ./cmd/ncps`
 
-- **Pre-built binaries:**
-
-  - Download the latest release for your platform from the [release page](https://github.com/kalbasit/ncps/releases).
-  - Extract the binary and place it in your desired location.
+<!--- **Pre-built binaries:**-->
+<!---->
+<!--  - Download the latest release for your platform from the [release page](https://github.com/kalbasit/ncps/releases).-->
+<!--  - Extract the binary and place it in your desired location.-->
 
 - **Docker:**
   - Pull the Docker image: `docker pull kalbasit/ncps`
