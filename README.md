@@ -32,20 +32,119 @@ ncps addresses these issues by acting as a central cache on your local network.
 
 ncps can be installed in several ways:
 
-- **Build from source:**
-  - Ensure you have Go installed and configured.
-  - Clone the repository: `git clone https://github.com/kalbasit/ncps.git`
-  - Navigate to the root directory of ncps: `cd ncps`
-  - Build the binary: `go build ./cmd/ncps`
-
 <!--- **Pre-built binaries:**-->
 <!---->
 <!--  - Download the latest release for your platform from the [release page](https://github.com/kalbasit/ncps/releases).-->
 <!--  - Extract the binary and place it in your desired location.-->
 
+- **Build from source:**
+
+  - Ensure you have Go installed and configured.
+  - Clone the repository: `git clone https://github.com/kalbasit/ncps.git`
+  - Navigate to the root directory of ncps: `cd ncps`
+  - Build the binary: `go build ./cmd/ncps`
+
 - **Docker:**
+
   - Pull the Docker image: `docker pull kalbasit/ncps`
   - Run the container with appropriate port mappings and volume mounts for the cache directory.
+
+- **Kubernetes**
+
+  The following resources are provided as an example for running ncps on Kubernetes. Personally, I run it on my k3s cluster.
+
+<details>
+<summary>PersistentVolumeClaim</summary>
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nix-cache
+  labels:
+    app: nix-cache
+    tier: proxy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+```
+
+</details>
+
+<details>
+<summary>StatefulSet</summary>
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nix-cache
+  labels:
+    app: nix-cache
+    tier: proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nix-cache
+      tier: proxy
+  template:
+    metadata:
+      labels:
+        app: nix-cache
+        tier: proxy
+    spec:
+      containers:
+        - image: kalbasit/ncps:latest # NOTE: It's recommended to use a tag here!
+          name: nix-cache
+          args:
+            - /app/ncps
+            - serve
+            - --cache-hostname=nix-cache.yournetwork.local # TODO: Replace with your own hostname
+            - --cache-data-path=/storage
+            - --upstream-cache=cache.nixos.org
+            - --upstream-cache=nix-community.cachix.org
+            - --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            - --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+          ports:
+            - containerPort: 8501
+              name: http-web
+          volumeMounts:
+            - name: nix-cache-persistent-storage
+              mountPath: /storage
+      volumes:
+        - name: nix-cache-persistent-storage
+          persistentVolumeClaim:
+            claimName: nix-cache
+```
+
+</details>
+
+<details>
+<summary>Service</summary>
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nix-cache
+  labels:
+    app: nix-cache
+    tier: proxy
+spec:
+  type: ClusterIP
+  ports:
+    - name: http-web
+      port: 8501
+  selector:
+    app: nix-cache
+    tier: proxy
+```
+
+</details>
 
 ## Configuration
 
