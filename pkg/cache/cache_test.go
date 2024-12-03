@@ -368,7 +368,7 @@ func TestGetNar(t *testing.T) {
 	}
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
-		_, _, err := c.GetNar(context.Background(), "doesnotexist", "")
+		_, _, err := c.GetNar("doesnotexist", "")
 		if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
 			t.Errorf("want %s got %s", want, got)
 		}
@@ -382,7 +382,7 @@ func TestGetNar(t *testing.T) {
 			}
 		})
 
-		size, r, err := c.GetNar(context.Background(), narHash, "")
+		size, r, err := c.GetNar(narHash, "")
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
 		}
