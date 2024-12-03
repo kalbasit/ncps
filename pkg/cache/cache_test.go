@@ -260,6 +260,13 @@ func TestGetNarInfo(t *testing.T) {
 			}
 		})
 
+		t.Run("nar does not exist in storage yet", func(t *testing.T) {
+			_, err := os.Stat(filepath.Join(dir, "store", narHash+".nar"))
+			if err == nil {
+				t.Fatal("expected an error but got none")
+			}
+		})
+
 		ni, err := c.GetNarInfo(context.Background(), narInfoHash)
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
@@ -298,6 +305,13 @@ func TestGetNarInfo(t *testing.T) {
 
 			if want, got := true, validSig; want != got {
 				t.Errorf("want %t got %t", want, got)
+			}
+		})
+
+		t.Run("it should have also pulled the nar", func(t *testing.T) {
+			_, err := os.Stat(filepath.Join(dir, "store", narHash+".nar"))
+			if err != nil {
+				t.Fatalf("expected no error got %s", err)
 			}
 		})
 	})
