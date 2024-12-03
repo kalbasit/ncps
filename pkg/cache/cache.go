@@ -122,12 +122,14 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 	errC := make(chan error)
 
 	c.mu.Lock()
+
 	doneC, ok := c.upstreamJobs[hash]
 	if ok {
 		log.Info("waiting for an in-progress download to finish")
 	} else {
 		doneC = make(chan struct{})
 		c.upstreamJobs[hash] = doneC
+
 		go c.pullNar(log, hash, compression, doneC, errC)
 	}
 	c.mu.Unlock()
@@ -149,6 +151,7 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 
 func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
 	now := time.Now()
+
 	log.Info("downloading the nar from upstream")
 
 	size, r, err := c.getNarFromUpstream(hash, compression)
@@ -175,7 +178,7 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 		return
 	}
 
-	log.Info("download complete", "elapsed", time.Now().Sub(now))
+	log.Info("download complete", "elapsed", time.Since(now))
 
 	if size > 0 && written != size {
 		log.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
