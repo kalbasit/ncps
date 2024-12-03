@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -55,11 +57,18 @@ type Cache struct {
 	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
+
+	mu           sync.Mutex
+	upstreamJobs map[string]chan struct{}
 }
 
 // New returns a new Cache.
-func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (Cache, error) {
-	c := Cache{logger: logger, upstreamCaches: ucs}
+func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (*Cache, error) {
+	c := &Cache{
+		logger:         logger,
+		upstreamCaches: ucs,
+		upstreamJobs:   make(map[string]chan struct{}),
+	}
 
 	if err := c.validateHostname(hostName); err != nil {
 		return c, err
@@ -94,48 +103,103 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 }
 
 // GetHostname returns the hostname.
-func (c Cache) GetHostname() string { return c.hostName }
+func (c *Cache) GetHostname() string { return c.hostName }
 
 // PublicKey returns the public key of the server.
-func (c Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey() }
+func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey() }
 
 // GetNarInfo returns the nar given a hash and compression from the store. If
 // the nar is not found in the store, it's pulled from an upstream, stored in
 // the stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
-func (c Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 	if c.hasNarInStore(hash, compression) {
 		return c.getNarFromStore(hash, compression)
 	}
 
+	log := c.logger.New("hash", hash, "compression", compression)
+
+	errC := make(chan error)
+
+	c.mu.Lock()
+
+	doneC, ok := c.upstreamJobs[hash]
+	if ok {
+		log.Info("waiting for an in-progress download to finish")
+	} else {
+		doneC = make(chan struct{})
+		c.upstreamJobs[hash] = doneC
+
+		go c.pullNar(log, hash, compression, doneC, errC)
+	}
+	c.mu.Unlock()
+
+	select {
+	case err := <-errC:
+		close(doneC) // notify other go-routines waiting on the done channel.
+
+		return 0, nil, err
+	case <-doneC:
+	}
+
+	if !c.hasNarInStore(hash, compression) {
+		return 0, nil, ErrNotFound
+	}
+
+	return c.getNarFromStore(hash, compression)
+}
+
+func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
+	now := time.Now()
+
+	log.Info("downloading the nar from upstream")
+
 	size, r, err := c.getNarFromUpstream(hash, compression)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+		c.mu.Lock()
+		delete(c.upstreamJobs, hash)
+		c.mu.Unlock()
+
+		errC <- fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+
+		return
 	}
 
 	defer r.Close()
 
 	written, err := c.putNarInStore(hash, compression, r)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
+		c.mu.Lock()
+		delete(c.upstreamJobs, hash)
+		c.mu.Unlock()
+
+		errC <- fmt.Errorf("error storing the narInfo in the store: %w", err)
+
+		return
 	}
+
+	log.Info("download complete", "elapsed", time.Since(now))
 
 	if size > 0 && written != size {
-		c.logger.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
+		log.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
 	}
 
-	return c.getNarFromStore(hash, compression)
+	c.mu.Lock()
+	delete(c.upstreamJobs, hash)
+	c.mu.Unlock()
+
+	close(doneC)
 }
 
-func (c Cache) hasNarInStore(hash, compression string) bool {
+func (c *Cache) hasNarInStore(hash, compression string) bool {
 	return c.hasInStore(helper.NarPath(hash, compression))
 }
 
-func (c Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser, error) {
 	return c.getFromStore(helper.NarPath(hash, compression))
 }
 
-func (c Cache) getNarFromUpstream(hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) getNarFromUpstream(hash, compression string) (int64, io.ReadCloser, error) {
 	// create a new context not associated with any request because we don't want
 	// pulling from upstream to be associated with a user request.
 	ctx := context.Background()
@@ -156,7 +220,7 @@ func (c Cache) getNarFromUpstream(hash, compression string) (int64, io.ReadClose
 	return 0, nil, ErrNotFound
 }
 
-func (c Cache) putNarInStore(hash, compression string, r io.ReadCloser) (int64, error) {
+func (c *Cache) putNarInStore(hash, compression string, r io.ReadCloser) (int64, error) {
 	pattern := hash + "-*.nar"
 	if compression != "" {
 		pattern += "." + compression
@@ -191,7 +255,7 @@ func (c Cache) putNarInStore(hash, compression string, r io.ReadCloser) (int64, 
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
-func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	if c.hasNarInfoInStore(hash) {
 		return c.getNarInfoFromStore(hash)
 	}
@@ -212,7 +276,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 	return narInfo, nil
 }
 
-func (c Cache) signNarInfo(narInfo *narinfo.NarInfo) error {
+func (c *Cache) signNarInfo(narInfo *narinfo.NarInfo) error {
 	sig, err := c.secretKey.Sign(nil, narInfo.Fingerprint())
 	if err != nil {
 		return fmt.Errorf("error signing the fingerprint: %w", err)
@@ -223,11 +287,11 @@ func (c Cache) signNarInfo(narInfo *narinfo.NarInfo) error {
 	return nil
 }
 
-func (c Cache) hasNarInfoInStore(hash string) bool {
+func (c *Cache) hasNarInfoInStore(hash string) bool {
 	return c.hasInStore(helper.NarInfoPath(hash))
 }
 
-func (c Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 	_, r, err := c.getFromStore(helper.NarInfoPath(hash))
 	if err != nil {
 		return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
@@ -238,7 +302,7 @@ func (c Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 	return narinfo.Parse(r)
 }
 
-func (c Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	for _, uc := range c.upstreamCaches {
 		narInfo, err := uc.GetNarInfo(ctx, hash)
 		if err != nil {
@@ -255,7 +319,7 @@ func (c Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinf
 	return nil, ErrNotFound
 }
 
-func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
+func (c *Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 	f, err := os.CreateTemp(c.storeTMPPath(), hash+"-*.narinfo")
 	if err != nil {
 		return fmt.Errorf("error creating the temporary directory: %w", err)
@@ -281,7 +345,7 @@ func (c Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 	return nil
 }
 
-func (c Cache) hasInStore(key string) bool {
+func (c *Cache) hasInStore(key string) bool {
 	_, err := os.Stat(filepath.Join(c.storePath(), key))
 
 	return err == nil
@@ -289,7 +353,7 @@ func (c Cache) hasInStore(key string) bool {
 
 // GetFile returns the file define by its key
 // NOTE: It's the caller responsibility to close the file after using it.
-func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
+func (c *Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
 	p := filepath.Join(c.storePath(), key)
 
 	f, err := os.Open(p)
@@ -305,7 +369,7 @@ func (c Cache) getFromStore(key string) (int64, io.ReadCloser, error) {
 	return info.Size(), f, nil
 }
 
-func (c Cache) validateHostname(hostName string) error {
+func (c *Cache) validateHostname(hostName string) error {
 	if hostName == "" {
 		c.logger.Error("given hostname is empty", "hostName", hostName)
 
@@ -334,7 +398,7 @@ func (c Cache) validateHostname(hostName string) error {
 	return nil
 }
 
-func (c Cache) validatePath(cachePath string) error {
+func (c *Cache) validatePath(cachePath string) error {
 	if !filepath.IsAbs(cachePath) {
 		c.logger.Error("path is not absolute", "path", cachePath)
 
@@ -361,7 +425,7 @@ func (c Cache) validatePath(cachePath string) error {
 	return nil
 }
 
-func (c Cache) isWritable(cachePath string) bool {
+func (c *Cache) isWritable(cachePath string) bool {
 	tmpFile, err := os.CreateTemp(cachePath, "write_test")
 	if err != nil {
 		c.logger.Error("error writing a temp file in the path", "path", cachePath, "error", err)
@@ -375,7 +439,7 @@ func (c Cache) isWritable(cachePath string) bool {
 	return true
 }
 
-func (c Cache) setupDirs() error {
+func (c *Cache) setupDirs() error {
 	if err := os.RemoveAll(c.storeTMPPath()); err != nil {
 		return fmt.Errorf("error removing the temporary download directory: %w", err)
 	}
@@ -396,13 +460,13 @@ func (c Cache) setupDirs() error {
 	return nil
 }
 
-func (c Cache) configPath() string    { return filepath.Join(c.path, "config") }
-func (c Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
-func (c Cache) storePath() string     { return filepath.Join(c.path, "store") }
-func (c Cache) storeNarPath() string  { return filepath.Join(c.storePath(), "nar") }
-func (c Cache) storeTMPPath() string  { return filepath.Join(c.storePath(), "tmp") }
+func (c *Cache) configPath() string    { return filepath.Join(c.path, "config") }
+func (c *Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
+func (c *Cache) storePath() string     { return filepath.Join(c.path, "store") }
+func (c *Cache) storeNarPath() string  { return filepath.Join(c.storePath(), "nar") }
+func (c *Cache) storeTMPPath() string  { return filepath.Join(c.storePath(), "tmp") }
 
-func (c Cache) setupSecretKey() (signature.SecretKey, error) {
+func (c *Cache) setupSecretKey() (signature.SecretKey, error) {
 	f, err := os.Open(c.secretKeyPath())
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -426,7 +490,7 @@ func (c Cache) setupSecretKey() (signature.SecretKey, error) {
 	return sk, nil
 }
 
-func (c Cache) createNewKey() (signature.SecretKey, error) {
+func (c *Cache) createNewKey() (signature.SecretKey, error) {
 	if err := os.MkdirAll(filepath.Dir(c.secretKeyPath()), 0o700); err != nil {
 		return signature.SecretKey{}, fmt.Errorf("error creating the parent directories for %q: %w", c.secretKeyPath(), err)
 	}
