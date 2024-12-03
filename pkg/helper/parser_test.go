@@ -15,11 +15,11 @@ func TestParseNarURL(t *testing.T) {
 	}{
 		{
 			url: "",
-			err: ErrNoMatchesInURL,
+			err: ErrInvalidNarURL,
 		},
 		{
 			url: "helloworld",
-			err: ErrNoMatchesInURL,
+			err: ErrInvalidNarURL,
 		},
 		{
 			url:         "nar/1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps.nar",
