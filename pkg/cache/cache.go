@@ -266,23 +266,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	}
 
 	// start a job to also pull the nar
-	go func() {
-		hash, compression, err := helper.ParseNarURL(narInfo.URL)
-		c.logger.Info("pre-caching NAR ahead of time", "URL", narInfo.URL, "hash", hash, "compression", compression)
-		if err != nil {
-			c.logger.Error("error parsing the nar URL %q: %w", narInfo.URL, err)
-
-			return
-		}
-		_, nar, err := c.GetNar(hash, compression)
-		if err != nil {
-			c.logger.Error("error fetching the NAR: %w", err)
-
-			return
-		}
-
-		nar.Close()
-	}()
+	go c.prePullNar(narInfo.URL)
 
 	if err := c.signNarInfo(narInfo); err != nil {
 		return nil, fmt.Errorf("error signing the narinfo: %w", err)
@@ -293,6 +277,26 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	}
 
 	return narInfo, nil
+}
+
+func (c *Cache) prePullNar(url string) {
+	hash, compression, err := helper.ParseNarURL(url)
+	if err != nil {
+		c.logger.Error("error parsing the nar URL %q: %w", url, err)
+
+		return
+	}
+
+	c.logger.Info("pre-caching NAR ahead of time", "URL", url, "hash", hash, "compression", compression)
+
+	_, nar, err := c.GetNar(hash, compression)
+	if err != nil {
+		c.logger.Error("error fetching the NAR: %w", err)
+
+		return
+	}
+
+	nar.Close()
 }
 
 func (c *Cache) signNarInfo(narInfo *narinfo.NarInfo) error {
