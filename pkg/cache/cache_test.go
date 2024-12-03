@@ -99,7 +99,7 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("config/, store/nar and store/tmp were created", func(t *testing.T) {
-			dir, err := os.MkdirTemp("", "cache-path")
+			dir, err := os.MkdirTemp("", "cache-path-")
 			if err != nil {
 				t.Fatalf("expected no error, got: %q", err)
 			}
@@ -127,7 +127,7 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("store/tmp is removed on boot", func(t *testing.T) {
-			dir, err := os.MkdirTemp("", "cache-path")
+			dir, err := os.MkdirTemp("", "cache-path-")
 			if err != nil {
 				t.Fatalf("expected no error, got: %q", err)
 			}
