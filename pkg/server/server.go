@@ -35,13 +35,13 @@ Priority: 10`
 
 // Server represents the main HTTP server.
 type Server struct {
-	cache  cache.Cache
+	cache  *cache.Cache
 	logger log15.Logger
 	router *chi.Mux
 }
 
 // New returns a new server.
-func New(logger log15.Logger, cache cache.Cache) Server {
+func New(logger log15.Logger, cache *cache.Cache) Server {
 	s := Server{
 		cache:  cache,
 		logger: logger,
