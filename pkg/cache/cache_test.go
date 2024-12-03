@@ -221,25 +221,7 @@ func TestPublicKey(t *testing.T) {
 
 //nolint:paralleltest
 func TestGetNarInfo(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/nix-cache-info" {
-			if _, err := w.Write([]byte(nixStoreInfo)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		if r.URL.Path == "/"+narInfoHash+".narinfo" {
-			if _, err := w.Write([]byte(narInfoText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-	}))
+	ts := startServer(t)
 	defer ts.Close()
 
 	tu, err := url.Parse(ts.URL)
@@ -323,27 +305,7 @@ func TestGetNarInfo(t *testing.T) {
 
 //nolint:paralleltest
 func TestGetNar(t *testing.T) {
-	narName := narHash + ".nar"
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/nix-cache-info" {
-			if _, err := w.Write([]byte(nixStoreInfo)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		if r.URL.Path == "/nar/"+narName {
-			if _, err := w.Write([]byte(narText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-	}))
+	ts := startServer(t)
 	defer ts.Close()
 
 	tu, err := url.Parse(ts.URL)
@@ -366,6 +328,8 @@ func TestGetNar(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	narName := narHash + ".nar"
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		_, _, err := c.GetNar("doesnotexist", "")
@@ -412,4 +376,36 @@ func TestGetNar(t *testing.T) {
 			}
 		})
 	})
+}
+
+func startServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/nix-cache-info" {
+			if _, err := w.Write([]byte(nixStoreInfo)); err != nil {
+				t.Fatalf("expected no error got: %s", err)
+			}
+
+			return
+		}
+
+		if r.URL.Path == "/"+narInfoHash+".narinfo" {
+			if _, err := w.Write([]byte(narInfoText)); err != nil {
+				t.Fatalf("expected no error got: %s", err)
+			}
+
+			return
+		}
+
+		if r.URL.Path == "/nar/"+narHash+".nar" {
+			if _, err := w.Write([]byte(narText)); err != nil {
+				t.Fatalf("expected no error got: %s", err)
+			}
+
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
 }
