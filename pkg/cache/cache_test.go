@@ -32,10 +32,10 @@ const (
 WantMassQuery: 1
 Priority: 40`
 
-	narInfoHash = "7bn85d74qa0127p85rrswfyghxsqmcf7"
+	narInfoHash1 = "7bn85d74qa0127p85rrswfyghxsqmcf7"
 
 	//nolint:lll
-	narInfoText = `StorePath: /nix/store/7bn85d74qa0127p85rrswfyghxsqmcf7-iputils-20210722
+	narInfoText1 = `StorePath: /nix/store/7bn85d74qa0127p85rrswfyghxsqmcf7-iputils-20210722
 URL: nar/136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00.nar
 Compression: xz
 FileHash: sha256:136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00
@@ -46,9 +46,9 @@ References: 7bn85d74qa0127p85rrswfyghxsqmcf7-iputils-20210722 892cxk44qxzzlw9h90
 Deriver: 9fs4vq4gdsb8r9ywawb5f6zl40ycp1bh-iputils-20210722.drv
 Sig: cache.nixos.org-1:WzhkqDdkgPz2qU/0QyEA6wUIm7EMR5MY8nTb5jAmmoh5b80ACIp/+Zpgi5t1KvmO8uG8GVrkPejCxbyQ2gNXDQ==`
 
-	narHash = "136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00"
+	narHash1 = "136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00"
 
-	narText = "Hello, World" // fake nar for above nar info
+	narText1 = "Hello, World" // fake nar for above nar info
 )
 
 func TestNew(t *testing.T) {
@@ -255,20 +255,20 @@ func TestGetNarInfo(t *testing.T) {
 
 	t.Run("narfile exists upstream", func(t *testing.T) {
 		t.Run("narfile does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", narInfoHash+".narinfo"))
+			_, err := os.Stat(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
 			}
 		})
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", narHash+".nar"))
+			_, err := os.Stat(filepath.Join(dir, "store", narHash1+".nar"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
 			}
 		})
 
-		ni, err := c.GetNarInfo(context.Background(), narInfoHash)
+		ni, err := c.GetNarInfo(context.Background(), narInfoHash1)
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
 		}
@@ -280,7 +280,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", narInfoHash+".narinfo"))
+			_, err := os.Stat(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
 			if err != nil {
 				t.Fatalf("expected no error got %s", err)
 			}
@@ -315,7 +315,7 @@ func TestGetNarInfo(t *testing.T) {
 			for i := 0; i < 9; i++ {
 				runtime.Gosched()
 
-				_, err := os.Stat(filepath.Join(dir, "store", "nar", narHash+".nar"))
+				_, err := os.Stat(filepath.Join(dir, "store", "nar", narHash1+".nar"))
 				if err == nil {
 					break
 				}
@@ -353,7 +353,7 @@ func TestGetNar(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	narName := narHash + ".nar"
+	narName := narHash1 + ".nar"
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		_, _, err := c.GetNar("doesnotexist", "")
@@ -370,14 +370,14 @@ func TestGetNar(t *testing.T) {
 			}
 		})
 
-		size, r, err := c.GetNar(narHash, "")
+		size, r, err := c.GetNar(narHash1, "")
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
 		}
 		defer r.Close()
 
 		t.Run("size is correct", func(t *testing.T) {
-			if want, got := int64(len(narText)), size; want != got {
+			if want, got := int64(len(narText1)), size; want != got {
 				t.Errorf("want %d got %d", want, got)
 			}
 		})
@@ -388,7 +388,7 @@ func TestGetNar(t *testing.T) {
 				t.Fatalf("expected no error, got: %s", err)
 			}
 
-			if want, got := narText, string(body); want != got {
+			if want, got := narText1, string(body); want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
@@ -414,16 +414,16 @@ func startServer(t *testing.T) *httptest.Server {
 			return
 		}
 
-		if r.URL.Path == "/"+narInfoHash+".narinfo" {
-			if _, err := w.Write([]byte(narInfoText)); err != nil {
+		if r.URL.Path == "/"+narInfoHash1+".narinfo" {
+			if _, err := w.Write([]byte(narInfoText1)); err != nil {
 				t.Fatalf("expected no error got: %s", err)
 			}
 
 			return
 		}
 
-		if r.URL.Path == "/nar/"+narHash+".nar" {
-			if _, err := w.Write([]byte(narText)); err != nil {
+		if r.URL.Path == "/nar/"+narHash1+".nar" {
+			if _, err := w.Write([]byte(narText1)); err != nil {
 				t.Fatalf("expected no error got: %s", err)
 			}
 
