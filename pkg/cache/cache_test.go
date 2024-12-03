@@ -309,7 +309,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("it should have also pulled the nar", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", narHash+".nar"))
+			_, err := os.Stat(filepath.Join(dir, "store", "nar", narHash+".nar"))
 			if err != nil {
 				t.Fatalf("expected no error got %s", err)
 			}
