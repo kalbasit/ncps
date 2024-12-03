@@ -112,7 +112,7 @@ func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey
 // the nar is not found in the store, it's pulled from an upstream, stored in
 // the stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
-func (c *Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 	if c.hasNarInStore(hash, compression) {
 		return c.getNarFromStore(hash, compression)
 	}
@@ -151,11 +151,7 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 	now := time.Now()
 	log.Info("downloading the nar from upstream")
 
-	// create a new context not associated with any request because we don't want
-	// pulling from upstream to be associated with a user request.
-	ctx := context.Background()
-
-	size, r, err := c.getNarFromUpstream(ctx, hash, compression)
+	size, r, err := c.getNarFromUpstream(hash, compression)
 	if err != nil {
 		c.mu.Lock()
 		delete(c.upstreamJobs, hash)
@@ -200,7 +196,11 @@ func (c *Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser,
 	return c.getFromStore(helper.NarPath(hash, compression))
 }
 
-func (c *Cache) getNarFromUpstream(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) getNarFromUpstream(hash, compression string) (int64, io.ReadCloser, error) {
+	// create a new context not associated with any request because we don't want
+	// pulling from upstream to be associated with a user request.
+	ctx := context.Background()
+
 	for _, uc := range c.upstreamCaches {
 		size, nar, err := uc.GetNar(ctx, hash, compression)
 		if err != nil {
