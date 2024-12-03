@@ -330,16 +330,17 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("it should have also pulled the nar", func(t *testing.T) {
 			// Force the other goroutine to run so it actually download the file
 			// Try at least 10 times before announcing an error
+			var err error
 			for i := 0; i < 9; i++ {
 				runtime.Gosched()
 
-				_, err := os.Stat(filepath.Join(dir, "store", "nar", narHash2+".nar"))
+				_, err = os.Stat(filepath.Join(dir, "store", "nar", narHash2+".nar"))
 				if err == nil {
 					break
 				}
 			}
 			if err != nil {
-				t.Fatalf("expected no error got %s", err)
+				t.Errorf("expected no error got %s", err)
 			}
 		})
 	})
