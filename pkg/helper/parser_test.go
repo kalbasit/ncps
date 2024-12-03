@@ -2,6 +2,7 @@
 package helper
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -35,8 +36,13 @@ func TestParseNarURL(t *testing.T) {
 		},
 	}
 
+	t.Parallel()
+
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("ParseNarURL(%q) -> (%q, %q, %s)", test.url, test.hash, test.compression, test.err), func(t *testing.T) {
+		t.Run(fmt.Sprintf("ParseNarURL(%q) -> (%q, %q, %s)",
+			test.url, test.hash, test.compression, test.err), func(t *testing.T) {
+			t.Parallel()
+
 			hash, compression, err := ParseNarURL(test.url)
 
 			if want, got := test.hash, hash; want != got {
@@ -47,8 +53,8 @@ func TestParseNarURL(t *testing.T) {
 				t.Errorf("want %q got %q", want, got)
 			}
 
-			if want, got := test.err, err; want != got {
-				t.Errorf("want %q got %q", want, got)
+			if want, got := test.err, err; !errors.Is(got, want) {
+				t.Errorf("want %s got %s", want, got)
 			}
 		})
 	}
