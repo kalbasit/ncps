@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -55,11 +56,18 @@ type Cache struct {
 	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
+
+	mu           sync.Mutex
+	upstreamJobs map[string]chan struct{}
 }
 
 // New returns a new Cache.
 func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (*Cache, error) {
-	c := &Cache{logger: logger, upstreamCaches: ucs}
+	c := &Cache{
+		logger:         logger,
+		upstreamCaches: ucs,
+		upstreamJobs:   make(map[string]chan struct{}),
+	}
 
 	if err := c.validateHostname(hostName); err != nil {
 		return c, err
@@ -108,23 +116,66 @@ func (c *Cache) GetNar(ctx context.Context, hash, compression string) (int64, io
 		return c.getNarFromStore(hash, compression)
 	}
 
+	errC := make(chan error)
+
+	c.mu.Lock()
+	doneC, ok := c.upstreamJobs[hash]
+	if !ok {
+		doneC = make(chan struct{})
+		c.upstreamJobs[hash] = doneC
+		go c.pullNar(ctx, hash, compression, doneC, errC)
+	}
+	c.mu.Unlock()
+
+	select {
+	case err := <-errC:
+		close(doneC) // notify other go-routines waiting on the done channel.
+
+		return 0, nil, err
+	case <-doneC:
+	}
+
+	if !c.hasNarInStore(hash, compression) {
+		return 0, nil, ErrNotFound
+	}
+
+	return c.getNarFromStore(hash, compression)
+}
+
+func (c *Cache) pullNar(ctx context.Context, hash, compression string, doneC chan struct{}, errC chan error) {
 	size, r, err := c.getNarFromUpstream(ctx, hash, compression)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+		c.mu.Lock()
+		delete(c.upstreamJobs, hash)
+		c.mu.Unlock()
+
+		errC <- fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+
+		return
 	}
 
 	defer r.Close()
 
 	written, err := c.putNarInStore(hash, compression, r)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
+		c.mu.Lock()
+		delete(c.upstreamJobs, hash)
+		c.mu.Unlock()
+
+		errC <- fmt.Errorf("error storing the narInfo in the store: %w", err)
+
+		return
 	}
 
 	if size > 0 && written != size {
 		c.logger.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
 	}
 
-	return c.getNarFromStore(hash, compression)
+	c.mu.Lock()
+	delete(c.upstreamJobs, hash)
+	c.mu.Unlock()
+
+	close(doneC)
 }
 
 func (c *Cache) hasNarInStore(hash, compression string) bool {
