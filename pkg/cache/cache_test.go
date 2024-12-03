@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -35,7 +36,7 @@ Priority: 40`
 
 	//nolint:lll
 	narInfoText = `StorePath: /nix/store/7bn85d74qa0127p85rrswfyghxsqmcf7-iputils-20210722
-URL: nar/136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00.nar.xz
+URL: nar/136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00.nar
 Compression: xz
 FileHash: sha256:136jk8xlxqzqd16d00dpnnpgffmycwm66zgky6397x75yg7ylz00
 FileSize: 132228
@@ -309,7 +310,16 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("it should have also pulled the nar", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", "nar", narHash+".nar"))
+			// Force the other goroutine to run so it actually download the file
+			// Try at least 10 times before announcing an error
+			for i := 0; i < 9; i++ {
+				runtime.Gosched()
+
+				_, err := os.Stat(filepath.Join(dir, "store", "nar", narHash+".nar"))
+				if err == nil {
+					break
+				}
+			}
 			if err != nil {
 				t.Fatalf("expected no error got %s", err)
 			}
