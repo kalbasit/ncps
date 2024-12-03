@@ -123,6 +123,8 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
+	log := c.logger.New("hash", hash, "compression", compression)
+
 	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+helper.NarPath(hash, compression), nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
@@ -141,7 +143,7 @@ func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.
 			return 0, nil, ErrNotFound
 		}
 
-		c.logger.Error(ErrUnexpectedHTTPStatusCode.Error(), "status_code", resp.StatusCode)
+		log.Error(ErrUnexpectedHTTPStatusCode.Error(), "status_code", resp.StatusCode)
 
 		return 0, nil, ErrUnexpectedHTTPStatusCode
 	}
@@ -150,7 +152,7 @@ func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.
 
 	cl, err := strconv.ParseInt(cls, 10, 64)
 	if err != nil {
-		c.logger.Error("error computing the content-length", "Content-Length", cls, "error", err)
+		log.Error("error computing the content-length", "Content-Length", cls, "error", err)
 
 		// TODO: Compute narinfo, pull it and return narInfo.FileSize
 		return 0, resp.Body, nil
