@@ -201,6 +201,25 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
 
+	// start a job to also pull the nar
+	go func() {
+		hash, compression, err := helper.ParseNarURL(narInfo.URL)
+		c.logger.Info("pre-caching NAR ahead of time", "URL", narInfo.URL, "hash", hash, "compression", compression)
+		if err != nil {
+			c.logger.Error("error parsing the nar URL %q: %w", narInfo.URL, err)
+
+			return
+		}
+		_, nar, err := c.GetNar(hash, compression)
+		if err != nil {
+			c.logger.Error("error fetching the NAR: %w", err)
+
+			return
+		}
+
+		nar.Close()
+	}()
+
 	if err := c.signNarInfo(narInfo); err != nil {
 		return nil, fmt.Errorf("error signing the narinfo: %w", err)
 	}
