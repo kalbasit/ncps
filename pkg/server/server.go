@@ -184,7 +184,7 @@ func (s Server) getNar(withBody bool) http.HandlerFunc {
 		hash := chi.URLParam(r, "hash")
 		compression := chi.URLParam(r, "compression")
 
-		size, reader, err := s.cache.GetNar(r.Context(), hash, compression)
+		size, reader, err := s.cache.GetNar(hash, compression)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
