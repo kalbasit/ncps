@@ -128,7 +128,7 @@ func (c *Cache) GetNar(ctx context.Context, hash, compression string) (int64, io
 	} else {
 		doneC = make(chan struct{})
 		c.upstreamJobs[hash] = doneC
-		go c.pullNar(log, ctx, hash, compression, doneC, errC)
+		go c.pullNar(log, hash, compression, doneC, errC)
 	}
 	c.mu.Unlock()
 
@@ -147,9 +147,13 @@ func (c *Cache) GetNar(ctx context.Context, hash, compression string) (int64, io
 	return c.getNarFromStore(hash, compression)
 }
 
-func (c *Cache) pullNar(log log15.Logger, ctx context.Context, hash, compression string, doneC chan struct{}, errC chan error) {
+func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
 	now := time.Now()
 	log.Info("downloading the nar from upstream")
+
+	// create a new context not associated with any request because we don't want
+	// pulling from upstream to be associated with a user request.
+	ctx := context.Background()
 
 	size, r, err := c.getNarFromUpstream(ctx, hash, compression)
 	if err != nil {
