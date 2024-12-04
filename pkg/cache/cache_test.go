@@ -266,15 +266,15 @@ func TestGetNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	t.Run("narfile does not exist upstream", func(t *testing.T) {
+	t.Run("narinfo does not exist upstream", func(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
 		if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
 			t.Errorf("want %s got %s", want, got)
 		}
 	})
 
-	t.Run("narfile exists upstream", func(t *testing.T) {
-		t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+	t.Run("narinfo exists upstream", func(t *testing.T) {
+		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, "store", narInfoHash2+".narinfo"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
@@ -371,7 +371,7 @@ func TestPutNarInfo(t *testing.T) {
 
 	storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
 
-	t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+	t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 		_, err := os.Stat(storePath)
 		if err == nil {
 			t.Fatal("expected an error but got none")
@@ -396,7 +396,7 @@ func TestPutNarInfo(t *testing.T) {
 		}
 	})
 
-	t.Run("narfile does exist in storage", func(t *testing.T) {
+	t.Run("narinfo does exist in storage", func(t *testing.T) {
 		_, err := os.Stat(storePath)
 		if err != nil {
 			t.Fatalf("expected no error but got: %s", err)
