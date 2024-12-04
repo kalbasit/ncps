@@ -163,6 +163,11 @@ func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadClo
 	return err
 }
 
+// DeleteNar deletes the nar from the store.
+func (c *Cache) DeleteNar(_ context.Context, hash string, r io.ReadCloser) error {
+	return errors.New("not implemented")
+}
+
 func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
 	now := time.Now()
 
@@ -316,6 +321,11 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 	}
 
 	return nil
+}
+
+// DeleteNarInfo deletes the narInfo from the store.
+func (c *Cache) DeleteNarInfo(_ context.Context, hash string, r io.ReadCloser) error {
+	return errors.New("not implemented")
 }
 
 func (c *Cache) prePullNar(url string) {

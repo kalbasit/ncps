@@ -438,6 +438,79 @@ func TestPutNarInfo(t *testing.T) {
 }
 
 //nolint:paralleltest
+func TestDeleteNarInfo(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cache-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	if err != nil {
+		t.Errorf("expected no error, got %q", err)
+	}
+
+	s := server.New(logger, c)
+
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
+
+	t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
+		_, err := os.Stat(storePath)
+		if err == nil {
+			t.Fatal("expected an error but got none")
+		}
+	})
+
+	f, err := os.Create(storePath)
+	if err != nil {
+		t.Fatalf("expecting no error got %s", err)
+	}
+
+	if _, err := f.WriteString(narInfoText1); err != nil {
+		t.Fatalf("expecting no error got %s", err)
+	}
+
+	if err := f.Close(); err != nil {
+		t.Fatalf("expecting no error got %s", err)
+	}
+
+	t.Run("narinfo does exist in storage", func(t *testing.T) {
+		_, err := os.Stat(storePath)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+	})
+
+	t.Run("deleteNarInfo does not return an error", func(t *testing.T) {
+		p := ts.URL + "/" + narInfoHash1 + ".narinfo"
+
+		r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
+		if err != nil {
+			t.Fatalf("error Do(r): %s", err)
+		}
+
+		resp, err := ts.Client().Do(r)
+		if err != nil {
+			t.Fatalf("error Do(r): %s", err)
+		}
+
+		if want, got := http.StatusNoContent, resp.StatusCode; want != got {
+			t.Errorf("want %d got %d", want, got)
+		}
+	})
+
+	t.Run("narinfo is gone from the store", func(t *testing.T) {
+		_, err := os.Stat(storePath)
+		if err == nil {
+			t.Fatal("expected an error but got none")
+		}
+	})
+}
+
+//nolint:paralleltest
 func TestGetNar(t *testing.T) {
 	ts := startServer(t)
 	defer ts.Close()
@@ -618,6 +691,79 @@ func TestPutNar(t *testing.T) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
+	})
+}
+
+//nolint:paralleltest
+func TestDeleteNar(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cache-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	if err != nil {
+		t.Errorf("expected no error, got %q", err)
+	}
+
+	s := server.New(logger, c)
+
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	storePath := filepath.Join(dir, "store", narHash1+".narinfo")
+
+	t.Run("nar does not exist in storage yet", func(t *testing.T) {
+		_, err := os.Stat(storePath)
+		if err == nil {
+			t.Fatal("expected an error but got none")
+		}
+	})
+
+	f, err := os.Create(storePath)
+	if err != nil {
+		t.Fatalf("expecting no error got %s", err)
+	}
+
+	if _, err := f.WriteString(narText1); err != nil {
+		t.Fatalf("expecting no error got %s", err)
+	}
+
+	if err := f.Close(); err != nil {
+		t.Fatalf("expecting no error got %s", err)
+	}
+
+	t.Run("nar does exist in storage", func(t *testing.T) {
+		_, err := os.Stat(storePath)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+	})
+
+	t.Run("deleteNar does not return an error", func(t *testing.T) {
+		p := ts.URL + "/" + narHash1 + ".narinfo"
+
+		r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
+		if err != nil {
+			t.Fatalf("error Do(r): %s", err)
+		}
+
+		resp, err := ts.Client().Do(r)
+		if err != nil {
+			t.Fatalf("error Do(r): %s", err)
+		}
+
+		if want, got := http.StatusNoContent, resp.StatusCode; want != got {
+			t.Errorf("want %d got %d", want, got)
+		}
+	})
+
+	t.Run("nar is gone from the store", func(t *testing.T) {
+		_, err := os.Stat(storePath)
+		if err == nil {
+			t.Fatal("expected an error but got none")
+		}
 	})
 }
 

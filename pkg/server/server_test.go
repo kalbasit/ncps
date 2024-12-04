@@ -71,10 +71,10 @@ func TestServeHTTP(t *testing.T) {
 		ts := httptest.NewServer(s)
 		defer ts.Close()
 
-		t.Run("narFile", func(t *testing.T) {
+		t.Run("narInfo", func(t *testing.T) {
 			storePath := filepath.Join(dir, "store", narInfoHash+".narinfo")
 
-			t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+			t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 				_, err := os.Stat(storePath)
 				if err == nil {
 					t.Fatal("expected an error but got none")
@@ -94,7 +94,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Fatalf("expecting no error got %s", err)
 			}
 
-			t.Run("narfile does exist in storage", func(t *testing.T) {
+			t.Run("narinfo does exist in storage", func(t *testing.T) {
 				_, err := os.Stat(storePath)
 				if err != nil {
 					t.Fatalf("expected no error but got: %s", err)
@@ -117,7 +117,7 @@ func TestServeHTTP(t *testing.T) {
 				}
 			})
 
-			t.Run("narfile is gone from the store", func(t *testing.T) {
+			t.Run("narinfo is gone from the store", func(t *testing.T) {
 				_, err := os.Stat(storePath)
 				if err == nil {
 					t.Fatal("expected an error but got none")
@@ -172,7 +172,7 @@ func TestServeHTTP(t *testing.T) {
 					}
 				})
 
-				t.Run("narfile is gone from the store", func(t *testing.T) {
+				t.Run("narinfo is gone from the store", func(t *testing.T) {
 					_, err := os.Stat(storePath)
 					if err == nil {
 						t.Fatal("expected an error but got none")
@@ -226,7 +226,7 @@ func TestServeHTTP(t *testing.T) {
 					}
 				})
 
-				t.Run("narfile is gone from the store", func(t *testing.T) {
+				t.Run("narinfo is gone from the store", func(t *testing.T) {
 					_, err := os.Stat(storePath)
 					if err == nil {
 						t.Fatal("expected an error but got none")
@@ -298,7 +298,7 @@ func TestServeHTTP(t *testing.T) {
 		s := server.New(logger, c)
 
 		t.Run("narinfo", func(t *testing.T) {
-			t.Run("narfile does not exist upstream", func(t *testing.T) {
+			t.Run("narinfo does not exist upstream", func(t *testing.T) {
 				r := httptest.NewRequest("GET", "/doesnotexist.narinfo", nil)
 				w := httptest.NewRecorder()
 
@@ -309,7 +309,7 @@ func TestServeHTTP(t *testing.T) {
 				}
 			})
 
-			t.Run("narfile exists upstream", func(t *testing.T) {
+			t.Run("narinfo exists upstream", func(t *testing.T) {
 				r := httptest.NewRequest("GET", "/"+narInfoHash+".narinfo", nil)
 				w := httptest.NewRecorder()
 
@@ -414,14 +414,14 @@ func TestServeHTTP(t *testing.T) {
 		t.Run("narInfo", func(t *testing.T) {
 			storePath := filepath.Join(dir, "store", narInfoHash+".narinfo")
 
-			t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+			t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 				_, err := os.Stat(storePath)
 				if err == nil {
 					t.Fatal("expected an error but got none")
 				}
 			})
 
-			t.Run("putNarFile does not return an error", func(t *testing.T) {
+			t.Run("putNarInfo does not return an error", func(t *testing.T) {
 				p := ts.URL + "/" + narInfoHash + ".narinfo"
 
 				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narInfoText))
@@ -439,7 +439,7 @@ func TestServeHTTP(t *testing.T) {
 				}
 			})
 
-			t.Run("narfile does exist in storage", func(t *testing.T) {
+			t.Run("narinfo does exist in storage", func(t *testing.T) {
 				_, err := os.Stat(storePath)
 				if err != nil {
 					t.Fatalf("expected no error but got: %s", err)
