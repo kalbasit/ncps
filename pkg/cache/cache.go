@@ -149,6 +149,11 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 	return c.getNarFromStore(hash, compression)
 }
 
+// PutNar records the NAR (given as an io.Reader) into the store.
+func (c *Cache) PutNar(ctx context.Context, hash, compression string, r io.Reader) error {
+	return errors.New("not implemented")
+}
+
 func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
 	now := time.Now()
 
@@ -277,6 +282,11 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	}
 
 	return narInfo, nil
+}
+
+// PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
+func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.Reader) error {
+	return errors.New("not implemented")
 }
 
 func (c *Cache) prePullNar(url string) {
