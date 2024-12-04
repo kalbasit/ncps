@@ -297,5 +297,95 @@ func TestServeHTTP(t *testing.T) {
 				}
 			})
 		})
+
+		t.Run("nar without compression", func(t *testing.T) {
+			storePath := filepath.Join(dir, "store", "nar", narHash+".nar")
+
+			t.Run("nar does not exist in storage yet", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
+
+			t.Run("putNar does not return an error", func(t *testing.T) {
+				p := ts.URL + "/nar/" + narHash + ".nar"
+
+				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narText))
+				if err != nil {
+					t.Fatalf("error Do(r): %s", err)
+				}
+
+				resp, err := ts.Client().Do(r)
+				if err != nil {
+					t.Fatalf("error Do(r): %s", err)
+				}
+
+				if want, got := http.StatusNoContent, resp.StatusCode; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+			})
+
+			t.Run("nar does exist in storage", func(t *testing.T) {
+				f, err := os.Open(storePath)
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+
+				bs, err := io.ReadAll(f)
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+
+				if want, got := narText, string(bs); want != got {
+					t.Errorf("want %q got %q", want, got)
+				}
+			})
+		})
+
+		t.Run("nar with compression", func(t *testing.T) {
+			storePath := filepath.Join(dir, "store", "nar", narHash+".nar.xz")
+
+			t.Run("nar does not exist in storage yet", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
+
+			t.Run("putNar does not return an error", func(t *testing.T) {
+				p := ts.URL + "/nar/" + narHash + ".nar.xz"
+
+				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narText))
+				if err != nil {
+					t.Fatalf("error Do(r): %s", err)
+				}
+
+				resp, err := ts.Client().Do(r)
+				if err != nil {
+					t.Fatalf("error Do(r): %s", err)
+				}
+
+				if want, got := http.StatusNoContent, resp.StatusCode; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+			})
+
+			t.Run("nar does exist in storage", func(t *testing.T) {
+				f, err := os.Open(storePath)
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+
+				bs, err := io.ReadAll(f)
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+
+				if want, got := narText, string(bs); want != got {
+					t.Errorf("want %q got %q", want, got)
+				}
+			})
+		})
 	})
 }
