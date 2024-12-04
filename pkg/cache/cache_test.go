@@ -367,10 +367,12 @@ func TestPutNarInfo(t *testing.T) {
 	s := server.New(logger, c)
 
 	ts := httptest.NewServer(s)
-
 	defer ts.Close()
+
+	storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
+
 	t.Run("narfile does not exist in storage yet", func(t *testing.T) {
-		_, err := os.Stat(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
+		_, err := os.Stat(storePath)
 		if err == nil {
 			t.Fatal("expected an error but got none")
 		}
@@ -395,14 +397,14 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("narfile does exist in storage", func(t *testing.T) {
-		_, err := os.Stat(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
+		_, err := os.Stat(storePath)
 		if err != nil {
 			t.Fatalf("expected no error but got: %s", err)
 		}
 	})
 
 	t.Run("it should be signed by our server", func(t *testing.T) {
-		f, err := os.Open(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
+		f, err := os.Open(storePath)
 		if err != nil {
 			t.Fatalf("no error was expected, got: %s", err)
 		}
