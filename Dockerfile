@@ -9,7 +9,7 @@ RUN go mod download
 COPY . .
 
 ENV CGO_ENABLED=0
-RUN go build ./cmd/ncps
+RUN go build .
 
 FROM scratch
 

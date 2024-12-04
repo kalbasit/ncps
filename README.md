@@ -42,7 +42,7 @@ ncps can be installed in several ways:
   - Ensure you have Go installed and configured.
   - Clone the repository: `git clone https://github.com/kalbasit/ncps.git`
   - Navigate to the root directory of ncps: `cd ncps`
-  - Build the binary: `go build ./cmd/ncps`
+  - Build the binary: `go build .`
 
 - **Docker:**
 
