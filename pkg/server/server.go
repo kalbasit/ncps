@@ -70,14 +70,17 @@ func createRouter(s Server) *chi.Mux {
 	router.Head(routeNarInfo, s.getNarInfo(false))
 	router.Get(routeNarInfo, s.getNarInfo(true))
 	router.Put(routeNarInfo, s.putNarInfo)
+	router.Delete(routeNarInfo, s.deleteNarInfo)
 
 	router.Head(routeNarCompression, s.getNar(false))
 	router.Get(routeNarCompression, s.getNar(true))
 	router.Put(routeNarCompression, s.putNar)
+	router.Delete(routeNarCompression, s.deleteNar)
 
 	router.Head(routeNar, s.getNar(false))
 	router.Get(routeNar, s.getNar(true))
 	router.Put(routeNar, s.putNar)
+	router.Delete(routeNar, s.deleteNar)
 
 	return router
 }
@@ -199,6 +202,8 @@ func (s Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {}
+
 func (s Server) getNar(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
@@ -266,3 +271,5 @@ func (s Server) putNar(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (s Server) deleteNar(w http.ResponseWriter, r *http.Request) {}
