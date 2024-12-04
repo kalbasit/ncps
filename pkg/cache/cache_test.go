@@ -16,7 +16,6 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
@@ -364,11 +363,6 @@ func TestPutNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	s := server.New(logger, c)
-
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
 	storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
 
 	t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
@@ -378,21 +372,12 @@ func TestPutNarInfo(t *testing.T) {
 		}
 	})
 
-	t.Run("putNarFile does not return an error", func(t *testing.T) {
-		p := ts.URL + "/" + narInfoHash1 + ".narinfo"
+	t.Run("PutNarInfo does not return an error", func(t *testing.T) {
+		r := io.NopCloser(strings.NewReader(narInfoText1))
 
-		r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narInfoText1))
+		err := c.PutNarInfo(context.Background(), narInfoHash1, r)
 		if err != nil {
-			t.Fatalf("error Do(r): %s", err)
-		}
-
-		resp, err := ts.Client().Do(r)
-		if err != nil {
-			t.Fatalf("error Do(r): %s", err)
-		}
-
-		if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-			t.Errorf("want %d got %d", want, got)
+			t.Errorf("error not expected got %s", err)
 		}
 	})
 
@@ -450,11 +435,6 @@ func TestDeleteNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	s := server.New(logger, c)
-
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
 	t.Run("file does not exist in the store", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
 
@@ -465,21 +445,10 @@ func TestDeleteNarInfo(t *testing.T) {
 			}
 		})
 
-		t.Run("deleteNarInfo does return an error", func(t *testing.T) {
-			p := ts.URL + "/" + narInfoHash1 + ".narinfo"
-
-			r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			resp, err := ts.Client().Do(r)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			if want, got := http.StatusNotFound, resp.StatusCode; want != got {
-				t.Errorf("want %d got %d", want, got)
+		t.Run("DeleteNarInfo does return an error", func(t *testing.T) {
+			err := c.DeleteNarInfo(context.Background(), narInfoHash1)
+			if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
+				t.Errorf("want %q got %q", want, got)
 			}
 		})
 	})
@@ -514,21 +483,9 @@ func TestDeleteNarInfo(t *testing.T) {
 			}
 		})
 
-		t.Run("deleteNarInfo does not return an error", func(t *testing.T) {
-			p := ts.URL + "/" + narInfoHash1 + ".narinfo"
-
-			r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			resp, err := ts.Client().Do(r)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-				t.Errorf("want %d got %d", want, got)
+		t.Run("DeleteNarInfo does not return an error", func(t *testing.T) {
+			if err := c.DeleteNarInfo(context.Background(), narInfoHash1); err != nil {
+				t.Errorf("error not expected got %s", err)
 			}
 		})
 
@@ -629,11 +586,6 @@ func TestPutNar(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	s := server.New(logger, c)
-
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
 	t.Run("without compression", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")
 
@@ -645,20 +597,11 @@ func TestPutNar(t *testing.T) {
 		})
 
 		t.Run("putNar does not return an error", func(t *testing.T) {
-			p := ts.URL + "/nar/" + narHash1 + ".nar"
+			r := io.NopCloser(strings.NewReader(narText1))
 
-			r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narText1))
+			err := c.PutNar(context.Background(), narHash1, "", r)
 			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			resp, err := ts.Client().Do(r)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-				t.Errorf("want %d got %d", want, got)
+				t.Errorf("error not expected got %s", err)
 			}
 		})
 
@@ -690,20 +633,11 @@ func TestPutNar(t *testing.T) {
 		})
 
 		t.Run("putNar does not return an error", func(t *testing.T) {
-			p := ts.URL + "/nar/" + narHash1 + ".nar.xz"
+			r := io.NopCloser(strings.NewReader(narText1))
 
-			r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narText1))
+			err := c.PutNar(context.Background(), narHash1, "xz", r)
 			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			resp, err := ts.Client().Do(r)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-				t.Errorf("want %d got %d", want, got)
+				t.Errorf("error not expected got %s", err)
 			}
 		})
 
@@ -738,11 +672,6 @@ func TestDeleteNar(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	s := server.New(logger, c)
-
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
 	t.Run("without compression", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")
 
@@ -754,21 +683,10 @@ func TestDeleteNar(t *testing.T) {
 				}
 			})
 
-			t.Run("deleteNar does return an error", func(t *testing.T) {
-				p := ts.URL + "/nar/" + narHash1 + ".nar"
-
-				r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				resp, err := ts.Client().Do(r)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				if want, got := http.StatusNotFound, resp.StatusCode; want != got {
-					t.Errorf("want %d got %d", want, got)
+			t.Run("DeleteNar does return an error", func(t *testing.T) {
+				err := c.DeleteNar(context.Background(), narHash1, "")
+				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
+					t.Errorf("want %q got %q", want, got)
 				}
 			})
 		})
@@ -802,20 +720,8 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				p := ts.URL + "/nar/" + narHash1 + ".nar"
-
-				r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				resp, err := ts.Client().Do(r)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-					t.Errorf("want %d got %d", want, got)
+				if err := c.DeleteNar(context.Background(), narHash1, ""); err != nil {
+					t.Errorf("error not expected got %s", err)
 				}
 			})
 
@@ -839,21 +745,10 @@ func TestDeleteNar(t *testing.T) {
 				}
 			})
 
-			t.Run("deleteNar does return an error", func(t *testing.T) {
-				p := ts.URL + "/nar/" + narHash1 + ".nar.xz"
-
-				r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				resp, err := ts.Client().Do(r)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				if want, got := http.StatusNotFound, resp.StatusCode; want != got {
-					t.Errorf("want %d got %d", want, got)
+			t.Run("DeleteNar does return an error", func(t *testing.T) {
+				err := c.DeleteNar(context.Background(), narHash1, "xz")
+				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
+					t.Errorf("want %q got %q", want, got)
 				}
 			})
 		})
@@ -887,20 +782,8 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				p := ts.URL + "/nar/" + narHash1 + ".nar.xz"
-
-				r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				resp, err := ts.Client().Do(r)
-				if err != nil {
-					t.Fatalf("error Do(r): %s", err)
-				}
-
-				if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-					t.Errorf("want %d got %d", want, got)
+				if err := c.DeleteNar(context.Background(), narHash1, "xz"); err != nil {
+					t.Errorf("error not expected got %s", err)
 				}
 			})
 
