@@ -202,7 +202,29 @@ func (s Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {}
+func (s Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+
+	if err := s.cache.DeleteNarInfo(r.Context(), hash); err != nil {
+		if err == cache.ErrNotFound {
+			w.WriteHeader(http.StatusNotFound)
+			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
+				s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			}
+
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
 
 func (s Server) getNar(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -272,4 +294,27 @@ func (s Server) putNar(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s Server) deleteNar(w http.ResponseWriter, r *http.Request) {}
+func (s Server) deleteNar(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	compression := chi.URLParam(r, "compression")
+
+	if err := s.cache.DeleteNar(r.Context(), hash, compression); err != nil {
+		if err == cache.ErrNotFound {
+			w.WriteHeader(http.StatusNotFound)
+			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
+				s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			}
+
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

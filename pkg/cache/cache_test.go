@@ -802,7 +802,7 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				p := ts.URL + "/" + narHash1 + ".narinfo"
+				p := ts.URL + "/nar/" + narHash1 + ".nar"
 
 				r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
 				if err != nil {
@@ -887,7 +887,7 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				p := ts.URL + "/" + narHash1 + ".narinfo"
+				p := ts.URL + "/nar/" + narHash1 + ".nar.xz"
 
 				r, err := http.NewRequestWithContext(context.Background(), "DELETE", p, nil)
 				if err != nil {
