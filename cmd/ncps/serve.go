@@ -20,6 +20,11 @@ var serveCommand = &cli.Command{
 	Usage:   "serve the nix binary cache over http",
 	Action:  serveAction,
 	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:    "allow-delete",
+			Usage:   "Whether to allow the DELETE verb to delete narInfo and nar files",
+			Sources: cli.EnvVars("ALLOW_DELETE"),
+		},
 		&cli.StringFlag{
 			Name:     "cache-hostname",
 			Usage:    "The hostname of the cache server",
@@ -65,6 +70,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	srv := server.New(logger, cache)
+	srv.SetDeletePermitted(cmd.Bool("allow-delete"))
 
 	logger.Info("Server started", "server-addr", cmd.String("server-addr"))
 

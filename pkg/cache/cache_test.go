@@ -16,7 +16,6 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
@@ -266,15 +265,15 @@ func TestGetNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	t.Run("narfile does not exist upstream", func(t *testing.T) {
+	t.Run("narinfo does not exist upstream", func(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
 		if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
 			t.Errorf("want %s got %s", want, got)
 		}
 	})
 
-	t.Run("narfile exists upstream", func(t *testing.T) {
-		t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+	t.Run("narinfo exists upstream", func(t *testing.T) {
+		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, "store", narInfoHash2+".narinfo"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
@@ -364,39 +363,25 @@ func TestPutNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	s := server.New(logger, c)
-
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
 	storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
 
-	t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+	t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 		_, err := os.Stat(storePath)
 		if err == nil {
 			t.Fatal("expected an error but got none")
 		}
 	})
 
-	t.Run("putNarFile does not return an error", func(t *testing.T) {
-		p := ts.URL + "/" + narInfoHash1 + ".narinfo"
+	t.Run("PutNarInfo does not return an error", func(t *testing.T) {
+		r := io.NopCloser(strings.NewReader(narInfoText1))
 
-		r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narInfoText1))
+		err := c.PutNarInfo(context.Background(), narInfoHash1, r)
 		if err != nil {
-			t.Fatalf("error Do(r): %s", err)
-		}
-
-		resp, err := ts.Client().Do(r)
-		if err != nil {
-			t.Fatalf("error Do(r): %s", err)
-		}
-
-		if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-			t.Errorf("want %d got %d", want, got)
+			t.Errorf("error not expected got %s", err)
 		}
 	})
 
-	t.Run("narfile does exist in storage", func(t *testing.T) {
+	t.Run("narinfo does exist in storage", func(t *testing.T) {
 		_, err := os.Stat(storePath)
 		if err != nil {
 			t.Fatalf("expected no error but got: %s", err)
@@ -434,6 +419,82 @@ func TestPutNarInfo(t *testing.T) {
 		if want, got := true, validSig; want != got {
 			t.Errorf("want %t got %t", want, got)
 		}
+	})
+}
+
+//nolint:paralleltest
+func TestDeleteNarInfo(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cache-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	if err != nil {
+		t.Errorf("expected no error, got %q", err)
+	}
+
+	t.Run("file does not exist in the store", func(t *testing.T) {
+		storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
+
+		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
+			_, err := os.Stat(storePath)
+			if err == nil {
+				t.Fatal("expected an error but got none")
+			}
+		})
+
+		t.Run("DeleteNarInfo does return an error", func(t *testing.T) {
+			err := c.DeleteNarInfo(context.Background(), narInfoHash1)
+			if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
+				t.Errorf("want %q got %q", want, got)
+			}
+		})
+	})
+
+	t.Run("file does exist in the store", func(t *testing.T) {
+		storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
+
+		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
+			_, err := os.Stat(storePath)
+			if err == nil {
+				t.Fatal("expected an error but got none")
+			}
+		})
+
+		f, err := os.Create(storePath)
+		if err != nil {
+			t.Fatalf("expecting no error got %s", err)
+		}
+
+		if _, err := f.WriteString(narInfoText1); err != nil {
+			t.Fatalf("expecting no error got %s", err)
+		}
+
+		if err := f.Close(); err != nil {
+			t.Fatalf("expecting no error got %s", err)
+		}
+
+		t.Run("narinfo does exist in storage", func(t *testing.T) {
+			_, err := os.Stat(storePath)
+			if err != nil {
+				t.Fatalf("expected no error but got: %s", err)
+			}
+		})
+
+		t.Run("DeleteNarInfo does not return an error", func(t *testing.T) {
+			if err := c.DeleteNarInfo(context.Background(), narInfoHash1); err != nil {
+				t.Errorf("error not expected got %s", err)
+			}
+		})
+
+		t.Run("narinfo is gone from the store", func(t *testing.T) {
+			_, err := os.Stat(storePath)
+			if err == nil {
+				t.Fatal("expected an error but got none")
+			}
+		})
 	})
 }
 
@@ -525,11 +586,6 @@ func TestPutNar(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
-	s := server.New(logger, c)
-
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
 	t.Run("without compression", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")
 
@@ -541,20 +597,11 @@ func TestPutNar(t *testing.T) {
 		})
 
 		t.Run("putNar does not return an error", func(t *testing.T) {
-			p := ts.URL + "/nar/" + narHash1 + ".nar"
+			r := io.NopCloser(strings.NewReader(narText1))
 
-			r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narText1))
+			err := c.PutNar(context.Background(), narHash1, "", r)
 			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			resp, err := ts.Client().Do(r)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-				t.Errorf("want %d got %d", want, got)
+				t.Errorf("error not expected got %s", err)
 			}
 		})
 
@@ -586,20 +633,11 @@ func TestPutNar(t *testing.T) {
 		})
 
 		t.Run("putNar does not return an error", func(t *testing.T) {
-			p := ts.URL + "/nar/" + narHash1 + ".nar.xz"
+			r := io.NopCloser(strings.NewReader(narText1))
 
-			r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narText1))
+			err := c.PutNar(context.Background(), narHash1, "xz", r)
 			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			resp, err := ts.Client().Do(r)
-			if err != nil {
-				t.Fatalf("error Do(r): %s", err)
-			}
-
-			if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-				t.Errorf("want %d got %d", want, got)
+				t.Errorf("error not expected got %s", err)
 			}
 		})
 
@@ -617,6 +655,144 @@ func TestPutNar(t *testing.T) {
 			if want, got := narText1, string(bs); want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
+		})
+	})
+}
+
+//nolint:paralleltest
+func TestDeleteNar(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cache-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	if err != nil {
+		t.Errorf("expected no error, got %q", err)
+	}
+
+	t.Run("without compression", func(t *testing.T) {
+		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")
+
+		t.Run("file does not exist in the store", func(t *testing.T) {
+			t.Run("nar does not exist in storage yet", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
+
+			t.Run("DeleteNar does return an error", func(t *testing.T) {
+				err := c.DeleteNar(context.Background(), narHash1, "")
+				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
+					t.Errorf("want %q got %q", want, got)
+				}
+			})
+		})
+
+		t.Run("file does exist in the store", func(t *testing.T) {
+			t.Run("nar does not exist in storage yet", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
+
+			f, err := os.Create(storePath)
+			if err != nil {
+				t.Fatalf("expecting no error got %s", err)
+			}
+
+			if _, err := f.WriteString(narText1); err != nil {
+				t.Fatalf("expecting no error got %s", err)
+			}
+
+			if err := f.Close(); err != nil {
+				t.Fatalf("expecting no error got %s", err)
+			}
+
+			t.Run("nar does exist in storage", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+			})
+
+			t.Run("deleteNar does not return an error", func(t *testing.T) {
+				if err := c.DeleteNar(context.Background(), narHash1, ""); err != nil {
+					t.Errorf("error not expected got %s", err)
+				}
+			})
+
+			t.Run("nar is gone from the store", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
+		})
+	})
+
+	t.Run("with compression", func(t *testing.T) {
+		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar.xz")
+
+		t.Run("file does not exist in the store", func(t *testing.T) {
+			t.Run("nar does not exist in storage yet", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
+
+			t.Run("DeleteNar does return an error", func(t *testing.T) {
+				err := c.DeleteNar(context.Background(), narHash1, "xz")
+				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
+					t.Errorf("want %q got %q", want, got)
+				}
+			})
+		})
+
+		t.Run("file does exist in the store", func(t *testing.T) {
+			t.Run("nar does not exist in storage yet", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
+
+			f, err := os.Create(storePath)
+			if err != nil {
+				t.Fatalf("expecting no error got %s", err)
+			}
+
+			if _, err := f.WriteString(narText1); err != nil {
+				t.Fatalf("expecting no error got %s", err)
+			}
+
+			if err := f.Close(); err != nil {
+				t.Fatalf("expecting no error got %s", err)
+			}
+
+			t.Run("nar does exist in storage", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+			})
+
+			t.Run("deleteNar does not return an error", func(t *testing.T) {
+				if err := c.DeleteNar(context.Background(), narHash1, "xz"); err != nil {
+					t.Errorf("error not expected got %s", err)
+				}
+			})
+
+			t.Run("nar is gone from the store", func(t *testing.T) {
+				_, err := os.Stat(storePath)
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
 		})
 	})
 }

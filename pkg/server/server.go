@@ -35,51 +35,56 @@ Priority: 10`
 
 // Server represents the main HTTP server.
 type Server struct {
-	cache  *cache.Cache
-	logger log15.Logger
-	router *chi.Mux
+	cache           *cache.Cache
+	deletePermitted bool
+	logger          log15.Logger
+	router          *chi.Mux
 }
 
 // New returns a new server.
-func New(logger log15.Logger, cache *cache.Cache) Server {
-	s := Server{
+func New(logger log15.Logger, cache *cache.Cache) *Server {
+	s := &Server{
 		cache:  cache,
 		logger: logger,
 	}
 
-	s.router = createRouter(s)
+	s.createRouter()
 
 	return s
 }
 
+// SetDeletePermitted configures the server to either allow or deny access to DELETE.
+func (s *Server) SetDeletePermitted(dp bool) { s.deletePermitted = dp }
+
 // ServeHTTP implements http.Handler and turns the Server type into a handler.
-func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
 
-func createRouter(s Server) *chi.Mux {
-	router := chi.NewRouter()
+func (s *Server) createRouter() {
+	s.router = chi.NewRouter()
 
-	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
-	router.Use(requestLogger(s.logger))
-	router.Use(middleware.Recoverer)
+	s.router.Use(middleware.RequestID)
+	s.router.Use(middleware.RealIP)
+	s.router.Use(requestLogger(s.logger))
+	s.router.Use(middleware.Recoverer)
 
-	router.Get(routeIndex, s.getIndex)
+	s.router.Get(routeIndex, s.getIndex)
 
-	router.Get(routeCacheInfo, s.getNixCacheInfo)
+	s.router.Get(routeCacheInfo, s.getNixCacheInfo)
 
-	router.Head(routeNarInfo, s.getNarInfo(false))
-	router.Get(routeNarInfo, s.getNarInfo(true))
-	router.Put(routeNarInfo, s.putNarInfo)
+	s.router.Head(routeNarInfo, s.getNarInfo(false))
+	s.router.Get(routeNarInfo, s.getNarInfo(true))
+	s.router.Put(routeNarInfo, s.putNarInfo)
+	s.router.Delete(routeNarInfo, s.deleteNarInfo)
 
-	router.Head(routeNarCompression, s.getNar(false))
-	router.Get(routeNarCompression, s.getNar(true))
-	router.Put(routeNarCompression, s.putNar)
+	s.router.Head(routeNarCompression, s.getNar(false))
+	s.router.Get(routeNarCompression, s.getNar(true))
+	s.router.Put(routeNarCompression, s.putNar)
+	s.router.Delete(routeNarCompression, s.deleteNar)
 
-	router.Head(routeNar, s.getNar(false))
-	router.Get(routeNar, s.getNar(true))
-	router.Put(routeNar, s.putNar)
-
-	return router
+	s.router.Head(routeNar, s.getNar(false))
+	s.router.Get(routeNar, s.getNar(true))
+	s.router.Put(routeNar, s.putNar)
+	s.router.Delete(routeNar, s.deleteNar)
 }
 
 func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler {
@@ -132,13 +137,13 @@ func (s *Server) getIndex(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-func (s Server) getNixCacheInfo(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) getNixCacheInfo(w http.ResponseWriter, _ *http.Request) {
 	if _, err := w.Write([]byte(nixCacheInfo)); err != nil {
 		s.logger.Error("error writing the response", "error", err)
 	}
 }
 
-func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
+func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
@@ -182,7 +187,7 @@ func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 	}
 }
 
-func (s Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
+func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
 	if err := s.cache.PutNarInfo(r.Context(), hash, r.Body); err != nil {
@@ -199,7 +204,43 @@ func (s Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s Server) getNar(withBody bool) http.HandlerFunc {
+func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+
+	if !s.deletePermitted {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	if err := s.cache.DeleteNarInfo(r.Context(), hash); err != nil {
+		if errors.Is(err, cache.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+
+			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
+				s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			}
+
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getNar(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 		compression := chi.URLParam(r, "compression")
@@ -249,7 +290,7 @@ func (s Server) getNar(withBody bool) http.HandlerFunc {
 	}
 }
 
-func (s Server) putNar(w http.ResponseWriter, r *http.Request) {
+func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
 
@@ -258,6 +299,43 @@ func (s Server) putNar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err2 := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + err.Error())); err2 != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	compression := chi.URLParam(r, "compression")
+
+	if !s.deletePermitted {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	if err := s.cache.DeleteNar(r.Context(), hash, compression); err != nil {
+		if errors.Is(err, cache.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+
+			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
+				s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			}
+
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
 			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
 		}
 

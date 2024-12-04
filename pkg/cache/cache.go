@@ -163,6 +163,11 @@ func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadClo
 	return err
 }
 
+// DeleteNar deletes the nar from the store.
+func (c *Cache) DeleteNar(_ context.Context, hash, compression string) error {
+	return c.deleteNarFromStore(hash, compression)
+}
+
 func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
 	now := time.Now()
 
@@ -266,6 +271,14 @@ func (c *Cache) putNarInStore(hash, compression string, r io.ReadCloser) (int64,
 	return written, nil
 }
 
+func (c *Cache) deleteNarFromStore(hash, compression string) error {
+	if !c.hasNarInStore(hash, compression) {
+		return ErrNotFound
+	}
+
+	return os.Remove(filepath.Join(c.storePath(), helper.NarPath(hash, compression)))
+}
+
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
@@ -316,6 +329,11 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 	}
 
 	return nil
+}
+
+// DeleteNarInfo deletes the narInfo from the store.
+func (c *Cache) DeleteNarInfo(_ context.Context, hash string) error {
+	return c.deleteNarInfoFromStore(hash)
 }
 
 func (c *Cache) prePullNar(url string) {
@@ -405,6 +423,14 @@ func (c *Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 	}
 
 	return nil
+}
+
+func (c *Cache) deleteNarInfoFromStore(hash string) error {
+	if !c.hasNarInfoInStore(hash) {
+		return ErrNotFound
+	}
+
+	return os.Remove(filepath.Join(c.storePath(), helper.NarInfoPath(hash)))
 }
 
 func (c *Cache) hasInStore(key string) bool {
