@@ -285,7 +285,15 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 }
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
-func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.Reader) error {
+func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) error {
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, r)
+
+		//nolint:errcheck
+		r.Close()
+	}()
+
 	narInfo, err := narinfo.Parse(r)
 	if err != nil {
 		return fmt.Errorf("error parsing narinfo: %w", err)
