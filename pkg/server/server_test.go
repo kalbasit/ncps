@@ -102,7 +102,7 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("DELETE returns no error", func(t *testing.T) {
-				r, err := http.NewRequest("DELETE", ts.URL+"/"+narInfoHash+".narinfo", nil)
+				r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/"+narInfoHash+".narinfo", nil)
 				if err != nil {
 					t.Fatalf("expecting no error got %s", err)
 				}
@@ -157,7 +157,7 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				t.Run("DELETE returns no error", func(t *testing.T) {
-					r, err := http.NewRequest("DELETE", ts.URL+"/nar/"+narHash+".nar", nil)
+					r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/nar/"+narHash+".nar", nil)
 					if err != nil {
 						t.Fatalf("expecting no error got %s", err)
 					}
@@ -211,7 +211,7 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				t.Run("DELETE returns no error", func(t *testing.T) {
-					r, err := http.NewRequest("DELETE", ts.URL+"/nar/"+narHash+".nar.xz", nil)
+					r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/nar/"+narHash+".nar.xz", nil)
 					if err != nil {
 						t.Fatalf("expecting no error got %s", err)
 					}
