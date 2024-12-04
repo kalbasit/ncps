@@ -207,7 +207,6 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
-	fmt.Printf("%#v\n", s)
 	if !s.deletePermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 

@@ -1,4 +1,3 @@
-//nolint:testpackage
 package server
 
 import (
@@ -18,8 +17,6 @@ func init() {
 }
 
 func TestSetDeletePermitted(t *testing.T) {
-	t.Parallel()
-
 	dir, err := os.MkdirTemp("", "cache-path-")
 	if err != nil {
 		t.Fatalf("expected no error, got: %q", err)
@@ -32,6 +29,8 @@ func TestSetDeletePermitted(t *testing.T) {
 	}
 
 	t.Run("false", func(t *testing.T) {
+		t.Parallel()
+
 		s := New(logger, c)
 		s.SetDeletePermitted(false)
 
@@ -41,6 +40,8 @@ func TestSetDeletePermitted(t *testing.T) {
 	})
 
 	t.Run("true", func(t *testing.T) {
+		t.Parallel()
+
 		s := New(logger, c)
 		s.SetDeletePermitted(true)
 
