@@ -22,7 +22,7 @@ var serveCommand = &cli.Command{
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "allow-delete",
-			Usage:   "Wether to allow the DELETE verb to delete narInfo and nar files",
+			Usage:   "Whether to allow the DELETE verb to delete narInfo and nar files",
 			Sources: cli.EnvVars("ALLOW_DELETE"),
 		},
 		&cli.StringFlag{
