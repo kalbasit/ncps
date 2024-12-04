@@ -351,6 +351,7 @@ func TestGetNarInfo(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest
 func TestPutNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	if err != nil {
@@ -376,7 +377,9 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("putNarFile does not return an error", func(t *testing.T) {
-		r, err := http.NewRequest("PUT", ts.URL+"/"+narInfoHash1+".narinfo", strings.NewReader(narInfoText1))
+		p := ts.URL + "/" + narInfoHash1 + ".narinfo"
+
+		r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narInfoText1))
 		if err != nil {
 			t.Fatalf("error Do(r): %s", err)
 		}

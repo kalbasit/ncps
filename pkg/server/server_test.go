@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -237,7 +238,9 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("putNarFile does not return an error", func(t *testing.T) {
-				r, err := http.NewRequest("PUT", ts.URL+"/"+narInfoHash+".narinfo", strings.NewReader(narInfoText))
+				p := ts.URL + "/" + narInfoHash + ".narinfo"
+
+				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(narInfoText))
 				if err != nil {
 					t.Fatalf("error Do(r): %s", err)
 				}
