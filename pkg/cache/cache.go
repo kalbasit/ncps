@@ -150,8 +150,17 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
-func (c *Cache) PutNar(ctx context.Context, hash, compression string, r io.Reader) error {
-	return errors.New("not implemented")
+func (c *Cache) PutNar(ctx context.Context, hash, compression string, r io.ReadCloser) error {
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, r)
+
+		//nolint:errcheck
+		r.Close()
+	}()
+
+	_, err := c.putNarInStore(hash, compression, r)
+	return err
 }
 
 func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
