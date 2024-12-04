@@ -37,6 +37,15 @@ ncps can be installed in several ways:
 <!--  - Download the latest release for your platform from the [release page](https://github.com/kalbasit/ncps/releases).-->
 <!--  - Extract the binary and place it in your desired location.-->
 
+- **Install with Go from GitHub:**
+
+  - Ensure you have Go installed and configured.
+  - Run the following command:
+
+    ```bash
+    go install github.com/kalbasit/ncps@latest
+    ```
+
 - **Build from source:**
 
   - Ensure you have Go installed and configured.
