@@ -5,11 +5,10 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-var (
-	// Version defines the version of the binary, and is meant to be set with ldflags at build time.
-	//nolint:gochecknoglobals
-	Version = "dev"
-)
+// Version defines the version of the binary, and is meant to be set with ldflags at build time.
+//
+//nolint:gochecknoglobals
+var Version = "dev"
 
 func New(logger log15.Logger) *cli.Command {
 	return &cli.Command{
