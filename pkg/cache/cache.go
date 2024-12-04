@@ -96,7 +96,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 	logger.Info("the order of upstream caches has been determined by priority to be")
 
 	for idx, uc := range c.upstreamCaches {
-		logger.Info("upstream cache", "idx", idx, "hostname", hostName, "priority", uc.GetPriority())
+		logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
 	}
 
 	return c, c.setupDirs()
