@@ -16,6 +16,8 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/server"
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
@@ -346,6 +348,87 @@ func TestGetNarInfo(t *testing.T) {
 				t.Errorf("expected no error got %s", err)
 			}
 		})
+	})
+}
+
+func TestPutNarInfo(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cache-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	if err != nil {
+		t.Errorf("expected no error, got %q", err)
+	}
+
+	s := server.New(logger, c)
+
+	ts := httptest.NewServer(s)
+
+	defer ts.Close()
+	t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+		_, err := os.Stat(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
+		if err == nil {
+			t.Fatal("expected an error but got none")
+		}
+	})
+
+	t.Run("putNarFile does not return an error", func(t *testing.T) {
+		r, err := http.NewRequest("PUT", ts.URL+"/"+narInfoHash1+".narinfo", strings.NewReader(narInfoText1))
+		if err != nil {
+			t.Fatalf("error Do(r): %s", err)
+		}
+
+		resp, err := ts.Client().Do(r)
+		if err != nil {
+			t.Fatalf("error Do(r): %s", err)
+		}
+
+		if want, got := http.StatusNoContent, resp.StatusCode; want != got {
+			t.Errorf("want %d got %d", want, got)
+		}
+	})
+
+	t.Run("narfile does exist in storage", func(t *testing.T) {
+		_, err := os.Stat(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+	})
+
+	t.Run("it should be signed by our server", func(t *testing.T) {
+		f, err := os.Open(filepath.Join(dir, "store", narInfoHash1+".narinfo"))
+		if err != nil {
+			t.Fatalf("no error was expected, got: %s", err)
+		}
+
+		ni, err := narinfo.Parse(f)
+		if err != nil {
+			t.Fatalf("no error was expected, got: %s", err)
+		}
+
+		var found bool
+
+		var sig signature.Signature
+		for _, sig = range ni.Signatures {
+			if sig.Name == "cache.example.com" {
+				found = true
+
+				break
+			}
+		}
+
+		if want, got := true, found; want != got {
+			t.Errorf("want %t got %t", want, got)
+		}
+
+		validSig := signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()})
+
+		if want, got := true, validSig; want != got {
+			t.Errorf("want %t got %t", want, got)
+		}
 	})
 }
 
