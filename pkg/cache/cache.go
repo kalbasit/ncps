@@ -96,7 +96,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 	logger.Info("the order of upstream caches has been determined by priority to be")
 
 	for idx, uc := range c.upstreamCaches {
-		logger.Info("upstream cache", "idx", idx, "hostname", hostName, "priority", uc.GetPriority())
+		logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
 	}
 
 	return c, c.setupDirs()
@@ -108,9 +108,9 @@ func (c *Cache) GetHostname() string { return c.hostName }
 // PublicKey returns the public key of the server.
 func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey() }
 
-// GetNarInfo returns the nar given a hash and compression from the store. If
-// the nar is not found in the store, it's pulled from an upstream, stored in
-// the stored and finally returned.
+// GetNar returns the nar given a hash and compression from the store. If the
+// nar is not found in the store, it's pulled from an upstream, stored in the
+// stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
 func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 	if c.hasNarInStore(hash, compression) {
@@ -147,6 +147,20 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 	}
 
 	return c.getNarFromStore(hash, compression)
+}
+
+// PutNar records the NAR (given as an io.Reader) into the store.
+func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadCloser) error {
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, r)
+
+		r.Close()
+	}()
+
+	_, err := c.putNarInStore(hash, compression, r)
+
+	return err
 }
 
 func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan struct{}, errC chan error) {
@@ -277,6 +291,31 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	}
 
 	return narInfo, nil
+}
+
+// PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
+func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) error {
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, r)
+
+		r.Close()
+	}()
+
+	narInfo, err := narinfo.Parse(r)
+	if err != nil {
+		return fmt.Errorf("error parsing narinfo: %w", err)
+	}
+
+	if err := c.signNarInfo(narInfo); err != nil {
+		return fmt.Errorf("error signing the narinfo: %w", err)
+	}
+
+	if err := c.putNarInfoInStore(hash, narInfo); err != nil {
+		return fmt.Errorf("error storing the narInfo in the store: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Cache) prePullNar(url string) {

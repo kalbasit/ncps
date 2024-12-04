@@ -106,7 +106,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 
 	ni, err := narinfo.Parse(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing the nix-cache-info: %w", err)
+		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
 	}
 
 	if err := ni.Check(); err != nil {

@@ -69,12 +69,15 @@ func createRouter(s Server) *chi.Mux {
 
 	router.Head(routeNarInfo, s.getNarInfo(false))
 	router.Get(routeNarInfo, s.getNarInfo(true))
+	router.Put(routeNarInfo, s.putNarInfo)
 
 	router.Head(routeNarCompression, s.getNar(false))
 	router.Get(routeNarCompression, s.getNar(true))
+	router.Put(routeNarCompression, s.putNar)
 
 	router.Head(routeNar, s.getNar(false))
 	router.Get(routeNar, s.getNar(true))
+	router.Put(routeNar, s.putNar)
 
 	return router
 }
@@ -179,6 +182,23 @@ func (s Server) getNarInfo(withBody bool) http.HandlerFunc {
 	}
 }
 
+func (s Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+
+	if err := s.cache.PutNarInfo(r.Context(), hash, r.Body); err != nil {
+		s.logger.Error("error putting the NAR in cache: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+
+		if _, err2 := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + err.Error())); err2 != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s Server) getNar(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
@@ -219,10 +239,30 @@ func (s Server) getNar(withBody bool) http.HandlerFunc {
 		written, err := io.Copy(w, reader)
 		if err != nil {
 			s.logger.Error("error writing the response", "error", err)
+
+			return
 		}
 
 		if written != size {
 			s.logger.Error("Bytes copied does not match object size", "expected", size, "written", written)
 		}
 	}
+}
+
+func (s Server) putNar(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	compression := chi.URLParam(r, "compression")
+
+	if err := s.cache.PutNar(r.Context(), hash, compression, r.Body); err != nil {
+		s.logger.Error("error putting the NAR in cache: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+
+		if _, err2 := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + err.Error())); err2 != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
