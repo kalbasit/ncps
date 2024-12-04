@@ -237,14 +237,17 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("putNarFile does not return an error", func(t *testing.T) {
-				r := httptest.NewRequest("GET", ts.URL+"/"+narInfoHash+".narinfo", strings.NewReader(narInfoText))
-
-				resp, err := http.DefaultClient.Do(r)
+				r, err := http.NewRequest("PUT", ts.URL+"/"+narInfoHash+".narinfo", strings.NewReader(narInfoText))
 				if err != nil {
 					t.Fatalf("error Do(r): %s", err)
 				}
 
-				if want, got := http.StatusOK, resp.StatusCode; want != got {
+				resp, err := ts.Client().Do(r)
+				if err != nil {
+					t.Fatalf("error Do(r): %s", err)
+				}
+
+				if want, got := http.StatusNoContent, resp.StatusCode; want != got {
 					t.Errorf("want %d got %d", want, got)
 				}
 			})
