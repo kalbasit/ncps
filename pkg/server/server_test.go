@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/server"
+	"github.com/nix-community/go-nix/pkg/narinfo"
+	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
 //nolint:gochecknoglobals
@@ -50,159 +53,240 @@ Sig: cache.nixos.org-1:WzhkqDdkgPz2qU/0QyEA6wUIm7EMR5MY8nTb5jAmmoh5b80ACIp/+Zpgi
 
 //nolint:paralleltest
 func TestServeHTTP(t *testing.T) {
-	us := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/nix-cache-info" {
-			if _, err := w.Write([]byte(nixStoreInfo)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
+	t.Run("GET requests", func(t *testing.T) {
+		us := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/nix-cache-info" {
+				if _, err := w.Write([]byte(nixStoreInfo)); err != nil {
+					t.Fatalf("expected no error got: %s", err)
+				}
+
+				return
 			}
 
-			return
+			if r.URL.Path == "/"+narInfoHash+".narinfo" {
+				if _, err := w.Write([]byte(narInfoText)); err != nil {
+					t.Fatalf("expected no error got: %s", err)
+				}
+
+				return
+			}
+
+			if r.URL.Path == "/nar/"+narHash+".nar" {
+				if _, err := w.Write([]byte(narText)); err != nil {
+					t.Fatalf("expected no error got: %s", err)
+				}
+
+				return
+			}
+
+			if r.URL.Path == "/nar/"+narHash+".nar.xz" {
+				if _, err := w.Write([]byte(narText + "xz")); err != nil {
+					t.Fatalf("expected no error got: %s", err)
+				}
+
+				return
+			}
+
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer us.Close()
+
+		uu, err := url.Parse(us.URL)
+		if err != nil {
+			t.Fatalf("error not expected, got %s", err)
 		}
 
-		if r.URL.Path == "/"+narInfoHash+".narinfo" {
-			if _, err := w.Write([]byte(narInfoText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
+		dir, err := os.MkdirTemp("", "cache-path-")
+		if err != nil {
+			t.Fatalf("expected no error, got: %q", err)
+		}
+		defer os.RemoveAll(dir) // clean up
 
-			return
+		uc, err := upstream.New(logger, uu.Host, []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="})
+		if err != nil {
+			t.Fatalf("expected no error, got %s", err)
 		}
 
-		if r.URL.Path == "/nar/"+narHash+".nar" {
-			if _, err := w.Write([]byte(narText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
+		c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
+		if err != nil {
+			t.Fatalf("expected no error, got %q", err)
 		}
 
-		if r.URL.Path == "/nar/"+narHash+".nar.xz" {
-			if _, err := w.Write([]byte(narText + "xz")); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
+		s := server.New(logger, c)
 
-			return
-		}
+		t.Run("narinfo", func(t *testing.T) {
+			t.Run("narfile does not exist upstream", func(t *testing.T) {
+				r := httptest.NewRequest("GET", "/doesnotexist.narinfo", nil)
+				w := httptest.NewRecorder()
 
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer us.Close()
+				s.ServeHTTP(w, r)
 
-	uu, err := url.Parse(us.URL)
-	if err != nil {
-		t.Fatalf("error not expected, got %s", err)
-	}
+				if want, got := http.StatusNotFound, w.Code; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+			})
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
-	defer os.RemoveAll(dir) // clean up
+			t.Run("narfile exists upstream", func(t *testing.T) {
+				r := httptest.NewRequest("GET", "/"+narInfoHash+".narinfo", nil)
+				w := httptest.NewRecorder()
 
-	uc, err := upstream.New(logger, uu.Host, []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="})
-	if err != nil {
-		t.Fatalf("expected no error, got %s", err)
-	}
+				s.ServeHTTP(w, r)
 
-	c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
-	if err != nil {
-		t.Fatalf("expected no error, got %q", err)
-	}
+				if want, got := http.StatusOK, w.Code; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
 
-	s := server.New(logger, c)
+				resp := w.Result()
+				defer resp.Body.Close()
 
-	t.Run("narinfo", func(t *testing.T) {
-		t.Run("narfile does not exist upstream", func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/doesnotexist.narinfo", nil)
-			w := httptest.NewRecorder()
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					t.Fatalf("expected no error got %s", err)
+				}
 
-			s.ServeHTTP(w, r)
-
-			if want, got := http.StatusNotFound, w.Code; want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+				// NOTE: HasPrefix instead equality because we add our signature to the narInfo.
+				if !strings.HasPrefix(string(body), narInfoText) {
+					t.Error("expected the body to start with narInfo but it did not")
+				}
+			})
 		})
 
-		t.Run("narfile exists upstream", func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/"+narInfoHash+".narinfo", nil)
-			w := httptest.NewRecorder()
+		t.Run("nar", func(t *testing.T) {
+			t.Run("nar does not exist upstream", func(t *testing.T) {
+				r := httptest.NewRequest("GET", "/nar/doesnotexist.nar", nil)
+				w := httptest.NewRecorder()
 
-			s.ServeHTTP(w, r)
+				s.ServeHTTP(w, r)
 
-			if want, got := http.StatusOK, w.Code; want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+				if want, got := http.StatusNotFound, w.Code; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+			})
 
-			resp := w.Result()
-			defer resp.Body.Close()
+			t.Run("nar exists upstream without compression", func(t *testing.T) {
+				r := httptest.NewRequest("GET", "/nar/"+narHash+".nar", nil)
+				w := httptest.NewRecorder()
 
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatalf("expected no error got %s", err)
-			}
+				s.ServeHTTP(w, r)
 
-			// NOTE: HasPrefix instead equality because we add our signature to the narInfo.
-			if !strings.HasPrefix(string(body), narInfoText) {
-				t.Error("expected the body to start with narInfo but it did not")
-			}
+				if want, got := http.StatusOK, w.Code; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+
+				resp := w.Result()
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					t.Fatalf("expected no error got %s", err)
+				}
+
+				if want, got := narText, string(body); want != got {
+					t.Errorf("want %q got %q", want, got)
+				}
+			})
+
+			t.Run("nar exists upstream with compression", func(t *testing.T) {
+				r := httptest.NewRequest("GET", "/nar/"+narHash+".nar.xz", nil)
+				w := httptest.NewRecorder()
+
+				s.ServeHTTP(w, r)
+
+				if want, got := http.StatusOK, w.Code; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+
+				resp := w.Result()
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					t.Fatalf("expected no error got %s", err)
+				}
+
+				if want, got := narText+"xz", string(body); want != got {
+					t.Errorf("want %q got %q", want, got)
+				}
+			})
 		})
 	})
 
-	t.Run("nar", func(t *testing.T) {
-		t.Run("nar does not exist upstream", func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/nar/doesnotexist.nar", nil)
-			w := httptest.NewRecorder()
+	t.Run("PUT requests", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "cache-path-")
+		if err != nil {
+			t.Fatalf("expected no error, got: %q", err)
+		}
+		defer os.RemoveAll(dir) // clean up
 
-			s.ServeHTTP(w, r)
+		c, err := cache.New(logger, "cache.example.com", dir, nil)
+		if err != nil {
+			t.Fatalf("expected no error, got %q", err)
+		}
 
-			if want, got := http.StatusNotFound, w.Code; want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
-		})
+		s := server.New(logger, c)
 
-		t.Run("nar exists upstream without compression", func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/nar/"+narHash+".nar", nil)
-			w := httptest.NewRecorder()
+		ts := httptest.NewServer(s)
+		defer ts.Close()
 
-			s.ServeHTTP(w, r)
+		t.Run("narInfo", func(t *testing.T) {
+			t.Run("narfile does not exist in storage yet", func(t *testing.T) {
+				_, err := os.Stat(filepath.Join(dir, "store", narInfoHash+".narinfo"))
+				if err == nil {
+					t.Fatal("expected an error but got none")
+				}
+			})
 
-			if want, got := http.StatusOK, w.Code; want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+			t.Run("putNarFile does not return an error", func(t *testing.T) {
+				r := httptest.NewRequest("GET", ts.URL+"/"+narInfoHash+".narinfo", strings.NewReader(narInfoText))
+				resp, err := http.DefaultClient.Do(r)
+				if err != nil {
+					t.Fatalf("error Do(r): %s", err)
+				}
 
-			resp := w.Result()
-			defer resp.Body.Close()
+				if want, got := http.StatusOK, resp.StatusCode; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+			})
 
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatalf("expected no error got %s", err)
-			}
+			t.Run("narfile does exist in storage", func(t *testing.T) {
+				_, err := os.Stat(filepath.Join(dir, "store", narInfoHash+".narinfo"))
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+			})
 
-			if want, got := narText, string(body); want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-		})
+			t.Run("it should be signed by our server", func(t *testing.T) {
+				f, err := os.Open(filepath.Join(dir, "store", narInfoHash+".narinfo"))
+				if err != nil {
+					t.Fatalf("no error was expected, got: %s", err)
+				}
 
-		t.Run("nar exists upstream with compression", func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/nar/"+narHash+".nar.xz", nil)
-			w := httptest.NewRecorder()
+				ni, err := narinfo.Parse(f)
+				if err != nil {
+					t.Fatalf("no error was expected, got: %s", err)
+				}
 
-			s.ServeHTTP(w, r)
+				var found bool
 
-			if want, got := http.StatusOK, w.Code; want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+				var sig signature.Signature
+				for _, sig = range ni.Signatures {
+					if sig.Name == "cache.example.com" {
+						found = true
 
-			resp := w.Result()
-			defer resp.Body.Close()
+						break
+					}
+				}
 
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatalf("expected no error got %s", err)
-			}
+				if want, got := true, found; want != got {
+					t.Errorf("want %t got %t", want, got)
+				}
 
-			if want, got := narText+"xz", string(body); want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
+				validSig := signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()})
+
+				if want, got := true, validSig; want != got {
+					t.Errorf("want %t got %t", want, got)
+				}
+			})
 		})
 	})
 }
