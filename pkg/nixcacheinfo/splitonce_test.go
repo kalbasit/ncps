@@ -15,8 +15,11 @@ func TestSplitOnce(t *testing.T) {
 		err  string
 	}{
 		{"hello:world", ":", "hello", "world", ""},
+		{":helloworld", ":", "", "helloworld", ""},
+		{"helloworld:", ":", "helloworld", "", ""},
 		{"helloworld", ":", "", "", "found no separators in the string: separator=\":\" string=\"helloworld\""},
 		{"hello:wo:rld", ":", "", "", "found multiple separators in the string: separator=\":\" string=\"hello:wo:rld\""},
+		{"hello::world", ":", "", "", "found multiple separators in the string: separator=\":\" string=\"hello::world\""},
 	}
 
 	t.Parallel()
