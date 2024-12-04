@@ -286,7 +286,20 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
 func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.Reader) error {
-	return errors.New("not implemented")
+	narInfo, err := narinfo.Parse(r)
+	if err != nil {
+		return fmt.Errorf("error parsing narinfo: %w", err)
+	}
+
+	if err := c.signNarInfo(narInfo); err != nil {
+		return fmt.Errorf("error signing the narinfo: %w", err)
+	}
+
+	if err := c.putNarInfoInStore(hash, narInfo); err != nil {
+		return fmt.Errorf("error storing the narInfo in the store: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Cache) prePullNar(url string) {
