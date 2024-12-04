@@ -108,9 +108,9 @@ func (c *Cache) GetHostname() string { return c.hostName }
 // PublicKey returns the public key of the server.
 func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey() }
 
-// GetNarInfo returns the nar given a hash and compression from the store. If
-// the nar is not found in the store, it's pulled from an upstream, stored in
-// the stored and finally returned.
+// GetNar returns the nar given a hash and compression from the store. If the
+// nar is not found in the store, it's pulled from an upstream, stored in the
+// stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
 func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 	if c.hasNarInStore(hash, compression) {
