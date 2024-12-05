@@ -45,6 +45,12 @@ const (
 	insertNarQuery = `
 	INSERT into nars(narinfo_id, hash, compression, file_size) VALUES (?, ?, ?, ?)
 	`
+
+	touchNarInfoQuery = `
+	UPDATE narinfos
+	SET last_accessed_at = CURRENT_TIMESTAMP
+	WHERE hash = ?
+	`
 )
 
 type (
@@ -109,8 +115,21 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	return res, nil
 }
 
-func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) error {
-	return errors.New("not implemented")
+// TouchNarInfoRecord updates the last_accessed_at of a narinfo record in the
+// database.
+func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
+	stmt, err := tx.Prepare(touchNarInfoQuery)
+	if err != nil {
+		return nil, fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	res, err := stmt.Exec(hash)
+	if err != nil {
+		return nil, fmt.Errorf("error executing the statement: %w", err)
+	}
+
+	return res, nil
 }
 
 // InsertNarRecord creates a new nar record in the database.

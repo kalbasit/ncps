@@ -276,15 +276,18 @@ func TestTouchNarInfoRecord(t *testing.T) {
 		//nolint:errcheck
 		defer tx.Rollback()
 
-		err = db.TouchNarInfoRecord(tx, hash)
-
-		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
-		if !ok {
-			t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
+		res, err := db.TouchNarInfoRecord(tx, hash)
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
 		}
 
-		if want, got := sqlite3.ErrNotFound, sqliteErr.Code; want != got {
-			t.Errorf("want %q got %q", want, got)
+		ra, err := res.RowsAffected()
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
+		}
+
+		if want, got := int64(0), ra; want != got {
+			t.Errorf("want %d got %d", want, got)
 		}
 	})
 }
