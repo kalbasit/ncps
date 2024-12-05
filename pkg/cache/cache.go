@@ -332,7 +332,7 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 		return fmt.Errorf("error storing the narInfo in the store: %w", err)
 	}
 
-	return nil
+	return c.storeInDatabase(hash, narInfo)
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
