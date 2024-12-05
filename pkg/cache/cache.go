@@ -429,6 +429,8 @@ func (c *Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 }
 
 func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
+	c.logger.Info("storing narinfo and nar record in the database", "hash", hash, "nar-url", narInfo.URL)
+
 	tx, err := c.db.Begin()
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
