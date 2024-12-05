@@ -6,11 +6,13 @@ import (
 
 	"github.com/inconshreveable/log15/v3"
 
-	// Import the SQLite driver
+	// Import the SQLite driver.
 	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
+	// narInfosTable represents all the narinfo files that are available in the store.
+	// NOTE: Updating the structure here **will not** migrate the existing table!
 	narInfosTable = `
 	CREATE TABLE IF NOT EXISTS narinfos (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,6 +23,8 @@ const (
 	);
 	`
 
+	// narsTable represents all the nar files that are available in the store.
+	// NOTE: Updating the structure here **will not** migrate the existing table!
 	narsTable = `
 	CREATE TABLE IF NOT EXISTS nars (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,9 +53,7 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 
 	db := &DB{DB: sdb, logger: logger.New("dbpath", dbpath)}
 
-	db.createTables()
-
-	return db, nil
+	return db, db.createTables()
 }
 
 func (db *DB) createTables() error {

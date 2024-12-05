@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -59,7 +58,7 @@ type Cache struct {
 	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
-	db             *sql.DB
+	db             *database.DB
 
 	mu           sync.Mutex
 	upstreamJobs map[string]chan struct{}
@@ -573,7 +572,7 @@ func (c *Cache) dbDirPath() string     { return filepath.Join(c.path, "var", "nc
 func (c *Cache) dbKeyPath() string     { return filepath.Join(c.dbDirPath(), "db.sqlite") }
 
 func (c *Cache) setupDataBase() error {
-	db, err := database.Open(c.dbKeyPath())
+	db, err := database.Open(c.logger, c.dbKeyPath())
 	if err != nil {
 		return fmt.Errorf("error opening the database %q: %w", c.dbKeyPath(), err)
 	}
