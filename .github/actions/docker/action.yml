@@ -1,5 +1,5 @@
 name: Build and push Docker images
-description: "Configure Go cache"
+description: "Build and push Docker images"
 runs:
   using: "composite"
   steps:
