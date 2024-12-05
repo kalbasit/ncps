@@ -612,3 +612,195 @@ func TestInsertNarRecord(t *testing.T) {
 		})
 	}
 }
+
+//nolint:paralleltest
+func TestTouchNarRecord(t *testing.T) {
+	dir, err := os.MkdirTemp("", "database-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	dbpath := filepath.Join(dir, "db.sqlite")
+
+	db, err := database.Open(logger, dbpath)
+	if err != nil {
+		t.Fatalf("expected no error but got: %s", err)
+	}
+
+	t.Run("nar not existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		compression := ""
+
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
+		}
+
+		//nolint:errcheck
+		defer tx.Rollback()
+
+		res, err := db.TouchNarRecord(tx, hash, compression)
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
+		}
+
+		ra, err := res.RowsAffected()
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
+		}
+
+		if want, got := int64(0), ra; want != got {
+			t.Errorf("want %d got %d", want, got)
+		}
+	})
+
+	t.Run("nar existing", func(t *testing.T) {
+		// create a narinfo
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		//nolint:errcheck
+		defer tx.Rollback()
+
+		res, err := db.InsertNarInfoRecord(tx, hash)
+		if err != nil {
+			t.Fatalf("expected no error got: %s", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("expected no error got: %s", err)
+		}
+
+		nid, err := res.LastInsertId()
+		if err != nil {
+			t.Fatalf("expected no error got: %s", err)
+		}
+
+		for _, compression := range []string{"", "xz", "tar.gz"} {
+			t.Run(fmt.Sprintf("compression=%q", compression), func(t *testing.T) {
+				hash, err := helper.RandString(32, nil)
+				if err != nil {
+					t.Fatalf("expected no error but got: %s", err)
+				}
+
+				tx, err := db.Begin()
+				if err != nil {
+					t.Fatalf("error beginning a transaction: %s", err)
+				}
+
+				//nolint:errcheck
+				defer tx.Rollback()
+
+				if _, err := db.InsertNarRecord(tx, nid, hash, compression, 123); err != nil {
+					t.Fatalf("error inserting the record: %s", err)
+				}
+
+				if err := tx.Commit(); err != nil {
+					t.Fatalf("error committing transaction: %s", err)
+				}
+
+				rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+				if err != nil {
+					t.Fatalf("error selecting narinfos: %s", err)
+				}
+
+				defer rows.Close()
+
+				nims := make([]database.NarInfoModel, 0)
+
+				for rows.Next() {
+					var nim database.NarInfoModel
+
+					if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+						t.Fatalf("expected no error got: %s", err)
+					}
+
+					nims = append(nims, nim)
+				}
+
+				if err := rows.Err(); err != nil {
+					t.Fatalf("got an error on rows: %s", err)
+				}
+
+				if want, got := 1, len(nims); want != got {
+					t.Fatalf("want %d got %d", want, got)
+				}
+
+				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; !reflect.DeepEqual(want, got) {
+					t.Errorf("want %s got %s", want, got)
+				}
+
+				tx, err = db.Begin()
+				if err != nil {
+					t.Fatalf("error beginning a transaction: %s", err)
+				}
+
+				//nolint:errcheck
+				defer tx.Rollback()
+
+				time.Sleep(time.Second)
+
+				res, err := db.TouchNarInfoRecord(tx, hash)
+				if err != nil {
+					t.Fatalf("error beginning a transaction: %s", err)
+				}
+
+				if err := tx.Commit(); err != nil {
+					t.Fatalf("error committing transaction: %s", err)
+				}
+
+				ra, err := res.RowsAffected()
+				if err != nil {
+					t.Fatalf("error beginning a transaction: %s", err)
+				}
+
+				if want, got := int64(1), ra; want != got {
+					t.Errorf("want %d got %d", want, got)
+				}
+
+				rows, err = db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+				if err != nil {
+					t.Fatalf("error selecting narinfos: %s", err)
+				}
+
+				defer rows.Close()
+
+				nims = make([]database.NarInfoModel, 0)
+
+				for rows.Next() {
+					var nim database.NarInfoModel
+
+					if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+						t.Fatalf("expected no error got: %s", err)
+					}
+
+					nims = append(nims, nim)
+				}
+
+				if err := rows.Err(); err != nil {
+					t.Fatalf("got an error on rows: %s", err)
+				}
+
+				if want, got := 1, len(nims); want != got {
+					t.Fatalf("want %d got %d", want, got)
+				}
+
+				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; reflect.DeepEqual(want, got) {
+					t.Errorf("expected lastAccessedAt to be different than createdAt but it was the same: %q == %q", nims[0].CreatedAt, nims[0].LastAccessedAt)
+				}
+			})
+		}
+	})
+}

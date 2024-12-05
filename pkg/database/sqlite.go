@@ -150,8 +150,8 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 	return res, nil
 }
 
-func (db *DB) TouchNarRecord(tx *sql.Tx, hash, compression string) error {
-	return errors.New("not implemented")
+func (db *DB) TouchNarRecord(tx *sql.Tx, hash, compression string) (sql.Result, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (db *DB) createTables() error {
