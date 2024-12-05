@@ -1,6 +1,7 @@
 name: Releases
 
 on:
+  pull_request:
   push:
     tags:
       - "v*.*.*"
@@ -15,7 +16,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: test
+    needs: go-test
     permissions:
       contents: write
     steps:
@@ -32,9 +33,9 @@ jobs:
             done
           done
 
-      - name: Release with Notes
-        uses: softprops/action-gh-release@v2
-        with:
-          files: out/*
-          generate_release_notes: true
-          make_latest: "true"
+      # - name: Release with Notes
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     files: out/*
+      #     generate_release_notes: true
+      #     make_latest: "true"
