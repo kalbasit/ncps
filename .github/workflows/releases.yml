@@ -1,6 +1,7 @@
 name: Releases
 
 on:
+  # TODO: Remove this
   pull_request:
   push:
     tags:
@@ -19,6 +20,8 @@ jobs:
     needs: go-test
     steps:
       - uses: ./.github/actions/docker
+        with:
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
 
   release:
     runs-on: ubuntu-latest

@@ -1,5 +1,9 @@
 name: Build and push Docker images
 description: "Build and push Docker images"
+inputs:
+  platforms:
+    description: "List of target platforms for build"
+    required: false
 runs:
   using: "composite"
   steps:
@@ -35,7 +39,6 @@ runs:
       uses: docker/build-push-action@v6
       with:
         push: true
-        # NOTE: Enable multiple platforms once this is ready for a public release
-        #platforms: linux/amd64,linux/arm64,linux/arm/v7
+        platforms: ${{ inputs.platform }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
