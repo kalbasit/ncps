@@ -47,13 +47,15 @@ const (
 
 	touchNarInfoQuery = `
 	UPDATE narinfos
-	SET last_accessed_at = CURRENT_TIMESTAMP
+	SET last_accessed_at = CURRENT_TIMESTAMP,
+		  updated_at = CURRENT_TIMESTAMP
 	WHERE hash = ?
 	`
 
 	touchNarQuery = `
 	UPDATE nars
-	SET last_accessed_at = CURRENT_TIMESTAMP
+	SET last_accessed_at = CURRENT_TIMESTAMP,
+		  updated_at = CURRENT_TIMESTAMP
 	WHERE hash = ?
 	`
 )

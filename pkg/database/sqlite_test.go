@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
@@ -209,8 +208,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 			t.Errorf("expected no updated_at field, found: %s", nims[0].UpdatedAt)
 		}
 
-		if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; !reflect.DeepEqual(want, got) {
-			t.Errorf("want %s got %s", want, got)
+		if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+			t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
 		}
 	})
 
@@ -325,7 +324,7 @@ func TestTouchNarInfoRecord(t *testing.T) {
 			}
 		})
 
-		t.Run("confirm created_at == last_accessed_at", func(t *testing.T) {
+		t.Run("confirm created_at == last_accessed_at, and no updated_at", func(t *testing.T) {
 			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
 			if err != nil {
 				t.Fatalf("error selecting narinfos: %s", err)
@@ -353,8 +352,12 @@ func TestTouchNarInfoRecord(t *testing.T) {
 				t.Fatalf("want %d got %d", want, got)
 			}
 
-			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; !reflect.DeepEqual(want, got) {
-				t.Errorf("want %s got %s", want, got)
+			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+				t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
+			}
+
+			if ua := nims[0].UpdatedAt; ua != nil {
+				t.Errorf("expected updated_at to be nil got: %s", ua)
 			}
 		})
 
@@ -388,7 +391,7 @@ func TestTouchNarInfoRecord(t *testing.T) {
 			}
 		})
 
-		t.Run("confirm created_at != last_accessed_at", func(t *testing.T) {
+		t.Run("confirm created_at != last_accessed_at and updated_at == last_accessed_at", func(t *testing.T) {
 			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
 			if err != nil {
 				t.Fatalf("error selecting narinfos: %s", err)
@@ -416,9 +419,12 @@ func TestTouchNarInfoRecord(t *testing.T) {
 				t.Fatalf("want %d got %d", want, got)
 			}
 
-			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; reflect.DeepEqual(want, got) {
-				t.Errorf("expected lastAccessedAt to be different than createdAt but it was the same: %q == %q",
-					nims[0].CreatedAt, nims[0].LastAccessedAt)
+			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() == got.Unix() {
+				t.Errorf("expected created_at != last_accessed_at got: %q == %q", want, got)
+			}
+
+			if want, got := nims[0].UpdatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+				t.Errorf("expected updated_at == last_accessed_at got: %q == %q", want, got)
 			}
 		})
 	})
@@ -572,8 +578,8 @@ func TestInsertNarRecord(t *testing.T) {
 					t.Errorf("expected no updated_at field, found: %s", nims[0].UpdatedAt)
 				}
 
-				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; !reflect.DeepEqual(want, got) {
-					t.Errorf("want %s got %s", want, got)
+				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+					t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
 				}
 			})
 
@@ -722,7 +728,7 @@ func TestTouchNarRecord(t *testing.T) {
 			}
 		})
 
-		t.Run("confirm created_at == last_accessed_at", func(t *testing.T) {
+		t.Run("confirm created_at == last_accessed_at, and no updated_at", func(t *testing.T) {
 			const query = `
 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
 				FROM nars
@@ -765,8 +771,12 @@ func TestTouchNarRecord(t *testing.T) {
 				t.Fatalf("want %d got %d", want, got)
 			}
 
-			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; !reflect.DeepEqual(want, got) {
-				t.Errorf("want %s got %s", want, got)
+			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+				t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
+			}
+
+			if ua := nims[0].UpdatedAt; ua != nil {
+				t.Errorf("expected updated_at to be nil got: %s", ua)
 			}
 		})
 
@@ -800,7 +810,7 @@ func TestTouchNarRecord(t *testing.T) {
 			}
 		})
 
-		t.Run("confirm created_at != last_accessed_at", func(t *testing.T) {
+		t.Run("confirm created_at != last_accessed_at and updated_at == last_accessed_at", func(t *testing.T) {
 			const query = `
 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
 				FROM nars
@@ -843,9 +853,12 @@ func TestTouchNarRecord(t *testing.T) {
 				t.Fatalf("want %d got %d", want, got)
 			}
 
-			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; reflect.DeepEqual(want, got) {
-				t.Errorf("expected lastAccessedAt to be different than createdAt but it was the same: %q == %q",
-					nims[0].CreatedAt, nims[0].LastAccessedAt)
+			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() == got.Unix() {
+				t.Errorf("expected created_at != last_accessed_at got: %q == %q", want, got)
+			}
+
+			if want, got := nims[0].UpdatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+				t.Errorf("expected updated_at == last_accessed_at got: %q == %q", want, got)
 			}
 		})
 	})
