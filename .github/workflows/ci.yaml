@@ -22,7 +22,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.go-cache-paths.outputs.go_mod_cache }}
-          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-todo-mod-${{ hashFiles('**/go.sum') }}
 
       - name: Run the tests
         if: success()
