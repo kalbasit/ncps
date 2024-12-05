@@ -1,8 +1,6 @@
 name: Releases
 
 on:
-  # TODO: Remove this
-  pull_request:
   push:
     tags:
       - "v*.*.*"
