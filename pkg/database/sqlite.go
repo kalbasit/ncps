@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+
 	// Import the SQLite driver.
 	_ "github.com/mattn/go-sqlite3"
 )
