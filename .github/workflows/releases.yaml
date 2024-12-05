@@ -20,11 +20,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install devbox
-        uses: jetify-com/devbox-install-action@v0.11.0
-        with:
-          enable-cache: "true"
+      - uses: ./.github/actions/setup_devbox
 
       - name: Prepare Go build cache
         id: go-cache-paths
