@@ -376,7 +376,7 @@ func TestInsertNarRecord(t *testing.T) {
 					t.Errorf("want %s got %s", want, got)
 				}
 
-				if want, got := int64(123), nims[0].FileSize; want != got {
+				if want, got := uint64(123), nims[0].FileSize; want != got {
 					t.Errorf("want %d got %d", want, got)
 				}
 

@@ -72,7 +72,7 @@ type (
 		NarInfoID   int64
 		Hash        string
 		Compression string
-		FileSize    int64
+		FileSize    uint64
 
 		CreatedAt      time.Time
 		UpdatedAt      *time.Time
@@ -110,7 +110,7 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 
 // InsertNarRecord creates a new nar record in the database.
 func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
-	hash, compression string, fileSize int64,
+	hash, compression string, fileSize uint64,
 ) (sql.Result, error) {
 	stmt, err := tx.Prepare(insertNarQuery)
 	if err != nil {

@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 )
 
@@ -58,6 +60,7 @@ type Cache struct {
 	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
+	db             *database.DB
 
 	mu           sync.Mutex
 	upstreamJobs map[string]chan struct{}
@@ -100,7 +103,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 		logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
 	}
 
-	return c, c.setupDirs()
+	return c, c.setup()
 }
 
 // GetHostname returns the hostname.
@@ -304,7 +307,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
 	}
 
-	return narInfo, nil
+	return narInfo, c.storeInDatabase(hash, narInfo)
 }
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
@@ -426,6 +429,48 @@ func (c *Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 	return nil
 }
 
+func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
+	c.logger.Info("storing narinfo and nar record in the database", "hash", hash, "nar-url", narInfo.URL)
+
+	tx, err := c.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning a transaction: %w", err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				c.logger.Error("error rolling back the transaction", "error", err)
+			}
+		}
+	}()
+
+	res, err := c.db.InsertNarInfoRecord(tx, hash)
+	if err != nil {
+		return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
+	}
+
+	lid, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("error fetching the last insert ID of the narinfo with hash %q: %w", hash, err)
+	}
+
+	narHash, compression, err := helper.ParseNarURL(narInfo.URL)
+	if err != nil {
+		return fmt.Errorf("error parsing the nar URL: %w", err)
+	}
+
+	if _, err := c.db.InsertNarRecord(tx, lid, narHash, compression, narInfo.FileSize); err != nil {
+		return fmt.Errorf("error inserting the nar record in the database: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing the transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (c *Cache) deleteNarInfoFromStore(hash string) error {
 	if !c.hasNarInfoInStore(hash) {
 		return ErrNotFound
@@ -528,6 +573,18 @@ func (c *Cache) isWritable(cachePath string) bool {
 	return true
 }
 
+func (c *Cache) setup() error {
+	if err := c.setupDirs(); err != nil {
+		return fmt.Errorf("error setting up the cache directory: %w", err)
+	}
+
+	if err := c.setupDataBase(); err != nil {
+		return fmt.Errorf("error setting up the database: %w", err)
+	}
+
+	return nil
+}
+
 func (c *Cache) setupDirs() error {
 	if err := os.RemoveAll(c.storeTMPPath()); err != nil {
 		return fmt.Errorf("error removing the temporary download directory: %w", err)
@@ -538,6 +595,7 @@ func (c *Cache) setupDirs() error {
 		c.storePath(),
 		c.storeNarPath(),
 		c.storeTMPPath(),
+		c.dbDirPath(),
 	}
 
 	for _, p := range allPaths {
@@ -554,6 +612,19 @@ func (c *Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "c
 func (c *Cache) storePath() string     { return filepath.Join(c.path, "store") }
 func (c *Cache) storeNarPath() string  { return filepath.Join(c.storePath(), "nar") }
 func (c *Cache) storeTMPPath() string  { return filepath.Join(c.storePath(), "tmp") }
+func (c *Cache) dbDirPath() string     { return filepath.Join(c.path, "var", "ncps", "db") }
+func (c *Cache) dbKeyPath() string     { return filepath.Join(c.dbDirPath(), "db.sqlite") }
+
+func (c *Cache) setupDataBase() error {
+	db, err := database.Open(c.logger, c.dbKeyPath())
+	if err != nil {
+		return fmt.Errorf("error opening the database %q: %w", c.dbKeyPath(), err)
+	}
+
+	c.db = db
+
+	return nil
+}
 
 func (c *Cache) setupSecretKey() (signature.SecretKey, error) {
 	f, err := os.Open(c.secretKeyPath())
