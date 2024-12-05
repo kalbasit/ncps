@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -435,7 +436,9 @@ func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
 
 	defer func() {
 		if err := tx.Rollback(); err != nil {
-			c.logger.Error("error rolling back the transaction", "error", err)
+			if !errors.Is(err, sql.ErrTxDone) {
+				c.logger.Error("error rolling back the transaction", "error", err)
+			}
 		}
 	}()
 
