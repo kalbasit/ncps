@@ -417,7 +417,8 @@ func TestTouchNarInfoRecord(t *testing.T) {
 			}
 
 			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; reflect.DeepEqual(want, got) {
-				t.Errorf("expected lastAccessedAt to be different than createdAt but it was the same: %q == %q", nims[0].CreatedAt, nims[0].LastAccessedAt)
+				t.Errorf("expected lastAccessedAt to be different than createdAt but it was the same: %q == %q",
+					nims[0].CreatedAt, nims[0].LastAccessedAt)
 			}
 		})
 	})
@@ -843,7 +844,8 @@ func TestTouchNarRecord(t *testing.T) {
 			}
 
 			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; reflect.DeepEqual(want, got) {
-				t.Errorf("expected lastAccessedAt to be different than createdAt but it was the same: %q == %q", nims[0].CreatedAt, nims[0].LastAccessedAt)
+				t.Errorf("expected lastAccessedAt to be different than createdAt but it was the same: %q == %q",
+					nims[0].CreatedAt, nims[0].LastAccessedAt)
 			}
 		})
 	})
