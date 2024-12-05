@@ -44,6 +44,20 @@ const (
 	insertNarQuery = `
 	INSERT into nars(narinfo_id, hash, compression, file_size) VALUES (?, ?, ?, ?)
 	`
+
+	touchNarInfoQuery = `
+	UPDATE narinfos
+	SET last_accessed_at = CURRENT_TIMESTAMP,
+		  updated_at = CURRENT_TIMESTAMP
+	WHERE hash = ?
+	`
+
+	touchNarQuery = `
+	UPDATE nars
+	SET last_accessed_at = CURRENT_TIMESTAMP,
+		  updated_at = CURRENT_TIMESTAMP
+	WHERE hash = ?
+	`
 )
 
 type (
@@ -108,6 +122,12 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	return res, nil
 }
 
+// TouchNarInfoRecord updates the last_accessed_at of a narinfo record in the
+// database.
+func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
+	return db.touchRecord(tx, touchNarInfoQuery, hash)
+}
+
 // InsertNarRecord creates a new nar record in the database.
 func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 	hash, compression string, fileSize uint64,
@@ -119,6 +139,25 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 	defer stmt.Close()
 
 	res, err := stmt.Exec(narInfoID, hash, compression, fileSize)
+	if err != nil {
+		return nil, fmt.Errorf("error executing the statement: %w", err)
+	}
+
+	return res, nil
+}
+
+func (db *DB) TouchNarRecord(tx *sql.Tx, hash string) (sql.Result, error) {
+	return db.touchRecord(tx, touchNarQuery, hash)
+}
+
+func (db *DB) touchRecord(tx *sql.Tx, query, hash string) (sql.Result, error) {
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return nil, fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	res, err := stmt.Exec(hash)
 	if err != nil {
 		return nil, fmt.Errorf("error executing the statement: %w", err)
 	}
