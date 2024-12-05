@@ -44,9 +44,9 @@ jobs:
             done
           done
 
-      # - name: Release with Notes
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     files: out/*
-      #     generate_release_notes: true
-      #     make_latest: "true"
+      - name: Release with Notes
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+          make_latest: "true"
