@@ -45,6 +45,6 @@ runs:
       uses: docker/build-push-action@v6
       with:
         push: true
-        platforms: ${{ inputs.platform }}
+        platforms: ${{ inputs.platforms }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
