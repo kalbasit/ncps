@@ -865,6 +865,11 @@ func TestGetNar(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
+	if err != nil {
+		t.Fatalf("error opening the database: %s", err)
+	}
+
 	narName := narHash1 + ".nar"
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
@@ -879,6 +884,33 @@ func TestGetNar(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, "store", "nar", narName))
 			if err == nil {
 				t.Fatal("expected an error but got none")
+			}
+		})
+
+		t.Run("nar does not exist in database yet", func(t *testing.T) {
+			rows, err := db.Query("SELECT hash FROM nars")
+			if err != nil {
+				t.Fatalf("error executing select query: %s", err)
+			}
+
+			var hashes []string
+
+			for rows.Next() {
+				var hash string
+
+				if err := rows.Scan(&hash); err != nil {
+					t.Fatalf("error fetching hash from db: %s", err)
+				}
+
+				hashes = append(hashes, hash)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Errorf("not expecting an error got: %s", err)
+			}
+
+			if want, got := 0, len(hashes); want != got {
+				t.Errorf("want %d got %d", want, got)
 			}
 		})
 
@@ -910,6 +942,114 @@ func TestGetNar(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expected no error got %s", err)
 			}
+		})
+
+		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
+			_, err := c.GetNarInfo(context.Background(), narInfoHash1)
+			if err != nil {
+				t.Fatalf("no error expected, got: %s", err)
+			}
+			defer r.Close()
+		})
+
+		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
+			const query = `
+				SELECT  hash,  created_at,  last_accessed_at
+				FROM nars
+				`
+
+			rows, err := db.Query(query)
+			if err != nil {
+				t.Fatalf("error selecting narinfos: %s", err)
+			}
+
+			nims := make([]database.NarModel, 0)
+
+			for rows.Next() {
+				var nim database.NarModel
+
+				err := rows.Scan(
+					&nim.Hash,
+					&nim.CreatedAt,
+					&nim.LastAccessedAt,
+				)
+				if err != nil {
+					t.Fatalf("expected no error got: %s", err)
+				}
+
+				nims = append(nims, nim)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Errorf("not expecting an error got: %s", err)
+			}
+
+			if want, got := 1, len(nims); want != got {
+				t.Fatalf("want %d got %d", want, got)
+			}
+
+			if want, got := narHash1, nims[0].Hash; want != got {
+				t.Errorf("want %q got %q", want, got)
+			}
+
+			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+				t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
+			}
+		})
+
+		t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
+			time.Sleep(time.Second)
+
+			_, r, err := c.GetNar(narHash1, "")
+			if err != nil {
+				t.Fatalf("no error expected, got: %s", err)
+			}
+			defer r.Close()
+
+			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
+				const query = `
+				SELECT  hash,  created_at,  last_accessed_at
+				FROM nars
+				`
+
+				rows, err := db.Query(query)
+				if err != nil {
+					t.Fatalf("error selecting narinfos: %s", err)
+				}
+
+				nims := make([]database.NarModel, 0)
+
+				for rows.Next() {
+					var nim database.NarModel
+
+					err := rows.Scan(
+						&nim.Hash,
+						&nim.CreatedAt,
+						&nim.LastAccessedAt,
+					)
+					if err != nil {
+						t.Fatalf("expected no error got: %s", err)
+					}
+
+					nims = append(nims, nim)
+				}
+
+				if err := rows.Err(); err != nil {
+					t.Errorf("not expecting an error got: %s", err)
+				}
+
+				if want, got := 1, len(nims); want != got {
+					t.Fatalf("want %d got %d", want, got)
+				}
+
+				if want, got := narHash1, nims[0].Hash; want != got {
+					t.Errorf("want %q got %q", want, got)
+				}
+
+				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() == got.Unix() {
+					t.Errorf("expected created_at != last_accessed_at got: %q == %q", want, got)
+				}
+			})
 		})
 	})
 }

@@ -219,7 +219,33 @@ func (c *Cache) hasNarInStore(hash, compression string) bool {
 }
 
 func (c *Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser, error) {
-	return c.getFromStore(helper.NarPath(hash, compression))
+	size, r, err := c.getFromStore(helper.NarPath(hash, compression))
+	if err != nil {
+		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
+	}
+
+	tx, err := c.db.Begin()
+	if err != nil {
+		return 0, nil, fmt.Errorf("error beginning a transaction: %w", err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				c.logger.Error("error rolling back the transaction", "error", err)
+			}
+		}
+	}()
+
+	if _, err := c.db.TouchNarRecord(tx, hash); err != nil {
+		return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, nil, fmt.Errorf("error committing the transaction: %w", err)
+	}
+
+	return size, r, nil
 }
 
 func (c *Cache) getNarFromUpstream(hash, compression string) (int64, io.ReadCloser, error) {
