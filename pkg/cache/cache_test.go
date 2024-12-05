@@ -2,6 +2,7 @@ package cache_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"net/http"
@@ -18,6 +19,9 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+
+	// Import the SQLite driver.
+	_ "github.com/mattn/go-sqlite3"
 )
 
 //nolint:gochecknoglobals
@@ -125,8 +129,7 @@ func TestNew(t *testing.T) {
 			}
 			defer os.RemoveAll(dir) // clean up
 
-			_, err = cache.New(logger, "cache.example.com", dir, nil)
-			if err != nil {
+			if _, err = cache.New(logger, "cache.example.com", dir, nil); err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
 
@@ -176,6 +179,22 @@ func TestNew(t *testing.T) {
 
 			if _, err := os.Stat(f.Name()); !os.IsNotExist(err) {
 				t.Errorf("expected %q to not exist but it does", f.Name())
+			}
+		})
+
+		t.Run("should create sqlite3 database", func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "cache-path-")
+			if err != nil {
+				t.Fatalf("expected no error, got: %q", err)
+			}
+			defer os.RemoveAll(dir) // clean up
+
+			if _, err = cache.New(logger, "cache.example.com", dir, nil); err != nil {
+				t.Errorf("expected no error, got %q", err)
+			}
+
+			if _, err := os.Stat(filepath.Join(dir, "var", "ncps", "db", "db.sqlite")); err != nil {
+				t.Fatalf("expected no error, got: %s", err)
 			}
 		})
 	})
@@ -271,6 +290,11 @@ func TestGetNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
+	if err != nil {
+		t.Fatalf("error opening the database: %s", err)
+	}
+
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
 		if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
@@ -290,6 +314,50 @@ func TestGetNarInfo(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, "store", narHash2+".nar"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
+			}
+		})
+
+		t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
+			rows, err := db.Query("SELECT hash FROM narinfos")
+			if err != nil {
+				t.Fatalf("error executing select query: %s", err)
+			}
+
+			var hashes []string
+			for rows.Next() {
+				var hash string
+
+				if err := rows.Scan(&hash); err != nil {
+					t.Fatalf("error fetching hash from db: %s", err)
+				}
+
+				hashes = append(hashes, hash)
+			}
+
+			if want, got := 0, len(hashes); want != got {
+				t.Errorf("want %d got %d", want, got)
+			}
+		})
+
+		t.Run("nar does not exist in the database yet", func(t *testing.T) {
+			rows, err := db.Query("SELECT hash FROM nars")
+			if err != nil {
+				t.Fatalf("error executing select query: %s", err)
+			}
+
+			var hashes []string
+			for rows.Next() {
+				var hash string
+
+				if err := rows.Scan(&hash); err != nil {
+					t.Fatalf("error fetching hash from db: %s", err)
+				}
+
+				hashes = append(hashes, hash)
+			}
+
+			if want, got := 0, len(hashes); want != got {
+				t.Errorf("want %d got %d", want, got)
 			}
 		})
 
@@ -351,6 +419,58 @@ func TestGetNarInfo(t *testing.T) {
 
 			if err != nil {
 				t.Errorf("expected no error got %s", err)
+			}
+		})
+
+		t.Run("narinfo does exist in the database", func(t *testing.T) {
+			rows, err := db.Query("SELECT hash FROM narinfos")
+			if err != nil {
+				t.Fatalf("error executing select query: %s", err)
+			}
+
+			var hashes []string
+			for rows.Next() {
+				var hash string
+
+				if err := rows.Scan(&hash); err != nil {
+					t.Fatalf("error fetching hash from db: %s", err)
+				}
+
+				hashes = append(hashes, hash)
+			}
+
+			if want, got := 1, len(hashes); want != got {
+				t.Fatalf("want %d got %d", want, got)
+			}
+
+			if want, got := narInfoHash2, hashes[0]; want != got {
+				t.Errorf("want %q got %q", want, got)
+			}
+		})
+
+		t.Run("nar does exist in the database", func(t *testing.T) {
+			rows, err := db.Query("SELECT hash FROM nars")
+			if err != nil {
+				t.Fatalf("error executing select query: %s", err)
+			}
+
+			var hashes []string
+			for rows.Next() {
+				var hash string
+
+				if err := rows.Scan(&hash); err != nil {
+					t.Fatalf("error fetching hash from db: %s", err)
+				}
+
+				hashes = append(hashes, hash)
+			}
+
+			if want, got := 1, len(hashes); want != got {
+				t.Fatalf("want %d got %d", want, got)
+			}
+
+			if want, got := narHash2, hashes[0]; want != got {
+				t.Errorf("want %q got %q", want, got)
 			}
 		})
 	})
