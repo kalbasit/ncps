@@ -7,6 +7,10 @@ inputs:
   platforms:
     description: "List of target platforms for build"
     required: false
+  push:
+    description: "Push images to the Docker registry"
+    required: false
+    default: "true"
   username:
     description: "Username used to log against the Docker registry"
     required: true
@@ -20,7 +24,7 @@ runs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ inputs.image }}
+        images: ${{ inputs.images }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -44,7 +48,7 @@ runs:
     - name: Build and push
       uses: docker/build-push-action@v6
       with:
-        push: true
+        push: ${{ inputs.push }}
         platforms: ${{ inputs.platforms }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
