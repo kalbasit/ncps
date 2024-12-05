@@ -1,6 +1,7 @@
 package database_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/mattn/go-sqlite3"
 )
 
 //nolint:gochecknoglobals
@@ -214,8 +216,14 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		defer tx.Rollback()
 
-		if err := db.InsertNarInfoRecord(tx, hash); err == nil {
-			t.Error("expected an error got none")
+		err = db.InsertNarInfoRecord(tx, hash)
+		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
+		if !ok {
+			t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
+		}
+
+		if want, got := sqlite3.ErrConstraint, sqliteErr.Code; want != got {
+			t.Errorf("want %q got %q", want, got)
 		}
 	})
 }

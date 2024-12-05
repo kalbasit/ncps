@@ -32,11 +32,17 @@ const (
 		narinfo_id INTEGER NOT NULL REFERENCES narinfos(id),
 		hash TEXT NOT NULL UNIQUE,
 		compression TEXT NOT NULL DEFAULT '',
-		filesize INTEGER NOT NULL,
+		file_size INTEGER NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
 		updated_at TIMESTAMP,
 		last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
+	`
+
+	insertNarInfoQuery = `INSERT into narinfos(hash) VALUES (?)`
+
+	insertNarQuery = `
+	INSERT into nars(narinfo_id, hash, compression, file_size) VALUES (?, ?, ?, ?)
 	`
 )
 
@@ -88,13 +94,28 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 
 // InsertNarInfoRecord creates a new narinfo record in the database.
 func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) error {
-	stmt, err := tx.Prepare("INSERT into narinfos(hash) VALUES (?)")
+	stmt, err := tx.Prepare(insertNarInfoQuery)
 	if err != nil {
 		return fmt.Errorf("error preparing a statement: %w", err)
 	}
 	defer stmt.Close()
 
 	if _, err := stmt.Exec(hash); err != nil {
+		return fmt.Errorf("error executing the statement: %w", err)
+	}
+
+	return nil
+}
+
+// InsertNarRecord creates a new nar record in the database.
+func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64, hash, compression string, fileSize int64) error {
+	stmt, err := tx.Prepare(insertNarQuery)
+	if err != nil {
+		return fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.Exec(narInfoID, hash, compression, fileSize); err != nil {
 		return fmt.Errorf("error executing the statement: %w", err)
 	}
 
