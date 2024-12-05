@@ -132,6 +132,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 			t.Fatalf("expected no error but got: %s", err)
 		}
 
+		defer tx.Rollback()
+
 		if err := db.InsertNarInfoRecord(tx, hash); err != nil {
 			t.Fatalf("expected no error got: %s", err)
 		}
@@ -181,6 +183,39 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; !reflect.DeepEqual(want, got) {
 			t.Errorf("want %s got %s", want, got)
+		}
+	})
+
+	t.Run("hash is unique", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		defer tx.Rollback()
+
+		if err := db.InsertNarInfoRecord(tx, hash); err != nil {
+			t.Fatalf("expected no error got: %s", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("expected no error got: %s", err)
+		}
+
+		tx, err = db.Begin()
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		defer tx.Rollback()
+
+		if err := db.InsertNarInfoRecord(tx, hash); err == nil {
+			t.Error("expected an error got none")
 		}
 	})
 }
