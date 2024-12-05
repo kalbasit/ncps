@@ -305,7 +305,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
 	}
 
-	return narInfo, nil
+	return narInfo, c.storeInDatabase(hash, narInfo)
 }
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
@@ -422,6 +422,44 @@ func (c *Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 
 	if err := os.Rename(f.Name(), narInfoPath); err != nil {
 		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
+	}
+
+	return nil
+}
+
+func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning a transaction: %w", err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			c.logger.Error("error rolling back the transaction", "error", err)
+		}
+	}()
+
+	res, err := c.db.InsertNarInfoRecord(tx, hash)
+	if err != nil {
+		return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
+	}
+
+	lid, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("error fetching the last insert ID of the narinfo with hash %q: %w", hash, err)
+	}
+
+	narHash, compression, err := helper.ParseNarURL(narInfo.URL)
+	if err != nil {
+		return fmt.Errorf("error parsing the nar URL: %w", err)
+	}
+
+	if _, err := c.db.InsertNarRecord(tx, lid, narHash, compression, narInfo.FileSize); err != nil {
+		return fmt.Errorf("error inserting the nar record in the database: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing the transaction: %w", err)
 	}
 
 	return nil
