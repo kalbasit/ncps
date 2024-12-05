@@ -14,10 +14,11 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
-	"github.com/kalbasit/ncps/pkg/cache"
-	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+
+	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
 )
 
 //nolint:gochecknoglobals

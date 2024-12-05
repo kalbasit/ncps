@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
-	"github.com/kalbasit/ncps/pkg/helper"
-	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+
+	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 )
 
 var (
