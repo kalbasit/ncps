@@ -24,9 +24,10 @@ func init() {
 	logger.SetHandler(log15.DiscardHandler())
 }
 
-//nolint:paralleltest
 func TestOpen(t *testing.T) {
 	t.Run("database does not exist yet", func(t *testing.T) {
+		t.Parallel()
+
 		dir, err := os.MkdirTemp("", "database-path-")
 		if err != nil {
 			t.Fatalf("expected no error, got: %q", err)
@@ -114,7 +115,6 @@ func TestOpen(t *testing.T) {
 	})
 }
 
-//nolint:paralleltest
 func TestInsertNarInfoRecord(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	if err != nil {
@@ -130,6 +130,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 	}
 
 	t.Run("inserting one record", func(t *testing.T) {
+		t.Parallel()
+
 		hash, err := helper.RandString(32, nil)
 		if err != nil {
 			t.Fatalf("expected no error but got: %s", err)
@@ -203,6 +205,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 	})
 
 	t.Run("hash is unique", func(t *testing.T) {
+		t.Parallel()
+
 		hash, err := helper.RandString(32, nil)
 		if err != nil {
 			t.Fatalf("expected no error but got: %s", err)
