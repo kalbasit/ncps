@@ -159,7 +159,9 @@ spec:
 
 ncps can be configured using the following flags:
 
-- `--allow-delete`: Whether to allow the DELETE verb to delete `narinfo` and `nar` files from the cache (default: false). (Environment variable: `$ALLOW_DELETE`)
+- `--allow-delete`: Whether to allow the DELETE verb to delete `narinfo` and `nar` files from the cache (default: false). (Environment variable: `$ALLOW_DELETE_VERB`)
+- `--allow-put`: Whether to allow the PUT verb to push `narinfo` and `nar` files directly to the cache (default: false). (Environment variable: `$ALLOW_PUT_VERB`)
+
 - `--cache-hostname`: The hostname of the cache server. **This is used to generate the private key used for signing store paths (.narinfo).** (Environment variable: `$CACHE_HOSTNAME`)
 - `--cache-data-path`: The local directory for storing configuration and cached store paths. (Environment variable: `$CACHE_DATA_PATH`)
 - `--server-addr`: The address and port the server listens on (default: ":8501"). (Environment variable: `$SERVER_ADDR`)

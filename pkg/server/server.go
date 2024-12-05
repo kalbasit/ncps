@@ -36,10 +36,12 @@ Priority: 10`
 
 // Server represents the main HTTP server.
 type Server struct {
-	cache           *cache.Cache
+	cache  *cache.Cache
+	logger log15.Logger
+	router *chi.Mux
+
 	deletePermitted bool
-	logger          log15.Logger
-	router          *chi.Mux
+	putPermitted    bool
 }
 
 // New returns a new server.
@@ -56,6 +58,9 @@ func New(logger log15.Logger, cache *cache.Cache) *Server {
 
 // SetDeletePermitted configures the server to either allow or deny access to DELETE.
 func (s *Server) SetDeletePermitted(dp bool) { s.deletePermitted = dp }
+
+// SetPutPermitted configures the server to either allow or deny access to PUT.
+func (s *Server) SetPutPermitted(pp bool) { s.putPermitted = pp }
 
 // ServeHTTP implements http.Handler and turns the Server type into a handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
@@ -191,6 +196,16 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
+	if !s.putPermitted {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
+
 	if err := s.cache.PutNarInfo(r.Context(), hash, r.Body); err != nil {
 		s.logger.Error("error putting the NAR in cache: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -294,6 +309,16 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
+
+	if !s.putPermitted {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
+			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+		}
+
+		return
+	}
 
 	if err := s.cache.PutNar(r.Context(), hash, compression, r.Body); err != nil {
 		s.logger.Error("error putting the NAR in cache: %s", err)

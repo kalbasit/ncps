@@ -25,7 +25,12 @@ func serveCommand(logger log15.Logger) *cli.Command {
 			&cli.BoolFlag{
 				Name:    "allow-delete",
 				Usage:   "Whether to allow the DELETE verb to delete narInfo and nar files",
-				Sources: cli.EnvVars("ALLOW_DELETE"),
+				Sources: cli.EnvVars("ALLOW_DELETE_VERB"),
+			},
+			&cli.BoolFlag{
+				Name:    "allow-put",
+				Usage:   "Whether to allow the PUT verb to push narInfo and nar files directly",
+				Sources: cli.EnvVars("ALLOW_PUT_VERB"),
 			},
 			&cli.StringFlag{
 				Name:     "cache-hostname",
@@ -75,6 +80,7 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 
 		srv := server.New(logger, cache)
 		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
+		srv.SetPutPermitted(cmd.Bool("allow-put"))
 
 		logger.Info("Server started", "server-addr", cmd.String("server-addr"))
 
