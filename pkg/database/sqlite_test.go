@@ -249,6 +249,50 @@ func TestInsertNarInfoRecord(t *testing.T) {
 	})
 }
 
+func TestTouchNarInfoRecord(t *testing.T) {
+	dir, err := os.MkdirTemp("", "database-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	dbpath := filepath.Join(dir, "db.sqlite")
+
+	db, err := database.Open(logger, dbpath)
+	if err != nil {
+		t.Fatalf("expected no error but got: %s", err)
+	}
+
+	t.Run("no narinfo existing", func(t *testing.T) {
+		t.Parallel()
+
+		// create a narinfo
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
+		}
+
+		//nolint:errcheck
+		defer tx.Rollback()
+
+		err = db.TouchNarInfoRecord(tx, hash)
+
+		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
+		if !ok {
+			t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
+		}
+
+		if want, got := sqlite3.ErrNotFound, sqliteErr.Code; want != got {
+			t.Errorf("want %q got %q", want, got)
+		}
+	})
+}
+
 //nolint:paralleltest
 func TestInsertNarRecord(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")

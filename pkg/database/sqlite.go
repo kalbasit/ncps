@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -108,6 +109,10 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	return res, nil
 }
 
+func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) error {
+	return errors.New("not implemented")
+}
+
 // InsertNarRecord creates a new nar record in the database.
 func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 	hash, compression string, fileSize uint64,
@@ -124,6 +129,10 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 	}
 
 	return res, nil
+}
+
+func (db *DB) TouchNarRecord(tx *sql.Tx, hash, compression string) error {
+	return errors.New("not implemented")
 }
 
 func (db *DB) createTables() error {
