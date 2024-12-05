@@ -109,18 +109,19 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 }
 
 // InsertNarRecord creates a new nar record in the database.
-func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64, hash, compression string, fileSize int64) error {
+func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64, hash, compression string, fileSize int64) (sql.Result, error) {
 	stmt, err := tx.Prepare(insertNarQuery)
 	if err != nil {
-		return fmt.Errorf("error preparing a statement: %w", err)
+		return nil, fmt.Errorf("error preparing a statement: %w", err)
 	}
 	defer stmt.Close()
 
-	if _, err := stmt.Exec(narInfoID, hash, compression, fileSize); err != nil {
-		return fmt.Errorf("error executing the statement: %w", err)
+	res, err := stmt.Exec(narInfoID, hash, compression, fileSize)
+	if err != nil {
+		return nil, fmt.Errorf("error executing the statement: %w", err)
 	}
 
-	return nil
+	return res, nil
 }
 
 func (db *DB) createTables() error {
