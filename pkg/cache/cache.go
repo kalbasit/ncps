@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
@@ -57,6 +59,7 @@ type Cache struct {
 	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
+	db             *sql.DB
 
 	mu           sync.Mutex
 	upstreamJobs map[string]chan struct{}
@@ -99,7 +102,7 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 		logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
 	}
 
-	return c, c.setupDirs()
+	return c, c.setup()
 }
 
 // GetHostname returns the hostname.
@@ -527,6 +530,18 @@ func (c *Cache) isWritable(cachePath string) bool {
 	return true
 }
 
+func (c *Cache) setup() error {
+	if err := c.setupDirs(); err != nil {
+		return fmt.Errorf("error setting up the cache directory: %w", err)
+	}
+
+	if err := c.setupDataBase(); err != nil {
+		return fmt.Errorf("error setting up the database: %w", err)
+	}
+
+	return nil
+}
+
 func (c *Cache) setupDirs() error {
 	if err := os.RemoveAll(c.storeTMPPath()); err != nil {
 		return fmt.Errorf("error removing the temporary download directory: %w", err)
@@ -537,6 +552,7 @@ func (c *Cache) setupDirs() error {
 		c.storePath(),
 		c.storeNarPath(),
 		c.storeTMPPath(),
+		c.dbDirPath(),
 	}
 
 	for _, p := range allPaths {
@@ -553,6 +569,19 @@ func (c *Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "c
 func (c *Cache) storePath() string     { return filepath.Join(c.path, "store") }
 func (c *Cache) storeNarPath() string  { return filepath.Join(c.storePath(), "nar") }
 func (c *Cache) storeTMPPath() string  { return filepath.Join(c.storePath(), "tmp") }
+func (c *Cache) dbDirPath() string     { return filepath.Join(c.path, "var", "ncps", "db") }
+func (c *Cache) dbKeyPath() string     { return filepath.Join(c.dbDirPath(), "db.sqlite") }
+
+func (c *Cache) setupDataBase() error {
+	db, err := database.Open(c.dbKeyPath())
+	if err != nil {
+		return fmt.Errorf("error opening the database %q: %w", c.dbKeyPath(), err)
+	}
+
+	c.db = db
+
+	return nil
+}
 
 func (c *Cache) setupSecretKey() (signature.SecretKey, error) {
 	f, err := os.Open(c.secretKeyPath())

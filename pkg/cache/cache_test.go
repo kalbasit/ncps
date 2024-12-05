@@ -118,7 +118,7 @@ func TestNew(t *testing.T) {
 			}
 		})
 
-		t.Run("config/, store/nar and store/tmp were created", func(t *testing.T) {
+		t.Run("should create directories", func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "cache-path-")
 			if err != nil {
 				t.Fatalf("expected no error, got: %q", err)
@@ -130,7 +130,13 @@ func TestNew(t *testing.T) {
 				t.Errorf("expected no error, got %q", err)
 			}
 
-			dirs := []string{"config", "store", filepath.Join("store", "nar"), filepath.Join("store", "tmp")}
+			dirs := []string{
+				"config",
+				"store",
+				filepath.Join("store", "nar"),
+				filepath.Join("store", "tmp"),
+				filepath.Join("var", "ncps", "db"),
+			}
 
 			for _, p := range dirs {
 				t.Run("Checking that "+p+" exists", func(t *testing.T) {
