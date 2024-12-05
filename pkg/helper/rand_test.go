@@ -26,6 +26,7 @@ func TestRandString(t *testing.T) {
 
 		src := rand.NewSource(123)
 
+		//nolint:gosec
 		s, err := helper.RandString(5, rand.New(src))
 		if err != nil {
 			t.Errorf("expected no error got: %s", err)

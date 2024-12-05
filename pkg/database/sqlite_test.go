@@ -23,6 +23,7 @@ func init() {
 	logger.SetHandler(log15.DiscardHandler())
 }
 
+//nolint:paralleltest
 func TestOpen(t *testing.T) {
 	t.Run("database does not exist yet", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "database-path-")
@@ -61,6 +62,7 @@ func TestOpen(t *testing.T) {
 			defer rows.Close()
 
 			names := make([]string, 0)
+
 			for rows.Next() {
 				var name string
 
@@ -89,6 +91,7 @@ func TestOpen(t *testing.T) {
 			defer rows.Close()
 
 			names := make([]string, 0)
+
 			for rows.Next() {
 				var name string
 
@@ -110,6 +113,7 @@ func TestOpen(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest
 func TestInsertNarInfoRecord(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	if err != nil {
@@ -135,6 +139,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 			t.Fatalf("expected no error but got: %s", err)
 		}
 
+		//nolint:errcheck
 		defer tx.Rollback()
 
 		res, err := db.InsertNarInfoRecord(tx, hash)
@@ -154,6 +159,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 		defer rows.Close()
 
 		nims := make([]database.NarInfoModel, 0)
+
 		for rows.Next() {
 			var nim database.NarInfoModel
 
@@ -181,8 +187,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 			t.Errorf("want %s got %s", want, got)
 		}
 
-		old := time.Now().Sub(nims[0].CreatedAt)
-		if old > time.Duration(3*time.Second) {
+		old := time.Since(nims[0].CreatedAt)
+		if old > 3*time.Second {
 			t.Errorf("expected the nim to have a created at less than 3s got: %s", old)
 		}
 
@@ -206,6 +212,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 			t.Fatalf("expected no error but got: %s", err)
 		}
 
+		//nolint:errcheck
 		defer tx.Rollback()
 
 		if _, err := db.InsertNarInfoRecord(tx, hash); err != nil {
@@ -221,9 +228,11 @@ func TestInsertNarInfoRecord(t *testing.T) {
 			t.Fatalf("expected no error but got: %s", err)
 		}
 
+		//nolint:errcheck
 		defer tx.Rollback()
 
 		_, err = db.InsertNarInfoRecord(tx, hash)
+
 		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
 		if !ok {
 			t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
@@ -235,6 +244,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest
 func TestInsertNarRecord(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	if err != nil {
@@ -260,6 +270,7 @@ func TestInsertNarRecord(t *testing.T) {
 		t.Fatalf("expected no error but got: %s", err)
 	}
 
+	//nolint:errcheck
 	defer tx.Rollback()
 
 	res, err := db.InsertNarInfoRecord(tx, hash)
@@ -293,6 +304,7 @@ func TestInsertNarRecord(t *testing.T) {
 					t.Fatalf("expected no error but got: %s", err)
 				}
 
+				//nolint:errcheck
 				defer tx.Rollback()
 
 				res, err := db.InsertNarRecord(tx, nid, hash, compression, 123)
@@ -304,7 +316,12 @@ func TestInsertNarRecord(t *testing.T) {
 					t.Fatalf("expected no error got: %s", err)
 				}
 
-				rows, err := db.Query("SELECT id,narinfo_id, hash, compression,file_size, created_at, updated_at, last_accessed_at FROM nars")
+				const query = `
+				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+				FROM nars
+				`
+
+				rows, err := db.Query(query)
 				if err != nil {
 					t.Fatalf("error selecting narinfos: %s", err)
 				}
@@ -312,10 +329,21 @@ func TestInsertNarRecord(t *testing.T) {
 				defer rows.Close()
 
 				nims := make([]database.NarModel, 0)
+
 				for rows.Next() {
 					var nim database.NarModel
 
-					if err := rows.Scan(&nim.ID, &nim.NarInfoID, &nim.Hash, &nim.Compression, &nim.FileSize, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+					err := rows.Scan(
+						&nim.ID,
+						&nim.NarInfoID,
+						&nim.Hash,
+						&nim.Compression,
+						&nim.FileSize,
+						&nim.CreatedAt,
+						&nim.UpdatedAt,
+						&nim.LastAccessedAt,
+					)
+					if err != nil {
 						t.Fatalf("expected no error got: %s", err)
 					}
 
@@ -351,8 +379,8 @@ func TestInsertNarRecord(t *testing.T) {
 					t.Errorf("want %d got %d", want, got)
 				}
 
-				old := time.Now().Sub(nims[0].CreatedAt)
-				if old > time.Duration(3*time.Second) {
+				old := time.Since(nims[0].CreatedAt)
+				if old > 3*time.Second {
 					t.Errorf("expected the nim to have a created at less than 3s got: %s", old)
 				}
 
@@ -376,6 +404,7 @@ func TestInsertNarRecord(t *testing.T) {
 					t.Fatalf("expected no error but got: %s", err)
 				}
 
+				//nolint:errcheck
 				defer tx.Rollback()
 
 				if _, err := db.InsertNarRecord(tx, nid, hash, "", 123); err != nil {
@@ -391,9 +420,11 @@ func TestInsertNarRecord(t *testing.T) {
 					t.Fatalf("expected no error but got: %s", err)
 				}
 
+				//nolint:errcheck
 				defer tx.Rollback()
 
 				_, err = db.InsertNarRecord(tx, nid, hash, "", 123)
+
 				sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
 				if !ok {
 					t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
