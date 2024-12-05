@@ -4,6 +4,12 @@ inputs:
   platforms:
     description: "List of target platforms for build"
     required: false
+  username:
+    description: "Username used to log against the Docker registry"
+    required: false
+  password:
+    description: "Password or personal access token used to log against the Docker registry"
+    required: false
 runs:
   using: "composite"
   steps:
@@ -32,8 +38,8 @@ runs:
     - name: Login to Docker Hub
       uses: docker/login-action@v3
       with:
-        username: ${{ vars.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
 
     - name: Build and push
       uses: docker/build-push-action@v6
