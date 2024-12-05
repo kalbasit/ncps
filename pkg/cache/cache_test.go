@@ -17,11 +17,10 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/nix-community/go-nix/pkg/narinfo"
-	"github.com/nix-community/go-nix/pkg/narinfo/signature"
-
 	// Import the SQLite driver.
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/nix-community/go-nix/pkg/narinfo"
+	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
 //nolint:gochecknoglobals
@@ -324,6 +323,7 @@ func TestGetNarInfo(t *testing.T) {
 			}
 
 			var hashes []string
+
 			for rows.Next() {
 				var hash string
 
@@ -332,6 +332,10 @@ func TestGetNarInfo(t *testing.T) {
 				}
 
 				hashes = append(hashes, hash)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Errorf("not expecting an error got: %s", err)
 			}
 
 			if want, got := 0, len(hashes); want != got {
@@ -346,6 +350,7 @@ func TestGetNarInfo(t *testing.T) {
 			}
 
 			var hashes []string
+
 			for rows.Next() {
 				var hash string
 
@@ -354,6 +359,10 @@ func TestGetNarInfo(t *testing.T) {
 				}
 
 				hashes = append(hashes, hash)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Errorf("not expecting an error got: %s", err)
 			}
 
 			if want, got := 0, len(hashes); want != got {
@@ -429,6 +438,7 @@ func TestGetNarInfo(t *testing.T) {
 			}
 
 			var hashes []string
+
 			for rows.Next() {
 				var hash string
 
@@ -437,6 +447,10 @@ func TestGetNarInfo(t *testing.T) {
 				}
 
 				hashes = append(hashes, hash)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Errorf("not expecting an error got: %s", err)
 			}
 
 			if want, got := 1, len(hashes); want != got {
@@ -455,6 +469,7 @@ func TestGetNarInfo(t *testing.T) {
 			}
 
 			var hashes []string
+
 			for rows.Next() {
 				var hash string
 
@@ -463,6 +478,10 @@ func TestGetNarInfo(t *testing.T) {
 				}
 
 				hashes = append(hashes, hash)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Errorf("not expecting an error got: %s", err)
 			}
 
 			if want, got := 1, len(hashes); want != got {
