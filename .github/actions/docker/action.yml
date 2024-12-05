@@ -1,15 +1,18 @@
 name: Build and push Docker images
 description: "Build and push Docker images"
 inputs:
+  images:
+    description: "List of Docker images to use as base name for tags"
+    required: false
   platforms:
     description: "List of target platforms for build"
     required: false
   username:
     description: "Username used to log against the Docker registry"
-    required: false
+    required: true
   password:
     description: "Password or personal access token used to log against the Docker registry"
-    required: false
+    required: true
 runs:
   using: "composite"
   steps:
@@ -17,10 +20,7 @@ runs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        # list of Docker images to use as base name for tags
-        images: |
-          kalbasit/ncps
-        # generate Docker tags based on the following events/attributes
+        images: ${{ inputs.image }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
