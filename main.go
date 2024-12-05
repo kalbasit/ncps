@@ -6,9 +6,10 @@ import (
 	"os"
 
 	"github.com/inconshreveable/log15/v3"
-	"github.com/kalbasit/ncps/cmd"
 	"github.com/mattn/go-colorable"
 	"golang.org/x/term"
+
+	"github.com/kalbasit/ncps/cmd"
 )
 
 func main() {

@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/urfave/cli/v3"
+
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/server"
-	"github.com/urfave/cli/v3"
 )
 
 func serveCommand(logger log15.Logger) *cli.Command {

@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/mattn/go-sqlite3"
+
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
-	"github.com/mattn/go-sqlite3"
 )
 
 //nolint:gochecknoglobals
