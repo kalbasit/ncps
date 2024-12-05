@@ -93,18 +93,19 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 }
 
 // InsertNarInfoRecord creates a new narinfo record in the database.
-func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) error {
+func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	stmt, err := tx.Prepare(insertNarInfoQuery)
 	if err != nil {
-		return fmt.Errorf("error preparing a statement: %w", err)
+		return nil, fmt.Errorf("error preparing a statement: %w", err)
 	}
 	defer stmt.Close()
 
-	if _, err := stmt.Exec(hash); err != nil {
-		return fmt.Errorf("error executing the statement: %w", err)
+	res, err := stmt.Exec(hash)
+	if err != nil {
+		return nil, fmt.Errorf("error executing the statement: %w", err)
 	}
 
-	return nil
+	return res, nil
 }
 
 // InsertNarRecord creates a new nar record in the database.

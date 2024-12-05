@@ -136,7 +136,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		defer tx.Rollback()
 
-		if err := db.InsertNarInfoRecord(tx, hash); err != nil {
+		res, err := db.InsertNarInfoRecord(tx, hash)
+		if err != nil {
 			t.Fatalf("expected no error got: %s", err)
 		}
 
@@ -167,6 +168,15 @@ func TestInsertNarInfoRecord(t *testing.T) {
 		}
 
 		if want, got := int64(1), nims[0].ID; want != got {
+			t.Errorf("want %d got %d", want, got)
+		}
+
+		lid, err := res.LastInsertId()
+		if err != nil {
+			t.Errorf("error getting the last access id: %s", err)
+		}
+
+		if want, got := lid, nims[0].ID; want != got {
 			t.Errorf("want %d got %d", want, got)
 		}
 
@@ -201,7 +211,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		defer tx.Rollback()
 
-		if err := db.InsertNarInfoRecord(tx, hash); err != nil {
+		if _, err := db.InsertNarInfoRecord(tx, hash); err != nil {
 			t.Fatalf("expected no error got: %s", err)
 		}
 
@@ -216,7 +226,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		defer tx.Rollback()
 
-		err = db.InsertNarInfoRecord(tx, hash)
+		_, err = db.InsertNarInfoRecord(tx, hash)
 		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
 		if !ok {
 			t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
@@ -227,3 +237,145 @@ func TestInsertNarInfoRecord(t *testing.T) {
 		}
 	})
 }
+
+// func TestInsertNarRecord(t *testing.T) {
+// 	dir, err := os.MkdirTemp("", "database-path-")
+// 	if err != nil {
+// 		t.Fatalf("expected no error, got: %q", err)
+// 	}
+// 	defer os.RemoveAll(dir) // clean up
+//
+// 	dbpath := filepath.Join(dir, "db.sqlite")
+//
+// 	db, err := database.Open(logger, dbpath)
+// 	if err != nil {
+// 		t.Fatalf("expected no error but got: %s", err)
+// 	}
+//
+// 	// create a narinfo
+// 	hash, err := helper.RandString(32, nil)
+// 	if err != nil {
+// 		t.Fatalf("expected no error but got: %s", err)
+// 	}
+//
+// 	tx, err := db.Begin()
+// 	if err != nil {
+// 		t.Fatalf("expected no error but got: %s", err)
+// 	}
+//
+// 	defer tx.Rollback()
+//
+// 	if err := db.InsertNarInfoRecord(tx, hash); err != nil {
+// 		t.Fatalf("expected no error got: %s", err)
+// 	}
+//
+// 	if err := tx.Commit(); err != nil {
+// 		t.Fatalf("expected no error got: %s", err)
+// 	}
+//
+// 	t.Run("without compression", func(t *testing.T) {
+// 		t.Run("inserting one record", func(t *testing.T) {
+// 			hash, err := helper.RandString(32, nil)
+// 			if err != nil {
+// 				t.Fatalf("expected no error but got: %s", err)
+// 			}
+//
+// 			tx, err := db.Begin()
+// 			if err != nil {
+// 				t.Fatalf("expected no error but got: %s", err)
+// 			}
+//
+// 			defer tx.Rollback()
+//
+// 			if err := db.InsertNarInfoRecord(tx, hash); err != nil {
+// 				t.Fatalf("expected no error got: %s", err)
+// 			}
+//
+// 			if err := tx.Commit(); err != nil {
+// 				t.Fatalf("expected no error got: %s", err)
+// 			}
+//
+// 			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+// 			if err != nil {
+// 				t.Fatalf("error selecting narinfos: %s", err)
+// 			}
+//
+// 			defer rows.Close()
+//
+// 			nims := make([]database.NarInfoModel, 0)
+// 			for rows.Next() {
+// 				var nim database.NarInfoModel
+//
+// 				if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+// 					t.Fatalf("expected no error got: %s", err)
+// 				}
+//
+// 				nims = append(nims, nim)
+// 			}
+//
+// 			if want, got := 1, len(nims); want != got {
+// 				t.Fatalf("want %d got %d", want, got)
+// 			}
+//
+// 			if want, got := int64(1), nims[0].ID; want != got {
+// 				t.Errorf("want %d got %d", want, got)
+// 			}
+//
+// 			if want, got := hash, nims[0].Hash; want != got {
+// 				t.Errorf("want %s got %s", want, got)
+// 			}
+//
+// 			old := time.Now().Sub(nims[0].CreatedAt)
+// 			if old > time.Duration(3*time.Second) {
+// 				t.Errorf("expected the nim to have a created at less than 3s got: %s", old)
+// 			}
+//
+// 			if nims[0].UpdatedAt != nil {
+// 				t.Errorf("expected no updated_at field, found: %s", nims[0].UpdatedAt)
+// 			}
+//
+// 			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; !reflect.DeepEqual(want, got) {
+// 				t.Errorf("want %s got %s", want, got)
+// 			}
+// 		})
+//
+// 		t.Run("hash is unique", func(t *testing.T) {
+// 			hash, err := helper.RandString(32, nil)
+// 			if err != nil {
+// 				t.Fatalf("expected no error but got: %s", err)
+// 			}
+//
+// 			tx, err := db.Begin()
+// 			if err != nil {
+// 				t.Fatalf("expected no error but got: %s", err)
+// 			}
+//
+// 			defer tx.Rollback()
+//
+// 			if err := db.InsertNarInfoRecord(tx, hash); err != nil {
+// 				t.Fatalf("expected no error got: %s", err)
+// 			}
+//
+// 			if err := tx.Commit(); err != nil {
+// 				t.Fatalf("expected no error got: %s", err)
+// 			}
+//
+// 			tx, err = db.Begin()
+// 			if err != nil {
+// 				t.Fatalf("expected no error but got: %s", err)
+// 			}
+//
+// 			defer tx.Rollback()
+//
+// 			err = db.InsertNarInfoRecord(tx, hash)
+// 			sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
+// 			if !ok {
+// 				t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
+// 			}
+//
+// 			if want, got := sqlite3.ErrConstraint, sqliteErr.Code; want != got {
+// 				t.Errorf("want %q got %q", want, got)
+// 			}
+// 		})
+// 	})
+// }
