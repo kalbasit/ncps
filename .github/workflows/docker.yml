@@ -1,0 +1,18 @@
+name: Docker images
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/docker
+        with:
+          images: kalbasit/ncps
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}

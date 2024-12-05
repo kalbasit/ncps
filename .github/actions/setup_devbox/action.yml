@@ -1,0 +1,9 @@
+name: Setup Devbox
+description: "install devbox"
+runs:
+  using: "composite"
+  steps:
+    - name: Install devbox
+      uses: jetify-com/devbox-install-action@v0.11.0
+      with:
+        enable-cache: "true"

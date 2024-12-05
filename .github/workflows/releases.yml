@@ -1,0 +1,52 @@
+name: Releases
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup_devbox
+      - uses: ./.github/actions/go_test
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: go-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/docker
+        with:
+          images: kalbasit/ncps
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: go-test
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup_devbox
+      - uses: ./.github/actions/setup_go
+
+      - name: Build binaries
+        run: |
+          mkdir out
+          for os in linux darwin; do
+            for arch in amd64 arm64; do
+              GOOS=$os GOARCH=$arch go build -o out/${{ github.event.repository.name }}-${os}-${arch}
+            done
+          done
+
+      - name: Release with Notes
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+          make_latest: "true"

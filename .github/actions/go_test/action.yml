@@ -1,0 +1,9 @@
+name: Go Test
+description: "Run Go Test"
+runs:
+  using: "composite"
+  steps:
+    - name: Run the tests
+      if: success()
+      shell: bash
+      run: devbox run -- go test -race -bench='.+' -v ./...
