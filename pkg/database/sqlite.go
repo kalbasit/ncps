@@ -55,9 +55,13 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 }
 
 func (db *DB) createTables() error {
+	db.logger.Info("creating the narinfos table")
+
 	if _, err := db.Exec(narInfosTable); err != nil {
 		return fmt.Errorf("error creating the narinfos table: %w", err)
 	}
+
+	db.logger.Info("creating the nars table")
 
 	if _, err := db.Exec(narsTable); err != nil {
 		return fmt.Errorf("error creating the nars table: %w", err)
