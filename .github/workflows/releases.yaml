@@ -55,3 +55,5 @@ jobs:
         with:
           body_path: ".github/RELEASE-TEMPLATE.md"
           files: out/*
+          generate_release_notes: true
+          make_latest: "true"
