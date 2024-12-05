@@ -12,6 +12,18 @@ jobs:
         with:
           enable-cache: "true"
 
+      - name: Prepare Go build cache
+        id: go-cache-paths
+        run: |
+          devbox run -- echo "go_mod_cache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
+
+      # Cache go mod cache, used to speedup builds
+      - name: Go Mod Cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.go-cache-paths.outputs.go_mod_cache }}
+          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+
       - name: Run the tests
         if: success()
         run: devbox run -- go test -race -bench='.+' -v ./...
