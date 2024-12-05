@@ -722,19 +722,34 @@ func TestTouchNarRecord(t *testing.T) {
 		})
 
 		t.Run("confirm created_at == last_accessed_at", func(t *testing.T) {
-			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+			const query = `
+				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+				FROM nars
+				`
+
+			rows, err := db.Query(query)
 			if err != nil {
 				t.Fatalf("error selecting narinfos: %s", err)
 			}
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarModel, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarModel
 
-				if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+				err := rows.Scan(
+					&nim.ID,
+					&nim.NarInfoID,
+					&nim.Hash,
+					&nim.Compression,
+					&nim.FileSize,
+					&nim.CreatedAt,
+					&nim.UpdatedAt,
+					&nim.LastAccessedAt,
+				)
+				if err != nil {
 					t.Fatalf("expected no error got: %s", err)
 				}
 
@@ -765,7 +780,7 @@ func TestTouchNarRecord(t *testing.T) {
 
 			time.Sleep(time.Second)
 
-			res, err := db.TouchNarInfoRecord(tx, hash)
+			res, err := db.TouchNarRecord(tx, hash)
 			if err != nil {
 				t.Fatalf("error beginning a transaction: %s", err)
 			}
@@ -785,19 +800,34 @@ func TestTouchNarRecord(t *testing.T) {
 		})
 
 		t.Run("confirm created_at != last_accessed_at", func(t *testing.T) {
-			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+			const query = `
+				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+				FROM nars
+				`
+
+			rows, err := db.Query(query)
 			if err != nil {
 				t.Fatalf("error selecting narinfos: %s", err)
 			}
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarModel, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarModel
 
-				if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+				err := rows.Scan(
+					&nim.ID,
+					&nim.NarInfoID,
+					&nim.Hash,
+					&nim.Compression,
+					&nim.FileSize,
+					&nim.CreatedAt,
+					&nim.UpdatedAt,
+					&nim.LastAccessedAt,
+				)
+				if err != nil {
 					t.Fatalf("expected no error got: %s", err)
 				}
 
