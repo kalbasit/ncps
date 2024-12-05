@@ -949,6 +949,7 @@ func TestGetNar(t *testing.T) {
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
+
 			defer r.Close()
 		})
 
