@@ -16,11 +16,13 @@ func RandString(n int, r io.Reader) (string, error) {
 	}
 
 	ret := make([]byte, n)
+
 	for i := 0; i < n; i++ {
 		num, err := rand.Int(r, big.NewInt(int64(len(chars))))
 		if err != nil {
 			return "", err
 		}
+
 		ret[i] = chars[num.Int64()]
 	}
 
