@@ -383,7 +383,33 @@ func (c *Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 
 	defer r.Close()
 
-	return narinfo.Parse(r)
+	ni, err := narinfo.Parse(r)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
+	}
+
+	tx, err := c.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("error beginning a transaction: %w", err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				c.logger.Error("error rolling back the transaction", "error", err)
+			}
+		}
+	}()
+
+	if _, err := c.db.TouchNarInfoRecord(tx, hash); err != nil {
+		return nil, fmt.Errorf("error touching the narinfo record: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("error committing the transaction: %w", err)
+	}
+
+	return ni, nil
 }
 
 func (c *Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
