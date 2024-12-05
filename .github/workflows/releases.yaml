@@ -50,7 +50,6 @@ jobs:
       - name: Release with Notes
         uses: softprops/action-gh-release@v2
         with:
-          body_path: ".github/RELEASE-TEMPLATE.md"
           files: out/*
           generate_release_notes: true
           make_latest: "true"
