@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o /dist/app/ncps
+RUN go build -ldflags='-s -w' -trimpath -o /dist/app/ncps
 
 RUN ldd /dist/app/ncps | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /dist/%
 
