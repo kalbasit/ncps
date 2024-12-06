@@ -525,6 +525,7 @@ func TestGetNarInfo(t *testing.T) {
 			time.Sleep(time.Second)
 
 			c.SetRecordAgeIgnoreTouch(time.Hour)
+
 			defer func() {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
@@ -1069,6 +1070,7 @@ func TestGetNar(t *testing.T) {
 			time.Sleep(time.Second)
 
 			c.SetRecordAgeIgnoreTouch(time.Hour)
+
 			defer func() {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
