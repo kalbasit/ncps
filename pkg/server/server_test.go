@@ -51,7 +51,9 @@ func TestServeHTTP(t *testing.T) {
 			defer ts.Close()
 
 			t.Run("narInfo", func(t *testing.T) {
-				r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/"+testdata.Nar1.NarInfoHash+".narinfo", nil)
+				url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
+
+				r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 				if err != nil {
 					t.Fatalf("expecting no error got %s", err)
 				}
@@ -68,7 +70,9 @@ func TestServeHTTP(t *testing.T) {
 
 			t.Run("nar", func(t *testing.T) {
 				t.Run("without compression", func(t *testing.T) {
-					r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/nar/"+testdata.Nar1.NarHash+".nar", nil)
+					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
+
+					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 					if err != nil {
 						t.Fatalf("expecting no error got %s", err)
 					}
@@ -84,7 +88,9 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				t.Run("with compression", func(t *testing.T) {
-					r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/nar/"+testdata.Nar1.NarHash+".nar.xz", nil)
+					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+
+					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 					if err != nil {
 						t.Fatalf("expecting no error got %s", err)
 					}
@@ -139,7 +145,9 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				t.Run("DELETE returns no error", func(t *testing.T) {
-					r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/"+testdata.Nar1.NarInfoHash+".narinfo", nil)
+					url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
+
+					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 					if err != nil {
 						t.Fatalf("expecting no error got %s", err)
 					}
@@ -194,7 +202,9 @@ func TestServeHTTP(t *testing.T) {
 					})
 
 					t.Run("DELETE returns no error", func(t *testing.T) {
-						r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/nar/"+testdata.Nar1.NarHash+".nar", nil)
+						url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
+
+						r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 						if err != nil {
 							t.Fatalf("expecting no error got %s", err)
 						}
@@ -248,7 +258,9 @@ func TestServeHTTP(t *testing.T) {
 					})
 
 					t.Run("DELETE returns no error", func(t *testing.T) {
-						r, err := http.NewRequestWithContext(context.Background(), "DELETE", ts.URL+"/nar/"+testdata.Nar1.NarHash+".nar.xz", nil)
+						url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+
+						r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 						if err != nil {
 							t.Fatalf("expecting no error got %s", err)
 						}
