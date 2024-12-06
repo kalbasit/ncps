@@ -540,6 +540,7 @@ func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
 	if err != nil {
 		if errors.Is(err, database.ErrAlreadyExists) {
 			log.Warn("narinfo record was not added to database because it already exists")
+
 			return nil
 		}
 
@@ -559,6 +560,7 @@ func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
 	if _, err := c.db.InsertNarRecord(tx, lid, narHash, compression, narInfo.FileSize); err != nil {
 		if errors.Is(err, database.ErrAlreadyExists) {
 			log.Warn("nar record was not added to database because it already exists")
+
 			return nil
 		}
 

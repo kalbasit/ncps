@@ -7,10 +7,7 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
-
-	// Import the SQLite driver.
 	"github.com/mattn/go-sqlite3"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -152,8 +149,6 @@ func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfoModel, error) {
 	nims := make([]NarInfoModel, 0)
 
 	for rows.Next() {
-		var nim NarInfoModel
-
 		if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
 			return nim, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
 		}
@@ -161,12 +156,12 @@ func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfoModel, error) {
 		nims = append(nims, nim)
 	}
 
-	if len(nims) == 0 {
-		return nim, ErrNotFound
+	if err := rows.Err(); err != nil {
+		return nim, fmt.Errorf("error returned from rows: %w", err)
 	}
 
-	if len(nims) > 1 {
-		return nim, fmt.Errorf("that's impossible but multiple narinfos were found with the same hash %q", hash)
+	if len(nims) == 0 {
+		return nim, ErrNotFound
 	}
 
 	return nims[0], nil
@@ -217,8 +212,6 @@ func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
 	nms := make([]NarModel, 0)
 
 	for rows.Next() {
-		var nm NarModel
-
 		err := rows.Scan(
 			&nm.ID,
 			&nm.NarInfoID,
@@ -236,12 +229,12 @@ func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
 		nms = append(nms, nm)
 	}
 
-	if len(nms) == 0 {
-		return nm, ErrNotFound
+	if err := rows.Err(); err != nil {
+		return nm, fmt.Errorf("error returned from rows: %w", err)
 	}
 
-	if len(nms) > 1 {
-		return nm, fmt.Errorf("that's impossible but multiple nars were found with the same hash %q", hash)
+	if len(nms) == 0 {
+		return nm, ErrNotFound
 	}
 
 	return nms[0], nil
