@@ -8,15 +8,16 @@ RUN go mod download
 
 COPY . .
 
-ENV CGO_ENABLED=0
-RUN go build .
+RUN go build -o /dist/app/ncps
+
+RUN ldd /dist/app/ncps | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /dist/%
 
 FROM scratch
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
-COPY --from=builder /app/ncps /app/ncps
+COPY --from=builder /dist /
 
 WORKDIR /app
 
