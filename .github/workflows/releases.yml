@@ -40,8 +40,8 @@ jobs:
       - name: Build binaries
         run: |
           mkdir out
-          for os in linux darwin; do
-            for arch in amd64 arm64; do
+          for os in linux; do
+            for arch in amd64; do
               GOOS=$os GOARCH=$arch go build -o out/${{ github.event.repository.name }}-${os}-${arch}
             done
           done
