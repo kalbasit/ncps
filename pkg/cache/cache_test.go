@@ -950,8 +950,6 @@ func TestGetNar(t *testing.T) {
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
-
-			defer r.Close()
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
