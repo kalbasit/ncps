@@ -155,7 +155,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 		log := s.logger.New("hash", hash)
 
-		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
+		narInfo, err := s.cache.GetNarInfo(hash)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)

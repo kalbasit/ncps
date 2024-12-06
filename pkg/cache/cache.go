@@ -337,7 +337,7 @@ func (c *Cache) deleteNarFromStore(hash, compression string) error {
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
-func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 	if c.hasNarInfoInStore(hash) {
 		return c.getNarInfoFromStore(hash)
 	}

@@ -300,7 +300,7 @@ func TestGetNarInfo(t *testing.T) {
 	}
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
-		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
+		_, err := c.GetNarInfo("doesnotexist")
 		if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
 			t.Errorf("want %s got %s", want, got)
 		}
@@ -375,7 +375,7 @@ func TestGetNarInfo(t *testing.T) {
 			}
 		})
 
-		ni, err := c.GetNarInfo(context.Background(), narInfoHash2)
+		ni, err := c.GetNarInfo(narInfoHash2)
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
 		}
@@ -530,7 +530,7 @@ func TestGetNarInfo(t *testing.T) {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
 
-			_, err := c.GetNarInfo(context.Background(), narInfoHash2)
+			_, err := c.GetNarInfo(narInfoHash2)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -579,7 +579,7 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			_, err := c.GetNarInfo(context.Background(), narInfoHash2)
+			_, err := c.GetNarInfo(narInfoHash2)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -630,7 +630,7 @@ func TestGetNarInfo(t *testing.T) {
 				t.Fatalf("error removing the narinfo from the store: %s", err)
 			}
 
-			_, err := c.GetNarInfo(context.Background(), narInfoHash2)
+			_, err := c.GetNarInfo(narInfoHash2)
 			if err != nil {
 				t.Errorf("no error expected, got: %s", err)
 			}
@@ -989,7 +989,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(context.Background(), narInfoHash1)
+			_, err := c.GetNarInfo(narInfoHash1)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -1026,7 +1026,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(context.Background(), narInfoHash1)
+			_, err := c.GetNarInfo(narInfoHash1)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
