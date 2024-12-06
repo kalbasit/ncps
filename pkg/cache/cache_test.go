@@ -592,6 +592,41 @@ func TestGetNarInfo(t *testing.T) {
 				t.Errorf("no error expected, got: %s", err)
 			}
 		})
+
+		t.Run("nar does not exist in storage, it gets pulled automatically", func(t *testing.T) {
+			narFile := filepath.Join(dir, "store", "nar", testdata.Nar2.NarHash+".nar")
+
+			if err := os.Remove(narFile); err != nil {
+				t.Fatalf("error remove the nar file: %s", err)
+			}
+
+			t.Run("it should not return an error", func(t *testing.T) {
+				_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
+				if err != nil {
+					t.Fatalf("no error expected, got: %s", err)
+				}
+			})
+
+			t.Run("it should have also pulled the nar", func(t *testing.T) {
+				// Force the other goroutine to run so it actually download the file
+				// Try at least 10 times before announcing an error
+				var err error
+
+				for i := 0; i < 9; i++ {
+					// NOTE: I tried runtime.Gosched() but it makes the test flaky
+					time.Sleep(time.Millisecond)
+
+					_, err = os.Stat(narFile)
+					if err == nil {
+						break
+					}
+				}
+
+				if err != nil {
+					t.Errorf("expected no error got %s", err)
+				}
+			})
+		})
 	})
 }
 
