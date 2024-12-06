@@ -355,8 +355,10 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 	log := c.logger.New("hash", hash)
 
-	var narInfo *narinfo.NarInfo
-	var err error
+	var (
+		narInfo *narinfo.NarInfo
+		err     error
+	)
 
 	if c.hasNarInfoInStore(log, hash) {
 		narInfo, err = c.getNarInfoFromStore(log, hash)
