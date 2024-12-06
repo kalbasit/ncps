@@ -496,7 +496,7 @@ func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*narinfo.
 		narInfo, err := uc.GetNarInfo(ctx, hash)
 		if err != nil {
 			if !errors.Is(err, upstream.ErrNotFound) {
-				log.Error("error fetching the narInfo from upstream", "hostname", uc.GetHostname(), "error", err)
+				log.Error("error fetching the narInfo from upstream", "hash", hash, "hostname", uc.GetHostname(), "error", err)
 			}
 
 			continue
