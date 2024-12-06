@@ -366,10 +366,10 @@ func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 			log.Error("error parsing the nar URL from narinfo", "narinfo", narInfo, "nar-url", narInfo.URL)
 		} else if c.hasNarInStore(log.New("nar-hash", narHash, "nar-compression", narCompression), narHash, narCompression) {
 			return narInfo, err
-		}
-
-		if err := c.purgeNarInfo(log, hash, narHash, narCompression); err != nil {
-			return nil, fmt.Errorf("error purging the narinfo: %w", err)
+		} else {
+			if err := c.purgeNarInfo(log, hash, narHash, narCompression); err != nil {
+				return nil, fmt.Errorf("error purging the narinfo: %w", err)
+			}
 		}
 	}
 
