@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -252,6 +253,66 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		if want, got := sqlite3.ErrConstraint, sqliteErr.Code; want != got {
 			t.Errorf("want %q got %q", want, got)
+		}
+	})
+
+	t.Run("can write many narinfos", func(t *testing.T) {
+		var wg sync.WaitGroup
+
+		errC := make(chan error)
+
+		for i := 0; i < 500; i++ {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				hash, err := helper.RandString(128, nil)
+				if err != nil {
+					errC <- fmt.Errorf("expected no error but got: %w", err)
+
+					return
+				}
+
+				tx, err := db.Begin()
+				if err != nil {
+					errC <- fmt.Errorf("expected no error but got: %w", err)
+
+					return
+				}
+
+				//nolint:errcheck
+				defer tx.Rollback()
+
+				if _, err := db.InsertNarInfoRecord(tx, hash); err != nil {
+					errC <- fmt.Errorf("expected no error got: %w", err)
+
+					return
+				}
+
+				if err := tx.Commit(); err != nil {
+					errC <- fmt.Errorf("expected no error got: %w", err)
+
+					return
+				}
+			}()
+		}
+
+		done := make(chan struct{})
+
+		go func() {
+			wg.Wait()
+
+			close(done)
+		}()
+
+		for {
+			select {
+			case err := <-errC:
+				t.Errorf("got an error: %s", err)
+			case <-done:
+				return
+			}
 		}
 	})
 }
