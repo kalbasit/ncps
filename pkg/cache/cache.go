@@ -240,6 +240,10 @@ func (c *Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser,
 	nr, err := c.db.GetNarRecord(tx, hash)
 	if err != nil {
 		// TODO: If record not found, record it instead!
+		if errors.Is(err, database.ErrNotFound) {
+			return size, r, nil
+		}
+
 		return 0, nil, fmt.Errorf("error fetching the nar record: %w", err)
 	}
 
@@ -438,6 +442,10 @@ func (c *Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 	nir, err := c.db.GetNarInfoRecord(tx, hash)
 	if err != nil {
 		// TODO: If record not found, record it instead!
+		if errors.Is(err, database.ErrNotFound) {
+			return ni, nil
+		}
+
 		return nil, fmt.Errorf("error fetching the narinfo record: %w", err)
 	}
 
