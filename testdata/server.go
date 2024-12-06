@@ -49,7 +49,7 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 			}
 
 			if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
-				if _, err := w.Write([]byte(entry.NarText)); err != nil {
+				if _, err := w.Write([]byte(entry.NarText + "xz")); err != nil {
 					t.Fatalf("error writing the nar to the response: %s", err)
 				}
 
