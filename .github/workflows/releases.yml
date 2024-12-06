@@ -21,8 +21,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/docker
         with:
+          # NOTE: Enable more platform when we have demand for them and I can test them.
+          # platforms: linux/amd64,linux/arm64,linux/arm/v7
           images: kalbasit/ncps
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
