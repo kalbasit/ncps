@@ -6,7 +6,9 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+COPY *.go .
+COPY cmd cmd
+COPY pkg pkg
 
 RUN go build -ldflags='-s -w' -trimpath -o /dist/app/ncps
 
