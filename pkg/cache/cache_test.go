@@ -273,14 +273,14 @@ func TestGetNarInfo(t *testing.T) {
 
 	t.Run("narinfo exists upstream", func(t *testing.T) {
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", testdata.NarInfoHash2+".narinfo"))
+			_, err := os.Stat(filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
 			}
 		})
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", testdata.NarHash2+".nar"))
+			_, err := os.Stat(filepath.Join(dir, "store", testdata.Nar2.NarHash+".nar"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
 			}
@@ -340,7 +340,7 @@ func TestGetNarInfo(t *testing.T) {
 			}
 		})
 
-		ni, err := c.GetNarInfo(testdata.NarInfoHash2)
+		ni, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
 		}
@@ -352,7 +352,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", testdata.NarInfoHash2+".narinfo"))
+			_, err := os.Stat(filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo"))
 			if err != nil {
 				t.Fatalf("expected no error got %s", err)
 			}
@@ -390,7 +390,7 @@ func TestGetNarInfo(t *testing.T) {
 				// NOTE: I tried runtime.Gosched() but it makes the test flaky
 				time.Sleep(time.Millisecond)
 
-				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.NarHash2+".nar"))
+				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar2.NarHash+".nar"))
 				if err == nil {
 					break
 				}
@@ -432,7 +432,7 @@ func TestGetNarInfo(t *testing.T) {
 				t.Fatalf("want %d got %d", want, got)
 			}
 
-			if want, got := testdata.NarInfoHash2, nims[0].Hash; want != got {
+			if want, got := testdata.Nar2.NarInfoHash, nims[0].Hash; want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
 
@@ -477,7 +477,7 @@ func TestGetNarInfo(t *testing.T) {
 				t.Fatalf("want %d got %d", want, got)
 			}
 
-			if want, got := testdata.NarHash2, nims[0].Hash; want != got {
+			if want, got := testdata.Nar2.NarHash, nims[0].Hash; want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
 
@@ -495,7 +495,7 @@ func TestGetNarInfo(t *testing.T) {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
 
-			_, err := c.GetNarInfo(testdata.NarInfoHash2)
+			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -531,7 +531,7 @@ func TestGetNarInfo(t *testing.T) {
 					t.Fatalf("want %d got %d", want, got)
 				}
 
-				if want, got := testdata.NarInfoHash2, nims[0].Hash; want != got {
+				if want, got := testdata.Nar2.NarInfoHash, nims[0].Hash; want != got {
 					t.Errorf("want %q got %q", want, got)
 				}
 
@@ -544,7 +544,7 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			_, err := c.GetNarInfo(testdata.NarInfoHash2)
+			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -580,7 +580,7 @@ func TestGetNarInfo(t *testing.T) {
 					t.Fatalf("want %d got %d", want, got)
 				}
 
-				if want, got := testdata.NarInfoHash2, nims[0].Hash; want != got {
+				if want, got := testdata.Nar2.NarInfoHash, nims[0].Hash; want != got {
 					t.Errorf("want %q got %q", want, got)
 				}
 
@@ -591,11 +591,11 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("no error is returned if the entry already exist in the database", func(t *testing.T) {
-			if err := os.Remove(filepath.Join(dir, "store", testdata.NarInfoHash2+".narinfo")); err != nil {
+			if err := os.Remove(filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo")); err != nil {
 				t.Fatalf("error removing the narinfo from the store: %s", err)
 			}
 
-			_, err := c.GetNarInfo(testdata.NarInfoHash2)
+			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
 			if err != nil {
 				t.Errorf("no error expected, got: %s", err)
 			}
@@ -623,7 +623,7 @@ func TestPutNarInfo(t *testing.T) {
 		t.Fatalf("error opening the database: %s", err)
 	}
 
-	storePath := filepath.Join(dir, "store", testdata.NarInfoHash1+".narinfo")
+	storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 	t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 		_, err := os.Stat(storePath)
@@ -687,9 +687,9 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("PutNarInfo does not return an error", func(t *testing.T) {
-		r := io.NopCloser(strings.NewReader(testdata.NarInfoText1))
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
 
-		err := c.PutNarInfo(context.Background(), testdata.NarInfoHash1, r)
+		err := c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r)
 		if err != nil {
 			t.Errorf("error not expected got %s", err)
 		}
@@ -761,7 +761,7 @@ func TestPutNarInfo(t *testing.T) {
 			t.Fatalf("want %d got %d", want, got)
 		}
 
-		if want, got := testdata.NarInfoHash1, hashes[0]; want != got {
+		if want, got := testdata.Nar1.NarInfoHash, hashes[0]; want != got {
 			t.Errorf("want %q got %q", want, got)
 		}
 	})
@@ -792,7 +792,7 @@ func TestPutNarInfo(t *testing.T) {
 			t.Fatalf("want %d got %d", want, got)
 		}
 
-		if want, got := testdata.NarHash1, hashes[0]; want != got {
+		if want, got := testdata.Nar1.NarHash, hashes[0]; want != got {
 			t.Errorf("want %q got %q", want, got)
 		}
 	})
@@ -814,7 +814,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("file does not exist in the store", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", testdata.NarInfoHash1+".narinfo")
+		storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 			_, err := os.Stat(storePath)
@@ -824,7 +824,7 @@ func TestDeleteNarInfo(t *testing.T) {
 		})
 
 		t.Run("DeleteNarInfo does return an error", func(t *testing.T) {
-			err := c.DeleteNarInfo(context.Background(), testdata.NarInfoHash1)
+			err := c.DeleteNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
 			if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
@@ -832,7 +832,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	})
 
 	t.Run("file does exist in the store", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", testdata.NarInfoHash1+".narinfo")
+		storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 			_, err := os.Stat(storePath)
@@ -846,7 +846,7 @@ func TestDeleteNarInfo(t *testing.T) {
 			t.Fatalf("expecting no error got %s", err)
 		}
 
-		if _, err := f.WriteString(testdata.NarInfoText1); err != nil {
+		if _, err := f.WriteString(testdata.Nar1.NarInfoText); err != nil {
 			t.Fatalf("expecting no error got %s", err)
 		}
 
@@ -862,7 +862,7 @@ func TestDeleteNarInfo(t *testing.T) {
 		})
 
 		t.Run("DeleteNarInfo does not return an error", func(t *testing.T) {
-			if err := c.DeleteNarInfo(context.Background(), testdata.NarInfoHash1); err != nil {
+			if err := c.DeleteNarInfo(context.Background(), testdata.Nar1.NarInfoHash); err != nil {
 				t.Errorf("error not expected got %s", err)
 			}
 		})
@@ -909,7 +909,7 @@ func TestGetNar(t *testing.T) {
 		t.Fatalf("error opening the database: %s", err)
 	}
 
-	narName := testdata.NarHash1 + ".nar"
+	narName := testdata.Nar1.NarHash + ".nar"
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		_, _, err := c.GetNar("doesnotexist", "")
@@ -954,20 +954,20 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(testdata.NarInfoHash1)
+			_, err := c.GetNarInfo(testdata.Nar1.NarInfoHash)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
 		})
 
-		size, r, err := c.GetNar(testdata.NarHash1, "")
+		size, r, err := c.GetNar(testdata.Nar1.NarHash, "")
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
 		}
 		defer r.Close()
 
 		t.Run("size is correct", func(t *testing.T) {
-			if want, got := int64(len(testdata.NarText1)), size; want != got {
+			if want, got := int64(len(testdata.Nar1.NarText)), size; want != got {
 				t.Errorf("want %d got %d", want, got)
 			}
 		})
@@ -978,7 +978,7 @@ func TestGetNar(t *testing.T) {
 				t.Fatalf("expected no error, got: %s", err)
 			}
 
-			if want, got := testdata.NarText1, string(body); want != got {
+			if want, got := testdata.Nar1.NarText, string(body); want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
@@ -991,7 +991,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(testdata.NarInfoHash1)
+			_, err := c.GetNarInfo(testdata.Nar1.NarInfoHash)
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -1033,7 +1033,7 @@ func TestGetNar(t *testing.T) {
 				t.Fatalf("want %d got %d", want, got)
 			}
 
-			if want, got := testdata.NarHash1, nims[0].Hash; want != got {
+			if want, got := testdata.Nar1.NarHash, nims[0].Hash; want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
 
@@ -1051,7 +1051,7 @@ func TestGetNar(t *testing.T) {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
 
-			_, r, err := c.GetNar(testdata.NarHash1, "")
+			_, r, err := c.GetNar(testdata.Nar1.NarHash, "")
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -1093,7 +1093,7 @@ func TestGetNar(t *testing.T) {
 					t.Fatalf("want %d got %d", want, got)
 				}
 
-				if want, got := testdata.NarHash1, nims[0].Hash; want != got {
+				if want, got := testdata.Nar1.NarHash, nims[0].Hash; want != got {
 					t.Errorf("want %q got %q", want, got)
 				}
 
@@ -1106,7 +1106,7 @@ func TestGetNar(t *testing.T) {
 		t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			_, r, err := c.GetNar(testdata.NarHash1, "")
+			_, r, err := c.GetNar(testdata.Nar1.NarHash, "")
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
@@ -1148,7 +1148,7 @@ func TestGetNar(t *testing.T) {
 					t.Fatalf("want %d got %d", want, got)
 				}
 
-				if want, got := testdata.NarHash1, nims[0].Hash; want != got {
+				if want, got := testdata.Nar1.NarHash, nims[0].Hash; want != got {
 					t.Errorf("want %q got %q", want, got)
 				}
 
@@ -1176,7 +1176,7 @@ func TestPutNar(t *testing.T) {
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("without compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.NarHash1+".nar")
+		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar")
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
 			_, err := os.Stat(storePath)
@@ -1186,9 +1186,9 @@ func TestPutNar(t *testing.T) {
 		})
 
 		t.Run("putNar does not return an error", func(t *testing.T) {
-			r := io.NopCloser(strings.NewReader(testdata.NarText1))
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
 
-			err := c.PutNar(context.Background(), testdata.NarHash1, "", r)
+			err := c.PutNar(context.Background(), testdata.Nar1.NarHash, "", r)
 			if err != nil {
 				t.Errorf("error not expected got %s", err)
 			}
@@ -1205,14 +1205,14 @@ func TestPutNar(t *testing.T) {
 				t.Fatalf("expected no error but got: %s", err)
 			}
 
-			if want, got := testdata.NarText1, string(bs); want != got {
+			if want, got := testdata.Nar1.NarText, string(bs); want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 	})
 
 	t.Run("with compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.NarHash1+".nar.xz")
+		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
 			_, err := os.Stat(storePath)
@@ -1222,9 +1222,9 @@ func TestPutNar(t *testing.T) {
 		})
 
 		t.Run("putNar does not return an error", func(t *testing.T) {
-			r := io.NopCloser(strings.NewReader(testdata.NarText1))
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
 
-			err := c.PutNar(context.Background(), testdata.NarHash1, "xz", r)
+			err := c.PutNar(context.Background(), testdata.Nar1.NarHash, "xz", r)
 			if err != nil {
 				t.Errorf("error not expected got %s", err)
 			}
@@ -1241,7 +1241,7 @@ func TestPutNar(t *testing.T) {
 				t.Fatalf("expected no error but got: %s", err)
 			}
 
-			if want, got := testdata.NarText1, string(bs); want != got {
+			if want, got := testdata.Nar1.NarText, string(bs); want != got {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
@@ -1264,7 +1264,7 @@ func TestDeleteNar(t *testing.T) {
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("without compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.NarHash1+".nar")
+		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar")
 
 		t.Run("file does not exist in the store", func(t *testing.T) {
 			t.Run("nar does not exist in storage yet", func(t *testing.T) {
@@ -1275,7 +1275,7 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("DeleteNar does return an error", func(t *testing.T) {
-				err := c.DeleteNar(context.Background(), testdata.NarHash1, "")
+				err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "")
 				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
 					t.Errorf("want %q got %q", want, got)
 				}
@@ -1295,7 +1295,7 @@ func TestDeleteNar(t *testing.T) {
 				t.Fatalf("expecting no error got %s", err)
 			}
 
-			if _, err := f.WriteString(testdata.NarText1); err != nil {
+			if _, err := f.WriteString(testdata.Nar1.NarText); err != nil {
 				t.Fatalf("expecting no error got %s", err)
 			}
 
@@ -1311,7 +1311,7 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				if err := c.DeleteNar(context.Background(), testdata.NarHash1, ""); err != nil {
+				if err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, ""); err != nil {
 					t.Errorf("error not expected got %s", err)
 				}
 			})
@@ -1326,7 +1326,7 @@ func TestDeleteNar(t *testing.T) {
 	})
 
 	t.Run("with compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.NarHash1+".nar.xz")
+		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
 
 		t.Run("file does not exist in the store", func(t *testing.T) {
 			t.Run("nar does not exist in storage yet", func(t *testing.T) {
@@ -1337,7 +1337,7 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("DeleteNar does return an error", func(t *testing.T) {
-				err := c.DeleteNar(context.Background(), testdata.NarHash1, "xz")
+				err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
 				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
 					t.Errorf("want %q got %q", want, got)
 				}
@@ -1357,7 +1357,7 @@ func TestDeleteNar(t *testing.T) {
 				t.Fatalf("expecting no error got %s", err)
 			}
 
-			if _, err := f.WriteString(testdata.NarText1); err != nil {
+			if _, err := f.WriteString(testdata.Nar1.NarText); err != nil {
 				t.Fatalf("expecting no error got %s", err)
 			}
 
@@ -1373,7 +1373,7 @@ func TestDeleteNar(t *testing.T) {
 			})
 
 			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				if err := c.DeleteNar(context.Background(), testdata.NarHash1, "xz"); err != nil {
+				if err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz"); err != nil {
 					t.Errorf("error not expected got %s", err)
 				}
 			})
@@ -1400,32 +1400,32 @@ func startServer(t *testing.T) *httptest.Server {
 			return
 		}
 
-		if r.URL.Path == "/"+testdata.NarInfoHash1+".narinfo" {
-			if _, err := w.Write([]byte(testdata.NarInfoText1)); err != nil {
+		if r.URL.Path == "/"+testdata.Nar1.NarInfoHash+".narinfo" {
+			if _, err := w.Write([]byte(testdata.Nar1.NarInfoText)); err != nil {
 				t.Fatalf("expected no error got: %s", err)
 			}
 
 			return
 		}
 
-		if r.URL.Path == "/nar/"+testdata.NarHash1+".nar" {
-			if _, err := w.Write([]byte(testdata.NarText1)); err != nil {
+		if r.URL.Path == "/nar/"+testdata.Nar1.NarHash+".nar" {
+			if _, err := w.Write([]byte(testdata.Nar1.NarText)); err != nil {
 				t.Fatalf("expected no error got: %s", err)
 			}
 
 			return
 		}
 
-		if r.URL.Path == "/"+testdata.NarInfoHash2+".narinfo" {
-			if _, err := w.Write([]byte(testdata.NarInfoText2)); err != nil {
+		if r.URL.Path == "/"+testdata.Nar2.NarInfoHash+".narinfo" {
+			if _, err := w.Write([]byte(testdata.Nar2.NarInfoText)); err != nil {
 				t.Fatalf("expected no error got: %s", err)
 			}
 
 			return
 		}
 
-		if r.URL.Path == "/nar/"+testdata.NarHash2+".nar" {
-			if _, err := w.Write([]byte(testdata.NarText2)); err != nil {
+		if r.URL.Path == "/nar/"+testdata.Nar2.NarHash+".nar" {
+			if _, err := w.Write([]byte(testdata.Nar2.NarText)); err != nil {
 				t.Fatalf("expected no error got: %s", err)
 			}
 
