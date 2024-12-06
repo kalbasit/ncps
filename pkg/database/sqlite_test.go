@@ -261,7 +261,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		errC := make(chan error)
 
-		for i := 0; i < 500; i++ {
+		for i := 0; i < 10000; i++ {
 			wg.Add(1)
 
 			go func() {
