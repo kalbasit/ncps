@@ -70,6 +70,16 @@ const (
 		  updated_at = CURRENT_TIMESTAMP
 	WHERE hash = ?
 	`
+
+	deletNarInfoQuery = `
+	DELETE FROM narinfos
+	WHERE hash = ?
+	`
+
+	deletNarQuery = `
+	DELETE FROM nars
+	WHERE hash = ?
+	`
 )
 
 var (
@@ -194,6 +204,11 @@ func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	return db.touchRecord(tx, touchNarInfoQuery, hash)
 }
 
+// DeleteNarInfoRecord deletes the narinfo record.
+func (db *DB) DeleteNarInfoRecord(tx *sql.Tx, hash string) error {
+	return db.deleteRecord(tx, deletNarInfoQuery, hash)
+}
+
 func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
 	var nm NarModel
 
@@ -267,6 +282,11 @@ func (db *DB) TouchNarRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	return db.touchRecord(tx, touchNarQuery, hash)
 }
 
+// DeleteNarInfoRecord deletes the narinfo record.
+func (db *DB) DeleteNarRecord(tx *sql.Tx, hash string) error {
+	return db.deleteRecord(tx, deletNarQuery, hash)
+}
+
 func (db *DB) touchRecord(tx *sql.Tx, query, hash string) (sql.Result, error) {
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -280,6 +300,10 @@ func (db *DB) touchRecord(tx *sql.Tx, query, hash string) (sql.Result, error) {
 	}
 
 	return res, nil
+}
+
+func (db *DB) deleteRecord(tx *sql.Tx, query, hash string) error {
+	return errors.New("not implemented")
 }
 
 func (db *DB) createTables() error {
