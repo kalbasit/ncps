@@ -506,7 +506,9 @@ func (c *Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 }
 
 func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
-	c.logger.Info("storing narinfo and nar record in the database", "hash", hash, "nar-url", narInfo.URL)
+	log := c.logger.New("hash", hash, "nar-url", narInfo.URL)
+
+	log.Info("storing narinfo and nar record in the database")
 
 	tx, err := c.db.Begin()
 	if err != nil {
@@ -523,6 +525,11 @@ func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
 
 	res, err := c.db.InsertNarInfoRecord(tx, hash)
 	if err != nil {
+		if errors.Is(err, database.ErrAlreadyExists) {
+			log.Warn("narinfo record was not added to database because it already exists")
+			return nil
+		}
+
 		return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
 	}
 
@@ -537,6 +544,11 @@ func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
 	}
 
 	if _, err := c.db.InsertNarRecord(tx, lid, narHash, compression, narInfo.FileSize); err != nil {
+		if errors.Is(err, database.ErrAlreadyExists) {
+			log.Warn("nar record was not added to database because it already exists")
+			return nil
+		}
+
 		return fmt.Errorf("error inserting the nar record in the database: %w", err)
 	}
 
