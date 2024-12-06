@@ -337,12 +337,12 @@ func (c *Cache) deleteNarFromStore(hash, compression string) error {
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
-func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 	if c.hasNarInfoInStore(hash) {
 		return c.getNarInfoFromStore(hash)
 	}
 
-	narInfo, err := c.getNarInfoFromUpstream(ctx, hash)
+	narInfo, err := c.getNarInfoFromUpstream(hash)
 	if err != nil {
 		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
@@ -475,7 +475,11 @@ func (c *Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 	return ni, nil
 }
 
-func (c *Cache) getNarInfoFromUpstream(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) getNarInfoFromUpstream(hash string) (*narinfo.NarInfo, error) {
+	// create a new context not associated with any request because we don't want
+	// pulling from upstream to be associated with a user request.
+	ctx := context.Background()
+
 	for _, uc := range c.upstreamCaches {
 		narInfo, err := uc.GetNarInfo(ctx, hash)
 		if err != nil {
