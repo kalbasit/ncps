@@ -11,6 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup_devbox
+      - uses: ./.github/actions/setup_go
       - uses: ./.github/actions/go_test
 
   docker:
