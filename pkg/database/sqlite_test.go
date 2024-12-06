@@ -342,12 +342,12 @@ func TestTouchNarInfoRecord(t *testing.T) {
 
 		res, err := db.TouchNarInfoRecord(tx, hash)
 		if err != nil {
-			t.Fatalf("error beginning a transaction: %s", err)
+			t.Fatalf("error touching a narinfo record: %s", err)
 		}
 
 		ra, err := res.RowsAffected()
 		if err != nil {
-			t.Fatalf("error beginning a transaction: %s", err)
+			t.Fatalf("error getting rows affected: %s", err)
 		}
 
 		if want, got := int64(0), ra; want != got {
@@ -438,7 +438,7 @@ func TestTouchNarInfoRecord(t *testing.T) {
 
 			ra, err := res.RowsAffected()
 			if err != nil {
-				t.Fatalf("error beginning a transaction: %s", err)
+				t.Fatalf("error getting rows affected: %s", err)
 			}
 
 			if want, got := int64(1), ra; want != got {
@@ -480,6 +480,115 @@ func TestTouchNarInfoRecord(t *testing.T) {
 
 			if want, got := nims[0].UpdatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
 				t.Errorf("expected updated_at == last_accessed_at got: %q == %q", want, got)
+			}
+		})
+	})
+}
+
+//nolint:paralleltest
+func TestDeleteNarInfoRecord(t *testing.T) {
+	dir, err := os.MkdirTemp("", "database-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	dbpath := filepath.Join(dir, "db.sqlite")
+
+	db, err := database.Open(logger, dbpath)
+	if err != nil {
+		t.Fatalf("expected no error but got: %s", err)
+	}
+
+	t.Run("narinfo not existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
+		}
+
+		//nolint:errcheck
+		defer tx.Rollback()
+
+		if err := db.DeleteNarInfoRecord(tx, hash); err != nil {
+			t.Errorf("error deleting narinfo record: %s", err)
+		}
+	})
+
+	t.Run("narinfo existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		t.Run("create the narinfo", func(t *testing.T) {
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatalf("error beginning a transaction: %s", err)
+			}
+
+			//nolint:errcheck
+			defer tx.Rollback()
+
+			if _, err := db.InsertNarInfoRecord(tx, hash); err != nil {
+				t.Fatalf("error inserting the record: %s", err)
+			}
+
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("error committing transaction: %s", err)
+			}
+		})
+
+		t.Run("delete the narinfo", func(t *testing.T) {
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatalf("error beginning a transaction: %s", err)
+			}
+
+			//nolint:errcheck
+			defer tx.Rollback()
+
+			time.Sleep(time.Second)
+
+			if err := db.DeleteNarInfoRecord(tx, hash); err != nil {
+				t.Fatalf("error deleting a narinfo record: %s", err)
+			}
+
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("error committing transaction: %s", err)
+			}
+		})
+
+		t.Run("confirm it has been removed", func(t *testing.T) {
+			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+			if err != nil {
+				t.Fatalf("error selecting narinfos: %s", err)
+			}
+
+			defer rows.Close()
+
+			nims := make([]database.NarInfoModel, 0)
+
+			for rows.Next() {
+				var nim database.NarInfoModel
+
+				if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+					t.Fatalf("expected no error got: %s", err)
+				}
+
+				nims = append(nims, nim)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Fatalf("got an error on rows: %s", err)
+			}
+
+			if want, got := 0, len(nims); want != got {
+				t.Fatalf("want %d got %d", want, got)
 			}
 		})
 	})
@@ -909,6 +1018,162 @@ func TestTouchNarRecord(t *testing.T) {
 
 			if want, got := nims[0].UpdatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
 				t.Errorf("expected updated_at == last_accessed_at got: %q == %q", want, got)
+			}
+		})
+	})
+}
+
+//nolint:paralleltest
+func TestDeleteNarRecord(t *testing.T) {
+	dir, err := os.MkdirTemp("", "database-path-")
+	if err != nil {
+		t.Fatalf("expected no error, got: %q", err)
+	}
+	defer os.RemoveAll(dir) // clean up
+
+	dbpath := filepath.Join(dir, "db.sqlite")
+
+	db, err := database.Open(logger, dbpath)
+	if err != nil {
+		t.Fatalf("expected no error but got: %s", err)
+	}
+
+	t.Run("nar not existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("error beginning a transaction: %s", err)
+		}
+
+		//nolint:errcheck
+		defer tx.Rollback()
+
+		if err := db.DeleteNarRecord(tx, hash); err != nil {
+			t.Errorf("error deleting narinfo record: %s", err)
+		}
+	})
+
+	t.Run("nar existing", func(t *testing.T) {
+		var nid int64
+
+		t.Run("create the narinfo", func(t *testing.T) {
+			// create a narinfo
+			hash, err := helper.RandString(32, nil)
+			if err != nil {
+				t.Fatalf("expected no error but got: %s", err)
+			}
+
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatalf("expected no error but got: %s", err)
+			}
+
+			//nolint:errcheck
+			defer tx.Rollback()
+
+			res, err := db.InsertNarInfoRecord(tx, hash)
+			if err != nil {
+				t.Fatalf("expected no error got: %s", err)
+			}
+
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("expected no error got: %s", err)
+			}
+
+			nid, err = res.LastInsertId()
+			if err != nil {
+				t.Fatalf("expected no error got: %s", err)
+			}
+		})
+
+		hash, err := helper.RandString(32, nil)
+		if err != nil {
+			t.Fatalf("expected no error but got: %s", err)
+		}
+
+		t.Run("create the nar", func(t *testing.T) {
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatalf("error beginning a transaction: %s", err)
+			}
+
+			//nolint:errcheck
+			defer tx.Rollback()
+
+			if _, err := db.InsertNarRecord(tx, nid, hash, "", 123); err != nil {
+				t.Fatalf("error inserting the record: %s", err)
+			}
+
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("error committing transaction: %s", err)
+			}
+		})
+
+		t.Run("delete the narinfo", func(t *testing.T) {
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatalf("error beginning a transaction: %s", err)
+			}
+
+			//nolint:errcheck
+			defer tx.Rollback()
+
+			time.Sleep(time.Second)
+
+			if err := db.DeleteNarRecord(tx, hash); err != nil {
+				t.Fatalf("error deleting a narinfo record: %s", err)
+			}
+
+			if err := tx.Commit(); err != nil {
+				t.Fatalf("error committing transaction: %s", err)
+			}
+		})
+
+		t.Run("confirm it has been removed", func(t *testing.T) {
+			const query = `
+				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+				FROM nars
+				`
+
+			rows, err := db.Query(query)
+			if err != nil {
+				t.Fatalf("error selecting narinfos: %s", err)
+			}
+
+			defer rows.Close()
+
+			nims := make([]database.NarModel, 0)
+
+			for rows.Next() {
+				var nim database.NarModel
+
+				err := rows.Scan(
+					&nim.ID,
+					&nim.NarInfoID,
+					&nim.Hash,
+					&nim.Compression,
+					&nim.FileSize,
+					&nim.CreatedAt,
+					&nim.UpdatedAt,
+					&nim.LastAccessedAt,
+				)
+				if err != nil {
+					t.Fatalf("expected no error got: %s", err)
+				}
+
+				nims = append(nims, nim)
+			}
+
+			if err := rows.Err(); err != nil {
+				t.Fatalf("got an error on rows: %s", err)
+			}
+
+			if want, got := 0, len(nims); want != got {
+				t.Fatalf("want %d got %d", want, got)
 			}
 		})
 	})

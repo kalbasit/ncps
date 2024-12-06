@@ -70,6 +70,16 @@ const (
 		  updated_at = CURRENT_TIMESTAMP
 	WHERE hash = ?
 	`
+
+	deletNarInfoQuery = `
+	DELETE FROM narinfos
+	WHERE hash = ?
+	`
+
+	deletNarQuery = `
+	DELETE FROM nars
+	WHERE hash = ?
+	`
 )
 
 var (
@@ -191,7 +201,14 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 // TouchNarInfoRecord updates the last_accessed_at of a narinfo record in the
 // database.
 func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
-	return db.touchRecord(tx, touchNarInfoQuery, hash)
+	return db.doQuery(tx, touchNarInfoQuery, hash)
+}
+
+// DeleteNarInfoRecord deletes the narinfo record.
+func (db *DB) DeleteNarInfoRecord(tx *sql.Tx, hash string) error {
+	_, err := db.doQuery(tx, deletNarInfoQuery, hash)
+
+	return err
 }
 
 func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
@@ -264,17 +281,24 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 }
 
 func (db *DB) TouchNarRecord(tx *sql.Tx, hash string) (sql.Result, error) {
-	return db.touchRecord(tx, touchNarQuery, hash)
+	return db.doQuery(tx, touchNarQuery, hash)
 }
 
-func (db *DB) touchRecord(tx *sql.Tx, query, hash string) (sql.Result, error) {
+// DeleteNarInfoRecord deletes the narinfo record.
+func (db *DB) DeleteNarRecord(tx *sql.Tx, hash string) error {
+	_, err := db.doQuery(tx, deletNarQuery, hash)
+
+	return err
+}
+
+func (db *DB) doQuery(tx *sql.Tx, query string, args ...any) (sql.Result, error) {
 	stmt, err := tx.Prepare(query)
 	if err != nil {
 		return nil, fmt.Errorf("error preparing a statement: %w", err)
 	}
 	defer stmt.Close()
 
-	res, err := stmt.Exec(hash)
+	res, err := stmt.Exec(args...)
 	if err != nil {
 		return nil, fmt.Errorf("error executing the statement: %w", err)
 	}

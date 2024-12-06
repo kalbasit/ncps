@@ -51,6 +51,9 @@ var (
 
 	// ErrNotFound is returned if the nar or narinfo were not found.
 	ErrNotFound = errors.New("not found")
+
+	// errNarInfoPurged is returned if the narinfo was purged.
+	errNarInfoPurged = errors.New("the narinfo was purged")
 )
 
 const recordAgeIgnoreTouch = 5 * time.Minute
@@ -231,12 +234,20 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 	close(doneC)
 }
 
+func (c *Cache) getNarPathInStore(hash, compression string) string {
+	return filepath.Join(c.storePath(), helper.NarPath(hash, compression))
+}
+
+func (c *Cache) getNarInfoPathInStore(hash string) string {
+	return filepath.Join(c.storePath(), helper.NarInfoPath(hash))
+}
+
 func (c *Cache) hasNarInStore(log log15.Logger, hash, compression string) bool {
-	return c.hasInStore(log, helper.NarPath(hash, compression))
+	return c.hasInStore(log, c.getNarPathInStore(hash, compression))
 }
 
 func (c *Cache) getNarFromStore(log log15.Logger, hash, compression string) (int64, io.ReadCloser, error) {
-	size, r, err := c.getFromStore(log, helper.NarPath(hash, compression))
+	size, r, err := c.getFromStore(log, c.getNarPathInStore(hash, compression))
 	if err != nil {
 		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 	}
@@ -321,7 +332,7 @@ func (c *Cache) putNarInStore(_ log15.Logger, hash, compression string, r io.Rea
 		return 0, fmt.Errorf("error closing the temporary file: %w", err)
 	}
 
-	narPath := filepath.Join(c.storePath(), helper.NarPath(hash, compression))
+	narPath := c.getNarPathInStore(hash, compression)
 
 	if err := os.Rename(f.Name(), narPath); err != nil {
 		return 0, fmt.Errorf("error creating the nar file %q: %w", narPath, err)
@@ -335,20 +346,30 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 		return ErrNotFound
 	}
 
-	return os.Remove(filepath.Join(c.storePath(), helper.NarPath(hash, compression)))
+	return os.Remove(c.getNarPathInStore(hash, compression))
 }
 
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
 func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
-	log := log15.New("hash", hash)
+	log := c.logger.New("hash", hash)
+
+	var (
+		narInfo *narinfo.NarInfo
+		err     error
+	)
 
 	if c.hasNarInfoInStore(log, hash) {
-		return c.getNarInfoFromStore(log, hash)
+		narInfo, err = c.getNarInfoFromStore(log, hash)
+		if err == nil {
+			return narInfo, nil
+		} else if !errors.Is(err, errNarInfoPurged) {
+			return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
+		}
 	}
 
-	narInfo, err := c.getNarInfoFromUpstream(log, hash)
+	narInfo, err = c.getNarInfoFromUpstream(log, hash)
 	if err != nil {
 		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
@@ -376,7 +397,7 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 		r.Close()
 	}()
 
-	log := log15.New("hash", hash)
+	log := c.logger.New("hash", hash)
 
 	narInfo, err := narinfo.Parse(r)
 	if err != nil {
@@ -435,11 +456,11 @@ func (c *Cache) signNarInfo(_ log15.Logger, narInfo *narinfo.NarInfo) error {
 }
 
 func (c *Cache) hasNarInfoInStore(log log15.Logger, hash string) bool {
-	return c.hasInStore(log, helper.NarInfoPath(hash))
+	return c.hasInStore(log, c.getNarInfoPathInStore(hash))
 }
 
 func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.NarInfo, error) {
-	_, r, err := c.getFromStore(log, helper.NarInfoPath(hash))
+	_, r, err := c.getFromStore(log, c.getNarInfoPathInStore(hash))
 	if err != nil {
 		return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 	}
@@ -449,6 +470,26 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 	ni, err := narinfo.Parse(r)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
+	}
+
+	narHash, narCompression, err := helper.ParseNarURL(ni.URL)
+	if err != nil {
+		// narinfo is invalid, remove it
+		if err := c.purgeNarInfo(log, hash, "", ""); err != nil {
+			log.Error("error purging the narinfo", "error", err)
+		}
+
+		return nil, errNarInfoPurged
+	}
+
+	log = log.New("nar-hash", narHash, "nar-compression", narCompression)
+
+	if !c.hasNarInStore(log, narHash, narCompression) && !c.hasUpstreamJob(hash) {
+		if err := c.purgeNarInfo(log, hash, narHash, narCompression); err != nil {
+			return nil, fmt.Errorf("error purging the narinfo: %w", err)
+		}
+
+		return nil, errNarInfoPurged
 	}
 
 	tx, err := c.db.Begin()
@@ -508,6 +549,51 @@ func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*narinfo.
 	return nil, ErrNotFound
 }
 
+func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression string) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning a transaction: %w", err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				log.Error("error rolling back the transaction", "error", err)
+			}
+		}
+	}()
+
+	if err := c.db.DeleteNarInfoRecord(tx, hash); err != nil {
+		return fmt.Errorf("error deleting the narinfo record: %w", err)
+	}
+
+	if narHash != "" {
+		if err := c.db.DeleteNarRecord(tx, narHash); err != nil {
+			return fmt.Errorf("error deleting the nar record: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing the transaction: %w", err)
+	}
+
+	if c.hasNarInfoInStore(log, hash) {
+		if err := c.deleteNarInfoFromStore(log, hash); err != nil {
+			return fmt.Errorf("error removing narinfo from store: %w", err)
+		}
+	}
+
+	if narHash != "" {
+		if c.hasNarInStore(log, narHash, narCompression) {
+			if err := c.deleteNarFromStore(log, narHash, narCompression); err != nil {
+				return fmt.Errorf("error removing nar from store: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (c *Cache) putNarInfoInStore(_ log15.Logger, hash string, narInfo *narinfo.NarInfo) error {
 	f, err := os.CreateTemp(c.storeTMPPath(), hash+"-*.narinfo")
 	if err != nil {
@@ -525,7 +611,7 @@ func (c *Cache) putNarInfoInStore(_ log15.Logger, hash string, narInfo *narinfo.
 		return fmt.Errorf("error closing the temporary file: %w", err)
 	}
 
-	narInfoPath := filepath.Join(c.storePath(), helper.NarInfoPath(hash))
+	narInfoPath := c.getNarInfoPathInStore(hash)
 
 	if err := os.Rename(f.Name(), narInfoPath); err != nil {
 		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
@@ -595,28 +681,26 @@ func (c *Cache) deleteNarInfoFromStore(log log15.Logger, hash string) error {
 		return ErrNotFound
 	}
 
-	return os.Remove(filepath.Join(c.storePath(), helper.NarInfoPath(hash)))
+	return os.Remove(c.getNarInfoPathInStore(hash))
 }
 
-func (c *Cache) hasInStore(_ log15.Logger, key string) bool {
-	_, err := os.Stat(filepath.Join(c.storePath(), key))
+func (c *Cache) hasInStore(_ log15.Logger, path string) bool {
+	_, err := os.Stat(path)
 
 	return err == nil
 }
 
 // GetFile returns the file define by its key
 // NOTE: It's the caller responsibility to close the file after using it.
-func (c *Cache) getFromStore(_ log15.Logger, key string) (int64, io.ReadCloser, error) {
-	p := filepath.Join(c.storePath(), key)
-
-	f, err := os.Open(p)
+func (c *Cache) getFromStore(_ log15.Logger, path string) (int64, io.ReadCloser, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error opening the file %q: %w", key, err)
+		return 0, nil, fmt.Errorf("error opening the file %q: %w", path, err)
 	}
 
-	info, err := os.Stat(p)
+	info, err := os.Stat(path)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error getting the stat for path %q: %w", p, err)
+		return 0, nil, fmt.Errorf("error getting the stat for path %q: %w", path, err)
 	}
 
 	return info.Size(), f, nil
@@ -791,4 +875,12 @@ func (c *Cache) createNewKey() (signature.SecretKey, error) {
 	}
 
 	return secretKey, nil
+}
+
+func (c *Cache) hasUpstreamJob(hash string) bool {
+	c.mu.Lock()
+	_, ok := c.upstreamJobs[hash]
+	c.mu.Unlock()
+
+	return ok
 }
