@@ -350,7 +350,7 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
 func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
-	log := log15.New("hash", hash)
+	log := c.logger.New("hash", hash)
 
 	var narInfo *narinfo.NarInfo
 	var err error
@@ -404,7 +404,7 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 		r.Close()
 	}()
 
-	log := log15.New("hash", hash)
+	log := c.logger.New("hash", hash)
 
 	narInfo, err := narinfo.Parse(r)
 	if err != nil {
