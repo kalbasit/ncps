@@ -101,6 +101,11 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 		return nil, fmt.Errorf("error opening the SQLite3 database at %q: %w", dbpath, err)
 	}
 
+	// Getting an error `database is locked` when data is being inserted in the
+	// database at a fast rate. This will slow down read/write from the database
+	// but at least none of them will fail due to connection issues.
+	sdb.SetMaxOpenConns(1)
+
 	db := &DB{DB: sdb, logger: logger.New("dbpath", dbpath)}
 
 	return db, db.createTables()
