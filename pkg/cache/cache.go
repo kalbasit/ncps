@@ -240,11 +240,11 @@ func (c *Cache) getNarInfoPathInStore(hash string) string {
 }
 
 func (c *Cache) hasNarInStore(log log15.Logger, hash, compression string) bool {
-	return c.hasInStore(log, helper.NarPath(hash, compression))
+	return c.hasInStore(log, c.getNarPathInStore(hash, compression))
 }
 
 func (c *Cache) getNarFromStore(log log15.Logger, hash, compression string) (int64, io.ReadCloser, error) {
-	size, r, err := c.getFromStore(log, helper.NarPath(hash, compression))
+	size, r, err := c.getFromStore(log, c.getNarPathInStore(hash, compression))
 	if err != nil {
 		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 	}
@@ -343,7 +343,7 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 		return ErrNotFound
 	}
 
-	return os.Remove(filepath.Join(c.storePath(), helper.NarPath(hash, compression)))
+	return os.Remove(c.getNarPathInStore(hash, compression))
 }
 
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
@@ -463,11 +463,11 @@ func (c *Cache) signNarInfo(_ log15.Logger, narInfo *narinfo.NarInfo) error {
 }
 
 func (c *Cache) hasNarInfoInStore(log log15.Logger, hash string) bool {
-	return c.hasInStore(log, helper.NarInfoPath(hash))
+	return c.hasInStore(log, c.getNarInfoPathInStore(hash))
 }
 
 func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.NarInfo, error) {
-	_, r, err := c.getFromStore(log, helper.NarInfoPath(hash))
+	_, r, err := c.getFromStore(log, c.getNarInfoPathInStore(hash))
 	if err != nil {
 		return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 	}
@@ -563,13 +563,13 @@ func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression str
 	}
 
 	if c.hasNarInfoInStore(log, hash) {
-		if err := os.Remove(c.getNarInfoPathInStore(hash)); err != nil {
-			return fmt.Errorf("error removing nar from store: %w", err)
+		if err := c.deleteNarInfoFromStore(log, hash); err != nil {
+			return fmt.Errorf("error removing narinfo from store: %w", err)
 		}
 	}
 
 	if c.hasNarInStore(log, narHash, narCompression) {
-		if err := os.Remove(c.getNarPathInStore(narHash, narCompression)); err != nil {
+		if err := c.deleteNarFromStore(log, narHash, narCompression); err != nil {
 			return fmt.Errorf("error removing nar from store: %w", err)
 		}
 	}
@@ -594,7 +594,7 @@ func (c *Cache) putNarInfoInStore(_ log15.Logger, hash string, narInfo *narinfo.
 		return fmt.Errorf("error closing the temporary file: %w", err)
 	}
 
-	narInfoPath := filepath.Join(c.storePath(), helper.NarInfoPath(hash))
+	narInfoPath := c.getNarInfoPathInStore(hash)
 
 	if err := os.Rename(f.Name(), narInfoPath); err != nil {
 		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
@@ -664,28 +664,26 @@ func (c *Cache) deleteNarInfoFromStore(log log15.Logger, hash string) error {
 		return ErrNotFound
 	}
 
-	return os.Remove(filepath.Join(c.storePath(), helper.NarInfoPath(hash)))
+	return os.Remove(c.getNarInfoPathInStore(hash))
 }
 
-func (c *Cache) hasInStore(_ log15.Logger, key string) bool {
-	_, err := os.Stat(filepath.Join(c.storePath(), key))
+func (c *Cache) hasInStore(_ log15.Logger, path string) bool {
+	_, err := os.Stat(path)
 
 	return err == nil
 }
 
 // GetFile returns the file define by its key
 // NOTE: It's the caller responsibility to close the file after using it.
-func (c *Cache) getFromStore(_ log15.Logger, key string) (int64, io.ReadCloser, error) {
-	p := filepath.Join(c.storePath(), key)
-
-	f, err := os.Open(p)
+func (c *Cache) getFromStore(_ log15.Logger, path string) (int64, io.ReadCloser, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error opening the file %q: %w", key, err)
+		return 0, nil, fmt.Errorf("error opening the file %q: %w", path, err)
 	}
 
-	info, err := os.Stat(p)
+	info, err := os.Stat(path)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error getting the stat for path %q: %w", p, err)
+		return 0, nil, fmt.Errorf("error getting the stat for path %q: %w", path, err)
 	}
 
 	return info.Size(), f, nil
