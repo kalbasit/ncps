@@ -68,6 +68,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.Se
 func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
 
+	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(requestLogger(s.logger))
@@ -292,7 +293,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		}
 
 		h := w.Header()
-		h.Set(contentType, contentTypeNarInfo)
+		h.Set(contentType, contentTypeNar)
 		h.Set(contentLength, strconv.FormatInt(size, 10))
 
 		if !withBody {
