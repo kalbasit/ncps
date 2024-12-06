@@ -51,6 +51,9 @@ var (
 
 	// ErrNotFound is returned if the nar or narinfo were not found.
 	ErrNotFound = errors.New("not found")
+
+	// errNarInfoPurged is returned if the narinfo was purged.
+	errNarInfoPurged = errors.New("the narinfo was purged")
 )
 
 const recordAgeIgnoreTouch = 5 * time.Minute
@@ -357,22 +360,10 @@ func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 
 	if c.hasNarInfoInStore(log, hash) {
 		narInfo, err = c.getNarInfoFromStore(log, hash)
-		if err != nil {
-			return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
-		}
-
-		narHash, narCompression, err := helper.ParseNarURL(narInfo.URL)
 		if err == nil {
-			log = log.New("nar-hash", narHash, "nar-compression", narCompression)
-			if c.hasNarInStore(log, narHash, narCompression) {
-				return narInfo, err
-			}
-
-			if err := c.purgeNarInfo(log, hash, narHash, narCompression); err != nil {
-				return nil, fmt.Errorf("error purging the narinfo: %w", err)
-			}
-		} else {
-			log.Error("error parsing the nar URL from narinfo", "narinfo", narInfo, "nar-url", narInfo.URL)
+			return narInfo, nil
+		} else if !errors.Is(err, errNarInfoPurged) {
+			return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 		}
 	}
 
@@ -479,6 +470,26 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
 	}
 
+	narHash, narCompression, err := helper.ParseNarURL(ni.URL)
+	if err != nil {
+		// narinfo is invalid, remove it
+		if err := c.purgeNarInfo(log, hash, "", ""); err != nil {
+			log.Error("error purging the narinfo", "error", err)
+		}
+
+		return nil, errNarInfoPurged
+	}
+
+	log = log.New("nar-hash", narHash, "nar-compression", narCompression)
+
+	if !c.hasNarInStore(log, narHash, narCompression) && !c.hasUpstreamJob(hash) {
+		if err := c.purgeNarInfo(log, hash, narHash, narCompression); err != nil {
+			return nil, fmt.Errorf("error purging the narinfo: %w", err)
+		}
+
+		return nil, errNarInfoPurged
+	}
+
 	tx, err := c.db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("error beginning a transaction: %w", err)
@@ -554,8 +565,10 @@ func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression str
 		return fmt.Errorf("error deleting the narinfo record: %w", err)
 	}
 
-	if err := c.db.DeleteNarRecord(tx, narHash); err != nil {
-		return fmt.Errorf("error deleting the nar record: %w", err)
+	if narHash != "" {
+		if err := c.db.DeleteNarRecord(tx, narHash); err != nil {
+			return fmt.Errorf("error deleting the nar record: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -568,9 +581,11 @@ func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression str
 		}
 	}
 
-	if c.hasNarInStore(log, narHash, narCompression) {
-		if err := c.deleteNarFromStore(log, narHash, narCompression); err != nil {
-			return fmt.Errorf("error removing nar from store: %w", err)
+	if narHash != "" {
+		if c.hasNarInStore(log, narHash, narCompression) {
+			if err := c.deleteNarFromStore(log, narHash, narCompression); err != nil {
+				return fmt.Errorf("error removing nar from store: %w", err)
+			}
 		}
 	}
 
@@ -858,4 +873,12 @@ func (c *Cache) createNewKey() (signature.SecretKey, error) {
 	}
 
 	return secretKey, nil
+}
+
+func (c *Cache) hasUpstreamJob(hash string) bool {
+	c.mu.Lock()
+	_, ok := c.upstreamJobs[hash]
+	c.mu.Unlock()
+
+	return ok
 }
