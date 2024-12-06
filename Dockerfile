@@ -6,17 +6,20 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+COPY *.go .
+COPY cmd cmd
+COPY pkg pkg
 
-ENV CGO_ENABLED=0
-RUN go build .
+RUN go build -ldflags='-s -w' -trimpath -o /dist/app/ncps
+
+RUN ldd /dist/app/ncps | tr -s [:blank:] '\n' | grep ^/ | xargs -I % install -D % /dist/%
 
 FROM scratch
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
-COPY --from=builder /app/ncps /app/ncps
+COPY --from=builder /dist /
 
 WORKDIR /app
 
