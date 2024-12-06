@@ -177,7 +177,7 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 
 	res, err := stmt.Exec(hash)
 	if err != nil {
-		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
+		sqliteErr, ok := err.(sqlite3.Error)
 		if ok && sqliteErr.Code == sqlite3.ErrConstraint {
 			return nil, ErrAlreadyExists
 		}
@@ -252,7 +252,7 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 
 	res, err := stmt.Exec(narInfoID, hash, compression, fileSize)
 	if err != nil {
-		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
+		sqliteErr, ok := err.(sqlite3.Error)
 		if ok && sqliteErr.Code == sqlite3.ErrConstraint {
 			return nil, ErrAlreadyExists
 		}
