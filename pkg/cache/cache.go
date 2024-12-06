@@ -427,8 +427,16 @@ func (c *Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 		}
 	}()
 
-	if _, err := c.db.TouchNarInfoRecord(tx, hash); err != nil {
-		return nil, fmt.Errorf("error touching the narinfo record: %w", err)
+	nir, err := c.db.GetNarInfoRecord(tx, hash)
+	if err != nil {
+		// TODO: If record not found, record it instead!
+		return nil, fmt.Errorf("error fetching the narinfo record: %w", err)
+	}
+
+	if time.Since(nir.LastAccessedAt) > 24*time.Hour {
+		if _, err := c.db.TouchNarInfoRecord(tx, hash); err != nil {
+			return nil, fmt.Errorf("error touching the narinfo record: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

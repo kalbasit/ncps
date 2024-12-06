@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -39,6 +40,12 @@ const (
 	);
 	`
 
+	getNarInfoQuery = `
+	SELECT id, hash, created_at, updated_at, last_accessed_at
+	FROM narinfos
+	WHERE hash = ?
+	`
+
 	insertNarInfoQuery = `INSERT into narinfos(hash) VALUES (?)`
 
 	insertNarQuery = `
@@ -58,6 +65,11 @@ const (
 		  updated_at = CURRENT_TIMESTAMP
 	WHERE hash = ?
 	`
+)
+
+var (
+	// ErrNotFound is returned if record is not found in the database.
+	ErrNotFound = errors.New("not found")
 )
 
 type (
@@ -109,6 +121,44 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 	db := &DB{DB: sdb, logger: logger.New("dbpath", dbpath)}
 
 	return db, db.createTables()
+}
+
+func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfoModel, error) {
+	var nim NarInfoModel
+
+	stmt, err := tx.Prepare(getNarInfoQuery)
+	if err != nil {
+		return nim, fmt.Errorf("error preparing a statement: %w", err)
+	}
+
+	rows, err := stmt.Query(hash)
+	if err != nil {
+		return nim, fmt.Errorf("error executing the statement: %w", err)
+	}
+
+	defer rows.Close()
+
+	nims := make([]NarInfoModel, 0)
+
+	for rows.Next() {
+		var nim NarInfoModel
+
+		if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+			return nim, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
+		}
+
+		nims = append(nims, nim)
+	}
+
+	if len(nims) == 0 {
+		return nim, ErrNotFound
+	}
+
+	if len(nims) > 1 {
+		return nim, fmt.Errorf("that's impossible but multiple narinfos were found with the same hash %q", hash)
+	}
+
+	return nims[0], nil
 }
 
 // InsertNarInfoRecord creates a new narinfo record in the database.
