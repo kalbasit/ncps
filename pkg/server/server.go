@@ -72,6 +72,7 @@ func (s *Server) createRouter() {
 	s.router.Use(middleware.RealIP)
 	s.router.Use(requestLogger(s.logger))
 	s.router.Use(middleware.Recoverer)
+	s.router.Use(middleware.Heartbeat("/healthz"))
 
 	s.router.Get(routeIndex, s.getIndex)
 
