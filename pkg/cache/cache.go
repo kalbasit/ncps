@@ -237,8 +237,16 @@ func (c *Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser,
 		}
 	}()
 
-	if _, err := c.db.TouchNarRecord(tx, hash); err != nil {
-		return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
+	nr, err := c.db.GetNarRecord(tx, hash)
+	if err != nil {
+		// TODO: If record not found, record it instead!
+		return 0, nil, fmt.Errorf("error fetching the nar record: %w", err)
+	}
+
+	if time.Since(nr.LastAccessedAt) > 24*time.Hour {
+		if _, err := c.db.TouchNarRecord(tx, hash); err != nil {
+			return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
