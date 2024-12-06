@@ -292,6 +292,8 @@ func TestGetNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	c.SetRecordAgeIgnoreTouch(0)
+
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 	if err != nil {
 		t.Fatalf("error opening the database: %s", err)
@@ -519,6 +521,61 @@ func TestGetNarInfo(t *testing.T) {
 			}
 		})
 
+		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
+			time.Sleep(time.Second)
+
+			c.SetRecordAgeIgnoreTouch(time.Hour)
+
+			defer func() {
+				c.SetRecordAgeIgnoreTouch(0)
+			}()
+
+			_, err := c.GetNarInfo(context.Background(), narInfoHash2)
+			if err != nil {
+				t.Fatalf("no error expected, got: %s", err)
+			}
+
+			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
+				const query = `
+			SELECT  hash, created_at,  last_accessed_at
+			FROM narinfos
+			`
+
+				rows, err := db.Query(query)
+				if err != nil {
+					t.Fatalf("error selecting narinfos: %s", err)
+				}
+
+				nims := make([]database.NarInfoModel, 0)
+
+				for rows.Next() {
+					var nim database.NarInfoModel
+
+					if err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt); err != nil {
+						t.Fatalf("expected no error got: %s", err)
+					}
+
+					nims = append(nims, nim)
+				}
+
+				if err := rows.Err(); err != nil {
+					t.Errorf("not expecting an error got: %s", err)
+				}
+
+				if want, got := 1, len(nims); want != got {
+					t.Fatalf("want %d got %d", want, got)
+				}
+
+				if want, got := narInfoHash2, nims[0].Hash; want != got {
+					t.Errorf("want %q got %q", want, got)
+				}
+
+				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+					t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
+				}
+			})
+		})
+
 		t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
 			time.Sleep(time.Second)
 
@@ -582,6 +639,8 @@ func TestPutNarInfo(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 	if err != nil {
@@ -776,6 +835,8 @@ func TestDeleteNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	c.SetRecordAgeIgnoreTouch(0)
+
 	t.Run("file does not exist in the store", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
 
@@ -865,6 +926,8 @@ func TestGetNar(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	c.SetRecordAgeIgnoreTouch(0)
+
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 	if err != nil {
 		t.Fatalf("error opening the database: %s", err)
@@ -914,6 +977,13 @@ func TestGetNar(t *testing.T) {
 			}
 		})
 
+		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
+			_, err := c.GetNarInfo(context.Background(), narInfoHash1)
+			if err != nil {
+				t.Fatalf("no error expected, got: %s", err)
+			}
+		})
+
 		size, r, err := c.GetNar(narHash1, "")
 		if err != nil {
 			t.Fatalf("no error expected, got: %s", err)
@@ -949,8 +1019,6 @@ func TestGetNar(t *testing.T) {
 			if err != nil {
 				t.Fatalf("no error expected, got: %s", err)
 			}
-
-			defer r.Close()
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
@@ -996,6 +1064,67 @@ func TestGetNar(t *testing.T) {
 			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
 				t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
 			}
+		})
+
+		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
+			time.Sleep(time.Second)
+
+			c.SetRecordAgeIgnoreTouch(time.Hour)
+
+			defer func() {
+				c.SetRecordAgeIgnoreTouch(0)
+			}()
+
+			_, r, err := c.GetNar(narHash1, "")
+			if err != nil {
+				t.Fatalf("no error expected, got: %s", err)
+			}
+			defer r.Close()
+
+			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
+				const query = `
+				SELECT  hash,  created_at,  last_accessed_at
+				FROM nars
+				`
+
+				rows, err := db.Query(query)
+				if err != nil {
+					t.Fatalf("error selecting narinfos: %s", err)
+				}
+
+				nims := make([]database.NarModel, 0)
+
+				for rows.Next() {
+					var nim database.NarModel
+
+					err := rows.Scan(
+						&nim.Hash,
+						&nim.CreatedAt,
+						&nim.LastAccessedAt,
+					)
+					if err != nil {
+						t.Fatalf("expected no error got: %s", err)
+					}
+
+					nims = append(nims, nim)
+				}
+
+				if err := rows.Err(); err != nil {
+					t.Errorf("not expecting an error got: %s", err)
+				}
+
+				if want, got := 1, len(nims); want != got {
+					t.Fatalf("want %d got %d", want, got)
+				}
+
+				if want, got := narHash1, nims[0].Hash; want != got {
+					t.Errorf("want %q got %q", want, got)
+				}
+
+				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
+					t.Errorf("expected created_at == last_accessed_at got: %q != %q", want, got)
+				}
+			})
 		})
 
 		t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
@@ -1067,6 +1196,8 @@ func TestPutNar(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("without compression", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")
@@ -1153,6 +1284,8 @@ func TestDeleteNar(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("without compression", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")

@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -39,6 +40,19 @@ const (
 	);
 	`
 
+	getNarInfoQuery = `
+	SELECT id, hash, created_at, updated_at, last_accessed_at
+	FROM narinfos
+	WHERE hash = ?
+	`
+
+	getNarQuery = `
+	SELECT id, narinfo_id, hash, compression, file_size,
+		created_at, updated_at, last_accessed_at
+	FROM nars
+	WHERE hash = ?
+	`
+
 	insertNarInfoQuery = `INSERT into narinfos(hash) VALUES (?)`
 
 	insertNarQuery = `
@@ -59,6 +73,9 @@ const (
 	WHERE hash = ?
 	`
 )
+
+// ErrNotFound is returned if record is not found in the database.
+var ErrNotFound = errors.New("not found")
 
 type (
 	// DB is the main database wrapping *sql.DB and have functions that can
@@ -111,6 +128,42 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 	return db, db.createTables()
 }
 
+func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfoModel, error) {
+	var nim NarInfoModel
+
+	stmt, err := tx.Prepare(getNarInfoQuery)
+	if err != nil {
+		return nim, fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(hash)
+	if err != nil {
+		return nim, fmt.Errorf("error executing the statement: %w", err)
+	}
+	defer rows.Close()
+
+	nims := make([]NarInfoModel, 0)
+
+	for rows.Next() {
+		if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+			return nim, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
+		}
+
+		nims = append(nims, nim)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nim, fmt.Errorf("error returned from rows: %w", err)
+	}
+
+	if len(nims) == 0 {
+		return nim, ErrNotFound
+	}
+
+	return nims[0], nil
+}
+
 // InsertNarInfoRecord creates a new narinfo record in the database.
 func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	stmt, err := tx.Prepare(insertNarInfoQuery)
@@ -131,6 +184,52 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 // database.
 func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	return db.touchRecord(tx, touchNarInfoQuery, hash)
+}
+
+func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
+	var nm NarModel
+
+	stmt, err := tx.Prepare(getNarQuery)
+	if err != nil {
+		return nm, fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(hash)
+	if err != nil {
+		return nm, fmt.Errorf("error executing the statement: %w", err)
+	}
+	defer rows.Close()
+
+	nms := make([]NarModel, 0)
+
+	for rows.Next() {
+		err := rows.Scan(
+			&nm.ID,
+			&nm.NarInfoID,
+			&nm.Hash,
+			&nm.Compression,
+			&nm.FileSize,
+			&nm.CreatedAt,
+			&nm.UpdatedAt,
+			&nm.LastAccessedAt,
+		)
+		if err != nil {
+			return nm, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
+		}
+
+		nms = append(nms, nm)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nm, fmt.Errorf("error returned from rows: %w", err)
+	}
+
+	if len(nms) == 0 {
+		return nm, ErrNotFound
+	}
+
+	return nms[0], nil
 }
 
 // InsertNarRecord creates a new nar record in the database.

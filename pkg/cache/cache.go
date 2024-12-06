@@ -53,6 +53,8 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
+const recordAgeIgnoreTouch = 5 * time.Minute
+
 // Cache represents the main cache service.
 type Cache struct {
 	hostName       string
@@ -62,6 +64,12 @@ type Cache struct {
 	upstreamCaches []upstream.Cache
 	db             *database.DB
 
+	// recordAgeIgnoreTouch represents the duration at which a record is
+	// considered up to date and a touch is not invoked. This helps avoid
+	// repetitive touching of records in the database which are causing `database
+	// is locked` errors
+	recordAgeIgnoreTouch time.Duration
+
 	mu           sync.Mutex
 	upstreamJobs map[string]chan struct{}
 }
@@ -69,9 +77,10 @@ type Cache struct {
 // New returns a new Cache.
 func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (*Cache, error) {
 	c := &Cache{
-		logger:         logger,
-		upstreamCaches: ucs,
-		upstreamJobs:   make(map[string]chan struct{}),
+		logger:               logger,
+		upstreamCaches:       ucs,
+		upstreamJobs:         make(map[string]chan struct{}),
+		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
 
 	if err := c.validateHostname(hostName); err != nil {
@@ -105,6 +114,10 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 
 	return c, c.setup()
 }
+
+// SetRecordAgeIgnoreTouch changes the duration at which a record is considered
+// up to date and a touch is not invoked.
+func (c *Cache) SetRecordAgeIgnoreTouch(d time.Duration) { c.recordAgeIgnoreTouch = d }
 
 // GetHostname returns the hostname.
 func (c *Cache) GetHostname() string { return c.hostName }
@@ -237,8 +250,20 @@ func (c *Cache) getNarFromStore(hash, compression string) (int64, io.ReadCloser,
 		}
 	}()
 
-	if _, err := c.db.TouchNarRecord(tx, hash); err != nil {
-		return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
+	nr, err := c.db.GetNarRecord(tx, hash)
+	if err != nil {
+		// TODO: If record not found, record it instead!
+		if errors.Is(err, database.ErrNotFound) {
+			return size, r, nil
+		}
+
+		return 0, nil, fmt.Errorf("error fetching the nar record: %w", err)
+	}
+
+	if time.Since(nr.LastAccessedAt) > c.recordAgeIgnoreTouch {
+		if _, err := c.db.TouchNarRecord(tx, hash); err != nil {
+			return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -427,8 +452,20 @@ func (c *Cache) getNarInfoFromStore(hash string) (*narinfo.NarInfo, error) {
 		}
 	}()
 
-	if _, err := c.db.TouchNarInfoRecord(tx, hash); err != nil {
-		return nil, fmt.Errorf("error touching the narinfo record: %w", err)
+	nir, err := c.db.GetNarInfoRecord(tx, hash)
+	if err != nil {
+		// TODO: If record not found, record it instead!
+		if errors.Is(err, database.ErrNotFound) {
+			return ni, nil
+		}
+
+		return nil, fmt.Errorf("error fetching the narinfo record: %w", err)
+	}
+
+	if time.Since(nir.LastAccessedAt) > c.recordAgeIgnoreTouch {
+		if _, err := c.db.TouchNarInfoRecord(tx, hash); err != nil {
+			return nil, fmt.Errorf("error touching the narinfo record: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -482,7 +519,9 @@ func (c *Cache) putNarInfoInStore(hash string, narInfo *narinfo.NarInfo) error {
 }
 
 func (c *Cache) storeInDatabase(hash string, narInfo *narinfo.NarInfo) error {
-	c.logger.Info("storing narinfo and nar record in the database", "hash", hash, "nar-url", narInfo.URL)
+	log := c.logger.New("hash", hash, "nar-url", narInfo.URL)
+
+	log.Info("storing narinfo and nar record in the database")
 
 	tx, err := c.db.Begin()
 	if err != nil {
