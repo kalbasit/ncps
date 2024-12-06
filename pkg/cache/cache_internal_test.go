@@ -2,16 +2,15 @@ package cache
 
 import (
 	"math/rand/v2"
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/inconshreveable/log15/v3"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/testdata"
 )
 
 //nolint:gochecknoglobals
@@ -26,28 +25,10 @@ func TestNew(t *testing.T) {
 	t.Run("upstream caches", func(t *testing.T) {
 		t.Parallel()
 
-		handlerFunc := func(priority int) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/nix-cache-info" {
-					w.WriteHeader(http.StatusNotFound)
-
-					return
-				}
-
-				body := `StoreDir: /nix/store
-WantMassQuery: 1
-Priority: ` + strconv.Itoa(priority)
-
-				if _, err := w.Write([]byte(body)); err != nil {
-					t.Fatalf("expected no error got: %s", err)
-				}
-			})
-		}
-
 		testServers := make(map[int]*httptest.Server)
 
 		for i := 1; i < 10; i++ {
-			ts := httptest.NewServer(handlerFunc(i))
+			ts := testdata.HTTPTestServer(t, i)
 			defer ts.Close()
 			testServers[i] = ts
 		}

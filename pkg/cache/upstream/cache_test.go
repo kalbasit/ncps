@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -134,35 +132,9 @@ func TestGetNarInfo(t *testing.T) {
 	t.Run("check has failed", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testdata.Nar1.NarInfoHash
+		hash := "broken-" + testdata.Nar1.NarInfoHash
 
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/nix-cache-info" {
-				_, err := w.Write([]byte(`StoreDir: /nix/store
-WantMassQuery: 1
-Priority: 40`))
-				if err != nil {
-					t.Fatalf("expected no error, got %s", err)
-				}
-
-				return
-			}
-
-			if r.URL.Path == "/"+hash+".narinfo" {
-				// mutate the inside
-				b := testdata.Nar1.NarInfoText
-				b = strings.Replace(b, "References:", "References: notfound-path", -1)
-
-				_, err := w.Write([]byte(b))
-				if err != nil {
-					t.Fatalf("expected no error, got %s", err)
-				}
-
-				return
-			}
-
-			w.WriteHeader(http.StatusNotFound)
-		}))
+		ts := testdata.HTTPTestServer(t, 40)
 		defer ts.Close()
 
 		tu, err := url.Parse(ts.URL)

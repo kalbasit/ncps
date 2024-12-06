@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -34,12 +32,6 @@ var logger = log15.New()
 func init() {
 	logger.SetHandler(log15.DiscardHandler())
 }
-
-const (
-	nixStoreInfo = `StoreDir: /nix/store
-WantMassQuery: 1
-Priority: 40`
-)
 
 func TestNew(t *testing.T) {
 	t.Parallel()
@@ -233,7 +225,7 @@ func TestPublicKey(t *testing.T) {
 
 //nolint:paralleltest
 func TestGetNarInfo(t *testing.T) {
-	ts := startServer(t)
+	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
 	tu, err := url.Parse(ts.URL)
@@ -878,7 +870,7 @@ func TestDeleteNarInfo(t *testing.T) {
 
 //nolint:paralleltest
 func TestGetNar(t *testing.T) {
-	ts := startServer(t)
+	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
 	tu, err := url.Parse(ts.URL)
@@ -1386,52 +1378,4 @@ func TestDeleteNar(t *testing.T) {
 			})
 		})
 	})
-}
-
-func startServer(t *testing.T) *httptest.Server {
-	t.Helper()
-
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/nix-cache-info" {
-			if _, err := w.Write([]byte(nixStoreInfo)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		if r.URL.Path == "/"+testdata.Nar1.NarInfoHash+".narinfo" {
-			if _, err := w.Write([]byte(testdata.Nar1.NarInfoText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		if r.URL.Path == "/nar/"+testdata.Nar1.NarHash+".nar" {
-			if _, err := w.Write([]byte(testdata.Nar1.NarText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		if r.URL.Path == "/"+testdata.Nar2.NarInfoHash+".narinfo" {
-			if _, err := w.Write([]byte(testdata.Nar2.NarInfoText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		if r.URL.Path == "/nar/"+testdata.Nar2.NarHash+".nar" {
-			if _, err := w.Write([]byte(testdata.Nar2.NarText)); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
-
-			return
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-	}))
 }
