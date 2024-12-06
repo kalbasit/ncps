@@ -153,23 +153,25 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
+		log := s.logger.New("hash", hash)
+
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
 
 				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-					s.logger.Error("error writing the response", "error", err)
+					log.Error("error writing the response", "error", err)
 				}
 
 				return
 			}
 
-			s.logger.Error("error fetching the narinfo", "hash", hash, "error", err)
+			log.Error("error fetching the narinfo", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
-				s.logger.Error("error writing the response", "error", err)
+				log.Error("error writing the response", "error", err)
 			}
 
 			return
@@ -188,7 +190,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 		}
 
 		if _, err := w.Write(narInfoBytes); err != nil {
-			s.logger.Error("error writing the narinfo to the response", "error", err)
+			log.Error("error writing the narinfo to the response", "error", err)
 		}
 	}
 }
@@ -196,22 +198,24 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
+	log := s.logger.New("hash", hash)
+
 	if !s.putPermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
 	}
 
 	if err := s.cache.PutNarInfo(r.Context(), hash, r.Body); err != nil {
-		s.logger.Error("error putting the NAR in cache: %s", err)
+		log.Error("error putting the NAR in cache", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err2 := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + err.Error())); err2 != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
@@ -223,11 +227,13 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
+	log := s.logger.New("hash", hash)
+
 	if !s.deletePermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
@@ -238,7 +244,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-				s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+				log.Error("error writing the body to the response", "error", err)
 			}
 
 			return
@@ -247,7 +253,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
@@ -261,23 +267,25 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		hash := chi.URLParam(r, "hash")
 		compression := chi.URLParam(r, "compression")
 
+		log := s.logger.New("hash", hash, "compression", compression)
+
 		size, reader, err := s.cache.GetNar(hash, compression)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
 
 				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-					s.logger.Error("error writing the response", "error", err)
+					log.Error("error writing the response", "error", err)
 				}
 
 				return
 			}
 
-			s.logger.Error("error fetching the nar", "hash", hash, "compression", compression, "error", err)
+			log.Error("error fetching the nar", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
-				s.logger.Error("error writing the response", "error", err)
+				log.Error("error writing the response", "error", err)
 			}
 
 			return
@@ -295,13 +303,13 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		written, err := io.Copy(w, reader)
 		if err != nil {
-			s.logger.Error("error writing the response", "error", err)
+			log.Error("error writing the response", "error", err)
 
 			return
 		}
 
 		if written != size {
-			s.logger.Error("Bytes copied does not match object size", "expected", size, "written", written)
+			log.Error("Bytes copied does not match object size", "expected", size, "written", written)
 		}
 	}
 }
@@ -310,22 +318,24 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
 
+	log := s.logger.New("hash", hash, "compression", compression)
+
 	if !s.putPermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
 	}
 
 	if err := s.cache.PutNar(r.Context(), hash, compression, r.Body); err != nil {
-		s.logger.Error("error putting the NAR in cache: %s", err)
+		log.Error("error putting the NAR in cache", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err2 := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + err.Error())); err2 != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
@@ -338,11 +348,13 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
 
+	log := s.logger.New("hash", hash, "compression", compression)
+
 	if !s.deletePermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
@@ -353,7 +365,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-				s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+				log.Error("error writing the body to the response", "error", err)
 			}
 
 			return
@@ -362,7 +374,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
-			s.logger.Error("error writing the body to the response", "hash", hash, "error", err)
+			log.Error("error writing the body to the response", "error", err)
 		}
 
 		return
