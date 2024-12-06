@@ -415,7 +415,7 @@ func (c *Cache) prePullNar(log log15.Logger, url string) {
 
 	_, nar, err := c.GetNar(hash, compression)
 	if err != nil {
-		log.Error("error fetching the NAR: %w", err)
+		log.Error("error fetching the NAR", "error", err)
 
 		return
 	}
