@@ -231,6 +231,14 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 	close(doneC)
 }
 
+func (c *Cache) getNarPathInStore(hash, compression string) string {
+	return filepath.Join(c.storePath(), helper.NarPath(hash, compression))
+}
+
+func (c *Cache) getNarInfoPathInStore(hash string) string {
+	return filepath.Join(c.storePath(), helper.NarInfoPath(hash))
+}
+
 func (c *Cache) hasNarInStore(log log15.Logger, hash, compression string) bool {
 	return c.hasInStore(log, helper.NarPath(hash, compression))
 }
@@ -321,7 +329,7 @@ func (c *Cache) putNarInStore(_ log15.Logger, hash, compression string, r io.Rea
 		return 0, fmt.Errorf("error closing the temporary file: %w", err)
 	}
 
-	narPath := filepath.Join(c.storePath(), helper.NarPath(hash, compression))
+	narPath := c.getNarPathInStore(hash, compression)
 
 	if err := os.Rename(f.Name(), narPath); err != nil {
 		return 0, fmt.Errorf("error creating the nar file %q: %w", narPath, err)
@@ -344,11 +352,28 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 	log := log15.New("hash", hash)
 
+	var narInfo *narinfo.NarInfo
+	var err error
+
 	if c.hasNarInfoInStore(log, hash) {
-		return c.getNarInfoFromStore(log, hash)
+		narInfo, err = c.getNarInfoFromStore(log, hash)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
+		}
+
+		narHash, narCompression, err := helper.ParseNarURL(narInfo.URL)
+		if err != nil {
+			log.Error("error parsing the nar URL from narinfo", "narinfo", narInfo, "nar-url", narInfo.URL)
+		} else if c.hasNarInStore(log.New("nar-hash", narHash, "nar-compression", narCompression), narHash, narCompression) {
+			return narInfo, err
+		}
+
+		if err := c.purgeNarInfo(log, hash, narHash, narCompression); err != nil {
+			return nil, fmt.Errorf("error purging the narinfo: %w", err)
+		}
 	}
 
-	narInfo, err := c.getNarInfoFromUpstream(log, hash)
+	narInfo, err = c.getNarInfoFromUpstream(log, hash)
 	if err != nil {
 		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
@@ -506,6 +531,47 @@ func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*narinfo.
 	}
 
 	return nil, ErrNotFound
+}
+
+func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression string) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning a transaction: %w", err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				log.Error("error rolling back the transaction", "error", err)
+			}
+		}
+	}()
+
+	if err := c.db.DeleteNarInfoRecord(tx, hash); err != nil {
+		return fmt.Errorf("error deleting the narinfo record: %w", err)
+	}
+
+	if err := c.db.DeleteNarRecord(tx, narHash); err != nil {
+		return fmt.Errorf("error deleting the nar record: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing the transaction: %w", err)
+	}
+
+	if c.hasNarInfoInStore(log, hash) {
+		if err := os.Remove(c.getNarInfoPathInStore(hash)); err != nil {
+			return fmt.Errorf("error removing nar from store: %w", err)
+		}
+	}
+
+	if c.hasNarInStore(log, narHash, narCompression) {
+		if err := os.Remove(c.getNarPathInStore(narHash, narCompression)); err != nil {
+			return fmt.Errorf("error removing nar from store: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (c *Cache) putNarInfoInStore(_ log15.Logger, hash string, narInfo *narinfo.NarInfo) error {
