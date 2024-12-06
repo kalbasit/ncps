@@ -624,6 +624,17 @@ func TestGetNarInfo(t *testing.T) {
 				}
 			})
 		})
+
+		t.Run("no error is returned if the entry already exist in the database", func(t *testing.T) {
+			if err := os.Remove(filepath.Join(dir, "store", narInfoHash2+".narinfo")); err != nil {
+				t.Fatalf("error removing the narinfo from the store: %s", err)
+			}
+
+			_, err := c.GetNarInfo(context.Background(), narInfoHash2)
+			if err != nil {
+				t.Errorf("no error expected, got: %s", err)
+			}
+		})
 	})
 }
 
