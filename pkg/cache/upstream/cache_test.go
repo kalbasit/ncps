@@ -160,6 +160,36 @@ func TestGetNarInfo(t *testing.T) {
 			t.Errorf("want %q got %q", want, got)
 		}
 	})
+
+	for _, entry := range testdata.Entries {
+		t.Run("check does not fail", func(t *testing.T) {
+			t.Parallel()
+
+			hash := entry.NarInfoHash
+
+			ts := testdata.HTTPTestServer(t, 40)
+			defer ts.Close()
+
+			tu, err := url.Parse(ts.URL)
+			if err != nil {
+				t.Fatalf("error not expected: %s", err)
+			}
+
+			c, err := upstream.New(
+				logger,
+				tu.Host,
+				[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+			)
+			if err != nil {
+				t.Fatalf("expected no error, got %s", err)
+			}
+
+			_, err = c.GetNarInfo(context.Background(), hash)
+			if err != nil {
+				t.Fatalf("error not expected getting narinfo %q got: %s", hash, err)
+			}
+		})
+	}
 }
 
 func TestGetNar(t *testing.T) {
