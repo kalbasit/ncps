@@ -293,7 +293,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		}
 
 		h := w.Header()
-		h.Set(contentType, contentTypeNarInfo)
+		h.Set(contentType, contentTypeNar)
 		h.Set(contentLength, strconv.FormatInt(size, 10))
 
 		if !withBody {
