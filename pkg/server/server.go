@@ -68,11 +68,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.Se
 func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
 
+	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(requestLogger(s.logger))
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(middleware.Heartbeat("/healthz"))
 
 	s.router.Get(routeIndex, s.getIndex)
 
