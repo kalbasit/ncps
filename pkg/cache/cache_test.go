@@ -292,6 +292,8 @@ func TestGetNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	c.SetRecordAgeIgnoreTouch(0)
+
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 	if err != nil {
 		t.Fatalf("error opening the database: %s", err)
@@ -528,7 +530,6 @@ func TestGetNarInfo(t *testing.T) {
 			}
 
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
-				t.Skip("test is skipped because I need to change it to work with the new database reliever")
 				const query = `
 			SELECT  hash, created_at,  last_accessed_at
 			FROM narinfos
@@ -583,6 +584,8 @@ func TestPutNarInfo(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 	if err != nil {
@@ -777,6 +780,8 @@ func TestDeleteNarInfo(t *testing.T) {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	c.SetRecordAgeIgnoreTouch(0)
+
 	t.Run("file does not exist in the store", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", narInfoHash1+".narinfo")
 
@@ -865,6 +870,8 @@ func TestGetNar(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 	if err != nil {
@@ -1014,7 +1021,6 @@ func TestGetNar(t *testing.T) {
 			defer r.Close()
 
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
-				t.Skip("test is skipped because I need to change it to work with the new database reliever")
 				const query = `
 				SELECT  hash,  created_at,  last_accessed_at
 				FROM nars
@@ -1074,6 +1080,8 @@ func TestPutNar(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("without compression", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")
@@ -1160,6 +1168,8 @@ func TestDeleteNar(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
+
+	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("without compression", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "nar", narHash1+".nar")
