@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
-
-	// Import the SQLite driver.
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -74,8 +72,13 @@ const (
 	`
 )
 
-// ErrNotFound is returned if record is not found in the database.
-var ErrNotFound = errors.New("not found")
+var (
+	// ErrNotFound is returned if record is not found in the database.
+	ErrNotFound = errors.New("not found")
+
+	// ErrAlreadyExists is returned if record insertion failed due to uniqueness constraint.
+	ErrAlreadyExists = errors.New("error already exists")
+)
 
 type (
 	// DB is the main database wrapping *sql.DB and have functions that can
@@ -174,6 +177,11 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 
 	res, err := stmt.Exec(hash)
 	if err != nil {
+		sqliteErr, ok := err.(sqlite3.Error)
+		if ok && sqliteErr.Code == sqlite3.ErrConstraint {
+			return nil, ErrAlreadyExists
+		}
+
 		return nil, fmt.Errorf("error executing the statement: %w", err)
 	}
 
@@ -244,6 +252,11 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 
 	res, err := stmt.Exec(narInfoID, hash, compression, fileSize)
 	if err != nil {
+		sqliteErr, ok := err.(sqlite3.Error)
+		if ok && sqliteErr.Code == sqlite3.ErrConstraint {
+			return nil, ErrAlreadyExists
+		}
+
 		return nil, fmt.Errorf("error executing the statement: %w", err)
 	}
 

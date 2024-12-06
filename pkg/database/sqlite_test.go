@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
-	"github.com/mattn/go-sqlite3"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
@@ -246,12 +245,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		_, err = db.InsertNarInfoRecord(tx, hash)
 
-		sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
-		if !ok {
-			t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
-		}
-
-		if want, got := sqlite3.ErrConstraint, sqliteErr.Code; want != got {
+		if want, got := database.ErrAlreadyExists, err; !errors.Is(got, want) {
 			t.Errorf("want %q got %q", want, got)
 		}
 	})
@@ -676,12 +670,7 @@ func TestInsertNarRecord(t *testing.T) {
 
 				_, err = db.InsertNarRecord(tx, nid, hash, "", 123)
 
-				sqliteErr, ok := errors.Unwrap(err).(sqlite3.Error)
-				if !ok {
-					t.Fatalf("error should be castable to sqliteErr but it was not: %s", err)
-				}
-
-				if want, got := sqlite3.ErrConstraint, sqliteErr.Code; want != got {
+				if want, got := database.ErrAlreadyExists, err; !errors.Is(got, want) {
 					t.Errorf("want %q got %q", want, got)
 				}
 			})
