@@ -141,6 +141,8 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 	return db, db.createTables()
 }
 
+// GetNarInfoRecord returns a narinfo record given its hash. If no nar was
+// found with the given hash then ErrNotFound is returned instead.
 func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfoModel, error) {
 	var nim NarInfoModel
 
@@ -211,6 +213,8 @@ func (db *DB) DeleteNarInfoRecord(tx *sql.Tx, hash string) error {
 	return err
 }
 
+// GetNarRecord returns a nar record given its hash. If no nar was found with
+// the given hash then ErrNotFound is returned instead.
 func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
 	var nm NarModel
 
@@ -280,6 +284,7 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 	return res, nil
 }
 
+// TouchNarRecord updates the last_accessed_at of a nar record in the database.
 func (db *DB) TouchNarRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 	return db.doQuery(tx, touchNarQuery, hash)
 }
