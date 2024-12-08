@@ -73,8 +73,11 @@ type Cache struct {
 	// is locked` errors
 	recordAgeIgnoreTouch time.Duration
 
-	mu           sync.Mutex
-	upstreamJobs map[string]chan struct{}
+	// upstreamJobs is used to store in-progress jobs for pulling nars from
+	// upstream cache so incomping requests for the same nar can find and wait
+	// for jobs.
+	muUpstreamJobs sync.Mutex
+	upstreamJobs   map[string]chan struct{}
 }
 
 // New returns a new Cache.
@@ -141,7 +144,7 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 
 	errC := make(chan error)
 
-	c.mu.Lock()
+	c.muUpstreamJobs.Lock()
 
 	doneC, ok := c.upstreamJobs[hash]
 	if ok {
@@ -152,7 +155,7 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 
 		go c.pullNar(log, hash, compression, doneC, errC)
 	}
-	c.mu.Unlock()
+	c.muUpstreamJobs.Unlock()
 
 	select {
 	case err := <-errC:
@@ -199,9 +202,9 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 
 	size, r, err := c.getNarFromUpstream(log, hash, compression)
 	if err != nil {
-		c.mu.Lock()
+		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, hash)
-		c.mu.Unlock()
+		c.muUpstreamJobs.Unlock()
 
 		errC <- fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 
@@ -212,9 +215,9 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 
 	written, err := c.putNarInStore(log, hash, compression, r)
 	if err != nil {
-		c.mu.Lock()
+		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, hash)
-		c.mu.Unlock()
+		c.muUpstreamJobs.Unlock()
 
 		errC <- fmt.Errorf("error storing the narInfo in the store: %w", err)
 
@@ -227,9 +230,9 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 		log.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
 	}
 
-	c.mu.Lock()
+	c.muUpstreamJobs.Lock()
 	delete(c.upstreamJobs, hash)
-	c.mu.Unlock()
+	c.muUpstreamJobs.Unlock()
 
 	close(doneC)
 }
@@ -878,9 +881,9 @@ func (c *Cache) createNewKey() (signature.SecretKey, error) {
 }
 
 func (c *Cache) hasUpstreamJob(hash string) bool {
-	c.mu.Lock()
+	c.muUpstreamJobs.Lock()
 	_, ok := c.upstreamJobs[hash]
-	c.mu.Unlock()
+	c.muUpstreamJobs.Unlock()
 
 	return ok
 }
