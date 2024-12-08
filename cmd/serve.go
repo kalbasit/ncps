@@ -50,16 +50,25 @@ func serveCommand(logger log15.Logger) *cli.Command {
 				Name:    "cache-max-size",
 				Usage:   "The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T",
 				Sources: cli.EnvVars("CACHE_MAX_SIZE"),
+				Validator: func(s string) error {
+					_, err := helper.ParseSize(s)
+					return err
+				},
 			},
 			&cli.StringFlag{
 				Name:    "cache-lru-schedule",
 				Usage:   "The cron spec for cleaning the store. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation",
 				Sources: cli.EnvVars("CACHE_LRU_SCHEDULE"),
+				Validator: func(s string) error {
+					_, err := cron.ParseStandard(s)
+					return err
+				},
 			},
 			&cli.StringFlag{
 				Name:    "cache-lru-schedule-timezone",
 				Usage:   "The name of the timezone to use for the cron",
 				Sources: cli.EnvVars("CACHE_LRU_SCHEDULE_TZ"),
+				Value:   "Local",
 			},
 			&cli.StringFlag{
 				Name:    "server-addr",
@@ -154,16 +163,19 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 		return c, nil
 	}
 
-	if cmd.String("cache-max-size") == "" {
+	var maxSize uint64
+	if maxSizeStr := cmd.String("cache-max-size"); maxSizeStr == "" {
 		return nil, fmt.Errorf("--cache-max-size is required when --cache-lru-schedule is specified")
+	} else {
+		maxSize, err = helper.ParseSize(maxSizeStr)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing the size: %w", err)
+		}
 	}
 
-	size, err := helper.ParseSize(cmd.String("cache-max-size"))
-	if err != nil {
-		return nil, fmt.Errorf("error parsing the size: %w", err)
-	}
+	logger.Info("setting up the cache max-size", "max-size", maxSize)
 
-	c.SetMaxSize(size)
+	c.SetMaxSize(maxSize)
 
 	var loc *time.Location
 
@@ -174,11 +186,13 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 		}
 	}
 
+	logger.Info("setting up the cache timezone location", "time-zone", loc)
+
 	c.SetupCron(loc)
 
 	schedule, err := cron.ParseStandard(cmd.String("cache-lru-schedule"))
 	if err != nil {
-		return nil, fmt.Errorf("error parsing the cron spec %q: %w", err)
+		return nil, fmt.Errorf("error parsing the cron spec %q: %w", cmd.String("cache-lru-schedule"), err)
 	}
 
 	c.AddLRUCronJob(schedule)
