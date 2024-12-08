@@ -10,9 +10,12 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/testdata"
 )
 
 //nolint:gochecknoglobals
@@ -1177,4 +1180,41 @@ func TestDeleteNarRecord(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestNarTotalSize(t *testing.T) {
+	dir, err := os.MkdirTemp("", "database-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir) // clean up
+
+	db, err := database.Open(logger, filepath.Join(dir, "db.sqlite"))
+	require.NoError(t, err)
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+
+	var expectedSize uint64
+	for _, nar := range testdata.Entries {
+		expectedSize += uint64(len(nar.NarText))
+
+		res, err := db.InsertNarInfoRecord(tx, nar.NarInfoHash)
+		require.NoError(t, err)
+
+		nid, err := res.LastInsertId()
+		require.NoError(t, err)
+
+		_, err = db.InsertNarRecord(tx, nid, nar.NarHash, "", uint64(len(nar.NarText)))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, tx.Commit())
+
+	tx, err = db.Begin()
+	require.NoError(t, err)
+
+	size, err := db.NarTotalSize(tx)
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedSize, size)
 }

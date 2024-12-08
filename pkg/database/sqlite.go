@@ -80,6 +80,10 @@ const (
 	DELETE FROM nars
 	WHERE hash = ?
 	`
+
+	narTotalSizeQuery = `
+	SELECT SUM(file_size) as total_size FROM nars;
+	`
 )
 
 var (
@@ -203,12 +207,12 @@ func (db *DB) InsertNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
 // TouchNarInfoRecord updates the last_accessed_at of a narinfo record in the
 // database.
 func (db *DB) TouchNarInfoRecord(tx *sql.Tx, hash string) (sql.Result, error) {
-	return db.doQuery(tx, touchNarInfoQuery, hash)
+	return db.stmtExec(tx, touchNarInfoQuery, hash)
 }
 
 // DeleteNarInfoRecord deletes the narinfo record.
 func (db *DB) DeleteNarInfoRecord(tx *sql.Tx, hash string) error {
-	_, err := db.doQuery(tx, deletNarInfoQuery, hash)
+	_, err := db.stmtExec(tx, deletNarInfoQuery, hash)
 
 	return err
 }
@@ -286,17 +290,43 @@ func (db *DB) InsertNarRecord(tx *sql.Tx, narInfoID int64,
 
 // TouchNarRecord updates the last_accessed_at of a nar record in the database.
 func (db *DB) TouchNarRecord(tx *sql.Tx, hash string) (sql.Result, error) {
-	return db.doQuery(tx, touchNarQuery, hash)
+	return db.stmtExec(tx, touchNarQuery, hash)
 }
 
 // DeleteNarInfoRecord deletes the narinfo record.
 func (db *DB) DeleteNarRecord(tx *sql.Tx, hash string) error {
-	_, err := db.doQuery(tx, deletNarQuery, hash)
+	_, err := db.stmtExec(tx, deletNarQuery, hash)
 
 	return err
 }
 
-func (db *DB) doQuery(tx *sql.Tx, query string, args ...any) (sql.Result, error) {
+// NarTotalSize returns the sum of FileSize of all nar records.
+func (db *DB) NarTotalSize(tx *sql.Tx) (uint64, error) {
+	stmt, err := tx.Prepare(narTotalSizeQuery)
+	if err != nil {
+		return 0, fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query()
+	if err != nil {
+		return 0, fmt.Errorf("error querying the statement: %w", err)
+	}
+
+	defer rows.Close()
+
+	var size uint64
+
+	for rows.Next() {
+		if err := rows.Scan(&size); err != nil {
+			return 0, err
+		}
+	}
+
+	return size, nil
+}
+
+func (db *DB) stmtExec(tx *sql.Tx, query string, args ...any) (sql.Result, error) {
 	stmt, err := tx.Prepare(query)
 	if err != nil {
 		return nil, fmt.Errorf("error preparing a statement: %w", err)
