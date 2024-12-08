@@ -73,10 +73,12 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"), ucs)
+		cache, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"))
 		if err != nil {
 			return fmt.Errorf("error creating a new cache: %w", err)
 		}
+
+		cache.AddUpstreamCaches(ucs...)
 
 		srv := server.New(logger, cache)
 		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
