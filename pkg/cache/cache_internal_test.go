@@ -188,7 +188,7 @@ func TestRunLRU(t *testing.T) {
 	})
 
 	t.Run("confirm all nars are in the store", func(t *testing.T) {
-		for _, nar := range testdata.Entries {
+		for _, nar := range allEntries {
 			assert.True(t, c.hasNarInStore(logger, nar.NarHash, ""))
 		}
 	})
@@ -237,6 +237,14 @@ func TestRunLRU(t *testing.T) {
 
 	c.runLRU()
 
+	t.Run("confirm all narinfos except the last one are in the store", func(t *testing.T) {
+		for _, nar := range entries {
+			assert.True(t, c.hasNarInfoInStore(logger, nar.NarInfoHash))
+		}
+
+		assert.False(t, c.hasNarInfoInStore(logger, lastEntry.NarInfoHash))
+	})
+
 	t.Run("confirm all nars except the last one are in the store", func(t *testing.T) {
 		for _, nar := range entries {
 			assert.True(t, c.hasNarInStore(logger, nar.NarHash, ""))
@@ -260,7 +268,7 @@ func TestRunLRU(t *testing.T) {
 		assert.ErrorIs(t, database.ErrNotFound, err)
 	})
 
-	t.Run("all nar records are in the database", func(t *testing.T) {
+	t.Run("all nar records except the last one are in the database", func(t *testing.T) {
 		tx, err := c.db.Begin()
 		require.NoError(t, err)
 

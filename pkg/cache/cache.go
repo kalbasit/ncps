@@ -945,4 +945,91 @@ func (c *Cache) runLRU() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	log := c.logger.New("op", "lru", "max-size", c.maxSize)
+	log.Info("running LRU")
+
+	tx, err := c.db.Begin()
+	if err != nil {
+		log.Error("error beginning a transaction", "error", err)
+
+		return
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				log.Error("error rolling back the transaction", "error", err)
+			}
+		}
+	}()
+
+	narTotalSize, err := c.db.NarTotalSize(tx)
+	if err != nil {
+		log.Error("error fetching the total nar size", "error", err)
+
+		return
+	}
+
+	fmt.Printf(`
+nar-total-size = %d\n
+max-size = %d\n
+		`,
+		narTotalSize,
+		c.maxSize,
+	)
+
+	log = log.New("nar-total-size", narTotalSize)
+
+	if narTotalSize <= c.maxSize {
+		log.Info("store size is less than max-size, not removing any nars")
+
+		return
+	}
+
+	cleanupSize := narTotalSize - c.maxSize
+
+	log = log.New("cleanup-size", cleanupSize)
+
+	log.Info("going to remove nars")
+
+	nars, err := c.db.GetLeastAccessedNarRecords(tx, cleanupSize)
+	if err != nil {
+		log.Error("error getting the least used nars up to cleanup-size", "error", err)
+
+		return
+	}
+
+	for _, nar := range nars {
+		narInfo, err := c.db.GetNarInfoRecordByID(tx, nar.NarInfoID)
+		if err != nil {
+			log.Error("error fetching narinfo from the database", "ID", nar.NarInfoID, "error", err)
+			continue
+		}
+
+		narInfoPath := c.getNarInfoPathInStore(narInfo.Hash)
+
+		if err := os.Remove(narInfoPath); err != nil {
+			log.Error("error removing narinfo from store", "hash", nar.Hash, "error", err)
+			continue
+		}
+
+		if err := c.db.DeleteNarInfoRecord(tx, narInfo.Hash); err != nil {
+			log.Error("error removing narinfo from database", "hash", narInfo.Hash, "error", err)
+		}
+
+		narPath := c.getNarPathInStore(nar.Hash, nar.Compression)
+
+		if err := os.Remove(narPath); err != nil {
+			log.Error("error removing nar from store", "hash", nar.Hash, "error", err)
+			continue
+		}
+
+		if err := c.db.DeleteNarRecord(tx, nar.Hash); err != nil {
+			log.Error("error removing nar from database", "hash", nar.Hash, "error", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Error("error committing the transaction", "error", err)
+	}
 }
