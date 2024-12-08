@@ -124,7 +124,7 @@ func TestGetNarInfo(t *testing.T) {
 			t.Fatalf("expected no error, got %s", err)
 		}
 
-		if want, got := "/nix/store/7bn85d74qa0127p85rrswfyghxsqmcf7-iputils-20210722", ni.StorePath; want != got {
+		if want, got := "/nix/store/n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1", ni.StorePath; want != got {
 			t.Errorf("want %q got %q", want, got)
 		}
 	})
@@ -227,7 +227,7 @@ func TestGetNar(t *testing.T) {
 			body.Close()
 		}()
 
-		if want, got := int64(132228), cl; want != got {
+		if want, got := int64(50160), cl; want != got {
 			t.Errorf("want %d got %d", want, got)
 		}
 	})
