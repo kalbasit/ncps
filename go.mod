@@ -2,16 +2,12 @@ module github.com/kalbasit/ncps
 
 go 1.23.3
 
-// TODO: Remove the following line once this PR is merged upstream:
-// https://github.com/nix-community/go-nix/pull/125
-replace github.com/nix-community/go-nix => github.com/kalbasit/go-nix v1.0.0
-
 require (
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/inconshreveable/log15/v3 v3.0.0-testing.5
 	github.com/mattn/go-colorable v0.1.13
 	github.com/mattn/go-sqlite3 v1.14.24
-	github.com/nix-community/go-nix v0.0.0-20241202132706-bf395042f3ee
+	github.com/nix-community/go-nix v0.0.0-20241207090453-00891a7727c2
 	github.com/urfave/cli/v3 v3.0.0-beta1
 	golang.org/x/term v0.27.0
 )
