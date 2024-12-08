@@ -44,6 +44,12 @@ const (
 	WHERE hash = ?
 	`
 
+	getNarInfoIDQuery = `
+	SELECT id, hash, created_at, updated_at, last_accessed_at
+	FROM narinfos
+	WHERE id = ?
+	`
+
 	getNarQuery = `
 	SELECT
 		id,
@@ -176,42 +182,16 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 	return db, db.createTables()
 }
 
+// GetNarInfoRecordByID returns a narinfo record given its hash. If no nar was
+// found with the given hash then ErrNotFound is returned instead.
+func (db *DB) GetNarInfoRecordByID(tx *sql.Tx, id int64) (NarInfoModel, error) {
+	return db.getNarInfoRecord(tx, getNarInfoIDQuery, id)
+}
+
 // GetNarInfoRecord returns a narinfo record given its hash. If no nar was
 // found with the given hash then ErrNotFound is returned instead.
 func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfoModel, error) {
-	var nim NarInfoModel
-
-	stmt, err := tx.Prepare(getNarInfoQuery)
-	if err != nil {
-		return nim, fmt.Errorf("error preparing a statement: %w", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(hash)
-	if err != nil {
-		return nim, fmt.Errorf("error executing the statement: %w", err)
-	}
-	defer rows.Close()
-
-	nims := make([]NarInfoModel, 0)
-
-	for rows.Next() {
-		if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
-			return nim, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
-		}
-
-		nims = append(nims, nim)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nim, fmt.Errorf("error returned from rows: %w", err)
-	}
-
-	if len(nims) == 0 {
-		return nim, ErrNotFound
-	}
-
-	return nims[0], nil
+	return db.getNarInfoRecord(tx, getNarInfoQuery, hash)
 }
 
 // InsertNarInfoRecord creates a new narinfo record in the database.
@@ -434,4 +414,40 @@ func (db *DB) createTables() error {
 	}
 
 	return nil
+}
+
+func (db *DB) getNarInfoRecord(tx *sql.Tx, query string, args ...any) (NarInfoModel, error) {
+	var nim NarInfoModel
+
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return nim, fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return nim, fmt.Errorf("error executing the statement: %w", err)
+	}
+	defer rows.Close()
+
+	nims := make([]NarInfoModel, 0)
+
+	for rows.Next() {
+		if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
+			return nim, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
+		}
+
+		nims = append(nims, nim)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nim, fmt.Errorf("error returned from rows: %w", err)
+	}
+
+	if len(nims) == 0 {
+		return nim, ErrNotFound
+	}
+
+	return nims[0], nil
 }
