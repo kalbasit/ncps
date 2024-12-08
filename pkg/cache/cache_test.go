@@ -239,7 +239,7 @@ func TestGetNarInfo(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, tu.Host, []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="})
+	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
 	if err != nil {
 		t.Fatalf("expected no error, got %s", err)
 	}
@@ -919,7 +919,7 @@ func TestGetNar(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, tu.Host, []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="})
+	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
 	if err != nil {
 		t.Fatalf("expected no error, got %s", err)
 	}

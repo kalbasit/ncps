@@ -301,7 +301,7 @@ func TestServeHTTP(t *testing.T) {
 		}
 		defer os.RemoveAll(dir) // clean up
 
-		uc, err := upstream.New(logger, uu.Host, []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="})
+		uc, err := upstream.New(logger, uu.Host, testdata.PublicKeys())
 		if err != nil {
 			t.Fatalf("expected no error, got %s", err)
 		}

@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+func PublicKeys() []string {
+	return []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="}
+}
+
 func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 	t.Helper()
 
