@@ -40,42 +40,42 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("path is required", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "hello", nil)
+			_, err := cache.New(logger, "cache.example.com", "hello")
 			if want, got := cache.ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path is not absolute", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "hello", nil)
+			_, err := cache.New(logger, "cache.example.com", "hello")
 			if want, got := cache.ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path must exist", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/non-existing", nil)
+			_, err := cache.New(logger, "cache.example.com", "/non-existing")
 			if want, got := cache.ErrPathMustExist, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path must be a directory", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo", nil)
+			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo")
 			if want, got := cache.ErrPathMustBeADirectory, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("path must be writable", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/root", nil)
+			_, err := cache.New(logger, "cache.example.com", "/root")
 			if want, got := cache.ErrPathMustBeWritable, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("valid path must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", os.TempDir(), nil)
+			_, err := cache.New(logger, "cache.example.com", os.TempDir())
 			if err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
@@ -88,7 +88,7 @@ func TestNew(t *testing.T) {
 			}
 			defer os.RemoveAll(dir) // clean up
 
-			if _, err = cache.New(logger, "cache.example.com", dir, nil); err != nil {
+			if _, err = cache.New(logger, "cache.example.com", dir); err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
 
@@ -131,7 +131,7 @@ func TestNew(t *testing.T) {
 				t.Fatalf("expected no error but got %s", err)
 			}
 
-			_, err = cache.New(logger, "cache.example.com", dir, nil)
+			_, err = cache.New(logger, "cache.example.com", dir)
 			if err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
@@ -148,7 +148,7 @@ func TestNew(t *testing.T) {
 			}
 			defer os.RemoveAll(dir) // clean up
 
-			if _, err = cache.New(logger, "cache.example.com", dir, nil); err != nil {
+			if _, err = cache.New(logger, "cache.example.com", dir); err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
 
@@ -162,28 +162,28 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := cache.New(logger, "", os.TempDir(), nil)
+			_, err := cache.New(logger, "", os.TempDir())
 			if want, got := cache.ErrHostnameRequired, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := cache.New(logger, "https://cache.example.com", os.TempDir(), nil)
+			_, err := cache.New(logger, "https://cache.example.com", os.TempDir())
 			if want, got := cache.ErrHostnameMustNotContainScheme, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir(), nil)
+			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir())
 			if want, got := cache.ErrHostnameMustNotContainPath, err; !errors.Is(got, want) {
 				t.Errorf("want %q got %q", want, got)
 			}
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", os.TempDir(), nil)
+			_, err := cache.New(logger, "cache.example.com", os.TempDir())
 			if err != nil {
 				t.Errorf("expected no error, got %q", err)
 			}
@@ -191,10 +191,14 @@ func TestNew(t *testing.T) {
 	})
 }
 
+func TestAddUpstreamCaches(t *testing.T) {
+
+}
+
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
-	c, err := cache.New(logger, "cache.example.com", "/tmp", nil)
+	c, err := cache.New(logger, "cache.example.com", "/tmp")
 	if err != nil {
 		t.Fatalf("error not expected, got an error: %s", err)
 	}
@@ -244,11 +248,12 @@ func TestGetNarInfo(t *testing.T) {
 		t.Fatalf("expected no error, got %s", err)
 	}
 
-	c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
+	c, err := cache.New(logger, "cache.example.com", dir)
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
@@ -638,7 +643,7 @@ func TestPutNarInfo(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
@@ -833,7 +838,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
@@ -924,11 +929,12 @@ func TestGetNar(t *testing.T) {
 		t.Fatalf("expected no error, got %s", err)
 	}
 
-	c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
+	c, err := cache.New(logger, "cache.example.com", dir)
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
 
+	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
@@ -1195,7 +1201,7 @@ func TestPutNar(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}
@@ -1283,7 +1289,7 @@ func TestDeleteNar(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	if err != nil {
 		t.Errorf("expected no error, got %q", err)
 	}

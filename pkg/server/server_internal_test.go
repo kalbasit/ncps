@@ -24,7 +24,7 @@ func TestSetDeletePermitted(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	if err != nil {
 		t.Fatalf("expected no error, got %q", err)
 	}

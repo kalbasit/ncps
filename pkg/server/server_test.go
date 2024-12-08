@@ -38,7 +38,7 @@ func TestServeHTTP(t *testing.T) {
 		}
 		defer os.RemoveAll(dir) // clean up
 
-		c, err := cache.New(logger, "cache.example.com", dir, nil)
+		c, err := cache.New(logger, "cache.example.com", dir)
 		if err != nil {
 			t.Fatalf("expected no error, got %q", err)
 		}
@@ -306,10 +306,12 @@ func TestServeHTTP(t *testing.T) {
 			t.Fatalf("expected no error, got %s", err)
 		}
 
-		c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
+		c, err := cache.New(logger, "cache.example.com", dir)
 		if err != nil {
 			t.Fatalf("expected no error, got %q", err)
 		}
+
+		c.AddUpstreamCaches(uc)
 
 		s := server.New(logger, c)
 
@@ -417,7 +419,7 @@ func TestServeHTTP(t *testing.T) {
 		}
 		defer os.RemoveAll(dir) // clean up
 
-		c, err := cache.New(logger, "cache.example.com", dir, nil)
+		c, err := cache.New(logger, "cache.example.com", dir)
 		if err != nil {
 			t.Fatalf("expected no error, got %q", err)
 		}
