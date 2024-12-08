@@ -1218,3 +1218,51 @@ func TestNarTotalSize(t *testing.T) {
 
 	assert.Equal(t, expectedSize, size)
 }
+
+func TestGetLeastAccessedNarRecords(t *testing.T) {
+	dir, err := os.MkdirTemp("", "database-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir) // clean up
+
+	db, err := database.Open(logger, filepath.Join(dir, "db.sqlite"))
+	require.NoError(t, err)
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+
+	var totalSize uint64
+	for _, nar := range testdata.Entries {
+		totalSize += uint64(len(nar.NarText))
+
+		res, err := db.InsertNarInfoRecord(tx, nar.NarInfoHash)
+		require.NoError(t, err)
+
+		nid, err := res.LastInsertId()
+		require.NoError(t, err)
+
+		_, err = db.InsertNarRecord(tx, nid, nar.NarHash, "", uint64(len(nar.NarText)))
+		require.NoError(t, err)
+	}
+
+	time.Sleep(time.Second)
+
+	for _, nar := range testdata.Entries[:len(testdata.Entries)-1] {
+		_, err := db.TouchNarRecord(tx, nar.NarHash)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, tx.Commit())
+
+	tx, err = db.Begin()
+	require.NoError(t, err)
+
+	lastEntry := testdata.Entries[len(testdata.Entries)-1]
+
+	nms, err := db.GetLeastAccessedNarRecords(tx, totalSize-uint64(len(lastEntry.NarText)))
+	require.NoError(t, err)
+
+	if assert.Equal(t, 1, len(nms)) {
+		assert.Equal(t, lastEntry.NarHash, nms[0].Hash)
+	}
+}

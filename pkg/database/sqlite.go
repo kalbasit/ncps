@@ -45,8 +45,15 @@ const (
 	`
 
 	getNarQuery = `
-	SELECT id, narinfo_id, hash, compression, file_size,
-		created_at, updated_at, last_accessed_at
+	SELECT
+		id,
+		narinfo_id,
+		hash,
+		compression,
+		file_size,
+		created_at,
+		updated_at,
+		last_accessed_at
 	FROM nars
 	WHERE hash = ?
 	`
@@ -83,6 +90,30 @@ const (
 
 	narTotalSizeQuery = `
 	SELECT SUM(file_size) as total_size FROM nars;
+	`
+	leastUsedNarsQuery = `
+	SELECT
+		id,
+		narinfo_id,
+		hash,
+		compression,
+		file_size,
+		created_at,
+		updated_at,
+		last_accessed_at
+	FROM (
+		SELECT 
+			*,
+			(
+				SELECT SUM(file_size)
+				FROM nars n2
+				WHERE n2.last_accessed_at <= n1.last_accessed_at
+				ORDER BY last_accessed_at ASC
+			) AS running_total
+			FROM nars n1
+			ORDER BY last_accessed_at ASC
+	)
+	WHERE running_total <= ?;
 	`
 )
 
@@ -248,7 +279,7 @@ func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
 			&nm.LastAccessedAt,
 		)
 		if err != nil {
-			return nm, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
+			return nm, fmt.Errorf("error scanning the row into a NarModel: %w", err)
 		}
 
 		nms = append(nms, nm)
@@ -323,7 +354,55 @@ func (db *DB) NarTotalSize(tx *sql.Tx) (uint64, error) {
 		}
 	}
 
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("error returned from rows: %w", err)
+	}
+
 	return size, nil
+}
+
+// GetLeastAccessedNarRecords returns all records with the oldest
+// last_accessed_at up to totalFileSize left behind.
+func (db *DB) GetLeastAccessedNarRecords(tx *sql.Tx, totalFileSize uint64) ([]NarModel, error) {
+	stmt, err := tx.Prepare(leastUsedNarsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("error preparing a statement: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(totalFileSize)
+	if err != nil {
+		return nil, fmt.Errorf("error querying the statement: %w", err)
+	}
+	defer rows.Close()
+
+	nms := make([]NarModel, 0)
+
+	for rows.Next() {
+		var nm NarModel
+
+		err := rows.Scan(
+			&nm.ID,
+			&nm.NarInfoID,
+			&nm.Hash,
+			&nm.Compression,
+			&nm.FileSize,
+			&nm.CreatedAt,
+			&nm.UpdatedAt,
+			&nm.LastAccessedAt,
+		)
+		if err != nil {
+			return nms, fmt.Errorf("error scanning the row into a NarModel: %w", err)
+		}
+
+		nms = append(nms, nm)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nms, fmt.Errorf("error returned from rows: %w", err)
+	}
+
+	return nms, nil
 }
 
 func (db *DB) stmtExec(tx *sql.Tx, query string, args ...any) (sql.Result, error) {
