@@ -150,7 +150,7 @@ func (c *Cache) SetupCron(timezone *time.Location) {
 
 // AddLRUCronJob adds a job for LRU.
 func (c *Cache) AddLRUCronJob(schedule cron.Schedule) {
-	c.cron.Schedule(schedule, cron.FuncJob(c.lruCronJob))
+	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU))
 }
 
 // StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
@@ -941,4 +941,8 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	return ok
 }
 
-func (c *Cache) lruCronJob() {}
+func (c *Cache) runLRU() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+}
