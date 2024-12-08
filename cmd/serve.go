@@ -52,14 +52,14 @@ func serveCommand(logger log15.Logger) *cli.Command {
 				Sources: cli.EnvVars("CACHE_MAX_SIZE"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-lru-cron-spec",
+				Name:    "cache-lru-schedule",
 				Usage:   "The cron spec for cleaning the store. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation",
-				Sources: cli.EnvVars("LRU_CRON_SPEC"),
+				Sources: cli.EnvVars("CACHE_LRU_SCHEDULE"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-lru-cron-timezone",
+				Name:    "cache-lru-schedule-timezone",
 				Usage:   "The name of the timezone to use for the cron",
-				Sources: cli.EnvVars("LRU_CRON_TZ"),
+				Sources: cli.EnvVars("CACHE_LRU_SCHEDULE_TZ"),
 			},
 			&cli.StringFlag{
 				Name:    "server-addr",
@@ -150,12 +150,12 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 
 	c.AddUpstreamCaches(ucs...)
 
-	if cmd.String("cache-lru-cron-spec") == "" {
+	if cmd.String("cache-lru-schedule") == "" {
 		return c, nil
 	}
 
 	if cmd.String("cache-max-size") == "" {
-		return nil, fmt.Errorf("--cache-max-size is required when --cache-lru-cron-spec is specified")
+		return nil, fmt.Errorf("--cache-max-size is required when --cache-lru-schedule is specified")
 	}
 
 	size, err := helper.ParseSize(cmd.String("cache-max-size"))
@@ -167,7 +167,7 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 
 	var loc *time.Location
 
-	if cronTimezone := cmd.String("cache-lru-cron-timezone"); cronTimezone != "" {
+	if cronTimezone := cmd.String("cache-lru-schedule-timezone"); cronTimezone != "" {
 		loc, err = time.LoadLocation(cronTimezone)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
@@ -176,7 +176,7 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 
 	c.SetupCron(loc)
 
-	schedule, err := cron.ParseStandard(cmd.String("cache-lru-cron-spec"))
+	schedule, err := cron.ParseStandard(cmd.String("cache-lru-schedule"))
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the cron spec %q: %w", err)
 	}
