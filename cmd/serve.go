@@ -159,6 +159,23 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 
 	c.AddUpstreamCaches(ucs...)
 
+	var loc *time.Location
+
+	if cronTimezone := cmd.String("cache-lru-schedule-timezone"); cronTimezone != "" {
+		loc, err = time.LoadLocation(cronTimezone)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
+		}
+	}
+
+	logger.Info("setting up the cache timezone location", "time-zone", loc)
+
+	c.SetupCron(loc)
+
+	logger.Info("starting the cache cron scheduler")
+
+	c.StartCron()
+
 	if cmd.String("cache-lru-schedule") == "" {
 		return c, nil
 	}
@@ -176,19 +193,6 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 	logger.Info("setting up the cache max-size", "max-size", maxSize)
 
 	c.SetMaxSize(maxSize)
-
-	var loc *time.Location
-
-	if cronTimezone := cmd.String("cache-lru-schedule-timezone"); cronTimezone != "" {
-		loc, err = time.LoadLocation(cronTimezone)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
-		}
-	}
-
-	logger.Info("setting up the cache timezone location", "time-zone", loc)
-
-	c.SetupCron(loc)
 
 	schedule, err := cron.ParseStandard(cmd.String("cache-lru-schedule"))
 	if err != nil {
