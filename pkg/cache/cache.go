@@ -78,6 +78,9 @@ type Cache struct {
 	// for jobs.
 	muUpstreamJobs sync.Mutex
 	upstreamJobs   map[string]chan struct{}
+
+	// mu  is used by the LRU garbage collector to freeze access to the cache.
+	mu sync.RWMutex
 }
 
 // New returns a new Cache.
@@ -136,6 +139,9 @@ func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey
 // stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
 func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash, "compression", compression)
 
 	if c.hasNarInStore(log, hash, compression) {
@@ -174,6 +180,9 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 
 // PutNar records the NAR (given as an io.Reader) into the store.
 func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadCloser) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, r)
@@ -190,6 +199,9 @@ func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadClo
 
 // DeleteNar deletes the nar from the store.
 func (c *Cache) DeleteNar(_ context.Context, hash, compression string) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash, "compression", compression)
 
 	return c.deleteNarFromStore(log, hash, compression)
@@ -356,6 +368,9 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
 func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash)
 
 	var (
@@ -393,6 +408,9 @@ func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
 func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, r)
@@ -420,6 +438,9 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 
 // DeleteNarInfo deletes the narInfo from the store.
 func (c *Cache) DeleteNarInfo(_ context.Context, hash string) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash)
 
 	return c.deleteNarInfoFromStore(log, hash)
