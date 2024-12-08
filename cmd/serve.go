@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/robfig/cron/v3"
 	"github.com/urfave/cli/v3"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/server"
 )
 
@@ -45,6 +47,21 @@ func serveCommand(logger log15.Logger) *cli.Command {
 				Required: true,
 			},
 			&cli.StringFlag{
+				Name:    "cache-max-size",
+				Usage:   "The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T",
+				Sources: cli.EnvVars("CACHE_MAX_SIZE"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-lru-cron-spec",
+				Usage:   "The cron spec for cleaning the store. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation",
+				Sources: cli.EnvVars("LRU_CRON_SPEC"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-lru-cron-timezone",
+				Usage:   "The name of the timezone to use for the cron",
+				Sources: cli.EnvVars("LRU_CRON_TZ"),
+			},
+			&cli.StringFlag{
 				Name:    "server-addr",
 				Usage:   "The address of the server",
 				Sources: cli.EnvVars("SERVER_ADDR"),
@@ -73,24 +90,22 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"))
+		cache, err := createCache(logger, cmd, ucs)
 		if err != nil {
-			return fmt.Errorf("error creating a new cache: %w", err)
+			return err
 		}
-
-		cache.AddUpstreamCaches(ucs...)
 
 		srv := server.New(logger, cache)
 		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
 		srv.SetPutPermitted(cmd.Bool("allow-put"))
-
-		logger.Info("Server started", "server-addr", cmd.String("server-addr"))
 
 		server := &http.Server{
 			Addr:              cmd.String("server-addr"),
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+
+		logger.Info("Server started", "server-addr", cmd.String("server-addr"))
 
 		if err := server.ListenAndServe(); err != nil {
 			return fmt.Errorf("error starting the HTTP listener: %w", err)
@@ -125,4 +140,48 @@ func getUpstreamCaches(_ context.Context, logger log15.Logger, cmd *cli.Command)
 	}
 
 	return ucs, nil
+}
+
+func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*cache.Cache, error) {
+	c, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"))
+	if err != nil {
+		return nil, fmt.Errorf("error creating a new cache: %w", err)
+	}
+
+	c.AddUpstreamCaches(ucs...)
+
+	if cmd.String("cache-lru-cron-spec") == "" {
+		return c, nil
+	}
+
+	if cmd.String("cache-max-size") == "" {
+		return nil, fmt.Errorf("--cache-max-size is required when --cache-lru-cron-spec is specified")
+	}
+
+	size, err := helper.ParseSize(cmd.String("cache-max-size"))
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the size: %w", err)
+	}
+
+	c.SetMaxSize(size)
+
+	var loc *time.Location
+
+	if cronTimezone := cmd.String("cache-lru-cron-timezone"); cronTimezone != "" {
+		loc, err = time.LoadLocation(cronTimezone)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
+		}
+	}
+
+	c.SetupCron(loc)
+
+	schedule, err := cron.ParseStandard(cmd.String("cache-lru-cron-spec"))
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the cron spec %q: %w", err)
+	}
+
+	c.AddLRUCronJob(schedule)
+
+	return c, nil
 }
