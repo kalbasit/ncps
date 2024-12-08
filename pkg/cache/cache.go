@@ -18,6 +18,7 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/robfig/cron/v3"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -65,6 +66,7 @@ type Cache struct {
 	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
+	maxSize        uint64
 	db             *database.DB
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
@@ -81,6 +83,8 @@ type Cache struct {
 
 	// mu  is used by the LRU garbage collector to freeze access to the cache.
 	mu sync.RWMutex
+
+	cron *cron.Cron
 }
 
 // New returns a new Cache.
@@ -129,6 +133,28 @@ func (s *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
 
 	s.upstreamCaches = ucss
 }
+
+// SetMaxSize sets the maxsize of the cache. This will be used by the LRU
+// cronjob to automatically clean-up the store.
+func (c *Cache) SetMaxSize(maxSize uint64) { c.maxSize = maxSize }
+
+// SetupCron creates a cron instance in the cache.
+func (c *Cache) SetupCron(timezone *time.Location) {
+	var opts []cron.Option
+	if timezone != nil {
+		opts = append(opts, cron.WithLocation(timezone))
+	}
+
+	c.cron = cron.New(opts...)
+}
+
+// AddLRUCronJob adds a job for LRU.
+func (c *Cache) AddLRUCronJob(schedule cron.Schedule) {
+	c.cron.Schedule(schedule, cron.FuncJob(c.lruCronJob))
+}
+
+// StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
+func (c *Cache) StartCron() { c.cron.Start() }
 
 // SetRecordAgeIgnoreTouch changes the duration at which a record is considered
 // up to date and a touch is not invoked.
@@ -914,3 +940,5 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 
 	return ok
 }
+
+func (c *Cache) lruCronJob() {}

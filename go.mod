@@ -8,6 +8,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/nix-community/go-nix v0.0.0-20241207090453-00891a7727c2
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v3 v3.0.0-beta1
 	golang.org/x/term v0.27.0
