@@ -1240,9 +1240,7 @@ func TestPutNar(t *testing.T) {
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
 			_, err := os.Stat(storePath)
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
+			assert.NoError(t, err)
 		})
 
 		t.Run("putNar does not return an error", func(t *testing.T) {
