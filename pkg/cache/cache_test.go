@@ -43,27 +43,27 @@ func TestNew(t *testing.T) {
 
 		t.Run("path is required", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "hello", nil)
-			assert.ErrorIs(t, cache.ErrPathMustBeAbsolute, err)
+			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path is not absolute", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "hello", nil)
-			assert.ErrorIs(t, cache.ErrPathMustBeAbsolute, err)
+			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path must exist", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "/non-existing", nil)
-			assert.ErrorIs(t, cache.ErrPathMustExist, err)
+			assert.ErrorIs(t, err, cache.ErrPathMustExist)
 		})
 
 		t.Run("path must be a directory", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo", nil)
-			assert.ErrorIs(t, cache.ErrPathMustBeADirectory, err)
+			assert.ErrorIs(t, err, cache.ErrPathMustBeADirectory)
 		})
 
 		t.Run("path must be writable", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "/root", nil)
-			assert.ErrorIs(t, cache.ErrPathMustBeWritable, err)
+			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
 		})
 
 		t.Run("valid path must return no error", func(t *testing.T) {
@@ -129,17 +129,17 @@ func TestNew(t *testing.T) {
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
 			_, err := cache.New(logger, "", os.TempDir(), nil)
-			assert.ErrorIs(t, cache.ErrHostnameRequired, err)
+			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
 			_, err := cache.New(logger, "https://cache.example.com", os.TempDir(), nil)
-			assert.ErrorIs(t, cache.ErrHostnameMustNotContainScheme, err)
+			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir(), nil)
-			assert.ErrorIs(t, cache.ErrHostnameMustNotContainPath, err)
+			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
