@@ -230,9 +230,7 @@ func TestGetNarInfo(t *testing.T) {
 
 		t.Run("nar does not exist in the database yet", func(t *testing.T) {
 			rows, err := db.Query("SELECT hash FROM nars")
-			if err != nil {
-				t.Fatalf("error executing select query: %s", err)
-			}
+			require.NoError(t, err)
 
 			var hashes []string
 
