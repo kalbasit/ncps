@@ -95,7 +95,7 @@ func TestServeHTTP(t *testing.T) {
 			defer ts.Close()
 
 			t.Run("narInfo", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoPath)
+				storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 
 				t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 					assert.NoFileExists(t, storePath)
@@ -311,7 +311,7 @@ func TestServeHTTP(t *testing.T) {
 			defer ts.Close()
 
 			t.Run("narInfo", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoPath)
+				storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 
 				t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 					assert.NoFileExists(t, storePath)
