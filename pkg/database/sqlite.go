@@ -14,6 +14,7 @@ const (
 	// narInfosTable represents all the narinfo files that are available in the store.
 	// NOTE: Updating the structure here **will not** migrate the existing table!
 	narInfosTable = `
+	-- table
 	CREATE TABLE IF NOT EXISTS narinfos (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		hash TEXT NOT NULL UNIQUE,
@@ -21,11 +22,17 @@ const (
 		updated_at TIMESTAMP,
 		last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
+
+	-- indexes
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_narinfos_id ON narinfos (id);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_narinfos_hash ON narinfos (hash);
+	CREATE INDEX IF NOT EXISTS idx_narinfos_last_accessed_at ON narinfos (last_accessed_at);
 	`
 
 	// narsTable represents all the nar files that are available in the store.
 	// NOTE: Updating the structure here **will not** migrate the existing table!
 	narsTable = `
+	-- table
 	CREATE TABLE IF NOT EXISTS nars (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		narinfo_id INTEGER NOT NULL REFERENCES narinfos(id),
@@ -36,6 +43,12 @@ const (
 		updated_at TIMESTAMP,
 		last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
+
+	-- indexes
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_nars_id ON nars (id);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_nars_hash ON nars (hash);
+	CREATE INDEX IF NOT EXISTS idx_nars_narinfo_id ON nars (narinfo_id);
+	CREATE INDEX IF NOT EXISTS idx_nars_last_accessed_at ON nars (last_accessed_at);
 	`
 
 	getNarInfoQuery = `
@@ -97,6 +110,7 @@ const (
 	narTotalSizeQuery = `
 	SELECT SUM(file_size) as total_size FROM nars;
 	`
+
 	leastUsedNarsQuery = `
 	SELECT
 		id,
