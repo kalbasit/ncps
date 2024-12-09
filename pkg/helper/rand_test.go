@@ -4,9 +4,10 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kalbasit/ncps/pkg/helper"
 )
 
 func TestRandString(t *testing.T) {

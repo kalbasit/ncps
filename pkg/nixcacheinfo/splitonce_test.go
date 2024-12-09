@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSplitOnce(t *testing.T) {
@@ -40,7 +41,7 @@ func TestSplitOnce(t *testing.T) {
 			} else if test.err != "" && err == nil {
 				t.Fatalf("expected an error but got none")
 			} else if test.err != "" && err != nil {
-				assert.EqualError(t, err, test.err)
+				require.EqualError(t, err, test.err)
 			}
 
 			assert.Equal(t, test.str1, str1)

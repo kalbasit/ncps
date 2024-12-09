@@ -3,9 +3,10 @@ package nixcacheinfo_test
 import (
 	"testing"
 
-	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 )
 
 func TestParse(t *testing.T) {

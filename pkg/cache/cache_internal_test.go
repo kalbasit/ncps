@@ -60,7 +60,6 @@ func TestNew(t *testing.T) {
 		require.NoError(t, err)
 
 		for idx, uc := range c.upstreamCaches {
-			//nolint:gosec
 			assert.EqualValues(t, idx+1, uc.GetPriority())
 		}
 	})

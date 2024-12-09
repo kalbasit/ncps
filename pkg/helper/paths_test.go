@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/kalbasit/ncps/pkg/helper"
 )
 
 func TestNarInfoPath(t *testing.T) {
