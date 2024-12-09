@@ -3,7 +3,6 @@ package cache_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"io"
 	"net/url"
 	"os"
@@ -43,56 +42,41 @@ func TestNew(t *testing.T) {
 
 		t.Run("path is required", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "hello")
-			if want, got := cache.ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path is not absolute", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "hello")
-			if want, got := cache.ErrPathMustBeAbsolute, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path must exist", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "/non-existing")
-			if want, got := cache.ErrPathMustExist, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrPathMustExist)
 		})
 
 		t.Run("path must be a directory", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo")
-			if want, got := cache.ErrPathMustBeADirectory, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrPathMustBeADirectory)
 		})
 
 		t.Run("path must be writable", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", "/root")
-			if want, got := cache.ErrPathMustBeWritable, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
 		})
 
 		t.Run("valid path must return no error", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", os.TempDir())
-			if err != nil {
-				t.Errorf("expected no error, got %q", err)
-			}
+			assert.NoError(t, err)
 		})
 
 		t.Run("should create directories", func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "cache-path-")
-			if err != nil {
-				t.Fatalf("expected no error, got: %q", err)
-			}
+			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
 
-			if _, err = cache.New(logger, "cache.example.com", dir); err != nil {
-				t.Errorf("expected no error, got %q", err)
-			}
+			_, err = cache.New(logger, "cache.example.com", dir)
+			require.NoError(t, err)
 
 			dirs := []string{
 				"config",
@@ -104,59 +88,38 @@ func TestNew(t *testing.T) {
 
 			for _, p := range dirs {
 				t.Run("Checking that "+p+" exists", func(t *testing.T) {
-					info, err := os.Stat(filepath.Join(dir, p))
-					if err != nil {
-						t.Fatalf("expected no error, got: %s", err)
-					}
-
-					if want, got := true, info.IsDir(); want != got {
-						t.Errorf("want %t got %t", want, got)
-					}
+					assert.DirExists(t, filepath.Join(dir, p))
 				})
 			}
 		})
 
 		t.Run("store/tmp is removed on boot", func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "cache-path-")
-			if err != nil {
-				t.Fatalf("expected no error, got: %q", err)
-			}
+			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
 
 			// create the directory tmp and add a file inside of it
-			if err := os.MkdirAll(filepath.Join(dir, "store", "tmp"), 0o700); err != nil {
-				t.Fatalf("expected no error but got %s", err)
-			}
+			err = os.MkdirAll(filepath.Join(dir, "store", "tmp"), 0o700)
+			require.NoError(t, err)
 
 			f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "hello")
-			if err != nil {
-				t.Fatalf("expected no error but got %s", err)
-			}
+			require.NoError(t, err)
 
 			_, err = cache.New(logger, "cache.example.com", dir)
-			if err != nil {
-				t.Errorf("expected no error, got %q", err)
-			}
+			require.NoError(t, err)
 
-			if _, err := os.Stat(f.Name()); !os.IsNotExist(err) {
-				t.Errorf("expected %q to not exist but it does", f.Name())
-			}
+			assert.NoFileExists(t, f.Name())
 		})
 
 		t.Run("should create sqlite3 database", func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "cache-path-")
-			if err != nil {
-				t.Fatalf("expected no error, got: %q", err)
-			}
+			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
 
-			if _, err = cache.New(logger, "cache.example.com", dir); err != nil {
-				t.Errorf("expected no error, got %q", err)
-			}
+			_, err = cache.New(logger, "cache.example.com", dir)
+			require.NoError(t, err)
 
-			if _, err := os.Stat(filepath.Join(dir, "var", "ncps", "db", "db.sqlite")); err != nil {
-				t.Fatalf("expected no error, got: %s", err)
-			}
+			assert.FileExists(t, filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 		})
 	})
 
@@ -165,30 +128,22 @@ func TestNew(t *testing.T) {
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
 			_, err := cache.New(logger, "", os.TempDir())
-			if want, got := cache.ErrHostnameRequired, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
 			_, err := cache.New(logger, "https://cache.example.com", os.TempDir())
-			if want, got := cache.ErrHostnameMustNotContainScheme, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir())
-			if want, got := cache.ErrHostnameMustNotContainPath, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
 			_, err := cache.New(logger, "cache.example.com", os.TempDir())
-			if err != nil {
-				t.Errorf("expected no error, got %q", err)
-			}
+			require.NoError(t, err)
 		})
 	})
 }
@@ -201,31 +156,23 @@ func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
 	c, err := cache.New(logger, "cache.example.com", "/tmp")
-	if err != nil {
-		t.Fatalf("error not expected, got an error: %s", err)
-	}
+	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
 
 	t.Run("should return a public key with the correct prefix", func(t *testing.T) {
 		t.Parallel()
 
-		if !strings.HasPrefix(pubKey, "cache.example.com:") {
-			t.Errorf("public key should start with cache.example.com: but it does not: %s", pubKey)
-		}
+		assert.True(t, strings.HasPrefix(pubKey, "cache.example.com:"))
 	})
 
 	t.Run("should return a valid public key", func(t *testing.T) {
 		t.Parallel()
 
 		pk, err := signature.ParsePublicKey(pubKey)
-		if err != nil {
-			t.Fatalf("error is not expected: %s", err)
-		}
+		require.NoError(t, err)
 
-		if want, got := pubKey, pk.String(); want != got {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.Equal(t, pubKey, pk.String())
 	})
 }
 
@@ -235,126 +182,85 @@ func TestGetNarInfo(t *testing.T) {
 	defer ts.Close()
 
 	tu, err := url.Parse(ts.URL)
-	if err != nil {
-		t.Fatalf("error not expected, got %s", err)
-	}
+	require.NoError(t, err)
 
 	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
 	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
-	if err != nil {
-		t.Fatalf("expected no error, got %s", err)
-	}
+	require.NoError(t, err)
 
 	c, err := cache.New(logger, "cache.example.com", dir)
-	if err != nil {
-		t.Errorf("expected no error, got %q", err)
-	}
+	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
-	if err != nil {
-		t.Fatalf("error opening the database: %s", err)
-	}
+	require.NoError(t, err)
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
 		_, err := c.GetNarInfo("doesnotexist")
-		if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
-			t.Errorf("want %s got %s", want, got)
-		}
+		assert.ErrorIs(t, err, cache.ErrNotFound)
 	})
 
 	t.Run("narinfo exists upstream", func(t *testing.T) {
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo"))
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
+			assert.NoFileExists(t, filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo"))
 		})
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar2.NarHash+".nar.xz"))
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
+			assert.NoFileExists(t, filepath.Join(dir, "store", "nar", testdata.Nar2.NarHash+".nar.xz"))
 		})
 
 		t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
 			rows, err := db.Query("SELECT hash FROM narinfos")
-			if err != nil {
-				t.Fatalf("error executing select query: %s", err)
-			}
+			require.NoError(t, err)
 
 			var hashes []string
 
 			for rows.Next() {
 				var hash string
 
-				if err := rows.Scan(&hash); err != nil {
-					t.Fatalf("error fetching hash from db: %s", err)
-				}
+				err := rows.Scan(&hash)
+				require.NoError(t, err)
 
 				hashes = append(hashes, hash)
 			}
 
-			if err := rows.Err(); err != nil {
-				t.Errorf("not expecting an error got: %s", err)
-			}
-
-			if want, got := 0, len(hashes); want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+			require.NoError(t, rows.Err())
+			assert.Empty(t, hashes)
 		})
 
 		t.Run("nar does not exist in the database yet", func(t *testing.T) {
 			rows, err := db.Query("SELECT hash FROM nars")
-			if err != nil {
-				t.Fatalf("error executing select query: %s", err)
-			}
+			require.NoError(t, err)
 
 			var hashes []string
 
 			for rows.Next() {
 				var hash string
 
-				if err := rows.Scan(&hash); err != nil {
-					t.Fatalf("error fetching hash from db: %s", err)
-				}
+				err := rows.Scan(&hash)
+				require.NoError(t, err)
 
 				hashes = append(hashes, hash)
 			}
 
-			if err := rows.Err(); err != nil {
-				t.Errorf("not expecting an error got: %s", err)
-			}
-
-			if want, got := 0, len(hashes); want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+			require.NoError(t, rows.Err())
+			assert.Empty(t, hashes)
 		})
 
 		ni, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
-		if err != nil {
-			t.Fatalf("no error expected, got: %s", err)
-		}
+		require.NoError(t, err)
 
 		t.Run("size is correct", func(t *testing.T) {
-			if want, got := uint64(50308), ni.FileSize; want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+			assert.Equal(t, uint64(50308), ni.FileSize)
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo"))
-			if err != nil {
-				t.Fatalf("expected no error got %s", err)
-			}
+			assert.FileExists(t, filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo"))
 		})
 
 		t.Run("it should be signed by our server", func(t *testing.T) {
@@ -369,15 +275,9 @@ func TestGetNarInfo(t *testing.T) {
 				}
 			}
 
-			if want, got := true, found; want != got {
-				t.Errorf("want %t got %t", want, got)
-			}
+			assert.True(t, found)
 
-			validSig := signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()})
-
-			if want, got := true, validSig; want != got {
-				t.Errorf("want %t got %t", want, got)
-			}
+			assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
 		})
 
 		t.Run("it should have also pulled the nar", func(t *testing.T) {
@@ -395,9 +295,7 @@ func TestGetNarInfo(t *testing.T) {
 				}
 			}
 
-			if err != nil {
-				t.Errorf("expected no error got %s", err)
-			}
+			assert.NoError(t, err)
 		})
 
 		t.Run("narinfo does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
@@ -407,37 +305,24 @@ func TestGetNarInfo(t *testing.T) {
 			`
 
 			rows, err := db.Query(query)
-			if err != nil {
-				t.Fatalf("error selecting narinfos: %s", err)
-			}
+			require.NoError(t, err)
 
 			nims := make([]database.NarInfoModel, 0)
 
 			for rows.Next() {
 				var nim database.NarInfoModel
 
-				if err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt); err != nil {
-					t.Fatalf("expected no error got: %s", err)
-				}
+				err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
+				require.NoError(t, err)
 
 				nims = append(nims, nim)
 			}
 
-			if err := rows.Err(); err != nil {
-				t.Errorf("not expecting an error got: %s", err)
-			}
+			require.NoError(t, rows.Err())
 
-			if want, got := 1, len(nims); want != got {
-				t.Fatalf("want %d got %d", want, got)
-			}
-
-			if want, got := testdata.Nar2.NarInfoHash, nims[0].Hash; want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-
-			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
-				t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
-			}
+			assert.Len(t, nims, 1)
+			assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
@@ -447,9 +332,7 @@ func TestGetNarInfo(t *testing.T) {
 				`
 
 			rows, err := db.Query(query)
-			if err != nil {
-				t.Fatalf("error selecting narinfos: %s", err)
-			}
+			require.NoError(t, err)
 
 			nims := make([]database.NarModel, 0)
 
@@ -461,28 +344,15 @@ func TestGetNarInfo(t *testing.T) {
 					&nim.CreatedAt,
 					&nim.LastAccessedAt,
 				)
-				if err != nil {
-					t.Fatalf("expected no error got: %s", err)
-				}
+				require.NoError(t, err)
 
 				nims = append(nims, nim)
 			}
 
-			if err := rows.Err(); err != nil {
-				t.Errorf("not expecting an error got: %s", err)
-			}
-
-			if want, got := 1, len(nims); want != got {
-				t.Fatalf("want %d got %d", want, got)
-			}
-
-			if want, got := testdata.Nar2.NarHash, nims[0].Hash; want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-
-			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
-				t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
-			}
+			require.NoError(t, rows.Err())
+			assert.Len(t, nims, 1)
+			assert.Equal(t, testdata.Nar2.NarHash, nims[0].Hash)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -495,9 +365,7 @@ func TestGetNarInfo(t *testing.T) {
 			}()
 
 			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
-			if err != nil {
-				t.Fatalf("no error expected, got: %s", err)
-			}
+			require.NoError(t, err)
 
 			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
 				const query = `
@@ -506,37 +374,24 @@ func TestGetNarInfo(t *testing.T) {
 			`
 
 				rows, err := db.Query(query)
-				if err != nil {
-					t.Fatalf("error selecting narinfos: %s", err)
-				}
+				require.NoError(t, err)
 
 				nims := make([]database.NarInfoModel, 0)
 
 				for rows.Next() {
 					var nim database.NarInfoModel
 
-					if err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt); err != nil {
-						t.Fatalf("expected no error got: %s", err)
-					}
+					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
+					require.NoError(t, err)
 
 					nims = append(nims, nim)
 				}
 
-				if err := rows.Err(); err != nil {
-					t.Errorf("not expecting an error got: %s", err)
-				}
+				require.NoError(t, rows.Err())
 
-				if want, got := 1, len(nims); want != got {
-					t.Fatalf("want %d got %d", want, got)
-				}
-
-				if want, got := testdata.Nar2.NarInfoHash, nims[0].Hash; want != got {
-					t.Errorf("want %q got %q", want, got)
-				}
-
-				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
-					t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
-				}
+				assert.Len(t, nims, 1)
+				assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 			})
 		})
 
@@ -544,9 +399,7 @@ func TestGetNarInfo(t *testing.T) {
 			time.Sleep(time.Second)
 
 			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
-			if err != nil {
-				t.Fatalf("no error expected, got: %s", err)
-			}
+			require.NoError(t, err)
 
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
 				const query = `
@@ -555,63 +408,42 @@ func TestGetNarInfo(t *testing.T) {
 			`
 
 				rows, err := db.Query(query)
-				if err != nil {
-					t.Fatalf("error selecting narinfos: %s", err)
-				}
+				require.NoError(t, err)
 
 				nims := make([]database.NarInfoModel, 0)
 
 				for rows.Next() {
 					var nim database.NarInfoModel
 
-					if err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt); err != nil {
-						t.Fatalf("expected no error got: %s", err)
-					}
+					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
+					require.NoError(t, err)
 
 					nims = append(nims, nim)
 				}
 
-				if err := rows.Err(); err != nil {
-					t.Errorf("not expecting an error got: %s", err)
-				}
+				require.NoError(t, rows.Err())
 
-				if want, got := 1, len(nims); want != got {
-					t.Fatalf("want %d got %d", want, got)
-				}
-
-				if want, got := testdata.Nar2.NarInfoHash, nims[0].Hash; want != got {
-					t.Errorf("want %q got %q", want, got)
-				}
-
-				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() == got.Unix() {
-					t.Errorf("expected created_at != last_accessed_at got: %q == %q", want, got)
-				}
+				assert.Len(t, nims, 1)
+				assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
+				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 			})
 		})
 
 		t.Run("no error is returned if the entry already exist in the database", func(t *testing.T) {
-			if err := os.Remove(filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo")); err != nil {
-				t.Fatalf("error removing the narinfo from the store: %s", err)
-			}
+			require.NoError(t, os.Remove(filepath.Join(dir, "store", testdata.Nar2.NarInfoHash+".narinfo")))
 
 			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
-			if err != nil {
-				t.Errorf("no error expected, got: %s", err)
-			}
+			assert.NoError(t, err)
 		})
 
 		t.Run("nar does not exist in storage, it gets pulled automatically", func(t *testing.T) {
 			narFile := filepath.Join(dir, "store", "nar", testdata.Nar2.NarHash+".nar.xz")
 
-			if err := os.Remove(narFile); err != nil {
-				t.Fatalf("error remove the nar file: %s", err)
-			}
+			require.NoError(t, os.Remove(narFile))
 
 			t.Run("it should not return an error", func(t *testing.T) {
 				_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
-				if err != nil {
-					t.Fatalf("no error expected, got: %s", err)
-				}
+				assert.NoError(t, err)
 			})
 
 			t.Run("it should have also pulled the nar", func(t *testing.T) {
@@ -629,9 +461,7 @@ func TestGetNarInfo(t *testing.T) {
 					}
 				}
 
-				if err != nil {
-					t.Errorf("expected no error got %s", err)
-				}
+				assert.NoError(t, err)
 			})
 		})
 	})
@@ -640,112 +470,77 @@ func TestGetNarInfo(t *testing.T) {
 //nolint:paralleltest
 func TestPutNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
 	c, err := cache.New(logger, "cache.example.com", dir)
-	if err != nil {
-		t.Errorf("expected no error, got %q", err)
-	}
+	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
-	if err != nil {
-		t.Fatalf("error opening the database: %s", err)
-	}
+	require.NoError(t, err)
 
 	storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 	t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-		_, err := os.Stat(storePath)
-		if err == nil {
-			t.Fatal("expected an error but got none")
-		}
+		assert.NoFileExists(t, storePath)
 	})
 
 	t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
 		rows, err := db.Query("SELECT hash FROM narinfos")
-		if err != nil {
-			t.Fatalf("error executing select query: %s", err)
-		}
+		require.NoError(t, err)
 
 		var hashes []string
 
 		for rows.Next() {
 			var hash string
 
-			if err := rows.Scan(&hash); err != nil {
-				t.Fatalf("error fetching hash from db: %s", err)
-			}
+			err := rows.Scan(&hash)
+			require.NoError(t, err)
 
 			hashes = append(hashes, hash)
 		}
 
-		if err := rows.Err(); err != nil {
-			t.Errorf("not expecting an error got: %s", err)
-		}
-
-		if want, got := 0, len(hashes); want != got {
-			t.Errorf("want %d got %d", want, got)
-		}
+		require.NoError(t, rows.Err())
+		assert.Empty(t, hashes)
 	})
 
 	t.Run("nar does not exist in the database yet", func(t *testing.T) {
 		rows, err := db.Query("SELECT hash FROM nars")
-		if err != nil {
-			t.Fatalf("error executing select query: %s", err)
-		}
+		require.NoError(t, err)
 
 		var hashes []string
 
 		for rows.Next() {
 			var hash string
 
-			if err := rows.Scan(&hash); err != nil {
-				t.Fatalf("error fetching hash from db: %s", err)
-			}
+			err := rows.Scan(&hash)
+			require.NoError(t, err)
 
 			hashes = append(hashes, hash)
 		}
 
-		if err := rows.Err(); err != nil {
-			t.Errorf("not expecting an error got: %s", err)
-		}
-
-		if want, got := 0, len(hashes); want != got {
-			t.Errorf("want %d got %d", want, got)
-		}
+		require.NoError(t, rows.Err())
+		assert.Empty(t, hashes)
 	})
 
 	t.Run("PutNarInfo does not return an error", func(t *testing.T) {
 		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
 
-		err := c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r)
-		if err != nil {
-			t.Errorf("error not expected got %s", err)
-		}
+		assert.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
 	})
 
 	t.Run("narinfo does exist in storage", func(t *testing.T) {
-		_, err := os.Stat(storePath)
-		if err != nil {
-			t.Fatalf("expected no error but got: %s", err)
-		}
+		assert.FileExists(t, storePath)
 	})
 
 	t.Run("it should be signed by our server", func(t *testing.T) {
 		f, err := os.Open(storePath)
-		if err != nil {
-			t.Fatalf("no error was expected, got: %s", err)
-		}
+		require.NoError(t, err)
 
 		ni, err := narinfo.Parse(f)
-		if err != nil {
-			t.Fatalf("no error was expected, got: %s", err)
-		}
+		require.NoError(t, err)
 
 		var found bool
 
@@ -758,92 +553,62 @@ func TestPutNarInfo(t *testing.T) {
 			}
 		}
 
-		if want, got := true, found; want != got {
-			t.Errorf("want %t got %t", want, got)
-		}
+		assert.True(t, found)
 
-		validSig := signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()})
-
-		if want, got := true, validSig; want != got {
-			t.Errorf("want %t got %t", want, got)
-		}
+		assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
 	})
 
 	t.Run("narinfo does exist in the database", func(t *testing.T) {
 		rows, err := db.Query("SELECT hash FROM narinfos")
-		if err != nil {
-			t.Fatalf("error executing select query: %s", err)
-		}
+		require.NoError(t, err)
 
 		var hashes []string
 
 		for rows.Next() {
 			var hash string
 
-			if err := rows.Scan(&hash); err != nil {
-				t.Fatalf("error fetching hash from db: %s", err)
-			}
+			err := rows.Scan(&hash)
+			require.NoError(t, err)
 
 			hashes = append(hashes, hash)
 		}
 
-		if err := rows.Err(); err != nil {
-			t.Errorf("not expecting an error got: %s", err)
-		}
+		require.NoError(t, rows.Err())
 
-		if want, got := 1, len(hashes); want != got {
-			t.Fatalf("want %d got %d", want, got)
-		}
-
-		if want, got := testdata.Nar1.NarInfoHash, hashes[0]; want != got {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.Len(t, hashes, 1)
+		assert.Equal(t, testdata.Nar1.NarInfoHash, hashes[0])
 	})
 
 	t.Run("nar does exist in the database", func(t *testing.T) {
 		rows, err := db.Query("SELECT hash FROM nars")
-		if err != nil {
-			t.Fatalf("error executing select query: %s", err)
-		}
+		require.NoError(t, err)
 
 		var hashes []string
 
 		for rows.Next() {
 			var hash string
 
-			if err := rows.Scan(&hash); err != nil {
-				t.Fatalf("error fetching hash from db: %s", err)
-			}
+			err := rows.Scan(&hash)
+			require.NoError(t, err)
 
 			hashes = append(hashes, hash)
 		}
 
-		if err := rows.Err(); err != nil {
-			t.Errorf("not expecting an error got: %s", err)
-		}
+		require.NoError(t, rows.Err())
 
-		if want, got := 1, len(hashes); want != got {
-			t.Fatalf("want %d got %d", want, got)
-		}
-
-		if want, got := testdata.Nar1.NarHash, hashes[0]; want != got {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.Len(t, hashes, 1)
+		assert.Equal(t, testdata.Nar1.NarHash, hashes[0])
 	})
 }
 
 //nolint:paralleltest
 func TestDeleteNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
 	c, err := cache.New(logger, "cache.example.com", dir)
-	if err != nil {
-		t.Errorf("expected no error, got %q", err)
-	}
+	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -851,17 +616,12 @@ func TestDeleteNarInfo(t *testing.T) {
 		storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(storePath)
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
+			assert.NoFileExists(t, storePath)
 		})
 
 		t.Run("DeleteNarInfo does return an error", func(t *testing.T) {
 			err := c.DeleteNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
-			if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, cache.ErrNotFound)
 		})
 	})
 
@@ -869,43 +629,27 @@ func TestDeleteNarInfo(t *testing.T) {
 		storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(storePath)
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
+			assert.NoFileExists(t, storePath)
 		})
 
 		f, err := os.Create(storePath)
-		if err != nil {
-			t.Fatalf("expecting no error got %s", err)
-		}
+		require.NoError(t, err)
 
-		if _, err := f.WriteString(testdata.Nar1.NarInfoText); err != nil {
-			t.Fatalf("expecting no error got %s", err)
-		}
+		_, err = f.WriteString(testdata.Nar1.NarInfoText)
+		require.NoError(t, err)
 
-		if err := f.Close(); err != nil {
-			t.Fatalf("expecting no error got %s", err)
-		}
+		require.NoError(t, err)
 
 		t.Run("narinfo does exist in storage", func(t *testing.T) {
-			_, err := os.Stat(storePath)
-			if err != nil {
-				t.Fatalf("expected no error but got: %s", err)
-			}
+			assert.FileExists(t, storePath)
 		})
 
 		t.Run("DeleteNarInfo does not return an error", func(t *testing.T) {
-			if err := c.DeleteNarInfo(context.Background(), testdata.Nar1.NarInfoHash); err != nil {
-				t.Errorf("error not expected got %s", err)
-			}
+			assert.NoError(t, c.DeleteNarInfo(context.Background(), testdata.Nar1.NarInfoHash))
 		})
 
 		t.Run("narinfo is gone from the store", func(t *testing.T) {
-			_, err := os.Stat(storePath)
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
+			assert.NoFileExists(t, storePath)
 		})
 	})
 }
@@ -916,81 +660,56 @@ func TestGetNar(t *testing.T) {
 	defer ts.Close()
 
 	tu, err := url.Parse(ts.URL)
-	if err != nil {
-		t.Fatalf("error not expected, got %s", err)
-	}
+	require.NoError(t, err)
 
 	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
 	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
-	if err != nil {
-		t.Fatalf("expected no error, got %s", err)
-	}
+	require.NoError(t, err)
 
 	c, err := cache.New(logger, "cache.example.com", dir)
-	if err != nil {
-		t.Errorf("expected no error, got %q", err)
-	}
+	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
-	if err != nil {
-		t.Fatalf("error opening the database: %s", err)
-	}
+	require.NoError(t, err)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		_, _, err := c.GetNar("doesnotexist", "xz")
-		if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
-			t.Errorf("want %s got %s", want, got)
-		}
+		assert.ErrorIs(t, err, cache.ErrNotFound)
 	})
 
 	t.Run("nar exists upstream", func(t *testing.T) {
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz"))
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
+			assert.NoFileExists(t, filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz"))
 		})
 
 		t.Run("nar does not exist in database yet", func(t *testing.T) {
 			rows, err := db.Query("SELECT hash FROM nars")
-			if err != nil {
-				t.Fatalf("error executing select query: %s", err)
-			}
+			require.NoError(t, err)
 
 			var hashes []string
 
 			for rows.Next() {
 				var hash string
 
-				if err := rows.Scan(&hash); err != nil {
-					t.Fatalf("error fetching hash from db: %s", err)
-				}
+				err := rows.Scan(&hash)
+				require.NoError(t, err)
 
 				hashes = append(hashes, hash)
 			}
 
-			if err := rows.Err(); err != nil {
-				t.Errorf("not expecting an error got: %s", err)
-			}
-
-			if want, got := 0, len(hashes); want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+			require.NoError(t, rows.Err())
+			assert.Empty(t, hashes)
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
 			_, err := c.GetNarInfo(testdata.Nar1.NarInfoHash)
-			if err != nil {
-				t.Fatalf("no error expected, got: %s", err)
-			}
+			assert.NoError(t, err)
 		})
 
 		size, r, err := c.GetNar(testdata.Nar1.NarHash, "xz")
@@ -999,14 +718,12 @@ func TestGetNar(t *testing.T) {
 		defer r.Close()
 
 		t.Run("size is correct", func(t *testing.T) {
-			require.Equal(t, int64(len(testdata.Nar1.NarText)), size)
+			assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
 		})
 
 		t.Run("body is the same", func(t *testing.T) {
 			body, err := io.ReadAll(r)
-			if err != nil {
-				t.Fatalf("expected no error, got: %s", err)
-			}
+			require.NoError(t, err)
 
 			if assert.Equal(t, len(testdata.Nar1.NarText), len(string(body))) {
 				assert.Equal(t, testdata.Nar1.NarText, string(body))
@@ -1014,17 +731,12 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz"))
-			if err != nil {
-				t.Fatalf("expected no error got %s", err)
-			}
+			assert.FileExists(t, filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz"))
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
 			_, err := c.GetNarInfo(testdata.Nar1.NarInfoHash)
-			if err != nil {
-				t.Fatalf("no error expected, got: %s", err)
-			}
+			assert.NoError(t, err)
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
@@ -1034,9 +746,7 @@ func TestGetNar(t *testing.T) {
 				`
 
 			rows, err := db.Query(query)
-			if err != nil {
-				t.Fatalf("error selecting narinfos: %s", err)
-			}
+			require.NoError(t, err)
 
 			nims := make([]database.NarModel, 0)
 
@@ -1048,28 +758,16 @@ func TestGetNar(t *testing.T) {
 					&nim.CreatedAt,
 					&nim.LastAccessedAt,
 				)
-				if err != nil {
-					t.Fatalf("expected no error got: %s", err)
-				}
+				require.NoError(t, err)
 
 				nims = append(nims, nim)
 			}
 
-			if err := rows.Err(); err != nil {
-				t.Errorf("not expecting an error got: %s", err)
-			}
+			require.NoError(t, rows.Err())
 
-			if want, got := 1, len(nims); want != got {
-				t.Fatalf("want %d got %d", want, got)
-			}
-
-			if want, got := testdata.Nar1.NarHash, nims[0].Hash; want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-
-			if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
-				t.Errorf("expected created_at == last_accessed_at got: %q == %q", want, got)
-			}
+			assert.Len(t, nims, 1)
+			assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -1082,9 +780,7 @@ func TestGetNar(t *testing.T) {
 			}()
 
 			_, r, err := c.GetNar(testdata.Nar1.NarHash, "xz")
-			if err != nil {
-				t.Fatalf("no error expected, got: %s", err)
-			}
+			require.NoError(t, err)
 			defer r.Close()
 
 			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
@@ -1094,9 +790,7 @@ func TestGetNar(t *testing.T) {
 				`
 
 				rows, err := db.Query(query)
-				if err != nil {
-					t.Fatalf("error selecting narinfos: %s", err)
-				}
+				require.NoError(t, err)
 
 				nims := make([]database.NarModel, 0)
 
@@ -1108,28 +802,16 @@ func TestGetNar(t *testing.T) {
 						&nim.CreatedAt,
 						&nim.LastAccessedAt,
 					)
-					if err != nil {
-						t.Fatalf("expected no error got: %s", err)
-					}
+					require.NoError(t, err)
 
 					nims = append(nims, nim)
 				}
 
-				if err := rows.Err(); err != nil {
-					t.Errorf("not expecting an error got: %s", err)
-				}
+				require.NoError(t, rows.Err())
 
-				if want, got := 1, len(nims); want != got {
-					t.Fatalf("want %d got %d", want, got)
-				}
-
-				if want, got := testdata.Nar1.NarHash, nims[0].Hash; want != got {
-					t.Errorf("want %q got %q", want, got)
-				}
-
-				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() != got.Unix() {
-					t.Errorf("expected created_at == last_accessed_at got: %q != %q", want, got)
-				}
+				assert.Len(t, nims, 1)
+				assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 			})
 		})
 
@@ -1137,9 +819,7 @@ func TestGetNar(t *testing.T) {
 			time.Sleep(time.Second)
 
 			_, r, err := c.GetNar(testdata.Nar1.NarHash, "xz")
-			if err != nil {
-				t.Fatalf("no error expected, got: %s", err)
-			}
+			require.NoError(t, err)
 			defer r.Close()
 
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
@@ -1149,9 +829,7 @@ func TestGetNar(t *testing.T) {
 				`
 
 				rows, err := db.Query(query)
-				if err != nil {
-					t.Fatalf("error selecting narinfos: %s", err)
-				}
+				require.NoError(t, err)
 
 				nims := make([]database.NarModel, 0)
 
@@ -1163,28 +841,16 @@ func TestGetNar(t *testing.T) {
 						&nim.CreatedAt,
 						&nim.LastAccessedAt,
 					)
-					if err != nil {
-						t.Fatalf("expected no error got: %s", err)
-					}
+					require.NoError(t, err)
 
 					nims = append(nims, nim)
 				}
 
-				if err := rows.Err(); err != nil {
-					t.Errorf("not expecting an error got: %s", err)
-				}
+				require.NoError(t, rows.Err())
 
-				if want, got := 1, len(nims); want != got {
-					t.Fatalf("want %d got %d", want, got)
-				}
-
-				if want, got := testdata.Nar1.NarHash, nims[0].Hash; want != got {
-					t.Errorf("want %q got %q", want, got)
-				}
-
-				if want, got := nims[0].CreatedAt, nims[0].LastAccessedAt; want.Unix() == got.Unix() {
-					t.Errorf("expected created_at != last_accessed_at got: %q == %q", want, got)
-				}
+				assert.Len(t, nims, 1)
+				assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
+				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 			})
 		})
 	})
@@ -1193,225 +859,86 @@ func TestGetNar(t *testing.T) {
 //nolint:paralleltest
 func TestPutNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
 	c, err := cache.New(logger, "cache.example.com", dir)
-	if err != nil {
-		t.Errorf("expected no error, got %q", err)
-	}
+	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
-	t.Run("without compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
+	storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
 
-		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(storePath)
-			if err == nil {
-				t.Fatal("expected an error but got none")
-			}
-		})
-
-		t.Run("putNar does not return an error", func(t *testing.T) {
-			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
-
-			err := c.PutNar(context.Background(), testdata.Nar1.NarHash, "xz", r)
-			if err != nil {
-				t.Errorf("error not expected got %s", err)
-			}
-		})
-
-		t.Run("nar does exist in storage", func(t *testing.T) {
-			f, err := os.Open(storePath)
-			if err != nil {
-				t.Fatalf("expected no error but got: %s", err)
-			}
-
-			bs, err := io.ReadAll(f)
-			if err != nil {
-				t.Fatalf("expected no error but got: %s", err)
-			}
-
-			if want, got := testdata.Nar1.NarText, string(bs); want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-		})
+	t.Run("nar does not exist in storage yet", func(t *testing.T) {
+		assert.NoFileExists(t, storePath)
 	})
 
-	t.Run("with compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
+	t.Run("putNar does not return an error", func(t *testing.T) {
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
 
-		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(storePath)
-			assert.NoError(t, err)
-		})
+		err := c.PutNar(context.Background(), testdata.Nar1.NarHash, "xz", r)
+		assert.NoError(t, err)
+	})
 
-		t.Run("putNar does not return an error", func(t *testing.T) {
-			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
+	t.Run("nar does exist in storage", func(t *testing.T) {
+		f, err := os.Open(storePath)
+		require.NoError(t, err)
 
-			err := c.PutNar(context.Background(), testdata.Nar1.NarHash, "xz", r)
-			if err != nil {
-				t.Errorf("error not expected got %s", err)
-			}
-		})
+		bs, err := io.ReadAll(f)
+		require.NoError(t, err)
 
-		t.Run("nar does exist in storage", func(t *testing.T) {
-			f, err := os.Open(storePath)
-			if err != nil {
-				t.Fatalf("expected no error but got: %s", err)
-			}
-
-			bs, err := io.ReadAll(f)
-			if err != nil {
-				t.Fatalf("expected no error but got: %s", err)
-			}
-
-			if want, got := testdata.Nar1.NarText, string(bs); want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-		})
+		assert.Equal(t, testdata.Nar1.NarText, string(bs))
 	})
 }
 
 //nolint:paralleltest
 func TestDeleteNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
 	c, err := cache.New(logger, "cache.example.com", dir)
-	if err != nil {
-		t.Errorf("expected no error, got %q", err)
-	}
+	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
-	t.Run("without compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
+	storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
 
-		t.Run("file does not exist in the store", func(t *testing.T) {
-			t.Run("nar does not exist in storage yet", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err == nil {
-					t.Fatal("expected an error but got none")
-				}
-			})
-
-			t.Run("DeleteNar does return an error", func(t *testing.T) {
-				err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
-				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
-					t.Errorf("want %q got %q", want, got)
-				}
-			})
+	t.Run("file does not exist in the store", func(t *testing.T) {
+		t.Run("nar does not exist in storage yet", func(t *testing.T) {
+			assert.NoFileExists(t, storePath)
 		})
 
-		t.Run("file does exist in the store", func(t *testing.T) {
-			t.Run("nar does not exist in storage yet", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err == nil {
-					t.Fatal("expected an error but got none")
-				}
-			})
-
-			f, err := os.Create(storePath)
-			if err != nil {
-				t.Fatalf("expecting no error got %s", err)
-			}
-
-			if _, err := f.WriteString(testdata.Nar1.NarText); err != nil {
-				t.Fatalf("expecting no error got %s", err)
-			}
-
-			if err := f.Close(); err != nil {
-				t.Fatalf("expecting no error got %s", err)
-			}
-
-			t.Run("nar does exist in storage", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err != nil {
-					t.Fatalf("expected no error but got: %s", err)
-				}
-			})
-
-			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				if err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz"); err != nil {
-					t.Errorf("error not expected got %s", err)
-				}
-			})
-
-			t.Run("nar is gone from the store", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err == nil {
-					t.Fatal("expected an error but got none")
-				}
-			})
+		t.Run("DeleteNar does return an error", func(t *testing.T) {
+			err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			assert.ErrorIs(t, err, cache.ErrNotFound)
 		})
 	})
 
-	t.Run("with compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
-
-		t.Run("file does not exist in the store", func(t *testing.T) {
-			t.Run("nar does not exist in storage yet", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err == nil {
-					t.Fatal("expected an error but got none")
-				}
-			})
-
-			t.Run("DeleteNar does return an error", func(t *testing.T) {
-				err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
-				if want, got := cache.ErrNotFound, err; !errors.Is(got, want) {
-					t.Errorf("want %q got %q", want, got)
-				}
-			})
+	t.Run("file does exist in the store", func(t *testing.T) {
+		t.Run("nar does not exist in storage yet", func(t *testing.T) {
+			assert.NoFileExists(t, storePath)
 		})
 
-		t.Run("file does exist in the store", func(t *testing.T) {
-			t.Run("nar does not exist in storage yet", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err == nil {
-					t.Fatal("expected an error but got none")
-				}
-			})
+		f, err := os.Create(storePath)
+		require.NoError(t, err)
 
-			f, err := os.Create(storePath)
-			if err != nil {
-				t.Fatalf("expecting no error got %s", err)
-			}
+		_, err = f.WriteString(testdata.Nar1.NarText)
+		require.NoError(t, err)
 
-			if _, err := f.WriteString(testdata.Nar1.NarText); err != nil {
-				t.Fatalf("expecting no error got %s", err)
-			}
+		require.NoError(t, f.Close())
 
-			if err := f.Close(); err != nil {
-				t.Fatalf("expecting no error got %s", err)
-			}
+		t.Run("nar does exist in storage", func(t *testing.T) {
+			assert.FileExists(t, storePath)
+		})
 
-			t.Run("nar does exist in storage", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err != nil {
-					t.Fatalf("expected no error but got: %s", err)
-				}
-			})
+		t.Run("deleteNar does not return an error", func(t *testing.T) {
+			err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			assert.NoError(t, err)
+		})
 
-			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				if err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz"); err != nil {
-					t.Errorf("error not expected got %s", err)
-				}
-			})
-
-			t.Run("nar is gone from the store", func(t *testing.T) {
-				_, err := os.Stat(storePath)
-				if err == nil {
-					t.Fatal("expected an error but got none")
-				}
-			})
+		t.Run("nar is gone from the store", func(t *testing.T) {
+			assert.NoFileExists(t, storePath)
 		})
 	})
 }

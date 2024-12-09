@@ -32,6 +32,7 @@ linters:
     - stylecheck
     - tagliatelle
     - tenv
+    - testifylint
     - testpackage
     - unconvert
     - unparam

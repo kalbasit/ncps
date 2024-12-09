@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func PublicKeys() []string {
@@ -16,9 +18,8 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/nix-cache-info" {
-			if _, err := w.Write([]byte(NixStoreInfo(priority))); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
+			_, err := w.Write([]byte(NixStoreInfo(priority)))
+			require.NoError(t, err)
 
 			return
 		}
@@ -29,25 +30,22 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 				b := entry.NarInfoText
 				b = strings.Replace(b, "References:", "References: notfound-path", -1)
 
-				if _, err := w.Write([]byte(b)); err != nil {
-					t.Fatalf("error writing the nar to the response: %s", err)
-				}
+				_, err := w.Write([]byte(b))
+				require.NoError(t, err)
 
 				return
 			}
 
 			if r.URL.Path == "/"+entry.NarInfoHash+".narinfo" {
-				if _, err := w.Write([]byte(entry.NarInfoText)); err != nil {
-					t.Fatalf("error writing the nar to the response: %s", err)
-				}
+				_, err := w.Write([]byte(entry.NarInfoText))
+				require.NoError(t, err)
 
 				return
 			}
 
 			if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
-				if _, err := w.Write([]byte(entry.NarText)); err != nil {
-					t.Fatalf("error writing the nar to the response: %s", err)
-				}
+				_, err := w.Write([]byte(entry.NarText))
+				require.NoError(t, err)
 
 				return
 			}

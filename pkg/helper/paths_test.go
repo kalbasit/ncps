@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/kalbasit/ncps/pkg/helper"
 )
 
@@ -22,9 +24,7 @@ func TestNarInfoPath(t *testing.T) {
 		t.Run(fmt.Sprintf("NarInfoPath(%q) -> %q", test.hash, test.path), func(t *testing.T) {
 			t.Parallel()
 
-			if want, got := test.path, helper.NarInfoPath(test.hash); want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.Equal(t, test.path, helper.NarInfoPath(test.hash))
 		})
 	}
 }
@@ -46,9 +46,7 @@ func TestNarPath(t *testing.T) {
 		t.Run(fmt.Sprintf("NarPath(%q, %q) -> %q", test.hash, test.compression, test.path), func(t *testing.T) {
 			t.Parallel()
 
-			if want, got := test.path, helper.NarPath(test.hash, test.compression); want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.Equal(t, test.path, helper.NarPath(test.hash, test.compression))
 		})
 	}
 }

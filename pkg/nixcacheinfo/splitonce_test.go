@@ -4,6 +4,9 @@ package nixcacheinfo
 import (
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSplitOnce(t *testing.T) {
@@ -38,18 +41,11 @@ func TestSplitOnce(t *testing.T) {
 			} else if test.err != "" && err == nil {
 				t.Fatalf("expected an error but got none")
 			} else if test.err != "" && err != nil {
-				if want, got := test.err, err.Error(); want != got {
-					t.Errorf("want %q got %q", want, got)
-				}
+				require.EqualError(t, err, test.err)
 			}
 
-			if want, got := test.str1, str1; want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-
-			if want, got := test.str2, str2; want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.Equal(t, test.str1, str1)
+			assert.Equal(t, test.str2, str2)
 		})
 	}
 }

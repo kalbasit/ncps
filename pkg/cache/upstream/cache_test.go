@@ -2,13 +2,14 @@ package upstream_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/testdata"
@@ -30,30 +31,22 @@ func TestNew(t *testing.T) {
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
 			_, err := upstream.New(logger, "", nil)
-			if want, got := upstream.ErrHostnameRequired, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, upstream.ErrHostnameRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
 			_, err := upstream.New(logger, "https://cache.nixos.org", nil)
-			if want, got := upstream.ErrHostnameMustNotContainScheme, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, upstream.ErrHostnameMustNotContainScheme)
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
 			_, err := upstream.New(logger, "cache.nixos.org/path/to", nil)
-			if want, got := upstream.ErrHostnameMustNotContainPath, err; !errors.Is(got, want) {
-				t.Errorf("want %q got %q", want, got)
-			}
+			assert.ErrorIs(t, err, upstream.ErrHostnameMustNotContainPath)
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
 			_, err := upstream.New(logger, "cache.nixos.org", nil)
-			if err != nil {
-				t.Errorf("expected no error, got %q", err)
-			}
+			assert.NoError(t, err)
 		})
 	})
 
@@ -62,9 +55,7 @@ func TestNew(t *testing.T) {
 
 		t.Run("invalid public keys", func(t *testing.T) {
 			_, err := upstream.New(logger, "cache.nixos.org", []string{"invalid"})
-			if !strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:") {
-				t.Errorf("expected error to say public key is corrupt, got %q", err)
-			}
+			assert.True(t, strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:"))
 		})
 
 		t.Run("valid public keys", func(t *testing.T) {
@@ -73,9 +64,7 @@ func TestNew(t *testing.T) {
 				"cache.nixos.org",
 				testdata.PublicKeys(),
 			)
-			if err != nil {
-				t.Errorf("expected no error, got %s", err)
-			}
+			assert.NoError(t, err)
 		})
 	})
 
@@ -87,13 +76,9 @@ func TestNew(t *testing.T) {
 			"cache.nixos.org",
 			testdata.PublicKeys(),
 		)
-		if err != nil {
-			t.Errorf("expected no error, got %s", err)
-		}
+		require.NoError(t, err)
 
-		if want, got := uint64(40), c.GetPriority(); want != got {
-			t.Errorf("want %d got %d", want, got)
-		}
+		assert.EqualValues(t, 40, c.GetPriority())
 	})
 }
 
@@ -103,30 +88,22 @@ func TestGetNarInfo(t *testing.T) {
 		"cache.nixos.org",
 		testdata.PublicKeys(),
 	)
-	if err != nil {
-		t.Fatalf("expected no error, got %s", err)
-	}
+	require.NoError(t, err)
 
 	t.Run("hash not found", func(t *testing.T) {
 		t.Parallel()
 
 		_, err := c.GetNarInfo(context.Background(), "abc123")
-		if want, got := upstream.ErrNotFound, err; !errors.Is(got, want) {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
 	t.Run("hash is found", func(t *testing.T) {
 		t.Parallel()
 
 		ni, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
-		if err != nil {
-			t.Fatalf("expected no error, got %s", err)
-		}
+		require.NoError(t, err)
 
-		if want, got := "/nix/store/n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1", ni.StorePath; want != got {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.Equal(t, "/nix/store/n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1", ni.StorePath)
 	})
 
 	t.Run("check has failed", func(t *testing.T) {
@@ -138,27 +115,17 @@ func TestGetNarInfo(t *testing.T) {
 		defer ts.Close()
 
 		tu, err := url.Parse(ts.URL)
-		if err != nil {
-			t.Fatalf("error not expected: %s", err)
-		}
+		require.NoError(t, err)
 
 		c, err := upstream.New(
 			logger,
 			tu.Host,
 			testdata.PublicKeys(),
 		)
-		if err != nil {
-			t.Fatalf("expected no error, got %s", err)
-		}
+		require.NoError(t, err)
 
 		_, err = c.GetNarInfo(context.Background(), hash)
-		if err == nil {
-			t.Fatal("error expected but got none")
-		}
-
-		if want, got := "error while checking the narInfo: invalid Reference[0]: notfound-path", err.Error(); want != got {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.ErrorContains(t, err, "error while checking the narInfo: invalid Reference[0]: notfound-path")
 	})
 
 	for _, entry := range testdata.Entries {
@@ -171,23 +138,17 @@ func TestGetNarInfo(t *testing.T) {
 			defer ts.Close()
 
 			tu, err := url.Parse(ts.URL)
-			if err != nil {
-				t.Fatalf("error not expected: %s", err)
-			}
+			require.NoError(t, err)
 
 			c, err := upstream.New(
 				logger,
 				tu.Host,
 				testdata.PublicKeys(),
 			)
-			if err != nil {
-				t.Fatalf("expected no error, got %s", err)
-			}
+			require.NoError(t, err)
 
 			_, err = c.GetNarInfo(context.Background(), hash)
-			if err != nil {
-				t.Fatalf("error not expected getting narinfo %q got: %s", hash, err)
-			}
+			assert.NoError(t, err)
 		})
 	}
 }
@@ -198,17 +159,13 @@ func TestGetNar(t *testing.T) {
 		"cache.nixos.org",
 		testdata.PublicKeys(),
 	)
-	if err != nil {
-		t.Fatalf("expected no error, got %s", err)
-	}
+	require.NoError(t, err)
 
 	t.Run("not found", func(t *testing.T) {
 		t.Parallel()
 
 		_, _, err := c.GetNar(context.Background(), "abc123", "")
-		if want, got := upstream.ErrNotFound, err; !errors.Is(got, want) {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
 	t.Run("hash is found", func(t *testing.T) {
@@ -217,9 +174,7 @@ func TestGetNar(t *testing.T) {
 		hash := testdata.Nar1.NarHash
 
 		cl, body, err := c.GetNar(context.Background(), hash, "xz")
-		if err != nil {
-			t.Fatalf("expected no error, got %s", err)
-		}
+		require.NoError(t, err)
 
 		defer func() {
 			//nolint:errcheck
@@ -227,8 +182,6 @@ func TestGetNar(t *testing.T) {
 			body.Close()
 		}()
 
-		if want, got := int64(50160), cl; want != got {
-			t.Errorf("want %d got %d", want, got)
-		}
+		assert.EqualValues(t, 50160, cl)
 	})
 }
