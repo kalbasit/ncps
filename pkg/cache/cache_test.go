@@ -148,10 +148,6 @@ func TestNew(t *testing.T) {
 	})
 }
 
-func TestAddUpstreamCaches(t *testing.T) {
-
-}
-
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 

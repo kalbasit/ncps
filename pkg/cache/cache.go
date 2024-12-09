@@ -116,22 +116,22 @@ func New(logger log15.Logger, hostName, cachePath string) (*Cache, error) {
 	return c, c.setup()
 }
 
-// AddUpstreamCaches adds one or more upstream caches
-func (s *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
-	ucss := append(s.upstreamCaches, ucs...)
+// AddUpstreamCaches adds one or more upstream caches.
+func (c *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
+	ucss := append(c.upstreamCaches, ucs...)
 
 	slices.SortFunc(ucss, func(a, b upstream.Cache) int {
 		//nolint:gosec
 		return int(a.GetPriority() - b.GetPriority())
 	})
 
-	s.logger.Info("the order of upstream caches has been determined by priority to be")
+	c.logger.Info("the order of upstream caches has been determined by priority to be")
 
 	for idx, uc := range ucss {
-		s.logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
+		c.logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
 	}
 
-	s.upstreamCaches = ucss
+	c.upstreamCaches = ucss
 }
 
 // SetMaxSize sets the maxsize of the cache. This will be used by the LRU
@@ -995,6 +995,7 @@ func (c *Cache) runLRU() {
 		narInfo, err := c.db.GetNarInfoRecordByID(tx, nar.NarInfoID)
 		if err != nil {
 			log.Error("error fetching narinfo from the database", "ID", nar.NarInfoID, "error", err)
+
 			continue
 		}
 
@@ -1002,6 +1003,7 @@ func (c *Cache) runLRU() {
 
 		if err := os.Remove(narInfoPath); err != nil {
 			log.Error("error removing narinfo from store", "hash", nar.Hash, "error", err)
+
 			continue
 		}
 
@@ -1013,6 +1015,7 @@ func (c *Cache) runLRU() {
 
 		if err := os.Remove(narPath); err != nil {
 			log.Error("error removing nar from store", "hash", nar.Hash, "error", err)
+
 			continue
 		}
 

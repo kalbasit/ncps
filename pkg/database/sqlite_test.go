@@ -842,6 +842,8 @@ func TestDeleteNarRecord(t *testing.T) {
 }
 
 func TestNarTotalSize(t *testing.T) {
+	t.Parallel()
+
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 
@@ -879,6 +881,8 @@ func TestNarTotalSize(t *testing.T) {
 }
 
 func TestGetLeastAccessedNarRecords(t *testing.T) {
+	t.Parallel()
+
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 
@@ -921,7 +925,7 @@ func TestGetLeastAccessedNarRecords(t *testing.T) {
 	nms, err := db.GetLeastAccessedNarRecords(tx, totalSize-uint64(len(lastEntry.NarText)))
 	require.NoError(t, err)
 
-	if assert.Equal(t, 1, len(nms)) {
+	if assert.Len(t, nms, 1) {
 		assert.Equal(t, lastEntry.NarHash, nms[0].Hash)
 	}
 }

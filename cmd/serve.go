@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -16,6 +17,9 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/server"
 )
+
+// ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
+var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
 
 func serveCommand(logger log15.Logger) *cli.Command {
 	return &cli.Command{
@@ -47,20 +51,24 @@ func serveCommand(logger log15.Logger) *cli.Command {
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:    "cache-max-size",
+				Name: "cache-max-size",
+				//nolint:lll
 				Usage:   "The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T",
 				Sources: cli.EnvVars("CACHE_MAX_SIZE"),
 				Validator: func(s string) error {
 					_, err := helper.ParseSize(s)
+
 					return err
 				},
 			},
 			&cli.StringFlag{
-				Name:    "cache-lru-schedule",
+				Name: "cache-lru-schedule",
+				//nolint:lll
 				Usage:   "The cron spec for cleaning the store. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation",
 				Sources: cli.EnvVars("CACHE_LRU_SCHEDULE"),
 				Validator: func(s string) error {
 					_, err := cron.ParseStandard(s)
+
 					return err
 				},
 			},
@@ -163,14 +171,14 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 		return c, nil
 	}
 
-	var maxSize uint64
-	if maxSizeStr := cmd.String("cache-max-size"); maxSizeStr == "" {
-		return nil, fmt.Errorf("--cache-max-size is required when --cache-lru-schedule is specified")
-	} else {
-		maxSize, err = helper.ParseSize(maxSizeStr)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing the size: %w", err)
-		}
+	maxSizeStr := cmd.String("cache-max-size")
+	if maxSizeStr == "" {
+		return nil, ErrCacheMaxSizeRequired
+	}
+
+	maxSize, err := helper.ParseSize(maxSizeStr)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the size: %w", err)
 	}
 
 	logger.Info("setting up the cache max-size", "max-size", maxSize)

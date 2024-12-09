@@ -47,11 +47,9 @@ func TestParseSize(t *testing.T) {
 			assert.Equal(t, test.size, s)
 
 			if test.err == "" {
-				assert.Nil(t, err)
+				assert.NoError(t, err)
 			} else {
-				if assert.NotNil(t, err) {
-					assert.Equal(t, test.err, err.Error())
-				}
+				assert.EqualError(t, err, test.err)
 			}
 		})
 	}
