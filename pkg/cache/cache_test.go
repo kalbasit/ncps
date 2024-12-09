@@ -16,6 +16,7 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -273,7 +274,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", testdata.Nar2.NarHash+".nar.xz"))
+			_, err := os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar2.NarHash+".nar.xz"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
 			}
@@ -944,11 +945,9 @@ func TestGetNar(t *testing.T) {
 		}
 	})
 
-	narName := testdata.Nar1.NarHash + ".nar.xz"
-
 	t.Run("nar exists upstream", func(t *testing.T) {
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", "nar.xz", narName))
+			_, err := os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz"))
 			if err == nil {
 				t.Fatal("expected an error but got none")
 			}
@@ -989,15 +988,12 @@ func TestGetNar(t *testing.T) {
 		})
 
 		size, r, err := c.GetNar(testdata.Nar1.NarHash, "xz")
-		if err != nil {
-			t.Fatalf("no error expected, got: %s", err)
-		}
+		require.NoError(t, err)
+
 		defer r.Close()
 
 		t.Run("size is correct", func(t *testing.T) {
-			if want, got := int64(len(testdata.Nar1.NarText)), size; want != got {
-				t.Errorf("want %d got %d", want, got)
-			}
+			require.Equal(t, int64(len(testdata.Nar1.NarText)), size)
 		})
 
 		t.Run("body is the same", func(t *testing.T) {
@@ -1012,7 +1008,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			_, err := os.Stat(filepath.Join(dir, "store", "nar.xz", narName))
+			_, err := os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz"))
 			if err != nil {
 				t.Fatalf("expected no error got %s", err)
 			}
