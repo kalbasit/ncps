@@ -1,18 +1,23 @@
 package testdata
 
-var Nar3 = Entry{
-	NarInfoHash: "8raygmhj0mhmq8jxb6bgr4ggcbyyrmf8",
-	NarInfoText: `StorePath: /nix/store/8raygmhj0mhmq8jxb6bgr4ggcbyyrmf8-gnutls-3.8.6.tar.xz.drv
-URL: nar/102hxakkbis6klnz008zr3a0qhll795x9bffrcnxzhvff9sgngw7.nar.xz
-Compression: xz
-FileHash: sha256:102hxakkbis6klnz008zr3a0qhll795x9bffrcnxzhvff9sgngw7
-FileSize: 1328
-NarHash: sha256:1j71h0jylc9lf1syg9srma2fsv64gsk3954xxf25bnlxhxdg29a8
-NarSize: 3048
-References: 6iah9pffqjj0lwgf0b1h32a6536jnw18-mirrors-list.drv 85lazfv5243dxqph70ngxq2scm241qc6-stdenv-linux.drv g0gn91m56b267ncx05w93kihyqia39cm-builder.sh v2whqah0ghyg7wpfy133x95raxfz282v-curl-8.11.0.drv vjznlmanjkps53l7hw2krvpzwqcd5m3d-bash-5.2p37.drv
-Sig: cache.nixos.org-1:G2Cxc5XkCcJDIub6IWbWMeayRmf3ymdlJ62OmSEPZfgGPAcVI8dslouzLOZ34JMxKiUVjNTO4E/CK0B0rLGMDQ==
-CA: text:sha256:18cyz621xqngdfc8kmxrj3v5rrxyzdls5ahqb6qaq5ggm7q9gjdq`,
+import (
+	"github.com/kalbasit/ncps/pkg/helper"
+)
 
-	NarHash: "102hxakkbis6klnz008zr3a0qhll795x9bffrcnxzhvff9sgngw7",
-	NarText: "gnutls-3.8.6",
+// Nar3 is the nar representing hello from release-24.11.
+var Nar3 = Entry{
+	NarInfoHash: "1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
+	NarHash:     "1dglqjx5wm3sdq0ggngcyh4gpcwykngkxps0a8v4v1f1f2lzdwd1",
+	NarText:     helper.MustRandString(50364, nil),
+
+	NarInfoText: `StorePath: /nix/store/1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl-hello-2.12.1
+URL: nar/1dglqjx5wm3sdq0ggngcyh4gpcwykngkxps0a8v4v1f1f2lzdwd1.nar.xz
+Compression: xz
+FileHash: sha256:1dglqjx5wm3sdq0ggngcyh4gpcwykngkxps0a8v4v1f1f2lzdwd1
+FileSize: 50364
+NarHash: sha256:1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac
+NarSize: 226560
+References: 1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl-hello-2.12.1 wn7v2vhyyyi6clcyn0s9ixvl7d4d87ic-glibc-2.40-36
+Deriver: k1rx7pnkdlzfscv6jqzwl4x89kcknfy1-hello-2.12.1.drv
+Sig: cache.nixos.org-1:qt4d4o04/cklIMANVntoLYHh36t1j+y/35qWoK2GeeeEeYU5RElnV/gpXrc5jgx4p2MQ38TasPhHg8rN6O+5Dw==`,
 }
