@@ -9,7 +9,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 )
 
-func TestNarInfoPath(t *testing.T) {
+func TestNarInfoURLPath(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -21,15 +21,15 @@ func TestNarInfoPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("NarInfoPath(%q) -> %q", test.hash, test.path), func(t *testing.T) {
+		t.Run(fmt.Sprintf("NarInfoURLPath(%q) -> %q", test.hash, test.path), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.path, helper.NarInfoPath(test.hash))
+			assert.Equal(t, test.path, helper.NarInfoURLPath(test.hash))
 		})
 	}
 }
 
-func TestNarPath(t *testing.T) {
+func TestNarURLPath(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -43,10 +43,10 @@ func TestNarPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("NarPath(%q, %q) -> %q", test.hash, test.compression, test.path), func(t *testing.T) {
+		t.Run(fmt.Sprintf("NarURLPath(%q, %q) -> %q", test.hash, test.compression, test.path), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.path, helper.NarPath(test.hash, test.compression))
+			assert.Equal(t, test.path, helper.NarURLPath(test.hash, test.compression))
 		})
 	}
 }
