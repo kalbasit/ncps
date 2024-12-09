@@ -18,6 +18,7 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/robfig/cron/v3"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -65,6 +66,7 @@ type Cache struct {
 	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
+	maxSize        uint64
 	db             *database.DB
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
@@ -73,8 +75,16 @@ type Cache struct {
 	// is locked` errors
 	recordAgeIgnoreTouch time.Duration
 
-	mu           sync.Mutex
-	upstreamJobs map[string]chan struct{}
+	// upstreamJobs is used to store in-progress jobs for pulling nars from
+	// upstream cache so incomping requests for the same nar can find and wait
+	// for jobs.
+	muUpstreamJobs sync.Mutex
+	upstreamJobs   map[string]chan struct{}
+
+	// mu  is used by the LRU garbage collector to freeze access to the cache.
+	mu sync.RWMutex
+
+	cron *cron.Cron
 }
 
 // New returns a new Cache.
@@ -124,6 +134,36 @@ func (c *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
 	c.upstreamCaches = ucss
 }
 
+// SetMaxSize sets the maxsize of the cache. This will be used by the LRU
+// cronjob to automatically clean-up the store.
+func (c *Cache) SetMaxSize(maxSize uint64) { c.maxSize = maxSize }
+
+// SetupCron creates a cron instance in the cache.
+func (c *Cache) SetupCron(timezone *time.Location) {
+	var opts []cron.Option
+	if timezone != nil {
+		opts = append(opts, cron.WithLocation(timezone))
+	}
+
+	c.cron = cron.New(opts...)
+
+	c.logger.Info("cron setup complete")
+}
+
+// AddLRUCronJob adds a job for LRU.
+func (c *Cache) AddLRUCronJob(schedule cron.Schedule) {
+	c.logger.Info("adding a cronjob for LRU", "next-run", schedule.Next(time.Now()))
+
+	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU))
+}
+
+// StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
+func (c *Cache) StartCron() {
+	c.logger.Info("starting the cron scheduler")
+
+	c.cron.Start()
+}
+
 // SetRecordAgeIgnoreTouch changes the duration at which a record is considered
 // up to date and a touch is not invoked.
 func (c *Cache) SetRecordAgeIgnoreTouch(d time.Duration) { c.recordAgeIgnoreTouch = d }
@@ -139,6 +179,9 @@ func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey
 // stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
 func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash, "compression", compression)
 
 	if c.hasNarInStore(log, hash, compression) {
@@ -147,7 +190,7 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 
 	errC := make(chan error)
 
-	c.mu.Lock()
+	c.muUpstreamJobs.Lock()
 
 	doneC, ok := c.upstreamJobs[hash]
 	if ok {
@@ -158,7 +201,7 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 
 		go c.pullNar(log, hash, compression, doneC, errC)
 	}
-	c.mu.Unlock()
+	c.muUpstreamJobs.Unlock()
 
 	select {
 	case err := <-errC:
@@ -177,6 +220,9 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 
 // PutNar records the NAR (given as an io.Reader) into the store.
 func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadCloser) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, r)
@@ -193,6 +239,9 @@ func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadClo
 
 // DeleteNar deletes the nar from the store.
 func (c *Cache) DeleteNar(_ context.Context, hash, compression string) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash, "compression", compression)
 
 	return c.deleteNarFromStore(log, hash, compression)
@@ -205,9 +254,9 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 
 	size, r, err := c.getNarFromUpstream(log, hash, compression)
 	if err != nil {
-		c.mu.Lock()
+		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, hash)
-		c.mu.Unlock()
+		c.muUpstreamJobs.Unlock()
 
 		errC <- fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 
@@ -218,9 +267,9 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 
 	written, err := c.putNarInStore(log, hash, compression, r)
 	if err != nil {
-		c.mu.Lock()
+		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, hash)
-		c.mu.Unlock()
+		c.muUpstreamJobs.Unlock()
 
 		errC <- fmt.Errorf("error storing the narInfo in the store: %w", err)
 
@@ -233,9 +282,9 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 		log.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
 	}
 
-	c.mu.Lock()
+	c.muUpstreamJobs.Lock()
 	delete(c.upstreamJobs, hash)
-	c.mu.Unlock()
+	c.muUpstreamJobs.Unlock()
 
 	close(doneC)
 }
@@ -359,6 +408,9 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
 func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash)
 
 	var (
@@ -396,6 +448,9 @@ func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
 func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, r)
@@ -423,6 +478,9 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 
 // DeleteNarInfo deletes the narInfo from the store.
 func (c *Cache) DeleteNarInfo(_ context.Context, hash string) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	log := c.logger.New("hash", hash)
 
 	return c.deleteNarInfoFromStore(log, hash)
@@ -884,9 +942,123 @@ func (c *Cache) createNewKey() (signature.SecretKey, error) {
 }
 
 func (c *Cache) hasUpstreamJob(hash string) bool {
-	c.mu.Lock()
+	c.muUpstreamJobs.Lock()
 	_, ok := c.upstreamJobs[hash]
-	c.mu.Unlock()
+	c.muUpstreamJobs.Unlock()
 
 	return ok
+}
+
+func (c *Cache) runLRU() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	log := c.logger.New("op", "lru", "max-size", c.maxSize)
+	log.Info("running LRU")
+
+	tx, err := c.db.Begin()
+	if err != nil {
+		log.Error("error beginning a transaction", "error", err)
+
+		return
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				log.Error("error rolling back the transaction", "error", err)
+			}
+		}
+	}()
+
+	narTotalSize, err := c.db.NarTotalSize(tx)
+	if err != nil {
+		log.Error("error fetching the total nar size", "error", err)
+
+		return
+	}
+
+	log = log.New("nar-total-size", narTotalSize)
+
+	if narTotalSize <= c.maxSize {
+		log.Info("store size is less than max-size, not removing any nars")
+
+		return
+	}
+
+	cleanupSize := narTotalSize - c.maxSize
+
+	log = log.New("cleanup-size", cleanupSize)
+
+	log.Info("going to remove nars")
+
+	nars, err := c.db.GetLeastAccessedNarRecords(tx, cleanupSize)
+	if err != nil {
+		log.Error("error getting the least used nars up to cleanup-size", "error", err)
+
+		return
+	}
+
+	if len(nars) == 0 {
+		log.Warn("nars needed to be removed but none were returned in the query")
+
+		return
+	}
+
+	log.Info("found this many nars to remove", "count-nars", len(nars))
+
+	filesToRemove := make([]string, 0, 2*len(nars))
+
+	for _, nar := range nars {
+		narInfo, err := c.db.GetNarInfoRecordByID(tx, nar.NarInfoID)
+		if err == nil {
+			log.Info("deleting narinfo record", "narinfo-hash", narInfo.Hash)
+
+			if err := c.db.DeleteNarInfoRecord(tx, narInfo.Hash); err != nil {
+				log.Error("error removing narinfo from database", "hash", narInfo.Hash, "error", err)
+			}
+
+			filesToRemove = append(filesToRemove,
+				c.getNarInfoPathInStore(narInfo.Hash),
+			)
+		} else {
+			log.Error("error fetching narinfo from the database", "ID", nar.NarInfoID, "error", err)
+		}
+
+		log.Info("deleting nar record", "nar-hash", nar.Hash)
+
+		if err := c.db.DeleteNarRecord(tx, nar.Hash); err != nil {
+			log.Error("error removing nar from database", "hash", nar.Hash, "error", err)
+		}
+
+		filesToRemove = append(filesToRemove,
+			c.getNarPathInStore(nar.Hash, nar.Compression),
+		)
+	}
+
+	// remove all the files from the store as fast as possible.
+
+	var wg sync.WaitGroup
+
+	for _, f := range filesToRemove {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			log.Info("deleting file from store", "path", f)
+
+			if err := os.Remove(f); err != nil {
+				log.Error("error removing the file", "file-to-remove", f, "error", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// finally commit the database transaction
+
+	if err := tx.Commit(); err != nil {
+		log.Error("error committing the transaction", "error", err)
+	}
 }

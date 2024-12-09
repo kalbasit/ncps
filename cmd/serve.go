@@ -2,18 +2,24 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/robfig/cron/v3"
 	"github.com/urfave/cli/v3"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/server"
 )
+
+// ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
+var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
 
 func serveCommand(logger log15.Logger) *cli.Command {
 	return &cli.Command{
@@ -45,6 +51,34 @@ func serveCommand(logger log15.Logger) *cli.Command {
 				Required: true,
 			},
 			&cli.StringFlag{
+				Name: "cache-max-size",
+				//nolint:lll
+				Usage:   "The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T",
+				Sources: cli.EnvVars("CACHE_MAX_SIZE"),
+				Validator: func(s string) error {
+					_, err := helper.ParseSize(s)
+
+					return err
+				},
+			},
+			&cli.StringFlag{
+				Name: "cache-lru-schedule",
+				//nolint:lll
+				Usage:   "The cron spec for cleaning the store. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation",
+				Sources: cli.EnvVars("CACHE_LRU_SCHEDULE"),
+				Validator: func(s string) error {
+					_, err := cron.ParseStandard(s)
+
+					return err
+				},
+			},
+			&cli.StringFlag{
+				Name:    "cache-lru-schedule-timezone",
+				Usage:   "The name of the timezone to use for the cron",
+				Sources: cli.EnvVars("CACHE_LRU_SCHEDULE_TZ"),
+				Value:   "Local",
+			},
+			&cli.StringFlag{
 				Name:    "server-addr",
 				Usage:   "The address of the server",
 				Sources: cli.EnvVars("SERVER_ADDR"),
@@ -73,24 +107,24 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"))
+		cache, err := createCache(logger, cmd, ucs)
 		if err != nil {
-			return fmt.Errorf("error creating a new cache: %w", err)
+			return err
 		}
 
-		cache.AddUpstreamCaches(ucs...)
+		cache.StartCron()
 
 		srv := server.New(logger, cache)
 		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
 		srv.SetPutPermitted(cmd.Bool("allow-put"))
-
-		logger.Info("Server started", "server-addr", cmd.String("server-addr"))
 
 		server := &http.Server{
 			Addr:              cmd.String("server-addr"),
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+
+		logger.Info("Server started", "server-addr", cmd.String("server-addr"))
 
 		if err := server.ListenAndServe(); err != nil {
 			return fmt.Errorf("error starting the HTTP listener: %w", err)
@@ -125,4 +159,53 @@ func getUpstreamCaches(_ context.Context, logger log15.Logger, cmd *cli.Command)
 	}
 
 	return ucs, nil
+}
+
+func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*cache.Cache, error) {
+	c, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"))
+	if err != nil {
+		return nil, fmt.Errorf("error creating a new cache: %w", err)
+	}
+
+	c.AddUpstreamCaches(ucs...)
+
+	if cmd.String("cache-lru-schedule") == "" {
+		return c, nil
+	}
+
+	maxSizeStr := cmd.String("cache-max-size")
+	if maxSizeStr == "" {
+		return nil, ErrCacheMaxSizeRequired
+	}
+
+	maxSize, err := helper.ParseSize(maxSizeStr)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the size: %w", err)
+	}
+
+	logger.Info("setting up the cache max-size", "max-size", maxSize)
+
+	c.SetMaxSize(maxSize)
+
+	var loc *time.Location
+
+	if cronTimezone := cmd.String("cache-lru-schedule-timezone"); cronTimezone != "" {
+		loc, err = time.LoadLocation(cronTimezone)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
+		}
+	}
+
+	logger.Info("setting up the cache timezone location", "time-zone", loc)
+
+	c.SetupCron(loc)
+
+	schedule, err := cron.ParseStandard(cmd.String("cache-lru-schedule"))
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the cron spec %q: %w", cmd.String("cache-lru-schedule"), err)
+	}
+
+	c.AddLRUCronJob(schedule)
+
+	return c, nil
 }

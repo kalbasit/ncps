@@ -6,12 +6,14 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/testdata"
 )
 
@@ -112,4 +114,156 @@ func TestAddUpstreamCaches(t *testing.T) {
 			assert.EqualValues(t, idx+1, uc.GetPriority())
 		}
 	})
+}
+
+// runLRU is not exposed function but it's a functionality that's triggered by
+// a cronjob.
+func TestRunLRU(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir) // clean up
+
+	c, err := New(logger, "cache.example.com", dir)
+	require.NoError(t, err)
+
+	ts := testdata.HTTPTestServer(t, 40)
+	defer ts.Close()
+
+	tu, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	allEntries := testdata.Entries
+	entries := testdata.Entries[:len(testdata.Entries)-1]
+	lastEntry := testdata.Entries[len(testdata.Entries)-1]
+
+	assert.Equal(t, allEntries, append(entries, lastEntry), "confirm my vars are correct")
+
+	// define the maximum size of our store based on responses of our testdata
+	// minus the last one
+	var maxSize uint64
+	for _, nar := range entries {
+		maxSize += uint64(len(nar.NarText))
+	}
+
+	c.SetMaxSize(maxSize)
+
+	assert.Equal(t, maxSize, c.maxSize, "confirm the maxSize is set correctly")
+
+	var sizePulled int64
+
+	for _, nar := range allEntries {
+		_, err := c.GetNarInfo(nar.NarInfoHash)
+		require.NoError(t, err)
+
+		size, _, err := c.GetNar(nar.NarHash, "xz")
+		require.NoError(t, err)
+
+		sizePulled += size
+	}
+
+	//nolint:gosec
+	expectedSize := int64(maxSize) + int64(len(lastEntry.NarText))
+
+	assert.Equal(t, expectedSize, sizePulled, "size pulled is less than maxSize by exactly the last one")
+
+	for _, nar := range allEntries {
+		assert.True(t, c.hasNarInStore(logger, nar.NarHash, "xz"), "confirm all nars are in the store")
+	}
+
+	// ensure time has moved by one sec for the last_accessed_at work
+	time.Sleep(time.Second)
+
+	// pull the nars except for the last entry to get their last_accessed_at updated
+	sizePulled = 0
+
+	for _, nar := range entries {
+		_, err := c.GetNarInfo(nar.NarInfoHash)
+		require.NoError(t, err)
+
+		size, _, err := c.GetNar(nar.NarHash, "xz")
+		require.NoError(t, err)
+
+		sizePulled += size
+	}
+
+	//nolint:gosec
+	assert.Equal(t, int64(maxSize), sizePulled, "confirm size pulled is exactly maxSize")
+
+	// all narinfo records are in the database
+	tx, err := c.db.Begin()
+	require.NoError(t, err)
+
+	for _, nar := range allEntries {
+		_, err := c.db.GetNarInfoRecord(tx, nar.NarInfoHash)
+		require.NoError(t, err)
+	}
+
+	//nolint:errcheck
+	tx.Rollback()
+
+	// all nar records are in the database
+	tx, err = c.db.Begin()
+	require.NoError(t, err)
+
+	for _, nar := range allEntries {
+		_, err := c.db.GetNarRecord(tx, nar.NarHash)
+		require.NoError(t, err)
+	}
+
+	//nolint:errcheck
+	tx.Rollback()
+
+	c.runLRU()
+
+	// confirm all narinfos except the last one are in the store
+	for _, nar := range entries {
+		assert.True(t, c.hasNarInfoInStore(logger, nar.NarInfoHash))
+	}
+
+	assert.False(t, c.hasNarInfoInStore(logger, lastEntry.NarInfoHash))
+
+	// confirm all nars except the last one are in the store
+	for _, nar := range entries {
+		assert.True(t, c.hasNarInStore(logger, nar.NarHash, "xz"))
+	}
+
+	assert.False(t, c.hasNarInStore(logger, lastEntry.NarHash, "xz"))
+
+	// all narinfo records except the last one are in the database
+	tx, err = c.db.Begin()
+	require.NoError(t, err)
+
+	for _, nar := range entries {
+		_, err := c.db.GetNarInfoRecord(tx, nar.NarInfoHash)
+		require.NoError(t, err)
+	}
+
+	_, err = c.db.GetNarInfoRecord(tx, lastEntry.NarInfoHash)
+	require.ErrorIs(t, database.ErrNotFound, err)
+
+	//nolint:errcheck
+	tx.Rollback()
+
+	// all nar records except the last one are in the database
+	tx, err = c.db.Begin()
+	require.NoError(t, err)
+
+	for _, nar := range entries {
+		_, err := c.db.GetNarRecord(tx, nar.NarHash)
+		require.NoError(t, err)
+	}
+
+	_, err = c.db.GetNarRecord(tx, lastEntry.NarHash)
+	require.ErrorIs(t, database.ErrNotFound, err)
+
+	//nolint:errcheck
+	tx.Rollback()
 }

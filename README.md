@@ -27,6 +27,7 @@ ncps addresses these issues by acting as a central cache on your local network.
 - **Reduced bandwidth usage:** Minimizes redundant downloads, saving bandwidth and time.
 - **Improved build times:** Faster access to dependencies speeds up builds.
 - **Secure caching:** ncps signs cached paths with its own key, ensuring integrity and authenticity.
+- **Cache size management:** Configure a maximum cache size and a cron schedule to automatically remove least recently used (LRU) store paths, preventing the cache from growing indefinitely.
 
 ## Installation
 
@@ -162,9 +163,11 @@ ncps can be configured using the following flags:
 
 - `--allow-delete`: Whether to allow the DELETE verb to delete `narinfo` and `nar` files from the cache (default: false). (Environment variable: `$ALLOW_DELETE_VERB`)
 - `--allow-put`: Whether to allow the PUT verb to push `narinfo` and `nar` files directly to the cache (default: false). (Environment variable: `$ALLOW_PUT_VERB`)
-
 - `--cache-hostname`: The hostname of the cache server. **This is used to generate the private key used for signing store paths (.narinfo).** (Environment variable: `$CACHE_HOSTNAME`)
 - `--cache-data-path`: The local directory for storing configuration and cached store paths. (Environment variable: `$CACHE_DATA_PATH`)
+- `--cache-max-size`: The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T (Environment variable: `$CACHE_MAX_SIZE`)
+- `--cache-lru-schedule`: The cron spec for cleaning the store to keep it under `--cache-max-size`. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation (Environment variable: `$CACHE_LRU_SCHEDULE`)
+- `--cache-lru-schedule-timezone`: The name of the timezone to use for the cron schedule (default: "Local"). (Environment variable: `$CACHE_LRU_SCHEDULE_TZ`)
 - `--server-addr`: The address and port the server listens on (default: ":8501"). (Environment variable: `$SERVER_ADDR`)
 - `--upstream-cache`: The **hostname** of an upstream binary cache (e.g., `cache.nixos.org`). **Do not include the scheme (https://).** This flag can be used multiple times to specify multiple upstream caches, for example: `--upstream-cache cache.nixos.org --upstream-cache nix-community.cachix.org`. (Environment variable: `$UPSTREAM_CACHES`)
 - `--upstream-public-key`: The public key of an upstream cache in the format `host:public-key`. This flag is used to verify the signatures of store paths downloaded from upstream caches. This flag can be used multiple times, once for each upstream cache. (Environment variable: `$UPSTREAM_PUBLIC_KEYS`)
