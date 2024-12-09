@@ -629,6 +629,8 @@ func TestDeleteNarInfo(t *testing.T) {
 			assert.NoFileExists(t, storePath)
 		})
 
+		require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
+
 		f, err := os.Create(storePath)
 		require.NoError(t, err)
 
@@ -916,6 +918,8 @@ func TestDeleteNar(t *testing.T) {
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
 			assert.NoFileExists(t, storePath)
 		})
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
 
 		f, err := os.Create(storePath)
 		require.NoError(t, err)
