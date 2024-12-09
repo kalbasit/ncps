@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"net/http/httptest"
 	"net/url"
@@ -133,6 +134,15 @@ func TestNew(t *testing.T) {
 // runLRU is not exposed function but it's a functionality that's triggered by
 // a cronjob.
 func TestRunLRU(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+	// defer os.RemoveAll(dir) // clean up
+
+	fmt.Printf("dir: %s\n", dir)
+
+	c, err := New(logger, "cache.example.com", dir)
+	require.NoError(t, err)
+
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
@@ -140,13 +150,6 @@ func TestRunLRU(t *testing.T) {
 	require.NoError(t, err)
 
 	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
-	require.NoError(t, err)
-
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir) // clean up
-
-	c, err := New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
