@@ -19,6 +19,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/testdata"
 )
@@ -101,6 +102,8 @@ func TestServeHTTP(t *testing.T) {
 					assert.NoFileExists(t, storePath)
 				})
 
+				require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
+
 				f, err := os.Create(storePath)
 				require.NoError(t, err)
 
@@ -136,6 +139,8 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("nar does not exist in storage yet", func(t *testing.T) {
 					assert.NoFileExists(t, storePath)
 				})
+
+				require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
 
 				f, err := os.Create(storePath)
 				require.NoError(t, err)
@@ -200,7 +205,7 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("narinfo exists upstream", func(t *testing.T) {
-				r := httptest.NewRequest("GET", "/"+testdata.Nar1.NarInfoPath, nil)
+				r := httptest.NewRequest("GET", helper.NarInfoURLPath(testdata.Nar1.NarInfoHash), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -229,7 +234,7 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("nar exists upstream", func(t *testing.T) {
-				r := httptest.NewRequest("GET", "/nar/"+testdata.Nar1.NarPath, nil)
+				r := httptest.NewRequest("GET", helper.NarURLPath(testdata.Nar1.NarHash, "xz"), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)

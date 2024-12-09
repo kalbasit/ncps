@@ -389,6 +389,10 @@ func (c *Cache) putNarInStore(_ log15.Logger, hash, compression string, r io.Rea
 
 	narPath := c.getNarPathInStore(hash, compression)
 
+	if err := os.MkdirAll(filepath.Dir(narPath), 0o700); err != nil {
+		return 0, fmt.Errorf("error creating the directories for %q: %w", narPath, err)
+	}
+
 	if err := os.Rename(f.Name(), narPath); err != nil {
 		return 0, fmt.Errorf("error creating the nar file %q: %w", narPath, err)
 	}
@@ -676,6 +680,10 @@ func (c *Cache) putNarInfoInStore(_ log15.Logger, hash string, narInfo *narinfo.
 	}
 
 	narInfoPath := c.getNarInfoPathInStore(hash)
+
+	if err := os.MkdirAll(filepath.Dir(narInfoPath), 0o700); err != nil {
+		return fmt.Errorf("error creating the directories for %q: %w", narInfoPath, err)
+	}
 
 	if err := os.Rename(f.Name(), narInfoPath); err != nil {
 		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
