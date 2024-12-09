@@ -1,7 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.13.4/.schema/devbox.schema.json",
   "packages": [
-    "delve@1.23",
     "go@1.23",
     "golangci-lint@1.62"
   ],
