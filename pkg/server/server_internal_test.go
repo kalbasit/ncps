@@ -24,7 +24,7 @@ func TestSetDeletePermitted(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	t.Run("false", func(t *testing.T) {

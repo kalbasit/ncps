@@ -38,7 +38,7 @@ func TestServeHTTP(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
-		c, err := cache.New(logger, "cache.example.com", dir, nil)
+		c, err := cache.New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
 
 		t.Run("DELETE is not permitted", func(t *testing.T) {
@@ -220,8 +220,10 @@ func TestServeHTTP(t *testing.T) {
 		uc, err := upstream.New(logger, uu.Host, testdata.PublicKeys())
 		require.NoError(t, err)
 
-		c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
+		c, err := cache.New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
+
+		c.AddUpstreamCaches(uc)
 
 		s := server.New(logger, c)
 
@@ -290,7 +292,7 @@ func TestServeHTTP(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
-		c, err := cache.New(logger, "cache.example.com", dir, nil)
+		c, err := cache.New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
 
 		t.Run("PUT is not permitted", func(t *testing.T) {
