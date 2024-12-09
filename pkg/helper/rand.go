@@ -28,3 +28,14 @@ func RandString(n int, r io.Reader) (string, error) {
 
 	return string(ret), nil
 }
+
+// MustRandString returns the string returned by RandString. If RandString
+// returns an error, it will panic.
+func MustRandString(n int, r io.Reader) string {
+	str, err := RandString(n, r)
+	if err != nil {
+		panic(err)
+	}
+
+	return str
+}

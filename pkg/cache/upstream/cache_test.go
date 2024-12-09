@@ -71,7 +71,7 @@ func TestNew(t *testing.T) {
 			_, err := upstream.New(
 				logger,
 				"cache.nixos.org",
-				[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+				testdata.PublicKeys(),
 			)
 			if err != nil {
 				t.Errorf("expected no error, got %s", err)
@@ -85,7 +85,7 @@ func TestNew(t *testing.T) {
 		c, err := upstream.New(
 			logger,
 			"cache.nixos.org",
-			[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+			testdata.PublicKeys(),
 		)
 		if err != nil {
 			t.Errorf("expected no error, got %s", err)
@@ -101,7 +101,7 @@ func TestGetNarInfo(t *testing.T) {
 	c, err := upstream.New(
 		logger,
 		"cache.nixos.org",
-		[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+		testdata.PublicKeys(),
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got %s", err)
@@ -124,7 +124,7 @@ func TestGetNarInfo(t *testing.T) {
 			t.Fatalf("expected no error, got %s", err)
 		}
 
-		if want, got := "/nix/store/7bn85d74qa0127p85rrswfyghxsqmcf7-iputils-20210722", ni.StorePath; want != got {
+		if want, got := "/nix/store/n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1", ni.StorePath; want != got {
 			t.Errorf("want %q got %q", want, got)
 		}
 	})
@@ -145,7 +145,7 @@ func TestGetNarInfo(t *testing.T) {
 		c, err := upstream.New(
 			logger,
 			tu.Host,
-			[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+			testdata.PublicKeys(),
 		)
 		if err != nil {
 			t.Fatalf("expected no error, got %s", err)
@@ -178,7 +178,7 @@ func TestGetNarInfo(t *testing.T) {
 			c, err := upstream.New(
 				logger,
 				tu.Host,
-				[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+				testdata.PublicKeys(),
 			)
 			if err != nil {
 				t.Fatalf("expected no error, got %s", err)
@@ -196,7 +196,7 @@ func TestGetNar(t *testing.T) {
 	c, err := upstream.New(
 		logger,
 		"cache.nixos.org",
-		[]string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="},
+		testdata.PublicKeys(),
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got %s", err)
@@ -227,7 +227,7 @@ func TestGetNar(t *testing.T) {
 			body.Close()
 		}()
 
-		if want, got := int64(132228), cl; want != got {
+		if want, got := int64(50160), cl; want != got {
 			t.Errorf("want %d got %d", want, got)
 		}
 	})
