@@ -22,8 +22,7 @@ NarHash: sha256:07kc6swib31psygpmwi8952lvywlpqn474059yxl7grwsvr6k0fj
 NarSize: 226552
 References: n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1 qdcbgcj27x2kpxj2sf9yfvva7qsgg64g-glibc-2.38-77
 Deriver: 1zpqmcicrg8smi9jlqv6dmd7v20d2fsn-hello-2.12.1.drv
-Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
-Sig: nix-cache.cluster.nasreddine.com:zcbCC5rjkEtQvM/XckDfBk9+q/XsbEuX/Z0YblZ/THjL5lnQgteQSI2u6fXirdF+bfTv4PvSEbPqeIYIFQNSCA==`,
+Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==`,
 }
 
 func init() {

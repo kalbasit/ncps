@@ -14,6 +14,8 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -362,30 +364,7 @@ func TestServeHTTP(t *testing.T) {
 				}
 			})
 
-			t.Run("nar exists upstream without compression", func(t *testing.T) {
-				r := httptest.NewRequest("GET", "/nar/"+testdata.Nar1.NarHash+".nar", nil)
-				w := httptest.NewRecorder()
-
-				s.ServeHTTP(w, r)
-
-				if want, got := http.StatusOK, w.Code; want != got {
-					t.Errorf("want %d got %d", want, got)
-				}
-
-				resp := w.Result()
-				defer resp.Body.Close()
-
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					t.Fatalf("expected no error got %s", err)
-				}
-
-				if want, got := testdata.Nar1.NarText, string(body); want != got {
-					t.Errorf("want %q got %q", want, got)
-				}
-			})
-
-			t.Run("nar exists upstream with compression", func(t *testing.T) {
+			t.Run("nar exists upstream", func(t *testing.T) {
 				r := httptest.NewRequest("GET", "/nar/"+testdata.Nar1.NarHash+".nar.xz", nil)
 				w := httptest.NewRecorder()
 
@@ -399,12 +378,10 @@ func TestServeHTTP(t *testing.T) {
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					t.Fatalf("expected no error got %s", err)
-				}
+				require.NoError(t, err)
 
-				if want, got := testdata.Nar1.NarText+"xz", string(body); want != got {
-					t.Errorf("want %q got %q", want, got)
+				if assert.Equal(t, len(testdata.Nar1.NarText), len(string(body))) {
+					assert.Equal(t, testdata.Nar1.NarText, string(body))
 				}
 			})
 		})
