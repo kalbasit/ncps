@@ -33,5 +33,6 @@ func FilePathWithSharding(fn string) string {
 
 	lvl1 := fn[:1]
 	lvl2 := fn[:2]
+
 	return filepath.Join(lvl1, lvl2, fn)
 }
