@@ -35,15 +35,11 @@ func init() {
 func TestServeHTTP(t *testing.T) {
 	t.Run("DELETE requests", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
-		if err != nil {
-			t.Fatalf("expected no error, got: %q", err)
-		}
+		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
 		c, err := cache.New(logger, "cache.example.com", dir, nil)
-		if err != nil {
-			t.Fatalf("expected no error, got %q", err)
-		}
+		require.NoError(t, err)
 
 		t.Run("DELETE is not permitted", func(t *testing.T) {
 			s := server.New(logger, c)
@@ -56,18 +52,12 @@ func TestServeHTTP(t *testing.T) {
 				url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
 				r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-				if err != nil {
-					t.Fatalf("expecting no error got %s", err)
-				}
+				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
-				if err != nil {
-					t.Fatalf("expecting no error got %s", err)
-				}
+				require.NoError(t, err)
 
-				if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
-					t.Errorf("want %d got %d", want, got)
-				}
+				assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 			})
 
 			t.Run("nar", func(t *testing.T) {
@@ -75,36 +65,24 @@ func TestServeHTTP(t *testing.T) {
 					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
 
 					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
-					if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 				})
 
 				t.Run("with compression", func(t *testing.T) {
 					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
 					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
-					if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 				})
 			})
 		})
@@ -120,55 +98,35 @@ func TestServeHTTP(t *testing.T) {
 				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 				t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-					_, err := os.Stat(storePath)
-					if err == nil {
-						t.Fatal("expected an error but got none")
-					}
+					assert.NoFileExists(t, storePath)
 				})
 
 				f, err := os.Create(storePath)
-				if err != nil {
-					t.Fatalf("expecting no error got %s", err)
-				}
+				require.NoError(t, err)
 
-				if _, err := f.WriteString(testdata.Nar1.NarInfoText); err != nil {
-					t.Fatalf("expecting no error got %s", err)
-				}
+				_, err = f.WriteString(testdata.Nar1.NarInfoText)
+				require.NoError(t, err)
 
-				if err := f.Close(); err != nil {
-					t.Fatalf("expecting no error got %s", err)
-				}
+				require.NoError(t, f.Close())
 
 				t.Run("narinfo does exist in storage", func(t *testing.T) {
-					_, err := os.Stat(storePath)
-					if err != nil {
-						t.Fatalf("expected no error but got: %s", err)
-					}
+					assert.FileExists(t, storePath)
 				})
 
 				t.Run("DELETE returns no error", func(t *testing.T) {
 					url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
 					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
-					if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 				})
 
 				t.Run("narinfo is gone from the store", func(t *testing.T) {
-					_, err := os.Stat(storePath)
-					if err == nil {
-						t.Fatal("expected an error but got none")
-					}
+					assert.NoFileExists(t, storePath)
 				})
 			})
 
@@ -177,55 +135,35 @@ func TestServeHTTP(t *testing.T) {
 					storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar")
 
 					t.Run("nar does not exist in storage yet", func(t *testing.T) {
-						_, err := os.Stat(storePath)
-						if err == nil {
-							t.Fatal("expected an error but got none")
-						}
+						assert.NoFileExists(t, storePath)
 					})
 
 					f, err := os.Create(storePath)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
-					if _, err := f.WriteString(testdata.Nar1.NarText); err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					_, err = f.WriteString(testdata.Nar1.NarText)
+					require.NoError(t, err)
 
-					if err := f.Close(); err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, f.Close())
 
 					t.Run("nar does exist in storage", func(t *testing.T) {
-						_, err := os.Stat(storePath)
-						if err != nil {
-							t.Fatalf("expected no error but got: %s", err)
-						}
+						assert.FileExists(t, storePath)
 					})
 
 					t.Run("DELETE returns no error", func(t *testing.T) {
 						url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
 
 						r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-						if err != nil {
-							t.Fatalf("expecting no error got %s", err)
-						}
+						require.NoError(t, err)
 
 						resp, err := ts.Client().Do(r)
-						if err != nil {
-							t.Fatalf("expecting no error got %s", err)
-						}
+						require.NoError(t, err)
 
-						if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-							t.Errorf("want %d got %d", want, got)
-						}
+						assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 					})
 
 					t.Run("narinfo is gone from the store", func(t *testing.T) {
-						_, err := os.Stat(storePath)
-						if err == nil {
-							t.Fatal("expected an error but got none")
-						}
+						assert.NoFileExists(t, storePath)
 					})
 				})
 
@@ -233,55 +171,35 @@ func TestServeHTTP(t *testing.T) {
 					storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
 
 					t.Run("nar does not exist in storage yet", func(t *testing.T) {
-						_, err := os.Stat(storePath)
-						if err == nil {
-							t.Fatal("expected an error but got none")
-						}
+						assert.NoFileExists(t, storePath)
 					})
 
 					f, err := os.Create(storePath)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
-					if _, err := f.WriteString(testdata.Nar1.NarText); err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					_, err = f.WriteString(testdata.Nar1.NarText)
+					require.NoError(t, err)
 
-					if err := f.Close(); err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, f.Close())
 
 					t.Run("nar does exist in storage", func(t *testing.T) {
-						_, err := os.Stat(storePath)
-						if err != nil {
-							t.Fatalf("expected no error but got: %s", err)
-						}
+						assert.FileExists(t, storePath)
 					})
 
 					t.Run("DELETE returns no error", func(t *testing.T) {
 						url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
 						r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-						if err != nil {
-							t.Fatalf("expecting no error got %s", err)
-						}
+						require.NoError(t, err)
 
 						resp, err := ts.Client().Do(r)
-						if err != nil {
-							t.Fatalf("expecting no error got %s", err)
-						}
+						require.NoError(t, err)
 
-						if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-							t.Errorf("want %d got %d", want, got)
-						}
+						assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 					})
 
 					t.Run("narinfo is gone from the store", func(t *testing.T) {
-						_, err := os.Stat(storePath)
-						if err == nil {
-							t.Fatal("expected an error but got none")
-						}
+						assert.NoFileExists(t, storePath)
 					})
 				})
 			})
@@ -293,25 +211,17 @@ func TestServeHTTP(t *testing.T) {
 		defer us.Close()
 
 		uu, err := url.Parse(us.URL)
-		if err != nil {
-			t.Fatalf("error not expected, got %s", err)
-		}
+		require.NoError(t, err)
 
 		dir, err := os.MkdirTemp("", "cache-path-")
-		if err != nil {
-			t.Fatalf("expected no error, got: %q", err)
-		}
+		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
 		uc, err := upstream.New(logger, uu.Host, testdata.PublicKeys())
-		if err != nil {
-			t.Fatalf("expected no error, got %s", err)
-		}
+		require.NoError(t, err)
 
 		c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
-		if err != nil {
-			t.Fatalf("expected no error, got %q", err)
-		}
+		require.NoError(t, err)
 
 		s := server.New(logger, c)
 
@@ -341,9 +251,7 @@ func TestServeHTTP(t *testing.T) {
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					t.Fatalf("expected no error got %s", err)
-				}
+				require.NoError(t, err)
 
 				// NOTE: HasPrefix instead equality because we add our signature to the narInfo.
 				if !strings.HasPrefix(string(body), testdata.Nar1.NarInfoText) {
@@ -389,15 +297,11 @@ func TestServeHTTP(t *testing.T) {
 
 	t.Run("PUT requests", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
-		if err != nil {
-			t.Fatalf("expected no error, got: %q", err)
-		}
+		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
 		c, err := cache.New(logger, "cache.example.com", dir, nil)
-		if err != nil {
-			t.Fatalf("expected no error, got %q", err)
-		}
+		require.NoError(t, err)
 
 		t.Run("PUT is not permitted", func(t *testing.T) {
 			s := server.New(logger, c)
@@ -410,14 +314,10 @@ func TestServeHTTP(t *testing.T) {
 				p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
 				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
-				if err != nil {
-					t.Fatalf("expecting no error got %s", err)
-				}
+				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
-				if err != nil {
-					t.Fatalf("expecting no error got %s", err)
-				}
+				require.NoError(t, err)
 
 				if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
 					t.Errorf("want %d got %d", want, got)
@@ -429,14 +329,10 @@ func TestServeHTTP(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar"
 
 					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
 					if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
 						t.Errorf("want %d got %d", want, got)
@@ -447,14 +343,10 @@ func TestServeHTTP(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar.xz"
 
 					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("expecting no error got %s", err)
-					}
+					require.NoError(t, err)
 
 					if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
 						t.Errorf("want %d got %d", want, got)
@@ -500,21 +392,15 @@ func TestServeHTTP(t *testing.T) {
 
 				t.Run("narinfo does exist in storage", func(t *testing.T) {
 					_, err := os.Stat(storePath)
-					if err != nil {
-						t.Fatalf("expected no error but got: %s", err)
-					}
+					require.NoError(t, err)
 				})
 
 				t.Run("it should be signed by our server", func(t *testing.T) {
 					f, err := os.Open(storePath)
-					if err != nil {
-						t.Fatalf("no error was expected, got: %s", err)
-					}
+					require.NoError(t, err)
 
 					ni, err := narinfo.Parse(f)
-					if err != nil {
-						t.Fatalf("no error was expected, got: %s", err)
-					}
+					require.NoError(t, err)
 
 					var found bool
 
@@ -569,14 +455,10 @@ func TestServeHTTP(t *testing.T) {
 
 				t.Run("nar does exist in storage", func(t *testing.T) {
 					f, err := os.Open(storePath)
-					if err != nil {
-						t.Fatalf("expected no error but got: %s", err)
-					}
+					require.NoError(t, err)
 
 					bs, err := io.ReadAll(f)
-					if err != nil {
-						t.Fatalf("expected no error but got: %s", err)
-					}
+					require.NoError(t, err)
 
 					if want, got := testdata.Nar1.NarText, string(bs); want != got {
 						t.Errorf("want %q got %q", want, got)
@@ -614,14 +496,10 @@ func TestServeHTTP(t *testing.T) {
 
 				t.Run("nar does exist in storage", func(t *testing.T) {
 					f, err := os.Open(storePath)
-					if err != nil {
-						t.Fatalf("expected no error but got: %s", err)
-					}
+					require.NoError(t, err)
 
 					bs, err := io.ReadAll(f)
-					if err != nil {
-						t.Fatalf("expected no error but got: %s", err)
-					}
+					require.NoError(t, err)
 
 					if want, got := testdata.Nar1.NarText, string(bs); want != got {
 						t.Errorf("want %q got %q", want, got)
