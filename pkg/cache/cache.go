@@ -290,11 +290,11 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 }
 
 func (c *Cache) getNarPathInStore(hash, compression string) string {
-	return filepath.Join(c.storePath(), helper.NarPath(hash, compression))
+	return filepath.Join(c.storePath(), "nar", helper.NarFilePath(hash, compression))
 }
 
 func (c *Cache) getNarInfoPathInStore(hash string) string {
-	return filepath.Join(c.storePath(), helper.NarInfoPath(hash))
+	return filepath.Join(c.storePath(), "", helper.NarInfoFilePath(hash))
 }
 
 func (c *Cache) hasNarInStore(log log15.Logger, hash, compression string) bool {
