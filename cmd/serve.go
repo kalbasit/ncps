@@ -112,6 +112,8 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 			return err
 		}
 
+		cache.StartCron()
+
 		srv := server.New(logger, cache)
 		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
 		srv.SetPutPermitted(cmd.Bool("allow-put"))

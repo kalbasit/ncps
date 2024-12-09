@@ -146,15 +146,23 @@ func (c *Cache) SetupCron(timezone *time.Location) {
 	}
 
 	c.cron = cron.New(opts...)
+
+	c.logger.Info("cron setup complete")
 }
 
 // AddLRUCronJob adds a job for LRU.
 func (c *Cache) AddLRUCronJob(schedule cron.Schedule) {
+	c.logger.Info("adding a cronjob for LRU", "next-run", schedule.Next(time.Now()))
+
 	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU))
 }
 
 // StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
-func (c *Cache) StartCron() { c.cron.Start() }
+func (c *Cache) StartCron() {
+	c.logger.Info("starting the cron scheduler")
+
+	c.cron.Start()
+}
 
 // SetRecordAgeIgnoreTouch changes the duration at which a record is considered
 // up to date and a touch is not invoked.
@@ -991,38 +999,64 @@ func (c *Cache) runLRU() {
 		return
 	}
 
+	if len(nars) == 0 {
+		log.Warn("nars needed to be removed but none were returned in the query")
+
+		return
+	}
+
+	log.Info("found this many nars to remove", "count-nars", len(nars))
+
+	filesToRemove := make([]string, 0, 2*len(nars))
+
 	for _, nar := range nars {
 		narInfo, err := c.db.GetNarInfoRecordByID(tx, nar.NarInfoID)
-		if err != nil {
+		if err == nil {
+			log.Info("deleting narinfo record", "narinfo-hash", narInfo.Hash)
+
+			if err := c.db.DeleteNarInfoRecord(tx, narInfo.Hash); err != nil {
+				log.Error("error removing narinfo from database", "hash", narInfo.Hash, "error", err)
+			}
+
+			filesToRemove = append(filesToRemove,
+				c.getNarInfoPathInStore(narInfo.Hash),
+			)
+		} else {
 			log.Error("error fetching narinfo from the database", "ID", nar.NarInfoID, "error", err)
-
-			continue
 		}
 
-		narInfoPath := c.getNarInfoPathInStore(narInfo.Hash)
-
-		if err := os.Remove(narInfoPath); err != nil {
-			log.Error("error removing narinfo from store", "hash", nar.Hash, "error", err)
-
-			continue
-		}
-
-		if err := c.db.DeleteNarInfoRecord(tx, narInfo.Hash); err != nil {
-			log.Error("error removing narinfo from database", "hash", narInfo.Hash, "error", err)
-		}
-
-		narPath := c.getNarPathInStore(nar.Hash, nar.Compression)
-
-		if err := os.Remove(narPath); err != nil {
-			log.Error("error removing nar from store", "hash", nar.Hash, "error", err)
-
-			continue
-		}
+		log.Info("deleting nar record", "nar-hash", nar.Hash)
 
 		if err := c.db.DeleteNarRecord(tx, nar.Hash); err != nil {
 			log.Error("error removing nar from database", "hash", nar.Hash, "error", err)
 		}
+
+		filesToRemove = append(filesToRemove,
+			c.getNarPathInStore(nar.Hash, nar.Compression),
+		)
 	}
+
+	// remove all the files from the store as fast as possible.
+
+	var wg sync.WaitGroup
+
+	for _, f := range filesToRemove {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			log.Info("deleting file from store", "path", f)
+
+			if err := os.Remove(f); err != nil {
+				log.Error("error removing the file", "file-to-remove", f, "error", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// finally commit the database transaction
 
 	if err := tx.Commit(); err != nil {
 		log.Error("error committing the transaction", "error", err)
