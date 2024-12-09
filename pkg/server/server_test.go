@@ -232,9 +232,7 @@ func TestServeHTTP(t *testing.T) {
 
 				s.ServeHTTP(w, r)
 
-				if want, got := http.StatusNotFound, w.Code; want != got {
-					t.Errorf("want %d got %d", want, got)
-				}
+				assert.Equal(t, http.StatusNotFound, w.Code)
 			})
 
 			t.Run("narinfo exists upstream", func(t *testing.T) {
@@ -243,9 +241,7 @@ func TestServeHTTP(t *testing.T) {
 
 				s.ServeHTTP(w, r)
 
-				if want, got := http.StatusOK, w.Code; want != got {
-					t.Errorf("want %d got %d", want, got)
-				}
+				require.Equal(t, http.StatusOK, w.Code)
 
 				resp := w.Result()
 				defer resp.Body.Close()
@@ -254,9 +250,7 @@ func TestServeHTTP(t *testing.T) {
 				require.NoError(t, err)
 
 				// NOTE: HasPrefix instead equality because we add our signature to the narInfo.
-				if !strings.HasPrefix(string(body), testdata.Nar1.NarInfoText) {
-					t.Error("expected the body to start with narInfo but it did not")
-				}
+				assert.True(t, strings.HasPrefix(string(body), testdata.Nar1.NarInfoText))
 			})
 		})
 
@@ -267,9 +261,7 @@ func TestServeHTTP(t *testing.T) {
 
 				s.ServeHTTP(w, r)
 
-				if want, got := http.StatusNotFound, w.Code; want != got {
-					t.Errorf("want %d got %d", want, got)
-				}
+				assert.Equal(t, http.StatusNotFound, w.Code)
 			})
 
 			t.Run("nar exists upstream", func(t *testing.T) {
@@ -278,9 +270,7 @@ func TestServeHTTP(t *testing.T) {
 
 				s.ServeHTTP(w, r)
 
-				if want, got := http.StatusOK, w.Code; want != got {
-					t.Errorf("want %d got %d", want, got)
-				}
+				assert.Equal(t, http.StatusOK, w.Code)
 
 				resp := w.Result()
 				defer resp.Body.Close()
@@ -319,9 +309,7 @@ func TestServeHTTP(t *testing.T) {
 				resp, err := ts.Client().Do(r)
 				require.NoError(t, err)
 
-				if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
-					t.Errorf("want %d got %d", want, got)
-				}
+				assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 			})
 
 			t.Run("nar", func(t *testing.T) {
@@ -334,9 +322,7 @@ func TestServeHTTP(t *testing.T) {
 					resp, err := ts.Client().Do(r)
 					require.NoError(t, err)
 
-					if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 				})
 
 				t.Run("with compression", func(t *testing.T) {
@@ -348,9 +334,7 @@ func TestServeHTTP(t *testing.T) {
 					resp, err := ts.Client().Do(r)
 					require.NoError(t, err)
 
-					if want, got := http.StatusMethodNotAllowed, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 				})
 			})
 		})
@@ -366,28 +350,19 @@ func TestServeHTTP(t *testing.T) {
 				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
 
 				t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-					_, err := os.Stat(storePath)
-					if err == nil {
-						t.Fatal("expected an error but got none")
-					}
+					assert.NoFileExists(t, storePath)
 				})
 
 				t.Run("putNarInfo does not return an error", func(t *testing.T) {
 					p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
 					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
-					if err != nil {
-						t.Fatalf("error Do(r): %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("error Do(r): %s", err)
-					}
+					require.NoError(t, err)
 
-					if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 				})
 
 				t.Run("narinfo does exist in storage", func(t *testing.T) {
@@ -413,15 +388,9 @@ func TestServeHTTP(t *testing.T) {
 						}
 					}
 
-					if want, got := true, found; want != got {
-						t.Errorf("want %t got %t", want, got)
-					}
+					assert.True(t, found)
 
-					validSig := signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()})
-
-					if want, got := true, validSig; want != got {
-						t.Errorf("want %t got %t", want, got)
-					}
+					assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
 				})
 			})
 
