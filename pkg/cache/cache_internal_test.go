@@ -93,14 +93,10 @@ func TestNew(t *testing.T) {
 			ts := testServers[idx]
 
 			u, err := url.Parse(ts.URL)
-			if err != nil {
-				t.Fatalf("error parsing the test server url: %s", err)
-			}
+			require.NoError(t, err)
 
 			uc, err := upstream.New(logger, u.Host, nil)
-			if err != nil {
-				t.Fatalf("error creating an upstream cache: %s", err)
-			}
+			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
 		}
@@ -108,9 +104,7 @@ func TestNew(t *testing.T) {
 		cachePath := os.TempDir()
 
 		c, err := New(logger, "cache.example.com", cachePath)
-		if err != nil {
-			t.Fatalf("error creating a new cache: %s", err)
-		}
+		require.NoError(t, err)
 
 		for _, uc := range ucs {
 			c.AddUpstreamCaches(uc)
