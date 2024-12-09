@@ -14,6 +14,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/testdata"
 )
 
 //nolint:gochecknoglobals
@@ -838,4 +839,93 @@ func TestDeleteNarRecord(t *testing.T) {
 			assert.Empty(t, nims)
 		})
 	})
+}
+
+func TestNarTotalSize(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "database-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir) // clean up
+
+	db, err := database.Open(logger, filepath.Join(dir, "db.sqlite"))
+	require.NoError(t, err)
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+
+	var expectedSize uint64
+	for _, nar := range testdata.Entries {
+		expectedSize += uint64(len(nar.NarText))
+
+		res, err := db.InsertNarInfoRecord(tx, nar.NarInfoHash)
+		require.NoError(t, err)
+
+		nid, err := res.LastInsertId()
+		require.NoError(t, err)
+
+		_, err = db.InsertNarRecord(tx, nid, nar.NarHash, "", uint64(len(nar.NarText)))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, tx.Commit())
+
+	tx, err = db.Begin()
+	require.NoError(t, err)
+
+	size, err := db.NarTotalSize(tx)
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedSize, size)
+}
+
+func TestGetLeastAccessedNarRecords(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "database-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir) // clean up
+
+	db, err := database.Open(logger, filepath.Join(dir, "db.sqlite"))
+	require.NoError(t, err)
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+
+	var totalSize uint64
+	for _, nar := range testdata.Entries {
+		totalSize += uint64(len(nar.NarText))
+
+		res, err := db.InsertNarInfoRecord(tx, nar.NarInfoHash)
+		require.NoError(t, err)
+
+		nid, err := res.LastInsertId()
+		require.NoError(t, err)
+
+		_, err = db.InsertNarRecord(tx, nid, nar.NarHash, "", uint64(len(nar.NarText)))
+		require.NoError(t, err)
+	}
+
+	time.Sleep(time.Second)
+
+	for _, nar := range testdata.Entries[:len(testdata.Entries)-1] {
+		_, err := db.TouchNarRecord(tx, nar.NarHash)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, tx.Commit())
+
+	tx, err = db.Begin()
+	require.NoError(t, err)
+
+	lastEntry := testdata.Entries[len(testdata.Entries)-1]
+
+	nms, err := db.GetLeastAccessedNarRecords(tx, totalSize-uint64(len(lastEntry.NarText)))
+	require.NoError(t, err)
+
+	if assert.Len(t, nms, 1) {
+		assert.Equal(t, lastEntry.NarHash, nms[0].Hash)
+	}
 }
