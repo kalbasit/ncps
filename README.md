@@ -27,6 +27,7 @@ ncps addresses these issues by acting as a central cache on your local network.
 - **Reduced bandwidth usage:** Minimizes redundant downloads, saving bandwidth and time.
 - **Improved build times:** Faster access to dependencies speeds up builds.
 - **Secure caching:** ncps signs cached paths with its own key, ensuring integrity and authenticity.
+- **Cache size management:** Configure a maximum cache size and a cron schedule to automatically remove least recently used (LRU) store paths, preventing the cache from growing indefinitely.
 
 ## Installation
 
