@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 )
@@ -19,15 +21,11 @@ func init() {
 
 func TestSetDeletePermitted(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
-	if err != nil {
-		t.Fatalf("expected no error, got: %q", err)
-	}
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
 	c, err := cache.New(logger, "cache.example.com", dir, nil)
-	if err != nil {
-		t.Fatalf("expected no error, got %q", err)
-	}
+	require.NoError(t, err)
 
 	t.Run("false", func(t *testing.T) {
 		t.Parallel()
@@ -35,9 +33,7 @@ func TestSetDeletePermitted(t *testing.T) {
 		s := New(logger, c)
 		s.SetDeletePermitted(false)
 
-		if want, got := false, s.deletePermitted; want != got {
-			t.Errorf("want %t got %t", want, got)
-		}
+		assert.False(t, s.deletePermitted)
 	})
 
 	t.Run("true", func(t *testing.T) {
@@ -46,8 +42,6 @@ func TestSetDeletePermitted(t *testing.T) {
 		s := New(logger, c)
 		s.SetDeletePermitted(true)
 
-		if want, got := true, s.deletePermitted; want != got {
-			t.Errorf("want %t got %t", want, got)
-		}
+		assert.True(t, s.deletePermitted)
 	})
 }

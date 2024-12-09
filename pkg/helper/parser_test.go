@@ -2,9 +2,10 @@
 package helper
 
 import (
-	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseNarURL(t *testing.T) {
@@ -45,17 +46,9 @@ func TestParseNarURL(t *testing.T) {
 
 			hash, compression, err := ParseNarURL(test.url)
 
-			if want, got := test.hash, hash; want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-
-			if want, got := test.compression, compression; want != got {
-				t.Errorf("want %q got %q", want, got)
-			}
-
-			if want, got := test.err, err; !errors.Is(got, want) {
-				t.Errorf("want %s got %s", want, got)
-			}
+			assert.Equal(t, test.hash, hash)
+			assert.Equal(t, test.compression, compression)
+			assert.ErrorIs(t, test.err, err)
 		})
 	}
 }

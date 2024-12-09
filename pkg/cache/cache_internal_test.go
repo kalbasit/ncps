@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/testdata"
@@ -44,14 +46,10 @@ func TestNew(t *testing.T) {
 			ts := testServers[idx]
 
 			u, err := url.Parse(ts.URL)
-			if err != nil {
-				t.Fatalf("error parsing the test server url: %s", err)
-			}
+			require.NoError(t, err)
 
 			uc, err := upstream.New(logger, u.Host, nil)
-			if err != nil {
-				t.Fatalf("error creating an upstream cache: %s", err)
-			}
+			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
 		}
@@ -59,15 +57,10 @@ func TestNew(t *testing.T) {
 		cachePath := os.TempDir()
 
 		c, err := New(logger, "cache.example.com", cachePath, ucs)
-		if err != nil {
-			t.Fatalf("error creating a new cache: %s", err)
-		}
+		require.NoError(t, err)
 
 		for idx, uc := range c.upstreamCaches {
-			//nolint:gosec
-			if want, got := uint64(idx+1), uc.GetPriority(); want != got {
-				t.Errorf("expected the priority at index %d to be %d but got %d", idx, want, got)
-			}
+			assert.EqualValues(t, idx+1, uc.GetPriority())
 		}
 	})
 }
