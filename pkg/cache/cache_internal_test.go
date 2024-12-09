@@ -1,12 +1,12 @@
 package cache
 
 import (
-	"fmt"
 	"math/rand/v2"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/stretchr/testify/assert"
@@ -121,9 +121,7 @@ func TestNew(t *testing.T) {
 func TestRunLRU(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
-	// defer os.RemoveAll(dir) // clean up
-
-	fmt.Printf("dir: %s\n", dir)
+	defer os.RemoveAll(dir) // clean up
 
 	c, err := New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
@@ -138,6 +136,7 @@ func TestRunLRU(t *testing.T) {
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
+	c.SetRecordAgeIgnoreTouch(0)
 
 	allEntries := testdata.Entries
 	entries := testdata.Entries[:len(testdata.Entries)-1]
@@ -164,7 +163,7 @@ func TestRunLRU(t *testing.T) {
 		_, err := c.GetNarInfo(nar.NarInfoHash)
 		require.NoError(t, err)
 
-		size, _, err := c.GetNar(nar.NarHash, "")
+		size, _, err := c.GetNar(nar.NarHash, "xz")
 		require.NoError(t, err)
 
 		sizePulled += size
@@ -177,9 +176,12 @@ func TestRunLRU(t *testing.T) {
 
 	t.Run("confirm all nars are in the store", func(t *testing.T) {
 		for _, nar := range allEntries {
-			assert.True(t, c.hasNarInStore(logger, nar.NarHash, ""))
+			assert.True(t, c.hasNarInStore(logger, nar.NarHash, "xz"))
 		}
 	})
+
+	// ensure time has moved by one sec for the last_accessed_at work
+	time.Sleep(time.Second)
 
 	t.Run("pull the nars except for the last entry to get their last_accessed_at updated", func(t *testing.T) {
 		var sizePulled int64
@@ -188,7 +190,7 @@ func TestRunLRU(t *testing.T) {
 			_, err := c.GetNarInfo(nar.NarInfoHash)
 			require.NoError(t, err)
 
-			size, _, err := c.GetNar(nar.NarHash, "")
+			size, _, err := c.GetNar(nar.NarHash, "xz")
 			require.NoError(t, err)
 
 			sizePulled += size
@@ -235,10 +237,10 @@ func TestRunLRU(t *testing.T) {
 
 	t.Run("confirm all nars except the last one are in the store", func(t *testing.T) {
 		for _, nar := range entries {
-			assert.True(t, c.hasNarInStore(logger, nar.NarHash, ""))
+			assert.True(t, c.hasNarInStore(logger, nar.NarHash, "xz"))
 		}
 
-		assert.False(t, c.hasNarInStore(logger, lastEntry.NarHash, ""))
+		assert.False(t, c.hasNarInStore(logger, lastEntry.NarHash, "xz"))
 	})
 
 	t.Run("all narinfo records except the last one are in the database", func(t *testing.T) {

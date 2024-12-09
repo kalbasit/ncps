@@ -970,14 +970,6 @@ func (c *Cache) runLRU() {
 		return
 	}
 
-	fmt.Printf(`
-nar-total-size = %d\n
-max-size = %d\n
-		`,
-		narTotalSize,
-		c.maxSize,
-	)
-
 	log = log.New("nar-total-size", narTotalSize)
 
 	if narTotalSize <= c.maxSize {
