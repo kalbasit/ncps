@@ -898,45 +898,43 @@ func TestDeleteNar(t *testing.T) {
 
 	c.SetRecordAgeIgnoreTouch(0)
 
-	t.Run("with compression", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
+	storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
 
-		t.Run("file does not exist in the store", func(t *testing.T) {
-			t.Run("nar does not exist in storage yet", func(t *testing.T) {
-				assert.NoFileExists(t, storePath)
-			})
-
-			t.Run("DeleteNar does return an error", func(t *testing.T) {
-				err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
-				assert.NoError(t, err)
-			})
+	t.Run("file does not exist in the store", func(t *testing.T) {
+		t.Run("nar does not exist in storage yet", func(t *testing.T) {
+			assert.NoFileExists(t, storePath)
 		})
 
-		t.Run("file does exist in the store", func(t *testing.T) {
-			t.Run("nar does not exist in storage yet", func(t *testing.T) {
-				assert.NoFileExists(t, storePath)
-			})
+		t.Run("DeleteNar does return an error", func(t *testing.T) {
+			err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			assert.ErrorIs(t, err, cache.ErrNotFound)
+		})
+	})
 
-			f, err := os.Create(storePath)
-			require.NoError(t, err)
+	t.Run("file does exist in the store", func(t *testing.T) {
+		t.Run("nar does not exist in storage yet", func(t *testing.T) {
+			assert.NoFileExists(t, storePath)
+		})
 
-			_, err = f.WriteString(testdata.Nar1.NarText)
-			require.NoError(t, err)
+		f, err := os.Create(storePath)
+		require.NoError(t, err)
 
-			require.NoError(t, f.Close())
+		_, err = f.WriteString(testdata.Nar1.NarText)
+		require.NoError(t, err)
 
-			t.Run("nar does exist in storage", func(t *testing.T) {
-				assert.FileExists(t, storePath)
-			})
+		require.NoError(t, f.Close())
 
-			t.Run("deleteNar does not return an error", func(t *testing.T) {
-				err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
-				assert.NoError(t, err)
-			})
+		t.Run("nar does exist in storage", func(t *testing.T) {
+			assert.FileExists(t, storePath)
+		})
 
-			t.Run("nar is gone from the store", func(t *testing.T) {
-				assert.FileExists(t, storePath)
-			})
+		t.Run("deleteNar does not return an error", func(t *testing.T) {
+			err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			assert.NoError(t, err)
+		})
+
+		t.Run("nar is gone from the store", func(t *testing.T) {
+			assert.NoFileExists(t, storePath)
 		})
 	})
 }
