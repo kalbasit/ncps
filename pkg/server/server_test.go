@@ -95,7 +95,7 @@ func TestServeHTTP(t *testing.T) {
 			defer ts.Close()
 
 			t.Run("narInfo", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
+				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoPath)
 
 				t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 					assert.NoFileExists(t, storePath)
@@ -131,76 +131,38 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("nar", func(t *testing.T) {
-				t.Run("nar without compression", func(t *testing.T) {
-					storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar")
+				storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
 
-					t.Run("nar does not exist in storage yet", func(t *testing.T) {
-						assert.NoFileExists(t, storePath)
-					})
-
-					f, err := os.Create(storePath)
-					require.NoError(t, err)
-
-					_, err = f.WriteString(testdata.Nar1.NarText)
-					require.NoError(t, err)
-
-					require.NoError(t, f.Close())
-
-					t.Run("nar does exist in storage", func(t *testing.T) {
-						assert.FileExists(t, storePath)
-					})
-
-					t.Run("DELETE returns no error", func(t *testing.T) {
-						url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
-
-						r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-						require.NoError(t, err)
-
-						resp, err := ts.Client().Do(r)
-						require.NoError(t, err)
-
-						assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-					})
-
-					t.Run("narinfo is gone from the store", func(t *testing.T) {
-						assert.NoFileExists(t, storePath)
-					})
+				t.Run("nar does not exist in storage yet", func(t *testing.T) {
+					assert.NoFileExists(t, storePath)
 				})
 
-				t.Run("nar with compression", func(t *testing.T) {
-					storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
+				f, err := os.Create(storePath)
+				require.NoError(t, err)
 
-					t.Run("nar does not exist in storage yet", func(t *testing.T) {
-						assert.NoFileExists(t, storePath)
-					})
+				_, err = f.WriteString(testdata.Nar1.NarText)
+				require.NoError(t, err)
 
-					f, err := os.Create(storePath)
+				require.NoError(t, f.Close())
+
+				t.Run("nar does exist in storage", func(t *testing.T) {
+					assert.FileExists(t, storePath)
+				})
+
+				t.Run("DELETE returns no error", func(t *testing.T) {
+					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+
+					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 					require.NoError(t, err)
 
-					_, err = f.WriteString(testdata.Nar1.NarText)
+					resp, err := ts.Client().Do(r)
 					require.NoError(t, err)
 
-					require.NoError(t, f.Close())
+					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+				})
 
-					t.Run("nar does exist in storage", func(t *testing.T) {
-						assert.FileExists(t, storePath)
-					})
-
-					t.Run("DELETE returns no error", func(t *testing.T) {
-						url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
-
-						r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-						require.NoError(t, err)
-
-						resp, err := ts.Client().Do(r)
-						require.NoError(t, err)
-
-						assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-					})
-
-					t.Run("narinfo is gone from the store", func(t *testing.T) {
-						assert.NoFileExists(t, storePath)
-					})
+				t.Run("narinfo is gone from the store", func(t *testing.T) {
+					assert.NoFileExists(t, storePath)
 				})
 			})
 		})
@@ -238,7 +200,7 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("narinfo exists upstream", func(t *testing.T) {
-				r := httptest.NewRequest("GET", "/"+testdata.Nar1.NarInfoHash+".narinfo", nil)
+				r := httptest.NewRequest("GET", "/"+testdata.Nar1.NarInfoPath, nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -267,7 +229,7 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("nar exists upstream", func(t *testing.T) {
-				r := httptest.NewRequest("GET", "/nar/"+testdata.Nar1.NarHash+".nar.xz", nil)
+				r := httptest.NewRequest("GET", "/nar/"+testdata.Nar1.NarPath, nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -349,7 +311,7 @@ func TestServeHTTP(t *testing.T) {
 			defer ts.Close()
 
 			t.Run("narInfo", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoHash+".narinfo")
+				storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoPath)
 
 				t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 					assert.NoFileExists(t, storePath)
@@ -396,64 +358,32 @@ func TestServeHTTP(t *testing.T) {
 				})
 			})
 
-			t.Run("nar without compression", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar")
+			storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
 
-				t.Run("nar does not exist in storage yet", func(t *testing.T) {
-					assert.NoFileExists(t, storePath)
-				})
-
-				t.Run("putNar does not return an error", func(t *testing.T) {
-					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
-
-					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
-					require.NoError(t, err)
-
-					resp, err := ts.Client().Do(r)
-					require.NoError(t, err)
-
-					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-				})
-
-				t.Run("nar does exist in storage", func(t *testing.T) {
-					f, err := os.Open(storePath)
-					require.NoError(t, err)
-
-					bs, err := io.ReadAll(f)
-					require.NoError(t, err)
-
-					assert.Equal(t, testdata.Nar1.NarText, string(bs))
-				})
+			t.Run("nar does not exist in storage yet", func(t *testing.T) {
+				assert.NoFileExists(t, storePath)
 			})
 
-			t.Run("nar with compression", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
+			t.Run("putNar does not return an error", func(t *testing.T) {
+				p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
-				t.Run("nar does not exist in storage yet", func(t *testing.T) {
-					assert.NoFileExists(t, storePath)
-				})
+				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
+				require.NoError(t, err)
 
-				t.Run("putNar does not return an error", func(t *testing.T) {
-					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+				resp, err := ts.Client().Do(r)
+				require.NoError(t, err)
 
-					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
-					require.NoError(t, err)
+				assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+			})
 
-					resp, err := ts.Client().Do(r)
-					require.NoError(t, err)
+			t.Run("nar does exist in storage", func(t *testing.T) {
+				f, err := os.Open(storePath)
+				require.NoError(t, err)
 
-					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-				})
+				bs, err := io.ReadAll(f)
+				require.NoError(t, err)
 
-				t.Run("nar does exist in storage", func(t *testing.T) {
-					f, err := os.Open(storePath)
-					require.NoError(t, err)
-
-					bs, err := io.ReadAll(f)
-					require.NoError(t, err)
-
-					assert.Equal(t, testdata.Nar1.NarText, string(bs))
-				})
+				assert.Equal(t, testdata.Nar1.NarText, string(bs))
 			})
 		})
 	})
