@@ -41,32 +41,32 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("path is required", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "hello", nil)
+			_, err := cache.New(logger, "cache.example.com", "hello")
 			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path is not absolute", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "hello", nil)
+			_, err := cache.New(logger, "cache.example.com", "hello")
 			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path must exist", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/non-existing", nil)
+			_, err := cache.New(logger, "cache.example.com", "/non-existing")
 			assert.ErrorIs(t, err, cache.ErrPathMustExist)
 		})
 
 		t.Run("path must be a directory", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo", nil)
+			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo")
 			assert.ErrorIs(t, err, cache.ErrPathMustBeADirectory)
 		})
 
 		t.Run("path must be writable", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/root", nil)
+			_, err := cache.New(logger, "cache.example.com", "/root")
 			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
 		})
 
 		t.Run("valid path must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", os.TempDir(), nil)
+			_, err := cache.New(logger, "cache.example.com", os.TempDir())
 			assert.NoError(t, err)
 		})
 
@@ -75,7 +75,7 @@ func TestNew(t *testing.T) {
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
 
-			_, err = cache.New(logger, "cache.example.com", dir, nil)
+			_, err = cache.New(logger, "cache.example.com", dir)
 			require.NoError(t, err)
 
 			dirs := []string{
@@ -105,7 +105,7 @@ func TestNew(t *testing.T) {
 			f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "hello")
 			require.NoError(t, err)
 
-			_, err = cache.New(logger, "cache.example.com", dir, nil)
+			_, err = cache.New(logger, "cache.example.com", dir)
 			require.NoError(t, err)
 
 			assert.NoFileExists(t, f.Name())
@@ -116,7 +116,7 @@ func TestNew(t *testing.T) {
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
 
-			_, err = cache.New(logger, "cache.example.com", dir, nil)
+			_, err = cache.New(logger, "cache.example.com", dir)
 			require.NoError(t, err)
 
 			assert.FileExists(t, filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
@@ -127,22 +127,22 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := cache.New(logger, "", os.TempDir(), nil)
+			_, err := cache.New(logger, "", os.TempDir())
 			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := cache.New(logger, "https://cache.example.com", os.TempDir(), nil)
+			_, err := cache.New(logger, "https://cache.example.com", os.TempDir())
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir(), nil)
+			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir())
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", os.TempDir(), nil)
+			_, err := cache.New(logger, "cache.example.com", os.TempDir())
 			require.NoError(t, err)
 		})
 	})
@@ -151,7 +151,7 @@ func TestNew(t *testing.T) {
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
-	c, err := cache.New(logger, "cache.example.com", "/tmp", nil)
+	c, err := cache.New(logger, "cache.example.com", "/tmp")
 	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
@@ -187,9 +187,10 @@ func TestGetNarInfo(t *testing.T) {
 	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
+	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
+	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
@@ -468,7 +469,7 @@ func TestPutNarInfo(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -602,7 +603,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -664,9 +665,10 @@ func TestGetNar(t *testing.T) {
 	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, "cache.example.com", dir, []upstream.Cache{uc})
+	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
+	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
@@ -856,7 +858,7 @@ func TestPutNar(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -891,7 +893,7 @@ func TestDeleteNar(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir, nil)
+	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
