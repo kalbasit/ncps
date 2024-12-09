@@ -290,11 +290,11 @@ func (c *Cache) pullNar(log log15.Logger, hash, compression string, doneC chan s
 }
 
 func (c *Cache) getNarPathInStore(hash, compression string) string {
-	return filepath.Join(c.storePath(), "nar", helper.NarFilePath(hash, compression))
+	return filepath.Join(c.storeNarPath(), helper.NarFilePath(hash, compression))
 }
 
 func (c *Cache) getNarInfoPathInStore(hash string) string {
-	return filepath.Join(c.storePath(), "", helper.NarInfoFilePath(hash))
+	return filepath.Join(c.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 }
 
 func (c *Cache) hasNarInStore(log log15.Logger, hash, compression string) bool {
@@ -860,6 +860,7 @@ func (c *Cache) setupDirs() error {
 	allPaths := []string{
 		c.configPath(),
 		c.storePath(),
+		c.storeNarInfoPath(),
 		c.storeNarPath(),
 		c.storeTMPPath(),
 		c.dbDirPath(),
@@ -874,13 +875,14 @@ func (c *Cache) setupDirs() error {
 	return nil
 }
 
-func (c *Cache) configPath() string    { return filepath.Join(c.path, "config") }
-func (c *Cache) secretKeyPath() string { return filepath.Join(c.configPath(), "cache.key") }
-func (c *Cache) storePath() string     { return filepath.Join(c.path, "store") }
-func (c *Cache) storeNarPath() string  { return filepath.Join(c.storePath(), "nar") }
-func (c *Cache) storeTMPPath() string  { return filepath.Join(c.storePath(), "tmp") }
-func (c *Cache) dbDirPath() string     { return filepath.Join(c.path, "var", "ncps", "db") }
-func (c *Cache) dbKeyPath() string     { return filepath.Join(c.dbDirPath(), "db.sqlite") }
+func (c *Cache) configPath() string       { return filepath.Join(c.path, "config") }
+func (c *Cache) secretKeyPath() string    { return filepath.Join(c.configPath(), "cache.key") }
+func (c *Cache) storePath() string        { return filepath.Join(c.path, "store") }
+func (c *Cache) storeNarInfoPath() string { return filepath.Join(c.storePath(), "narinfo") }
+func (c *Cache) storeNarPath() string     { return filepath.Join(c.storePath(), "nar") }
+func (c *Cache) storeTMPPath() string     { return filepath.Join(c.storePath(), "tmp") }
+func (c *Cache) dbDirPath() string        { return filepath.Join(c.path, "var", "ncps", "db") }
+func (c *Cache) dbKeyPath() string        { return filepath.Join(c.dbDirPath(), "db.sqlite") }
 
 func (c *Cache) setupDataBase() error {
 	db, err := database.Open(c.logger, c.dbKeyPath())

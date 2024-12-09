@@ -81,6 +81,7 @@ func TestNew(t *testing.T) {
 			dirs := []string{
 				"config",
 				"store",
+				filepath.Join("store", "narinfo"),
 				filepath.Join("store", "nar"),
 				filepath.Join("store", "tmp"),
 				filepath.Join("var", "ncps", "db"),
@@ -203,7 +204,7 @@ func TestGetNarInfo(t *testing.T) {
 
 	t.Run("narinfo exists upstream", func(t *testing.T) {
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-			assert.NoFileExists(t, filepath.Join(dir, "store", testdata.Nar2.NarInfoPath))
+			assert.NoFileExists(t, filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath))
 		})
 
 		t.Run("nar does not exist in storage yet", func(t *testing.T) {
@@ -256,7 +257,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			assert.FileExists(t, filepath.Join(dir, "store", testdata.Nar2.NarInfoPath))
+			assert.FileExists(t, filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath))
 		})
 
 		t.Run("it should be signed by our server", func(t *testing.T) {
@@ -426,7 +427,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("no error is returned if the entry already exist in the database", func(t *testing.T) {
-			require.NoError(t, os.Remove(filepath.Join(dir, "store", testdata.Nar2.NarInfoPath)))
+			require.NoError(t, os.Remove(filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)))
 
 			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
 			assert.NoError(t, err)
@@ -477,7 +478,7 @@ func TestPutNarInfo(t *testing.T) {
 	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 	require.NoError(t, err)
 
-	storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoPath)
+	storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 
 	t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 		assert.NoFileExists(t, storePath)
@@ -609,7 +610,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("file does not exist in the store", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoPath)
+		storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 			assert.NoFileExists(t, storePath)
@@ -622,7 +623,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	})
 
 	t.Run("file does exist in the store", func(t *testing.T) {
-		storePath := filepath.Join(dir, "store", testdata.Nar1.NarInfoPath)
+		storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 
 		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
 			assert.NoFileExists(t, storePath)
