@@ -745,9 +745,8 @@ func TestDeleteNarRecord(t *testing.T) {
 		//nolint:errcheck
 		defer tx.Rollback()
 
-		if err := db.DeleteNarRecord(tx, hash); err != nil {
-			t.Errorf("error deleting narinfo record: %s", err)
-		}
+		err = db.DeleteNarRecord(tx, hash)
+		require.NoError(t, err)
 	})
 
 	t.Run("nar existing", func(t *testing.T) {
@@ -767,9 +766,7 @@ func TestDeleteNarRecord(t *testing.T) {
 			res, err := db.InsertNarInfoRecord(tx, hash)
 			require.NoError(t, err)
 
-			if err := tx.Commit(); err != nil {
-				t.Fatalf("expected no error got: %s", err)
-			}
+			require.NoError(t, tx.Commit())
 
 			nid, err = res.LastInsertId()
 			require.NoError(t, err)
@@ -785,13 +782,10 @@ func TestDeleteNarRecord(t *testing.T) {
 			//nolint:errcheck
 			defer tx.Rollback()
 
-			if _, err := db.InsertNarRecord(tx, nid, hash, "", 123); err != nil {
-				t.Fatalf("error inserting the record: %s", err)
-			}
+			_, err = db.InsertNarRecord(tx, nid, hash, "", 123)
+			require.NoError(t, err)
 
-			if err := tx.Commit(); err != nil {
-				t.Fatalf("error committing transaction: %s", err)
-			}
+			assert.NoError(t, tx.Commit())
 		})
 
 		t.Run("delete the narinfo", func(t *testing.T) {
@@ -803,13 +797,10 @@ func TestDeleteNarRecord(t *testing.T) {
 
 			time.Sleep(time.Second)
 
-			if err := db.DeleteNarRecord(tx, hash); err != nil {
-				t.Fatalf("error deleting a narinfo record: %s", err)
-			}
+			err = db.DeleteNarRecord(tx, hash)
+			require.NoError(t, err)
 
-			if err := tx.Commit(); err != nil {
-				t.Fatalf("error committing transaction: %s", err)
-			}
+			assert.NoError(t, tx.Commit())
 		})
 
 		t.Run("confirm it has been removed", func(t *testing.T) {
@@ -843,13 +834,8 @@ func TestDeleteNarRecord(t *testing.T) {
 				nims = append(nims, nim)
 			}
 
-			if err := rows.Err(); err != nil {
-				t.Fatalf("got an error on rows: %s", err)
-			}
-
-			if want, got := 0, len(nims); want != got {
-				t.Fatalf("want %d got %d", want, got)
-			}
+			require.NoError(t, rows.Err())
+			assert.Empty(t, nims)
 		})
 	})
 }
