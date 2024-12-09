@@ -23,8 +23,8 @@ func init() {
 	logger.SetHandler(log15.DiscardHandler())
 }
 
-func TestNew(t *testing.T) {
-	t.Run("upstream caches", func(t *testing.T) {
+func TestAddUpstreamCaches(t *testing.T) {
+	t.Run("upstream caches added at once", func(t *testing.T) {
 		t.Parallel()
 
 		testServers := make(map[int]*httptest.Server)
@@ -56,8 +56,57 @@ func TestNew(t *testing.T) {
 
 		cachePath := os.TempDir()
 
-		c, err := New(logger, "cache.example.com", cachePath, ucs)
+		c, err := New(logger, "cache.example.com", cachePath)
 		require.NoError(t, err)
+
+		c.AddUpstreamCaches(ucs...)
+
+		for idx, uc := range c.upstreamCaches {
+			//nolint:gosec
+			if want, got := uint64(idx+1), uc.GetPriority(); want != got {
+				t.Errorf("expected the priority at index %d to be %d but got %d", idx, want, got)
+			}
+		}
+	})
+
+	t.Run("upstream caches added one by one", func(t *testing.T) {
+		t.Parallel()
+
+		testServers := make(map[int]*httptest.Server)
+
+		for i := 1; i < 10; i++ {
+			ts := testdata.HTTPTestServer(t, i)
+			defer ts.Close()
+			testServers[i] = ts
+		}
+
+		randomOrder := []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
+		rand.Shuffle(len(randomOrder), func(i, j int) { randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i] })
+
+		t.Logf("random order established: %v", randomOrder)
+
+		ucs := make([]upstream.Cache, 0, len(testServers))
+
+		for _, idx := range randomOrder {
+			ts := testServers[idx]
+
+			u, err := url.Parse(ts.URL)
+			require.NoError(t, err)
+
+			uc, err := upstream.New(logger, u.Host, nil)
+			require.NoError(t, err)
+
+			ucs = append(ucs, uc)
+		}
+
+		cachePath := os.TempDir()
+
+		c, err := New(logger, "cache.example.com", cachePath)
+		require.NoError(t, err)
+
+		for _, uc := range ucs {
+			c.AddUpstreamCaches(uc)
+		}
 
 		for idx, uc := range c.upstreamCaches {
 			assert.EqualValues(t, idx+1, uc.GetPriority())

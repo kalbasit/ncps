@@ -78,10 +78,9 @@ type Cache struct {
 }
 
 // New returns a new Cache.
-func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) (*Cache, error) {
+func New(logger log15.Logger, hostName, cachePath string) (*Cache, error) {
 	c := &Cache{
 		logger:               logger,
-		upstreamCaches:       ucs,
 		upstreamJobs:         make(map[string]chan struct{}),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
@@ -104,18 +103,25 @@ func New(logger log15.Logger, hostName, cachePath string, ucs []upstream.Cache) 
 
 	c.secretKey = sk
 
-	slices.SortFunc(c.upstreamCaches, func(a, b upstream.Cache) int {
+	return c, c.setup()
+}
+
+// AddUpstreamCaches adds one or more upstream caches.
+func (c *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
+	ucss := append(c.upstreamCaches, ucs...)
+
+	slices.SortFunc(ucss, func(a, b upstream.Cache) int {
 		//nolint:gosec
 		return int(a.GetPriority() - b.GetPriority())
 	})
 
-	logger.Info("the order of upstream caches has been determined by priority to be")
+	c.logger.Info("the order of upstream caches has been determined by priority to be")
 
-	for idx, uc := range c.upstreamCaches {
-		logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
+	for idx, uc := range ucss {
+		c.logger.Info("upstream cache", "idx", idx, "hostname", uc.GetHostname(), "priority", uc.GetPriority())
 	}
 
-	return c, c.setup()
+	c.upstreamCaches = ucss
 }
 
 // SetRecordAgeIgnoreTouch changes the duration at which a record is considered
