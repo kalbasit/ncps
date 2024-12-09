@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRandString(t *testing.T) {
@@ -12,13 +14,9 @@ func TestRandString(t *testing.T) {
 		t.Parallel()
 
 		s, err := helper.RandString(5, nil)
-		if err != nil {
-			t.Errorf("expected no error got: %s", err)
-		}
+		require.NoError(t, err)
 
-		if want, got := 5, len(s); want != got {
-			t.Errorf("want %d got %d", want, got)
-		}
+		assert.Len(t, s, 5)
 	})
 
 	t.Run("validate value based on deterministic source", func(t *testing.T) {
@@ -28,12 +26,8 @@ func TestRandString(t *testing.T) {
 
 		//nolint:gosec
 		s, err := helper.RandString(5, rand.New(src))
-		if err != nil {
-			t.Errorf("expected no error got: %s", err)
-		}
+		require.NoError(t, err)
 
-		if want, got := "a2lzq", s; want != got {
-			t.Errorf("want %q got %q", want, got)
-		}
+		assert.Equal(t, "a2lzq", s)
 	})
 }
