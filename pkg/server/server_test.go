@@ -398,28 +398,19 @@ func TestServeHTTP(t *testing.T) {
 				storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar")
 
 				t.Run("nar does not exist in storage yet", func(t *testing.T) {
-					_, err := os.Stat(storePath)
-					if err == nil {
-						t.Fatal("expected an error but got none")
-					}
+					assert.NoFileExists(t, storePath)
 				})
 
 				t.Run("putNar does not return an error", func(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
 
 					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
-					if err != nil {
-						t.Fatalf("error Do(r): %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("error Do(r): %s", err)
-					}
+					require.NoError(t, err)
 
-					if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 				})
 
 				t.Run("nar does exist in storage", func(t *testing.T) {
@@ -429,9 +420,7 @@ func TestServeHTTP(t *testing.T) {
 					bs, err := io.ReadAll(f)
 					require.NoError(t, err)
 
-					if want, got := testdata.Nar1.NarText, string(bs); want != got {
-						t.Errorf("want %q got %q", want, got)
-					}
+					assert.Equal(t, testdata.Nar1.NarText, string(bs))
 				})
 			})
 
@@ -439,28 +428,19 @@ func TestServeHTTP(t *testing.T) {
 				storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarHash+".nar.xz")
 
 				t.Run("nar does not exist in storage yet", func(t *testing.T) {
-					_, err := os.Stat(storePath)
-					if err == nil {
-						t.Fatal("expected an error but got none")
-					}
+					assert.NoFileExists(t, storePath)
 				})
 
 				t.Run("putNar does not return an error", func(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
 					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
-					if err != nil {
-						t.Fatalf("error Do(r): %s", err)
-					}
+					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
-					if err != nil {
-						t.Fatalf("error Do(r): %s", err)
-					}
+					require.NoError(t, err)
 
-					if want, got := http.StatusNoContent, resp.StatusCode; want != got {
-						t.Errorf("want %d got %d", want, got)
-					}
+					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 				})
 
 				t.Run("nar does exist in storage", func(t *testing.T) {
@@ -470,9 +450,7 @@ func TestServeHTTP(t *testing.T) {
 					bs, err := io.ReadAll(f)
 					require.NoError(t, err)
 
-					if want, got := testdata.Nar1.NarText, string(bs); want != got {
-						t.Errorf("want %q got %q", want, got)
-					}
+					assert.Equal(t, testdata.Nar1.NarText, string(bs))
 				})
 			})
 		})
