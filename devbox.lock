@@ -1,6 +1,54 @@
 {
   "lockfile_version": "1",
   "packages": {
+    "dbmate@2.22": {
+      "last_modified": "2024-11-28T07:51:56Z",
+      "resolved": "github:NixOS/nixpkgs/226216574ada4c3ecefcbbec41f39ce4655f78ef#dbmate",
+      "source": "devbox-search",
+      "version": "2.22.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/b28qb15ypyj60p4bsv8n2h7dx1rd3i67-dbmate-2.22.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/b28qb15ypyj60p4bsv8n2h7dx1rd3i67-dbmate-2.22.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/r48rg5qsxv04b6kiyrgz2q9az5vp3dbx-dbmate-2.22.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/r48rg5qsxv04b6kiyrgz2q9az5vp3dbx-dbmate-2.22.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/4ai029322bsk0vvcbihvp0zymr5hsaq6-dbmate-2.22.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/4ai029322bsk0vvcbihvp0zymr5hsaq6-dbmate-2.22.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/9mv4isdm26wcy83ia1ga9pdwbch7fvri-dbmate-2.22.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/9mv4isdm26wcy83ia1ga9pdwbch7fvri-dbmate-2.22.0"
+        }
+      }
+    },
     "go@1.23": {
       "last_modified": "2024-11-28T07:51:56Z",
       "resolved": "github:NixOS/nixpkgs/226216574ada4c3ecefcbbec41f39ce4655f78ef#go",

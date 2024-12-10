@@ -26,3 +26,6 @@ go.work.sum
 
 # Go binaries
 /ncps
+
+# SQLite database
+/db/database.sqlite3
