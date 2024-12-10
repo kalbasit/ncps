@@ -319,7 +319,7 @@ func TestGetNarInfo(t *testing.T) {
 
 			assert.Len(t, nims, 1)
 			assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
@@ -349,7 +349,7 @@ func TestGetNarInfo(t *testing.T) {
 			require.NoError(t, rows.Err())
 			assert.Len(t, nims, 1)
 			assert.Equal(t, testdata.Nar2.NarHash, nims[0].Hash)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -388,7 +388,7 @@ func TestGetNarInfo(t *testing.T) {
 
 				assert.Len(t, nims, 1)
 				assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
-				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 			})
 		})
 
@@ -766,7 +766,7 @@ func TestGetNar(t *testing.T) {
 
 			assert.Len(t, nims, 1)
 			assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -810,7 +810,7 @@ func TestGetNar(t *testing.T) {
 
 				assert.Len(t, nims, 1)
 				assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
-				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 			})
 		})
 
