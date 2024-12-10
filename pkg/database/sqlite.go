@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/mattn/go-sqlite3"
@@ -152,30 +151,7 @@ type (
 		*sql.DB
 
 		logger log15.Logger
-	}
 
-	// NarInfoModel represents a narinfo record in the database; This is not the
-	// same as narinfo.NarInfo!
-	NarInfoModel struct {
-		ID   int64
-		Hash string
-
-		CreatedAt      time.Time
-		UpdatedAt      *time.Time
-		LastAccessedAt time.Time
-	}
-
-	// NarModel represents a nar record in the database.
-	NarModel struct {
-		ID          int64
-		NarInfoID   int64
-		Hash        string
-		Compression string
-		FileSize    uint64
-
-		CreatedAt      time.Time
-		UpdatedAt      *time.Time
-		LastAccessedAt time.Time
 	}
 )
 
