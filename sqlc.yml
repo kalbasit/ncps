@@ -7,6 +7,8 @@ sql:
       go:
         package: "database"
         out: "pkg/database"
+        rename:
+          narinfo_id: NarInfoID
 overrides:
   go:
     rename:
