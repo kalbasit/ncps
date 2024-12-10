@@ -112,8 +112,6 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 			return err
 		}
 
-		cache.StartCron()
-
 		srv := server.New(logger, cache)
 		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
 		srv.SetPutPermitted(cmd.Bool("allow-put"))
@@ -206,6 +204,8 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 	}
 
 	c.AddLRUCronJob(schedule)
+
+	c.StartCron()
 
 	return c, nil
 }
