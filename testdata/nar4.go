@@ -6,7 +6,8 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 )
 
-// Nar4 is the nar representing a nar from nix-community that was failing to parse.
+// Nar4 is the nar representing a nar from nix-community that was failing to
+// parse because the FileHash is encoded in sha256/base-16.
 var Nar4 = Entry{
 	NarInfoHash: "7k3i624w0rfrvcrbbdrw0zrvasywxmz4",
 	NarInfoPath: filepath.Join("7", "7k", "7k3i624w0rfrvcrbbdrw0zrvasywxmz4.narinfo"),
