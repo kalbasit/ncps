@@ -1,0 +1,13 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    queries: "db/query.sql"
+    schema: "db/schema.sql"
+    gen:
+      go:
+        package: "database"
+        out: "pkg/database"
+overrides:
+  go:
+    rename:
+      narinfos: NarInfo
