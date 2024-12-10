@@ -10,4 +10,4 @@ sql:
 overrides:
   go:
     rename:
-      narinfos: NarInfo
+      narinfo: NarInfo
