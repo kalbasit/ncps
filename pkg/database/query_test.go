@@ -44,16 +44,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.DB().Begin()
+		nio, err := db.CreateNarInfo(context.Background(), hash)
 		require.NoError(t, err)
-
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		nio, err := db.WithTx(tx).CreateNarInfo(context.Background(), hash)
-		require.NoError(t, err)
-
-		require.NoError(t, tx.Commit())
 
 		rows, err := db.DB().Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
 		require.NoError(t, err)
@@ -88,24 +80,10 @@ func TestInsertNarInfoRecord(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.DB().Begin()
+		_, err = db.CreateNarInfo(context.Background(), hash)
 		require.NoError(t, err)
 
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		_, err = db.WithTx(tx).CreateNarInfo(context.Background(), hash)
-		require.NoError(t, err)
-
-		require.NoError(t, tx.Commit())
-
-		tx, err = db.DB().Begin()
-		require.NoError(t, err)
-
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		_, err = db.WithTx(tx).CreateNarInfo(context.Background(), hash)
+		_, err = db.CreateNarInfo(context.Background(), hash)
 		assert.True(t, database.ErrorIsNo(err, sqlite3.ErrConstraint))
 	})
 
@@ -587,12 +565,6 @@ func TestDeleteNarRecord(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("create the nar", func(t *testing.T) {
-			tx, err := db.DB().Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
 			_, err = db.CreateNar(context.Background(), database.CreateNarParams{
 				NarInfoID:   narInfo.ID,
 				Hash:        hash,
@@ -653,7 +625,6 @@ func TestNarTotalSize(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
-
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -662,9 +633,9 @@ func TestNarTotalSize(t *testing.T) {
 	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
-	var expectedSize uint64
+	var expectedSize float64
 	for _, nar := range testdata.Entries {
-		expectedSize += uint64(len(nar.NarText))
+		expectedSize += float64(len(nar.NarText))
 
 		narInfo, err := db.CreateNarInfo(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
@@ -681,7 +652,9 @@ func TestNarTotalSize(t *testing.T) {
 	size, err := db.GetNarTotalSize(context.Background())
 	require.NoError(t, err)
 
-	assert.Equal(t, expectedSize, size)
+	if assert.True(t, size.Valid) {
+		assert.Equal(t, expectedSize, size.Float64)
+	}
 }
 
 func TestGetLeastAccessedNarRecords(t *testing.T) {
@@ -689,7 +662,6 @@ func TestGetLeastAccessedNarRecords(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
-
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
