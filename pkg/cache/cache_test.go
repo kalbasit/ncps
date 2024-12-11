@@ -304,10 +304,10 @@ func TestGetNarInfo(t *testing.T) {
 			rows, err := db.Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -319,7 +319,7 @@ func TestGetNarInfo(t *testing.T) {
 
 			assert.Len(t, nims, 1)
 			assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
@@ -331,10 +331,10 @@ func TestGetNarInfo(t *testing.T) {
 			rows, err := db.Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.Hash,
@@ -349,7 +349,7 @@ func TestGetNarInfo(t *testing.T) {
 			require.NoError(t, rows.Err())
 			assert.Len(t, nims, 1)
 			assert.Equal(t, testdata.Nar2.NarHash, nims[0].Hash)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -373,10 +373,10 @@ func TestGetNarInfo(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarInfoModel, 0)
+				nims := make([]database.NarInfo, 0)
 
 				for rows.Next() {
-					var nim database.NarInfoModel
+					var nim database.NarInfo
 
 					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 					require.NoError(t, err)
@@ -388,7 +388,7 @@ func TestGetNarInfo(t *testing.T) {
 
 				assert.Len(t, nims, 1)
 				assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
-				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 			})
 		})
 
@@ -407,10 +407,10 @@ func TestGetNarInfo(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarInfoModel, 0)
+				nims := make([]database.NarInfo, 0)
 
 				for rows.Next() {
-					var nim database.NarInfoModel
+					var nim database.NarInfo
 
 					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 					require.NoError(t, err)
@@ -747,10 +747,10 @@ func TestGetNar(t *testing.T) {
 			rows, err := db.Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.Hash,
@@ -766,7 +766,7 @@ func TestGetNar(t *testing.T) {
 
 			assert.Len(t, nims, 1)
 			assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -791,10 +791,10 @@ func TestGetNar(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarModel, 0)
+				nims := make([]database.Nar, 0)
 
 				for rows.Next() {
-					var nim database.NarModel
+					var nim database.Nar
 
 					err := rows.Scan(
 						&nim.Hash,
@@ -810,7 +810,7 @@ func TestGetNar(t *testing.T) {
 
 				assert.Len(t, nims, 1)
 				assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
-				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 			})
 		})
 
@@ -830,10 +830,10 @@ func TestGetNar(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarModel, 0)
+				nims := make([]database.Nar, 0)
 
 				for rows.Next() {
-					var nim database.NarModel
+					var nim database.Nar
 
 					err := rows.Scan(
 						&nim.Hash,

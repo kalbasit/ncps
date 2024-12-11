@@ -123,10 +123,10 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		defer rows.Close()
 
-		nims := make([]database.NarInfoModel, 0)
+		nims := make([]database.NarInfo, 0)
 
 		for rows.Next() {
-			var nim database.NarInfoModel
+			var nim database.NarInfo
 
 			err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 			require.NoError(t, err)
@@ -143,8 +143,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 			assert.Equal(t, lid, nims[0].ID)
 			assert.Equal(t, hash, nims[0].Hash)
 			assert.Less(t, time.Since(nims[0].CreatedAt), 3*time.Second)
-			assert.Nil(t, nims[0].UpdatedAt)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			assert.False(t, nims[0].UpdatedAt.Valid)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 		}
 	})
 
@@ -287,10 +287,10 @@ func TestTouchNarInfoRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -301,8 +301,8 @@ func TestTouchNarInfoRecord(t *testing.T) {
 			require.NoError(t, rows.Err())
 
 			assert.Len(t, nims, 1)
-			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
-			assert.Nil(t, nims[0].UpdatedAt)
+			assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
+			assert.False(t, nims[0].UpdatedAt.Valid)
 		})
 
 		t.Run("touch the narinfo", func(t *testing.T) {
@@ -331,10 +331,10 @@ func TestTouchNarInfoRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -346,7 +346,10 @@ func TestTouchNarInfoRecord(t *testing.T) {
 			assert.Len(t, nims, 1)
 
 			assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
-			assert.Equal(t, *nims[0].UpdatedAt, nims[0].LastAccessedAt)
+
+			if assert.True(t, nims[0].UpdatedAt.Valid) {
+				assert.Equal(t, nims[0].UpdatedAt.Time, nims[0].LastAccessedAt.Time)
+			}
 		})
 	})
 }
@@ -414,10 +417,10 @@ func TestDeleteNarInfoRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -490,10 +493,10 @@ func TestInsertNarRecord(t *testing.T) {
 
 				defer rows.Close()
 
-				nims := make([]database.NarModel, 0)
+				nims := make([]database.Nar, 0)
 
 				for rows.Next() {
-					var nim database.NarModel
+					var nim database.Nar
 
 					err := rows.Scan(
 						&nim.ID,
@@ -522,8 +525,8 @@ func TestInsertNarRecord(t *testing.T) {
 					assert.Equal(t, compression, nims[0].Compression)
 					assert.EqualValues(t, 123, nims[0].FileSize)
 					assert.Less(t, time.Since(nims[0].CreatedAt), 3*time.Second)
-					assert.Nil(t, nims[0].UpdatedAt)
-					assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+					assert.False(t, nims[0].UpdatedAt.Valid)
+					assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 				}
 			})
 
@@ -636,10 +639,10 @@ func TestTouchNarRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.ID,
@@ -659,8 +662,8 @@ func TestTouchNarRecord(t *testing.T) {
 			require.NoError(t, rows.Err())
 
 			if assert.Len(t, nims, 1) {
-				assert.Nil(t, nims[0].UpdatedAt)
-				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+				assert.False(t, nims[0].UpdatedAt.Valid)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 			}
 		})
 
@@ -695,10 +698,10 @@ func TestTouchNarRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.ID,
@@ -719,7 +722,10 @@ func TestTouchNarRecord(t *testing.T) {
 
 			if assert.Len(t, nims, 1) {
 				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
-				assert.Equal(t, *nims[0].UpdatedAt, nims[0].LastAccessedAt)
+
+				if assert.True(t, nims[0].UpdatedAt.Valid) {
+					assert.Equal(t, nims[0].UpdatedAt.Time, nims[0].LastAccessedAt.Time)
+				}
 			}
 		})
 	})
@@ -815,10 +821,10 @@ func TestDeleteNarRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.ID,

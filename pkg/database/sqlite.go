@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/inconshreveable/log15/v3"
 	"github.com/mattn/go-sqlite3"
@@ -153,30 +152,6 @@ type (
 
 		logger log15.Logger
 	}
-
-	// NarInfoModel represents a narinfo record in the database; This is not the
-	// same as narinfo.NarInfo!
-	NarInfoModel struct {
-		ID   int64
-		Hash string
-
-		CreatedAt      time.Time
-		UpdatedAt      *time.Time
-		LastAccessedAt time.Time
-	}
-
-	// NarModel represents a nar record in the database.
-	NarModel struct {
-		ID          int64
-		NarInfoID   int64
-		Hash        string
-		Compression string
-		FileSize    uint64
-
-		CreatedAt      time.Time
-		UpdatedAt      *time.Time
-		LastAccessedAt time.Time
-	}
 )
 
 // Open opens a sqlite3 database, and creates it if necessary.
@@ -198,13 +173,13 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 
 // GetNarInfoRecordByID returns a narinfo record given its hash. If no nar was
 // found with the given hash then ErrNotFound is returned instead.
-func (db *DB) GetNarInfoRecordByID(tx *sql.Tx, id int64) (NarInfoModel, error) {
+func (db *DB) GetNarInfoRecordByID(tx *sql.Tx, id int64) (NarInfo, error) {
 	return db.getNarInfoRecord(tx, getNarInfoIDQuery, id)
 }
 
 // GetNarInfoRecord returns a narinfo record given its hash. If no nar was
 // found with the given hash then ErrNotFound is returned instead.
-func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfoModel, error) {
+func (db *DB) GetNarInfoRecord(tx *sql.Tx, hash string) (NarInfo, error) {
 	return db.getNarInfoRecord(tx, getNarInfoQuery, hash)
 }
 
@@ -244,8 +219,8 @@ func (db *DB) DeleteNarInfoRecord(tx *sql.Tx, hash string) error {
 
 // GetNarRecord returns a nar record given its hash. If no nar was found with
 // the given hash then ErrNotFound is returned instead.
-func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
-	var nm NarModel
+func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (Nar, error) {
+	var nm Nar
 
 	stmt, err := tx.Prepare(getNarQuery)
 	if err != nil {
@@ -259,7 +234,7 @@ func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
 	}
 	defer rows.Close()
 
-	nms := make([]NarModel, 0)
+	nms := make([]Nar, 0)
 
 	for rows.Next() {
 		err := rows.Scan(
@@ -273,7 +248,7 @@ func (db *DB) GetNarRecord(tx *sql.Tx, hash string) (NarModel, error) {
 			&nm.LastAccessedAt,
 		)
 		if err != nil {
-			return nm, fmt.Errorf("error scanning the row into a NarModel: %w", err)
+			return nm, fmt.Errorf("error scanning the row into a Nar: %w", err)
 		}
 
 		nms = append(nms, nm)
@@ -357,7 +332,7 @@ func (db *DB) NarTotalSize(tx *sql.Tx) (uint64, error) {
 
 // GetLeastAccessedNarRecords returns all records with the oldest
 // last_accessed_at up to totalFileSize left behind.
-func (db *DB) GetLeastAccessedNarRecords(tx *sql.Tx, totalFileSize uint64) ([]NarModel, error) {
+func (db *DB) GetLeastAccessedNarRecords(tx *sql.Tx, totalFileSize uint64) ([]Nar, error) {
 	stmt, err := tx.Prepare(leastUsedNarsQuery)
 	if err != nil {
 		return nil, fmt.Errorf("error preparing a statement: %w", err)
@@ -370,10 +345,10 @@ func (db *DB) GetLeastAccessedNarRecords(tx *sql.Tx, totalFileSize uint64) ([]Na
 	}
 	defer rows.Close()
 
-	nms := make([]NarModel, 0)
+	nms := make([]Nar, 0)
 
 	for rows.Next() {
-		var nm NarModel
+		var nm Nar
 
 		err := rows.Scan(
 			&nm.ID,
@@ -386,7 +361,7 @@ func (db *DB) GetLeastAccessedNarRecords(tx *sql.Tx, totalFileSize uint64) ([]Na
 			&nm.LastAccessedAt,
 		)
 		if err != nil {
-			return nms, fmt.Errorf("error scanning the row into a NarModel: %w", err)
+			return nms, fmt.Errorf("error scanning the row into a Nar: %w", err)
 		}
 
 		nms = append(nms, nm)
@@ -430,8 +405,8 @@ func (db *DB) createTables() error {
 	return nil
 }
 
-func (db *DB) getNarInfoRecord(tx *sql.Tx, query string, args ...any) (NarInfoModel, error) {
-	var nim NarInfoModel
+func (db *DB) getNarInfoRecord(tx *sql.Tx, query string, args ...any) (NarInfo, error) {
+	var nim NarInfo
 
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -445,11 +420,11 @@ func (db *DB) getNarInfoRecord(tx *sql.Tx, query string, args ...any) (NarInfoMo
 	}
 	defer rows.Close()
 
-	nims := make([]NarInfoModel, 0)
+	nims := make([]NarInfo, 0)
 
 	for rows.Next() {
 		if err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt); err != nil {
-			return nim, fmt.Errorf("error scanning the row into a NarInfoModel: %w", err)
+			return nim, fmt.Errorf("error scanning the row into a NarInfo: %w", err)
 		}
 
 		nims = append(nims, nim)

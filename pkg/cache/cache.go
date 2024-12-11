@@ -330,7 +330,7 @@ func (c *Cache) getNarFromStore(log log15.Logger, hash, compression string) (int
 		return 0, nil, fmt.Errorf("error fetching the nar record: %w", err)
 	}
 
-	if time.Since(nr.LastAccessedAt) > c.recordAgeIgnoreTouch {
+	if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
 		if _, err := c.db.TouchNarRecord(tx, hash); err != nil {
 			return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
 		}
@@ -583,7 +583,7 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 		return nil, fmt.Errorf("error fetching the narinfo record: %w", err)
 	}
 
-	if time.Since(nir.LastAccessedAt) > c.recordAgeIgnoreTouch {
+	if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
 		if _, err := c.db.TouchNarInfoRecord(tx, hash); err != nil {
 			return nil, fmt.Errorf("error touching the narinfo record: %w", err)
 		}

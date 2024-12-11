@@ -1,0 +1,15 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    queries: "db/query.sql"
+    schema: "db/migrations"
+    gen:
+      go:
+        package: "database"
+        out: "pkg/database"
+        rename:
+          narinfo_id: NarInfoID
+overrides:
+  go:
+    rename:
+      narinfo: NarInfo
