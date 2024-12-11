@@ -10,11 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	_, b, _, _ = runtime.Caller(0)
-	basePath   = filepath.Dir(b)
-)
-
+// CreateMigrateDatabase will create all necessary directories, and will create
+// the sqlite3 database (if necessary) and migrate it.
 func CreateMigrateDatabase(t *testing.T, dbFile string) {
 	t.Helper()
 
@@ -29,11 +26,11 @@ func CreateMigrateDatabase(t *testing.T, dbFile string) {
 		"migrations",
 	)
 
+	//nolint:gosec
 	cmd := exec.Command(
 		"dbmate",
 		"--url=sqlite:"+dbFile,
 		"--migrations-dir="+dbMigrationsDir,
-		"migrate",
 		"up",
 	)
 
