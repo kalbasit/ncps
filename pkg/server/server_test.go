@@ -22,6 +22,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 //nolint:gochecknoglobals
@@ -187,6 +188,9 @@ func TestServeHTTP(t *testing.T) {
 		uc, err := upstream.New(logger, uu.Host, testdata.PublicKeys())
 		require.NoError(t, err)
 
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
 		c, err := cache.New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
 
@@ -258,6 +262,9 @@ func TestServeHTTP(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
 
 		c, err := cache.New(logger, "cache.example.com", dir)
 		require.NoError(t, err)

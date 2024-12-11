@@ -21,6 +21,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 
 	// Import the SQLite driver.
 	_ "github.com/mattn/go-sqlite3"
@@ -75,6 +76,9 @@ func TestNew(t *testing.T) {
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
 
+			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+			testhelper.CreateMigrateDatabase(t, dbFile)
+
 			_, err = cache.New(logger, "cache.example.com", dir)
 			require.NoError(t, err)
 
@@ -110,17 +114,6 @@ func TestNew(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.NoFileExists(t, f.Name())
-		})
-
-		t.Run("should create sqlite3 database", func(t *testing.T) {
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-			defer os.RemoveAll(dir) // clean up
-
-			_, err = cache.New(logger, "cache.example.com", dir)
-			require.NoError(t, err)
-
-			assert.FileExists(t, filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
 		})
 	})
 
@@ -188,13 +181,16 @@ func TestGetNarInfo(t *testing.T) {
 	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
 	require.NoError(t, err)
 
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
 	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
-	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
+	db, err := sql.Open("sqlite3", dbFile)
 	require.NoError(t, err)
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
@@ -470,12 +466,15 @@ func TestPutNarInfo(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
 	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
-	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
+	db, err := sql.Open("sqlite3", dbFile)
 	require.NoError(t, err)
 
 	storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
@@ -604,6 +603,9 @@ func TestDeleteNarInfo(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
 	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
@@ -668,13 +670,16 @@ func TestGetNar(t *testing.T) {
 	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
 	require.NoError(t, err)
 
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
 	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
-	db, err := sql.Open("sqlite3", filepath.Join(dir, "var", "ncps", "db", "db.sqlite"))
+	db, err := sql.Open("sqlite3", dbFile)
 	require.NoError(t, err)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
@@ -861,6 +866,9 @@ func TestPutNar(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
 	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
@@ -895,6 +903,9 @@ func TestDeleteNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
 	c, err := cache.New(logger, "cache.example.com", dir)
 	require.NoError(t, err)

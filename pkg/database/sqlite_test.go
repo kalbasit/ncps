@@ -15,6 +15,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 //nolint:gochecknoglobals
@@ -26,81 +27,15 @@ func init() {
 }
 
 //nolint:paralleltest
-func TestOpen(t *testing.T) {
-	t.Run("database does not exist yet", func(t *testing.T) {
-		dir, err := os.MkdirTemp("", "database-path-")
-		require.NoError(t, err)
-		defer os.RemoveAll(dir) // clean up
-
-		dbpath := filepath.Join(dir, "db.sqlite")
-
-		t.Run("database does not exist yet", func(t *testing.T) {
-			assert.NoFileExists(t, dbpath)
-		})
-
-		db, err := database.Open(logger, dbpath)
-		require.NoError(t, err)
-
-		t.Run("database does exist now", func(t *testing.T) {
-			_, err := os.Stat(dbpath)
-			require.NoError(t, err)
-		})
-
-		t.Run("database has the narinfos table", func(t *testing.T) {
-			rows, err := db.Query("SELECT name FROM sqlite_master WHERE type=? AND name=?", "table", "narinfos")
-			require.NoError(t, err)
-
-			defer rows.Close()
-
-			names := make([]string, 0)
-
-			for rows.Next() {
-				var name string
-
-				err := rows.Scan(&name)
-				require.NoError(t, err)
-
-				names = append(names, name)
-			}
-
-			require.NoError(t, rows.Err())
-			assert.Len(t, names, 1)
-			assert.Equal(t, "narinfos", names[0])
-		})
-
-		t.Run("database has the nars table", func(t *testing.T) {
-			rows, err := db.Query("SELECT name FROM sqlite_master WHERE type=? AND name=?", "table", "nars")
-			require.NoError(t, err)
-
-			defer rows.Close()
-
-			names := make([]string, 0)
-
-			for rows.Next() {
-				var name string
-
-				err := rows.Scan(&name)
-				require.NoError(t, err)
-
-				names = append(names, name)
-			}
-
-			require.NoError(t, err)
-			assert.Len(t, names, 1)
-			assert.Equal(t, "nars", names[0])
-		})
-	})
-}
-
-//nolint:paralleltest
 func TestInsertNarInfoRecord(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	dbpath := filepath.Join(dir, "db.sqlite")
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbpath)
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	t.Run("inserting one record", func(t *testing.T) {
@@ -240,9 +175,10 @@ func TestTouchNarInfoRecord(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	dbpath := filepath.Join(dir, "db.sqlite")
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbpath)
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
@@ -360,9 +296,10 @@ func TestDeleteNarInfoRecord(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	dbpath := filepath.Join(dir, "db.sqlite")
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbpath)
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
@@ -440,9 +377,10 @@ func TestInsertNarRecord(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	dbpath := filepath.Join(dir, "db.sqlite")
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbpath)
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	// create a narinfo
@@ -565,9 +503,10 @@ func TestTouchNarRecord(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	dbpath := filepath.Join(dir, "db.sqlite")
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbpath)
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -737,9 +676,10 @@ func TestDeleteNarRecord(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	dbpath := filepath.Join(dir, "db.sqlite")
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbpath)
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -855,7 +795,10 @@ func TestNarTotalSize(t *testing.T) {
 
 	defer os.RemoveAll(dir) // clean up
 
-	db, err := database.Open(logger, filepath.Join(dir, "db.sqlite"))
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	tx, err := db.Begin()
@@ -894,7 +837,10 @@ func TestGetLeastAccessedNarRecords(t *testing.T) {
 
 	defer os.RemoveAll(dir) // clean up
 
-	db, err := database.Open(logger, filepath.Join(dir, "db.sqlite"))
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open(logger, dbFile)
 	require.NoError(t, err)
 
 	tx, err := db.Begin()

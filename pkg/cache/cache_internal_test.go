@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 //nolint:gochecknoglobals
@@ -56,9 +58,14 @@ func TestAddUpstreamCaches(t *testing.T) {
 			ucs = append(ucs, uc)
 		}
 
-		cachePath := os.TempDir()
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
 
-		c, err := New(logger, "cache.example.com", cachePath)
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		c, err := New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(ucs...)
@@ -101,9 +108,14 @@ func TestAddUpstreamCaches(t *testing.T) {
 			ucs = append(ucs, uc)
 		}
 
-		cachePath := os.TempDir()
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
 
-		c, err := New(logger, "cache.example.com", cachePath)
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		c, err := New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
 
 		for _, uc := range ucs {
@@ -124,6 +136,9 @@ func TestRunLRU(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
 
 	c, err := New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
