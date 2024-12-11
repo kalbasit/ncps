@@ -10,46 +10,6 @@ import (
 )
 
 const (
-	// narInfosTable represents all the narinfo files that are available in the store.
-	// NOTE: Updating the structure here **will not** migrate the existing table!
-	narInfosTable = `
-	-- table
-	CREATE TABLE IF NOT EXISTS narinfos (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		hash TEXT NOT NULL UNIQUE,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-		updated_at TIMESTAMP,
-		last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
-
-	-- indexes
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_narinfos_id ON narinfos (id);
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_narinfos_hash ON narinfos (hash);
-	CREATE INDEX IF NOT EXISTS idx_narinfos_last_accessed_at ON narinfos (last_accessed_at);
-	`
-
-	// narsTable represents all the nar files that are available in the store.
-	// NOTE: Updating the structure here **will not** migrate the existing table!
-	narsTable = `
-	-- table
-	CREATE TABLE IF NOT EXISTS nars (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		narinfo_id INTEGER NOT NULL REFERENCES narinfos(id),
-		hash TEXT NOT NULL UNIQUE,
-		compression TEXT NOT NULL DEFAULT '',
-		file_size INTEGER NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-		updated_at TIMESTAMP,
-		last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
-
-	-- indexes
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_nars_id ON nars (id);
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_nars_hash ON nars (hash);
-	CREATE INDEX IF NOT EXISTS idx_nars_narinfo_id ON nars (narinfo_id);
-	CREATE INDEX IF NOT EXISTS idx_nars_last_accessed_at ON nars (last_accessed_at);
-	`
-
 	getNarInfoQuery = `
 	SELECT id, hash, created_at, updated_at, last_accessed_at
 	FROM narinfos
@@ -168,7 +128,7 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 
 	db := &DB{DB: sdb, logger: logger.New("dbpath", dbpath)}
 
-	return db, db.createTables()
+	return db, nil
 }
 
 // GetNarInfoRecordByID returns a narinfo record given its hash. If no nar was
@@ -387,22 +347,6 @@ func (db *DB) stmtExec(tx *sql.Tx, query string, args ...any) (sql.Result, error
 	}
 
 	return res, nil
-}
-
-func (db *DB) createTables() error {
-	db.logger.Info("creating the narinfos table")
-
-	if _, err := db.Exec(narInfosTable); err != nil {
-		return fmt.Errorf("error creating the narinfos table: %w", err)
-	}
-
-	db.logger.Info("creating the nars table")
-
-	if _, err := db.Exec(narsTable); err != nil {
-		return fmt.Errorf("error creating the nars table: %w", err)
-	}
-
-	return nil
 }
 
 func (db *DB) getNarInfoRecord(tx *sql.Tx, query string, args ...any) (NarInfo, error) {
