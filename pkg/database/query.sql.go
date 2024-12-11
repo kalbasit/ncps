@@ -85,7 +85,7 @@ func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, erro
 	return i, err
 }
 
-const deleteNarByHash = `-- name: DeleteNarByHash :exec
+const deleteNarByHash = `-- name: DeleteNarByHash :execrows
 DELETE FROM nars
 WHERE hash = ?
 `
@@ -94,12 +94,15 @@ WHERE hash = ?
 //
 //	DELETE FROM nars
 //	WHERE hash = ?
-func (q *Queries) DeleteNarByHash(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, deleteNarByHash, hash)
-	return err
+func (q *Queries) DeleteNarByHash(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarByHash, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const deleteNarByID = `-- name: DeleteNarByID :exec
+const deleteNarByID = `-- name: DeleteNarByID :execrows
 DELETE FROM nars
 WHERE id = ?
 `
@@ -108,12 +111,15 @@ WHERE id = ?
 //
 //	DELETE FROM nars
 //	WHERE id = ?
-func (q *Queries) DeleteNarByID(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteNarByID, id)
-	return err
+func (q *Queries) DeleteNarByID(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const deleteNarInfoByHash = `-- name: DeleteNarInfoByHash :exec
+const deleteNarInfoByHash = `-- name: DeleteNarInfoByHash :execrows
 DELETE FROM narinfos
 WHERE hash = ?
 `
@@ -122,12 +128,15 @@ WHERE hash = ?
 //
 //	DELETE FROM narinfos
 //	WHERE hash = ?
-func (q *Queries) DeleteNarInfoByHash(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, deleteNarInfoByHash, hash)
-	return err
+func (q *Queries) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarInfoByHash, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const deleteNarInfoByID = `-- name: DeleteNarInfoByID :exec
+const deleteNarInfoByID = `-- name: DeleteNarInfoByID :execrows
 DELETE FROM narinfos
 WHERE id = ?
 `
@@ -136,9 +145,12 @@ WHERE id = ?
 //
 //	DELETE FROM narinfos
 //	WHERE id = ?
-func (q *Queries) DeleteNarInfoByID(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteNarInfoByID, id)
-	return err
+func (q *Queries) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarInfoByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getLeastUsedNars = `-- name: GetLeastUsedNars :many
