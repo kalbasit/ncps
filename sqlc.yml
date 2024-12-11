@@ -5,6 +5,7 @@ sql:
     schema: "db/migrations"
     gen:
       go:
+        emit_sql_as_comment: true
         package: "database"
         out: "pkg/database"
         overrides:
