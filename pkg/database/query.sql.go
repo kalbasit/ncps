@@ -312,7 +312,7 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (sql.NullFloat64, error) 
 	return total_size, err
 }
 
-const touchNar = `-- name: TouchNar :exec
+const touchNar = `-- name: TouchNar :execrows
 UPDATE nars
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
@@ -325,12 +325,15 @@ WHERE hash = ?
 //	SET last_accessed_at = CURRENT_TIMESTAMP,
 //	  updated_at = CURRENT_TIMESTAMP
 //	WHERE hash = ?
-func (q *Queries) TouchNar(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, touchNar, hash)
-	return err
+func (q *Queries) TouchNar(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, touchNar, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const touchNarInfo = `-- name: TouchNarInfo :exec
+const touchNarInfo = `-- name: TouchNarInfo :execrows
 UPDATE narinfos
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
@@ -343,7 +346,10 @@ WHERE hash = ?
 //	SET last_accessed_at = CURRENT_TIMESTAMP,
 //	  updated_at = CURRENT_TIMESTAMP
 //	WHERE hash = ?
-func (q *Queries) TouchNarInfo(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, touchNarInfo, hash)
-	return err
+func (q *Queries) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, touchNarInfo, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

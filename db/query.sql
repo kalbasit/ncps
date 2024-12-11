@@ -34,13 +34,13 @@ INSERT into nars (
 )
 RETURNING *;
 
--- name: TouchNarInfo :exec
+-- name: TouchNarInfo :execrows
 UPDATE narinfos
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
--- name: TouchNar :exec
+-- name: TouchNar :execrows
 UPDATE nars
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
