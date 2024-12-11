@@ -23,7 +23,7 @@ type CreateNarParams struct {
 	NarInfoID   int64
 	Hash        string
 	Compression string
-	FileSize    int64
+	FileSize    uint64
 }
 
 func (q *Queries) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
@@ -120,7 +120,7 @@ WHERE (
 ) <= ?
 `
 
-func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize int64) ([]Nar, error) {
+func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNars, fileSize)
 	if err != nil {
 		return nil, err
