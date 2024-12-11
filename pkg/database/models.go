@@ -9,20 +9,20 @@ import (
 	"time"
 )
 
-type NarInfoModel struct {
-	ID             int64
-	Hash           string
-	CreatedAt      time.Time
-	UpdatedAt      sql.NullTime
-	LastAccessedAt sql.NullTime
-}
-
-type NarModel struct {
+type Nar struct {
 	ID             int64
 	NarInfoID      int64
 	Hash           string
 	Compression    string
 	FileSize       int64
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
+}
+
+type NarInfo struct {
+	ID             int64
+	Hash           string
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime

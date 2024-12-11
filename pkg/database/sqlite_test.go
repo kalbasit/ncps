@@ -123,10 +123,10 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		defer rows.Close()
 
-		nims := make([]database.NarInfoModel, 0)
+		nims := make([]database.NarInfo, 0)
 
 		for rows.Next() {
-			var nim database.NarInfoModel
+			var nim database.NarInfo
 
 			err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 			require.NoError(t, err)
@@ -287,10 +287,10 @@ func TestTouchNarInfoRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -331,10 +331,10 @@ func TestTouchNarInfoRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -417,10 +417,10 @@ func TestDeleteNarInfoRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.ID, &nim.Hash, &nim.CreatedAt, &nim.UpdatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -493,10 +493,10 @@ func TestInsertNarRecord(t *testing.T) {
 
 				defer rows.Close()
 
-				nims := make([]database.NarModel, 0)
+				nims := make([]database.Nar, 0)
 
 				for rows.Next() {
-					var nim database.NarModel
+					var nim database.Nar
 
 					err := rows.Scan(
 						&nim.ID,
@@ -639,10 +639,10 @@ func TestTouchNarRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.ID,
@@ -698,10 +698,10 @@ func TestTouchNarRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.ID,
@@ -821,10 +821,10 @@ func TestDeleteNarRecord(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.ID,

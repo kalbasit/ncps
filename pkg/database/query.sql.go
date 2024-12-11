@@ -26,14 +26,14 @@ type CreateNarParams struct {
 	FileSize    int64
 }
 
-func (q *Queries) CreateNar(ctx context.Context, arg CreateNarParams) (NarModel, error) {
+func (q *Queries) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
 	row := q.db.QueryRowContext(ctx, createNar,
 		arg.NarInfoID,
 		arg.Hash,
 		arg.Compression,
 		arg.FileSize,
 	)
-	var i NarModel
+	var i Nar
 	err := row.Scan(
 		&i.ID,
 		&i.NarInfoID,
@@ -56,9 +56,9 @@ INSERT into narinfos (
 RETURNING id, hash, created_at, updated_at, last_accessed_at
 `
 
-func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfoModel, error) {
+func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, createNarInfo, hash)
-	var i NarInfoModel
+	var i NarInfo
 	err := row.Scan(
 		&i.ID,
 		&i.Hash,
@@ -120,15 +120,15 @@ WHERE (
 ) <= ?
 `
 
-func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize int64) ([]NarModel, error) {
+func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize int64) ([]Nar, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNars, fileSize)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NarModel
+	var items []Nar
 	for rows.Next() {
-		var i NarModel
+		var i Nar
 		if err := rows.Scan(
 			&i.ID,
 			&i.NarInfoID,
@@ -158,9 +158,9 @@ FROM nars
 WHERE hash = ?
 `
 
-func (q *Queries) GetNarByHash(ctx context.Context, hash string) (NarModel, error) {
+func (q *Queries) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
 	row := q.db.QueryRowContext(ctx, getNarByHash, hash)
-	var i NarModel
+	var i Nar
 	err := row.Scan(
 		&i.ID,
 		&i.NarInfoID,
@@ -180,9 +180,9 @@ FROM nars
 WHERE id = ?
 `
 
-func (q *Queries) GetNarByID(ctx context.Context, id int64) (NarModel, error) {
+func (q *Queries) GetNarByID(ctx context.Context, id int64) (Nar, error) {
 	row := q.db.QueryRowContext(ctx, getNarByID, id)
-	var i NarModel
+	var i Nar
 	err := row.Scan(
 		&i.ID,
 		&i.NarInfoID,
@@ -202,9 +202,9 @@ FROM narinfos
 WHERE hash = ?
 `
 
-func (q *Queries) GetNarInfoByHash(ctx context.Context, hash string) (NarInfoModel, error) {
+func (q *Queries) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, getNarInfoByHash, hash)
-	var i NarInfoModel
+	var i NarInfo
 	err := row.Scan(
 		&i.ID,
 		&i.Hash,
@@ -221,9 +221,9 @@ FROM narinfos
 WHERE id = ?
 `
 
-func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfoModel, error) {
+func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, getNarInfoByID, id)
-	var i NarInfoModel
+	var i NarInfo
 	err := row.Scan(
 		&i.ID,
 		&i.Hash,

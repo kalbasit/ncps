@@ -304,10 +304,10 @@ func TestGetNarInfo(t *testing.T) {
 			rows, err := db.Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.NarInfoModel, 0)
+			nims := make([]database.NarInfo, 0)
 
 			for rows.Next() {
-				var nim database.NarInfoModel
+				var nim database.NarInfo
 
 				err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 				require.NoError(t, err)
@@ -331,10 +331,10 @@ func TestGetNarInfo(t *testing.T) {
 			rows, err := db.Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.Hash,
@@ -373,10 +373,10 @@ func TestGetNarInfo(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarInfoModel, 0)
+				nims := make([]database.NarInfo, 0)
 
 				for rows.Next() {
-					var nim database.NarInfoModel
+					var nim database.NarInfo
 
 					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 					require.NoError(t, err)
@@ -407,10 +407,10 @@ func TestGetNarInfo(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarInfoModel, 0)
+				nims := make([]database.NarInfo, 0)
 
 				for rows.Next() {
-					var nim database.NarInfoModel
+					var nim database.NarInfo
 
 					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 					require.NoError(t, err)
@@ -747,10 +747,10 @@ func TestGetNar(t *testing.T) {
 			rows, err := db.Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.NarModel, 0)
+			nims := make([]database.Nar, 0)
 
 			for rows.Next() {
-				var nim database.NarModel
+				var nim database.Nar
 
 				err := rows.Scan(
 					&nim.Hash,
@@ -791,10 +791,10 @@ func TestGetNar(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarModel, 0)
+				nims := make([]database.Nar, 0)
 
 				for rows.Next() {
-					var nim database.NarModel
+					var nim database.Nar
 
 					err := rows.Scan(
 						&nim.Hash,
@@ -830,10 +830,10 @@ func TestGetNar(t *testing.T) {
 				rows, err := db.Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.NarModel, 0)
+				nims := make([]database.Nar, 0)
 
 				for rows.Next() {
-					var nim database.NarModel
+					var nim database.Nar
 
 					err := rows.Scan(
 						&nim.Hash,

@@ -12,5 +12,4 @@ sql:
 overrides:
   go:
     rename:
-      narinfo: NarInfoModel
-      nar: NarModel
+      narinfo: NarInfo
