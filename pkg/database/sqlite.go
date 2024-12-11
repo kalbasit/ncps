@@ -151,8 +151,6 @@ type (
 		*sql.DB
 
 		logger log15.Logger
-
-		dbtx DBTX // this will be returned eventually
 	}
 )
 
@@ -168,11 +166,7 @@ func Open(logger log15.Logger, dbpath string) (*DB, error) {
 	// but at least none of them will fail due to connection issues.
 	sdb.SetMaxOpenConns(1)
 
-	db := &DB{
-		DB:     sdb,
-		logger: logger.New("dbpath", dbpath),
-		dbtx:   sdb,
-	}
+	db := &DB{DB: sdb, logger: logger.New("dbpath", dbpath)}
 
 	return db, db.createTables()
 }
