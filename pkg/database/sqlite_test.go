@@ -526,7 +526,7 @@ func TestInsertNarRecord(t *testing.T) {
 					assert.EqualValues(t, 123, nims[0].FileSize)
 					assert.Less(t, time.Since(nims[0].CreatedAt), 3*time.Second)
 					assert.False(t, nims[0].UpdatedAt.Valid)
-					assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+					assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 				}
 			})
 
@@ -662,8 +662,8 @@ func TestTouchNarRecord(t *testing.T) {
 			require.NoError(t, rows.Err())
 
 			if assert.Len(t, nims, 1) {
-				assert.Nil(t, nims[0].UpdatedAt)
-				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+				assert.False(t, nims[0].UpdatedAt.Valid)
+				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 			}
 		})
 
@@ -724,7 +724,7 @@ func TestTouchNarRecord(t *testing.T) {
 				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 
 				if assert.True(t, nims[0].UpdatedAt.Valid) {
-					assert.Equal(t, nims[0].UpdatedAt.Time, nims[0].LastAccessedAt)
+					assert.Equal(t, nims[0].UpdatedAt.Time, nims[0].LastAccessedAt.Time)
 				}
 			}
 		})
