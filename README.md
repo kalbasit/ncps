@@ -108,11 +108,22 @@ spec:
         app: nix-cache
         tier: proxy
     spec:
+      initContainers:
+        - image: kalbasit/ncps:latest # NOTE: It's recommended to use a tag here!
+          name: migrate-database
+          args:
+            - /bin/dbmate
+            - --url=sqlite:/storage/var/ncps/db/db.sqlite
+            - migrate
+            - up
+          volumeMounts:
+            - name: nix-cache-persistent-storage
+              mountPath: /storage
       containers:
         - image: kalbasit/ncps:latest # NOTE: It's recommended to use a tag here!
           name: nix-cache
           args:
-            - /app/ncps
+            - /bin/ncps
             - serve
             - --cache-hostname=nix-cache.yournetwork.local # TODO: Replace with your own hostname
             - --cache-data-path=/storage
