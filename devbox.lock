@@ -49,54 +49,6 @@
         }
       }
     },
-    "delve@1.23": {
-      "last_modified": "2024-11-28T07:51:56Z",
-      "resolved": "github:NixOS/nixpkgs/226216574ada4c3ecefcbbec41f39ce4655f78ef#delve",
-      "source": "devbox-search",
-      "version": "1.23.1",
-      "systems": {
-        "aarch64-darwin": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/vcny3sqr3cjnk34fa6f7xmvarn7rv4ml-delve-1.23.1",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/vcny3sqr3cjnk34fa6f7xmvarn7rv4ml-delve-1.23.1"
-        },
-        "aarch64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/6pd8inv56sw7dx3d83w8pqwqbwykvka6-delve-1.23.1",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/6pd8inv56sw7dx3d83w8pqwqbwykvka6-delve-1.23.1"
-        },
-        "x86_64-darwin": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/59zzal68ykcfqw25bwgnhrjpcbfll79a-delve-1.23.1",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/59zzal68ykcfqw25bwgnhrjpcbfll79a-delve-1.23.1"
-        },
-        "x86_64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/5gy1inwg9w11wgck708laayladfjy525-delve-1.23.1",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/5gy1inwg9w11wgck708laayladfjy525-delve-1.23.1"
-        }
-      }
-    },
     "go@1.23": {
       "last_modified": "2024-11-28T07:51:56Z",
       "resolved": "github:NixOS/nixpkgs/226216574ada4c3ecefcbbec41f39ce4655f78ef#go",

@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.13.4/.schema/devbox.schema.json",
   "packages": [
     "dbmate@2.22",
-    "delve@1.23",
     "go@1.23",
     "golangci-lint@1.62",
     "sqlc@1.27"
