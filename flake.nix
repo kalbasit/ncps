@@ -9,12 +9,18 @@
     };
 
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+
+    treefmt-nix = {
+      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:numtide/treefmt-nix";
+    };
   };
 
   outputs =
     inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
+        ./nix/formatter/flake-module.nix
         ./nix/packages/flake-module.nix
       ];
       systems = [
