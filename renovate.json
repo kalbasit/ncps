@@ -3,14 +3,11 @@
   "addLabels": [
     "dependencies"
   ],
-  "automerge": true,
-  "dependencyDashboard": true,
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "schedule:daily",
+    ":automergeMinor"
   ],
-  "major": {
-    "automerge": false
-  },
   "nix": {
     "enabled": true
   }
