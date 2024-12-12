@@ -1,8 +1,0 @@
-name: Setup Nix
-description: "Install and configure Nix"
-runs:
-  using: "composite"
-  steps:
-    - uses: cachix/install-nix-action@v30
-      with:
-        github_access_token: ${{ secrets.GITHUB_TOKEN }}
