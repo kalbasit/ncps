@@ -9,8 +9,16 @@
       packages.docker = pkgs.dockerTools.buildLayeredImage {
         name = "kalbasit/ncps";
         contents = [
+          # required for TLS certificate validation
+          pkgs.cacert
+
+          # required for working with timezones
+          pkgs.tzdata
+
+          # required for migrating the database
           pkgs.dbmate
 
+          # the ncps package
           config.packages.ncps
         ];
         config = {
