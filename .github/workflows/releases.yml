@@ -34,16 +34,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
-      - uses: DeterminateSystems/magic-nix-cache-action@v8
-      - uses: ./.github/actions/setup_go
-      - name: Build binaries
-        run: |
-          # TODO: Add support for other oses/archs, preferrably through GitHub matrix
-          nix develop -c go build -o out/${{ github.event.repository.name }}-linux-amd64
       - name: Release with Notes
         uses: softprops/action-gh-release@v2
         with:
-          files: out/*
           generate_release_notes: true
           make_latest: "true"
