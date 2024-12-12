@@ -20,6 +20,7 @@
     inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
+        ./nix/devshells/flake-module.nix
         ./nix/formatter/flake-module.nix
         ./nix/packages/flake-module.nix
       ];
