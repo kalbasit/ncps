@@ -34,31 +34,31 @@ INSERT into nars (
 )
 RETURNING *;
 
--- name: TouchNarInfo :exec
+-- name: TouchNarInfo :execrows
 UPDATE narinfos
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
--- name: TouchNar :exec
+-- name: TouchNar :execrows
 UPDATE nars
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
--- name: DeleteNarInfoByHash :exec
+-- name: DeleteNarInfoByHash :execrows
 DELETE FROM narinfos
 WHERE hash = ?;
 
--- name: DeleteNarByHash :exec
+-- name: DeleteNarByHash :execrows
 DELETE FROM nars
 WHERE hash = ?;
 
--- name: DeleteNarInfoByID :exec
+-- name: DeleteNarInfoByID :execrows
 DELETE FROM narinfos
 WHERE id = ?;
 
--- name: DeleteNarByID :exec
+-- name: DeleteNarByID :execrows
 DELETE FROM nars
 WHERE id = ?;
 

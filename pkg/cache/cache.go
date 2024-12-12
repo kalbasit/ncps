@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/mattn/go-sqlite3"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/robfig/cron/v3"
@@ -67,7 +68,7 @@ type Cache struct {
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
 	maxSize        uint64
-	db             *database.DB
+	db             *database.Queries
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
@@ -178,14 +179,14 @@ func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey
 // nar is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
-func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	log := c.logger.New("hash", hash, "compression", compression)
 
 	if c.hasNarInStore(log, hash, compression) {
-		return c.getNarFromStore(log, hash, compression)
+		return c.getNarFromStore(ctx, log, hash, compression)
 	}
 
 	errC := make(chan error)
@@ -215,7 +216,7 @@ func (c *Cache) GetNar(hash, compression string) (int64, io.ReadCloser, error) {
 		return 0, nil, ErrNotFound
 	}
 
-	return c.getNarFromStore(log, hash, compression)
+	return c.getNarFromStore(ctx, log, hash, compression)
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
@@ -301,13 +302,17 @@ func (c *Cache) hasNarInStore(log log15.Logger, hash, compression string) bool {
 	return c.hasInStore(log, c.getNarPathInStore(hash, compression))
 }
 
-func (c *Cache) getNarFromStore(log log15.Logger, hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) getNarFromStore(
+	ctx context.Context,
+	log log15.Logger,
+	hash, compression string,
+) (int64, io.ReadCloser, error) {
 	size, r, err := c.getFromStore(log, c.getNarPathInStore(hash, compression))
 	if err != nil {
 		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 	}
 
-	tx, err := c.db.Begin()
+	tx, err := c.db.DB().Begin()
 	if err != nil {
 		return 0, nil, fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -320,10 +325,10 @@ func (c *Cache) getNarFromStore(log log15.Logger, hash, compression string) (int
 		}
 	}()
 
-	nr, err := c.db.GetNarRecord(tx, hash)
+	nr, err := c.db.WithTx(tx).GetNarByHash(ctx, hash)
 	if err != nil {
 		// TODO: If record not found, record it instead!
-		if errors.Is(err, database.ErrNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return size, r, nil
 		}
 
@@ -331,7 +336,7 @@ func (c *Cache) getNarFromStore(log log15.Logger, hash, compression string) (int
 	}
 
 	if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-		if _, err := c.db.TouchNarRecord(tx, hash); err != nil {
+		if _, err := c.db.WithTx(tx).TouchNar(ctx, hash); err != nil {
 			return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
 		}
 	}
@@ -405,13 +410,21 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 		return ErrNotFound
 	}
 
+	// create a new context not associated with any request because we don't want
+	// downstream HTTP request to cancel this.
+	ctx := context.Background()
+
+	if _, err := c.db.DeleteNarByHash(ctx, hash); err != nil {
+		return fmt.Errorf("error deleting narinfo from the database: %w", err)
+	}
+
 	return os.Remove(c.getNarPathInStore(hash, compression))
 }
 
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
-func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -423,7 +436,7 @@ func (c *Cache) GetNarInfo(hash string) (*narinfo.NarInfo, error) {
 	)
 
 	if c.hasNarInfoInStore(log, hash) {
-		narInfo, err = c.getNarInfoFromStore(log, hash)
+		narInfo, err = c.getNarInfoFromStore(ctx, log, hash)
 		if err == nil {
 			return narInfo, nil
 		} else if !errors.Is(err, errNarInfoPurged) {
@@ -481,16 +494,20 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
-func (c *Cache) DeleteNarInfo(_ context.Context, hash string) error {
+func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	log := c.logger.New("hash", hash)
 
-	return c.deleteNarInfoFromStore(log, hash)
+	return c.deleteNarInfoFromStore(ctx, log, hash)
 }
 
 func (c *Cache) prePullNar(log log15.Logger, url string) {
+	// create a new context not associated with any request because we don't want
+	// downstream HTTP request to cancel this.
+	ctx := context.Background()
+
 	hash, compression, err := helper.ParseNarURL(url)
 	if err != nil {
 		c.logger.Error("error parsing the nar URL", "url", url, "error", err)
@@ -502,7 +519,7 @@ func (c *Cache) prePullNar(log log15.Logger, url string) {
 
 	log.Info("pre-caching NAR ahead of time", "URL", url)
 
-	_, nar, err := c.GetNar(hash, compression)
+	_, nar, err := c.GetNar(ctx, hash, compression)
 	if err != nil {
 		log.Error("error fetching the NAR", "error", err)
 
@@ -527,7 +544,7 @@ func (c *Cache) hasNarInfoInStore(log log15.Logger, hash string) bool {
 	return c.hasInStore(log, c.getNarInfoPathInStore(hash))
 }
 
-func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) getNarInfoFromStore(ctx context.Context, log log15.Logger, hash string) (*narinfo.NarInfo, error) {
 	_, r, err := c.getFromStore(log, c.getNarInfoPathInStore(hash))
 	if err != nil {
 		return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
@@ -543,7 +560,7 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 	narHash, narCompression, err := helper.ParseNarURL(ni.URL)
 	if err != nil {
 		// narinfo is invalid, remove it
-		if err := c.purgeNarInfo(log, hash, "", ""); err != nil {
+		if err := c.purgeNarInfo(ctx, log, hash, "", ""); err != nil {
 			log.Error("error purging the narinfo", "error", err)
 		}
 
@@ -553,14 +570,14 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 	log = log.New("nar-hash", narHash, "nar-compression", narCompression)
 
 	if !c.hasNarInStore(log, narHash, narCompression) && !c.hasUpstreamJob(hash) {
-		if err := c.purgeNarInfo(log, hash, narHash, narCompression); err != nil {
+		if err := c.purgeNarInfo(ctx, log, hash, narHash, narCompression); err != nil {
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
 		}
 
 		return nil, errNarInfoPurged
 	}
 
-	tx, err := c.db.Begin()
+	tx, err := c.db.DB().Begin()
 	if err != nil {
 		return nil, fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -573,10 +590,10 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 		}
 	}()
 
-	nir, err := c.db.GetNarInfoRecord(tx, hash)
+	nir, err := c.db.WithTx(tx).GetNarInfoByHash(ctx, hash)
 	if err != nil {
 		// TODO: If record not found, record it instead!
-		if errors.Is(err, database.ErrNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return ni, nil
 		}
 
@@ -584,7 +601,7 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 	}
 
 	if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-		if _, err := c.db.TouchNarInfoRecord(tx, hash); err != nil {
+		if _, err := c.db.WithTx(tx).TouchNarInfo(ctx, hash); err != nil {
 			return nil, fmt.Errorf("error touching the narinfo record: %w", err)
 		}
 	}
@@ -598,7 +615,7 @@ func (c *Cache) getNarInfoFromStore(log log15.Logger, hash string) (*narinfo.Nar
 
 func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*narinfo.NarInfo, error) {
 	// create a new context not associated with any request because we don't want
-	// pulling from upstream to be associated with a user request.
+	// downstream HTTP request to cancel this.
 	ctx := context.Background()
 
 	for _, uc := range c.upstreamCaches {
@@ -617,8 +634,8 @@ func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*narinfo.
 	return nil, ErrNotFound
 }
 
-func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression string) error {
-	tx, err := c.db.Begin()
+func (c *Cache) purgeNarInfo(ctx context.Context, log log15.Logger, hash, narHash, narCompression string) error {
+	tx, err := c.db.DB().Begin()
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -631,12 +648,12 @@ func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression str
 		}
 	}()
 
-	if err := c.db.DeleteNarInfoRecord(tx, hash); err != nil {
+	if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, hash); err != nil {
 		return fmt.Errorf("error deleting the narinfo record: %w", err)
 	}
 
 	if narHash != "" {
-		if err := c.db.DeleteNarRecord(tx, narHash); err != nil {
+		if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narHash); err != nil {
 			return fmt.Errorf("error deleting the nar record: %w", err)
 		}
 	}
@@ -646,7 +663,7 @@ func (c *Cache) purgeNarInfo(log log15.Logger, hash, narHash, narCompression str
 	}
 
 	if c.hasNarInfoInStore(log, hash) {
-		if err := c.deleteNarInfoFromStore(log, hash); err != nil {
+		if err := c.deleteNarInfoFromStore(ctx, log, hash); err != nil {
 			return fmt.Errorf("error removing narinfo from store: %w", err)
 		}
 	}
@@ -693,11 +710,15 @@ func (c *Cache) putNarInfoInStore(_ log15.Logger, hash string, narInfo *narinfo.
 }
 
 func (c *Cache) storeInDatabase(log log15.Logger, hash string, narInfo *narinfo.NarInfo) error {
+	// create a new context not associated with any request because we don't want
+	// downstream HTTP request to cancel this.
+	ctx := context.Background()
+
 	log = log.New("nar-url", narInfo.URL)
 
 	log.Info("storing narinfo and nar record in the database")
 
-	tx, err := c.db.Begin()
+	tx, err := c.db.DB().Begin()
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -710,9 +731,9 @@ func (c *Cache) storeInDatabase(log log15.Logger, hash string, narInfo *narinfo.
 		}
 	}()
 
-	res, err := c.db.InsertNarInfoRecord(tx, hash)
+	nir, err := c.db.WithTx(tx).CreateNarInfo(ctx, hash)
 	if err != nil {
-		if errors.Is(err, database.ErrAlreadyExists) {
+		if database.ErrorIsNo(err, sqlite3.ErrConstraint) {
 			log.Warn("narinfo record was not added to database because it already exists")
 
 			return nil
@@ -721,18 +742,19 @@ func (c *Cache) storeInDatabase(log log15.Logger, hash string, narInfo *narinfo.
 		return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
 	}
 
-	lid, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("error fetching the last insert ID of the narinfo with hash %q: %w", hash, err)
-	}
-
 	narHash, compression, err := helper.ParseNarURL(narInfo.URL)
 	if err != nil {
 		return fmt.Errorf("error parsing the nar URL: %w", err)
 	}
 
-	if _, err := c.db.InsertNarRecord(tx, lid, narHash, compression, narInfo.FileSize); err != nil {
-		if errors.Is(err, database.ErrAlreadyExists) {
+	_, err = c.db.WithTx(tx).CreateNar(ctx, database.CreateNarParams{
+		NarInfoID:   nir.ID,
+		Hash:        narHash,
+		Compression: compression,
+		FileSize:    narInfo.FileSize,
+	})
+	if err != nil {
+		if database.ErrorIsNo(err, sqlite3.ErrConstraint) {
 			log.Warn("nar record was not added to database because it already exists")
 
 			return nil
@@ -748,9 +770,13 @@ func (c *Cache) storeInDatabase(log log15.Logger, hash string, narInfo *narinfo.
 	return nil
 }
 
-func (c *Cache) deleteNarInfoFromStore(log log15.Logger, hash string) error {
+func (c *Cache) deleteNarInfoFromStore(ctx context.Context, log log15.Logger, hash string) error {
 	if !c.hasNarInfoInStore(log, hash) {
 		return ErrNotFound
+	}
+
+	if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
+		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
 	return os.Remove(c.getNarInfoPathInStore(hash))
@@ -893,7 +919,7 @@ func (c *Cache) dbDirPath() string        { return filepath.Join(c.path, "var", 
 func (c *Cache) dbKeyPath() string        { return filepath.Join(c.dbDirPath(), "db.sqlite") }
 
 func (c *Cache) setupDataBase() error {
-	db, err := database.Open(c.logger, c.dbKeyPath())
+	db, err := database.Open(c.dbKeyPath())
 	if err != nil {
 		return fmt.Errorf("error opening the database %q: %w", c.dbKeyPath(), err)
 	}
@@ -966,7 +992,10 @@ func (c *Cache) runLRU() {
 	log := c.logger.New("op", "lru", "max-size", c.maxSize)
 	log.Info("running LRU")
 
-	tx, err := c.db.Begin()
+	// TODO: Possibly trickle ctx down
+	ctx := context.Background()
+
+	tx, err := c.db.DB().Begin()
 	if err != nil {
 		log.Error("error beginning a transaction", "error", err)
 
@@ -981,28 +1010,34 @@ func (c *Cache) runLRU() {
 		}
 	}()
 
-	narTotalSize, err := c.db.NarTotalSize(tx)
+	narTotalSize, err := c.db.WithTx(tx).GetNarTotalSize(ctx)
 	if err != nil {
 		log.Error("error fetching the total nar size", "error", err)
 
 		return
 	}
 
+	if !narTotalSize.Valid {
+		log.Error("SUM(file_size) returned NULL")
+
+		return
+	}
+
 	log = log.New("nar-total-size", narTotalSize)
 
-	if narTotalSize <= c.maxSize {
+	if uint64(narTotalSize.Float64) <= c.maxSize {
 		log.Info("store size is less than max-size, not removing any nars")
 
 		return
 	}
 
-	cleanupSize := narTotalSize - c.maxSize
+	cleanupSize := uint64(narTotalSize.Float64) - c.maxSize
 
 	log = log.New("cleanup-size", cleanupSize)
 
 	log.Info("going to remove nars")
 
-	nars, err := c.db.GetLeastAccessedNarRecords(tx, cleanupSize)
+	nars, err := c.db.WithTx(tx).GetLeastUsedNars(ctx, cleanupSize)
 	if err != nil {
 		log.Error("error getting the least used nars up to cleanup-size", "error", err)
 
@@ -1020,11 +1055,11 @@ func (c *Cache) runLRU() {
 	filesToRemove := make([]string, 0, 2*len(nars))
 
 	for _, nar := range nars {
-		narInfo, err := c.db.GetNarInfoRecordByID(tx, nar.NarInfoID)
+		narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, nar.NarInfoID)
 		if err == nil {
 			log.Info("deleting narinfo record", "narinfo-hash", narInfo.Hash)
 
-			if err := c.db.DeleteNarInfoRecord(tx, narInfo.Hash); err != nil {
+			if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
 				log.Error("error removing narinfo from database", "hash", narInfo.Hash, "error", err)
 			}
 
@@ -1037,7 +1072,7 @@ func (c *Cache) runLRU() {
 
 		log.Info("deleting nar record", "nar-hash", nar.Hash)
 
-		if err := c.db.DeleteNarRecord(tx, nar.Hash); err != nil {
+		if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, nar.Hash); err != nil {
 			log.Error("error removing nar from database", "hash", nar.Hash, "error", err)
 		}
 

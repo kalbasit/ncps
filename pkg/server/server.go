@@ -156,7 +156,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 		log := s.logger.New("hash", hash)
 
-		narInfo, err := s.cache.GetNarInfo(hash)
+		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
@@ -171,7 +171,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 			log.Error("error fetching the narinfo", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
-			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
 				log.Error("error writing the response", "error", err)
 			}
 
@@ -215,7 +215,7 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 		log.Error("error putting the NAR in cache", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 
-		if _, err2 := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + err.Error())); err2 != nil {
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
 			log.Error("error writing the body to the response", "error", err)
 		}
 
@@ -253,7 +253,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusInternalServerError)
 
-		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
 			log.Error("error writing the body to the response", "error", err)
 		}
 
@@ -270,7 +270,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		log := s.logger.New("hash", hash, "compression", compression)
 
-		size, reader, err := s.cache.GetNar(hash, compression)
+		size, reader, err := s.cache.GetNar(r.Context(), hash, compression)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
@@ -283,9 +283,10 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			}
 
 			log.Error("error fetching the nar", "error", err)
+
 			w.WriteHeader(http.StatusInternalServerError)
 
-			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
 				log.Error("error writing the response", "error", err)
 			}
 
@@ -335,7 +336,7 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 		log.Error("error putting the NAR in cache", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 
-		if _, err2 := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + err.Error())); err2 != nil {
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
 			log.Error("error writing the body to the response", "error", err)
 		}
 
@@ -374,7 +375,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusInternalServerError)
 
-		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError))); err != nil {
+		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
 			log.Error("error writing the body to the response", "error", err)
 		}
 

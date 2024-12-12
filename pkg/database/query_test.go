@@ -1,6 +1,8 @@
 package database_test
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,8 +29,57 @@ func init() {
 	logger.SetHandler(log15.DiscardHandler())
 }
 
+func TestGetNarInfoByHash(t *testing.T) {
+	t.Parallel()
+
+	t.Run("narinfo not existing", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
+		require.NoError(t, err)
+
+		hash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.GetNarInfoByHash(context.Background(), hash)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
+	})
+
+	t.Run("narinfo existing", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
+		require.NoError(t, err)
+
+		hash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni1, err := db.CreateNarInfo(context.Background(), hash)
+		require.NoError(t, err)
+
+		ni2, err := db.GetNarInfoByHash(context.Background(), hash)
+		require.NoError(t, err)
+
+		assert.Equal(t, ni1.Hash, ni2.Hash)
+	})
+}
+
 //nolint:paralleltest
-func TestInsertNarInfoRecord(t *testing.T) {
+func TestInsertNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -35,25 +87,17 @@ func TestInsertNarInfoRecord(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("inserting one record", func(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.Begin()
+		nio, err := db.CreateNarInfo(context.Background(), hash)
 		require.NoError(t, err)
 
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		res, err := db.InsertNarInfoRecord(tx, hash)
-		require.NoError(t, err)
-
-		require.NoError(t, tx.Commit())
-
-		rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+		rows, err := db.DB().Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
 		require.NoError(t, err)
 
 		defer rows.Close()
@@ -71,11 +115,10 @@ func TestInsertNarInfoRecord(t *testing.T) {
 
 		require.NoError(t, rows.Err())
 
-		lid, err := res.LastInsertId()
 		require.NoError(t, err)
 
 		if assert.Len(t, nims, 1) {
-			assert.Equal(t, lid, nims[0].ID)
+			assert.Equal(t, nio.ID, nims[0].ID)
 			assert.Equal(t, hash, nims[0].Hash)
 			assert.Less(t, time.Since(nims[0].CreatedAt), 3*time.Second)
 			assert.False(t, nims[0].UpdatedAt.Valid)
@@ -87,25 +130,11 @@ func TestInsertNarInfoRecord(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.Begin()
+		_, err = db.CreateNarInfo(context.Background(), hash)
 		require.NoError(t, err)
 
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		_, err = db.InsertNarInfoRecord(tx, hash)
-		require.NoError(t, err)
-
-		require.NoError(t, tx.Commit())
-
-		tx, err = db.Begin()
-		require.NoError(t, err)
-
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		_, err = db.InsertNarInfoRecord(tx, hash)
-		assert.ErrorIs(t, err, database.ErrAlreadyExists)
+		_, err = db.CreateNarInfo(context.Background(), hash)
+		assert.True(t, database.ErrorIsNo(err, sqlite3.ErrConstraint))
 	})
 
 	t.Run("can write many narinfos", func(t *testing.T) {
@@ -126,26 +155,8 @@ func TestInsertNarInfoRecord(t *testing.T) {
 					return
 				}
 
-				tx, err := db.Begin()
-				if err != nil {
-					errC <- fmt.Errorf("expected no error but got: %w", err)
-
-					return
-				}
-
-				//nolint:errcheck
-				defer tx.Rollback()
-
-				if _, err := db.InsertNarInfoRecord(tx, hash); err != nil {
-					errC <- fmt.Errorf("expected no error got: %w", err)
-
-					return
-				}
-
-				if err := tx.Commit(); err != nil {
-					errC <- fmt.Errorf("expected no error got: %w", err)
-
-					return
+				if _, err := db.CreateNarInfo(context.Background(), hash); err != nil {
+					errC <- fmt.Errorf("error creating the narinfo record: %w", err)
 				}
 			}()
 		}
@@ -170,7 +181,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestTouchNarInfoRecord(t *testing.T) {
+func TestTouchNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -178,23 +189,14 @@ func TestTouchNarInfoRecord(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.Begin()
-		require.NoError(t, err)
-
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		res, err := db.TouchNarInfoRecord(tx, hash)
-		require.NoError(t, err)
-
-		ra, err := res.RowsAffected()
+		ra, err := db.TouchNarInfo(context.Background(), hash)
 		require.NoError(t, err)
 
 		assert.Zero(t, ra)
@@ -204,21 +206,11 @@ func TestTouchNarInfoRecord(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		t.Run("create the narinfo", func(t *testing.T) {
-			tx, err := db.Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
-			_, err = db.InsertNarInfoRecord(tx, hash)
-			require.NoError(t, err)
-
-			require.NoError(t, tx.Commit())
-		})
+		_, err = db.CreateNarInfo(context.Background(), hash)
+		require.NoError(t, err)
 
 		t.Run("confirm created_at == last_accessed_at, and no updated_at", func(t *testing.T) {
-			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+			rows, err := db.DB().Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
 			require.NoError(t, err)
 
 			defer rows.Close()
@@ -242,27 +234,15 @@ func TestTouchNarInfoRecord(t *testing.T) {
 		})
 
 		t.Run("touch the narinfo", func(t *testing.T) {
-			tx, err := db.Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
 			time.Sleep(time.Second)
 
-			res, err := db.TouchNarInfoRecord(tx, hash)
+			ra, err := db.TouchNarInfo(context.Background(), hash)
 			require.NoError(t, err)
-
-			require.NoError(t, tx.Commit())
-
-			ra, err := res.RowsAffected()
-			require.NoError(t, err)
-
 			assert.EqualValues(t, 1, ra)
 		})
 
 		t.Run("confirm created_at != last_accessed_at and updated_at == last_accessed_at", func(t *testing.T) {
-			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+			rows, err := db.DB().Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
 			require.NoError(t, err)
 
 			defer rows.Close()
@@ -291,7 +271,7 @@ func TestTouchNarInfoRecord(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestDeleteNarInfoRecord(t *testing.T) {
+func TestDeleteNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -299,21 +279,17 @@ func TestDeleteNarInfoRecord(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.Begin()
+		ra, err := db.DeleteNarInfoByHash(context.Background(), hash)
 		require.NoError(t, err)
 
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		err = db.DeleteNarInfoRecord(tx, hash)
-		require.NoError(t, err)
+		assert.Zero(t, ra)
 	})
 
 	t.Run("narinfo existing", func(t *testing.T) {
@@ -321,35 +297,21 @@ func TestDeleteNarInfoRecord(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("create the narinfo", func(t *testing.T) {
-			tx, err := db.Begin()
+			_, err = db.CreateNarInfo(context.Background(), hash)
 			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
-			_, err = db.InsertNarInfoRecord(tx, hash)
-			require.NoError(t, err)
-
-			assert.NoError(t, tx.Commit())
 		})
 
 		t.Run("delete the narinfo", func(t *testing.T) {
-			tx, err := db.Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
 			time.Sleep(time.Second)
 
-			err = db.DeleteNarInfoRecord(tx, hash)
+			ra, err := db.DeleteNarInfoByHash(context.Background(), hash)
 			require.NoError(t, err)
 
-			assert.NoError(t, tx.Commit())
+			assert.EqualValues(t, 1, ra)
 		})
 
 		t.Run("confirm it has been removed", func(t *testing.T) {
-			rows, err := db.Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
+			rows, err := db.DB().Query("SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos")
 			require.NoError(t, err)
 
 			defer rows.Close()
@@ -371,8 +333,77 @@ func TestDeleteNarInfoRecord(t *testing.T) {
 	})
 }
 
+func TestGetNarByHash(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nar not existing", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
+		require.NoError(t, err)
+
+		narInfoHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), narInfoHash)
+		require.NoError(t, err)
+
+		narHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.GetNarByHash(context.Background(), narHash)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
+	})
+
+	t.Run("nar existing", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
+		require.NoError(t, err)
+
+		narInfoHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		narInfo, err := db.CreateNarInfo(context.Background(), narInfoHash)
+		require.NoError(t, err)
+
+		narHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni1, err := db.CreateNar(context.Background(), database.CreateNarParams{
+			NarInfoID:   narInfo.ID,
+			Hash:        narHash,
+			Compression: "xz",
+			FileSize:    123,
+		})
+		require.NoError(t, err)
+
+		ni2, err := db.GetNarByHash(context.Background(), narHash)
+		require.NoError(t, err)
+
+		assert.Equal(t, ni1.Hash, ni2.Hash)
+		assert.Equal(t, ni1.NarInfoID, ni2.NarInfoID)
+		assert.Equal(t, ni1.Compression, ni2.Compression)
+		assert.Equal(t, ni1.FileSize, ni2.FileSize)
+	})
+}
+
 //nolint:paralleltest
-func TestInsertNarRecord(t *testing.T) {
+func TestInsertNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -380,53 +411,39 @@ func TestInsertNarRecord(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	// create a narinfo
 	hash, err := helper.RandString(32, nil)
 	require.NoError(t, err)
 
-	tx, err := db.Begin()
-	require.NoError(t, err)
-
-	//nolint:errcheck
-	defer tx.Rollback()
-
-	res, err := db.InsertNarInfoRecord(tx, hash)
-	require.NoError(t, err)
-
-	require.NoError(t, tx.Commit())
-
-	nid, err := res.LastInsertId()
+	narInfo, err := db.CreateNarInfo(context.Background(), hash)
 	require.NoError(t, err)
 
 	for _, compression := range []string{"", "xz", "tar.gz"} {
 		t.Run(fmt.Sprintf("compression=%q", compression), func(t *testing.T) {
-			_, err := db.Exec("DELETE FROM nars")
+			_, err := db.DB().Exec("DELETE FROM nars")
 			require.NoError(t, err)
 
 			t.Run("inserting one record", func(t *testing.T) {
 				hash, err := helper.RandString(32, nil)
 				require.NoError(t, err)
 
-				tx, err := db.Begin()
+				nar, err := db.CreateNar(context.Background(), database.CreateNarParams{
+					NarInfoID:   narInfo.ID,
+					Hash:        hash,
+					Compression: compression,
+					FileSize:    123,
+				})
 				require.NoError(t, err)
-
-				//nolint:errcheck
-				defer tx.Rollback()
-
-				res, err := db.InsertNarRecord(tx, nid, hash, compression, 123)
-				require.NoError(t, err)
-
-				require.NoError(t, tx.Commit())
 
 				const query = `
-				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
-				FROM nars
-				`
+ 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+ 				FROM nars
+ 				`
 
-				rows, err := db.Query(query)
+				rows, err := db.DB().Query(query)
 				require.NoError(t, err)
 
 				defer rows.Close()
@@ -453,12 +470,9 @@ func TestInsertNarRecord(t *testing.T) {
 
 				require.NoError(t, rows.Err())
 
-				lid, err := res.LastInsertId()
-				require.NoError(t, err)
-
 				if assert.Len(t, nims, 1) {
-					assert.Equal(t, lid, nims[0].ID)
-					assert.Equal(t, nid, nims[0].NarInfoID)
+					assert.Equal(t, nar.ID, nims[0].ID)
+					assert.Equal(t, narInfo.ID, nims[0].NarInfoID)
 					assert.Equal(t, hash, nims[0].Hash)
 					assert.Equal(t, compression, nims[0].Compression)
 					assert.EqualValues(t, 123, nims[0].FileSize)
@@ -472,33 +486,29 @@ func TestInsertNarRecord(t *testing.T) {
 				hash, err := helper.RandString(32, nil)
 				require.NoError(t, err)
 
-				tx, err := db.Begin()
+				_, err = db.CreateNar(context.Background(), database.CreateNarParams{
+					NarInfoID:   narInfo.ID,
+					Hash:        hash,
+					Compression: "",
+					FileSize:    123,
+				})
 				require.NoError(t, err)
 
-				//nolint:errcheck
-				defer tx.Rollback()
+				_, err = db.CreateNar(context.Background(), database.CreateNarParams{
+					NarInfoID:   narInfo.ID,
+					Hash:        hash,
+					Compression: "",
+					FileSize:    123,
+				})
 
-				_, err = db.InsertNarRecord(tx, nid, hash, "", 123)
-				require.NoError(t, err)
-
-				require.NoError(t, tx.Commit())
-
-				tx, err = db.Begin()
-				require.NoError(t, err)
-
-				//nolint:errcheck
-				defer tx.Rollback()
-
-				_, err = db.InsertNarRecord(tx, nid, hash, "", 123)
-
-				assert.ErrorIs(t, database.ErrAlreadyExists, err)
+				assert.True(t, database.ErrorIsNo(err, sqlite3.ErrConstraint))
 			})
 		})
 	}
 }
 
 //nolint:paralleltest
-func TestTouchNarRecord(t *testing.T) {
+func TestTouchNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -506,48 +516,28 @@ func TestTouchNarRecord(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.Begin()
-		require.NoError(t, err)
-
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		res, err := db.TouchNarRecord(tx, hash)
-		require.NoError(t, err)
-
-		ra, err := res.RowsAffected()
+		ra, err := db.TouchNar(context.Background(), hash)
 		require.NoError(t, err)
 
 		assert.Zero(t, ra)
 	})
 
 	t.Run("nar existing", func(t *testing.T) {
-		var nid int64
+		var narInfo database.NarInfo
 
 		t.Run("create the narinfo", func(t *testing.T) {
 			// create a narinfo
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			tx, err := db.Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
-			res, err := db.InsertNarInfoRecord(tx, hash)
-			require.NoError(t, err)
-
-			require.NoError(t, tx.Commit())
-
-			nid, err = res.LastInsertId()
+			narInfo, err = db.CreateNarInfo(context.Background(), hash)
 			require.NoError(t, err)
 		})
 
@@ -555,25 +545,22 @@ func TestTouchNarRecord(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("create the nar", func(t *testing.T) {
-			tx, err := db.Begin()
+			_, err = db.CreateNar(context.Background(), database.CreateNarParams{
+				NarInfoID:   narInfo.ID,
+				Hash:        hash,
+				Compression: "",
+				FileSize:    123,
+			})
 			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
-			_, err = db.InsertNarRecord(tx, nid, hash, "", 123)
-			require.NoError(t, err)
-
-			require.NoError(t, tx.Commit())
 		})
 
 		t.Run("confirm created_at == last_accessed_at, and no updated_at", func(t *testing.T) {
 			const query = `
-				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
-				FROM nars
-				`
+ 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+ 				FROM nars
+ 				`
 
-			rows, err := db.Query(query)
+			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
 			defer rows.Close()
@@ -607,20 +594,9 @@ func TestTouchNarRecord(t *testing.T) {
 		})
 
 		t.Run("touch the nar", func(t *testing.T) {
-			tx, err := db.Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
 			time.Sleep(time.Second)
 
-			res, err := db.TouchNarRecord(tx, hash)
-			require.NoError(t, err)
-
-			require.NoError(t, tx.Commit())
-
-			ra, err := res.RowsAffected()
+			ra, err := db.TouchNar(context.Background(), hash)
 			require.NoError(t, err)
 
 			assert.EqualValues(t, 1, ra)
@@ -628,11 +604,11 @@ func TestTouchNarRecord(t *testing.T) {
 
 		t.Run("confirm created_at != last_accessed_at and updated_at == last_accessed_at", func(t *testing.T) {
 			const query = `
-				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
-				FROM nars
-				`
+ 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+ 				FROM nars
+ 				`
 
-			rows, err := db.Query(query)
+			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
 			defer rows.Close()
@@ -671,7 +647,7 @@ func TestTouchNarRecord(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestDeleteNarRecord(t *testing.T) {
+func TestDeleteNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -679,43 +655,28 @@ func TestDeleteNarRecord(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		tx, err := db.Begin()
+		ra, err := db.DeleteNarByHash(context.Background(), hash)
 		require.NoError(t, err)
 
-		//nolint:errcheck
-		defer tx.Rollback()
-
-		err = db.DeleteNarRecord(tx, hash)
-		require.NoError(t, err)
+		assert.Zero(t, ra)
 	})
 
 	t.Run("nar existing", func(t *testing.T) {
-		var nid int64
+		var narInfo database.NarInfo
 
 		t.Run("create the narinfo", func(t *testing.T) {
 			// create a narinfo
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			tx, err := db.Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
-			res, err := db.InsertNarInfoRecord(tx, hash)
-			require.NoError(t, err)
-
-			require.NoError(t, tx.Commit())
-
-			nid, err = res.LastInsertId()
+			narInfo, err = db.CreateNarInfo(context.Background(), hash)
 			require.NoError(t, err)
 		})
 
@@ -723,31 +684,22 @@ func TestDeleteNarRecord(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("create the nar", func(t *testing.T) {
-			tx, err := db.Begin()
+			_, err = db.CreateNar(context.Background(), database.CreateNarParams{
+				NarInfoID:   narInfo.ID,
+				Hash:        hash,
+				Compression: "",
+				FileSize:    123,
+			})
 			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
-			_, err = db.InsertNarRecord(tx, nid, hash, "", 123)
-			require.NoError(t, err)
-
-			assert.NoError(t, tx.Commit())
 		})
 
 		t.Run("delete the narinfo", func(t *testing.T) {
-			tx, err := db.Begin()
-			require.NoError(t, err)
-
-			//nolint:errcheck
-			defer tx.Rollback()
-
 			time.Sleep(time.Second)
 
-			err = db.DeleteNarRecord(tx, hash)
+			ra, err := db.DeleteNarByHash(context.Background(), hash)
 			require.NoError(t, err)
 
-			assert.NoError(t, tx.Commit())
+			assert.EqualValues(t, 1, ra)
 		})
 
 		t.Run("confirm it has been removed", func(t *testing.T) {
@@ -756,7 +708,7 @@ func TestDeleteNarRecord(t *testing.T) {
 				FROM nars
 				`
 
-			rows, err := db.Query(query)
+			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
 			defer rows.Close()
@@ -792,89 +744,77 @@ func TestNarTotalSize(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
-
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
-	require.NoError(t, err)
-
-	tx, err := db.Begin()
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	var expectedSize uint64
 	for _, nar := range testdata.Entries {
 		expectedSize += uint64(len(nar.NarText))
 
-		res, err := db.InsertNarInfoRecord(tx, nar.NarInfoHash)
+		narInfo, err := db.CreateNarInfo(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
 
-		nid, err := res.LastInsertId()
-		require.NoError(t, err)
-
-		_, err = db.InsertNarRecord(tx, nid, nar.NarHash, "", uint64(len(nar.NarText)))
+		_, err = db.CreateNar(context.Background(), database.CreateNarParams{
+			NarInfoID:   narInfo.ID,
+			Hash:        nar.NarHash,
+			Compression: "xz",
+			FileSize:    uint64(len(nar.NarText)),
+		})
 		require.NoError(t, err)
 	}
 
-	require.NoError(t, tx.Commit())
-
-	tx, err = db.Begin()
+	size, err := db.GetNarTotalSize(context.Background())
 	require.NoError(t, err)
 
-	size, err := db.NarTotalSize(tx)
-	require.NoError(t, err)
-
-	assert.Equal(t, expectedSize, size)
+	if assert.True(t, size.Valid) {
+		assert.Equal(t, expectedSize, uint64(size.Float64))
+	}
 }
 
-func TestGetLeastAccessedNarRecords(t *testing.T) {
+func TestGetLeastAccessedNars(t *testing.T) {
 	t.Parallel()
 
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
-
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
-	require.NoError(t, err)
-
-	tx, err := db.Begin()
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	var totalSize uint64
 	for _, nar := range testdata.Entries {
 		totalSize += uint64(len(nar.NarText))
 
-		res, err := db.InsertNarInfoRecord(tx, nar.NarInfoHash)
+		narInfo, err := db.CreateNarInfo(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
 
-		nid, err := res.LastInsertId()
-		require.NoError(t, err)
-
-		_, err = db.InsertNarRecord(tx, nid, nar.NarHash, "", uint64(len(nar.NarText)))
+		_, err = db.CreateNar(context.Background(), database.CreateNarParams{
+			NarInfoID:   narInfo.ID,
+			Hash:        nar.NarHash,
+			Compression: "xz",
+			FileSize:    uint64(len(nar.NarText)),
+		})
 		require.NoError(t, err)
 	}
 
 	time.Sleep(time.Second)
 
 	for _, nar := range testdata.Entries[:len(testdata.Entries)-1] {
-		_, err := db.TouchNarRecord(tx, nar.NarHash)
+		_, err := db.TouchNar(context.Background(), nar.NarHash)
 		require.NoError(t, err)
 	}
 
-	require.NoError(t, tx.Commit())
-
-	tx, err = db.Begin()
-	require.NoError(t, err)
-
 	lastEntry := testdata.Entries[len(testdata.Entries)-1]
 
-	nms, err := db.GetLeastAccessedNarRecords(tx, totalSize-uint64(len(lastEntry.NarText)))
+	nms, err := db.GetLeastUsedNars(context.Background(), totalSize-uint64(len(lastEntry.NarText)))
 	require.NoError(t, err)
 
 	if assert.Len(t, nms, 1) {

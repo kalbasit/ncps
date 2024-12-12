@@ -5,8 +5,12 @@ sql:
     schema: "db/migrations"
     gen:
       go:
+        emit_sql_as_comment: true
         package: "database"
         out: "pkg/database"
+        overrides:
+          - column: nars.file_size
+            go_type: uint64
         rename:
           narinfo_id: NarInfoID
 overrides:

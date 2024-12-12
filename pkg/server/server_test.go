@@ -35,13 +35,28 @@ func init() {
 
 //nolint:paralleltest
 func TestServeHTTP(t *testing.T) {
+	hts := testdata.HTTPTestServer(t, 40)
+	defer hts.Close()
+
+	htu, err := url.Parse(hts.URL)
+	require.NoError(t, err)
+
+	uc, err := upstream.New(logger, htu.Host, testdata.PublicKeys())
+	require.NoError(t, err)
+
 	t.Run("DELETE requests", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
 		c, err := cache.New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
+
+		c.AddUpstreamCaches(uc)
+		c.SetRecordAgeIgnoreTouch(0)
 
 		t.Run("DELETE is not permitted", func(t *testing.T) {
 			s := server.New(logger, c)
@@ -63,29 +78,15 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("nar", func(t *testing.T) {
-				t.Run("without compression", func(t *testing.T) {
-					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
+				url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
-					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-					require.NoError(t, err)
+				r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
+				require.NoError(t, err)
 
-					resp, err := ts.Client().Do(r)
-					require.NoError(t, err)
+				resp, err := ts.Client().Do(r)
+				require.NoError(t, err)
 
-					assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
-				})
-
-				t.Run("with compression", func(t *testing.T) {
-					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
-
-					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
-					require.NoError(t, err)
-
-					resp, err := ts.Client().Do(r)
-					require.NoError(t, err)
-
-					assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
-				})
+				assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 			})
 		})
 
@@ -103,15 +104,8 @@ func TestServeHTTP(t *testing.T) {
 					assert.NoFileExists(t, storePath)
 				})
 
-				require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
-
-				f, err := os.Create(storePath)
+				_, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
 				require.NoError(t, err)
-
-				_, err = f.WriteString(testdata.Nar1.NarInfoText)
-				require.NoError(t, err)
-
-				require.NoError(t, f.Close())
 
 				t.Run("narinfo does exist in storage", func(t *testing.T) {
 					assert.FileExists(t, storePath)
@@ -135,28 +129,21 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("nar", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+				storePath := filepath.Join(dir, "store", "nar", testdata.Nar2.NarPath)
 
 				t.Run("nar does not exist in storage yet", func(t *testing.T) {
 					assert.NoFileExists(t, storePath)
 				})
 
-				require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
-
-				f, err := os.Create(storePath)
+				_, _, err := c.GetNar(context.Background(), testdata.Nar2.NarHash, "xz")
 				require.NoError(t, err)
-
-				_, err = f.WriteString(testdata.Nar1.NarText)
-				require.NoError(t, err)
-
-				require.NoError(t, f.Close())
 
 				t.Run("nar does exist in storage", func(t *testing.T) {
 					assert.FileExists(t, storePath)
 				})
 
 				t.Run("DELETE returns no error", func(t *testing.T) {
-					url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+					url := ts.URL + "/nar/" + testdata.Nar2.NarHash + ".nar.xz"
 
 					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
 					require.NoError(t, err)
@@ -175,18 +162,9 @@ func TestServeHTTP(t *testing.T) {
 	})
 
 	t.Run("GET requests", func(t *testing.T) {
-		us := testdata.HTTPTestServer(t, 40)
-		defer us.Close()
-
-		uu, err := url.Parse(us.URL)
-		require.NoError(t, err)
-
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
-
-		uc, err := upstream.New(logger, uu.Host, testdata.PublicKeys())
-		require.NoError(t, err)
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
@@ -195,6 +173,7 @@ func TestServeHTTP(t *testing.T) {
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(uc)
+		c.SetRecordAgeIgnoreTouch(0)
 
 		s := server.New(logger, c)
 
@@ -268,6 +247,9 @@ func TestServeHTTP(t *testing.T) {
 
 		c, err := cache.New(logger, "cache.example.com", dir)
 		require.NoError(t, err)
+
+		c.AddUpstreamCaches(uc)
+		c.SetRecordAgeIgnoreTouch(0)
 
 		t.Run("PUT is not permitted", func(t *testing.T) {
 			s := server.New(logger, c)

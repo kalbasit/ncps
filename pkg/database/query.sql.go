@@ -23,9 +23,17 @@ type CreateNarParams struct {
 	NarInfoID   int64
 	Hash        string
 	Compression string
-	FileSize    int64
+	FileSize    uint64
 }
 
+// CreateNar
+//
+//	INSERT into nars (
+//	  narinfo_id, hash, compression, file_size
+//	) VALUES (
+//	  ?, ?, ?, ?
+//	)
+//	RETURNING id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
 func (q *Queries) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
 	row := q.db.QueryRowContext(ctx, createNar,
 		arg.NarInfoID,
@@ -56,6 +64,14 @@ INSERT into narinfos (
 RETURNING id, hash, created_at, updated_at, last_accessed_at
 `
 
+// CreateNarInfo
+//
+//	INSERT into narinfos (
+//	  hash
+//	) VALUES (
+//	  ?
+//	)
+//	RETURNING id, hash, created_at, updated_at, last_accessed_at
 func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, createNarInfo, hash)
 	var i NarInfo
@@ -69,44 +85,72 @@ func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, erro
 	return i, err
 }
 
-const deleteNarByHash = `-- name: DeleteNarByHash :exec
+const deleteNarByHash = `-- name: DeleteNarByHash :execrows
 DELETE FROM nars
 WHERE hash = ?
 `
 
-func (q *Queries) DeleteNarByHash(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, deleteNarByHash, hash)
-	return err
+// DeleteNarByHash
+//
+//	DELETE FROM nars
+//	WHERE hash = ?
+func (q *Queries) DeleteNarByHash(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarByHash, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const deleteNarByID = `-- name: DeleteNarByID :exec
+const deleteNarByID = `-- name: DeleteNarByID :execrows
 DELETE FROM nars
 WHERE id = ?
 `
 
-func (q *Queries) DeleteNarByID(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteNarByID, id)
-	return err
+// DeleteNarByID
+//
+//	DELETE FROM nars
+//	WHERE id = ?
+func (q *Queries) DeleteNarByID(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const deleteNarInfoByHash = `-- name: DeleteNarInfoByHash :exec
+const deleteNarInfoByHash = `-- name: DeleteNarInfoByHash :execrows
 DELETE FROM narinfos
 WHERE hash = ?
 `
 
-func (q *Queries) DeleteNarInfoByHash(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, deleteNarInfoByHash, hash)
-	return err
+// DeleteNarInfoByHash
+//
+//	DELETE FROM narinfos
+//	WHERE hash = ?
+func (q *Queries) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarInfoByHash, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const deleteNarInfoByID = `-- name: DeleteNarInfoByID :exec
+const deleteNarInfoByID = `-- name: DeleteNarInfoByID :execrows
 DELETE FROM narinfos
 WHERE id = ?
 `
 
-func (q *Queries) DeleteNarInfoByID(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteNarInfoByID, id)
-	return err
+// DeleteNarInfoByID
+//
+//	DELETE FROM narinfos
+//	WHERE id = ?
+func (q *Queries) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarInfoByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getLeastUsedNars = `-- name: GetLeastUsedNars :many
@@ -120,7 +164,17 @@ WHERE (
 ) <= ?
 `
 
-func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize int64) ([]Nar, error) {
+// GetLeastUsedNars
+//
+//	SELECT
+//	  n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at
+//	FROM nars n1
+//	WHERE (
+//	  SELECT SUM(n2.file_size)
+//	  FROM nars n2
+//	  WHERE n2.last_accessed_at <= n1.last_accessed_at
+//	) <= ?
+func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNars, fileSize)
 	if err != nil {
 		return nil, err
@@ -158,6 +212,11 @@ FROM nars
 WHERE hash = ?
 `
 
+// GetNarByHash
+//
+//	SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+//	FROM nars
+//	WHERE hash = ?
 func (q *Queries) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
 	row := q.db.QueryRowContext(ctx, getNarByHash, hash)
 	var i Nar
@@ -180,6 +239,11 @@ FROM nars
 WHERE id = ?
 `
 
+// GetNarByID
+//
+//	SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
+//	FROM nars
+//	WHERE id = ?
 func (q *Queries) GetNarByID(ctx context.Context, id int64) (Nar, error) {
 	row := q.db.QueryRowContext(ctx, getNarByID, id)
 	var i Nar
@@ -202,6 +266,11 @@ FROM narinfos
 WHERE hash = ?
 `
 
+// GetNarInfoByHash
+//
+//	SELECT id, hash, created_at, updated_at, last_accessed_at
+//	FROM narinfos
+//	WHERE hash = ?
 func (q *Queries) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, getNarInfoByHash, hash)
 	var i NarInfo
@@ -221,6 +290,11 @@ FROM narinfos
 WHERE id = ?
 `
 
+// GetNarInfoByID
+//
+//	SELECT id, hash, created_at, updated_at, last_accessed_at
+//	FROM narinfos
+//	WHERE id = ?
 func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, getNarInfoByID, id)
 	var i NarInfo
@@ -239,6 +313,10 @@ SELECT SUM(file_size) AS total_size
 FROM nars
 `
 
+// GetNarTotalSize
+//
+//	SELECT SUM(file_size) AS total_size
+//	FROM nars
 func (q *Queries) GetNarTotalSize(ctx context.Context) (sql.NullFloat64, error) {
 	row := q.db.QueryRowContext(ctx, getNarTotalSize)
 	var total_size sql.NullFloat64
@@ -246,26 +324,44 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (sql.NullFloat64, error) 
 	return total_size, err
 }
 
-const touchNar = `-- name: TouchNar :exec
+const touchNar = `-- name: TouchNar :execrows
 UPDATE nars
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?
 `
 
-func (q *Queries) TouchNar(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, touchNar, hash)
-	return err
+// TouchNar
+//
+//	UPDATE nars
+//	SET last_accessed_at = CURRENT_TIMESTAMP,
+//	  updated_at = CURRENT_TIMESTAMP
+//	WHERE hash = ?
+func (q *Queries) TouchNar(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, touchNar, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const touchNarInfo = `-- name: TouchNarInfo :exec
+const touchNarInfo = `-- name: TouchNarInfo :execrows
 UPDATE narinfos
 SET last_accessed_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?
 `
 
-func (q *Queries) TouchNarInfo(ctx context.Context, hash string) error {
-	_, err := q.db.ExecContext(ctx, touchNarInfo, hash)
-	return err
+// TouchNarInfo
+//
+//	UPDATE narinfos
+//	SET last_accessed_at = CURRENT_TIMESTAMP,
+//	  updated_at = CURRENT_TIMESTAMP
+//	WHERE hash = ?
+func (q *Queries) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, touchNarInfo, hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

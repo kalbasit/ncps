@@ -1,6 +1,8 @@
 package cache
 
 import (
+	"context"
+	"database/sql"
 	"math/rand/v2"
 	"net/http/httptest"
 	"net/url"
@@ -14,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -175,10 +176,10 @@ func TestRunLRU(t *testing.T) {
 	var sizePulled int64
 
 	for _, nar := range allEntries {
-		_, err := c.GetNarInfo(nar.NarInfoHash)
+		_, err := c.GetNarInfo(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
 
-		size, _, err := c.GetNar(nar.NarHash, "xz")
+		size, _, err := c.GetNar(context.Background(), nar.NarHash, "xz")
 		require.NoError(t, err)
 
 		sizePulled += size
@@ -200,10 +201,10 @@ func TestRunLRU(t *testing.T) {
 	sizePulled = 0
 
 	for _, nar := range entries {
-		_, err := c.GetNarInfo(nar.NarInfoHash)
+		_, err := c.GetNarInfo(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
 
-		size, _, err := c.GetNar(nar.NarHash, "xz")
+		size, _, err := c.GetNar(context.Background(), nar.NarHash, "xz")
 		require.NoError(t, err)
 
 		sizePulled += size
@@ -213,28 +214,16 @@ func TestRunLRU(t *testing.T) {
 	assert.Equal(t, int64(maxSize), sizePulled, "confirm size pulled is exactly maxSize")
 
 	// all narinfo records are in the database
-	tx, err := c.db.Begin()
-	require.NoError(t, err)
-
 	for _, nar := range allEntries {
-		_, err := c.db.GetNarInfoRecord(tx, nar.NarInfoHash)
+		_, err := c.db.GetNarInfoByHash(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
 	}
-
-	//nolint:errcheck
-	tx.Rollback()
 
 	// all nar records are in the database
-	tx, err = c.db.Begin()
-	require.NoError(t, err)
-
 	for _, nar := range allEntries {
-		_, err := c.db.GetNarRecord(tx, nar.NarHash)
+		_, err := c.db.GetNarByHash(context.Background(), nar.NarHash)
 		require.NoError(t, err)
 	}
-
-	//nolint:errcheck
-	tx.Rollback()
 
 	c.runLRU()
 
@@ -253,32 +242,21 @@ func TestRunLRU(t *testing.T) {
 	assert.False(t, c.hasNarInStore(logger, lastEntry.NarHash, "xz"))
 
 	// all narinfo records except the last one are in the database
-	tx, err = c.db.Begin()
-	require.NoError(t, err)
-
 	for _, nar := range entries {
-		_, err := c.db.GetNarInfoRecord(tx, nar.NarInfoHash)
+		_, err := c.db.GetNarInfoByHash(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
 	}
 
-	_, err = c.db.GetNarInfoRecord(tx, lastEntry.NarInfoHash)
-	require.ErrorIs(t, database.ErrNotFound, err)
-
-	//nolint:errcheck
-	tx.Rollback()
+	_, err = c.db.GetNarInfoByHash(context.Background(), lastEntry.NarInfoHash)
+	require.ErrorIs(t, sql.ErrNoRows, err)
 
 	// all nar records except the last one are in the database
-	tx, err = c.db.Begin()
-	require.NoError(t, err)
 
 	for _, nar := range entries {
-		_, err := c.db.GetNarRecord(tx, nar.NarHash)
+		_, err := c.db.GetNarByHash(context.Background(), nar.NarHash)
 		require.NoError(t, err)
 	}
 
-	_, err = c.db.GetNarRecord(tx, lastEntry.NarHash)
-	require.ErrorIs(t, database.ErrNotFound, err)
-
-	//nolint:errcheck
-	tx.Rollback()
+	_, err = c.db.GetNarByHash(context.Background(), lastEntry.NarHash)
+	require.ErrorIs(t, sql.ErrNoRows, err)
 }
