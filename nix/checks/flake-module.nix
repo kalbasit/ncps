@@ -17,14 +17,17 @@
         // devShells
         // {
           golangci-lint = config.packages.ncps.overrideAttrs (old: {
+            name = "golangci-lint";
+            src = ../../.;
             nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
             buildPhase = ''
               HOME=$TMPDIR
-              golangci-lint run
+              golangci-lint run --timeout 5m
             '';
             installPhase = ''
               touch $out
             '';
+            doCheck = false;
           });
         };
     };

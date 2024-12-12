@@ -12,7 +12,6 @@
 
         src = lib.fileset.toSource {
           fileset = lib.fileset.unions [
-            ../../.golangci.yml
             ../../cmd
             ../../db/migrations
             ../../go.mod

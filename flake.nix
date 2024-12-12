@@ -8,7 +8,7 @@
       url = "github:hercules-ci/flake-parts";
     };
 
-    nixpkgs.url = "github:NixOS/nixpkgs/release-24.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
 
     treefmt-nix = {
       inputs.nixpkgs.follows = "nixpkgs";
