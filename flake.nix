@@ -8,6 +8,11 @@
       url = "github:hercules-ci/flake-parts";
     };
 
+    git-hooks-nix = {
+      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:cachix/git-hooks.nix";
+    };
+
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
 
     treefmt-nix = {
@@ -23,6 +28,7 @@
         ./nix/devshells/flake-module.nix
         ./nix/formatter/flake-module.nix
         ./nix/packages/flake-module.nix
+        ./nix/pre-commit/flake-module.nix
       ];
       systems = [
         "x86_64-linux"

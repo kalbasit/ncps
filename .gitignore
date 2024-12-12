@@ -30,3 +30,6 @@ go.work.sum
 
 # SQLite database
 /db/database.sqlite3
+
+# Pre-commit configuration (auto-generated)
+/.pre-commit-config.yaml
