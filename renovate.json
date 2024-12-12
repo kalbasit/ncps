@@ -1,8 +1,16 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "addLabels": [
+    "dependencies"
+  ],
+  "automerge": true,
+  "dependencyDashboard": true,
   "extends": [
     "config:recommended"
   ],
+  "major": {
+    "automerge": false
+  },
   "nix": {
     "enabled": true
   }
