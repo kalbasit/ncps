@@ -37,7 +37,13 @@ runs:
       with:
         username: ${{ inputs.username }}
         password: ${{ inputs.password }}
-    - shell: bash
+    - name: Build the docker image pusher
+      shell: bash
       run: |
-        ls -la ~/.docker
-        cat ~/.docker/config.json
+        nix build .#push-docker-image
+    - name: Push the docker image
+      env:
+        DOCKER_IMAGE_TAGS: ${{ steps.meta.outputs.labels }}
+      shell: bash
+      run: |
+        ./result
