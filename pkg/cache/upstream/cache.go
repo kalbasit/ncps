@@ -114,9 +114,11 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		return ni, fmt.Errorf("error while checking the narInfo: %w", err)
 	}
 
+	// if len(c.publicKeys) > 0 {
 	if !signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, c.publicKeys) {
 		return ni, ErrSignatureValidationFailed
 	}
+	// }
 
 	return ni, nil
 }
