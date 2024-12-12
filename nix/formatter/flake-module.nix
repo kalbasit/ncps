@@ -10,14 +10,14 @@
       settings.global.excludes = [ ".envrc" ];
 
       programs = {
-        nixfmt.enable = true;
         deadnix.enable = true;
         gofumpt.enable = true;
-        yamlfmt.enable = true;
         mdformat.enable = true;
+        nixfmt.enable = true;
         sqlfluff.enable = true;
         sqlfluff.dialect = "sqlite";
         statix.enable = true;
+        yamlfmt.enable = true;
       };
     };
   };

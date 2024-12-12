@@ -9,8 +9,8 @@
     pre-commit.check.enable = false;
     pre-commit.settings.hooks = {
       deadnix.enable = true;
-      golangci-lint.enable = true;
       gofmt.enable = true;
+      golangci-lint.enable = true;
       no-commit-to-branch.enable = true;
       no-commit-to-branch.settings.branch = [ "main" ];
       nixfmt-rfc-style.enable = true;
