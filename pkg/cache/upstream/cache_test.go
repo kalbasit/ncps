@@ -3,7 +3,6 @@ package upstream_test
 import (
 	"context"
 	"io"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -13,6 +12,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 //nolint:gochecknoglobals
@@ -30,22 +30,33 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := upstream.New(logger, "", nil)
+			_, err := upstream.New(logger, nil, nil)
 			assert.ErrorIs(t, err, upstream.ErrHostnameRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := upstream.New(logger, "https://cache.nixos.org", nil)
-			assert.ErrorIs(t, err, upstream.ErrHostnameMustNotContainScheme)
+			_, err := upstream.New(logger, testhelper.MustParseURL(t, "cache.nixos.org"), nil)
+			assert.ErrorIs(t, err, upstream.ErrHostnameMustContainScheme)
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := upstream.New(logger, "cache.nixos.org/path/to", nil)
+			_, err := upstream.New(logger,
+				testhelper.MustParseURL(t, "https://cache.nixos.org/path/to"), nil)
+
 			assert.ErrorIs(t, err, upstream.ErrHostnameMustNotContainPath)
 		})
 
-		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := upstream.New(logger, "cache.nixos.org", nil)
+		t.Run("valid url with no path must not return no error", func(t *testing.T) {
+			_, err := upstream.New(logger,
+				testhelper.MustParseURL(t, "https://cache.nixos.org"), nil)
+
+			assert.NoError(t, err)
+		})
+
+		t.Run("valid url with only / must not return no error", func(t *testing.T) {
+			_, err := upstream.New(logger,
+				testhelper.MustParseURL(t, "https://cache.nixos.org/"), nil)
+
 			assert.NoError(t, err)
 		})
 	})
@@ -54,14 +65,14 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("invalid public keys", func(t *testing.T) {
-			_, err := upstream.New(logger, "cache.nixos.org", []string{"invalid"})
+			_, err := upstream.New(logger, testhelper.MustParseURL(t, "https://cache.nixos.org"), []string{"invalid"})
 			assert.True(t, strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:"))
 		})
 
 		t.Run("valid public keys", func(t *testing.T) {
 			_, err := upstream.New(
 				logger,
-				"cache.nixos.org",
+				testhelper.MustParseURL(t, "https://cache.nixos.org"),
 				testdata.PublicKeys(),
 			)
 			assert.NoError(t, err)
@@ -73,7 +84,7 @@ func TestNew(t *testing.T) {
 
 		c, err := upstream.New(
 			logger,
-			"cache.nixos.org",
+			testhelper.MustParseURL(t, "https://cache.nixos.org"),
 			testdata.PublicKeys(),
 		)
 		require.NoError(t, err)
@@ -85,7 +96,7 @@ func TestNew(t *testing.T) {
 func TestGetNarInfo(t *testing.T) {
 	c, err := upstream.New(
 		logger,
-		"cache.nixos.org",
+		testhelper.MustParseURL(t, "https://cache.nixos.org"),
 		testdata.PublicKeys(),
 	)
 	require.NoError(t, err)
@@ -114,12 +125,9 @@ func TestGetNarInfo(t *testing.T) {
 		ts := testdata.HTTPTestServer(t, 40)
 		defer ts.Close()
 
-		tu, err := url.Parse(ts.URL)
-		require.NoError(t, err)
-
 		c, err := upstream.New(
 			logger,
-			tu.Host,
+			testhelper.MustParseURL(t, ts.URL),
 			testdata.PublicKeys(),
 		)
 		require.NoError(t, err)
@@ -137,12 +145,9 @@ func TestGetNarInfo(t *testing.T) {
 			ts := testdata.HTTPTestServer(t, 40)
 			defer ts.Close()
 
-			tu, err := url.Parse(ts.URL)
-			require.NoError(t, err)
-
 			c, err := upstream.New(
 				logger,
-				tu.Host,
+				testhelper.MustParseURL(t, ts.URL),
 				testdata.PublicKeys(),
 			)
 			require.NoError(t, err)
@@ -156,7 +161,7 @@ func TestGetNarInfo(t *testing.T) {
 func TestGetNar(t *testing.T) {
 	c, err := upstream.New(
 		logger,
-		"cache.nixos.org",
+		testhelper.MustParseURL(t, "https://cache.nixos.org"),
 		testdata.PublicKeys(),
 	)
 	require.NoError(t, err)

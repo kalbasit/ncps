@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
@@ -22,8 +22,8 @@ var (
 	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
 
-	// ErrHostnameMustNotContainScheme is returned if the given hostName to New contained a scheme.
-	ErrHostnameMustNotContainScheme = errors.New("hostName must not contain scheme")
+	// ErrHostnameMustContainScheme is returned if the given hostName to New did not contain a scheme.
+	ErrHostnameMustContainScheme = errors.New("url must contain scheme")
 
 	// ErrHostnameNotValid is returned if the given hostName to New is not valid.
 	ErrHostnameNotValid = errors.New("hostName is not valid")
@@ -43,16 +43,16 @@ var (
 
 // Cache represents the upstream cache service.
 type Cache struct {
-	hostName   string
+	url        *url.URL
 	logger     log15.Logger
 	priority   uint64
 	publicKeys []signature.PublicKey
 }
 
-func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) {
-	c := Cache{logger: logger, hostName: hostName}
+func New(logger log15.Logger, u *url.URL, pubKeys []string) (Cache, error) {
+	c := Cache{logger: logger, url: u}
 
-	if err := c.validateHostname(hostName); err != nil {
+	if err := c.validateURL(u); err != nil {
 		return c, err
 	}
 
@@ -67,7 +67,7 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 
 	priority, err := c.parsePriority()
 	if err != nil {
-		return c, fmt.Errorf("error parsing the priority for %q: %w", hostName, err)
+		return c, fmt.Errorf("error parsing the priority for %q: %w", u, err)
 	}
 
 	c.priority = priority
@@ -76,11 +76,11 @@ func New(logger log15.Logger, hostName string, pubKeys []string) (Cache, error) 
 }
 
 // GetHostname returns the hostname.
-func (c Cache) GetHostname() string { return c.hostName }
+func (c Cache) GetHostname() string { return c.url.Hostname() }
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+helper.NarInfoURLPath(hash), nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(helper.NarInfoURLPath(hash)).String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -126,7 +126,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
 	log := c.logger.New("hash", hash, "compression", compression)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+helper.NarURLPath(hash, compression), nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(helper.NarURLPath(hash, compression)).String(), nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -166,15 +166,6 @@ func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.
 // GetPriority returns the priority of this upstream cache.
 func (c Cache) GetPriority() uint64 { return c.priority }
 
-func (c Cache) getHostnameWithScheme() string {
-	scheme := "https"
-	if strings.HasPrefix(c.hostName, "127.0.0.1") {
-		scheme = "http"
-	}
-
-	return scheme + "://" + c.hostName
-}
-
 func (c Cache) parsePriority() (uint64, error) {
 	// TODO: Should probably pass context around and have things like logger in the context
 	ctx := context.Background()
@@ -182,7 +173,7 @@ func (c Cache) parsePriority() (uint64, error) {
 	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFn()
 
-	r, err := http.NewRequestWithContext(ctx, "GET", c.getHostnameWithScheme()+"/nix-cache-info", nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath("/nix-cache-info").String(), nil)
 	if err != nil {
 		return 0, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -208,21 +199,21 @@ func (c Cache) parsePriority() (uint64, error) {
 	return nci.Priority, nil
 }
 
-func (c Cache) validateHostname(hostName string) error {
-	if hostName == "" {
-		c.logger.Error("given hostname is empty", "hostName", hostName)
+func (c Cache) validateURL(u *url.URL) error {
+	if u == nil {
+		c.logger.Error("given url is nil", "url", u)
 
 		return ErrHostnameRequired
 	}
 
-	if strings.Contains(hostName, "://") {
-		c.logger.Error("hostname should not contain a scheme", "hostName", hostName)
+	if u.Scheme == "" {
+		c.logger.Error("hostname should not contain a scheme", "url", u)
 
-		return ErrHostnameMustNotContainScheme
+		return ErrHostnameMustContainScheme
 	}
 
-	if strings.Contains(hostName, "/") {
-		c.logger.Error("hostname should not contain a path", "hostName", hostName)
+	if u.Path != "" {
+		c.logger.Error("hostname should not contain a path", "url", u)
 
 		return ErrHostnameMustNotContainPath
 	}

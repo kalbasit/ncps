@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,10 +37,7 @@ func TestServeHTTP(t *testing.T) {
 	hts := testdata.HTTPTestServer(t, 40)
 	defer hts.Close()
 
-	htu, err := url.Parse(hts.URL)
-	require.NoError(t, err)
-
-	uc, err := upstream.New(logger, htu.Host, testdata.PublicKeys())
+	uc, err := upstream.New(logger, testhelper.MustParseURL(t, hts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
 	t.Run("DELETE requests", func(t *testing.T) {
