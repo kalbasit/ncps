@@ -87,7 +87,7 @@ func serveCommand(logger log15.Logger) *cli.Command {
 			},
 			&cli.StringSliceFlag{
 				Name:     "upstream-cache",
-				Usage:    "Set to host for each upstream cache",
+				Usage:    "Set to URL (with scheme) for each upstream cache",
 				Sources:  cli.EnvVars("UPSTREAM_CACHES"),
 				Required: true,
 			},

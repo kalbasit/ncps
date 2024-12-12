@@ -136,8 +136,8 @@ spec:
             - serve
             - --cache-hostname=nix-cache.yournetwork.local # TODO: Replace with your own hostname
             - --cache-data-path=/storage
-            - --upstream-cache=cache.nixos.org
-            - --upstream-cache=nix-community.cachix.org
+            - --upstream-cache=https://cache.nixos.org
+            - --upstream-cache=https://nix-community.cachix.org
             - --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             - --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
           ports:
@@ -189,7 +189,7 @@ ncps can be configured using the following flags:
 - `--cache-lru-schedule`: The cron spec for cleaning the store to keep it under `--cache-max-size`. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation (Environment variable: `$CACHE_LRU_SCHEDULE`)
 - `--cache-lru-schedule-timezone`: The name of the timezone to use for the cron schedule (default: "Local"). (Environment variable: `$CACHE_LRU_SCHEDULE_TZ`)
 - `--server-addr`: The address and port the server listens on (default: ":8501"). (Environment variable: `$SERVER_ADDR`)
-- `--upstream-cache`: The **hostname** of an upstream binary cache (e.g., `cache.nixos.org`). **Do not include the scheme (https://).** This flag can be used multiple times to specify multiple upstream caches, for example: `--upstream-cache cache.nixos.org --upstream-cache nix-community.cachix.org`. (Environment variable: `$UPSTREAM_CACHES`)
+- `--upstream-cache`: The URL of an upstream binary cache (e.g., `https://cache.nixos.org`). This flag can be used multiple times to specify multiple upstream caches. (Environment variable: `$UPSTREAM_CACHES`)
 - `--upstream-public-key`: The public key of an upstream cache in the format `host:public-key`. This flag is used to verify the signatures of store paths downloaded from upstream caches. This flag can be used multiple times, once for each upstream cache. (Environment variable: `$UPSTREAM_PUBLIC_KEYS`)
 
 ## Nix Configuration
