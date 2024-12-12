@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,41 @@ var logger = log15.New()
 //nolint:gochecknoinits
 func init() {
 	logger.SetHandler(log15.DiscardHandler())
+}
+
+func TestGetNarInfoByHash(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "database-path-")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir) // clean up
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open(logger, dbFile)
+	require.NoError(t, err)
+
+	t.Run("narinfo not existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.GetNarInfoByHash(context.Background(), hash)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
+	})
+
+	t.Run("narinfo existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni1, err := db.CreateNarInfo(context.Background(), hash)
+		require.NoError(t, err)
+
+		ni2, err := db.GetNarInfoByHash(context.Background(), hash)
+		require.NoError(t, err)
+
+		assert.Equal(t, ni1.Hash, ni2.Hash)
+	})
 }
 
 //nolint:paralleltest
@@ -280,6 +316,55 @@ func TestDeleteNarInfoRecord(t *testing.T) {
 			require.NoError(t, rows.Err())
 			assert.Empty(t, nims)
 		})
+	})
+}
+
+func TestGetNarByHash(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "database-path-")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir) // clean up
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open(logger, dbFile)
+	require.NoError(t, err)
+
+	hash, err := helper.RandString(32, nil)
+	require.NoError(t, err)
+
+	narInfo, err := db.CreateNarInfo(context.Background(), hash)
+	require.NoError(t, err)
+
+	t.Run("nar not existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.GetNarByHash(context.Background(), hash)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
+	})
+
+	t.Run("nar existing", func(t *testing.T) {
+		hash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni1, err := db.CreateNar(context.Background(), database.CreateNarParams{
+			NarInfoID:   narInfo.ID,
+			Hash:        hash,
+			Compression: "xz",
+			FileSize:    123,
+		})
+		require.NoError(t, err)
+
+		ni2, err := db.GetNarByHash(context.Background(), hash)
+		require.NoError(t, err)
+
+		assert.Equal(t, ni1.Hash, ni2.Hash)
+		assert.Equal(t, ni1.NarInfoID, ni2.NarInfoID)
+		assert.Equal(t, ni1.Compression, ni2.Compression)
+		assert.Equal(t, ni1.FileSize, ni2.FileSize)
 	})
 }
 
