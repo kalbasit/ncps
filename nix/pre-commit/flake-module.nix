@@ -15,6 +15,7 @@
         no-commit-to-branch.settings.branch = [ "main" ];
         nixfmt-rfc-style.enable = true;
         statix.enable = true;
+        trim-trailing-whitespace.enable = true;
       };
     };
 }
