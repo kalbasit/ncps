@@ -3,6 +3,7 @@ package upstream_test
 import (
 	"context"
 	"io"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -87,68 +88,105 @@ func TestNew(t *testing.T) {
 }
 
 func TestGetNarInfo(t *testing.T) {
-	c, err := upstream.New(
-		logger,
-		testhelper.MustParseURL(t, "https://cache.nixos.org"),
-		testdata.PublicKeys(),
-	)
-	require.NoError(t, err)
+	t.Parallel()
 
-	t.Run("hash not found", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := c.GetNarInfo(context.Background(), "abc123")
-		assert.ErrorIs(t, err, upstream.ErrNotFound)
-	})
-
-	t.Run("hash is found", func(t *testing.T) {
-		t.Parallel()
-
-		ni, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
-		require.NoError(t, err)
-
-		assert.Equal(t, "/nix/store/n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1", ni.StorePath)
-	})
-
-	t.Run("check has failed", func(t *testing.T) {
-		t.Parallel()
-
-		hash := "broken-" + testdata.Nar1.NarInfoHash
-
-		ts := testdata.HTTPTestServer(t, 40)
-		defer ts.Close()
-
-		c, err := upstream.New(
-			logger,
-			testhelper.MustParseURL(t, ts.URL),
-			testdata.PublicKeys(),
-		)
-		require.NoError(t, err)
-
-		_, err = c.GetNarInfo(context.Background(), hash)
-		assert.ErrorContains(t, err, "error while checking the narInfo: invalid Reference[0]: notfound-path")
-	})
-
-	for _, entry := range testdata.Entries {
-		t.Run("check does not fail", func(t *testing.T) {
+	testFn := func(withKeys bool) func(*testing.T) {
+		return func(t *testing.T) {
 			t.Parallel()
 
-			hash := entry.NarInfoHash
+			var (
+				c   upstream.Cache
+				err error
+			)
 
 			ts := testdata.HTTPTestServer(t, 40)
 			defer ts.Close()
 
-			c, err := upstream.New(
-				logger,
-				testhelper.MustParseURL(t, ts.URL),
-				testdata.PublicKeys(),
-			)
+			if withKeys {
+				c, err = upstream.New(
+					logger,
+					testhelper.MustParseURL(t, ts.URL),
+					testdata.PublicKeys(),
+				)
+			} else {
+				c, err = upstream.New(
+					logger,
+					testhelper.MustParseURL(t, ts.URL),
+					nil,
+				)
+			}
+
 			require.NoError(t, err)
 
-			_, err = c.GetNarInfo(context.Background(), hash)
-			assert.NoError(t, err)
-		})
+			t.Run("hash not found", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.GetNarInfo(context.Background(), "abc123")
+				assert.ErrorIs(t, err, upstream.ErrNotFound)
+			})
+
+			t.Run("hash is found", func(t *testing.T) {
+				t.Parallel()
+
+				ni, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+				require.NoError(t, err)
+
+				assert.Equal(t, "/nix/store/n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1", ni.StorePath)
+			})
+
+			t.Run("check has failed", func(t *testing.T) {
+				t.Parallel()
+
+				hash := "broken-" + testdata.Nar1.NarInfoHash
+
+				ts := testdata.HTTPTestServer(t, 40)
+				defer ts.Close()
+
+				tu, err := url.Parse(ts.URL)
+				require.NoError(t, err)
+
+				c, err := upstream.New(
+					logger,
+					tu.Host,
+					testdata.PublicKeys(),
+				)
+				require.NoError(t, err)
+
+				_, err = c.GetNarInfo(context.Background(), hash)
+				assert.ErrorContains(t, err, "error while checking the narInfo: invalid Reference[0]: notfound-path")
+			})
+
+			for _, entry := range testdata.Entries {
+				t.Run("check does not fail", func(t *testing.T) {
+					t.Parallel()
+
+					hash := entry.NarInfoHash
+
+					ts := testdata.HTTPTestServer(t, 40)
+					defer ts.Close()
+
+					tu, err := url.Parse(ts.URL)
+					require.NoError(t, err)
+
+					c, err := upstream.New(
+						logger,
+						tu.Host,
+						testdata.PublicKeys(),
+					)
+					require.NoError(t, err)
+
+					_, err = c.GetNarInfo(context.Background(), hash)
+					assert.NoError(t, err)
+				})
+			}
+		}
 	}
+
+	//nolint:paralleltest
+	t.Run("upstream without public keys", testFn(false))
+
+	//nolint:paralleltest
+	t.Run("upstream with public keys", testFn(true))
 }
 
 func TestGetNar(t *testing.T) {
