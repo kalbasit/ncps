@@ -12,22 +12,22 @@ jobs:
       contents: "read"
     steps:
       - uses: actions/checkout@v4
-        # - uses: DeterminateSystems/nix-installer-action@v16
-        # - uses: DeterminateSystems/magic-nix-cache-action@v8
-        # - uses: DeterminateSystems/flake-checker-action@main
-        # - run: nix flake check
-  # docker:
-  #   runs-on: ubuntu-latest
-  #   needs: flake-check
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: ./.github/actions/docker
-  #       with:
-  #         # NOTE: Enable more platform when we have demand for them and I can test them.
-  #         # platforms: linux/amd64,linux/arm64,linux/arm/v7
-  #         images: kalbasit/ncps
-  #         username: ${{ vars.DOCKERHUB_USERNAME }}
-  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - uses: DeterminateSystems/flake-checker-action@main
+      - run: nix flake check
+  docker:
+    runs-on: ubuntu-latest
+    needs: flake-check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/docker
+        with:
+          # NOTE: Enable more platform when we have demand for them and I can test them.
+          # platforms: linux/amd64,linux/arm64,linux/arm/v7
+          images: kalbasit/ncps
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
   release:
     runs-on: ubuntu-latest
     needs: flake-check
