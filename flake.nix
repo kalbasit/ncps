@@ -29,6 +29,7 @@
         ./nix/devshells/flake-module.nix
         ./nix/formatter/flake-module.nix
         ./nix/packages/flake-module.nix
+        ./nix/pre-commit/flake-module.nix
       ];
       systems = [
         "x86_64-linux"
