@@ -34,6 +34,8 @@ runs:
       with:
         username: ${{ inputs.username }}
         password: ${{ inputs.password }}
+    - uses: DeterminateSystems/nix-installer-action@v16
+    - uses: DeterminateSystems/magic-nix-cache-action@v8
     - name: Build the docker image pusher
       shell: bash
       run: |
