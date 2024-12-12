@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "addLabels": [
+    "dependencies"
+  ],
+  "extends": [
+    "config:recommended",
+    "schedule:daily",
+    ":automergeMinor"
+  ],
+  "nix": {
+    "enabled": true
+  }
+}
