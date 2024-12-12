@@ -41,7 +41,7 @@ runs:
     - name: Push the docker image
       if: ${{ inputs.push }}
       env:
-        DOCKER_IMAGE_TAGS: ${{ steps.meta.outputs.labels }}
+        DOCKER_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
       shell: bash
       run: |
         ./result
