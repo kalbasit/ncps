@@ -22,7 +22,7 @@
             nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
             buildPhase = ''
               HOME=$TMPDIR
-              golangci-lint run --timeout 5m
+              golangci-lint run --timeout 10m
             '';
             installPhase = ''
               touch $out
