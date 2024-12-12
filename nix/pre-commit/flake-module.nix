@@ -8,6 +8,7 @@
   perSystem = {
     pre-commit.check.enable = false;
     pre-commit.settings.hooks = {
+      deadnix.enable = true;
       golangci-lint.enable = true;
       gofmt.enable = true;
       no-commit-to-branch.enable = true;
@@ -15,6 +16,7 @@
       nixfmt-rfc-style.enable = true;
       statix.enable = true;
       trim-trailing-whitespace.enable = true;
+      yamlfmt.enable = true;
     };
   };
 }
