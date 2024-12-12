@@ -31,19 +31,12 @@ func TestNew(t *testing.T) {
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
 			_, err := upstream.New(logger, nil, nil)
-			assert.ErrorIs(t, err, upstream.ErrHostnameRequired)
+			assert.ErrorIs(t, err, upstream.ErrURLRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
 			_, err := upstream.New(logger, testhelper.MustParseURL(t, "cache.nixos.org"), nil)
-			assert.ErrorIs(t, err, upstream.ErrHostnameMustContainScheme)
-		})
-
-		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := upstream.New(logger,
-				testhelper.MustParseURL(t, "https://cache.nixos.org/path/to"), nil)
-
-			assert.ErrorIs(t, err, upstream.ErrHostnameMustNotContainPath)
+			assert.ErrorIs(t, err, upstream.ErrURLMustContainScheme)
 		})
 
 		t.Run("valid url with no path must not return no error", func(t *testing.T) {

@@ -19,17 +19,14 @@ import (
 )
 
 var (
-	// ErrHostnameRequired is returned if the given hostName to New is not given.
-	ErrHostnameRequired = errors.New("hostName is required")
+	// ErrURLRequired is returned if the given URL to New is not given.
+	ErrURLRequired = errors.New("the URL is required")
 
-	// ErrHostnameMustContainScheme is returned if the given hostName to New did not contain a scheme.
-	ErrHostnameMustContainScheme = errors.New("url must contain scheme")
+	// ErrURLMustContainScheme is returned if the given URL to New did not contain a scheme.
+	ErrURLMustContainScheme = errors.New("the URL must contain scheme")
 
-	// ErrHostnameNotValid is returned if the given hostName to New is not valid.
-	ErrHostnameNotValid = errors.New("hostName is not valid")
-
-	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
-	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
+	// ErrInvalidURL is returned if the given hostName to New is not valid.
+	ErrInvalidURL = errors.New("the URL is not valid")
 
 	// ErrNotFound is returned if the nar or narinfo were not found.
 	ErrNotFound = errors.New("not found")
@@ -203,19 +200,13 @@ func (c Cache) validateURL(u *url.URL) error {
 	if u == nil {
 		c.logger.Error("given url is nil", "url", u)
 
-		return ErrHostnameRequired
+		return ErrURLRequired
 	}
 
 	if u.Scheme == "" {
 		c.logger.Error("hostname should not contain a scheme", "url", u)
 
-		return ErrHostnameMustContainScheme
-	}
-
-	if u.Path != "" {
-		c.logger.Error("hostname should not contain a path", "url", u)
-
-		return ErrHostnameMustNotContainPath
+		return ErrURLMustContainScheme
 	}
 
 	return nil
