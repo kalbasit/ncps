@@ -26,6 +26,9 @@ func init() {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
+	ts := testdata.HTTPTestServer(t, 40)
+	defer ts.Close()
+
 	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
 		t.Parallel()
 
@@ -35,7 +38,7 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := upstream.New(logger, testhelper.MustParseURL(t, "cache.nixos.org"), nil)
+			_, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
 			assert.ErrorIs(t, err, upstream.ErrURLMustContainScheme)
 		})
 
@@ -58,14 +61,14 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("invalid public keys", func(t *testing.T) {
-			_, err := upstream.New(logger, testhelper.MustParseURL(t, "https://cache.nixos.org"), []string{"invalid"})
+			_, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), []string{"invalid"})
 			assert.True(t, strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:"))
 		})
 
 		t.Run("valid public keys", func(t *testing.T) {
 			_, err := upstream.New(
 				logger,
-				testhelper.MustParseURL(t, "https://cache.nixos.org"),
+				testhelper.MustParseURL(t, ts.URL),
 				testdata.PublicKeys(),
 			)
 			assert.NoError(t, err)
@@ -77,7 +80,7 @@ func TestNew(t *testing.T) {
 
 		c, err := upstream.New(
 			logger,
-			testhelper.MustParseURL(t, "https://cache.nixos.org"),
+			testhelper.MustParseURL(t, ts.URL),
 			testdata.PublicKeys(),
 		)
 		require.NoError(t, err)
