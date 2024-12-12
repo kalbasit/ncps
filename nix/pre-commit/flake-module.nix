@@ -6,8 +6,9 @@
   ];
 
   perSystem = {
+    pre-commit.check.enable = false;
     pre-commit.settings.hooks = {
-      # golangci-lint.enable = true;
+      golangci-lint.enable = true;
       gofmt.enable = true;
       no-commit-to-branch.enable = true;
       no-commit-to-branch.settings.branch = [ "main" ];
