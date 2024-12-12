@@ -15,6 +15,9 @@
         ];
         config = {
           Cmd = [ "/bin/ncps" ];
+          ExposedPorts = {
+            "8501/tcp" = { };
+          };
         };
       };
     };
