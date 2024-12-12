@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"math/rand/v2"
 	"net/http/httptest"
 	"os"
@@ -140,8 +139,6 @@ func TestRunLRU(t *testing.T) {
 
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
-
-	fmt.Printf("URL ====> %s\n", ts.URL)
 
 	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)

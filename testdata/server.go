@@ -1,7 +1,6 @@
 package testdata
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,8 +17,6 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("Path ===> %s\n", r.URL.Path)
-
 		if r.URL.Path == "/nix-cache-info" {
 			_, err := w.Write([]byte(NixStoreInfo(priority)))
 			require.NoError(t, err)
