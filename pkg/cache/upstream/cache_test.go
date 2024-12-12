@@ -83,10 +83,17 @@ func TestNew(t *testing.T) {
 }
 
 func TestGetNarInfo(t *testing.T) {
+	t.Parallel()
+
 	testFn := func(withKeys bool) func(*testing.T) {
 		return func(t *testing.T) {
-			var c upstream.Cache
-			var err error
+			t.Parallel()
+
+			var (
+				c upstream.Cache
+
+				err error
+			)
 
 			if withKeys {
 				c, err = upstream.New(
@@ -168,7 +175,10 @@ func TestGetNarInfo(t *testing.T) {
 		}
 	}
 
+	//nolint:paralleltest
 	t.Run("upstream without public keys", testFn(false))
+
+	//nolint:paralleltest
 	t.Run("upstream with public keys", testFn(true))
 }
 
