@@ -61,7 +61,13 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("path must be writable", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/root")
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir) // clean up
+
+			require.NoError(t, os.Chmod(dir, 0500))
+
+			_, err = cache.New(logger, "cache.example.com", dir)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
 		})
 
