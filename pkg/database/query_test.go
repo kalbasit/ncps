@@ -65,7 +65,7 @@ func TestGetNarInfoByHash(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestInsertNarInfoRecord(t *testing.T) {
+func TestInsertNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -167,7 +167,7 @@ func TestInsertNarInfoRecord(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestTouchNarInfoRecord(t *testing.T) {
+func TestTouchNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -257,7 +257,7 @@ func TestTouchNarInfoRecord(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestDeleteNarInfoRecord(t *testing.T) {
+func TestDeleteNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -369,7 +369,7 @@ func TestGetNarByHash(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestInsertNarRecord(t *testing.T) {
+func TestInsertNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -474,7 +474,7 @@ func TestInsertNarRecord(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestTouchNarRecord(t *testing.T) {
+func TestTouchNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -613,7 +613,7 @@ func TestTouchNarRecord(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestDeleteNarRecord(t *testing.T) {
+func TestDeleteNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
@@ -742,7 +742,7 @@ func TestNarTotalSize(t *testing.T) {
 	}
 }
 
-func TestGetLeastAccessedNarRecords(t *testing.T) {
+func TestGetLeastAccessedNars(t *testing.T) {
 	t.Parallel()
 
 	dir, err := os.MkdirTemp("", "database-path-")
