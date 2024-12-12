@@ -91,10 +91,9 @@ func serveCommand(logger log15.Logger) *cli.Command {
 				Required: true,
 			},
 			&cli.StringSliceFlag{
-				Name:     "upstream-public-key",
-				Usage:    "Set to host:public-key for each upstream cache",
-				Sources:  cli.EnvVars("UPSTREAM_PUBLIC_KEYS"),
-				Required: true,
+				Name:    "upstream-public-key",
+				Usage:   "Set to host:public-key for each upstream cache",
+				Sources: cli.EnvVars("UPSTREAM_PUBLIC_KEYS"),
 			},
 		},
 	}
