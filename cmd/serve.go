@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"time"
 
@@ -136,10 +137,15 @@ func getUpstreamCaches(_ context.Context, logger log15.Logger, cmd *cli.Command)
 
 	ucs := make([]upstream.Cache, 0, len(ucSlice))
 
-	for _, host := range ucSlice {
+	for _, us := range ucSlice {
 		var pubKeys []string
 
-		rx := regexp.MustCompile(fmt.Sprintf(`^%s-[0-9]+:[A-Za-z0-9+/=]+$`, regexp.QuoteMeta(host)))
+		u, err := url.Parse(us)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing --upstream-cache=%q: %w", us, err)
+		}
+
+		rx := regexp.MustCompile(fmt.Sprintf(`^%s-[0-9]+:[A-Za-z0-9+/=]+$`, regexp.QuoteMeta(u.Host)))
 
 		for _, pubKey := range cmd.StringSlice("upstream-public-key") {
 			if rx.MatchString(pubKey) {
@@ -147,7 +153,7 @@ func getUpstreamCaches(_ context.Context, logger log15.Logger, cmd *cli.Command)
 			}
 		}
 
-		uc, err := upstream.New(logger, host, pubKeys)
+		uc, err := upstream.New(logger, u, pubKeys)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a new upstream cache: %w", err)
 		}
