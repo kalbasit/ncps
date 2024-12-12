@@ -1,5 +1,6 @@
 {
   imports = [
+    ./docker.nix
     ./ncps.nix
   ];
 
