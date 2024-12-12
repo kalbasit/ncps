@@ -77,7 +77,10 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(helper.NarInfoURLPath(hash)).String(), nil)
+	uuu := c.url.JoinPath(helper.NarInfoURLPath(hash))
+	fmt.Printf("Calling ===> %s\n", uuu)
+
+	r, err := http.NewRequestWithContext(ctx, "GET", uuu.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}

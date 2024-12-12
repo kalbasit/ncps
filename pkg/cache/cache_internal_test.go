@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math/rand/v2"
 	"net/http/httptest"
 	"os"
@@ -140,6 +141,8 @@ func TestRunLRU(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
+	fmt.Printf("URL ====> %s\n", ts.URL)
+
 	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)
 
@@ -165,12 +168,12 @@ func TestRunLRU(t *testing.T) {
 
 	var sizePulled int64
 
-	for _, nar := range allEntries {
+	for i, nar := range allEntries {
 		_, err := c.GetNarInfo(context.Background(), nar.NarInfoHash)
-		require.NoError(t, err)
+		require.NoErrorf(t, err, "unable to get narinfo for idx %d", i)
 
 		size, _, err := c.GetNar(context.Background(), nar.NarHash, "xz")
-		require.NoError(t, err)
+		require.NoError(t, err, "unable to get nar for idx %d", i)
 
 		sizePulled += size
 	}
