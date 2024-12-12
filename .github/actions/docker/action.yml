@@ -4,9 +4,6 @@ inputs:
   images:
     description: "List of Docker images to use as base name for tags"
     required: false
-  platforms:
-    description: "List of target platforms for build"
-    required: false
   push:
     description: "Push images to the Docker registry"
     required: false
@@ -42,6 +39,7 @@ runs:
       run: |
         nix build .#push-docker-image
     - name: Push the docker image
+      if: ${{ inputs.push }}
       env:
         DOCKER_IMAGE_TAGS: ${{ steps.meta.outputs.labels }}
       shell: bash
