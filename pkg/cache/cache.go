@@ -302,7 +302,11 @@ func (c *Cache) hasNarInStore(log log15.Logger, hash, compression string) bool {
 	return c.hasInStore(log, c.getNarPathInStore(hash, compression))
 }
 
-func (c *Cache) getNarFromStore(ctx context.Context, log log15.Logger, hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) getNarFromStore(
+	ctx context.Context,
+	log log15.Logger,
+	hash, compression string,
+) (int64, io.ReadCloser, error) {
 	size, r, err := c.getFromStore(log, c.getNarPathInStore(hash, compression))
 	if err != nil {
 		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
@@ -411,7 +415,7 @@ func (c *Cache) deleteNarFromStore(log log15.Logger, hash, compression string) e
 	ctx := context.Background()
 
 	if _, err := c.db.DeleteNarByHash(ctx, hash); err != nil {
-		return fmt.Errorf("error deleting narinfo from the database: %s", err)
+		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
 	return os.Remove(c.getNarPathInStore(hash, compression))
@@ -460,7 +464,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 }
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
-func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) error {
+func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -772,7 +776,7 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, log log15.Logger, ha
 	}
 
 	if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
-		return fmt.Errorf("error deleting narinfo from the database: %s", err)
+		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
 	return os.Remove(c.getNarInfoPathInStore(hash))
@@ -915,7 +919,7 @@ func (c *Cache) dbDirPath() string        { return filepath.Join(c.path, "var", 
 func (c *Cache) dbKeyPath() string        { return filepath.Join(c.dbDirPath(), "db.sqlite") }
 
 func (c *Cache) setupDataBase() error {
-	db, err := database.Open(c.logger, c.dbKeyPath())
+	db, err := database.Open(c.dbKeyPath())
 	if err != nil {
 		return fmt.Errorf("error opening the database %q: %w", c.dbKeyPath(), err)
 	}

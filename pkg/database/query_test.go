@@ -32,17 +32,19 @@ func init() {
 func TestGetNarInfoByHash(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "database-path-")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open(logger, dbFile)
-	require.NoError(t, err)
-
 	t.Run("narinfo not existing", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
+		require.NoError(t, err)
+
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
@@ -51,6 +53,18 @@ func TestGetNarInfoByHash(t *testing.T) {
 	})
 
 	t.Run("narinfo existing", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
+		require.NoError(t, err)
+
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
@@ -73,7 +87,7 @@ func TestInsertNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("inserting one record", func(t *testing.T) {
@@ -175,7 +189,7 @@ func TestTouchNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
@@ -265,7 +279,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
@@ -322,43 +336,63 @@ func TestDeleteNarInfo(t *testing.T) {
 func TestGetNarByHash(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "database-path-")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open(logger, dbFile)
-	require.NoError(t, err)
-
-	hash, err := helper.RandString(32, nil)
-	require.NoError(t, err)
-
-	narInfo, err := db.CreateNarInfo(context.Background(), hash)
-	require.NoError(t, err)
-
 	t.Run("nar not existing", func(t *testing.T) {
-		hash, err := helper.RandString(32, nil)
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
 		require.NoError(t, err)
 
-		_, err = db.GetNarByHash(context.Background(), hash)
+		narInfoHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), narInfoHash)
+		require.NoError(t, err)
+
+		narHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.GetNarByHash(context.Background(), narHash)
 		assert.ErrorIs(t, err, sql.ErrNoRows)
 	})
 
 	t.Run("nar existing", func(t *testing.T) {
-		hash, err := helper.RandString(32, nil)
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "database-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open(dbFile)
+		require.NoError(t, err)
+
+		narInfoHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		narInfo, err := db.CreateNarInfo(context.Background(), narInfoHash)
+		require.NoError(t, err)
+
+		narHash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
 		ni1, err := db.CreateNar(context.Background(), database.CreateNarParams{
 			NarInfoID:   narInfo.ID,
-			Hash:        hash,
+			Hash:        narHash,
 			Compression: "xz",
 			FileSize:    123,
 		})
 		require.NoError(t, err)
 
-		ni2, err := db.GetNarByHash(context.Background(), hash)
+		ni2, err := db.GetNarByHash(context.Background(), narHash)
 		require.NoError(t, err)
 
 		assert.Equal(t, ni1.Hash, ni2.Hash)
@@ -377,7 +411,7 @@ func TestInsertNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	// create a narinfo
@@ -482,7 +516,7 @@ func TestTouchNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -621,7 +655,7 @@ func TestDeleteNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -715,12 +749,12 @@ func TestNarTotalSize(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
-	var expectedSize float64
+	var expectedSize uint64
 	for _, nar := range testdata.Entries {
-		expectedSize += float64(len(nar.NarText))
+		expectedSize += uint64(len(nar.NarText))
 
 		narInfo, err := db.CreateNarInfo(context.Background(), nar.NarInfoHash)
 		require.NoError(t, err)
@@ -738,7 +772,7 @@ func TestNarTotalSize(t *testing.T) {
 	require.NoError(t, err)
 
 	if assert.True(t, size.Valid) {
-		assert.Equal(t, expectedSize, size.Float64)
+		assert.Equal(t, expectedSize, uint64(size.Float64))
 	}
 }
 
@@ -752,7 +786,7 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open(logger, dbFile)
+	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
 	var totalSize uint64

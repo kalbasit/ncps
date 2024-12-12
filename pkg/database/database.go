@@ -4,12 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/inconshreveable/log15/v3"
 	"github.com/mattn/go-sqlite3"
 )
 
 // Open opens a sqlite3 database, and creates it if necessary.
-func Open(logger log15.Logger, dbpath string) (*Queries, error) {
+func Open(dbpath string) (*Queries, error) {
 	sdb, err := sql.Open("sqlite3", dbpath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening the SQLite3 database at %q: %w", dbpath, err)
