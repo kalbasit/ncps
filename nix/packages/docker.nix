@@ -42,6 +42,7 @@
         fi
 
         for tag in $DOCKER_IMAGE_TAGS; do
+          echo "Pushing the image: $tag"
           ${pkgs.skopeo}/bin/skopeo --insecure-policy copy \
             "docker-archive:${config.packages.docker}" docker://$tag
         done
