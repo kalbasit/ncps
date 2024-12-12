@@ -490,13 +490,13 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
-func (c *Cache) DeleteNarInfo(_ context.Context, hash string) error {
+func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	log := c.logger.New("hash", hash)
 
-	return c.deleteNarInfoFromStore(log, hash)
+	return c.deleteNarInfoFromStore(ctx, log, hash)
 }
 
 func (c *Cache) prePullNar(log log15.Logger, url string) {
@@ -659,7 +659,7 @@ func (c *Cache) purgeNarInfo(ctx context.Context, log log15.Logger, hash, narHas
 	}
 
 	if c.hasNarInfoInStore(log, hash) {
-		if err := c.deleteNarInfoFromStore(log, hash); err != nil {
+		if err := c.deleteNarInfoFromStore(ctx, log, hash); err != nil {
 			return fmt.Errorf("error removing narinfo from store: %w", err)
 		}
 	}
@@ -766,14 +766,10 @@ func (c *Cache) storeInDatabase(log log15.Logger, hash string, narInfo *narinfo.
 	return nil
 }
 
-func (c *Cache) deleteNarInfoFromStore(log log15.Logger, hash string) error {
+func (c *Cache) deleteNarInfoFromStore(ctx context.Context, log log15.Logger, hash string) error {
 	if !c.hasNarInfoInStore(log, hash) {
 		return ErrNotFound
 	}
-
-	// create a new context not associated with any request because we don't want
-	// downstream HTTP request to cancel this.
-	ctx := context.Background()
 
 	if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
 		return fmt.Errorf("error deleting narinfo from the database: %s", err)
