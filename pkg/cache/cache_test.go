@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,14 +170,11 @@ func TestGetNarInfo(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
-	tu, err := url.Parse(ts.URL)
-	require.NoError(t, err)
-
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
+	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -660,14 +656,11 @@ func TestGetNar(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
-	tu, err := url.Parse(ts.URL)
-	require.NoError(t, err)
-
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
+	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
