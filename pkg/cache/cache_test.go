@@ -194,7 +194,7 @@ func TestGetNarInfo(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
-		_, err := c.GetNarInfo("doesnotexist")
+		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
 		assert.ErrorIs(t, err, cache.ErrNotFound)
 	})
 
@@ -245,7 +245,7 @@ func TestGetNarInfo(t *testing.T) {
 			assert.Empty(t, hashes)
 		})
 
-		ni, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
+		ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 		require.NoError(t, err)
 
 		t.Run("size is correct", func(t *testing.T) {
@@ -357,7 +357,7 @@ func TestGetNarInfo(t *testing.T) {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
 
-			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
+			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 
 			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
@@ -391,7 +391,7 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
+			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
@@ -425,7 +425,7 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("no error is returned if the entry already exist in the database", func(t *testing.T) {
 			require.NoError(t, os.Remove(filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)))
 
-			_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
+			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			assert.NoError(t, err)
 		})
 
@@ -435,7 +435,7 @@ func TestGetNarInfo(t *testing.T) {
 			require.NoError(t, os.Remove(narFile))
 
 			t.Run("it should not return an error", func(t *testing.T) {
-				_, err := c.GetNarInfo(testdata.Nar2.NarInfoHash)
+				_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 				assert.NoError(t, err)
 			})
 
@@ -683,7 +683,7 @@ func TestGetNar(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
-		_, _, err := c.GetNar("doesnotexist", "xz")
+		_, _, err := c.GetNar(context.Background(), "doesnotexist", "xz")
 		assert.ErrorIs(t, err, cache.ErrNotFound)
 	})
 
@@ -712,11 +712,11 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(testdata.Nar1.NarInfoHash)
+			_, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
 			assert.NoError(t, err)
 		})
 
-		size, r, err := c.GetNar(testdata.Nar1.NarHash, "xz")
+		size, r, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
 		require.NoError(t, err)
 
 		defer r.Close()
@@ -739,7 +739,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(testdata.Nar1.NarInfoHash)
+			_, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
 			assert.NoError(t, err)
 		})
 
@@ -783,7 +783,7 @@ func TestGetNar(t *testing.T) {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
 
-			_, r, err := c.GetNar(testdata.Nar1.NarHash, "xz")
+			_, r, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
 			require.NoError(t, err)
 			defer r.Close()
 
@@ -822,7 +822,7 @@ func TestGetNar(t *testing.T) {
 		t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			_, r, err := c.GetNar(testdata.Nar1.NarHash, "xz")
+			_, r, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
 			require.NoError(t, err)
 			defer r.Close()
 
