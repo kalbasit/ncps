@@ -17,6 +17,7 @@
         mdformat.enable = true;
         sqlfluff.enable = true;
         sqlfluff.dialect = "sqlite";
+        statix.enable = true;
       };
     };
   };
