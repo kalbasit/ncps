@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +61,13 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("path must be writable", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/root")
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir) // clean up
+
+			require.NoError(t, os.Chmod(dir, 0o500))
+
+			_, err = cache.New(logger, "cache.example.com", dir)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
 		})
 
@@ -171,14 +176,11 @@ func TestGetNarInfo(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
-	tu, err := url.Parse(ts.URL)
-	require.NoError(t, err)
-
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
+	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -660,14 +662,11 @@ func TestGetNar(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
-	tu, err := url.Parse(ts.URL)
-	require.NoError(t, err)
-
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
+	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")

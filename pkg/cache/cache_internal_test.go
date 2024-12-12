@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"math/rand/v2"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,10 +49,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
 
-			u, err := url.Parse(ts.URL)
-			require.NoError(t, err)
-
-			uc, err := upstream.New(logger, u.Host, nil)
+			uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
@@ -100,10 +96,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
 
-			u, err := url.Parse(ts.URL)
-			require.NoError(t, err)
-
-			uc, err := upstream.New(logger, u.Host, nil)
+			uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
@@ -147,10 +140,7 @@ func TestRunLRU(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
-	tu, err := url.Parse(ts.URL)
-	require.NoError(t, err)
-
-	uc, err := upstream.New(logger, tu.Host, testdata.PublicKeys())
+	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
@@ -175,12 +165,12 @@ func TestRunLRU(t *testing.T) {
 
 	var sizePulled int64
 
-	for _, nar := range allEntries {
+	for i, nar := range allEntries {
 		_, err := c.GetNarInfo(context.Background(), nar.NarInfoHash)
-		require.NoError(t, err)
+		require.NoErrorf(t, err, "unable to get narinfo for idx %d", i)
 
 		size, _, err := c.GetNar(context.Background(), nar.NarHash, "xz")
-		require.NoError(t, err)
+		require.NoError(t, err, "unable to get nar for idx %d", i)
 
 		sizePulled += size
 	}

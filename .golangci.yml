@@ -39,7 +39,6 @@ linters:
     - wastedassign
     - whitespace
     - wsl
-
 linters-settings:
   gci:
     # Section configuration to compare against.

@@ -21,11 +21,16 @@
 go.work
 go.work.sum
 
-# env file
+# env file used by dbmate
 .env
 
-# Go binaries
+# Go and Nix-related build result
 /ncps
+/result
+/.direnv
 
 # SQLite database
 /db/database.sqlite3
+
+# Pre-commit configuration (auto-generated)
+/.pre-commit-config.yaml

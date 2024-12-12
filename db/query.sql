@@ -19,31 +19,33 @@ FROM nars
 WHERE id = ?;
 
 -- name: CreateNarInfo :one
-INSERT into narinfos (
-  hash
+INSERT INTO narinfos (
+    hash
 ) VALUES (
-  ?
+    ?
 )
 RETURNING *;
 
 -- name: CreateNar :one
-INSERT into nars (
-  narinfo_id, hash, compression, file_size
+INSERT INTO nars (
+    narinfo_id, hash, compression, file_size
 ) VALUES (
-  ?, ?, ?, ?
+    ?, ?, ?, ?
 )
 RETURNING *;
 
 -- name: TouchNarInfo :execrows
 UPDATE narinfos
-SET last_accessed_at = CURRENT_TIMESTAMP,
-  updated_at = CURRENT_TIMESTAMP
+SET
+    last_accessed_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
 -- name: TouchNar :execrows
 UPDATE nars
-SET last_accessed_at = CURRENT_TIMESTAMP,
-  updated_at = CURRENT_TIMESTAMP
+SET
+    last_accessed_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
 -- name: DeleteNarInfoByHash :execrows
@@ -67,11 +69,10 @@ SELECT SUM(file_size) AS total_size
 FROM nars;
 
 -- name: GetLeastUsedNars :many
-SELECT
-  n1.*
+SELECT n1.*
 FROM nars n1
 WHERE (
-  SELECT SUM(n2.file_size)
-  FROM nars n2
-  WHERE n2.last_accessed_at <= n1.last_accessed_at
+    SELECT SUM(n2.file_size)
+    FROM nars n2
+    WHERE n2.last_accessed_at <= n1.last_accessed_at
 ) <= ?;
