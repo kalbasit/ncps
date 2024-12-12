@@ -29,42 +29,44 @@ func TestNew(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, 40)
 	defer ts.Close()
 
+	//nolint:paralleltest
 	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
-		t.Parallel()
-
+		//nolint:paralleltest
 		t.Run("hostname must not be empty", func(t *testing.T) {
 			_, err := upstream.New(logger, nil, nil)
 			assert.ErrorIs(t, err, upstream.ErrURLRequired)
 		})
 
+		//nolint:paralleltest
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
+			_, err := upstream.New(logger, testhelper.MustParseURL(t, "cache.nixos.org"), nil)
 			assert.ErrorIs(t, err, upstream.ErrURLMustContainScheme)
 		})
 
 		t.Run("valid url with no path must not return no error", func(t *testing.T) {
 			_, err := upstream.New(logger,
-				testhelper.MustParseURL(t, "https://cache.nixos.org"), nil)
+				testhelper.MustParseURL(t, ts.URL), nil)
 
 			assert.NoError(t, err)
 		})
 
 		t.Run("valid url with only / must not return no error", func(t *testing.T) {
 			_, err := upstream.New(logger,
-				testhelper.MustParseURL(t, "https://cache.nixos.org/"), nil)
+				testhelper.MustParseURL(t, ts.URL), nil)
 
 			assert.NoError(t, err)
 		})
 	})
 
+	//nolint:paralleltest
 	t.Run("public keys", func(t *testing.T) {
-		t.Parallel()
-
+		//nolint:paralleltest
 		t.Run("invalid public keys", func(t *testing.T) {
 			_, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), []string{"invalid"})
 			assert.True(t, strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:"))
 		})
 
+		//nolint:paralleltest
 		t.Run("valid public keys", func(t *testing.T) {
 			_, err := upstream.New(
 				logger,
@@ -75,9 +77,8 @@ func TestNew(t *testing.T) {
 		})
 	})
 
+	//nolint:paralleltest
 	t.Run("priority parsed", func(t *testing.T) {
-		t.Parallel()
-
 		c, err := upstream.New(
 			logger,
 			testhelper.MustParseURL(t, ts.URL),
@@ -158,26 +159,27 @@ func TestGetNarInfo(t *testing.T) {
 }
 
 func TestGetNar(t *testing.T) {
+	t.Parallel()
+
+	ts := testdata.HTTPTestServer(t, 40)
+	defer ts.Close()
+
 	c, err := upstream.New(
 		logger,
-		testhelper.MustParseURL(t, "https://cache.nixos.org"),
+		testhelper.MustParseURL(t, ts.URL),
 		testdata.PublicKeys(),
 	)
 	require.NoError(t, err)
 
+	//nolint:paralleltest
 	t.Run("not found", func(t *testing.T) {
-		t.Parallel()
-
-		_, _, err := c.GetNar(context.Background(), "abc123", "")
+		_, _, err := c.GetNar(context.Background(), "abc123", "xz")
 		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
+	//nolint:paralleltest
 	t.Run("hash is found", func(t *testing.T) {
-		t.Parallel()
-
-		hash := testdata.Nar1.NarHash
-
-		cl, body, err := c.GetNar(context.Background(), hash, "xz")
+		cl, body, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
 		require.NoError(t, err)
 
 		defer func() {

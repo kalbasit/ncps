@@ -3,6 +3,7 @@ package testdata
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,26 +26,28 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 		}
 
 		for _, entry := range Entries {
+			var bs []byte
+
 			if r.URL.Path == "/broken-"+entry.NarInfoHash+".narinfo" {
 				// mutate the inside
 				b := entry.NarInfoText
 				b = strings.Replace(b, "References:", "References: notfound-path", -1)
 
-				_, err := w.Write([]byte(b))
-				require.NoError(t, err)
-
-				return
+				bs = []byte(b)
 			}
 
 			if r.URL.Path == "/"+entry.NarInfoHash+".narinfo" {
-				_, err := w.Write([]byte(entry.NarInfoText))
-				require.NoError(t, err)
-
-				return
+				bs = []byte(entry.NarInfoText)
 			}
 
 			if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
-				_, err := w.Write([]byte(entry.NarText))
+				bs = []byte(entry.NarText)
+			}
+
+			if len(bs) > 0 {
+				w.Header().Add("Content-Length", strconv.Itoa(len(bs)))
+
+				_, err := w.Write(bs)
 				require.NoError(t, err)
 
 				return

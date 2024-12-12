@@ -65,7 +65,7 @@ func TestNew(t *testing.T) {
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
 
-			require.NoError(t, os.Chmod(dir, 0500))
+			require.NoError(t, os.Chmod(dir, 0o500))
 
 			_, err = cache.New(logger, "cache.example.com", dir)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
