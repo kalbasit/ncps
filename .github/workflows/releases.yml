@@ -4,16 +4,20 @@ on:
     tags:
       - "v*.*.*"
 jobs:
-  go-test:
+  flake-check:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: "write"
+      contents: "read"
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup_nix
-      - uses: ./.github/actions/setup_go
-      - uses: ./.github/actions/go_test
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - uses: DeterminateSystems/flake-checker-action@main
+      - run: nix flake check
   docker:
     runs-on: ubuntu-latest
-    needs: go-test
+    needs: flake-check
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/docker
@@ -25,12 +29,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
   release:
     runs-on: ubuntu-latest
-    needs: go-test
+    needs: flake-check
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup_nix
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
       - uses: ./.github/actions/setup_go
       - name: Build binaries
         run: |
