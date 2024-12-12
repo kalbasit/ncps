@@ -33,11 +33,11 @@ ncps addresses these issues by acting as a central cache on your local network.
 
 ncps can be installed in several ways:
 
-- **Pre-built binaries:**
+<!--- **Pre-built binaries:**
 
   - Download the latest release for your platform from the [release page](https://github.com/kalbasit/ncps/releases).
   - Extract the binary and place it in your desired location.
-  - Make it executable.
+  - Make it executable.-->
 
 - **Install with Go from GitHub:**
 
