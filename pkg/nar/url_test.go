@@ -41,6 +41,22 @@ func TestParseURL(t *testing.T) {
 			},
 			err: nil,
 		},
+		{
+			url: "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
+			narURL: nar.URL{
+				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
+				Compression: "",
+			},
+			err: nil,
+		},
+		{
+			url: "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar.xz?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
+			narURL: nar.URL{
+				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
+				Compression: "xz",
+			},
+			err: nil,
+		},
 	}
 
 	t.Parallel()

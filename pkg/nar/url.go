@@ -15,7 +15,8 @@ var (
 	// ErrInvalidURL is returned if the regexp did not match the given URL.
 	ErrInvalidURL = errors.New("invalid nar URL")
 
-	narRegexp = regexp.MustCompile(`^nar/([a-z0-9]+)\.nar(?:\.([a-z0-9]+))?$`)
+	// https://regex101.com/r/yPwxpw/2
+	narRegexp = regexp.MustCompile(`^nar/([a-z0-9]+)\.nar(\.([a-z0-9]+))?(\?([a-z0-9=&]*))?$`)
 )
 
 // URL represents a nar URL.
@@ -33,12 +34,12 @@ func ParseURL(u string) (URL, error) {
 	}
 
 	sm := narRegexp.FindStringSubmatch(u)
-	if len(sm) != 3 {
+	if len(sm) != 6 {
 		return nu, ErrInvalidURL
 	}
 
 	nu.Hash = sm[1]
-	nu.Compression = sm[2]
+	nu.Compression = sm[3]
 
 	return nu, nil
 }
