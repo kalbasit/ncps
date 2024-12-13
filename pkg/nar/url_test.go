@@ -2,11 +2,9 @@ package nar_test
 
 import (
 	"fmt"
-	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/nar"
 )
@@ -30,7 +28,6 @@ func TestParseURL(t *testing.T) {
 			narURL: nar.URL{
 				Hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
 				Compression: "",
-				Query:       url.Values{},
 			},
 			err: nil,
 		},
@@ -39,7 +36,6 @@ func TestParseURL(t *testing.T) {
 			narURL: nar.URL{
 				Hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
 				Compression: "xz",
-				Query:       url.Values{},
 			},
 			err: nil,
 		},
@@ -48,7 +44,6 @@ func TestParseURL(t *testing.T) {
 			narURL: nar.URL{
 				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
 				Compression: "",
-				Query:       url.Values(map[string][]string{"hash": {"1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"}}),
 			},
 			err: nil,
 		},
@@ -57,7 +52,6 @@ func TestParseURL(t *testing.T) {
 			narURL: nar.URL{
 				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
 				Compression: "xz",
-				Query:       url.Values(map[string][]string{"hash": {"1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"}}),
 			},
 			err: nil,
 		},
@@ -84,30 +78,22 @@ func TestNarURLPath(t *testing.T) {
 	tests := []struct {
 		hash        string
 		compression string
-		query       string
 		path        string
 	}{
 		{hash: "", compression: "", path: "/nar/.nar"}, // not really valid but it is what it is
 		{hash: "abc123", compression: "", path: "/nar/abc123.nar"},
 		{hash: "def456", compression: "xz", path: "/nar/def456.nar.xz"},
-
-		{hash: "abc123", compression: "", query: "hash=123", path: "/nar/abc123.nar?hash=123"},
-		{hash: "def456", compression: "xz", query: "hash=123", path: "/nar/def456.nar.xz?hash=123"},
 	}
 
 	for _, test := range tests {
-		tname := fmt.Sprintf("URL(%q, %q, %q).ToFilePath() -> %q", test.hash, test.compression, test.query, test.path)
+		tname := fmt.Sprintf("URL(%q, %q).ToFilePath() -> %q", test.hash, test.compression, test.path)
 
 		t.Run(tname, func(t *testing.T) {
 			t.Parallel()
 
-			q, err := url.ParseQuery(test.query)
-			require.NoError(t, err)
-
 			nu := nar.URL{
 				Hash:        test.hash,
 				Compression: test.compression,
-				Query:       q,
 			}
 
 			assert.Equal(t, test.path, nu.ToNetURLPath())
