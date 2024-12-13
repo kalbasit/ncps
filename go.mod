@@ -5,6 +5,7 @@ go 1.23.3
 require (
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/inconshreveable/log15/v3 v3.0.0-testing.5
+	github.com/klauspost/compress v1.17.11
 	github.com/mattn/go-colorable v0.1.13
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/nix-community/go-nix v0.0.0-20241207090453-00891a7727c2
