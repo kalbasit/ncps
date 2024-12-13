@@ -9,6 +9,7 @@
           pkgs.go
           pkgs.golangci-lint
           pkgs.sqlc
+          pkgs.watchexec
         ];
 
         _GO_VERSION = "${pkgs.go.version}";
