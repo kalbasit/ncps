@@ -54,6 +54,19 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 			}
 
 			if len(bs) > 0 {
+				if s := r.URL.Query().Get("fakesize"); s != "" {
+					size, err := strconv.Atoi(s)
+					if !requireNoError(w, err) {
+						return
+					}
+
+					w.Header().Add("Content-Length", s)
+					_, err = w.Write([]byte(strings.Repeat("a", size)))
+					requireNoError(w, err)
+
+					return
+				}
+
 				w.Header().Add("Content-Length", strconv.Itoa(len(bs)))
 
 				_, err := w.Write(bs)

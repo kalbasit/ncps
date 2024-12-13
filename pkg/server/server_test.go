@@ -237,6 +237,33 @@ func TestServeHTTP(t *testing.T) {
 					assert.Equal(t, testdata.Nar1.NarText, string(body))
 				}
 			})
+
+			t.Run("nar exists upstream with query", func(t *testing.T) {
+				u, err := url.Parse("http://example.com")
+				require.NoError(t, err)
+
+				q, err := url.ParseQuery("fakesize=123")
+				require.NoError(t, err)
+
+				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: "xz", Query: q}
+
+				r := httptest.NewRequest("GET", nu.JoinURL(u).String(), nil)
+				w := httptest.NewRecorder()
+
+				s.ServeHTTP(w, r)
+
+				assert.Equal(t, http.StatusOK, w.Code)
+
+				resp := w.Result()
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+
+				if assert.Len(t, string(body), 123) {
+					assert.Equal(t, strings.Repeat("a", 123), string(body))
+				}
+			})
 		})
 	})
 
