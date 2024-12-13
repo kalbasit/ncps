@@ -9,23 +9,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParseNarURL(t *testing.T) {
+func TestParseURL(t *testing.T) {
 	tests := []struct {
 		url    string
-		narURL NarURL
+		narURL URL
 		err    error
 	}{
 		{
 			url: "",
-			err: ErrInvalidNarURL,
+			err: ErrInvalidURL,
 		},
 		{
 			url: "helloworld",
-			err: ErrInvalidNarURL,
+			err: ErrInvalidURL,
 		},
 		{
 			url: "nar/1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps.nar",
-			narURL: NarURL{
+			narURL: URL{
 				Hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
 				Compression: "",
 				Query:       url.Values{},
@@ -34,7 +34,7 @@ func TestParseNarURL(t *testing.T) {
 		},
 		{
 			url: "nar/1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps.nar.xz",
-			narURL: NarURL{
+			narURL: URL{
 				Hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
 				Compression: "xz",
 				Query:       url.Values{},
@@ -43,7 +43,7 @@ func TestParseNarURL(t *testing.T) {
 		},
 		{
 			url: "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
-			narURL: NarURL{
+			narURL: URL{
 				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
 				Compression: "",
 				Query:       url.Values(map[string][]string{"hash": []string{"1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"}}),
@@ -52,7 +52,7 @@ func TestParseNarURL(t *testing.T) {
 		},
 		{
 			url: "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar.xz?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
-			narURL: NarURL{
+			narURL: URL{
 				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
 				Compression: "xz",
 				Query:       url.Values(map[string][]string{"hash": []string{"1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"}}),
@@ -64,10 +64,10 @@ func TestParseNarURL(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("ParseNarURL(%q)", test.url), func(t *testing.T) {
+		t.Run(fmt.Sprintf("ParseURL(%q)", test.url), func(t *testing.T) {
 			t.Parallel()
 
-			narURL, err := ParseNarURL(test.url)
+			narURL, err := ParseURL(test.url)
 
 			if assert.ErrorIs(t, test.err, err) {
 				assert.Equal(t, test.narURL, narURL)
