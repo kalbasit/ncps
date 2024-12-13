@@ -23,6 +23,7 @@ var (
 type URL struct {
 	Hash        string
 	Compression string
+	Query       url.Values
 }
 
 // ParseURL parses a nar URL (as present in narinfo) and returns its components.
@@ -41,6 +42,11 @@ func ParseURL(u string) (URL, error) {
 	nu.Hash = sm[1]
 	nu.Compression = sm[3]
 
+	var err error
+	if nu.Query, err = url.ParseQuery(sm[5]); err != nil {
+		return nu, err
+	}
+
 	return nu, nil
 }
 
@@ -49,6 +55,7 @@ func (u URL) NewLogger(log log15.Logger) log15.Logger {
 	return log.New(
 		"hash", u.Hash,
 		"compression", u.Compression,
+		"query", u.Query.Encode(),
 	)
 }
 
@@ -67,6 +74,14 @@ func (u URL) JoinURL(uri *url.URL) *url.URL {
 	}
 
 	uri = uri.JoinPath(p)
+
+	if q := u.Query.Encode(); q != "" {
+		if uri.RawQuery != "" {
+			uri.RawQuery += "&"
+		}
+
+		uri.RawQuery += q
+	}
 
 	return uri
 }
