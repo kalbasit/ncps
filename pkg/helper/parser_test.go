@@ -35,6 +35,12 @@ func TestParseNarURL(t *testing.T) {
 			compression: "xz",
 			err:         nil,
 		},
+		{
+			url:         "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
+			hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
+			compression: "",
+			err:         nil,
+		},
 	}
 
 	t.Parallel()

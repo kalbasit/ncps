@@ -10,7 +10,8 @@ var (
 	// ErrInvalidNarURL is returned if the regexp did not match the given URL.
 	ErrInvalidNarURL = errors.New("invalid nar URL")
 
-	narRegexp = regexp.MustCompile(`^nar/([a-z0-9]+)\.nar(?:\.([a-z0-9]+))?$`)
+	// https://regex101.com/r/yPwxpw/1
+	narRegexp = regexp.MustCompile(`^nar/([a-z0-9]+)\.nar(?:\.([a-z0-9]+))?(?:\?[a-z0-9=]*)?$`)
 )
 
 // ParseNarURL parses a nar URL (as present in narinfo) and returns its components.
