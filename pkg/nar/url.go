@@ -59,21 +59,9 @@ func (u URL) NewLogger(log log15.Logger) log15.Logger {
 	)
 }
 
-// ToFilePath returns the filepath in the store for a given nar URL.
-func (u URL) ToFilePath() string {
-	// TODO: bring it out of the helper
-	return helper.NarFilePath(u.Hash, u.Compression)
-}
-
 // JoinURL returns a new URL combined with the given URL.
 func (u URL) JoinURL(uri *url.URL) *url.URL {
-	p := "/nar/" + u.Hash + ".nar"
-
-	if u.Compression != "" {
-		p += "." + u.Compression
-	}
-
-	uri = uri.JoinPath(p)
+	uri = uri.JoinPath("/" + u.pathWithCompression())
 
 	if q := u.Query.Encode(); q != "" {
 		if uri.RawQuery != "" {
@@ -84,4 +72,31 @@ func (u URL) JoinURL(uri *url.URL) *url.URL {
 	}
 
 	return uri
+}
+
+// String returns the URL as a string.
+func (u URL) String() string {
+	p := u.pathWithCompression()
+
+	if q := u.Query.Encode(); q != "" {
+		p += "?" + q
+	}
+
+	return p
+}
+
+// ToFilePath returns the filepath in the store for a given nar URL.
+func (u URL) ToFilePath() string {
+	// TODO: bring it out of the helper
+	return helper.NarFilePath(u.Hash, u.Compression)
+}
+
+func (u URL) pathWithCompression() string {
+	p := "nar/" + u.Hash + ".nar"
+
+	if u.Compression != "" {
+		p += "." + u.Compression
+	}
+
+	return p
 }

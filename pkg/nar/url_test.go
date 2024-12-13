@@ -82,10 +82,13 @@ func TestJoinURL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
+		// params
 		hash        string
 		compression string
-		url         string
 		query       string
+
+		// result
+		url string
 	}{
 		{hash: "", compression: "", url: "http://example.com/nar/.nar"}, // not really valid but it is what it is
 		{hash: "abc123", compression: "", url: "http://example.com/nar/abc123.nar"},
@@ -113,6 +116,45 @@ func TestJoinURL(t *testing.T) {
 			}
 
 			assert.Equal(t, test.url, nu.JoinURL(u).String())
+		})
+	}
+}
+
+func TestString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		// params
+		hash        string
+		compression string
+		query       string
+
+		// result
+		string string
+	}{
+		{hash: "", compression: "", string: "nar/.nar"}, // not really valid but it is what it is
+		{hash: "abc123", compression: "", string: "nar/abc123.nar"},
+		{hash: "def456", compression: "xz", string: "nar/def456.nar.xz"},
+
+		{hash: "abc123", compression: "", query: "hash=123", string: "nar/abc123.nar?hash=123"},
+		{hash: "def456", compression: "xz", query: "hash=123", string: "nar/def456.nar.xz?hash=123"},
+	}
+
+	for _, test := range tests {
+		tname := fmt.Sprintf("URL(%q, %q, %q).String() -> %q", test.hash, test.compression, test.query, test.string)
+		t.Run(tname, func(t *testing.T) {
+			t.Parallel()
+
+			q, err := url.ParseQuery(test.query)
+			require.NoError(t, err)
+
+			nu := nar.URL{
+				Hash:        test.hash,
+				Compression: test.compression,
+				Query:       q,
+			}
+
+			assert.Equal(t, test.string, nu.String())
 		})
 	}
 }
