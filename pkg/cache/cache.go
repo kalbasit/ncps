@@ -184,7 +184,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	log := narURL.NewLogger(log15.New())
+	log := narURL.NewLogger(c.logger)
 
 	if c.hasNarInStore(log, narURL) {
 		return c.getNarFromStore(ctx, log, narURL)
