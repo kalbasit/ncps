@@ -21,7 +21,42 @@ func TestHTTPTestServer(t *testing.T) {
 	ts := testdata.HTTPTestServer(t, priority)
 	defer ts.Close()
 
-	r, err := http.NewRequestWithContext(context.Background(), "GET", ts.URL+"/nix-cache-info", nil)
+	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+
+	r, err := http.NewRequestWithContext(context.Background(), "GET", u, nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(r)
+	require.NoError(t, err)
+
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	if assert.Equal(t, http.StatusOK, resp.StatusCode) {
+		assert.NotEqual(t, "zstd", resp.Header.Get("Content-Encoding"))
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, len(string(body)), len(testdata.Nar1.NarText))
+		assert.Equal(t, testdata.Nar1.NarText, string(body))
+	}
+}
+
+func TestHTTPTestServerWithZSTD(t *testing.T) {
+	t.Parallel()
+
+	priority := 40
+
+	ts := testdata.HTTPTestServer(t, priority)
+	defer ts.Close()
+
+	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
+
+	r, err := http.NewRequestWithContext(context.Background(), "GET", u, nil)
 	require.NoError(t, err)
 
 	r.Header.Set("Accept-Encoding", "zstd")
@@ -41,14 +76,16 @@ func TestHTTPTestServer(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		if assert.NotEqual(t, testdata.NixStoreInfo(priority), string(body)) {
+		if assert.NotEqual(t, testdata.Nar1.NarText, string(body)) {
 			decoder, err := zstd.NewReader(nil)
 			require.NoError(t, err)
 
 			plain, err := decoder.DecodeAll(body, []byte{})
 			require.NoError(t, err)
 
-			assert.Equal(t, testdata.NixStoreInfo(priority), string(plain))
+			if assert.Equal(t, len(testdata.Nar1.NarText), len(string(plain))) {
+				assert.Equal(t, testdata.Nar1.NarText, string(plain))
+			}
 		}
 	}
 }
