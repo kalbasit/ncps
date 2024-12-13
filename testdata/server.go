@@ -1,34 +1,60 @@
 package testdata
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zstd"
 )
+
+// zstdResponseWriter wraps an http.ResponseWriter to capture the response body.
+type zstdResponseWriter struct {
+	io.Writer
+	http.ResponseWriter
+}
+
+func (zw *zstdResponseWriter) Write(p []byte) (n int, err error) {
+	return zw.Writer.Write(p)
+}
 
 func PublicKeys() []string {
 	return []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="}
 }
 
-func requireNoError(w http.ResponseWriter, err error) bool {
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-
-		//nolint:errcheck
-		w.Write([]byte(err.Error()))
-
-		return false
-	}
-
-	return true
-}
-
 func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(compressMiddleware(handler(priority)))
+}
+
+func compressMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept-Encoding") != "zstd" {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		w.Header().Set("Content-Encoding", "zstd")
+
+		encoder, err := zstd.NewWriter(w)
+		if !requireNoError(w, err) {
+			return
+		}
+		defer encoder.Close()
+
+		zw := &zstdResponseWriter{Writer: encoder, ResponseWriter: w}
+
+		next.ServeHTTP(zw, r)
+	})
+}
+
+func handler(priority int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := r.Header.Get("ping"); p != "" {
 			w.Header().Add("pong", p)
 		}
@@ -36,6 +62,8 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 		if r.URL.Path == "/nix-cache-info" {
 			_, err := w.Write([]byte(NixStoreInfo(priority)))
 			requireNoError(w, err)
+
+			return
 		}
 
 		for _, entry := range Entries {
@@ -81,5 +109,18 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 		}
 
 		w.WriteHeader(http.StatusNotFound)
-	}))
+	})
+}
+
+func requireNoError(w http.ResponseWriter, err error) bool {
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+
+		//nolint:errcheck
+		w.Write([]byte(err.Error()))
+
+		return false
+	}
+
+	return true
 }
