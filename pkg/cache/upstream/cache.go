@@ -40,6 +40,7 @@ var (
 
 // Cache represents the upstream cache service.
 type Cache struct {
+	httpClient *http.Client
 	url        *url.URL
 	logger     log15.Logger
 	priority   uint64
@@ -59,6 +60,13 @@ func New(logger log15.Logger, u *url.URL, pubKeys []string) (Cache, error) {
 
 	if err := c.validateURL(u); err != nil {
 		return c, err
+	}
+
+	c.httpClient = &http.Client{
+		Transport: &http.Transport{
+			// Disable automatic decompression
+			DisableCompression: true,
+		},
 	}
 
 	for _, pubKey := range pubKeys {
@@ -90,7 +98,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(r)
+	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		return nil, fmt.Errorf("error performing the request: %w", err)
 	}
@@ -133,10 +141,6 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
-	log := narURL.NewLogger(c.logger.New("nar-url", u))
-
-	log.Info("download the nar from upstream")
-
 	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
@@ -146,7 +150,11 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 		mutator(r)
 	}
 
-	resp, err := http.DefaultClient.Do(r)
+	log := narURL.NewLogger(c.logger.New("nar-url", u))
+
+	log.Info("download the nar from upstream")
+
+	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		return nil, fmt.Errorf("error performing the request: %w", err)
 	}
@@ -182,7 +190,7 @@ func (c Cache) parsePriority() (uint64, error) {
 		return 0, fmt.Errorf("error creating a new request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(r)
+	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		return 0, fmt.Errorf("error performing the request: %w", err)
 	}

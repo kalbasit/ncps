@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -801,8 +802,20 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	db, err := database.Open(dbFile)
 	require.NoError(t, err)
 
-	var totalSize uint64
+	// NOTE: For this test, any nar that's explicitly testing the zstd
+	// transparent compression support will not be included because its size will
+	// not be known and so the test will be more complex.
+	var allEntries []testdata.Entry
+
 	for _, narEntry := range testdata.Entries {
+		expectedCompression := fmt.Sprintf("Compression: %s", narEntry.NarCompression)
+		if strings.Contains(narEntry.NarInfoText, expectedCompression) {
+			allEntries = append(allEntries, narEntry)
+		}
+	}
+
+	var totalSize uint64
+	for _, narEntry := range allEntries {
 		totalSize += uint64(len(narEntry.NarText))
 
 		narInfo, err := db.CreateNarInfo(context.Background(), narEntry.NarInfoHash)
@@ -819,12 +832,12 @@ func TestGetLeastAccessedNars(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	for _, narEntry := range testdata.Entries[:len(testdata.Entries)-1] {
+	for _, narEntry := range allEntries[:len(allEntries)-1] {
 		_, err := db.TouchNar(context.Background(), narEntry.NarHash)
 		require.NoError(t, err)
 	}
 
-	lastEntry := testdata.Entries[len(testdata.Entries)-1]
+	lastEntry := allEntries[len(allEntries)-1]
 
 	nms, err := db.GetLeastUsedNars(context.Background(), totalSize-uint64(len(lastEntry.NarText)))
 	require.NoError(t, err)

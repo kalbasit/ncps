@@ -287,7 +287,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		log = nu.NewLogger(s.logger) // re-create the logger to avoid dups
 
-		size, reader, err := s.cache.GetNar(r.Context(), nu)
+		size, reader, err := s.cache.GetNar(r.Context(), nu, nil)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)

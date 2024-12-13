@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/nar"
 )
 
 // Nar2 is the nar representing hello from release-24.05.
@@ -23,7 +24,8 @@ References: 3acqrvb06vw0w3s9fa3wci433snbi2bg-hello-2.12.1 kpy2cyd05vdr6j1h200av8
 Deriver: 3gdc0qnmn6srg32sx019az6ll2mz1cda-hello-2.12.1.drv
 Sig: cache.nixos.org-1:eGSj5WPpZRjwzx7eWpCyZdNsFHjhtGTZF8T4FccYXjHNkTOZoGPfplgFP1w5bEST0/FtfV7f3AmQUVEv1NAEDg==`,
 
-	NarHash: "1xqqdh1yn5sz3d6wcz3qz3azm5mbypwq6mv8g2dal1v042h0sprf",
-	NarPath: filepath.Join("1", "1x", "1xqqdh1yn5sz3d6wcz3qz3azm5mbypwq6mv8g2dal1v042h0sprf.nar.xz"),
-	NarText: helper.MustRandString(50308, nil),
+	NarHash:        "1xqqdh1yn5sz3d6wcz3qz3azm5mbypwq6mv8g2dal1v042h0sprf",
+	NarCompression: nar.CompressionTypeXz,
+	NarPath:        filepath.Join("1", "1x", "1xqqdh1yn5sz3d6wcz3qz3azm5mbypwq6mv8g2dal1v042h0sprf.nar.xz"),
+	NarText:        helper.MustRandString(50308, nil),
 }
