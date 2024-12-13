@@ -18,6 +18,7 @@ type Nar struct {
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
+	Query          string
 }
 
 type NarInfo struct {
