@@ -269,7 +269,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		hash := chi.URLParam(r, "hash")
 		compression := chi.URLParam(r, "compression")
 
-		nu := nar.URL{Hash: hash, Compression: compression}
+		nu := nar.URL{Hash: hash, Compression: compression, Query: r.URL.Query()}
 
 		log := nu.NewLogger(s.logger)
 
@@ -323,7 +323,7 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
 
-	nu := nar.URL{Hash: hash, Compression: compression}
+	nu := nar.URL{Hash: hash, Compression: compression, Query: r.URL.Query()}
 
 	log := nu.NewLogger(s.logger)
 
@@ -355,7 +355,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
 
-	nu := nar.URL{Hash: hash, Compression: compression}
+	nu := nar.URL{Hash: hash, Compression: compression, Query: r.URL.Query()}
 
 	log := nu.NewLogger(s.logger)
 
