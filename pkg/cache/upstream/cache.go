@@ -126,11 +126,11 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
-	log := narURL.NewLogger(c.logger)
+	u := narURL.JoinURL(c.url).String()
 
-	u := c.url.JoinPath(narURL.ToNetURLPath()).String()
+	log := narURL.NewLogger(c.logger.New("nar-url", u))
 
-	log.Info("download the nar from upstream", "nar-url", u)
+	log.Info("download the nar from upstream")
 
 	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
