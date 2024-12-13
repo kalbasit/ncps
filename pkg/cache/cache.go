@@ -752,6 +752,7 @@ func (c *Cache) storeInDatabase(log log15.Logger, hash string, narInfo *narinfo.
 		NarInfoID:   nir.ID,
 		Hash:        narURL.Hash,
 		Compression: narURL.Compression,
+		Query:       narURL.Query.Encode(),
 		FileSize:    narInfo.FileSize,
 	})
 	if err != nil {
