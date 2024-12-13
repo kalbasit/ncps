@@ -191,6 +191,6 @@ func TestGetNar(t *testing.T) {
 			resp.Body.Close()
 		}()
 
-		assert.EqualValues(t, 50160, resp.Header.Get("Content-Length"))
+		assert.Equal(t, "50160", resp.Header.Get("Content-Length"))
 	})
 }
