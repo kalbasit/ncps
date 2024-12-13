@@ -130,7 +130,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
-func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (*http.Response, error) {
+func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
 	log := narURL.NewLogger(c.logger.New("nar-url", u))
@@ -140,6 +140,10 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (*http.Response, erro
 	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
+	}
+
+	for _, mutator := range mutators {
+		mutator(r)
 	}
 
 	resp, err := http.DefaultClient.Do(r)

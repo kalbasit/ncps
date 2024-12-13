@@ -29,6 +29,10 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := r.Header.Get("ping"); p != "" {
+			w.Header().Add("pong", p)
+		}
+
 		if r.URL.Path == "/nix-cache-info" {
 			_, err := w.Write([]byte(NixStoreInfo(priority)))
 			requireNoError(w, err)
