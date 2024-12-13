@@ -7,7 +7,12 @@
       # Used to find the project root
       projectRootFile = ".git/config";
 
-      settings.global.excludes = [ ".envrc" ];
+      settings.global.excludes = [
+        ".env"
+        ".envrc"
+        "LICENSE"
+        "renovate.json"
+      ];
 
       programs = {
         deadnix.enable = true;
