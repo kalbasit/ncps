@@ -59,6 +59,21 @@ func (u URL) NewLogger(log log15.Logger) log15.Logger {
 	)
 }
 
+// JoinURL returns a new URL combined with the given URL.
+func (u URL) JoinURL(uri *url.URL) *url.URL {
+	uri = uri.JoinPath("/" + u.pathWithCompression())
+
+	if q := u.Query.Encode(); q != "" {
+		if uri.RawQuery != "" {
+			uri.RawQuery += "&"
+		}
+
+		uri.RawQuery += q
+	}
+
+	return uri
+}
+
 // String returns the URL as a string.
 func (u URL) String() string {
 	p := u.pathWithCompression()
@@ -74,21 +89,6 @@ func (u URL) String() string {
 func (u URL) ToFilePath() string {
 	// TODO: bring it out of the helper
 	return helper.NarFilePath(u.Hash, u.Compression)
-}
-
-// JoinURL returns a new URL combined with the given URL.
-func (u URL) JoinURL(uri *url.URL) *url.URL {
-	uri = uri.JoinPath("/" + u.pathWithCompression())
-
-	if q := u.Query.Encode(); q != "" {
-		if uri.RawQuery != "" {
-			uri.RawQuery += "&"
-		}
-
-		uri.RawQuery += q
-	}
-
-	return uri
 }
 
 func (u URL) pathWithCompression() string {
