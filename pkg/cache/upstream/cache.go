@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
@@ -131,7 +130,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
-func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
+func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
 	log := narURL.NewLogger(c.logger.New("nar-url", u))
@@ -140,12 +139,12 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser
 
 	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
+		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
 
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error performing the request: %w", err)
+		return nil, fmt.Errorf("error performing the request: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -153,26 +152,15 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser
 		io.Copy(io.Discard, resp.Body)
 
 		if resp.StatusCode == http.StatusNotFound {
-			return 0, nil, ErrNotFound
+			return nil, ErrNotFound
 		}
 
 		log.Error(ErrUnexpectedHTTPStatusCode.Error(), "status_code", resp.StatusCode)
 
-		return 0, nil, ErrUnexpectedHTTPStatusCode
+		return nil, ErrUnexpectedHTTPStatusCode
 	}
 
-	cls := resp.Header.Get("Content-Length")
-
-	cl, err := strconv.ParseInt(cls, 10, 64)
-	if err != nil {
-		log.Error("error computing the content-length", "Content-Length", cls, "error", err)
-
-		// TODO: Compute narinfo, pull it and return narInfo.FileSize
-		return 0, resp.Body, nil
-	}
-
-	// TODO: Pull the narInfo and validate that narInfo.FileSize == cl
-	return cl, resp.Body, nil
+	return resp, nil
 }
 
 // GetPriority returns the priority of this upstream cache.
