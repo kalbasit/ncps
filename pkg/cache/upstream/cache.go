@@ -48,7 +48,13 @@ type Cache struct {
 }
 
 func New(logger log15.Logger, u *url.URL, pubKeys []string) (Cache, error) {
-	c := Cache{url: u}
+	c := Cache{}
+
+	if u == nil {
+		return c, ErrURLRequired
+	}
+
+	c.url = u
 
 	c.logger = logger.New("upstream-url", u.String())
 
