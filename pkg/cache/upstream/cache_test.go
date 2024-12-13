@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -173,13 +174,15 @@ func TestGetNar(t *testing.T) {
 
 	//nolint:paralleltest
 	t.Run("not found", func(t *testing.T) {
-		_, _, err := c.GetNar(context.Background(), "abc123", "xz")
+		nu := nar.URL{Hash: "abc123", Compression: "xz"}
+		_, _, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
 	//nolint:paralleltest
 	t.Run("hash is found", func(t *testing.T) {
-		cl, body, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
+		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+		cl, body, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
 		defer func() {

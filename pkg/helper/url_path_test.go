@@ -28,25 +28,3 @@ func TestNarInfoURLPath(t *testing.T) {
 		})
 	}
 }
-
-func TestNarURLPath(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		hash        string
-		compression string
-		path        string
-	}{
-		{hash: "", compression: "", path: "/nar/.nar"}, // not really valid but it is what it is
-		{hash: "abc123", compression: "", path: "/nar/abc123.nar"},
-		{hash: "def456", compression: "xz", path: "/nar/def456.nar.xz"},
-	}
-
-	for _, test := range tests {
-		t.Run(fmt.Sprintf("NarURLPath(%q, %q) -> %q", test.hash, test.compression, test.path), func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, test.path, helper.NarURLPath(test.hash, test.compression))
-		})
-	}
-}
