@@ -48,7 +48,9 @@ type Cache struct {
 }
 
 func New(logger log15.Logger, u *url.URL, pubKeys []string) (Cache, error) {
-	c := Cache{logger: logger, url: u}
+	c := Cache{url: u}
+
+	c.logger = logger.New("upstream-url", u.String())
 
 	if err := c.validateURL(u); err != nil {
 		return c, err
@@ -126,7 +128,11 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
 	log := narURL.NewLogger(c.logger)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", narURL.JoinURL(c.url).String(), nil)
+	u := c.url.JoinPath(narURL.ToNetURLPath()).String()
+
+	log.Info("download the nar from upstream", "nar-url", u)
+
+	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
 	}

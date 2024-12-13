@@ -388,6 +388,7 @@ func TestGetNarByHash(t *testing.T) {
 			NarInfoID:   narInfo.ID,
 			Hash:        narHash,
 			Compression: "xz",
+			Query:       "hash=123&key=value",
 			FileSize:    123,
 		})
 		require.NoError(t, err)
