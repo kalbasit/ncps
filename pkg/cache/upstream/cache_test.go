@@ -3,6 +3,7 @@ package upstream_test
 import (
 	"context"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -193,4 +195,36 @@ func TestGetNar(t *testing.T) {
 
 		assert.Equal(t, "50160", resp.Header.Get("Content-Length"))
 	})
+}
+
+func TestGetNarCanMutate(t *testing.T) {
+	t.Parallel()
+
+	ts := testdata.HTTPTestServer(t, 40)
+	defer ts.Close()
+
+	c, err := upstream.New(
+		logger,
+		testhelper.MustParseURL(t, ts.URL),
+		testdata.PublicKeys(),
+	)
+	require.NoError(t, err)
+
+	pingV := helper.MustRandString(10, nil)
+
+	mutator := func(r *http.Request) {
+		r.Header.Set("ping", pingV)
+	}
+
+	nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+	resp, err := c.GetNar(context.Background(), nu, mutator)
+	require.NoError(t, err)
+
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	assert.Equal(t, pingV, resp.Header.Get("pong"))
 }
