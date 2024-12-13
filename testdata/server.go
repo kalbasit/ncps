@@ -6,12 +6,23 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 func PublicKeys() []string {
 	return []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="}
+}
+
+func requireNoError(w http.ResponseWriter, err error) bool {
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+
+		//nolint:errcheck
+		w.Write([]byte(err.Error()))
+
+		return false
+	}
+
+	return true
 }
 
 func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
@@ -20,9 +31,7 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/nix-cache-info" {
 			_, err := w.Write([]byte(NixStoreInfo(priority)))
-			require.NoError(t, err)
-
-			return
+			requireNoError(w, err)
 		}
 
 		for _, entry := range Entries {
@@ -48,7 +57,7 @@ func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
 				w.Header().Add("Content-Length", strconv.Itoa(len(bs)))
 
 				_, err := w.Write(bs)
-				require.NoError(t, err)
+				requireNoError(w, err)
 
 				return
 			}
