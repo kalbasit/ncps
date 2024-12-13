@@ -1,6 +1,6 @@
 -- migrate:up
-ALTER TABLE nars ADD COLUMN query TEXT NOT NULL DEFAULT '';
+ALTER TABLE nars ADD COLUMN `query` TEXT NOT NULL DEFAULT '';
 
 
 -- migrate:down
-ALTER TABLE nars DROP COLUMN query;
+ALTER TABLE nars DROP COLUMN `query`;
