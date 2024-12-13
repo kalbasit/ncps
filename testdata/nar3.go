@@ -7,6 +7,8 @@ import (
 )
 
 // Nar3 is the nar representing hello from release-24.11.
+//
+//nolint:gochecknoglobals
 var Nar3 = Entry{
 	NarInfoHash: "1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
 	NarInfoPath: filepath.Join("1", "1q", "1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl.narinfo"),
