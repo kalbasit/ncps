@@ -2,9 +2,11 @@ package nar_test
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/nar"
 )
@@ -56,31 +58,33 @@ func TestParseURL(t *testing.T) {
 	}
 }
 
-func TestNarURLPath(t *testing.T) {
+func TestJoinURL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		hash        string
 		compression string
-		path        string
+		url         string
 	}{
-		{hash: "", compression: "", path: "/nar/.nar"}, // not really valid but it is what it is
-		{hash: "abc123", compression: "", path: "/nar/abc123.nar"},
-		{hash: "def456", compression: "xz", path: "/nar/def456.nar.xz"},
+		{hash: "", compression: "", url: "http://example.com/nar/.nar"}, // not really valid but it is what it is
+		{hash: "abc123", compression: "", url: "http://example.com/nar/abc123.nar"},
+		{hash: "def456", compression: "xz", url: "http://example.com/nar/def456.nar.xz"},
 	}
 
 	for _, test := range tests {
-		tname := fmt.Sprintf("URL(%q, %q).ToFilePath() -> %q", test.hash, test.compression, test.path)
-
+		tname := fmt.Sprintf("URL(%q, %q).ToFilePath() -> %q", test.hash, test.compression, test.url)
 		t.Run(tname, func(t *testing.T) {
 			t.Parallel()
+
+			u, err := url.Parse("http://example.com")
+			require.NoError(t, err)
 
 			nu := nar.URL{
 				Hash:        test.hash,
 				Compression: test.compression,
 			}
 
-			assert.Equal(t, test.path, nu.ToNetURLPath())
+			assert.Equal(t, test.url, nu.JoinURL(u).String())
 		})
 	}
 }

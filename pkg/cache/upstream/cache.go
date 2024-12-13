@@ -126,7 +126,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
 	log := narURL.NewLogger(c.logger)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(narURL.ToNetURLPath()).String(), nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", narURL.JoinURL(c.url).String(), nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
 	}

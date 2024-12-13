@@ -2,6 +2,7 @@ package nar
 
 import (
 	"errors"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -56,12 +57,15 @@ func (u URL) ToFilePath() string {
 	return helper.NarFilePath(u.Hash, u.Compression)
 }
 
-func (u URL) ToNetURLPath() string {
+// JoinURL returns a new URL combined with the given URL.
+func (u URL) JoinURL(uri *url.URL) *url.URL {
 	p := "/nar/" + u.Hash + ".nar"
 
 	if u.Compression != "" {
 		p += "." + u.Compression
 	}
 
-	return p
+	uri = uri.JoinPath(p)
+
+	return uri
 }

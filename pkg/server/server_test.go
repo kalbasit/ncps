@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,8 +216,11 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("nar exists upstream", func(t *testing.T) {
+				u, err := url.Parse("http://example.com")
+				require.NoError(t, err)
+
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
-				r := httptest.NewRequest("GET", nu.ToNetURLPath(), nil)
+				r := httptest.NewRequest("GET", nu.JoinURL(u).String(), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
