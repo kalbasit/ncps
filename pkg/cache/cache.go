@@ -179,28 +179,28 @@ func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey
 // nar is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
-func (c *Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
+func (c *Cache) GetNar(ctx context.Context, narURL helper.NarURL) (int64, io.ReadCloser, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	log := c.logger.New("hash", hash, "compression", compression)
+	log := log15.New("hash", narURL.Hash, "compression", narURL.Compression, "query", narURL.Query.Encode())
 
-	if c.hasNarInStore(log, hash, compression) {
-		return c.getNarFromStore(ctx, log, hash, compression)
+	if c.hasNarInStore(narURL) {
+		return c.getNarFromStore(ctx, narURL)
 	}
 
 	errC := make(chan error)
 
 	c.muUpstreamJobs.Lock()
 
-	doneC, ok := c.upstreamJobs[hash]
+	doneC, ok := c.upstreamJobs[narURL.Hash]
 	if ok {
 		log.Info("waiting for an in-progress download to finish")
 	} else {
 		doneC = make(chan struct{})
-		c.upstreamJobs[hash] = doneC
+		c.upstreamJobs[narURL.Hash] = doneC
 
-		go c.pullNar(log, hash, compression, doneC, errC)
+		go c.pullNar(log, narURL, doneC, errC)
 	}
 	c.muUpstreamJobs.Unlock()
 
@@ -212,15 +212,15 @@ func (c *Cache) GetNar(ctx context.Context, hash, compression string) (int64, io
 	case <-doneC:
 	}
 
-	if !c.hasNarInStore(log, hash, compression) {
+	if !c.hasNarInStore(log, narURL) {
 		return 0, nil, ErrNotFound
 	}
 
-	return c.getNarFromStore(ctx, log, hash, compression)
+	return c.getNarFromStore(ctx, log, narURL)
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
-func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadCloser) error {
+func (c *Cache) PutNar(_ context.Context, narURL helper.NarURL, r io.ReadCloser) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -233,7 +233,7 @@ func (c *Cache) PutNar(_ context.Context, hash, compression string, r io.ReadClo
 
 	log := c.logger.New("hash", hash, "compression", compression)
 
-	_, err := c.putNarInStore(log, hash, compression, r)
+	_, err := c.putNarInStore(log, narURL, r)
 
 	return err
 }
@@ -508,18 +508,18 @@ func (c *Cache) prePullNar(log log15.Logger, url string) {
 	// downstream HTTP request to cancel this.
 	ctx := context.Background()
 
-	hash, compression, err := helper.ParseNarURL(url)
+	narURL, err := helper.ParseNarURL(url)
 	if err != nil {
 		c.logger.Error("error parsing the nar URL", "url", url, "error", err)
 
 		return
 	}
 
-	log = log.New("hash", hash, "compression", compression)
+	log = log.New("hash", narURL.Hash, "compression", narURL.Compression, "query", narURL.Query.Encode())
 
 	log.Info("pre-caching NAR ahead of time", "URL", url)
 
-	_, nar, err := c.GetNar(ctx, hash, compression)
+	_, nar, err := c.GetNar(ctx, narURL)
 	if err != nil {
 		log.Error("error fetching the NAR", "error", err)
 
