@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -254,7 +255,7 @@ func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}, e
 
 	log.Info("downloading the nar from upstream")
 
-	size, r, err := c.getNarFromUpstream(log, narURL)
+	resp, err := c.getNarFromUpstream(log, narURL)
 	if err != nil {
 		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, narURL.Hash)
@@ -265,9 +266,14 @@ func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}, e
 		return
 	}
 
-	defer r.Close()
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
 
-	written, err := c.putNarInStore(log, narURL, r)
+		resp.Body.Close()
+	}()
+
+	_, err = c.putNarInStore(log, narURL, resp.Body)
 	if err != nil {
 		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, narURL.Hash)
@@ -279,10 +285,6 @@ func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}, e
 	}
 
 	log.Info("download complete", "elapsed", time.Since(now))
-
-	if size > 0 && written != size {
-		log.Error("bytes written is not the same as Content-Length", "Content-Length", size, "written", written)
-	}
 
 	c.muUpstreamJobs.Lock()
 	delete(c.upstreamJobs, narURL.Hash)
@@ -349,13 +351,13 @@ func (c *Cache) getNarFromStore(
 	return size, r, nil
 }
 
-func (c *Cache) getNarFromUpstream(log log15.Logger, narURL nar.URL) (int64, io.ReadCloser, error) {
+func (c *Cache) getNarFromUpstream(log log15.Logger, narURL nar.URL) (*http.Response, error) {
 	// create a new context not associated with any request because we don't want
 	// pulling from upstream to be associated with a user request.
 	ctx := context.Background()
 
 	for _, uc := range c.upstreamCaches {
-		size, nar, err := uc.GetNar(ctx, narURL)
+		resp, err := uc.GetNar(ctx, narURL)
 		if err != nil {
 			if !errors.Is(err, upstream.ErrNotFound) {
 				log.Error("error fetching the narInfo from upstream", "hostname", uc.GetHostname(), "error", err)
@@ -364,10 +366,10 @@ func (c *Cache) getNarFromUpstream(log log15.Logger, narURL nar.URL) (int64, io.
 			continue
 		}
 
-		return size, nar, nil
+		return resp, nil
 	}
 
-	return 0, nil, ErrNotFound
+	return nil, ErrNotFound
 }
 
 func (c *Cache) putNarInStore(_ log15.Logger, narURL nar.URL, r io.ReadCloser) (int64, error) {

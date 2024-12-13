@@ -175,22 +175,22 @@ func TestGetNar(t *testing.T) {
 	//nolint:paralleltest
 	t.Run("not found", func(t *testing.T) {
 		nu := nar.URL{Hash: "abc123", Compression: "xz"}
-		_, _, err := c.GetNar(context.Background(), nu)
+		_, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
 	//nolint:paralleltest
 	t.Run("hash is found", func(t *testing.T) {
 		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
-		cl, body, err := c.GetNar(context.Background(), nu)
+		resp, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
 		defer func() {
 			//nolint:errcheck
-			io.Copy(io.Discard, body)
-			body.Close()
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
 		}()
 
-		assert.EqualValues(t, 50160, cl)
+		assert.EqualValues(t, 50160, resp.Header.Get("Content-Length"))
 	})
 }
