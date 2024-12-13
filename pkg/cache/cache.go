@@ -372,6 +372,7 @@ func (c *Cache) getNarFromUpstream(log log15.Logger, narURL nar.URL) (*http.Resp
 	return nil, ErrNotFound
 }
 
+//nolint:unparam
 func (c *Cache) putNarInStore(_ log15.Logger, narURL nar.URL, r io.ReadCloser) (int64, error) {
 	pattern := narURL.Hash + "-*.nar"
 	if narURL.Compression != "" {
