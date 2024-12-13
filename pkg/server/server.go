@@ -14,6 +14,7 @@ import (
 	"github.com/inconshreveable/log15/v3"
 
 	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/nar"
 )
 
 const (
@@ -268,9 +269,11 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		hash := chi.URLParam(r, "hash")
 		compression := chi.URLParam(r, "compression")
 
-		log := s.logger.New("hash", hash, "compression", compression)
+		nu := nar.URL{Hash: hash, Compression: compression}
 
-		size, reader, err := s.cache.GetNar(r.Context(), hash, compression)
+		log := nu.NewLogger(s.logger)
+
+		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
 			if errors.Is(err, cache.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
@@ -320,7 +323,9 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
 
-	log := s.logger.New("hash", hash, "compression", compression)
+	nu := nar.URL{Hash: hash, Compression: compression}
+
+	log := nu.NewLogger(s.logger)
 
 	if !s.putPermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -332,7 +337,7 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.cache.PutNar(r.Context(), hash, compression, r.Body); err != nil {
+	if err := s.cache.PutNar(r.Context(), nu, r.Body); err != nil {
 		log.Error("error putting the NAR in cache", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 
@@ -350,7 +355,9 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	compression := chi.URLParam(r, "compression")
 
-	log := s.logger.New("hash", hash, "compression", compression)
+	nu := nar.URL{Hash: hash, Compression: compression}
+
+	log := nu.NewLogger(s.logger)
 
 	if !s.deletePermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -362,7 +369,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.cache.DeleteNar(r.Context(), hash, compression); err != nil {
+	if err := s.cache.DeleteNar(r.Context(), nu); err != nil {
 		if errors.Is(err, cache.ErrNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 

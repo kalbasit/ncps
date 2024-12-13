@@ -15,6 +15,7 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 )
 
@@ -122,10 +123,10 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
-func (c Cache) GetNar(ctx context.Context, hash, compression string) (int64, io.ReadCloser, error) {
-	log := c.logger.New("hash", hash, "compression", compression)
+func (c Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
+	log := narURL.NewLogger(c.logger)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(helper.NarURLPath(hash, compression)).String(), nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(narURL.ToNetURLPath()).String(), nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error creating a new request: %w", err)
 	}

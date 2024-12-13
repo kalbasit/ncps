@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/inconshreveable/log15/v3"
+
+	"github.com/kalbasit/ncps/pkg/helper"
 )
 
 var (
@@ -55,4 +57,24 @@ func (u URL) NewLogger(log log15.Logger) log15.Logger {
 		"compression", u.Compression,
 		"query", u.Query.Encode(),
 	)
+}
+
+// ToFilePath returns the filepath in the store for a given nar URL.
+func (u URL) ToFilePath() string {
+	// TODO: bring it out of the helper
+	return helper.NarFilePath(u.Hash, u.Compression)
+}
+
+func (u URL) ToNetURLPath() string {
+	p := "/nar/" + u.Hash + ".nar"
+
+	if u.Compression != "" {
+		p += "." + u.Compression
+	}
+
+	if q := u.Query.Encode(); q != "" {
+		p += "?" + q
+	}
+
+	return p
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 
@@ -682,7 +683,8 @@ func TestGetNar(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
-		_, _, err := c.GetNar(context.Background(), "doesnotexist", "xz")
+		nu := nar.URL{Hash: "doesnotexist", Compression: "xz"}
+		_, _, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, cache.ErrNotFound)
 	})
 
@@ -715,7 +717,8 @@ func TestGetNar(t *testing.T) {
 			assert.NoError(t, err)
 		})
 
-		size, r, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
+		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+		size, r, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
 		defer r.Close()
@@ -782,7 +785,9 @@ func TestGetNar(t *testing.T) {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
 
-			_, r, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+
+			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 			defer r.Close()
 
@@ -821,7 +826,9 @@ func TestGetNar(t *testing.T) {
 		t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			_, r, err := c.GetNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+
+			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 			defer r.Close()
 
@@ -882,7 +889,8 @@ func TestPutNar(t *testing.T) {
 	t.Run("putNar does not return an error", func(t *testing.T) {
 		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
 
-		err := c.PutNar(context.Background(), testdata.Nar1.NarHash, "xz", r)
+		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+		err := c.PutNar(context.Background(), nu, r)
 		assert.NoError(t, err)
 	})
 
@@ -919,7 +927,8 @@ func TestDeleteNar(t *testing.T) {
 		})
 
 		t.Run("DeleteNar does return an error", func(t *testing.T) {
-			err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+			err := c.DeleteNar(context.Background(), nu)
 			assert.ErrorIs(t, err, cache.ErrNotFound)
 		})
 	})
@@ -944,7 +953,8 @@ func TestDeleteNar(t *testing.T) {
 		})
 
 		t.Run("deleteNar does not return an error", func(t *testing.T) {
-			err := c.DeleteNar(context.Background(), testdata.Nar1.NarHash, "xz")
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+			err := c.DeleteNar(context.Background(), nu)
 			assert.NoError(t, err)
 		})
 
