@@ -15,10 +15,29 @@ import (
 type zstdResponseWriter struct {
 	io.Writer
 	http.ResponseWriter
+
+	wroteHeader bool
 }
 
 func (zw *zstdResponseWriter) Write(p []byte) (n int, err error) {
+	if !zw.wroteHeader {
+		zw.WriteHeader(http.StatusOK)
+	}
+
 	return zw.Writer.Write(p)
+}
+
+func (zw *zstdResponseWriter) WriteHeader(code int) {
+	if zw.wroteHeader {
+		zw.ResponseWriter.WriteHeader(code)
+
+		return
+	}
+
+	zw.wroteHeader = true
+
+	zw.Header().Set("Content-Encoding", "zstd")
+	zw.Header().Del("Content-Length")
 }
 
 func PublicKeys() []string {
@@ -38,8 +57,6 @@ func compressMiddleware(next http.Handler) http.Handler {
 
 			return
 		}
-
-		w.Header().Set("Content-Encoding", "zstd")
 
 		encoder, err := zstd.NewWriter(w)
 		if !requireNoError(w, err) {
@@ -79,6 +96,10 @@ func handler(priority int) http.Handler {
 
 			if r.URL.Path == "/"+entry.NarInfoHash+".narinfo" {
 				bs = []byte(entry.NarInfoText)
+			}
+
+			if r.URL.Path == "/nar/"+entry.NarHash+".nar" {
+				bs = []byte(entry.NarText)
 			}
 
 			if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
