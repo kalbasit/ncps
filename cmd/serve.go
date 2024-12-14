@@ -12,6 +12,7 @@ import (
 	"github.com/inconshreveable/log15/v3"
 	"github.com/robfig/cron/v3"
 	"github.com/urfave/cli/v3"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -102,6 +103,24 @@ func serveCommand(logger log15.Logger) *cli.Command {
 
 func serveAction(logger log15.Logger) cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
+		ctx, cancel := context.WithCancel(ctx)
+
+		g, ctx := errgroup.WithContext(ctx)
+		defer func() {
+			if err := g.Wait(); err != nil {
+				logger.Error("error returned from g.Wait()", "error", err)
+			}
+		}()
+
+		// NOTE: Reminder that defer statements run last to first so the first
+		// thing that happens here is the context is canceled which triggers the
+		// errgroup 'g' to start exiting.
+		defer cancel()
+
+		g.Go(func() error {
+			return autoMaxProcs(ctx, 30*time.Second, logger)
+		})
+
 		ucs, err := getUpstreamCaches(ctx, logger, cmd)
 		if err != nil {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
