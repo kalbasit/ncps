@@ -40,7 +40,13 @@ func ParseURL(u string) (URL, error) {
 	}
 
 	nu.Hash = sm[1]
-	nu.Compression = sm[3]
+
+	switch sm[3] {
+	case "zst":
+		nu.Compression = "zstd"
+	default:
+		nu.Compression = sm[3]
+	}
 
 	var err error
 	if nu.Query, err = url.ParseQuery(sm[5]); err != nil {
@@ -95,7 +101,12 @@ func (u URL) pathWithCompression() string {
 	p := "nar/" + u.Hash + ".nar"
 
 	if u.Compression != "" {
-		p += "." + u.Compression
+		switch u.Compression {
+		case "zstd":
+			p += ".zst"
+		default:
+			p += "." + u.Compression
+		}
 	}
 
 	return p

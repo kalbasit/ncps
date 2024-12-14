@@ -44,6 +44,15 @@ func TestParseURL(t *testing.T) {
 			err: nil,
 		},
 		{
+			url: "nar/1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps.nar.zst",
+			narURL: nar.URL{
+				Hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
+				Compression: "zstd",
+				Query:       url.Values{},
+			},
+			err: nil,
+		},
+		{
 			url: "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
 			narURL: nar.URL{
 				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
@@ -57,6 +66,15 @@ func TestParseURL(t *testing.T) {
 			narURL: nar.URL{
 				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
 				Compression: "xz",
+				Query:       url.Values(map[string][]string{"hash": {"1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"}}),
+			},
+			err: nil,
+		},
+		{
+			url: "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar.zst?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
+			narURL: nar.URL{
+				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
+				Compression: "zstd",
 				Query:       url.Values(map[string][]string{"hash": {"1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"}}),
 			},
 			err: nil,
@@ -93,9 +111,11 @@ func TestJoinURL(t *testing.T) {
 		{hash: "", compression: "", url: "http://example.com/nar/.nar"}, // not really valid but it is what it is
 		{hash: "abc123", compression: "", url: "http://example.com/nar/abc123.nar"},
 		{hash: "def456", compression: "xz", url: "http://example.com/nar/def456.nar.xz"},
+		{hash: "def456", compression: "zstd", url: "http://example.com/nar/def456.nar.zst"},
 
 		{hash: "abc123", compression: "", query: "hash=123", url: "http://example.com/nar/abc123.nar?hash=123"},
 		{hash: "def456", compression: "xz", query: "hash=123", url: "http://example.com/nar/def456.nar.xz?hash=123"},
+		{hash: "def456", compression: "zstd", query: "hash=123", url: "http://example.com/nar/def456.nar.zst?hash=123"},
 	}
 
 	for _, test := range tests {
@@ -135,9 +155,11 @@ func TestString(t *testing.T) {
 		{hash: "", compression: "", string: "nar/.nar"}, // not really valid but it is what it is
 		{hash: "abc123", compression: "", string: "nar/abc123.nar"},
 		{hash: "def456", compression: "xz", string: "nar/def456.nar.xz"},
+		{hash: "def456", compression: "zstd", string: "nar/def456.nar.zst"},
 
 		{hash: "abc123", compression: "", query: "hash=123", string: "nar/abc123.nar?hash=123"},
 		{hash: "def456", compression: "xz", query: "hash=123", string: "nar/def456.nar.xz?hash=123"},
+		{hash: "def456", compression: "zstd", query: "hash=123", string: "nar/def456.nar.zst?hash=123"},
 	}
 
 	for _, test := range tests {
