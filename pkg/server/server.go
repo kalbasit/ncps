@@ -285,7 +285,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		log = nu.NewLogger(log)
+		log = nu.NewLogger(s.logger) // re-create the logger to avoid dups
 
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
@@ -353,7 +353,7 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log = nu.NewLogger(log)
+	log = nu.NewLogger(s.logger) // re-create the logger to avoid dups
 
 	if !s.putPermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -399,7 +399,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log = nu.NewLogger(log)
+	log = nu.NewLogger(s.logger) // re-create the logger to avoid dups
 
 	if !s.deletePermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
