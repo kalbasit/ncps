@@ -13,20 +13,22 @@ var ErrUnknownFileExtension = errors.New("file extension is not known")
 type CompressionType string
 
 const (
-	CompressionTypeNoCompression CompressionType = ""
-	CompressionTypeBzip2         CompressionType = "bzip2"
-	CompressionTypeZstd          CompressionType = "zstd"
-	CompressionTypeLzip          CompressionType = "lzip"
-	CompressionTypeLz4           CompressionType = "lz4"
-	CompressionTypeBr            CompressionType = "br"
-	CompressionTypeXz            CompressionType = "xz"
+	CompressionTypeNone  CompressionType = "none"
+	CompressionTypeBzip2 CompressionType = "bzip2"
+	CompressionTypeZstd  CompressionType = "zstd"
+	CompressionTypeLzip  CompressionType = "lzip"
+	CompressionTypeLz4   CompressionType = "lz4"
+	CompressionTypeBr    CompressionType = "br"
+	CompressionTypeXz    CompressionType = "xz"
 )
 
 // CompressionTypeFromExtension returns the compression type given an extension.
 func CompressionTypeFromExtension(ext string) (CompressionType, error) {
 	switch ext {
 	case "":
-		return CompressionTypeNoCompression, nil
+		fallthrough
+	case "none":
+		return CompressionTypeNone, nil
 	case "bz2":
 		return CompressionTypeBzip2, nil
 	case "zst":
@@ -47,7 +49,7 @@ func CompressionTypeFromExtension(ext string) (CompressionType, error) {
 // ToFileExtension returns the file extensions associated with the compression type.
 func (ct CompressionType) ToFileExtension() string {
 	switch ct {
-	case CompressionTypeNoCompression:
+	case CompressionTypeNone:
 		return ""
 	case CompressionTypeBzip2:
 		return "bz2"

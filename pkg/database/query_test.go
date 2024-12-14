@@ -424,7 +424,7 @@ func TestInsertNar(t *testing.T) {
 	require.NoError(t, err)
 
 	allCompressions := []nar.CompressionType{
-		nar.CompressionTypeNoCompression,
+		nar.CompressionTypeNone,
 		nar.CompressionTypeBzip2,
 		nar.CompressionTypeZstd,
 		nar.CompressionTypeLzip,

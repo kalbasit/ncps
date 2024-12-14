@@ -29,7 +29,7 @@ func TestParseURL(t *testing.T) {
 			url: "nar/1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps.nar",
 			narURL: nar.URL{
 				Hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
-				Compression: nar.CompressionTypeNoCompression,
+				Compression: nar.CompressionTypeNone,
 				Query:       url.Values{},
 			},
 			err: nil,
@@ -92,7 +92,7 @@ func TestParseURL(t *testing.T) {
 			url: "nar/1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac.nar?hash=1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl",
 			narURL: nar.URL{
 				Hash:        "1bn7c3bf5z32cdgylhbp9nzhh6ydib5ngsm6mdhsvf233g0nh1ac",
-				Compression: nar.CompressionTypeNoCompression,
+				Compression: nar.CompressionTypeNone,
 				Query:       url.Values(map[string][]string{"hash": {"1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"}}),
 			},
 			err: nil,
@@ -143,7 +143,7 @@ func TestJoinURL(t *testing.T) {
 		{
 			narURL: nar.URL{
 				Hash:        "abc123",
-				Compression: nar.CompressionTypeNoCompression,
+				Compression: nar.CompressionTypeNone,
 			},
 			url: "http://example.com/nar/abc123.nar",
 		},
@@ -171,7 +171,7 @@ func TestJoinURL(t *testing.T) {
 		{
 			narURL: nar.URL{
 				Hash:        "abc123",
-				Compression: nar.CompressionTypeNoCompression,
+				Compression: nar.CompressionTypeNone,
 				Query:       url.Values(map[string][]string{"hash": {"123"}}),
 			},
 			url: "http://example.com/nar/abc123.nar?hash=123",
@@ -225,7 +225,7 @@ func TestString(t *testing.T) {
 		{
 			narURL: nar.URL{
 				Hash:        "abc123",
-				Compression: nar.CompressionTypeNoCompression,
+				Compression: nar.CompressionTypeNone,
 			},
 			string: "nar/abc123.nar",
 		},
@@ -253,7 +253,7 @@ func TestString(t *testing.T) {
 		{
 			narURL: nar.URL{
 				Hash:        "abc123",
-				Compression: nar.CompressionTypeNoCompression,
+				Compression: nar.CompressionTypeNone,
 				Query:       url.Values(map[string][]string{"hash": {"123"}}),
 			},
 			string: "nar/abc123.nar?hash=123",
