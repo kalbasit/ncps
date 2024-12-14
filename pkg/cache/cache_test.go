@@ -3,14 +3,17 @@ package cache_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/inconshreveable/log15/v3"
+	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/stretchr/testify/assert"
@@ -460,6 +463,45 @@ func TestGetNarInfo(t *testing.T) {
 				assert.NoError(t, err)
 			})
 		})
+	})
+
+	t.Run("narinfo with transparent encryption", func(t *testing.T) {
+		var allEntries []testdata.Entry
+
+		for _, narEntry := range testdata.Entries {
+			c := fmt.Sprintf("Compression: %s", narEntry.NarCompression)
+			if !strings.Contains(narEntry.NarInfoText, c) {
+				allEntries = append(allEntries, narEntry)
+			}
+		}
+
+		for i, narEntry := range allEntries {
+			t.Run("nar idx"+strconv.Itoa(i), func(t *testing.T) {
+				narInfo, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+				require.NoError(t, err)
+
+				if assert.Equal(t, nar.CompressionTypeZstd.String(), narInfo.Compression) {
+					storePath := filepath.Join(dir, "store", "nar", narEntry.NarPath)
+					if assert.FileExists(t, storePath) {
+						body, err := os.ReadFile(storePath)
+						require.NoError(t, err)
+
+						if assert.NotEqual(t, narEntry.NarText, string(body), "returned body should be compressed") {
+							decoder, err := zstd.NewReader(nil)
+							require.NoError(t, err)
+
+							plain, err := decoder.DecodeAll(body, []byte{})
+							require.NoError(t, err)
+
+							assert.Equal(t, narEntry.NarText, string(plain))
+
+							//nolint:gosec
+							assert.Len(t, body, int(narInfo.FileSize))
+						}
+					}
+				}
+			})
+		}
 	})
 }
 

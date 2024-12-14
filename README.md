@@ -28,6 +28,7 @@ ncps addresses these issues by acting as a central cache on your local network.
 - **Improved build times:** Faster access to dependencies speeds up builds.
 - **Secure caching:** ncps signs cached paths with its own key, ensuring integrity and authenticity.
 - **Cache size management:** Configure a maximum cache size and a cron schedule to automatically remove least recently used (LRU) store paths, preventing the cache from growing indefinitely.
+- **Zstandard compression support:** ncps supports storing NAR files compressed with Zstandard (zstd) as provided by upstream caches like [Harmonia](https://github.com/nix-community/harmonia). It adjusts the `narinfo` metadata accordingly to reflect the correct filesize and compression method.
 
 ## Installation
 

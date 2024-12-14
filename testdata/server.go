@@ -102,7 +102,7 @@ func handler(priority int) http.Handler {
 				bs = []byte(entry.NarText)
 			}
 
-			if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
+			if r.URL.Path == "/nar/"+entry.NarHash+".nar."+entry.NarCompression.ToFileExtension() {
 				bs = []byte(entry.NarText)
 			}
 
