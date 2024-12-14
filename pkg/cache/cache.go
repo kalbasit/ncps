@@ -453,8 +453,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
 	}
 
+	narURL, err := nar.ParseURL(narInfo.URL)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the nar URL %q: %w", narInfo.URL, err)
+	}
+
 	// start a job to also pull the nar
-	go c.prePullNar(log, narInfo.URL)
+	go c.prePullNar(log, narURL)
 
 	if err := c.signNarInfo(log, narInfo); err != nil {
 		return nil, fmt.Errorf("error signing the narinfo: %w", err)
@@ -507,21 +512,14 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	return c.deleteNarInfoFromStore(ctx, log, hash)
 }
 
-func (c *Cache) prePullNar(log log15.Logger, url string) {
+func (c *Cache) prePullNar(log log15.Logger, narURL nar.URL) {
 	// create a new context not associated with any request because we don't want
 	// downstream HTTP request to cancel this.
 	ctx := context.Background()
 
-	narURL, err := nar.ParseURL(url)
-	if err != nil {
-		c.logger.Error("error parsing the nar URL", "url", url, "error", err)
-
-		return
-	}
-
 	log = narURL.NewLogger(log)
 
-	log.Info("pre-caching NAR ahead of time", "URL", url)
+	log.Info("pre-caching NAR ahead of time")
 
 	_, nar, err := c.GetNar(ctx, narURL)
 	if err != nil {
