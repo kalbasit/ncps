@@ -1227,7 +1227,7 @@ func (c *Cache) runLRU() {
 
 func zstdMutator(log log15.Logger, compression nar.CompressionType) func(r *http.Request) {
 	return func(r *http.Request) {
-		log.Info("narinfo compress is none will set Accept-Encoding to zstd")
+		log.Debug("narinfo compress is none will set Accept-Encoding to zstd")
 
 		r.Header.Set("Accept-Encoding", "zstd")
 
