@@ -184,7 +184,7 @@ func TestRunLRU(t *testing.T) {
 		require.NoErrorf(t, err, "unable to get narinfo for idx %d", i)
 
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		size, _, err := c.GetNar(context.Background(), nu, nil)
+		size, _, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err, "unable to get nar for idx %d", i)
 
 		sizePulled += size
@@ -211,7 +211,7 @@ func TestRunLRU(t *testing.T) {
 		require.NoError(t, err)
 
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		size, _, err := c.GetNar(context.Background(), nu, nil)
+		size, _, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
 		sizePulled += size

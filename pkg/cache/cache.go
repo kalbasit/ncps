@@ -191,7 +191,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		return c.getNarFromStore(ctx, log, narURL)
 	}
 
-	doneC := c.prePullNar(log, narURL)
+	doneC := c.prePullNar(log, narURL, false, nil, nil)
 
 	log.Debug("pulling nar in a go-routing and will wait for it")
 	<-doneC
@@ -232,7 +232,14 @@ func (c *Cache) DeleteNar(_ context.Context, narURL nar.URL) error {
 	return c.deleteNarFromStore(log, narURL)
 }
 
-func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}) {
+func (c *Cache) pullNar(
+	log log15.Logger,
+	enableZSTD bool,
+	uc *upstream.Cache,
+	narInfo *narinfo.NarInfo,
+	narURL nar.URL,
+	doneC chan struct{},
+) {
 	done := func() {
 		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, narURL.Hash)
@@ -245,7 +252,7 @@ func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}) {
 
 	log.Info("downloading the nar from upstream")
 
-	resp, err := c.getNarFromUpstream(log, narURL)
+	resp, err := c.getNarFromUpstream(log, enableZSTD, uc, narInfo, narURL)
 	if err != nil {
 		log.Error("error getting the narInfo from upstream caches", "error", err)
 
@@ -261,13 +268,17 @@ func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}) {
 		resp.Body.Close()
 	}()
 
-	_, err = c.putNarInStore(log, narURL, resp.Body)
+	written, err := c.putNarInStore(log, narURL, resp.Body)
 	if err != nil {
 		log.Error("error storing the narInfo in the store", "error", err)
 
 		done()
 
 		return
+	}
+
+	if enableZSTD && written > 0 {
+		narInfo.FileSize = uint64(written)
 	}
 
 	log.Info("download of nar complete", "elapsed", time.Since(now))
@@ -333,13 +344,37 @@ func (c *Cache) getNarFromStore(
 	return size, r, nil
 }
 
-func (c *Cache) getNarFromUpstream(log log15.Logger, narURL nar.URL) (*http.Response, error) {
+func (c *Cache) getNarFromUpstream(
+	log log15.Logger,
+	enableZSTD bool,
+	uc *upstream.Cache,
+	narInfo *narinfo.NarInfo,
+	narURL nar.URL,
+) (*http.Response, error) {
 	// create a new context not associated with any request because we don't want
 	// pulling from upstream to be associated with a user request.
 	ctx := context.Background()
 
-	for _, uc := range c.upstreamCaches {
-		resp, err := uc.GetNar(ctx, narURL)
+	var mutators []func(*http.Request)
+
+	if enableZSTD {
+		mutators = append(mutators, zstdMutator(log, narURL.Compression))
+
+		narInfo.Compression = nar.CompressionTypeZstd.String()
+		narURL.Compression = nar.CompressionTypeZstd
+	}
+
+	log = narURL.NewLogger(log)
+
+	var ucs []upstream.Cache
+	if uc != nil {
+		ucs = []upstream.Cache{*uc}
+	} else {
+		ucs = c.upstreamCaches
+	}
+
+	for _, uc := range ucs {
+		resp, err := uc.GetNar(ctx, narURL, mutators...)
 		if err != nil {
 			if !errors.Is(err, upstream.ErrNotFound) {
 				log.Error("error fetching the narInfo from upstream", "hostname", uc.GetHostname(), "error", err)
@@ -457,7 +492,7 @@ func (c *Cache) pullNarInfo(
 
 	now := time.Now()
 
-	narInfo, err := c.getNarInfoFromUpstream(log, hash)
+	uc, narInfo, err := c.getNarInfoFromUpstream(log, hash)
 	if err != nil {
 		log.Error("error getting the narInfo from upstream caches", "error", err)
 
@@ -475,8 +510,24 @@ func (c *Cache) pullNarInfo(
 		return
 	}
 
-	// start a job to also pull the nar but don't wait for it to come back
-	c.prePullNar(log, narURL)
+	var enableZSTD bool
+
+	if narInfo.Compression == nar.CompressionTypeNone.String() {
+		log = log.New("zstd-enabled", true)
+		enableZSTD = true
+	} else {
+		log = log.New("zstd-enabled", false)
+	}
+
+	// start a job to also pull the nar but don't wait for it to cme back
+	narDoneC := c.prePullNar(log, narURL, enableZSTD, uc, narInfo)
+
+	// Harmonia, for example, explicitly returns none for compression but does
+	// accept encoding request, if that's the case we should get the compressed
+	// version and store that instead.
+	if enableZSTD {
+		<-narDoneC
+	}
 
 	if err := c.signNarInfo(log, narInfo); err != nil {
 		log.Error("error signing the narinfo", "error", err)
@@ -564,7 +615,13 @@ func (c *Cache) prePullNarInfo(log log15.Logger, hash string) chan struct{} {
 	return doneC
 }
 
-func (c *Cache) prePullNar(log log15.Logger, narURL nar.URL) chan struct{} {
+func (c *Cache) prePullNar(
+	log log15.Logger,
+	narURL nar.URL,
+	enableZSTD bool,
+	uc *upstream.Cache,
+	narInfo *narinfo.NarInfo,
+) chan struct{} {
 	c.muUpstreamJobs.Lock()
 
 	doneC, ok := c.upstreamJobs[narURL.Hash]
@@ -572,7 +629,7 @@ func (c *Cache) prePullNar(log log15.Logger, narURL nar.URL) chan struct{} {
 		doneC = make(chan struct{})
 		c.upstreamJobs[narURL.Hash] = doneC
 
-		go c.pullNar(log, narURL, doneC)
+		go c.pullNar(log, enableZSTD, uc, narInfo, narURL, doneC)
 	}
 	c.muUpstreamJobs.Unlock()
 
@@ -667,7 +724,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log log15.Logger, hash 
 	return ni, nil
 }
 
-func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*upstream.Cache, *narinfo.NarInfo, error) {
 	// create a new context not associated with any request because we don't want
 	// downstream HTTP request to cancel this.
 	ctx := context.Background()
@@ -682,10 +739,10 @@ func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*narinfo.
 			continue
 		}
 
-		return narInfo, nil
+		return nil, narInfo, nil
 	}
 
-	return nil, ErrNotFound
+	return nil, nil, ErrNotFound
 }
 
 func (c *Cache) purgeNarInfo(ctx context.Context, log log15.Logger, hash string, narURL nar.URL) error {
@@ -1165,5 +1222,24 @@ func (c *Cache) runLRU() {
 
 	if err := tx.Commit(); err != nil {
 		log.Error("error committing the transaction", "error", err)
+	}
+}
+
+func zstdMutator(log log15.Logger, compression nar.CompressionType) func(r *http.Request) {
+	return func(r *http.Request) {
+		log.Info("narinfo compress is none will set Accept-Encoding to zstd")
+		r.Header.Set("Accept-Encoding", "zstd")
+
+		cfe := compression.ToFileExtension()
+		if cfe != "" {
+			cfe = "." + cfe
+		}
+
+		r.URL.Path = strings.Replace(
+			r.URL.Path,
+			"."+nar.CompressionTypeZstd.ToFileExtension(),
+			cfe,
+			-1,
+		)
 	}
 }
