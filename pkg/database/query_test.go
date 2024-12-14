@@ -388,7 +388,7 @@ func TestGetNarByHash(t *testing.T) {
 		ni1, err := db.CreateNar(context.Background(), database.CreateNarParams{
 			NarInfoID:   narInfo.ID,
 			Hash:        narHash,
-			Compression: "xz",
+			Compression: nar.CompressionTypeXz.String(),
 			Query:       "hash=123&key=value",
 			FileSize:    123,
 		})
@@ -765,17 +765,17 @@ func TestNarTotalSize(t *testing.T) {
 	require.NoError(t, err)
 
 	var expectedSize uint64
-	for _, nar := range testdata.Entries {
-		expectedSize += uint64(len(nar.NarText))
+	for _, narEntry := range testdata.Entries {
+		expectedSize += uint64(len(narEntry.NarText))
 
-		narInfo, err := db.CreateNarInfo(context.Background(), nar.NarInfoHash)
+		narInfo, err := db.CreateNarInfo(context.Background(), narEntry.NarInfoHash)
 		require.NoError(t, err)
 
 		_, err = db.CreateNar(context.Background(), database.CreateNarParams{
 			NarInfoID:   narInfo.ID,
-			Hash:        nar.NarHash,
-			Compression: "xz",
-			FileSize:    uint64(len(nar.NarText)),
+			Hash:        narEntry.NarHash,
+			Compression: nar.CompressionTypeXz.String(),
+			FileSize:    uint64(len(narEntry.NarText)),
 		})
 		require.NoError(t, err)
 	}
@@ -802,25 +802,25 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	require.NoError(t, err)
 
 	var totalSize uint64
-	for _, nar := range testdata.Entries {
-		totalSize += uint64(len(nar.NarText))
+	for _, narEntry := range testdata.Entries {
+		totalSize += uint64(len(narEntry.NarText))
 
-		narInfo, err := db.CreateNarInfo(context.Background(), nar.NarInfoHash)
+		narInfo, err := db.CreateNarInfo(context.Background(), narEntry.NarInfoHash)
 		require.NoError(t, err)
 
 		_, err = db.CreateNar(context.Background(), database.CreateNarParams{
 			NarInfoID:   narInfo.ID,
-			Hash:        nar.NarHash,
-			Compression: "xz",
-			FileSize:    uint64(len(nar.NarText)),
+			Hash:        narEntry.NarHash,
+			Compression: nar.CompressionTypeXz.String(),
+			FileSize:    uint64(len(narEntry.NarText)),
 		})
 		require.NoError(t, err)
 	}
 
 	time.Sleep(time.Second)
 
-	for _, nar := range testdata.Entries[:len(testdata.Entries)-1] {
-		_, err := db.TouchNar(context.Background(), nar.NarHash)
+	for _, narEntry := range testdata.Entries[:len(testdata.Entries)-1] {
+		_, err := db.TouchNar(context.Background(), narEntry.NarHash)
 		require.NoError(t, err)
 	}
 

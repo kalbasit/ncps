@@ -683,7 +683,7 @@ func TestGetNar(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
-		nu := nar.URL{Hash: "doesnotexist", Compression: "xz"}
+		nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
 		_, _, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, cache.ErrNotFound)
 	})
@@ -717,7 +717,7 @@ func TestGetNar(t *testing.T) {
 			assert.NoError(t, err)
 		})
 
-		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 		size, r, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
@@ -785,7 +785,7 @@ func TestGetNar(t *testing.T) {
 				c.SetRecordAgeIgnoreTouch(0)
 			}()
 
-			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
 			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
@@ -826,7 +826,7 @@ func TestGetNar(t *testing.T) {
 		t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
 			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
@@ -889,7 +889,7 @@ func TestPutNar(t *testing.T) {
 	t.Run("putNar does not return an error", func(t *testing.T) {
 		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
 
-		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 		err := c.PutNar(context.Background(), nu, r)
 		assert.NoError(t, err)
 	})
@@ -927,7 +927,7 @@ func TestDeleteNar(t *testing.T) {
 		})
 
 		t.Run("DeleteNar does return an error", func(t *testing.T) {
-			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 			err := c.DeleteNar(context.Background(), nu)
 			assert.ErrorIs(t, err, cache.ErrNotFound)
 		})
@@ -953,7 +953,7 @@ func TestDeleteNar(t *testing.T) {
 		})
 
 		t.Run("deleteNar does not return an error", func(t *testing.T) {
-			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 			err := c.DeleteNar(context.Background(), nu)
 			assert.NoError(t, err)
 		})

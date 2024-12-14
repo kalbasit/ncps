@@ -170,7 +170,7 @@ func TestRunLRU(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 		require.NoErrorf(t, err, "unable to get narinfo for idx %d", i)
 
-		nu := nar.URL{Hash: narEntry.NarHash, Compression: "xz"}
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: nar.CompressionTypeXz}
 		size, _, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err, "unable to get nar for idx %d", i)
 
@@ -183,7 +183,7 @@ func TestRunLRU(t *testing.T) {
 	assert.Equal(t, expectedSize, sizePulled, "size pulled is less than maxSize by exactly the last one")
 
 	for _, narEntry := range allEntries {
-		nu := nar.URL{Hash: narEntry.NarHash, Compression: "xz"}
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: nar.CompressionTypeXz}
 		assert.True(t, c.hasNarInStore(logger, nu), "confirm all nars are in the store")
 	}
 
@@ -197,7 +197,7 @@ func TestRunLRU(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 		require.NoError(t, err)
 
-		nu := nar.URL{Hash: narEntry.NarHash, Compression: "xz"}
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: nar.CompressionTypeXz}
 		size, _, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
@@ -230,11 +230,11 @@ func TestRunLRU(t *testing.T) {
 
 	// confirm all nars except the last one are in the store
 	for _, narEntry := range entries {
-		nu := nar.URL{Hash: narEntry.NarHash, Compression: "xz"}
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: nar.CompressionTypeXz}
 		assert.True(t, c.hasNarInStore(logger, nu))
 	}
 
-	nu := nar.URL{Hash: lastEntry.NarHash, Compression: "xz"}
+	nu := nar.URL{Hash: lastEntry.NarHash, Compression: nar.CompressionTypeXz}
 	assert.False(t, c.hasNarInStore(logger, nu))
 
 	// all narinfo records except the last one are in the database

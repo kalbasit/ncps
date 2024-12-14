@@ -133,7 +133,7 @@ func TestServeHTTP(t *testing.T) {
 					assert.NoFileExists(t, storePath)
 				})
 
-				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: "xz"}
+				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz}
 				_, _, err := c.GetNar(context.Background(), nu)
 				require.NoError(t, err)
 
@@ -219,7 +219,7 @@ func TestServeHTTP(t *testing.T) {
 				u, err := url.Parse("http://example.com")
 				require.NoError(t, err)
 
-				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 				r := httptest.NewRequest("GET", nu.JoinURL(u).String(), nil)
 				w := httptest.NewRecorder()
 
@@ -245,7 +245,7 @@ func TestServeHTTP(t *testing.T) {
 				q, err := url.ParseQuery("fakesize=123")
 				require.NoError(t, err)
 
-				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: "xz", Query: q}
+				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz, Query: q}
 
 				r := httptest.NewRequest("GET", nu.JoinURL(u).String(), nil)
 				w := httptest.NewRecorder()

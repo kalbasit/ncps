@@ -176,14 +176,14 @@ func TestGetNar(t *testing.T) {
 
 	//nolint:paralleltest
 	t.Run("not found", func(t *testing.T) {
-		nu := nar.URL{Hash: "abc123", Compression: "xz"}
+		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
 		_, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
 	//nolint:paralleltest
 	t.Run("hash is found", func(t *testing.T) {
-		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 		resp, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
@@ -216,7 +216,7 @@ func TestGetNarCanMutate(t *testing.T) {
 		r.Header.Set("ping", pingV)
 	}
 
-	nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: "xz"}
+	nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 	resp, err := c.GetNar(context.Background(), nu, mutator)
 	require.NoError(t, err)
 
