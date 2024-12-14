@@ -267,11 +267,25 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getNar(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
-		compression := chi.URLParam(r, "compression")
 
-		nu := nar.URL{Hash: hash, Compression: compression, Query: r.URL.Query()}
+		nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
 		log := nu.NewLogger(s.logger)
+
+		var err error
+
+		nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+
+			if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
+				log.Error("error computing the compression", "error", err)
+			}
+
+			return
+		}
+
+		log = nu.NewLogger(log)
 
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
@@ -321,11 +335,25 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
-	compression := chi.URLParam(r, "compression")
 
-	nu := nar.URL{Hash: hash, Compression: compression, Query: r.URL.Query()}
+	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
 	log := nu.NewLogger(s.logger)
+
+	var err error
+
+	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
+			log.Error("error computing the compression", "error", err)
+		}
+
+		return
+	}
+
+	log = nu.NewLogger(log)
 
 	if !s.putPermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -353,11 +381,25 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
-	compression := chi.URLParam(r, "compression")
 
-	nu := nar.URL{Hash: hash, Compression: compression, Query: r.URL.Query()}
+	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
 	log := nu.NewLogger(s.logger)
+
+	var err error
+
+	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
+			log.Error("error computing the compression", "error", err)
+		}
+
+		return
+	}
+
+	log = nu.NewLogger(log)
 
 	if !s.deletePermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
