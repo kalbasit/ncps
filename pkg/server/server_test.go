@@ -134,7 +134,7 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz}
-				_, _, err := c.GetNar(context.Background(), nu, nil)
+				_, _, err := c.GetNar(context.Background(), nu)
 				require.NoError(t, err)
 
 				t.Run("nar does exist in storage", func(t *testing.T) {

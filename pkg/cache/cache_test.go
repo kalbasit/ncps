@@ -728,7 +728,7 @@ func TestGetNar(t *testing.T) {
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
-		_, _, err := c.GetNar(context.Background(), nu, nil)
+		_, _, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, cache.ErrNotFound)
 	})
 
@@ -762,7 +762,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-		size, r, err := c.GetNar(context.Background(), nu, nil)
+		size, r, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 
 		defer r.Close()
@@ -831,7 +831,7 @@ func TestGetNar(t *testing.T) {
 
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
-			_, r, err := c.GetNar(context.Background(), nu, nil)
+			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 			defer r.Close()
 
@@ -872,7 +872,7 @@ func TestGetNar(t *testing.T) {
 
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
-			_, r, err := c.GetNar(context.Background(), nu, nil)
+			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 			defer r.Close()
 
