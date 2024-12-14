@@ -197,7 +197,7 @@ func TestRunLRU(t *testing.T) {
 
 	for _, narEntry := range allEntries {
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		assert.True(t, c.hasNarInStore(logger, nu), "confirm all nars are in the store")
+		assert.True(t, c.hasNarInStore(logger, &nu), "confirm all nars are in the store")
 	}
 
 	// ensure time has moved by one sec for the last_accessed_at work
@@ -244,11 +244,11 @@ func TestRunLRU(t *testing.T) {
 	// confirm all nars except the last one are in the store
 	for _, narEntry := range entries {
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		assert.True(t, c.hasNarInStore(logger, nu))
+		assert.True(t, c.hasNarInStore(logger, &nu))
 	}
 
 	nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastEntry.NarCompression}
-	assert.False(t, c.hasNarInStore(logger, nu))
+	assert.False(t, c.hasNarInStore(logger, &nu))
 
 	// all narinfo records except the last one are in the database
 	for _, narEntry := range entries {

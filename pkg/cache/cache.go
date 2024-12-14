@@ -187,20 +187,20 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 	log := narURL.NewLogger(c.logger)
 
-	if c.hasNarInStore(log, narURL) {
-		return c.getNarFromStore(ctx, log, narURL)
+	if c.hasNarInStore(log, &narURL) {
+		return c.getNarFromStore(ctx, log, &narURL)
 	}
 
-	doneC := c.prePullNar(log, narURL, false, nil, nil)
+	doneC := c.prePullNar(log, &narURL, nil, nil, false)
 
 	log.Debug("pulling nar in a go-routing and will wait for it")
 	<-doneC
 
-	if !c.hasNarInStore(log, narURL) {
+	if !c.hasNarInStore(log, &narURL) {
 		return 0, nil, ErrNotFound
 	}
 
-	return c.getNarFromStore(ctx, log, narURL)
+	return c.getNarFromStore(ctx, log, &narURL)
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
@@ -217,7 +217,7 @@ func (c *Cache) PutNar(_ context.Context, narURL nar.URL, r io.ReadCloser) error
 
 	log := narURL.NewLogger(c.logger)
 
-	_, err := c.putNarInStore(log, narURL, r)
+	_, err := c.putNarInStore(log, &narURL, r)
 
 	return err
 }
@@ -229,15 +229,15 @@ func (c *Cache) DeleteNar(_ context.Context, narURL nar.URL) error {
 
 	log := narURL.NewLogger(c.logger)
 
-	return c.deleteNarFromStore(log, narURL)
+	return c.deleteNarFromStore(log, &narURL)
 }
 
 func (c *Cache) pullNar(
 	log log15.Logger,
-	enableZSTD bool,
+	narURL *nar.URL,
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
-	narURL nar.URL,
+	enableZSTD bool,
 	doneC chan struct{},
 ) {
 	done := func() {
@@ -252,7 +252,7 @@ func (c *Cache) pullNar(
 
 	log.Info("downloading the nar from upstream")
 
-	resp, err := c.getNarFromUpstream(log, enableZSTD, uc, narInfo, narURL)
+	resp, err := c.getNarFromUpstream(log, narURL, uc, narInfo, enableZSTD)
 	if err != nil {
 		log.Error("error getting the narInfo from upstream caches", "error", err)
 
@@ -286,7 +286,7 @@ func (c *Cache) pullNar(
 	done()
 }
 
-func (c *Cache) getNarPathInStore(narURL nar.URL) string {
+func (c *Cache) getNarPathInStore(narURL *nar.URL) string {
 	return filepath.Join(c.storeNarPath(), narURL.ToFilePath())
 }
 
@@ -294,14 +294,14 @@ func (c *Cache) getNarInfoPathInStore(hash string) string {
 	return filepath.Join(c.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 }
 
-func (c *Cache) hasNarInStore(log log15.Logger, narURL nar.URL) bool {
+func (c *Cache) hasNarInStore(log log15.Logger, narURL *nar.URL) bool {
 	return c.hasInStore(log, c.getNarPathInStore(narURL))
 }
 
 func (c *Cache) getNarFromStore(
 	ctx context.Context,
 	log log15.Logger,
-	narURL nar.URL,
+	narURL *nar.URL,
 ) (int64, io.ReadCloser, error) {
 	size, r, err := c.getFromStore(log, c.getNarPathInStore(narURL))
 	if err != nil {
@@ -346,10 +346,10 @@ func (c *Cache) getNarFromStore(
 
 func (c *Cache) getNarFromUpstream(
 	log log15.Logger,
-	enableZSTD bool,
+	narURL *nar.URL,
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
-	narURL nar.URL,
+	enableZSTD bool,
 ) (*http.Response, error) {
 	// create a new context not associated with any request because we don't want
 	// pulling from upstream to be associated with a user request.
@@ -360,8 +360,10 @@ func (c *Cache) getNarFromUpstream(
 	if enableZSTD {
 		mutators = append(mutators, zstdMutator(log, narURL.Compression))
 
-		narInfo.Compression = nar.CompressionTypeZstd.String()
 		narURL.Compression = nar.CompressionTypeZstd
+
+		narInfo.Compression = nar.CompressionTypeZstd.String()
+		narInfo.URL = narURL.String()
 	}
 
 	log = narURL.NewLogger(log)
@@ -374,7 +376,7 @@ func (c *Cache) getNarFromUpstream(
 	}
 
 	for _, uc := range ucs {
-		resp, err := uc.GetNar(ctx, narURL, mutators...)
+		resp, err := uc.GetNar(ctx, *narURL, mutators...)
 		if err != nil {
 			if !errors.Is(err, upstream.ErrNotFound) {
 				log.Error("error fetching the narInfo from upstream", "hostname", uc.GetHostname(), "error", err)
@@ -389,7 +391,7 @@ func (c *Cache) getNarFromUpstream(
 	return nil, ErrNotFound
 }
 
-func (c *Cache) putNarInStore(_ log15.Logger, narURL nar.URL, r io.ReadCloser) (int64, error) {
+func (c *Cache) putNarInStore(_ log15.Logger, narURL *nar.URL, r io.ReadCloser) (int64, error) {
 	pattern := narURL.Hash + "-*.nar"
 	if cext := narURL.Compression.String(); cext != "" {
 		pattern += "." + cext
@@ -425,7 +427,7 @@ func (c *Cache) putNarInStore(_ log15.Logger, narURL nar.URL, r io.ReadCloser) (
 	return written, nil
 }
 
-func (c *Cache) deleteNarFromStore(log log15.Logger, narURL nar.URL) error {
+func (c *Cache) deleteNarFromStore(log log15.Logger, narURL *nar.URL) error {
 	if !c.hasNarInStore(log, narURL) {
 		return ErrNotFound
 	}
@@ -512,14 +514,13 @@ func (c *Cache) pullNarInfo(
 	var enableZSTD bool
 
 	if narInfo.Compression == nar.CompressionTypeNone.String() {
-		log = log.New("zstd-enabled", true)
 		enableZSTD = true
-	} else {
-		log = log.New("zstd-enabled", false)
 	}
 
+	log = log.New("zstd-support", enableZSTD)
+
 	// start a job to also pull the nar but don't wait for it to cme back
-	narDoneC := c.prePullNar(log, narURL, enableZSTD, uc, narInfo)
+	narDoneC := c.prePullNar(log, &narURL, uc, narInfo, enableZSTD)
 
 	// Harmonia, for example, explicitly returns none for compression but does
 	// accept encoding request, if that's the case we should get the compressed
@@ -616,10 +617,10 @@ func (c *Cache) prePullNarInfo(log log15.Logger, hash string) chan struct{} {
 
 func (c *Cache) prePullNar(
 	log log15.Logger,
-	narURL nar.URL,
-	enableZSTD bool,
+	narURL *nar.URL,
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
+	enableZSTD bool,
 ) chan struct{} {
 	c.muUpstreamJobs.Lock()
 
@@ -628,7 +629,7 @@ func (c *Cache) prePullNar(
 		doneC = make(chan struct{})
 		c.upstreamJobs[narURL.Hash] = doneC
 
-		go c.pullNar(log, enableZSTD, uc, narInfo, narURL, doneC)
+		go c.pullNar(log, narURL, uc, narInfo, enableZSTD, doneC)
 	}
 	c.muUpstreamJobs.Unlock()
 
@@ -668,7 +669,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log log15.Logger, hash 
 		log.Error("error parsing the nar-url", "nar-url", ni.URL, "error", err)
 
 		// narinfo is invalid, remove it
-		if err := c.purgeNarInfo(ctx, log, hash, narURL); err != nil {
+		if err := c.purgeNarInfo(ctx, log, hash, &narURL); err != nil {
 			log.Error("error purging the narinfo", "error", err)
 		}
 
@@ -677,10 +678,10 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log log15.Logger, hash 
 
 	log = narURL.NewLogger(log)
 
-	if !c.hasNarInStore(log, narURL) && !c.hasUpstreamJob(narURL.Hash) {
+	if !c.hasNarInStore(log, &narURL) && !c.hasUpstreamJob(narURL.Hash) {
 		log.Error("narinfo was requested but no nar was found requesting a purge")
 
-		if err := c.purgeNarInfo(ctx, log, hash, narURL); err != nil {
+		if err := c.purgeNarInfo(ctx, log, hash, &narURL); err != nil {
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
 		}
 
@@ -744,7 +745,7 @@ func (c *Cache) getNarInfoFromUpstream(log log15.Logger, hash string) (*upstream
 	return nil, nil, ErrNotFound
 }
 
-func (c *Cache) purgeNarInfo(ctx context.Context, log log15.Logger, hash string, narURL nar.URL) error {
+func (c *Cache) purgeNarInfo(ctx context.Context, log log15.Logger, hash string, narURL *nar.URL) error {
 	tx, err := c.db.DB().Begin()
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
@@ -1190,7 +1191,7 @@ func (c *Cache) runLRU() {
 		filesToRemove = append(filesToRemove,
 			// NOTE: we don't need the query when working with store so it's
 			// explicitly omitted.
-			c.getNarPathInStore(nar.URL{
+			c.getNarPathInStore(&nar.URL{
 				Hash:        narRecord.Hash,
 				Compression: nar.CompressionTypeFromString(narRecord.Compression),
 			}),
@@ -1227,6 +1228,7 @@ func (c *Cache) runLRU() {
 func zstdMutator(log log15.Logger, compression nar.CompressionType) func(r *http.Request) {
 	return func(r *http.Request) {
 		log.Info("narinfo compress is none will set Accept-Encoding to zstd")
+
 		r.Header.Set("Accept-Encoding", "zstd")
 
 		cfe := compression.ToFileExtension()

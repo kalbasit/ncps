@@ -480,8 +480,6 @@ func TestGetNarInfo(t *testing.T) {
 				narInfo, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 				require.NoError(t, err)
 
-				fmt.Printf("allEntries=%#v\n", narInfo)
-
 				if assert.Equal(t, nar.CompressionTypeZstd.String(), narInfo.Compression) {
 					storePath := filepath.Join(dir, "store", "nar", narEntry.NarPath)
 					if assert.FileExists(t, storePath) {
