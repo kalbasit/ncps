@@ -191,28 +191,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		return c.getNarFromStore(ctx, log, narURL)
 	}
 
-	errC := make(chan error)
+	doneC := c.prePullNar(log, narURL)
 
-	c.muUpstreamJobs.Lock()
-
-	doneC, ok := c.upstreamJobs[narURL.Hash]
-	if ok {
-		log.Info("waiting for an in-progress download to finish")
-	} else {
-		doneC = make(chan struct{})
-		c.upstreamJobs[narURL.Hash] = doneC
-
-		go c.pullNar(log, narURL, doneC, errC)
-	}
-	c.muUpstreamJobs.Unlock()
-
-	select {
-	case err := <-errC:
-		close(doneC) // notify other go-routines waiting on the done channel.
-
-		return 0, nil, err
-	case <-doneC:
-	}
+	log.Debug("pulling nar in a go-routing and will wait for it")
+	<-doneC
 
 	if !c.hasNarInStore(log, narURL) {
 		return 0, nil, ErrNotFound
@@ -250,18 +232,24 @@ func (c *Cache) DeleteNar(_ context.Context, narURL nar.URL) error {
 	return c.deleteNarFromStore(log, narURL)
 }
 
-func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}, errC chan error) {
+func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}) {
+	done := func() {
+		c.muUpstreamJobs.Lock()
+		delete(c.upstreamJobs, narURL.Hash)
+		c.muUpstreamJobs.Unlock()
+
+		close(doneC)
+	}
+
 	now := time.Now()
 
 	log.Info("downloading the nar from upstream")
 
 	resp, err := c.getNarFromUpstream(log, narURL)
 	if err != nil {
-		c.muUpstreamJobs.Lock()
-		delete(c.upstreamJobs, narURL.Hash)
-		c.muUpstreamJobs.Unlock()
+		log.Error("error getting the narInfo from upstream caches", "error", err)
 
-		errC <- fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+		done()
 
 		return
 	}
@@ -275,22 +263,16 @@ func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}, e
 
 	_, err = c.putNarInStore(log, narURL, resp.Body)
 	if err != nil {
-		c.muUpstreamJobs.Lock()
-		delete(c.upstreamJobs, narURL.Hash)
-		c.muUpstreamJobs.Unlock()
+		log.Error("error storing the narInfo in the store", "error", err)
 
-		errC <- fmt.Errorf("error storing the narInfo in the store: %w", err)
+		done()
 
 		return
 	}
 
-	log.Info("download complete", "elapsed", time.Since(now))
+	log.Info("download of nar complete", "elapsed", time.Since(now))
 
-	c.muUpstreamJobs.Lock()
-	delete(c.upstreamJobs, narURL.Hash)
-	c.muUpstreamJobs.Unlock()
-
-	close(doneC)
+	done()
 }
 
 func (c *Cache) getNarPathInStore(narURL nar.URL) string {
@@ -448,28 +430,81 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		}
 	}
 
-	narInfo, err = c.getNarInfoFromUpstream(log, hash)
+	doneC := c.prePullNarInfo(log, hash)
+
+	log.Debug("pulling nar in a go-routing and will wait for it")
+	<-doneC
+
+	if !c.hasNarInfoInStore(log, hash) {
+		return nil, ErrNotFound
+	}
+
+	return c.getNarInfoFromStore(ctx, log, hash)
+}
+
+func (c *Cache) pullNarInfo(
+	log log15.Logger,
+	hash string,
+	doneC chan struct{},
+) {
+	done := func() {
+		c.muUpstreamJobs.Lock()
+		delete(c.upstreamJobs, hash)
+		c.muUpstreamJobs.Unlock()
+
+		close(doneC)
+	}
+
+	now := time.Now()
+
+	narInfo, err := c.getNarInfoFromUpstream(log, hash)
 	if err != nil {
-		return nil, fmt.Errorf("error getting the narInfo from upstream caches: %w", err)
+		log.Error("error getting the narInfo from upstream caches", "error", err)
+
+		done()
+
+		return
 	}
 
 	narURL, err := nar.ParseURL(narInfo.URL)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing the nar URL %q: %w", narInfo.URL, err)
+		log.Error("error parsing the nar URL", "nar-url", narInfo.URL, "error", err)
+
+		done()
+
+		return
 	}
 
-	// start a job to also pull the nar
-	go c.prePullNar(log, narURL)
+	// start a job to also pull the nar but don't wait for it to come back
+	c.prePullNar(log, narURL)
 
 	if err := c.signNarInfo(log, narInfo); err != nil {
-		return nil, fmt.Errorf("error signing the narinfo: %w", err)
+		log.Error("error signing the narinfo", "error", err)
+
+		done()
+
+		return
 	}
 
 	if err := c.putNarInfoInStore(log, hash, narInfo); err != nil {
-		return nil, fmt.Errorf("error storing the narInfo in the store: %w", err)
+		log.Error("error storing the narInfo in the store", "error", err)
+
+		done()
+
+		return
 	}
 
-	return narInfo, c.storeInDatabase(log, hash, narInfo)
+	if err := c.storeInDatabase(log, hash, narInfo); err != nil {
+		log.Error("error storing the narinfo in the database", "error", err)
+
+		done()
+
+		return
+	}
+
+	log.Info("download of narinfo complete", "elapsed", time.Since(now))
+
+	done()
 }
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
@@ -512,23 +547,36 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	return c.deleteNarInfoFromStore(ctx, log, hash)
 }
 
-func (c *Cache) prePullNar(log log15.Logger, narURL nar.URL) {
-	// create a new context not associated with any request because we don't want
-	// downstream HTTP request to cancel this.
-	ctx := context.Background()
+func (c *Cache) prePullNarInfo(log log15.Logger, hash string) chan struct{} {
+	c.muUpstreamJobs.Lock()
 
-	log = narURL.NewLogger(log)
+	doneC, ok := c.upstreamJobs[hash]
+	if ok {
+		log.Info("waiting for an in-progress download of narinfo to finish")
+	} else {
+		doneC = make(chan struct{})
+		c.upstreamJobs[hash] = doneC
 
-	log.Info("pre-caching NAR ahead of time")
-
-	_, nar, err := c.GetNar(ctx, narURL)
-	if err != nil {
-		log.Error("error fetching the NAR", "error", err)
-
-		return
+		go c.pullNarInfo(log, hash, doneC)
 	}
+	c.muUpstreamJobs.Unlock()
 
-	nar.Close()
+	return doneC
+}
+
+func (c *Cache) prePullNar(log log15.Logger, narURL nar.URL) chan struct{} {
+	c.muUpstreamJobs.Lock()
+
+	doneC, ok := c.upstreamJobs[narURL.Hash]
+	if !ok {
+		doneC = make(chan struct{})
+		c.upstreamJobs[narURL.Hash] = doneC
+
+		go c.pullNar(log, narURL, doneC)
+	}
+	c.muUpstreamJobs.Unlock()
+
+	return doneC
 }
 
 func (c *Cache) signNarInfo(_ log15.Logger, narInfo *narinfo.NarInfo) error {
@@ -561,6 +609,8 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log log15.Logger, hash 
 
 	narURL, err := nar.ParseURL(ni.URL)
 	if err != nil {
+		log.Error("error parsing the nar-url", "nar-url", ni.URL, "error", err)
+
 		// narinfo is invalid, remove it
 		if err := c.purgeNarInfo(ctx, log, hash, narURL); err != nil {
 			log.Error("error purging the narinfo", "error", err)
@@ -571,7 +621,9 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log log15.Logger, hash 
 
 	log = narURL.NewLogger(log)
 
-	if !c.hasNarInStore(log, narURL) && !c.hasUpstreamJob(hash) {
+	if !c.hasNarInStore(log, narURL) && !c.hasUpstreamJob(narURL.Hash) {
+		log.Error("narinfo was requested but no nar was found requesting a purge")
+
 		if err := c.purgeNarInfo(ctx, log, hash, narURL); err != nil {
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
 		}
