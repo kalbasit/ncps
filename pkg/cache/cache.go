@@ -294,7 +294,7 @@ func (c *Cache) pullNar(log log15.Logger, narURL nar.URL, doneC chan struct{}, e
 }
 
 func (c *Cache) getNarPathInStore(narURL nar.URL) string {
-	return filepath.Join(c.storeNarPath(), helper.NarFilePath(narURL.Hash, narURL.Compression))
+	return filepath.Join(c.storeNarPath(), narURL.ToFilePath())
 }
 
 func (c *Cache) getNarInfoPathInStore(hash string) string {
@@ -375,8 +375,8 @@ func (c *Cache) getNarFromUpstream(log log15.Logger, narURL nar.URL) (*http.Resp
 //nolint:unparam
 func (c *Cache) putNarInStore(_ log15.Logger, narURL nar.URL, r io.ReadCloser) (int64, error) {
 	pattern := narURL.Hash + "-*.nar"
-	if narURL.Compression != "" {
-		pattern += "." + narURL.Compression
+	if cext := narURL.Compression.String(); cext != "" {
+		pattern += "." + cext
 	}
 
 	f, err := os.CreateTemp(c.storeTMPPath(), pattern)
@@ -754,7 +754,7 @@ func (c *Cache) storeInDatabase(log log15.Logger, hash string, narInfo *narinfo.
 	_, err = c.db.WithTx(tx).CreateNar(ctx, database.CreateNarParams{
 		NarInfoID:   nir.ID,
 		Hash:        narURL.Hash,
-		Compression: narURL.Compression,
+		Compression: narURL.Compression.String(),
 		Query:       narURL.Query.Encode(),
 		FileSize:    narInfo.FileSize,
 	})
@@ -1086,7 +1086,7 @@ func (c *Cache) runLRU() {
 			// explicitly omitted.
 			c.getNarPathInStore(nar.URL{
 				Hash:        narRecord.Hash,
-				Compression: narRecord.Compression,
+				Compression: nar.CompressionTypeFromString(narRecord.Compression),
 			}),
 		)
 	}

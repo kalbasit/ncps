@@ -2,6 +2,7 @@ package nar
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -22,7 +23,7 @@ var (
 // URL represents a nar URL.
 type URL struct {
 	Hash        string
-	Compression string
+	Compression CompressionType
 	Query       url.Values
 }
 
@@ -40,11 +41,15 @@ func ParseURL(u string) (URL, error) {
 	}
 
 	nu.Hash = sm[1]
-	nu.Compression = sm[3]
 
 	var err error
+
+	if nu.Compression, err = CompressionTypeFromExtension(sm[3]); err != nil {
+		return nu, fmt.Errorf("error computing the compression type: %w", err)
+	}
+
 	if nu.Query, err = url.ParseQuery(sm[5]); err != nil {
-		return nu, err
+		return nu, fmt.Errorf("error parsing the RawQuery as url.Values: %w", err)
 	}
 
 	return nu, nil
@@ -88,14 +93,14 @@ func (u URL) String() string {
 // ToFilePath returns the filepath in the store for a given nar URL.
 func (u URL) ToFilePath() string {
 	// TODO: bring it out of the helper
-	return helper.NarFilePath(u.Hash, u.Compression)
+	return helper.NarFilePath(u.Hash, u.Compression.ToFileExtension())
 }
 
 func (u URL) pathWithCompression() string {
 	p := "nar/" + u.Hash + ".nar"
 
-	if u.Compression != "" {
-		p += "." + u.Compression
+	if e := u.Compression.ToFileExtension(); e != "" {
+		p += "." + e
 	}
 
 	return p
