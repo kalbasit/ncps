@@ -17,6 +17,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -422,7 +423,17 @@ func TestInsertNar(t *testing.T) {
 	narInfo, err := db.CreateNarInfo(context.Background(), hash)
 	require.NoError(t, err)
 
-	for _, compression := range []string{"", "xz", "tar.gz"} {
+	allCompressions := []nar.CompressionType{
+		nar.CompressionTypeNoCompression,
+		nar.CompressionTypeBzip2,
+		nar.CompressionTypeZstd,
+		nar.CompressionTypeLzip,
+		nar.CompressionTypeLz4,
+		nar.CompressionTypeBr,
+		nar.CompressionTypeXz,
+	}
+
+	for _, compression := range allCompressions {
 		t.Run(fmt.Sprintf("compression=%q", compression), func(t *testing.T) {
 			_, err := db.DB().Exec("DELETE FROM nars")
 			require.NoError(t, err)
@@ -434,7 +445,7 @@ func TestInsertNar(t *testing.T) {
 				nar, err := db.CreateNar(context.Background(), database.CreateNarParams{
 					NarInfoID:   narInfo.ID,
 					Hash:        hash,
-					Compression: compression,
+					Compression: compression.String(),
 					FileSize:    123,
 				})
 				require.NoError(t, err)
@@ -475,7 +486,7 @@ func TestInsertNar(t *testing.T) {
 					assert.Equal(t, nar.ID, nims[0].ID)
 					assert.Equal(t, narInfo.ID, nims[0].NarInfoID)
 					assert.Equal(t, hash, nims[0].Hash)
-					assert.Equal(t, compression, nims[0].Compression)
+					assert.Equal(t, compression.String(), nims[0].Compression)
 					assert.EqualValues(t, 123, nims[0].FileSize)
 					assert.Less(t, time.Since(nims[0].CreatedAt), 3*time.Second)
 					assert.False(t, nims[0].UpdatedAt.Valid)
