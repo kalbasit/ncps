@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -256,12 +257,14 @@ func TestGetNarInfo(t *testing.T) {
 		ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 		require.NoError(t, err)
 
+		storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)
+
 		t.Run("size is correct", func(t *testing.T) {
 			assert.Equal(t, uint64(50308), ni.FileSize)
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			assert.FileExists(t, filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath))
+			assert.FileExists(t, storePath)
 		})
 
 		t.Run("it should be signed by our server", func(t *testing.T) {
@@ -279,6 +282,50 @@ func TestGetNarInfo(t *testing.T) {
 			assert.True(t, found)
 
 			assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
+		})
+
+		t.Run("it should not be signed twice by our server", func(t *testing.T) {
+			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
+
+			var sigs1 []signature.Signature
+
+			for _, sig := range ni.Signatures {
+				if sig.Name == cacheName {
+					sigs1 = append(sigs1, sig)
+				}
+			}
+
+			require.Len(t, sigs1, 1)
+
+			idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path == "/"+testdata.Nar2.NarInfoHash+".narinfo" {
+					_, err := w.Write([]byte(ni.String()))
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+					}
+
+					return true
+				}
+
+				return false
+			})
+			defer ts.RemoveMaybeHandler(idx)
+
+			require.NoError(t, os.Remove(storePath))
+
+			ni, err = c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
+
+			var sigs2 []signature.Signature
+
+			for _, sig := range ni.Signatures {
+				if sig.Name == cacheName {
+					sigs2 = append(sigs2, sig)
+				}
+			}
+
+			require.Len(t, sigs2, 1)
 		})
 
 		t.Run("it should have also pulled the nar", func(t *testing.T) {
