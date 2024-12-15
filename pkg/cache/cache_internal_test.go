@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"math/rand/v2"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,10 +33,10 @@ func TestAddUpstreamCaches(t *testing.T) {
 	t.Run("upstream caches added at once", func(t *testing.T) {
 		t.Parallel()
 
-		testServers := make(map[int]*httptest.Server)
+		testServers := make(map[int]*testdata.Server)
 
 		for i := 1; i < 10; i++ {
-			ts := testdata.HTTPTestServer(t, i)
+			ts := testdata.NewTestServer(t, i)
 			defer ts.Close()
 			testServers[i] = ts
 		}
@@ -81,10 +80,10 @@ func TestAddUpstreamCaches(t *testing.T) {
 	t.Run("upstream caches added one by one", func(t *testing.T) {
 		t.Parallel()
 
-		testServers := make(map[int]*httptest.Server)
+		testServers := make(map[int]*testdata.Server)
 
 		for i := 1; i < 10; i++ {
-			ts := testdata.HTTPTestServer(t, i)
+			ts := testdata.NewTestServer(t, i)
 			defer ts.Close()
 			testServers[i] = ts
 		}
@@ -140,7 +139,7 @@ func TestRunLRU(t *testing.T) {
 	c, err := New(logger, "cache.example.com", dir)
 	require.NoError(t, err)
 
-	ts := testdata.HTTPTestServer(t, 40)
+	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
 	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)

@@ -6,38 +6,21 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/kalbasit/ncps/pkg/helper"
 )
 
-// zstdResponseWriter wraps an http.ResponseWriter to capture the response body.
-type zstdResponseWriter struct {
-	io.Writer
-	http.ResponseWriter
+type Server struct {
+	*httptest.Server
 
-	wroteHeader bool
-}
-
-func (zw *zstdResponseWriter) Write(p []byte) (n int, err error) {
-	if !zw.wroteHeader {
-		zw.WriteHeader(http.StatusOK)
-	}
-
-	return zw.Writer.Write(p)
-}
-
-func (zw *zstdResponseWriter) WriteHeader(code int) {
-	if zw.wroteHeader {
-		zw.ResponseWriter.WriteHeader(code)
-
-		return
-	}
-
-	zw.wroteHeader = true
-
-	zw.Header().Set("Content-Encoding", "zstd")
-	zw.Header().Del("Content-Length")
+	mu            sync.RWMutex
+	maybeHandlers map[string]MaybeHandlerFunc
+	priority      int
+	publicKeys    []string
 }
 
 type MaybeHandlerFunc func(http.ResponseWriter, *http.Request) bool
@@ -46,10 +29,49 @@ func PublicKeys() []string {
 	return []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="}
 }
 
-func HTTPTestServer(t *testing.T, priority int, handlers ...MaybeHandlerFunc) *httptest.Server {
+func NewTestServer(t *testing.T, priority int) *Server {
 	t.Helper()
 
-	return httptest.NewServer(compressMiddleware(handler(priority, handlers...)))
+	s := &Server{
+		maybeHandlers: make(map[string]MaybeHandlerFunc),
+		priority:      priority,
+	}
+
+	s.Server = httptest.NewServer(compressMiddleware(s.handler()))
+
+	return s
+}
+
+func (s *Server) AddPublicKey(pk string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.publicKeys = append(s.publicKeys, pk)
+}
+
+func (s *Server) AddMaybeHandler(maybeHandler MaybeHandlerFunc) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var idx string
+
+	for {
+		idx = helper.MustRandString(10, nil)
+		if _, ok := s.maybeHandlers[idx]; !ok {
+			break
+		}
+	}
+
+	s.maybeHandlers[idx] = maybeHandler
+
+	return idx
+}
+
+func (s *Server) RemoveMaybeHandler(idx string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.maybeHandlers, idx)
 }
 
 func compressMiddleware(next http.Handler) http.Handler {
@@ -72,9 +94,12 @@ func compressMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func handler(priority int, handlers ...MaybeHandlerFunc) http.Handler {
+func (s *Server) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for _, handler := range handlers {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		for _, handler := range s.maybeHandlers {
 			if handler(w, r) {
 				return
 			}
@@ -85,7 +110,7 @@ func handler(priority int, handlers ...MaybeHandlerFunc) http.Handler {
 		}
 
 		if r.URL.Path == "/nix-cache-info" {
-			_, err := w.Write([]byte(NixStoreInfo(priority)))
+			_, err := w.Write([]byte(NixStoreInfo(s.priority)))
 			requireNoError(w, err)
 
 			return
@@ -144,4 +169,33 @@ func requireNoError(w http.ResponseWriter, err error) bool {
 	}
 
 	return true
+}
+
+// zstdResponseWriter wraps an http.ResponseWriter to capture the response body.
+type zstdResponseWriter struct {
+	io.Writer
+	http.ResponseWriter
+
+	wroteHeader bool
+}
+
+func (zw *zstdResponseWriter) Write(p []byte) (n int, err error) {
+	if !zw.wroteHeader {
+		zw.WriteHeader(http.StatusOK)
+	}
+
+	return zw.Writer.Write(p)
+}
+
+func (zw *zstdResponseWriter) WriteHeader(code int) {
+	if zw.wroteHeader {
+		zw.ResponseWriter.WriteHeader(code)
+
+		return
+	}
+
+	zw.wroteHeader = true
+
+	zw.Header().Set("Content-Encoding", "zstd")
+	zw.Header().Del("Content-Length")
 }
