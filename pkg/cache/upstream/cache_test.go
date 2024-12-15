@@ -105,7 +105,24 @@ func TestGetNarInfo(t *testing.T) {
 				err error
 			)
 
-			ts := testdata.HTTPTestServer(t, 40)
+			ts := testdata.HTTPTestServer(t, 40, func(w http.ResponseWriter, r *http.Request) bool {
+				for _, entry := range testdata.Entries {
+					if r.URL.Path == "/broken-"+entry.NarInfoHash+".narinfo" {
+						// mutate the inside
+						b := entry.NarInfoText
+						b = strings.Replace(b, "References:", "References: notfound-path", -1)
+
+						_, err := w.Write([]byte(b))
+						if err != nil {
+							http.Error(w, err.Error(), http.StatusInternalServerError)
+						}
+
+						return true
+					}
+				}
+
+				return false
+			})
 			defer ts.Close()
 
 			if withKeys {

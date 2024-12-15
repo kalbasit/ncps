@@ -40,14 +40,16 @@ func (zw *zstdResponseWriter) WriteHeader(code int) {
 	zw.Header().Del("Content-Length")
 }
 
+type MaybeHandlerFunc func(http.ResponseWriter, *http.Request) bool
+
 func PublicKeys() []string {
 	return []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="}
 }
 
-func HTTPTestServer(t *testing.T, priority int) *httptest.Server {
+func HTTPTestServer(t *testing.T, priority int, handlers ...MaybeHandlerFunc) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(compressMiddleware(handler(priority)))
+	return httptest.NewServer(compressMiddleware(handler(priority, handlers...)))
 }
 
 func compressMiddleware(next http.Handler) http.Handler {
@@ -70,8 +72,14 @@ func compressMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func handler(priority int) http.Handler {
+func handler(priority int, handlers ...MaybeHandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, handler := range handlers {
+			if handler(w, r) {
+				return
+			}
+		}
+
 		if p := r.Header.Get("ping"); p != "" {
 			w.Header().Add("pong", p)
 		}
@@ -85,14 +93,6 @@ func handler(priority int) http.Handler {
 
 		for _, entry := range Entries {
 			var bs []byte
-
-			if r.URL.Path == "/broken-"+entry.NarInfoHash+".narinfo" {
-				// mutate the inside
-				b := entry.NarInfoText
-				b = strings.Replace(b, "References:", "References: notfound-path", -1)
-
-				bs = []byte(b)
-			}
 
 			if r.URL.Path == "/"+entry.NarInfoHash+".narinfo" {
 				bs = []byte(entry.NarInfoText)
