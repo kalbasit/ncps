@@ -20,14 +20,9 @@ type Server struct {
 	mu            sync.RWMutex
 	maybeHandlers map[string]MaybeHandlerFunc
 	priority      int
-	publicKeys    []string
 }
 
 type MaybeHandlerFunc func(http.ResponseWriter, *http.Request) bool
-
-func PublicKeys() []string {
-	return []string{"cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="}
-}
 
 func NewTestServer(t *testing.T, priority int) *Server {
 	t.Helper()
@@ -40,13 +35,6 @@ func NewTestServer(t *testing.T, priority int) *Server {
 	s.Server = httptest.NewServer(compressMiddleware(s.handler()))
 
 	return s
-}
-
-func (s *Server) AddPublicKey(pk string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.publicKeys = append(s.publicKeys, pk)
 }
 
 func (s *Server) AddMaybeHandler(maybeHandler MaybeHandlerFunc) string {
