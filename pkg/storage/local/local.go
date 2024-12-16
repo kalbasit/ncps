@@ -89,7 +89,13 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 
 // DeleteSecretKey deletes the secret key in the store.
 func (s *Store) DeleteSecretKey(ctx context.Context) error {
-	return errors.New("not implemented")
+	skPath := s.secretKeyPath()
+
+	if _, err := os.Stat(skPath); os.IsNotExist(err) {
+		return ErrNoSecretKey
+	}
+
+	return os.Remove(skPath)
 }
 
 // GetNarInfo returns narinfo from the store.
