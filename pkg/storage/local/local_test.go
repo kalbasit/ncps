@@ -223,6 +223,47 @@ func TestPutSecretKey(t *testing.T) {
 }
 
 func TestDeleteSecretKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("secret key does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		s, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		err = s.DeleteSecretKey(newContext())
+		assert.ErrorIs(t, err, local.ErrNoSecretKey)
+	})
+
+	t.Run("secret key does exist", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		sk, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		require.NoError(t, err)
+
+		skPath := filepath.Join(dir, "config", "cache.key")
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(skPath), 0o700))
+
+		require.NoError(t, os.WriteFile(skPath, []byte(sk.String()), 0o400))
+
+		require.NoError(t, s.DeleteSecretKey(ctx))
+
+		assert.NoFileExists(t, skPath)
+	})
 }
 
 func TestGetNarInfo(t *testing.T) {
