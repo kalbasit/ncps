@@ -31,6 +31,14 @@ var (
 
 	// ErrNoSecretKey is returned if no secret key is present.
 	ErrNoSecretKey = errors.New("no secret key was found")
+
+	// ErrSecretKeyAlreadyExists is returned if a secret key already exists in the store.
+	ErrSecretKeyAlreadyExists = errors.New("secret key already exists")
+)
+
+const (
+	secretKeyFileMode = 0o400
+	dirsFileMode      = 0o700
 )
 
 // Store represents a local store and implements storage.Store.
@@ -54,7 +62,7 @@ func New(ctx context.Context, path string) (*Store, error) {
 
 // GetSecretKey returns secret key from the store.
 func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
-	skPath := filepath.Join(s.secretKeyPath())
+	skPath := s.secretKeyPath()
 
 	if _, err := os.Stat(skPath); os.IsNotExist(err) {
 		return signature.SecretKey{}, ErrNoSecretKey
@@ -70,7 +78,13 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 
 // PutSecretKey stores the secret key in the store.
 func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error {
-	return errors.New("not implemented")
+	skPath := s.secretKeyPath()
+
+	if _, err := os.Stat(skPath); err == nil {
+		return ErrSecretKeyAlreadyExists
+	}
+
+	return os.WriteFile(skPath, []byte(sk.String()), secretKeyFileMode)
 }
 
 // DeleteSecretKey deletes the secret key in the store.
@@ -129,7 +143,7 @@ func (s *Store) setupDirs() error {
 	}
 
 	for _, p := range allPaths {
-		if err := os.MkdirAll(p, 0o700); err != nil {
+		if err := os.MkdirAll(p, dirsFileMode); err != nil {
 			return fmt.Errorf("error creating the directory %q: %w", p, err)
 		}
 	}
