@@ -13,7 +13,9 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
 
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage"
 )
 
 var (
@@ -100,7 +102,16 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	return nil, errors.New("not implemented")
+	nif, err := os.Open(filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash)))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, storage.ErrNotFound
+		}
+
+		return nil, fmt.Errorf("error opening the narinfo: %w", err)
+	}
+
+	return narinfo.Parse(nif)
 }
 
 // PutNarInfo puts the narinfo in the store.
