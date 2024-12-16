@@ -270,6 +270,8 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("it should be signed by our server", func(t *testing.T) {
 			var found bool
 
+			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
+
 			var sig signature.Signature
 			for _, sig = range ni.Signatures {
 				if sig.Name == cacheName {
@@ -287,6 +289,8 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("it should not be signed twice by our server", func(t *testing.T) {
 			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
+
+			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
 
 			var sigs1 []signature.Signature
 
@@ -316,6 +320,8 @@ func TestGetNarInfo(t *testing.T) {
 
 			ni, err = c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
+
+			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
 
 			var sigs2 []signature.Signature
 
