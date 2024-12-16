@@ -36,7 +36,7 @@ func init() {
 
 //nolint:paralleltest
 func TestServeHTTP(t *testing.T) {
-	hts := testdata.HTTPTestServer(t, 40)
+	hts := testdata.NewTestServer(t, 40)
 	defer hts.Close()
 
 	uc, err := upstream.New(logger, testhelper.MustParseURL(t, hts.URL), testdata.PublicKeys())

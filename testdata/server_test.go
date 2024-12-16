@@ -13,12 +13,12 @@ import (
 	"github.com/kalbasit/ncps/testdata"
 )
 
-func TestHTTPTestServer(t *testing.T) {
+func TestNewTestServer(t *testing.T) {
 	t.Parallel()
 
 	priority := 40
 
-	ts := testdata.HTTPTestServer(t, priority)
+	ts := testdata.NewTestServer(t, priority)
 	defer ts.Close()
 
 	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
@@ -46,12 +46,12 @@ func TestHTTPTestServer(t *testing.T) {
 	}
 }
 
-func TestHTTPTestServerWithZSTD(t *testing.T) {
+func TestNewTestServerWithZSTD(t *testing.T) {
 	t.Parallel()
 
 	priority := 40
 
-	ts := testdata.HTTPTestServer(t, priority)
+	ts := testdata.NewTestServer(t, priority)
 	defer ts.Close()
 
 	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"

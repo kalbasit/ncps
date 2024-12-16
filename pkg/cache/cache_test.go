@@ -177,7 +177,7 @@ func TestPublicKey(t *testing.T) {
 
 //nolint:paralleltest
 func TestGetNarInfo(t *testing.T) {
-	ts := testdata.HTTPTestServer(t, 40)
+	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -702,7 +702,7 @@ func TestDeleteNarInfo(t *testing.T) {
 
 //nolint:paralleltest
 func TestGetNar(t *testing.T) {
-	ts := testdata.HTTPTestServer(t, 40)
+	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
