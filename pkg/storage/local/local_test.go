@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
@@ -12,7 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
+	"github.com/kalbasit/ncps/testdata"
 )
 
 func TestNew(t *testing.T) {
@@ -267,6 +271,56 @@ func TestDeleteSecretKey(t *testing.T) {
 }
 
 func TestGetNarInfo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		_, err = s.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
+	})
+
+	t.Run("narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		narPath := filepath.Join(
+			dir,
+			"store",
+			"narinfo",
+			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+		)
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+
+		err = os.WriteFile(narPath, []byte(testdata.Nar1.NarInfoText), 0o400)
+		require.NoError(t, err)
+
+		ni, err := s.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			strings.TrimSpace(testdata.Nar1.NarInfoText),
+			strings.TrimSpace(ni.String()),
+		)
+	})
 }
 
 func TestPutNarInfo(t *testing.T) {
