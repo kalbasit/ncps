@@ -1,10 +1,11 @@
 package server
 
 import (
+	"io"
 	"os"
 	"testing"
 
-	"github.com/inconshreveable/log15/v3"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -12,12 +13,7 @@ import (
 )
 
 //nolint:gochecknoglobals
-var logger = log15.New()
-
-//nolint:gochecknoinits
-func init() {
-	logger.SetHandler(log15.DiscardHandler())
-}
+var logger = zerolog.New(io.Discard)
 
 func TestSetDeletePermitted(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")

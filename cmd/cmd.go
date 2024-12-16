@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/inconshreveable/log15/v3"
+	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v3"
 )
 
@@ -10,7 +10,7 @@ import (
 //nolint:gochecknoglobals
 var Version = "dev"
 
-func New(logger log15.Logger) *cli.Command {
+func New(logger zerolog.Logger) *cli.Command {
 	return &cli.Command{
 		Name:    "ncps",
 		Usage:   "Nix Binary Cache Proxy Service",

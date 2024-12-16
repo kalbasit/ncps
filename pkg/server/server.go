@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/inconshreveable/log15/v3"
+	"github.com/rs/zerolog"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -38,7 +37,7 @@ Priority: 10`
 // Server represents the main HTTP server.
 type Server struct {
 	cache  *cache.Cache
-	logger log15.Logger
+	logger zerolog.Logger
 	router *chi.Mux
 
 	deletePermitted bool
@@ -46,7 +45,7 @@ type Server struct {
 }
 
 // New returns a new server.
-func New(logger log15.Logger, cache *cache.Cache) *Server {
+func New(logger zerolog.Logger, cache *cache.Cache) *Server {
 	s := &Server{
 		cache:  cache,
 		logger: logger,
@@ -95,7 +94,7 @@ func (s *Server) createRouter() {
 	s.router.Delete(routeNar, s.deleteNar)
 }
 
-func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler {
+func requestLogger(logger zerolog.Logger) func(handler http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			startedAt := time.Now()
@@ -104,21 +103,23 @@ func requestLogger(logger log15.Logger) func(handler http.Handler) http.Handler 
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			defer func() {
-				entries := []interface{}{
-					"status", ww.Status(),
-					"elapsed", time.Since(startedAt),
-					"from", r.RemoteAddr,
-					"reqID", reqID,
-				}
+				logger.With().
+					Str("method", r.Method).
+					Str("request-uri", r.RequestURI).
+					Int("status", ww.Status()).
+					Dur("elapsed", time.Since(startedAt)).
+					Str("from", r.RemoteAddr).
+					Str("reqID", reqID).
+					Logger()
 
 				switch r.Method {
 				case http.MethodHead, http.MethodGet:
-					entries = append(entries, "bytes", ww.BytesWritten())
+					logger = logger.With().Int("bytes", ww.BytesWritten()).Logger()
 				case http.MethodPost, http.MethodPut, http.MethodPatch:
-					entries = append(entries, "bytes", r.ContentLength)
+					logger = logger.With().Int64("bytes", r.ContentLength).Logger()
 				}
 
-				logger.Info(fmt.Sprintf("%s %s", r.Method, r.RequestURI), entries...)
+				logger.Info().Msg("handled request")
 			}()
 
 			next.ServeHTTP(ww, r)
@@ -141,13 +142,13 @@ func (s *Server) getIndex(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(body); err != nil {
-		s.logger.Error("error writing the body to the response", "error", err)
+		s.logger.Error().Err(err).Msg("error writing the body to the response")
 	}
 }
 
 func (s *Server) getNixCacheInfo(w http.ResponseWriter, _ *http.Request) {
 	if _, err := w.Write([]byte(nixCacheInfo)); err != nil {
-		s.logger.Error("error writing the response", "error", err)
+		s.logger.Error().Err(err).Msg("error writing the response")
 	}
 }
 
@@ -155,7 +156,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
-		log := s.logger.New("hash", hash)
+		log := s.logger.With().Str("hash", hash).Logger()
 
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
@@ -163,17 +164,17 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 				w.WriteHeader(http.StatusNotFound)
 
 				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-					log.Error("error writing the response", "error", err)
+					log.Error().Err(err).Msg("error writing the response")
 				}
 
 				return
 			}
 
-			log.Error("error fetching the narinfo", "error", err)
+			log.Error().Err(err).Msg("error fetching the narinfo")
 			w.WriteHeader(http.StatusInternalServerError)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-				log.Error("error writing the response", "error", err)
+				log.Error().Err(err).Msg("error writing the response")
 			}
 
 			return
@@ -192,7 +193,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 		}
 
 		if _, err := w.Write(narInfoBytes); err != nil {
-			log.Error("error writing the narinfo to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the narinfo to the response")
 		}
 	}
 }
@@ -200,24 +201,24 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
-	log := s.logger.New("hash", hash)
+	log := s.logger.With().Str("hash", hash).Logger()
 
 	if !s.putPermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return
 	}
 
 	if err := s.cache.PutNarInfo(r.Context(), hash, r.Body); err != nil {
-		log.Error("error putting the NAR in cache", "error", err)
+		log.Error().Err(err).Msg("error putting the NAR in cache")
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return
@@ -229,13 +230,13 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
-	log := s.logger.New("hash", hash)
+	log := s.logger.With().Str("hash", hash).Logger()
 
 	if !s.deletePermitted {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return
@@ -246,7 +247,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-				log.Error("error writing the body to the response", "error", err)
+				log.Error().Err(err).Msg("error writing the body to the response")
 			}
 
 			return
@@ -255,7 +256,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return
@@ -279,7 +280,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
-				log.Error("error computing the compression", "error", err)
+				log.Error().Err(err).Msg("error computing the compression")
 			}
 
 			return
@@ -293,18 +294,18 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 				w.WriteHeader(http.StatusNotFound)
 
 				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-					log.Error("error writing the response", "error", err)
+					log.Error().Err(err).Msg("error writing the response")
 				}
 
 				return
 			}
 
-			log.Error("error fetching the nar", "error", err)
+			log.Error().Err(err).Msg("error fetching the nar")
 
 			w.WriteHeader(http.StatusInternalServerError)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-				log.Error("error writing the response", "error", err)
+				log.Error().Err(err).Msg("error writing the response")
 			}
 
 			return
@@ -322,13 +323,16 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		written, err := io.Copy(w, reader)
 		if err != nil {
-			log.Error("error writing the response", "error", err)
+			log.Error().Err(err).Msg("error writing the response")
 
 			return
 		}
 
 		if written != size {
-			log.Error("Bytes copied does not match object size", "expected", size, "written", written)
+			log.Error().
+				Int64("expected", size).
+				Int64("written", written).
+				Msg("Bytes copied does not match object size")
 		}
 	}
 }
@@ -347,7 +351,7 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
-			log.Error("error computing the compression", "error", err)
+			log.Error().Err(err).Msg("error computing the compression")
 		}
 
 		return
@@ -359,18 +363,18 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return
 	}
 
 	if err := s.cache.PutNar(r.Context(), nu, r.Body); err != nil {
-		log.Error("error putting the NAR in cache", "error", err)
+		log.Error().Err(err).Msg("error putting the NAR in cache")
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return
@@ -393,7 +397,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
-			log.Error("error computing the compression", "error", err)
+			log.Error().Err(err).Msg("error computing the compression")
 		}
 
 		return
@@ -405,7 +409,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return
@@ -416,7 +420,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-				log.Error("error writing the body to the response", "error", err)
+				log.Error().Err(err).Msg("error writing the body to the response")
 			}
 
 			return
@@ -425,7 +429,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 
 		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error("error writing the body to the response", "error", err)
+			log.Error().Err(err).Msg("error writing the body to the response")
 		}
 
 		return

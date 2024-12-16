@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inconshreveable/log15/v3"
 	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,14 +21,6 @@ import (
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
-
-//nolint:gochecknoglobals
-var logger = log15.New()
-
-//nolint:gochecknoinits
-func init() {
-	logger.SetHandler(log15.DiscardHandler())
-}
 
 func TestGetNarInfoByHash(t *testing.T) {
 	t.Parallel()

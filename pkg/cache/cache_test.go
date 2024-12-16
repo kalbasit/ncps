@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inconshreveable/log15/v3"
 	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,12 +34,7 @@ import (
 const cacheName = "cache.example.com"
 
 //nolint:gochecknoglobals
-var logger = log15.New()
-
-//nolint:gochecknoinits
-func init() {
-	logger.SetHandler(log15.DiscardHandler())
-}
+var logger = zerolog.New(io.Discard)
 
 func TestNew(t *testing.T) {
 	t.Parallel()

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/inconshreveable/log15/v3"
+	"github.com/rs/zerolog"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
@@ -14,13 +14,13 @@ import (
 
 // autoMaxProcs automatically configures Go's runtime.GOMAXPROCS based on the
 // given quota in a container.
-func autoMaxProcs(ctx context.Context, d time.Duration, logger log15.Logger) error {
-	log := logger.New("operation", "auto-max-procs")
+func autoMaxProcs(ctx context.Context, d time.Duration, logger zerolog.Logger) error {
+	log := logger.With().Str("operation", "auto-max-procs").Logger()
 
 	infof := diffInfof(log)
 	setMaxProcs := func() {
 		if _, err := maxprocs.Set(maxprocs.Logger(infof)); err != nil {
-			log.Error("failed to set GOMAXPROCS", "error", err)
+			log.Error().Err(err).Msg("failed to set GOMAXPROCS")
 		}
 	}
 	// set the gomaxprocs immediately.
@@ -39,13 +39,13 @@ func autoMaxProcs(ctx context.Context, d time.Duration, logger log15.Logger) err
 	}
 }
 
-func diffInfof(logger log15.Logger) func(string, ...interface{}) {
+func diffInfof(logger zerolog.Logger) func(string, ...interface{}) {
 	var last string
 
 	return func(format string, args ...interface{}) {
 		msg := fmt.Sprintf(format, args...)
 		if msg != last {
-			logger.Info(msg)
+			logger.Info().Msg(msg)
 			last = msg
 		}
 	}

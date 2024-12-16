@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/inconshreveable/log15/v3"
+	"github.com/rs/zerolog"
 
 	"github.com/kalbasit/ncps/pkg/helper"
 )
@@ -56,12 +56,12 @@ func ParseURL(u string) (URL, error) {
 }
 
 // NewLogger returns a new logger with the right fields.
-func (u URL) NewLogger(log log15.Logger) log15.Logger {
-	return log.New(
-		"hash", u.Hash,
-		"compression", u.Compression,
-		"query", u.Query.Encode(),
-	)
+func (u URL) NewLogger(log zerolog.Logger) zerolog.Logger {
+	return log.With().
+		Str("hash", u.Hash).
+		Str("compression", u.Compression.String()).
+		Str("query", u.Query.Encode()).
+		Logger()
 }
 
 // JoinURL returns a new URL combined with the given URL.
