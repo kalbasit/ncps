@@ -38,6 +38,7 @@ linters:
     - wastedassign
     - whitespace
     - wsl
+    - zerologlint
 linters-settings:
   gci:
     # Section configuration to compare against.
