@@ -140,7 +140,9 @@ func TestGetSecretKey(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
-		s, err := local.New(newContext(), dir)
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
 		sk1, _, err := signature.GenerateKeypair("cache.example.com", nil)
@@ -152,7 +154,7 @@ func TestGetSecretKey(t *testing.T) {
 
 		require.NoError(t, os.WriteFile(skPath, []byte(sk1.String()), 0o400))
 
-		sk2, err := s.GetSecretKey(newContext())
+		sk2, err := s.GetSecretKey(ctx)
 		require.NoError(t, err)
 
 		assert.Equal(t, sk1.String(), sk2.String())
@@ -160,6 +162,64 @@ func TestGetSecretKey(t *testing.T) {
 }
 
 func TestPutSecretKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no secret exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		sk1, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		require.NoError(t, err)
+
+		require.NoError(t, s.PutSecretKey(ctx, sk1))
+
+		skPath := filepath.Join(dir, "config", "cache.key")
+		if assert.FileExists(t, skPath) {
+			skc, err := os.ReadFile(skPath)
+			require.NoError(t, err)
+
+			sk2, err := signature.LoadSecretKey(string(skc))
+			require.NoError(t, err)
+
+			assert.Equal(t, sk1.String(), sk2.String())
+		}
+	})
+
+	t.Run("secret exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		sk1, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		require.NoError(t, err)
+
+		skPath := filepath.Join(dir, "config", "cache.key")
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(skPath), 0o700))
+
+		require.NoError(t, os.WriteFile(skPath, []byte(sk1.String()), 0o400))
+
+		sk2, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		require.NoError(t, err)
+
+		err = s.PutSecretKey(ctx, sk2)
+		assert.ErrorIs(t, err, local.ErrSecretKeyAlreadyExists)
+	})
 }
 
 func TestDeleteSecretKey(t *testing.T) {
