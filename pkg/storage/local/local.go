@@ -28,6 +28,9 @@ var (
 
 	// ErrPathMustBeWritable is returned if the given path to New is not writable.
 	ErrPathMustBeWritable = errors.New("path must be writable")
+
+	// ErrNoSecretKey is returned if no secret key is present.
+	ErrNoSecretKey = errors.New("no secret key was found")
 )
 
 // Store represents a local store and implements storage.Store.
@@ -51,7 +54,18 @@ func New(ctx context.Context, path string) (*Store, error) {
 
 // GetSecretKey returns secret key from the store.
 func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
-	return signature.SecretKey{}, errors.New("not implemented")
+	skPath := filepath.Join(s.secretKeyPath())
+
+	if _, err := os.Stat(skPath); os.IsNotExist(err) {
+		return signature.SecretKey{}, ErrNoSecretKey
+	}
+
+	skc, err := os.ReadFile(skPath)
+	if err != nil {
+		return signature.SecretKey{}, fmt.Errorf("error reading the secret: %w", err)
+	}
+
+	return signature.LoadSecretKey(string(skc))
 }
 
 // PutSecretKey stores the secret key in the store.
