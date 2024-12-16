@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/storage/local"
-	"github.com/kalbasit/ncps/testhelper"
 )
 
 func TestNew(t *testing.T) {
@@ -77,9 +77,6 @@ func TestNew(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir) // clean up
 
-		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-		testhelper.CreateMigrateDatabase(t, dbFile)
-
 		_, err = local.New(newContext(), dir)
 		require.NoError(t, err)
 
@@ -89,7 +86,6 @@ func TestNew(t *testing.T) {
 			filepath.Join("store", "narinfo"),
 			filepath.Join("store", "nar"),
 			filepath.Join("store", "tmp"),
-			filepath.Join("var", "ncps", "db"),
 		}
 
 		for _, p := range dirs {
@@ -121,6 +117,46 @@ func TestNew(t *testing.T) {
 }
 
 func TestGetSecretKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no secret key is present", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		s, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		_, err = s.GetSecretKey(newContext())
+		assert.ErrorIs(t, err, local.ErrNoSecretKey)
+	})
+
+	t.Run("secret key is present", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		s, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		sk1, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		require.NoError(t, err)
+
+		skPath := filepath.Join(dir, "config", "cache.key")
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(skPath), 0o700))
+
+		require.NoError(t, os.WriteFile(skPath, []byte(sk1.String()), 0o400))
+
+		sk2, err := s.GetSecretKey(newContext())
+		require.NoError(t, err)
+
+		assert.Equal(t, sk1.String(), sk2.String())
+	})
 }
 
 func TestPutSecretKey(t *testing.T) {
