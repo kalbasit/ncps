@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inconshreveable/log15/v3"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -27,12 +27,7 @@ import (
 )
 
 //nolint:gochecknoglobals
-var logger = log15.New()
-
-//nolint:gochecknoinits
-func init() {
-	logger.SetHandler(log15.DiscardHandler())
-}
+var logger = zerolog.New(io.Discard)
 
 //nolint:paralleltest
 func TestServeHTTP(t *testing.T) {

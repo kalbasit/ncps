@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/inconshreveable/log15/v3"
 	"github.com/robfig/cron/v3"
+	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
@@ -23,12 +23,12 @@ import (
 // ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
 var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
 
-func serveCommand(logger log15.Logger) *cli.Command {
+func serveCommand(logger zerolog.Logger) *cli.Command {
 	return &cli.Command{
 		Name:    "serve",
 		Aliases: []string{"s"},
 		Usage:   "serve the nix binary cache over http",
-		Action:  serveAction(logger.New("cmd", "serve")),
+		Action:  serveAction(logger.With().Str("cmd", "serve").Logger()),
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "allow-delete",
@@ -101,14 +101,14 @@ func serveCommand(logger log15.Logger) *cli.Command {
 	}
 }
 
-func serveAction(logger log15.Logger) cli.ActionFunc {
+func serveAction(logger zerolog.Logger) cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
 		ctx, cancel := context.WithCancel(ctx)
 
 		g, ctx := errgroup.WithContext(ctx)
 		defer func() {
 			if err := g.Wait(); err != nil {
-				logger.Error("error returned from g.Wait()", "error", err)
+				logger.Error().Err(err).Msg("error returned from g.Wait()")
 			}
 		}()
 
@@ -141,7 +141,9 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 
-		logger.Info("Server started", "server-addr", cmd.String("server-addr"))
+		logger.Info().
+			Str("server-addr", cmd.String("server-addr")).
+			Msg("Server started")
 
 		if err := server.ListenAndServe(); err != nil {
 			return fmt.Errorf("error starting the HTTP listener: %w", err)
@@ -151,7 +153,7 @@ func serveAction(logger log15.Logger) cli.ActionFunc {
 	}
 }
 
-func getUpstreamCaches(_ context.Context, logger log15.Logger, cmd *cli.Command) ([]upstream.Cache, error) {
+func getUpstreamCaches(_ context.Context, logger zerolog.Logger, cmd *cli.Command) ([]upstream.Cache, error) {
 	ucSlice := cmd.StringSlice("upstream-cache")
 
 	ucs := make([]upstream.Cache, 0, len(ucSlice))
@@ -183,7 +185,7 @@ func getUpstreamCaches(_ context.Context, logger log15.Logger, cmd *cli.Command)
 	return ucs, nil
 }
 
-func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*cache.Cache, error) {
+func createCache(logger zerolog.Logger, cmd *cli.Command, ucs []upstream.Cache) (*cache.Cache, error) {
 	c, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"))
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new cache: %w", err)
@@ -205,7 +207,9 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 		return nil, fmt.Errorf("error parsing the size: %w", err)
 	}
 
-	logger.Info("setting up the cache max-size", "max-size", maxSize)
+	logger.Info().
+		Uint64("max-size", maxSize).
+		Msg("setting up the cache max-size")
 
 	c.SetMaxSize(maxSize)
 
@@ -218,7 +222,9 @@ func createCache(logger log15.Logger, cmd *cli.Command, ucs []upstream.Cache) (*
 		}
 	}
 
-	logger.Info("setting up the cache timezone location", "time-zone", loc)
+	logger.Info().
+		Str("time-zone", loc.String()).
+		Msg("setting up the cache timezone location")
 
 	c.SetupCron(loc)
 

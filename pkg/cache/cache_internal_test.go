@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inconshreveable/log15/v3"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,12 +23,7 @@ import (
 )
 
 //nolint:gochecknoglobals
-var logger = log15.New()
-
-//nolint:gochecknoinits
-func init() {
-	logger.SetHandler(log15.DiscardHandler())
-}
+var logger = zerolog.New(io.Discard)
 
 func TestAddUpstreamCaches(t *testing.T) {
 	t.Run("upstream caches added at once", func(t *testing.T) {
