@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,6 +31,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+const cacheName = "cache.example.com"
+
 //nolint:gochecknoglobals
 var logger = log15.New()
 
@@ -45,22 +48,22 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("path is required", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "hello")
+			_, err := cache.New(logger, cacheName, "hello")
 			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path is not absolute", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "hello")
+			_, err := cache.New(logger, cacheName, "hello")
 			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path must exist", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/non-existing")
+			_, err := cache.New(logger, cacheName, "/non-existing")
 			assert.ErrorIs(t, err, cache.ErrPathMustExist)
 		})
 
 		t.Run("path must be a directory", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", "/proc/cpuinfo")
+			_, err := cache.New(logger, cacheName, "/proc/cpuinfo")
 			assert.ErrorIs(t, err, cache.ErrPathMustBeADirectory)
 		})
 
@@ -71,12 +74,12 @@ func TestNew(t *testing.T) {
 
 			require.NoError(t, os.Chmod(dir, 0o500))
 
-			_, err = cache.New(logger, "cache.example.com", dir)
+			_, err = cache.New(logger, cacheName, dir)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
 		})
 
 		t.Run("valid path must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", os.TempDir())
+			_, err := cache.New(logger, cacheName, os.TempDir())
 			assert.NoError(t, err)
 		})
 
@@ -88,7 +91,7 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			_, err = cache.New(logger, "cache.example.com", dir)
+			_, err = cache.New(logger, cacheName, dir)
 			require.NoError(t, err)
 
 			dirs := []string{
@@ -119,7 +122,7 @@ func TestNew(t *testing.T) {
 			f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "hello")
 			require.NoError(t, err)
 
-			_, err = cache.New(logger, "cache.example.com", dir)
+			_, err = cache.New(logger, cacheName, dir)
 			require.NoError(t, err)
 
 			assert.NoFileExists(t, f.Name())
@@ -145,7 +148,7 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com", os.TempDir())
+			_, err := cache.New(logger, cacheName, os.TempDir())
 			require.NoError(t, err)
 		})
 	})
@@ -154,7 +157,7 @@ func TestNew(t *testing.T) {
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
-	c, err := cache.New(logger, "cache.example.com", "/tmp")
+	c, err := cache.New(logger, cacheName, "/tmp")
 	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
@@ -190,7 +193,7 @@ func TestGetNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, "cache.example.com", dir)
+	c, err := cache.New(logger, cacheName, dir)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
@@ -254,20 +257,24 @@ func TestGetNarInfo(t *testing.T) {
 		ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 		require.NoError(t, err)
 
+		storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)
+
 		t.Run("size is correct", func(t *testing.T) {
 			assert.Equal(t, uint64(50308), ni.FileSize)
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			assert.FileExists(t, filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath))
+			assert.FileExists(t, storePath)
 		})
 
 		t.Run("it should be signed by our server", func(t *testing.T) {
 			var found bool
 
+			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
+
 			var sig signature.Signature
 			for _, sig = range ni.Signatures {
-				if sig.Name == "cache.example.com" {
+				if sig.Name == cacheName {
 					found = true
 
 					break
@@ -277,6 +284,54 @@ func TestGetNarInfo(t *testing.T) {
 			assert.True(t, found)
 
 			assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
+		})
+
+		t.Run("it should not be signed twice by our server", func(t *testing.T) {
+			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
+
+			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
+
+			var sigs1 []signature.Signature
+
+			for _, sig := range ni.Signatures {
+				if sig.Name == cacheName {
+					sigs1 = append(sigs1, sig)
+				}
+			}
+
+			require.Len(t, sigs1, 1)
+
+			idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path == "/"+testdata.Nar2.NarInfoHash+".narinfo" {
+					_, err := w.Write([]byte(ni.String()))
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+					}
+
+					return true
+				}
+
+				return false
+			})
+			defer ts.RemoveMaybeHandler(idx)
+
+			require.NoError(t, os.Remove(storePath))
+
+			ni, err = c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
+
+			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
+
+			var sigs2 []signature.Signature
+
+			for _, sig := range ni.Signatures {
+				if sig.Name == cacheName {
+					sigs2 = append(sigs2, sig)
+				}
+			}
+
+			require.Len(t, sigs2, 1)
 		})
 
 		t.Run("it should have also pulled the nar", func(t *testing.T) {
@@ -514,7 +569,7 @@ func TestPutNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, "cache.example.com", dir)
+	c, err := cache.New(logger, cacheName, dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -587,7 +642,7 @@ func TestPutNarInfo(t *testing.T) {
 
 		var sig signature.Signature
 		for _, sig = range ni.Signatures {
-			if sig.Name == "cache.example.com" {
+			if sig.Name == cacheName {
 				found = true
 
 				break
@@ -651,7 +706,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, "cache.example.com", dir)
+	c, err := cache.New(logger, cacheName, dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -715,7 +770,7 @@ func TestGetNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, "cache.example.com", dir)
+	c, err := cache.New(logger, cacheName, dir)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
@@ -917,7 +972,7 @@ func TestPutNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, "cache.example.com", dir)
+	c, err := cache.New(logger, cacheName, dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -956,7 +1011,7 @@ func TestDeleteNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, "cache.example.com", dir)
+	c, err := cache.New(logger, cacheName, dir)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
