@@ -637,12 +637,22 @@ func (c *Cache) prePullNar(
 }
 
 func (c *Cache) signNarInfo(_ log15.Logger, narInfo *narinfo.NarInfo) error {
+	var sigs []signature.Signature
+
+	for _, sig := range narInfo.Signatures {
+		if sig.Name != c.hostName {
+			sigs = append(sigs, sig)
+		}
+	}
+
 	sig, err := c.secretKey.Sign(nil, narInfo.Fingerprint())
 	if err != nil {
 		return fmt.Errorf("error signing the fingerprint: %w", err)
 	}
 
-	narInfo.Signatures = append(narInfo.Signatures, sig)
+	sigs = append(sigs, sig)
+
+	narInfo.Signatures = sigs
 
 	return nil
 }
