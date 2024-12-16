@@ -38,8 +38,10 @@ runs:
     - uses: DeterminateSystems/magic-nix-cache-action@v8
     - name: Build the docker image pusher
       shell: bash
+      env:
+        RELEASE_VERSION: ${{ github.ref_name }}
       run: |
-        nix build .#push-docker-image
+        nix build --impure .#push-docker-image
     - name: Push the docker image
       if: ${{ inputs.push }}
       env:
