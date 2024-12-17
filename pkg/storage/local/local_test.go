@@ -465,7 +465,7 @@ func TestGetNar(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		_, err = s.GetNar(ctx, nar.URL{
+		_, _, err = s.GetNar(ctx, nar.URL{
 			Hash:        testdata.Nar1.NarHash,
 			Compression: testdata.Nar1.NarCompression,
 		})
@@ -502,11 +502,13 @@ func TestGetNar(t *testing.T) {
 			Compression: testdata.Nar1.NarCompression,
 		}
 
-		r, err := s.GetNar(ctx, narURL)
+		size, r, err := s.GetNar(ctx, narURL)
 		require.NoError(t, err)
 
 		nt, err := io.ReadAll(r)
 		require.NoError(t, err)
+
+		assert.EqualValues(t, len(testdata.Nar1.NarText), size)
 
 		if assert.Equal(t, len(testdata.Nar1.NarText), len(nt)) {
 			assert.Equal(t,
