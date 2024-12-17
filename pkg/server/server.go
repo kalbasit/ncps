@@ -14,6 +14,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage"
 )
 
 const (
@@ -160,7 +161,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
-			if errors.Is(err, cache.ErrNotFound) {
+			if errors.Is(err, storage.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
 
 				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
@@ -243,7 +244,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.cache.DeleteNarInfo(r.Context(), hash); err != nil {
-		if errors.Is(err, cache.ErrNotFound) {
+		if errors.Is(err, storage.ErrNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
@@ -290,7 +291,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
-			if errors.Is(err, cache.ErrNotFound) {
+			if errors.Is(err, storage.ErrNotFound) {
 				w.WriteHeader(http.StatusNotFound)
 
 				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
@@ -416,7 +417,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.cache.DeleteNar(r.Context(), nu); err != nil {
-		if errors.Is(err, cache.ErrNotFound) {
+		if errors.Is(err, storage.ErrNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 
 			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {

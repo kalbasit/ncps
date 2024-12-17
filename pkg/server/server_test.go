@@ -23,6 +23,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/server"
+	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -51,7 +52,12 @@ func TestServeHTTP(t *testing.T) {
 		db, err := database.Open("sqlite:" + dbFile)
 		require.NoError(t, err)
 
-		c, err := cache.New(logger, cacheName, dir, db)
+		ctx := context.Background()
+
+		localStore, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(uc)
@@ -172,7 +178,12 @@ func TestServeHTTP(t *testing.T) {
 		db, err := database.Open("sqlite:" + dbFile)
 		require.NoError(t, err)
 
-		c, err := cache.New(logger, cacheName, dir, db)
+		ctx := context.Background()
+
+		localStore, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(uc)
@@ -282,7 +293,12 @@ func TestServeHTTP(t *testing.T) {
 		db, err := database.Open("sqlite:" + dbFile)
 		require.NoError(t, err)
 
-		c, err := cache.New(logger, cacheName, dir, db)
+		ctx := context.Background()
+
+		localStore, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(uc)

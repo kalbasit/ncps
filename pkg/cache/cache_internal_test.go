@@ -19,9 +19,12 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
+
+const cacheName = "cache.example.com"
 
 //nolint:gochecknoglobals
 var logger = zerolog.New(io.Discard)
@@ -64,7 +67,12 @@ func TestAddUpstreamCaches(t *testing.T) {
 		db, err := database.Open("sqlite:" + dbFile)
 		require.NoError(t, err)
 
-		c, err := New(logger, "cache.example.com", dir, db)
+		ctx := context.Background()
+
+		localStore, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		c, err := New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(ucs...)
@@ -114,7 +122,12 @@ func TestAddUpstreamCaches(t *testing.T) {
 		db, err := database.Open("sqlite:" + dbFile)
 		require.NoError(t, err)
 
-		c, err := New(logger, "cache.example.com", dir, db)
+		ctx := context.Background()
+
+		localStore, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		c, err := New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		for _, uc := range ucs {
@@ -142,7 +155,12 @@ func TestRunLRU(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := New(logger, "cache.example.com", dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	ts := testdata.NewTestServer(t, 40)
@@ -202,7 +220,7 @@ func TestRunLRU(t *testing.T) {
 
 	for _, narEntry := range allEntries {
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		assert.True(t, c.hasNarInStore(logger, &nu), "confirm all nars are in the store")
+		assert.True(t, c.narStore.HasNar(ctx, nu), "confirm all nars are in the store")
 	}
 
 	// ensure time has moved by one sec for the last_accessed_at work
@@ -241,19 +259,19 @@ func TestRunLRU(t *testing.T) {
 
 	// confirm all narinfos except the last one are in the store
 	for _, nar := range entries {
-		assert.True(t, c.hasNarInfoInStore(logger, nar.NarInfoHash))
+		assert.True(t, c.narInfoStore.HasNarInfo(ctx, nar.NarInfoHash))
 	}
 
-	assert.False(t, c.hasNarInfoInStore(logger, lastEntry.NarInfoHash))
+	assert.False(t, c.narInfoStore.HasNarInfo(ctx, lastEntry.NarInfoHash))
 
 	// confirm all nars except the last one are in the store
 	for _, narEntry := range entries {
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		assert.True(t, c.hasNarInStore(logger, &nu))
+		assert.True(t, c.narStore.HasNar(ctx, nu))
 	}
 
 	nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastEntry.NarCompression}
-	assert.False(t, c.hasNarInStore(logger, &nu))
+	assert.False(t, c.narStore.HasNar(ctx, nu))
 
 	// all narinfo records except the last one are in the database
 	for _, narEntry := range entries {

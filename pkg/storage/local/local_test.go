@@ -20,6 +20,8 @@ import (
 	"github.com/kalbasit/ncps/testdata"
 )
 
+const cacheName = "cache.example.com"
+
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -150,7 +152,7 @@ func TestGetSecretKey(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		sk1, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		sk1, _, err := signature.GenerateKeypair(cacheName, nil)
 		require.NoError(t, err)
 
 		skPath := filepath.Join(dir, "config", "cache.key")
@@ -181,7 +183,7 @@ func TestPutSecretKey(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		sk1, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		sk1, _, err := signature.GenerateKeypair(cacheName, nil)
 		require.NoError(t, err)
 
 		require.NoError(t, s.PutSecretKey(ctx, sk1))
@@ -210,7 +212,7 @@ func TestPutSecretKey(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		sk1, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		sk1, _, err := signature.GenerateKeypair(cacheName, nil)
 		require.NoError(t, err)
 
 		skPath := filepath.Join(dir, "config", "cache.key")
@@ -219,7 +221,7 @@ func TestPutSecretKey(t *testing.T) {
 
 		require.NoError(t, os.WriteFile(skPath, []byte(sk1.String()), 0o400))
 
-		sk2, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		sk2, _, err := signature.GenerateKeypair(cacheName, nil)
 		require.NoError(t, err)
 
 		err = s.PutSecretKey(ctx, sk2)
@@ -256,7 +258,7 @@ func TestDeleteSecretKey(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		sk, _, err := signature.GenerateKeypair("cache.example.com", nil)
+		sk, _, err := signature.GenerateKeypair(cacheName, nil)
 		require.NoError(t, err)
 
 		skPath := filepath.Join(dir, "config", "cache.key")
