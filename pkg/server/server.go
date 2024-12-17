@@ -104,7 +104,7 @@ func requestLogger(logger zerolog.Logger) func(handler http.Handler) http.Handle
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			defer func() {
-				logger.With().
+				log := logger.With().
 					Str("method", r.Method).
 					Str("request-uri", r.RequestURI).
 					Int("status", ww.Status()).
@@ -115,12 +115,12 @@ func requestLogger(logger zerolog.Logger) func(handler http.Handler) http.Handle
 
 				switch r.Method {
 				case http.MethodHead, http.MethodGet:
-					logger = logger.With().Int("bytes", ww.BytesWritten()).Logger()
+					log = logger.With().Int("bytes", ww.BytesWritten()).Logger()
 				case http.MethodPost, http.MethodPut, http.MethodPatch:
-					logger = logger.With().Int64("bytes", r.ContentLength).Logger()
+					log = logger.With().Int64("bytes", r.ContentLength).Logger()
 				}
 
-				logger.Info().Msg("handled request")
+				log.Info().Msg("handled request")
 			}()
 
 			next.ServeHTTP(ww, r)
