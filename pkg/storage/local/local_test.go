@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -301,16 +302,16 @@ func TestGetNarInfo(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		narPath := filepath.Join(
+		narInfoPath := filepath.Join(
 			dir,
 			"store",
 			"narinfo",
 			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
 		)
 
-		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
 
-		err = os.WriteFile(narPath, []byte(testdata.Nar1.NarInfoText), 0o400)
+		err = os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o400)
 		require.NoError(t, err)
 
 		ni, err := s.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
@@ -324,6 +325,78 @@ func TestGetNarInfo(t *testing.T) {
 }
 
 func TestPutNarInfo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		ni1, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		require.NoError(t, s.PutNarInfo(ctx, ni1))
+
+		narInfoPath := filepath.Join(
+			dir,
+			"store",
+			"narinfo",
+			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+		)
+
+		require.FileExists(t, narInfoPath)
+
+		ni2c, err := os.Open(narInfoPath)
+		require.NoError(t, err)
+
+		defer ni2c.Close()
+
+		ni2, err := narinfo.Parse(ni2c)
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			strings.TrimSpace(ni1.String()),
+			strings.TrimSpace(ni2.String()),
+		)
+	})
+
+	t.Run("narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		narInfoPath := filepath.Join(
+			dir,
+			"store",
+			"narinfo",
+			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+		)
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+
+		err = os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o400)
+		require.NoError(t, err)
+
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		err = s.PutNarInfo(ctx, ni)
+		assert.ErrorIs(t, err, storage.ErrAlreadyExists)
+	})
 }
 
 func TestDeleteNarInfo(t *testing.T) {
