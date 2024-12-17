@@ -173,7 +173,7 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (io.ReadCloser, erro
 }
 
 // PutNar puts the nar in the store.
-func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.ReadCloser) error {
+func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) error {
 	return errors.New("not implemented")
 }
 
