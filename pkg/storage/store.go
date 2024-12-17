@@ -47,7 +47,7 @@ type NarStore interface {
 	GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error)
 
 	// PutNar puts the nar in the store.
-	PutNar(ctx context.Context, narURL nar.URL, body io.ReadCloser) (int64, error)
+	PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error)
 
 	// DeleteNar deletes the nar from the store.
 	DeleteNar(ctx context.Context, narURL nar.URL) error
