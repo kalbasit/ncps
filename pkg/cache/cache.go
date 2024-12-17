@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,21 +25,10 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage"
 )
 
 var (
-	// ErrPathMustBeAbsolute is returned if the given path to New was not absolute.
-	ErrPathMustBeAbsolute = errors.New("path must be absolute")
-
-	// ErrPathMustExist is returned if the given path to New did not exist.
-	ErrPathMustExist = errors.New("path must exist")
-
-	// ErrPathMustBeADirectory is returned if the given path to New is not a directory.
-	ErrPathMustBeADirectory = errors.New("path must be a directory")
-
-	// ErrPathMustBeWritable is returned if the given path to New is not writable.
-	ErrPathMustBeWritable = errors.New("path must be writable")
-
 	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
 
@@ -66,11 +54,15 @@ const recordAgeIgnoreTouch = 5 * time.Minute
 type Cache struct {
 	hostName       string
 	logger         zerolog.Logger
-	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
 	maxSize        uint64
 	db             *database.Queries
+
+	// stores
+	configStore  storage.ConfigStore
+	narInfoStore storage.NarInfoStore
+	narStore     storage.NarStore
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
@@ -92,14 +84,18 @@ type Cache struct {
 
 // New returns a new Cache.
 func New(
-	logger zerolog.Logger,
+	ctx context.Context,
 	hostName string,
-	cachePath string,
 	db *database.Queries,
+	configStore storage.ConfigStore,
+	narInfoStore storage.NarInfoStore,
+	narStore storage.NarStore,
 ) (*Cache, error) {
 	c := &Cache{
-		logger:               logger,
-		db:                   db,
+		logger:               *zerolog.Ctx(ctx),
+		configStore:          configStore,
+		narInfoStore:         narInfoStore,
+		narStore:             narStore,
 		upstreamJobs:         make(map[string]chan struct{}),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
@@ -108,21 +104,16 @@ func New(
 		return c, err
 	}
 
-	if err := c.validatePath(cachePath); err != nil {
-		return c, err
-	}
-
 	c.hostName = hostName
-	c.path = cachePath
 
-	sk, err := c.setupSecretKey()
+	sk, err := c.setupSecretKey(ctx)
 	if err != nil {
 		return c, fmt.Errorf("error setting up the secret key: %w", err)
 	}
 
 	c.secretKey = sk
 
-	return c, c.setup()
+	return c, nil
 }
 
 // AddUpstreamCaches adds one or more upstream caches.
@@ -213,7 +204,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		return 0, nil, ErrNotFound
 	}
 
-	return c.getNarFromStore(ctx, log, &narURL)
+	return c.narStore.GetNar(ctx, narURL)
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
@@ -985,133 +976,26 @@ func (c *Cache) validateHostname(hostName string) error {
 	return nil
 }
 
-func (c *Cache) validatePath(cachePath string) error {
-	if !filepath.IsAbs(cachePath) {
-		c.logger.Error().Str("path", cachePath).Msg("path is not absolute")
-
-		return ErrPathMustBeAbsolute
+func (c *Cache) setupSecretKey(ctx context.Context) (signature.SecretKey, error) {
+	sk, err := c.configStore.GetSecretKey(ctx)
+	if err == nil {
+		return sk, nil
 	}
 
-	info, err := os.Stat(cachePath)
-	if errors.Is(err, fs.ErrNotExist) {
-		c.logger.Error().Str("path", cachePath).Msg("path does not exist")
-
-		return ErrPathMustExist
+	if err != storage.ErrNotFound {
+		return sk, fmt.Errorf("error fetching the secret key from the store: %w", err)
 	}
 
-	if !info.IsDir() {
-		c.logger.Error().Str("path", cachePath).Msg("path is not a directory")
-
-		return ErrPathMustBeADirectory
-	}
-
-	if !c.isWritable(cachePath) {
-		return ErrPathMustBeWritable
-	}
-
-	return nil
-}
-
-func (c *Cache) isWritable(cachePath string) bool {
-	tmpFile, err := os.CreateTemp(cachePath, "write_test")
+	sk, _, err = signature.GenerateKeypair(c.hostName, nil)
 	if err != nil {
-		c.logger.Error().
-			Err(err).
-			Str("path", cachePath).
-			Msg("error writing a temp file in the path")
-
-		return false
+		return sk, fmt.Errorf("error generating a secret key pair: %w", err)
 	}
 
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	return true
-}
-
-func (c *Cache) setup() error {
-	if err := c.setupDirs(); err != nil {
-		return fmt.Errorf("error setting up the cache directory: %w", err)
-	}
-
-	return nil
-}
-
-func (c *Cache) setupDirs() error {
-	if err := os.RemoveAll(c.storeTMPPath()); err != nil {
-		return fmt.Errorf("error removing the temporary download directory: %w", err)
-	}
-
-	allPaths := []string{
-		c.configPath(),
-		c.storePath(),
-		c.storeNarInfoPath(),
-		c.storeNarPath(),
-		c.storeTMPPath(),
-	}
-
-	for _, p := range allPaths {
-		if err := os.MkdirAll(p, 0o700); err != nil {
-			return fmt.Errorf("error creating the directory %q: %w", p, err)
-		}
-	}
-
-	return nil
-}
-
-func (c *Cache) configPath() string       { return filepath.Join(c.path, "config") }
-func (c *Cache) secretKeyPath() string    { return filepath.Join(c.configPath(), "cache.key") }
-func (c *Cache) storePath() string        { return filepath.Join(c.path, "store") }
-func (c *Cache) storeNarInfoPath() string { return filepath.Join(c.storePath(), "narinfo") }
-func (c *Cache) storeNarPath() string     { return filepath.Join(c.storePath(), "nar") }
-func (c *Cache) storeTMPPath() string     { return filepath.Join(c.storePath(), "tmp") }
-
-func (c *Cache) setupSecretKey() (signature.SecretKey, error) {
-	f, err := os.Open(c.secretKeyPath())
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return c.createNewKey()
-		}
-
-		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", c.secretKeyPath(), err)
-	}
-	defer f.Close()
-
-	skc, err := io.ReadAll(f)
-	if err != nil {
-		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", c.secretKeyPath(), err)
-	}
-
-	sk, err := signature.LoadSecretKey(string(skc))
-	if err != nil {
-		return signature.SecretKey{}, fmt.Errorf("error loading the secret key: %w", err)
+	if err := c.configStore.PutSecretKey(ctx, sk); err != nil {
+		return sk, fmt.Errorf("error storing the generated secret key in the store: %w", err)
 	}
 
 	return sk, nil
-}
-
-func (c *Cache) createNewKey() (signature.SecretKey, error) {
-	if err := os.MkdirAll(filepath.Dir(c.secretKeyPath()), 0o700); err != nil {
-		return signature.SecretKey{}, fmt.Errorf("error creating the parent directories for %q: %w", c.secretKeyPath(), err)
-	}
-
-	secretKey, _, err := signature.GenerateKeypair(c.hostName, nil)
-	if err != nil {
-		return secretKey, fmt.Errorf("error generating a new secret key: %w", err)
-	}
-
-	f, err := os.Create(c.secretKeyPath())
-	if err != nil {
-		return secretKey, fmt.Errorf("error creating the cache key file %q: %w", c.secretKeyPath(), err)
-	}
-
-	defer f.Close()
-
-	if _, err := f.WriteString(secretKey.String()); err != nil {
-		return secretKey, fmt.Errorf("error writing the secret key to %q: %w", c.secretKeyPath(), err)
-	}
-
-	return secretKey, nil
 }
 
 func (c *Cache) hasUpstreamJob(hash string) bool {
