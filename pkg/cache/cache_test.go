@@ -23,6 +23,8 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage"
+	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 
@@ -38,46 +40,10 @@ var logger = zerolog.New(io.Discard)
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	t.Run("path must be absolute, must exist, and must be a writable directory", func(t *testing.T) {
+	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("path is required", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "hello", nil)
-			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
-		})
-
-		t.Run("path is not absolute", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "hello", nil)
-			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
-		})
-
-		t.Run("path must exist", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "/non-existing", nil)
-			assert.ErrorIs(t, err, cache.ErrPathMustExist)
-		})
-
-		t.Run("path must be a directory", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "/proc/cpuinfo", nil)
-			assert.ErrorIs(t, err, cache.ErrPathMustBeADirectory)
-		})
-
-		t.Run("path must be writable", func(t *testing.T) {
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-			defer os.RemoveAll(dir) // clean up
-
-			require.NoError(t, os.Chmod(dir, 0o500))
-
-			_, err = cache.New(logger, cacheName, dir, nil)
-			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
-		})
-
-		t.Run("valid path must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, os.TempDir(), nil)
-			assert.NoError(t, err)
-		})
-
-		t.Run("should create directories", func(t *testing.T) {
+		t.Run("hostname must not be empty", func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
@@ -88,63 +54,72 @@ func TestNew(t *testing.T) {
 			db, err := database.Open("sqlite:" + dbFile)
 			require.NoError(t, err)
 
-			_, err = cache.New(logger, cacheName, dir, db)
+			ctx := context.Background()
+
+			localStore, err := local.New(ctx, dir)
 			require.NoError(t, err)
 
-			dirs := []string{
-				"config",
-				"store",
-				filepath.Join("store", "narinfo"),
-				filepath.Join("store", "nar"),
-				filepath.Join("store", "tmp"),
-			}
-
-			for _, p := range dirs {
-				t.Run("Checking that "+p+" exists", func(t *testing.T) {
-					assert.DirExists(t, filepath.Join(dir, p))
-				})
-			}
-		})
-
-		t.Run("store/tmp is removed on boot", func(t *testing.T) {
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-			defer os.RemoveAll(dir) // clean up
-
-			// create the directory tmp and add a file inside of it
-			err = os.MkdirAll(filepath.Join(dir, "store", "tmp"), 0o700)
-			require.NoError(t, err)
-
-			f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "hello")
-			require.NoError(t, err)
-
-			_, err = cache.New(logger, cacheName, dir, nil)
-			require.NoError(t, err)
-
-			assert.NoFileExists(t, f.Name())
-		})
-	})
-
-	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := cache.New(logger, "", os.TempDir(), nil)
+			_, err = cache.New(ctx, "", db, localStore, localStore, localStore)
 			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := cache.New(logger, "https://cache.example.com", os.TempDir(), nil)
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir) // clean up
+
+			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+			testhelper.CreateMigrateDatabase(t, dbFile)
+
+			db, err := database.Open("sqlite:" + dbFile)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+
+			localStore, err := local.New(ctx, dir)
+			require.NoError(t, err)
+
+			_, err = cache.New(ctx, "https://cache.example.com", db, localStore, localStore, localStore)
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir(), nil)
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir) // clean up
+
+			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+			testhelper.CreateMigrateDatabase(t, dbFile)
+
+			db, err := database.Open("sqlite:" + dbFile)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+
+			localStore, err := local.New(ctx, dir)
+			require.NoError(t, err)
+
+			_, err = cache.New(ctx, "cache.example.com/path/to", db, localStore, localStore, localStore)
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, os.TempDir(), nil)
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir) // clean up
+
+			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+			testhelper.CreateMigrateDatabase(t, dbFile)
+
+			db, err := database.Open("sqlite:" + dbFile)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+
+			localStore, err := local.New(ctx, dir)
+			require.NoError(t, err)
+
+			_, err = cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 			require.NoError(t, err)
 		})
 	})
@@ -153,7 +128,22 @@ func TestNew(t *testing.T) {
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
-	c, err := cache.New(logger, cacheName, "/tmp", nil)
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir) // clean up
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
@@ -192,7 +182,12 @@ func TestGetNarInfo(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, cacheName, dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
@@ -200,7 +195,7 @@ func TestGetNarInfo(t *testing.T) {
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
-		assert.ErrorIs(t, err, cache.ErrNotFound)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
 	t.Run("narinfo exists upstream", func(t *testing.T) {
@@ -568,7 +563,12 @@ func TestPutNarInfo(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, cacheName, dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -705,7 +705,12 @@ func TestDeleteNarInfo(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, cacheName, dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -719,7 +724,7 @@ func TestDeleteNarInfo(t *testing.T) {
 
 		t.Run("DeleteNarInfo does return an error", func(t *testing.T) {
 			err := c.DeleteNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
-			assert.ErrorIs(t, err, cache.ErrNotFound)
+			assert.ErrorIs(t, err, storage.ErrNotFound)
 		})
 	})
 
@@ -772,7 +777,12 @@ func TestGetNar(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, cacheName, dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
@@ -781,7 +791,7 @@ func TestGetNar(t *testing.T) {
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
 		_, _, err := c.GetNar(context.Background(), nu)
-		assert.ErrorIs(t, err, cache.ErrNotFound)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
 	t.Run("nar exists upstream", func(t *testing.T) {
@@ -974,7 +984,12 @@ func TestPutNar(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, cacheName, dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -1016,7 +1031,12 @@ func TestDeleteNar(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, cacheName, dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -1031,7 +1051,7 @@ func TestDeleteNar(t *testing.T) {
 		t.Run("DeleteNar does return an error", func(t *testing.T) {
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 			err := c.DeleteNar(context.Background(), nu)
-			assert.ErrorIs(t, err, cache.ErrNotFound)
+			assert.ErrorIs(t, err, storage.ErrNotFound)
 		})
 	})
 

@@ -6,11 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -24,23 +21,11 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage"
 )
 
 var (
-	// ErrPathMustBeAbsolute is returned if the given path to New was not absolute.
-	ErrPathMustBeAbsolute = errors.New("path must be absolute")
-
-	// ErrPathMustExist is returned if the given path to New did not exist.
-	ErrPathMustExist = errors.New("path must exist")
-
-	// ErrPathMustBeADirectory is returned if the given path to New is not a directory.
-	ErrPathMustBeADirectory = errors.New("path must be a directory")
-
-	// ErrPathMustBeWritable is returned if the given path to New is not writable.
-	ErrPathMustBeWritable = errors.New("path must be writable")
-
 	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
 
@@ -53,9 +38,6 @@ var (
 	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
 	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
 
-	// ErrNotFound is returned if the nar or narinfo were not found.
-	ErrNotFound = errors.New("not found")
-
 	// errNarInfoPurged is returned if the narinfo was purged.
 	errNarInfoPurged = errors.New("the narinfo was purged")
 )
@@ -66,11 +48,15 @@ const recordAgeIgnoreTouch = 5 * time.Minute
 type Cache struct {
 	hostName       string
 	logger         zerolog.Logger
-	path           string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
 	maxSize        uint64
 	db             *database.Queries
+
+	// stores
+	configStore  storage.ConfigStore
+	narInfoStore storage.NarInfoStore
+	narStore     storage.NarStore
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
@@ -92,14 +78,19 @@ type Cache struct {
 
 // New returns a new Cache.
 func New(
-	logger zerolog.Logger,
+	ctx context.Context,
 	hostName string,
-	cachePath string,
 	db *database.Queries,
+	configStore storage.ConfigStore,
+	narInfoStore storage.NarInfoStore,
+	narStore storage.NarStore,
 ) (*Cache, error) {
 	c := &Cache{
-		logger:               logger,
+		logger:               *zerolog.Ctx(ctx),
 		db:                   db,
+		configStore:          configStore,
+		narInfoStore:         narInfoStore,
+		narStore:             narStore,
 		upstreamJobs:         make(map[string]chan struct{}),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
@@ -108,21 +99,16 @@ func New(
 		return c, err
 	}
 
-	if err := c.validatePath(cachePath); err != nil {
-		return c, err
-	}
-
 	c.hostName = hostName
-	c.path = cachePath
 
-	sk, err := c.setupSecretKey()
+	sk, err := c.setupSecretKey(ctx)
 	if err != nil {
 		return c, fmt.Errorf("error setting up the secret key: %w", err)
 	}
 
 	c.secretKey = sk
 
-	return c, c.setup()
+	return c, nil
 }
 
 // AddUpstreamCaches adds one or more upstream caches.
@@ -200,7 +186,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 	log := narURL.NewLogger(c.logger)
 
-	if c.hasNarInStore(log, &narURL) {
+	if c.narStore.HasNar(ctx, narURL) {
 		return c.getNarFromStore(ctx, log, &narURL)
 	}
 
@@ -209,15 +195,11 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	log.Debug().Msg("pulling nar in a go-routing and will wait for it")
 	<-doneC
 
-	if !c.hasNarInStore(log, &narURL) {
-		return 0, nil, ErrNotFound
-	}
-
 	return c.getNarFromStore(ctx, log, &narURL)
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
-func (c *Cache) PutNar(_ context.Context, narURL nar.URL, r io.ReadCloser) error {
+func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -228,24 +210,21 @@ func (c *Cache) PutNar(_ context.Context, narURL nar.URL, r io.ReadCloser) error
 		r.Close()
 	}()
 
-	log := narURL.NewLogger(c.logger)
-
-	_, err := c.putNarInStore(log, &narURL, r)
+	_, err := c.narStore.PutNar(ctx, narURL, r)
 
 	return err
 }
 
 // DeleteNar deletes the nar from the store.
-func (c *Cache) DeleteNar(_ context.Context, narURL nar.URL) error {
+func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	log := narURL.NewLogger(c.logger)
-
-	return c.deleteNarFromStore(log, &narURL)
+	return c.narStore.DeleteNar(ctx, narURL)
 }
 
 func (c *Cache) pullNar(
+	ctx context.Context,
 	log zerolog.Logger,
 	narURL *nar.URL,
 	uc *upstream.Cache,
@@ -283,7 +262,7 @@ func (c *Cache) pullNar(
 		resp.Body.Close()
 	}()
 
-	written, err := c.putNarInStore(log, narURL, resp.Body)
+	written, err := c.narStore.PutNar(ctx, *narURL, resp.Body)
 	if err != nil {
 		log.Error().Err(err).Msg("error storing the narInfo in the store")
 
@@ -301,24 +280,12 @@ func (c *Cache) pullNar(
 	done()
 }
 
-func (c *Cache) getNarPathInStore(narURL *nar.URL) string {
-	return filepath.Join(c.storeNarPath(), narURL.ToFilePath())
-}
-
-func (c *Cache) getNarInfoPathInStore(hash string) string {
-	return filepath.Join(c.storeNarInfoPath(), helper.NarInfoFilePath(hash))
-}
-
-func (c *Cache) hasNarInStore(log zerolog.Logger, narURL *nar.URL) bool {
-	return c.hasInStore(log, c.getNarPathInStore(narURL))
-}
-
 func (c *Cache) getNarFromStore(
 	ctx context.Context,
 	log zerolog.Logger,
 	narURL *nar.URL,
 ) (int64, io.ReadCloser, error) {
-	size, r, err := c.getFromStore(log, c.getNarPathInStore(narURL))
+	size, r, err := c.narStore.GetNar(ctx, *narURL)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 	}
@@ -406,59 +373,23 @@ func (c *Cache) getNarFromUpstream(
 		return resp, nil
 	}
 
-	return nil, ErrNotFound
+	return nil, storage.ErrNotFound
 }
 
-func (c *Cache) putNarInStore(_ zerolog.Logger, narURL *nar.URL, r io.ReadCloser) (int64, error) {
-	pattern := narURL.Hash + "-*.nar"
-	if cext := narURL.Compression.String(); cext != "" {
-		pattern += "." + cext
-	}
-
-	f, err := os.CreateTemp(c.storeTMPPath(), pattern)
-	if err != nil {
-		return 0, fmt.Errorf("error creating the temporary directory: %w", err)
-	}
-
-	written, err := io.Copy(f, r)
-	if err != nil {
-		f.Close()
-		os.Remove(f.Name())
-
-		return 0, fmt.Errorf("error writing the nar to the temporary file: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return 0, fmt.Errorf("error closing the temporary file: %w", err)
-	}
-
-	narPath := c.getNarPathInStore(narURL)
-
-	if err := os.MkdirAll(filepath.Dir(narPath), 0o700); err != nil {
-		return 0, fmt.Errorf("error creating the directories for %q: %w", narPath, err)
-	}
-
-	if err := os.Rename(f.Name(), narPath); err != nil {
-		return 0, fmt.Errorf("error creating the nar file %q: %w", narPath, err)
-	}
-
-	return written, nil
-}
-
-func (c *Cache) deleteNarFromStore(log zerolog.Logger, narURL *nar.URL) error {
-	if !c.hasNarInStore(log, narURL) {
-		return ErrNotFound
-	}
-
+func (c *Cache) deleteNarFromStore(_ zerolog.Logger, narURL *nar.URL) error {
 	// create a new context not associated with any request because we don't want
 	// downstream HTTP request to cancel this.
 	ctx := context.Background()
+
+	if !c.narStore.HasNar(ctx, *narURL) {
+		return storage.ErrNotFound
+	}
 
 	if _, err := c.db.DeleteNarByHash(ctx, narURL.Hash); err != nil {
 		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
-	return os.Remove(c.getNarPathInStore(narURL))
+	return c.narStore.DeleteNar(ctx, *narURL)
 }
 
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
@@ -475,7 +406,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		err     error
 	)
 
-	if c.hasNarInfoInStore(log, hash) {
+	if c.narInfoStore.HasNarInfo(ctx, hash) {
 		narInfo, err = c.getNarInfoFromStore(ctx, log, hash)
 		if err == nil {
 			return narInfo, nil
@@ -489,14 +420,11 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	log.Debug().Msg("pulling nar in a go-routing and will wait for it")
 	<-doneC
 
-	if !c.hasNarInfoInStore(log, hash) {
-		return nil, ErrNotFound
-	}
-
-	return c.getNarInfoFromStore(ctx, log, hash)
+	return c.narInfoStore.GetNarInfo(ctx, hash)
 }
 
 func (c *Cache) pullNarInfo(
+	ctx context.Context,
 	log zerolog.Logger,
 	hash string,
 	doneC chan struct{},
@@ -555,7 +483,7 @@ func (c *Cache) pullNarInfo(
 		return
 	}
 
-	if err := c.putNarInfoInStore(log, hash, narInfo); err != nil {
+	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
 		log.Error().Err(err).Msg("error storing the narInfo in the store")
 
 		done()
@@ -577,7 +505,7 @@ func (c *Cache) pullNarInfo(
 }
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
-func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) error {
+func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -599,7 +527,7 @@ func (c *Cache) PutNarInfo(_ context.Context, hash string, r io.ReadCloser) erro
 		return fmt.Errorf("error signing the narinfo: %w", err)
 	}
 
-	if err := c.putNarInfoInStore(log, hash, narInfo); err != nil {
+	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
 		return fmt.Errorf("error storing the narInfo in the store: %w", err)
 	}
 
@@ -617,6 +545,10 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 }
 
 func (c *Cache) prePullNarInfo(log zerolog.Logger, hash string) chan struct{} {
+	// create a new context not associated with any request because we don't want
+	// pulling from upstream to be associated with a user request.
+	ctx := context.Background()
+
 	c.muUpstreamJobs.Lock()
 
 	doneC, ok := c.upstreamJobs[hash]
@@ -626,7 +558,7 @@ func (c *Cache) prePullNarInfo(log zerolog.Logger, hash string) chan struct{} {
 		doneC = make(chan struct{})
 		c.upstreamJobs[hash] = doneC
 
-		go c.pullNarInfo(log, hash, doneC)
+		go c.pullNarInfo(ctx, log, hash, doneC)
 	}
 	c.muUpstreamJobs.Unlock()
 
@@ -640,6 +572,10 @@ func (c *Cache) prePullNar(
 	narInfo *narinfo.NarInfo,
 	enableZSTD bool,
 ) chan struct{} {
+	// create a new context not associated with any request because we don't want
+	// pulling from upstream to be associated with a user request.
+	ctx := context.Background()
+
 	c.muUpstreamJobs.Lock()
 
 	doneC, ok := c.upstreamJobs[narURL.Hash]
@@ -647,7 +583,7 @@ func (c *Cache) prePullNar(
 		doneC = make(chan struct{})
 		c.upstreamJobs[narURL.Hash] = doneC
 
-		go c.pullNar(log, narURL, uc, narInfo, enableZSTD, doneC)
+		go c.pullNar(ctx, log, narURL, uc, narInfo, enableZSTD, doneC)
 	}
 	c.muUpstreamJobs.Unlock()
 
@@ -675,19 +611,8 @@ func (c *Cache) signNarInfo(_ zerolog.Logger, narInfo *narinfo.NarInfo) error {
 	return nil
 }
 
-func (c *Cache) hasNarInfoInStore(log zerolog.Logger, hash string) bool {
-	return c.hasInStore(log, c.getNarInfoPathInStore(hash))
-}
-
 func (c *Cache) getNarInfoFromStore(ctx context.Context, log zerolog.Logger, hash string) (*narinfo.NarInfo, error) {
-	_, r, err := c.getFromStore(log, c.getNarInfoPathInStore(hash))
-	if err != nil {
-		return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
-	}
-
-	defer r.Close()
-
-	ni, err := narinfo.Parse(r)
+	ni, err := c.narInfoStore.GetNarInfo(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
 	}
@@ -709,7 +634,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log zerolog.Logger, has
 
 	log = narURL.NewLogger(log)
 
-	if !c.hasNarInStore(log, &narURL) && !c.hasUpstreamJob(narURL.Hash) {
+	if !c.narStore.HasNar(ctx, narURL) && !c.hasUpstreamJob(narURL.Hash) {
 		log.Error().Msg("narinfo was requested but no nar was found requesting a purge")
 
 		if err := c.purgeNarInfo(ctx, log, hash, &narURL); err != nil {
@@ -776,7 +701,7 @@ func (c *Cache) getNarInfoFromUpstream(log zerolog.Logger, hash string) (*upstre
 		return &uc, narInfo, nil
 	}
 
-	return nil, nil, ErrNotFound
+	return nil, nil, storage.ErrNotFound
 }
 
 func (c *Cache) purgeNarInfo(ctx context.Context, log zerolog.Logger, hash string, narURL *nar.URL) error {
@@ -807,48 +732,18 @@ func (c *Cache) purgeNarInfo(ctx context.Context, log zerolog.Logger, hash strin
 		return fmt.Errorf("error committing the transaction: %w", err)
 	}
 
-	if c.hasNarInfoInStore(log, hash) {
+	if c.narInfoStore.HasNarInfo(ctx, hash) {
 		if err := c.deleteNarInfoFromStore(ctx, log, hash); err != nil {
 			return fmt.Errorf("error removing narinfo from store: %w", err)
 		}
 	}
 
 	if narURL.Hash != "" {
-		if c.hasNarInStore(log, narURL) {
+		if c.narStore.HasNar(ctx, *narURL) {
 			if err := c.deleteNarFromStore(log, narURL); err != nil {
 				return fmt.Errorf("error removing nar from store: %w", err)
 			}
 		}
-	}
-
-	return nil
-}
-
-func (c *Cache) putNarInfoInStore(_ zerolog.Logger, hash string, narInfo *narinfo.NarInfo) error {
-	f, err := os.CreateTemp(c.storeTMPPath(), hash+"-*.narinfo")
-	if err != nil {
-		return fmt.Errorf("error creating the temporary directory: %w", err)
-	}
-
-	if _, err := f.WriteString(narInfo.String()); err != nil {
-		f.Close()
-		os.Remove(f.Name())
-
-		return fmt.Errorf("error writing the narinfo to the temporary file: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("error closing the temporary file: %w", err)
-	}
-
-	narInfoPath := c.getNarInfoPathInStore(hash)
-
-	if err := os.MkdirAll(filepath.Dir(narInfoPath), 0o700); err != nil {
-		return fmt.Errorf("error creating the directories for %q: %w", narInfoPath, err)
-	}
-
-	if err := os.Rename(f.Name(), narInfoPath); err != nil {
-		return fmt.Errorf("error creating the narinfo file %q: %w", narInfoPath, err)
 	}
 
 	return nil
@@ -916,38 +811,16 @@ func (c *Cache) storeInDatabase(log zerolog.Logger, hash string, narInfo *narinf
 	return nil
 }
 
-func (c *Cache) deleteNarInfoFromStore(ctx context.Context, log zerolog.Logger, hash string) error {
-	if !c.hasNarInfoInStore(log, hash) {
-		return ErrNotFound
+func (c *Cache) deleteNarInfoFromStore(ctx context.Context, _ zerolog.Logger, hash string) error {
+	if !c.narInfoStore.HasNarInfo(ctx, hash) {
+		return storage.ErrNotFound
 	}
 
 	if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
 		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
-	return os.Remove(c.getNarInfoPathInStore(hash))
-}
-
-func (c *Cache) hasInStore(_ zerolog.Logger, path string) bool {
-	_, err := os.Stat(path)
-
-	return err == nil
-}
-
-// GetFile returns the file define by its key
-// NOTE: It's the caller responsibility to close the file after using it.
-func (c *Cache) getFromStore(_ zerolog.Logger, path string) (int64, io.ReadCloser, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, nil, fmt.Errorf("error opening the file %q: %w", path, err)
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0, nil, fmt.Errorf("error getting the stat for path %q: %w", path, err)
-	}
-
-	return info.Size(), f, nil
+	return c.narInfoStore.DeleteNarInfo(ctx, hash)
 }
 
 func (c *Cache) validateHostname(hostName string) error {
@@ -985,133 +858,26 @@ func (c *Cache) validateHostname(hostName string) error {
 	return nil
 }
 
-func (c *Cache) validatePath(cachePath string) error {
-	if !filepath.IsAbs(cachePath) {
-		c.logger.Error().Str("path", cachePath).Msg("path is not absolute")
-
-		return ErrPathMustBeAbsolute
+func (c *Cache) setupSecretKey(ctx context.Context) (signature.SecretKey, error) {
+	sk, err := c.configStore.GetSecretKey(ctx)
+	if err == nil {
+		return sk, nil
 	}
 
-	info, err := os.Stat(cachePath)
-	if errors.Is(err, fs.ErrNotExist) {
-		c.logger.Error().Str("path", cachePath).Msg("path does not exist")
-
-		return ErrPathMustExist
+	if !errors.Is(err, storage.ErrNotFound) {
+		return sk, fmt.Errorf("error fetching the secret key from the store: %w", err)
 	}
 
-	if !info.IsDir() {
-		c.logger.Error().Str("path", cachePath).Msg("path is not a directory")
-
-		return ErrPathMustBeADirectory
-	}
-
-	if !c.isWritable(cachePath) {
-		return ErrPathMustBeWritable
-	}
-
-	return nil
-}
-
-func (c *Cache) isWritable(cachePath string) bool {
-	tmpFile, err := os.CreateTemp(cachePath, "write_test")
+	sk, _, err = signature.GenerateKeypair(c.hostName, nil)
 	if err != nil {
-		c.logger.Error().
-			Err(err).
-			Str("path", cachePath).
-			Msg("error writing a temp file in the path")
-
-		return false
+		return sk, fmt.Errorf("error generating a secret key pair: %w", err)
 	}
 
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	return true
-}
-
-func (c *Cache) setup() error {
-	if err := c.setupDirs(); err != nil {
-		return fmt.Errorf("error setting up the cache directory: %w", err)
-	}
-
-	return nil
-}
-
-func (c *Cache) setupDirs() error {
-	if err := os.RemoveAll(c.storeTMPPath()); err != nil {
-		return fmt.Errorf("error removing the temporary download directory: %w", err)
-	}
-
-	allPaths := []string{
-		c.configPath(),
-		c.storePath(),
-		c.storeNarInfoPath(),
-		c.storeNarPath(),
-		c.storeTMPPath(),
-	}
-
-	for _, p := range allPaths {
-		if err := os.MkdirAll(p, 0o700); err != nil {
-			return fmt.Errorf("error creating the directory %q: %w", p, err)
-		}
-	}
-
-	return nil
-}
-
-func (c *Cache) configPath() string       { return filepath.Join(c.path, "config") }
-func (c *Cache) secretKeyPath() string    { return filepath.Join(c.configPath(), "cache.key") }
-func (c *Cache) storePath() string        { return filepath.Join(c.path, "store") }
-func (c *Cache) storeNarInfoPath() string { return filepath.Join(c.storePath(), "narinfo") }
-func (c *Cache) storeNarPath() string     { return filepath.Join(c.storePath(), "nar") }
-func (c *Cache) storeTMPPath() string     { return filepath.Join(c.storePath(), "tmp") }
-
-func (c *Cache) setupSecretKey() (signature.SecretKey, error) {
-	f, err := os.Open(c.secretKeyPath())
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return c.createNewKey()
-		}
-
-		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", c.secretKeyPath(), err)
-	}
-	defer f.Close()
-
-	skc, err := io.ReadAll(f)
-	if err != nil {
-		return signature.SecretKey{}, fmt.Errorf("error reading the secret key from %q: %w", c.secretKeyPath(), err)
-	}
-
-	sk, err := signature.LoadSecretKey(string(skc))
-	if err != nil {
-		return signature.SecretKey{}, fmt.Errorf("error loading the secret key: %w", err)
+	if err := c.configStore.PutSecretKey(ctx, sk); err != nil {
+		return sk, fmt.Errorf("error storing the generated secret key in the store: %w", err)
 	}
 
 	return sk, nil
-}
-
-func (c *Cache) createNewKey() (signature.SecretKey, error) {
-	if err := os.MkdirAll(filepath.Dir(c.secretKeyPath()), 0o700); err != nil {
-		return signature.SecretKey{}, fmt.Errorf("error creating the parent directories for %q: %w", c.secretKeyPath(), err)
-	}
-
-	secretKey, _, err := signature.GenerateKeypair(c.hostName, nil)
-	if err != nil {
-		return secretKey, fmt.Errorf("error generating a new secret key: %w", err)
-	}
-
-	f, err := os.Create(c.secretKeyPath())
-	if err != nil {
-		return secretKey, fmt.Errorf("error creating the cache key file %q: %w", c.secretKeyPath(), err)
-	}
-
-	defer f.Close()
-
-	if _, err := f.WriteString(secretKey.String()); err != nil {
-		return secretKey, fmt.Errorf("error writing the secret key to %q: %w", c.secretKeyPath(), err)
-	}
-
-	return secretKey, nil
 }
 
 func (c *Cache) hasUpstreamJob(hash string) bool {
@@ -1193,7 +959,8 @@ func (c *Cache) runLRU() {
 
 	log.Info().Int("count-nars", len(nars)).Msg("found this many nars to remove")
 
-	filesToRemove := make([]string, 0, 2*len(nars))
+	narInfoHashesToRemove := make([]string, 0, len(nars))
+	narURLsToRemove := make([]nar.URL, 0, len(nars))
 
 	for _, narRecord := range nars {
 		narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, narRecord.NarInfoID)
@@ -1207,9 +974,7 @@ func (c *Cache) runLRU() {
 					Msg("error removing narinfo from database")
 			}
 
-			filesToRemove = append(filesToRemove,
-				c.getNarInfoPathInStore(narInfo.Hash),
-			)
+			narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
 		} else {
 			log.Error().
 				Err(err).
@@ -1226,33 +991,50 @@ func (c *Cache) runLRU() {
 				Msg("error removing nar from database")
 		}
 
-		filesToRemove = append(filesToRemove,
-			// NOTE: we don't need the query when working with store so it's
-			// explicitly omitted.
-			c.getNarPathInStore(&nar.URL{
-				Hash:        narRecord.Hash,
-				Compression: nar.CompressionTypeFromString(narRecord.Compression),
-			}),
-		)
+		// NOTE: we don't need the query when working with store so it's
+		// explicitly omitted.
+		narURLsToRemove = append(narURLsToRemove, nar.URL{
+			Hash:        narRecord.Hash,
+			Compression: nar.CompressionTypeFromString(narRecord.Compression),
+		})
 	}
 
 	// remove all the files from the store as fast as possible.
 
 	var wg sync.WaitGroup
 
-	for _, f := range filesToRemove {
+	for _, hash := range narInfoHashesToRemove {
 		wg.Add(1)
 
 		go func() {
 			defer wg.Done()
 
-			log.Info().Str("path", f).Msg("deleting file from store")
+			log := log.With().Str("narinfo-hash", hash).Logger()
 
-			if err := os.Remove(f); err != nil {
+			log.Info().Msg("deleting narinfo from store")
+
+			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
 				log.Error().
 					Err(err).
-					Str("file-to-remove", f).
-					Msg("error removing the file")
+					Msg("error removing the narinfo from the store")
+			}
+		}()
+	}
+
+	for _, narURL := range narURLsToRemove {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			log := log.With().Str("nar-url", narURL.String()).Logger()
+
+			log.Info().Msg("deleting nar from store")
+
+			if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+				log.Error().
+					Err(err).
+					Msg("error removing the nar from the store")
 			}
 		}()
 	}

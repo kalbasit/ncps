@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,8 +13,11 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testhelper"
 )
+
+const cacheName = "cache.example.com"
 
 //nolint:gochecknoglobals
 var logger = zerolog.New(io.Discard)
@@ -29,7 +33,12 @@ func TestSetDeletePermitted(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	c, err := cache.New(logger, "cache.example.com", dir, db)
+	ctx := context.Background()
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	t.Run("false", func(t *testing.T) {

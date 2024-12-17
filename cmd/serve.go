@@ -19,6 +19,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/server"
+	"github.com/kalbasit/ncps/pkg/storage/local"
 )
 
 // ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
@@ -133,7 +134,7 @@ func serveAction(logger zerolog.Logger) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := createCache(logger, cmd, ucs)
+		cache, err := createCache(ctx, logger, cmd, ucs)
 		if err != nil {
 			return err
 		}
@@ -192,7 +193,12 @@ func getUpstreamCaches(_ context.Context, logger zerolog.Logger, cmd *cli.Comman
 	return ucs, nil
 }
 
-func createCache(logger zerolog.Logger, cmd *cli.Command, ucs []upstream.Cache) (*cache.Cache, error) {
+func createCache(
+	ctx context.Context,
+	logger zerolog.Logger,
+	cmd *cli.Command,
+	ucs []upstream.Cache,
+) (*cache.Cache, error) {
 	dbURL := cmd.String("cache-database-url")
 
 	db, err := database.Open(dbURL)
@@ -200,11 +206,20 @@ func createCache(logger zerolog.Logger, cmd *cli.Command, ucs []upstream.Cache) 
 		return nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
 	}
 
+	cacheDataPath := cmd.String("cache-data-path")
+
+	localStore, err := local.New(ctx, cacheDataPath)
+	if err != nil {
+		return nil, fmt.Errorf("error creating a new local store at %q: %w", cacheDataPath, err)
+	}
+
 	c, err := cache.New(
-		logger,
+		logger.WithContext(ctx),
 		cmd.String("cache-hostname"),
-		cmd.String("cache-data-path"),
 		db,
+		localStore,
+		localStore,
+		localStore,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new cache: %w", err)
