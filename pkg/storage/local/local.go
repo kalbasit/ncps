@@ -30,9 +30,6 @@ var (
 
 	// ErrPathMustBeWritable is returned if the given path to New is not writable.
 	ErrPathMustBeWritable = errors.New("path must be writable")
-
-	// ErrNoSecretKey is returned if no secret key is present.
-	ErrNoSecretKey = errors.New("no secret key was found")
 )
 
 const (
@@ -64,7 +61,7 @@ func (s *Store) GetSecretKey(_ context.Context) (signature.SecretKey, error) {
 	skPath := s.secretKeyPath()
 
 	if _, err := os.Stat(skPath); os.IsNotExist(err) {
-		return signature.SecretKey{}, ErrNoSecretKey
+		return signature.SecretKey{}, storage.ErrNotFound
 	}
 
 	skc, err := os.ReadFile(skPath)
@@ -91,7 +88,7 @@ func (s *Store) DeleteSecretKey(_ context.Context) error {
 	skPath := s.secretKeyPath()
 
 	if _, err := os.Stat(skPath); os.IsNotExist(err) {
-		return ErrNoSecretKey
+		return storage.ErrNotFound
 	}
 
 	return os.Remove(skPath)

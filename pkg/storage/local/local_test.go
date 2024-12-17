@@ -135,7 +135,7 @@ func TestGetSecretKey(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = s.GetSecretKey(newContext())
-		assert.ErrorIs(t, err, local.ErrNoSecretKey)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
 	t.Run("secret key is present", func(t *testing.T) {
@@ -241,7 +241,7 @@ func TestDeleteSecretKey(t *testing.T) {
 		require.NoError(t, err)
 
 		err = s.DeleteSecretKey(newContext())
-		assert.ErrorIs(t, err, local.ErrNoSecretKey)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
 	t.Run("secret key does exist", func(t *testing.T) {
