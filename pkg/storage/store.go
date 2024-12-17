@@ -25,6 +25,9 @@ type ConfigStore interface {
 
 // NarInfoStore represents a store capable of storing narinfos.
 type NarInfoStore interface {
+	// HasNarInfo returns true if the store has the narinfo.
+	HasNarInfo(ctx context.Context, hash string) bool
+
 	// GetNarInfo returns narinfo from the store.
 	GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error)
 
@@ -37,6 +40,9 @@ type NarInfoStore interface {
 
 // NarStore represents a store capable of storing nars.
 type NarStore interface {
+	// HasNar returns true if the store has the nar.
+	HasNar(ctx context.Context, narURL nar.URL) bool
+
 	// GetNar returns nar from the store.
 	GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error)
 
