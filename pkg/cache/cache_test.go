@@ -2,7 +2,6 @@ package cache_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -43,22 +42,22 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("path is required", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "hello")
+			_, err := cache.New(logger, cacheName, "hello", nil)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path is not absolute", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "hello")
+			_, err := cache.New(logger, cacheName, "hello", nil)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeAbsolute)
 		})
 
 		t.Run("path must exist", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "/non-existing")
+			_, err := cache.New(logger, cacheName, "/non-existing", nil)
 			assert.ErrorIs(t, err, cache.ErrPathMustExist)
 		})
 
 		t.Run("path must be a directory", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, "/proc/cpuinfo")
+			_, err := cache.New(logger, cacheName, "/proc/cpuinfo", nil)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeADirectory)
 		})
 
@@ -69,12 +68,12 @@ func TestNew(t *testing.T) {
 
 			require.NoError(t, os.Chmod(dir, 0o500))
 
-			_, err = cache.New(logger, cacheName, dir)
+			_, err = cache.New(logger, cacheName, dir, nil)
 			assert.ErrorIs(t, err, cache.ErrPathMustBeWritable)
 		})
 
 		t.Run("valid path must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, os.TempDir())
+			_, err := cache.New(logger, cacheName, os.TempDir(), nil)
 			assert.NoError(t, err)
 		})
 
@@ -86,7 +85,10 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			_, err = cache.New(logger, cacheName, dir)
+			db, err := database.Open("sqlite:" + dbFile)
+			require.NoError(t, err)
+
+			_, err = cache.New(logger, cacheName, dir, db)
 			require.NoError(t, err)
 
 			dirs := []string{
@@ -95,7 +97,6 @@ func TestNew(t *testing.T) {
 				filepath.Join("store", "narinfo"),
 				filepath.Join("store", "nar"),
 				filepath.Join("store", "tmp"),
-				filepath.Join("var", "ncps", "db"),
 			}
 
 			for _, p := range dirs {
@@ -117,7 +118,7 @@ func TestNew(t *testing.T) {
 			f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "hello")
 			require.NoError(t, err)
 
-			_, err = cache.New(logger, cacheName, dir)
+			_, err = cache.New(logger, cacheName, dir, nil)
 			require.NoError(t, err)
 
 			assert.NoFileExists(t, f.Name())
@@ -128,22 +129,22 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := cache.New(logger, "", os.TempDir())
+			_, err := cache.New(logger, "", os.TempDir(), nil)
 			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := cache.New(logger, "https://cache.example.com", os.TempDir())
+			_, err := cache.New(logger, "https://cache.example.com", os.TempDir(), nil)
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
-			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir())
+			_, err := cache.New(logger, "cache.example.com/path/to", os.TempDir(), nil)
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
-			_, err := cache.New(logger, cacheName, os.TempDir())
+			_, err := cache.New(logger, cacheName, os.TempDir(), nil)
 			require.NoError(t, err)
 		})
 	})
@@ -152,7 +153,7 @@ func TestNew(t *testing.T) {
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
-	c, err := cache.New(logger, cacheName, "/tmp")
+	c, err := cache.New(logger, cacheName, "/tmp", nil)
 	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
@@ -188,14 +189,14 @@ func TestGetNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, cacheName, dir)
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := cache.New(logger, cacheName, dir, db)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
-
-	db, err := sql.Open("sqlite3", dbFile)
-	require.NoError(t, err)
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
@@ -212,7 +213,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
-			rows, err := db.Query("SELECT hash FROM narinfos")
+			rows, err := db.DB().Query("SELECT hash FROM narinfos")
 			require.NoError(t, err)
 
 			var hashes []string
@@ -231,7 +232,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("nar does not exist in the database yet", func(t *testing.T) {
-			rows, err := db.Query("SELECT hash FROM nars")
+			rows, err := db.DB().Query("SELECT hash FROM nars")
 			require.NoError(t, err)
 
 			var hashes []string
@@ -353,7 +354,7 @@ func TestGetNarInfo(t *testing.T) {
 			FROM narinfos
 			`
 
-			rows, err := db.Query(query)
+			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
 			nims := make([]database.NarInfo, 0)
@@ -380,7 +381,7 @@ func TestGetNarInfo(t *testing.T) {
 				FROM nars
 				`
 
-			rows, err := db.Query(query)
+			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
 			nims := make([]database.Nar, 0)
@@ -422,7 +423,7 @@ func TestGetNarInfo(t *testing.T) {
 			FROM narinfos
 			`
 
-				rows, err := db.Query(query)
+				rows, err := db.DB().Query(query)
 				require.NoError(t, err)
 
 				nims := make([]database.NarInfo, 0)
@@ -456,7 +457,7 @@ func TestGetNarInfo(t *testing.T) {
 			FROM narinfos
 			`
 
-				rows, err := db.Query(query)
+				rows, err := db.DB().Query(query)
 				require.NoError(t, err)
 
 				nims := make([]database.NarInfo, 0)
@@ -564,13 +565,13 @@ func TestPutNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, cacheName, dir)
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := cache.New(logger, cacheName, dir, db)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
-
-	db, err := sql.Open("sqlite3", dbFile)
-	require.NoError(t, err)
 
 	storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 
@@ -579,7 +580,7 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
-		rows, err := db.Query("SELECT hash FROM narinfos")
+		rows, err := db.DB().Query("SELECT hash FROM narinfos")
 		require.NoError(t, err)
 
 		var hashes []string
@@ -598,7 +599,7 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("nar does not exist in the database yet", func(t *testing.T) {
-		rows, err := db.Query("SELECT hash FROM nars")
+		rows, err := db.DB().Query("SELECT hash FROM nars")
 		require.NoError(t, err)
 
 		var hashes []string
@@ -650,7 +651,7 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("narinfo does exist in the database", func(t *testing.T) {
-		rows, err := db.Query("SELECT hash FROM narinfos")
+		rows, err := db.DB().Query("SELECT hash FROM narinfos")
 		require.NoError(t, err)
 
 		var hashes []string
@@ -671,7 +672,7 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("nar does exist in the database", func(t *testing.T) {
-		rows, err := db.Query("SELECT hash FROM nars")
+		rows, err := db.DB().Query("SELECT hash FROM nars")
 		require.NoError(t, err)
 
 		var hashes []string
@@ -701,7 +702,10 @@ func TestDeleteNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, cacheName, dir)
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := cache.New(logger, cacheName, dir, db)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -765,14 +769,14 @@ func TestGetNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, cacheName, dir)
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := cache.New(logger, cacheName, dir, db)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(uc)
 	c.SetRecordAgeIgnoreTouch(0)
-
-	db, err := sql.Open("sqlite3", dbFile)
-	require.NoError(t, err)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
@@ -786,7 +790,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("nar does not exist in database yet", func(t *testing.T) {
-			rows, err := db.Query("SELECT hash FROM nars")
+			rows, err := db.DB().Query("SELECT hash FROM nars")
 			require.NoError(t, err)
 
 			var hashes []string
@@ -843,7 +847,7 @@ func TestGetNar(t *testing.T) {
 				FROM nars
 				`
 
-			rows, err := db.Query(query)
+			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
 			nims := make([]database.Nar, 0)
@@ -889,7 +893,7 @@ func TestGetNar(t *testing.T) {
 				FROM nars
 				`
 
-				rows, err := db.Query(query)
+				rows, err := db.DB().Query(query)
 				require.NoError(t, err)
 
 				nims := make([]database.Nar, 0)
@@ -930,7 +934,7 @@ func TestGetNar(t *testing.T) {
 				FROM nars
 				`
 
-				rows, err := db.Query(query)
+				rows, err := db.DB().Query(query)
 				require.NoError(t, err)
 
 				nims := make([]database.Nar, 0)
@@ -967,7 +971,10 @@ func TestPutNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, cacheName, dir)
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := cache.New(logger, cacheName, dir, db)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -1006,7 +1013,10 @@ func TestDeleteNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := cache.New(logger, cacheName, dir)
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := cache.New(logger, cacheName, dir, db)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)

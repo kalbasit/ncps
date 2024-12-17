@@ -91,9 +91,15 @@ type Cache struct {
 }
 
 // New returns a new Cache.
-func New(logger zerolog.Logger, hostName, cachePath string) (*Cache, error) {
+func New(
+	logger zerolog.Logger,
+	hostName string,
+	cachePath string,
+	db *database.Queries,
+) (*Cache, error) {
 	c := &Cache{
 		logger:               logger,
+		db:                   db,
 		upstreamJobs:         make(map[string]chan struct{}),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
@@ -1028,10 +1034,6 @@ func (c *Cache) setup() error {
 		return fmt.Errorf("error setting up the cache directory: %w", err)
 	}
 
-	if err := c.setupDataBase(); err != nil {
-		return fmt.Errorf("error setting up the database: %w", err)
-	}
-
 	return nil
 }
 
@@ -1046,7 +1048,6 @@ func (c *Cache) setupDirs() error {
 		c.storeNarInfoPath(),
 		c.storeNarPath(),
 		c.storeTMPPath(),
-		c.dbDirPath(),
 	}
 
 	for _, p := range allPaths {
@@ -1064,19 +1065,6 @@ func (c *Cache) storePath() string        { return filepath.Join(c.path, "store"
 func (c *Cache) storeNarInfoPath() string { return filepath.Join(c.storePath(), "narinfo") }
 func (c *Cache) storeNarPath() string     { return filepath.Join(c.storePath(), "nar") }
 func (c *Cache) storeTMPPath() string     { return filepath.Join(c.storePath(), "tmp") }
-func (c *Cache) dbDirPath() string        { return filepath.Join(c.path, "var", "ncps", "db") }
-func (c *Cache) dbKeyPath() string        { return filepath.Join(c.dbDirPath(), "db.sqlite") }
-
-func (c *Cache) setupDataBase() error {
-	db, err := database.Open(c.dbKeyPath())
-	if err != nil {
-		return fmt.Errorf("error opening the database %q: %w", c.dbKeyPath(), err)
-	}
-
-	c.db = db
-
-	return nil
-}
 
 func (c *Cache) setupSecretKey() (signature.SecretKey, error) {
 	f, err := os.Open(c.secretKeyPath())

@@ -3,15 +3,30 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 
 	"github.com/mattn/go-sqlite3"
 )
 
 // Open opens a sqlite3 database, and creates it if necessary.
-func Open(dbpath string) (*Queries, error) {
-	sdb, err := sql.Open("sqlite3", dbpath)
+func Open(dbURL string) (*Queries, error) {
+	u, err := url.Parse(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("error opening the SQLite3 database at %q: %w", dbpath, err)
+		return nil, fmt.Errorf("error parsing the database URL %q: %w", dbURL, err)
+	}
+
+	var sdb *sql.DB
+
+	switch u.Scheme {
+	case "sqlite":
+		sdb, err = sql.Open("sqlite3", u.Path)
+	default:
+		//nolint:err113
+		return nil, fmt.Errorf("driver %q unrecognized", u.Scheme)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("error opening the database at %q: %w", dbURL, err)
 	}
 
 	// Getting an error `database is locked` when data is being inserted in the

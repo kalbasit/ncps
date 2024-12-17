@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -60,7 +61,10 @@ func TestAddUpstreamCaches(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		c, err := New(logger, "cache.example.com", dir)
+		db, err := database.Open("sqlite:" + dbFile)
+		require.NoError(t, err)
+
+		c, err := New(logger, "cache.example.com", dir, db)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(ucs...)
@@ -107,7 +111,10 @@ func TestAddUpstreamCaches(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		c, err := New(logger, "cache.example.com", dir)
+		db, err := database.Open("sqlite:" + dbFile)
+		require.NoError(t, err)
+
+		c, err := New(logger, "cache.example.com", dir, db)
 		require.NoError(t, err)
 
 		for _, uc := range ucs {
@@ -132,7 +139,10 @@ func TestRunLRU(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	c, err := New(logger, "cache.example.com", dir)
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := New(logger, "cache.example.com", dir, db)
 	require.NoError(t, err)
 
 	ts := testdata.NewTestServer(t, 40)

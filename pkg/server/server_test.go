@@ -19,12 +19,15 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
+
+const cacheName = "cache.example.com"
 
 //nolint:gochecknoglobals
 var logger = zerolog.New(io.Discard)
@@ -45,7 +48,10 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		c, err := cache.New(logger, "cache.example.com", dir)
+		db, err := database.Open("sqlite:" + dbFile)
+		require.NoError(t, err)
+
+		c, err := cache.New(logger, cacheName, dir, db)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(uc)
@@ -163,7 +169,10 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		c, err := cache.New(logger, "cache.example.com", dir)
+		db, err := database.Open("sqlite:" + dbFile)
+		require.NoError(t, err)
+
+		c, err := cache.New(logger, cacheName, dir, db)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(uc)
@@ -270,7 +279,10 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		c, err := cache.New(logger, "cache.example.com", dir)
+		db, err := database.Open("sqlite:" + dbFile)
+		require.NoError(t, err)
+
+		c, err := cache.New(logger, cacheName, dir, db)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(uc)
@@ -364,7 +376,7 @@ func TestServeHTTP(t *testing.T) {
 
 					var sig signature.Signature
 					for _, sig = range ni.Signatures {
-						if sig.Name == "cache.example.com" {
+						if sig.Name == cacheName {
 							found = true
 
 							break
