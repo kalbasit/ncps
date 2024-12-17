@@ -3,6 +3,7 @@ package server
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -10,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 //nolint:gochecknoglobals
@@ -20,7 +23,13 @@ func TestSetDeletePermitted(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	c, err := cache.New(logger, "cache.example.com", dir)
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	c, err := cache.New(logger, "cache.example.com", dir, db)
 	require.NoError(t, err)
 
 	t.Run("false", func(t *testing.T) {

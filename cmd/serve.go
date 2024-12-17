@@ -16,6 +16,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/server"
 )
@@ -50,6 +51,12 @@ func serveCommand(logger zerolog.Logger) *cli.Command {
 				Name:     "cache-data-path",
 				Usage:    "The local data path used for configuration and cache storage",
 				Sources:  cli.EnvVars("CACHE_DATA_PATH"),
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "cache-database-url",
+				Usage:    "The URL of the database",
+				Sources:  cli.EnvVars("CACHE_DATABASE_URL"),
 				Required: true,
 			},
 			&cli.StringFlag{
@@ -186,7 +193,19 @@ func getUpstreamCaches(_ context.Context, logger zerolog.Logger, cmd *cli.Comman
 }
 
 func createCache(logger zerolog.Logger, cmd *cli.Command, ucs []upstream.Cache) (*cache.Cache, error) {
-	c, err := cache.New(logger, cmd.String("cache-hostname"), cmd.String("cache-data-path"))
+	dbURL := cmd.String("cache-database-url")
+
+	db, err := database.Open(dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
+	}
+
+	c, err := cache.New(
+		logger,
+		cmd.String("cache-hostname"),
+		cmd.String("cache-data-path"),
+		db,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new cache: %w", err)
 	}
