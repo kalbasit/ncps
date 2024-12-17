@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
@@ -448,14 +449,71 @@ func TestDeleteNarInfo(t *testing.T) {
 		assert.NoFileExists(t, narInfoPath)
 	})
 }
-
 func TestGetNar(t *testing.T) {
-}
+	t.Parallel()
 
-func TestPutNar(t *testing.T) {
-}
+	t.Run("no narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
 
-func TestDeleteNar(t *testing.T) {
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		_, err = s.GetNar(ctx, nar.URL{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression,
+		})
+
+		assert.ErrorIs(t, err, storage.ErrNotFound)
+	})
+
+	t.Run("narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		narPath := filepath.Join(
+			dir,
+			"store",
+			"narinfo",
+			testdata.Nar1.NarPath,
+		)
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+
+		err = os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o400)
+		require.NoError(t, err)
+
+		narURL := nar.URL{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression,
+		}
+
+		r, err := s.GetNar(ctx, narURL)
+		require.NoError(t, err)
+
+		nt, err := io.ReadAll(r)
+		require.NoError(t, err)
+
+		if assert.Equal(t, len(testdata.Nar1.NarText), len(nt)) {
+			assert.Equal(t,
+				strings.TrimSpace(testdata.Nar1.NarText),
+				strings.TrimSpace(string(nt)),
+			)
+		}
+	})
 }
 
 func newContext() context.Context {

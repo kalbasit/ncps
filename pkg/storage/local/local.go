@@ -157,8 +157,8 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 }
 
 // GetNar returns nar from the store.
-func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
-	return 0, nil, errors.New("not implemented")
+func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (io.ReadCloser, error) {
+	return nil, errors.New("not implemented")
 }
 
 // PutNar puts the nar in the store.
