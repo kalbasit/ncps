@@ -174,7 +174,42 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (io.ReadCloser, erro
 
 // PutNar puts the nar in the store.
 func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) error {
-	return errors.New("not implemented")
+	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	if _, err := os.Stat(narPath); err == nil {
+		return storage.ErrAlreadyExists
+	}
+
+	pattern := narURL.Hash + "-*.nar"
+	if cext := narURL.Compression.String(); cext != "" {
+		pattern += "." + cext
+	}
+
+	f, err := os.CreateTemp(s.storeTMPPath(), pattern)
+	if err != nil {
+		return fmt.Errorf("error creating the temporary directory: %w", err)
+	}
+
+	if _, err := io.Copy(f, body); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+
+		return fmt.Errorf("error writing the nar to the temporary file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing the temporary file: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(narPath), dirMode); err != nil {
+		return fmt.Errorf("error creating the directories for %q: %w", narPath, err)
+	}
+
+	if err := os.Rename(f.Name(), narPath); err != nil {
+		return fmt.Errorf("error creating the nar file %q: %w", narPath, err)
+	}
+
+	return os.Chmod(narPath, fileMode)
 }
 
 // DeleteNar deletes the nar from the store.

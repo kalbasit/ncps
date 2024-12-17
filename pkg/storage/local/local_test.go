@@ -541,7 +541,7 @@ func TestPutNar(t *testing.T) {
 		narPath := filepath.Join(
 			dir,
 			"store",
-			"narinfo",
+			"nar",
 			testdata.Nar1.NarPath,
 		)
 
@@ -573,7 +573,7 @@ func TestPutNar(t *testing.T) {
 		narPath := filepath.Join(
 			dir,
 			"store",
-			"narinfo",
+			"nar",
 			testdata.Nar1.NarPath,
 		)
 
