@@ -170,6 +170,7 @@ func (s *Store) HasNar(_ context.Context, narURL nar.URL) bool {
 }
 
 // GetNar returns nar from the store.
+// NOTE: The caller must close the returned io.ReadCloser!
 func (s *Store) GetNar(_ context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
