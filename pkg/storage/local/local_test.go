@@ -222,7 +222,7 @@ func TestPutSecretKey(t *testing.T) {
 		require.NoError(t, err)
 
 		err = s.PutSecretKey(ctx, sk2)
-		assert.ErrorIs(t, err, local.ErrSecretKeyAlreadyExists)
+		assert.ErrorIs(t, err, storage.ErrAlreadyExists)
 	})
 }
 

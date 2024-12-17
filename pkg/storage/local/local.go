@@ -33,9 +33,6 @@ var (
 
 	// ErrNoSecretKey is returned if no secret key is present.
 	ErrNoSecretKey = errors.New("no secret key was found")
-
-	// ErrSecretKeyAlreadyExists is returned if a secret key already exists in the store.
-	ErrSecretKeyAlreadyExists = errors.New("secret key already exists")
 )
 
 const (
@@ -83,7 +80,7 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 	skPath := s.secretKeyPath()
 
 	if _, err := os.Stat(skPath); err == nil {
-		return ErrSecretKeyAlreadyExists
+		return storage.ErrAlreadyExists
 	}
 
 	return os.WriteFile(skPath, []byte(sk.String()), secretKeyFileMode)

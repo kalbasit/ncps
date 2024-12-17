@@ -14,6 +14,10 @@ import (
 var (
 	// ErrNotFound is returned if the nar or narinfo were not found.
 	ErrNotFound = errors.New("not found")
+
+	// ErrAlreadyExists is returned the store already has a file with the
+	// same name.
+	ErrAlreadyExists = errors.New("secret key already exists")
 )
 
 // ConfigStore represents a store for the ncps to use for storing
