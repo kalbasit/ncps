@@ -60,7 +60,7 @@ func New(ctx context.Context, path string) (*Store, error) {
 }
 
 // GetSecretKey returns secret key from the store.
-func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
+func (s *Store) GetSecretKey(_ context.Context) (signature.SecretKey, error) {
 	skPath := s.secretKeyPath()
 
 	if _, err := os.Stat(skPath); os.IsNotExist(err) {
@@ -76,7 +76,7 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 }
 
 // PutSecretKey stores the secret key in the store.
-func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error {
+func (s *Store) PutSecretKey(_ context.Context, sk signature.SecretKey) error {
 	skPath := s.secretKeyPath()
 
 	if _, err := os.Stat(skPath); err == nil {
@@ -87,7 +87,7 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 }
 
 // DeleteSecretKey deletes the secret key in the store.
-func (s *Store) DeleteSecretKey(ctx context.Context) error {
+func (s *Store) DeleteSecretKey(_ context.Context) error {
 	skPath := s.secretKeyPath()
 
 	if _, err := os.Stat(skPath); os.IsNotExist(err) {
@@ -98,7 +98,7 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 }
 
 // GetNarInfo returns narinfo from the store.
-func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (s *Store) GetNarInfo(_ context.Context, hash string) (*narinfo.NarInfo, error) {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
 	nif, err := os.Open(narInfoPath)
@@ -116,7 +116,7 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 }
 
 // PutNarInfo puts the narinfo in the store.
-func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
+func (s *Store) PutNarInfo(_ context.Context, hash string, narInfo *narinfo.NarInfo) error {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
 	if err := os.MkdirAll(filepath.Dir(narInfoPath), dirMode); err != nil {
@@ -135,14 +135,14 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 	defer nif.Close()
 
 	if _, err := nif.WriteString(narInfo.String()); err != nil {
-		return fmt.Errorf("error writing the narinfo to %q: %s", narInfoPath, err)
+		return fmt.Errorf("error writing the narinfo to %q: %w", narInfoPath, err)
 	}
 
 	return nil
 }
 
 // DeleteNarInfo deletes the narinfo from the store.
-func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
+func (s *Store) DeleteNarInfo(_ context.Context, hash string) error {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
 	if err := os.Remove(narInfoPath); err != nil {
@@ -157,7 +157,7 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 }
 
 // GetNar returns nar from the store.
-func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (io.ReadCloser, error) {
+func (s *Store) GetNar(_ context.Context, narURL nar.URL) (io.ReadCloser, error) {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
 	nf, err := os.Open(narPath)
@@ -173,7 +173,7 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (io.ReadCloser, erro
 }
 
 // PutNar puts the nar in the store.
-func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) error {
+func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) error {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
 	if _, err := os.Stat(narPath); err == nil {
@@ -213,7 +213,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) erro
 }
 
 // DeleteNar deletes the nar from the store.
-func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
+func (s *Store) DeleteNar(_ context.Context, narURL nar.URL) error {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
 	if err := os.Remove(narPath); err != nil {
@@ -287,6 +287,7 @@ func validatePath(ctx context.Context, path string) error {
 
 func isWritable(ctx context.Context, path string) bool {
 	log := zerolog.Ctx(ctx)
+
 	tmpFile, err := os.CreateTemp(path, "write_test")
 	if err != nil {
 		log.Error().

@@ -449,6 +449,7 @@ func TestDeleteNarInfo(t *testing.T) {
 		assert.NoFileExists(t, narInfoPath)
 	})
 }
+
 func TestGetNar(t *testing.T) {
 	t.Parallel()
 
