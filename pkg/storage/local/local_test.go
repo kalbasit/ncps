@@ -452,7 +452,7 @@ func TestDeleteNarInfo(t *testing.T) {
 func TestGetNar(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no narfile exists in the store", func(t *testing.T) {
+	t.Run("no nar exists in the store", func(t *testing.T) {
 		t.Parallel()
 
 		dir, err := os.MkdirTemp("", "cache-path-")
@@ -472,7 +472,7 @@ func TestGetNar(t *testing.T) {
 		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
-	t.Run("narfile exists in the store", func(t *testing.T) {
+	t.Run("nar exists in the store", func(t *testing.T) {
 		t.Parallel()
 
 		dir, err := os.MkdirTemp("", "cache-path-")
@@ -558,7 +558,7 @@ func TestPutNar(t *testing.T) {
 		}
 	})
 
-	t.Run("narfile exists in the store", func(t *testing.T) {
+	t.Run("nar exists in the store", func(t *testing.T) {
 		t.Parallel()
 
 		dir, err := os.MkdirTemp("", "cache-path-")
@@ -592,56 +592,66 @@ func TestPutNar(t *testing.T) {
 	})
 }
 
-// func TestDeleteNar(t *testing.T) {
-// 	t.Parallel()
-//
-// 	t.Run("no nar exists in the store", func(t *testing.T) {
-// 		t.Parallel()
-//
-// 		dir, err := os.MkdirTemp("", "cache-path-")
-// 		require.NoError(t, err)
-// 		defer os.RemoveAll(dir) // clean up
-//
-// 		ctx := newContext()
-//
-// 		s, err := local.New(ctx, dir)
-// 		require.NoError(t, err)
-//
-// 		assert.ErrorIs(t,
-// 			s.DeleteNar(ctx, testdata.Nar1.NarHash),
-// 			storage.ErrNotFound,
-// 		)
-// 	})
-//
-// 	t.Run("narfile exists in the store", func(t *testing.T) {
-// 		t.Parallel()
-//
-// 		dir, err := os.MkdirTemp("", "cache-path-")
-// 		require.NoError(t, err)
-// 		defer os.RemoveAll(dir) // clean up
-//
-// 		ctx := newContext()
-//
-// 		s, err := local.New(ctx, dir)
-// 		require.NoError(t, err)
-//
-// 		narPath := filepath.Join(
-// 			dir,
-// 			"store",
-// 			"narinfo",
-// 			helper.NarFilePath(testdata.Nar1.NarHash),
-// 		)
-//
-// 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
-//
-// 		err = os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o400)
-// 		require.NoError(t, err)
-//
-// 		require.NoError(t, s.DeleteNar(ctx, testdata.Nar1.NarHash))
-//
-// 		assert.NoFileExists(t, narPath)
-// 	})
-// }
+func TestDeleteNar(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no nar exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		narURL := nar.URL{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression,
+		}
+
+		assert.ErrorIs(t,
+			s.DeleteNar(ctx, narURL),
+			storage.ErrNotFound,
+		)
+	})
+
+	t.Run("nar exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		narPath := filepath.Join(
+			dir,
+			"store",
+			"nar",
+			testdata.Nar1.NarPath,
+		)
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+
+		err = os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o400)
+		require.NoError(t, err)
+
+		narURL := nar.URL{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression,
+		}
+
+		require.NoError(t, s.DeleteNar(ctx, narURL))
+
+		assert.NoFileExists(t, narPath)
+	})
+}
 
 func newContext() context.Context {
 	return zerolog.
