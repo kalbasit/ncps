@@ -143,7 +143,17 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 
 // DeleteNarInfo deletes the narinfo from the store.
 func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
-	return errors.New("not implemented")
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
+	if err := os.Remove(narInfoPath); err != nil {
+		if os.IsNotExist(err) {
+			return storage.ErrNotFound
+		}
+
+		return fmt.Errorf("error deleting narinfo %q from store: %w", narInfoPath, err)
+	}
+
+	return nil
 }
 
 // GetNar returns nar from the store.
