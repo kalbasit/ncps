@@ -342,7 +342,7 @@ func TestPutNarInfo(t *testing.T) {
 		ni1, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
-		require.NoError(t, s.PutNarInfo(ctx, ni1))
+		require.NoError(t, s.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni1))
 
 		narInfoPath := filepath.Join(
 			dir,
@@ -394,7 +394,7 @@ func TestPutNarInfo(t *testing.T) {
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
-		err = s.PutNarInfo(ctx, ni)
+		err = s.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni)
 		assert.ErrorIs(t, err, storage.ErrAlreadyExists)
 	})
 }

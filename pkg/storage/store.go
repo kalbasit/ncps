@@ -42,7 +42,7 @@ type NarInfoStore interface {
 	GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error)
 
 	// PutNarInfo puts the narinfo in the store.
-	PutNarInfo(ctx context.Context, narInfo *narinfo.NarInfo) error
+	PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error
 
 	// DeleteNarInfo deletes the narinfo from the store.
 	DeleteNarInfo(ctx context.Context, hash string) error
