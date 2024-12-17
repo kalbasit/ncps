@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
@@ -306,7 +305,7 @@ func TestGetNarInfo(t *testing.T) {
 			dir,
 			"store",
 			"narinfo",
-			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+			testdata.Nar1.NarInfoPath,
 		)
 
 		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
@@ -348,7 +347,7 @@ func TestPutNarInfo(t *testing.T) {
 			dir,
 			"store",
 			"narinfo",
-			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+			testdata.Nar1.NarInfoPath,
 		)
 
 		require.FileExists(t, narInfoPath)
@@ -383,7 +382,7 @@ func TestPutNarInfo(t *testing.T) {
 			dir,
 			"store",
 			"narinfo",
-			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+			testdata.Nar1.NarInfoPath,
 		)
 
 		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
@@ -436,7 +435,7 @@ func TestDeleteNarInfo(t *testing.T) {
 			dir,
 			"store",
 			"narinfo",
-			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+			testdata.Nar1.NarInfoPath,
 		)
 
 		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
