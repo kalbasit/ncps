@@ -138,6 +138,7 @@ spec:
             - serve
             - --cache-hostname=nix-cache.yournetwork.local # TODO: Replace with your own hostname
             - --cache-data-path=/storage
+            - --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
             - --upstream-cache=https://cache.nixos.org
             - --upstream-cache=https://nix-community.cachix.org
             - --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
@@ -187,6 +188,7 @@ ncps can be configured using the following flags:
 - `--allow-put`: Whether to allow the PUT verb to push `narinfo` and `nar` files directly to the cache (default: false). (Environment variable: `$ALLOW_PUT_VERB`)
 - `--cache-hostname`: The hostname of the cache server. **This is used to generate the private key used for signing store paths (.narinfo).** (Environment variable: `$CACHE_HOSTNAME`)
 - `--cache-data-path`: The local directory for storing configuration and cached store paths. (Environment variable: `$CACHE_DATA_PATH`)
+- `--cache-database-url`: The URL of the database (defaults to an embedded SQLite database). (Environment variable: `$CACHE_DATABASE_URL`)
 - `--cache-max-size`: The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T (Environment variable: `$CACHE_MAX_SIZE`)
 - `--cache-lru-schedule`: The cron spec for cleaning the store to keep it under `--cache-max-size`. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation (Environment variable: `$CACHE_LRU_SCHEDULE`)
 - `--cache-lru-schedule-timezone`: The name of the timezone to use for the cron schedule (default: "Local"). (Environment variable: `$CACHE_LRU_SCHEDULE_TZ`)
