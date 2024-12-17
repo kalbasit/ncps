@@ -199,6 +199,10 @@ func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) (int64
 		return 0, storage.ErrAlreadyExists
 	}
 
+	if err := os.MkdirAll(filepath.Dir(narPath), dirMode); err != nil {
+		return 0, fmt.Errorf("error creating the directories for %q: %w", narPath, err)
+	}
+
 	pattern := narURL.Hash + "-*.nar"
 	if cext := narURL.Compression.String(); cext != "" {
 		pattern += "." + cext
@@ -219,10 +223,6 @@ func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) (int64
 
 	if err := f.Close(); err != nil {
 		return 0, fmt.Errorf("error closing the temporary file: %w", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(narPath), dirMode); err != nil {
-		return 0, fmt.Errorf("error creating the directories for %q: %w", narPath, err)
 	}
 
 	if err := os.Rename(f.Name(), narPath); err != nil {
