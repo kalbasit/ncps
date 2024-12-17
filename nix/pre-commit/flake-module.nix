@@ -11,7 +11,6 @@
       check-merge-conflicts.enable = true;
       commitizen.enable = true;
       deadnix.enable = true;
-      end-of-file-fixer.enable = true;
       gofmt.enable = true;
       golangci-lint.enable = true;
       no-commit-to-branch.enable = true;
