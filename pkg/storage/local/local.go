@@ -108,6 +108,8 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return nil, fmt.Errorf("error opening the narinfo: %w", err)
 	}
 
+	defer nif.Close()
+
 	return narinfo.Parse(nif)
 }
 
