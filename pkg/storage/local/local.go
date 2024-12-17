@@ -196,11 +196,11 @@ func (s *Store) GetNar(_ context.Context, narURL nar.URL) (int64, io.ReadCloser,
 }
 
 // PutNar puts the nar in the store.
-func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) error {
+func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) (int64, error) {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
 	if _, err := os.Stat(narPath); err == nil {
-		return storage.ErrAlreadyExists
+		return 0, storage.ErrAlreadyExists
 	}
 
 	pattern := narURL.Hash + "-*.nar"
@@ -210,29 +210,30 @@ func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) error 
 
 	f, err := os.CreateTemp(s.storeTMPPath(), pattern)
 	if err != nil {
-		return fmt.Errorf("error creating the temporary directory: %w", err)
+		return 0, fmt.Errorf("error creating the temporary directory: %w", err)
 	}
 
-	if _, err := io.Copy(f, body); err != nil {
+	written, err := io.Copy(f, body)
+	if err != nil {
 		f.Close()
 		os.Remove(f.Name())
 
-		return fmt.Errorf("error writing the nar to the temporary file: %w", err)
+		return 0, fmt.Errorf("error writing the nar to the temporary file: %w", err)
 	}
 
 	if err := f.Close(); err != nil {
-		return fmt.Errorf("error closing the temporary file: %w", err)
+		return 0, fmt.Errorf("error closing the temporary file: %w", err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(narPath), dirMode); err != nil {
-		return fmt.Errorf("error creating the directories for %q: %w", narPath, err)
+		return 0, fmt.Errorf("error creating the directories for %q: %w", narPath, err)
 	}
 
 	if err := os.Rename(f.Name(), narPath); err != nil {
-		return fmt.Errorf("error creating the nar file %q: %w", narPath, err)
+		return 0, fmt.Errorf("error creating the nar file %q: %w", narPath, err)
 	}
 
-	return os.Chmod(narPath, fileMode)
+	return written, os.Chmod(narPath, fileMode)
 }
 
 // DeleteNar deletes the nar from the store.

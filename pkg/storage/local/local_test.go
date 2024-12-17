@@ -643,7 +643,10 @@ func TestPutNar(t *testing.T) {
 			Compression: testdata.Nar1.NarCompression,
 		}
 
-		require.NoError(t, s.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText)))
+		written, err := s.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		require.NoError(t, err)
+
+		require.EqualValues(t, len([]byte(testdata.Nar1.NarText)), written)
 
 		narPath := filepath.Join(
 			dir,
@@ -694,7 +697,7 @@ func TestPutNar(t *testing.T) {
 			Compression: testdata.Nar1.NarCompression,
 		}
 
-		err = s.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		_, err = s.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
 		assert.ErrorIs(t, err, storage.ErrAlreadyExists)
 	})
 }
