@@ -115,9 +115,9 @@ func requestLogger(logger zerolog.Logger) func(handler http.Handler) http.Handle
 
 				switch r.Method {
 				case http.MethodHead, http.MethodGet:
-					log = logger.With().Int("bytes", ww.BytesWritten()).Logger()
+					log = log.With().Int("bytes", ww.BytesWritten()).Logger()
 				case http.MethodPost, http.MethodPut, http.MethodPatch:
-					log = logger.With().Int64("bytes", r.ContentLength).Logger()
+					log = log.With().Int64("bytes", r.ContentLength).Logger()
 				}
 
 				log.Info().Msg("handled request")
