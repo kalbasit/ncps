@@ -2,12 +2,22 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 
 	"github.com/kalbasit/ncps/pkg/nar"
+)
+
+var (
+	// ErrNotFound is returned if the nar or narinfo were not found.
+	ErrNotFound = errors.New("not found")
+
+	// ErrAlreadyExists is returned the store already has a file with the
+	// same name.
+	ErrAlreadyExists = errors.New("file already exists")
 )
 
 // ConfigStore represents a store for the ncps to use for storing
