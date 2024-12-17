@@ -114,7 +114,7 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 }
 
 // PutNarInfo puts the narinfo in the store.
-func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
+func (s *Store) PutNarInfo(ctx context.Context, narInfo *narinfo.NarInfo) error {
 	return errors.New("not implemented")
 }
 
