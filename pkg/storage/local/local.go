@@ -214,7 +214,17 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) erro
 
 // DeleteNar deletes the nar from the store.
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
-	return errors.New("not implemented")
+	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	if err := os.Remove(narPath); err != nil {
+		if os.IsNotExist(err) {
+			return storage.ErrNotFound
+		}
+
+		return fmt.Errorf("error deleting nar %q from store: %w", narPath, err)
+	}
+
+	return nil
 }
 
 func (s *Store) configPath() string       { return filepath.Join(s.path, "config") }
