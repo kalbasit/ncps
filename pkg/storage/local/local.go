@@ -97,6 +97,15 @@ func (s *Store) DeleteSecretKey(_ context.Context) error {
 	return os.Remove(skPath)
 }
 
+// HasNarInfo returns true if the store has the narinfo.
+func (s *Store) HasNarInfo(_ context.Context, hash string) bool {
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
+	_, err := os.Stat(narInfoPath)
+
+	return err == nil
+}
+
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(_ context.Context, hash string) (*narinfo.NarInfo, error) {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
@@ -154,6 +163,15 @@ func (s *Store) DeleteNarInfo(_ context.Context, hash string) error {
 	}
 
 	return nil
+}
+
+// HasNar returns true if the store has the nar.
+func (s *Store) HasNar(_ context.Context, narURL nar.URL) bool {
+	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	_, err := os.Stat(narPath)
+
+	return err == nil
 }
 
 // GetNar returns nar from the store.
