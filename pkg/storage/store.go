@@ -44,6 +44,7 @@ type NarStore interface {
 	HasNar(ctx context.Context, narURL nar.URL) bool
 
 	// GetNar returns nar from the store.
+	// NOTE: The caller must close the returned io.ReadCloser!
 	GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error)
 
 	// PutNar puts the nar in the store.
