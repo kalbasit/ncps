@@ -158,7 +158,18 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 
 // GetNar returns nar from the store.
 func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (io.ReadCloser, error) {
-	return nil, errors.New("not implemented")
+	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	nf, err := os.Open(narPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, storage.ErrNotFound
+		}
+
+		return nil, fmt.Errorf("error opening the nar file %q: %w", narPath, err)
+	}
+
+	return nf, nil
 }
 
 // PutNar puts the nar in the store.
