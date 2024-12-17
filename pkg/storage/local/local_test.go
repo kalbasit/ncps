@@ -400,6 +400,54 @@ func TestPutNarInfo(t *testing.T) {
 }
 
 func TestDeleteNarInfo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		assert.ErrorIs(t,
+			s.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash),
+			storage.ErrNotFound,
+		)
+	})
+
+	t.Run("narfile exists in the store", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		narInfoPath := filepath.Join(
+			dir,
+			"store",
+			"narinfo",
+			helper.NarInfoFilePath(testdata.Nar1.NarInfoHash),
+		)
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+
+		err = os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o400)
+		require.NoError(t, err)
+
+		require.NoError(t, s.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash))
+
+		assert.NoFileExists(t, narInfoPath)
+	})
 }
 
 func TestGetNar(t *testing.T) {
