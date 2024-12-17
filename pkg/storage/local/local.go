@@ -36,8 +36,8 @@ var (
 )
 
 const (
-	secretKeyFileMode = 0o400
-	dirsFileMode      = 0o700
+	fileMode = 0o400
+	dirMode  = 0o700
 )
 
 // Store represents a local store and implements storage.Store.
@@ -83,7 +83,7 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 		return storage.ErrAlreadyExists
 	}
 
-	return os.WriteFile(skPath, []byte(sk.String()), secretKeyFileMode)
+	return os.WriteFile(skPath, []byte(sk.String()), fileMode)
 }
 
 // DeleteSecretKey deletes the secret key in the store.
@@ -99,13 +99,15 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	nif, err := os.Open(filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash)))
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
+	nif, err := os.Open(narInfoPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, storage.ErrNotFound
 		}
 
-		return nil, fmt.Errorf("error opening the narinfo: %w", err)
+		return nil, fmt.Errorf("error opening the narinfo file %q: %w", narInfoPath, err)
 	}
 
 	defer nif.Close()
@@ -115,7 +117,28 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 // PutNarInfo puts the narinfo in the store.
 func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
-	return errors.New("not implemented")
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
+	if err := os.MkdirAll(filepath.Dir(narInfoPath), dirMode); err != nil {
+		return fmt.Errorf("error creating the directories for %q: %w", narInfoPath, err)
+	}
+
+	nif, err := os.OpenFile(narInfoPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
+	if err != nil {
+		if os.IsExist(err) {
+			return storage.ErrAlreadyExists
+		}
+
+		return fmt.Errorf("error opening the narinfo file for writing %q: %w", narInfoPath, err)
+	}
+
+	defer nif.Close()
+
+	if _, err := nif.WriteString(narInfo.String()); err != nil {
+		return fmt.Errorf("error writing the narinfo to %q: %s", narInfoPath, err)
+	}
+
+	return nil
 }
 
 // DeleteNarInfo deletes the narinfo from the store.
@@ -159,7 +182,7 @@ func (s *Store) setupDirs() error {
 	}
 
 	for _, p := range allPaths {
-		if err := os.MkdirAll(p, dirsFileMode); err != nil {
+		if err := os.MkdirAll(p, dirMode); err != nil {
 			return fmt.Errorf("error creating the directory %q: %w", p, err)
 		}
 	}
