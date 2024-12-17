@@ -38,9 +38,7 @@ const (
 )
 
 // Store represents a local store and implements storage.Store.
-type Store struct {
-	path string
-}
+type Store struct{ path string }
 
 func New(ctx context.Context, path string) (*Store, error) {
 	if err := validatePath(ctx, path); err != nil {
