@@ -29,27 +29,25 @@ type URL struct {
 
 // ParseURL parses a nar URL (as present in narinfo) and returns its components.
 func ParseURL(u string) (URL, error) {
-	var nu URL
-
 	if u == "" || !strings.HasPrefix(u, "nar/") {
-		return nu, ErrInvalidURL
+		return URL{}, ErrInvalidURL
 	}
 
 	sm := narRegexp.FindStringSubmatch(u)
 	if len(sm) != 6 {
-		return nu, ErrInvalidURL
+		return URL{}, ErrInvalidURL
 	}
 
-	nu.Hash = sm[1]
+	nu := URL{Hash: sm[1]}
 
 	var err error
 
 	if nu.Compression, err = CompressionTypeFromExtension(sm[3]); err != nil {
-		return nu, fmt.Errorf("error computing the compression type: %w", err)
+		return URL{}, fmt.Errorf("error computing the compression type: %w", err)
 	}
 
 	if nu.Query, err = url.ParseQuery(sm[5]); err != nil {
-		return nu, fmt.Errorf("error parsing the RawQuery as url.Values: %w", err)
+		return URL{}, fmt.Errorf("error parsing the RawQuery as url.Values: %w", err)
 	}
 
 	return nu, nil
