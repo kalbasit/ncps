@@ -9,7 +9,7 @@ on:
 permissions:
   pull-requests: read
 jobs:
-  main:
+  validate-pr-title:
     name: Validate PR title
     runs-on: ubuntu-24.04
     steps:
