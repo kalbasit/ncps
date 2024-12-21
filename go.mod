@@ -6,7 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.0
 	github.com/klauspost/compress v1.17.11
 	github.com/mattn/go-sqlite3 v1.14.24
-	github.com/nix-community/go-nix v0.0.0-20241207090453-00891a7727c2
+	github.com/nix-community/go-nix v0.0.0-20241220082528-4ad2fe83d684
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.33.0
 	github.com/stretchr/testify v1.10.0
