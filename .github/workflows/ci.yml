@@ -13,3 +13,12 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v8
       - uses: DeterminateSystems/flake-checker-action@main
       - run: nix flake check
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/docker
+        with:
+          images: kalbasit/ncps
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
