@@ -9,7 +9,6 @@
     pre-commit.check.enable = false;
     pre-commit.settings.hooks = {
       check-merge-conflicts.enable = true;
-      commitizen.enable = true;
       deadnix.enable = true;
       gofmt.enable = true;
       golangci-lint.enable = true;
