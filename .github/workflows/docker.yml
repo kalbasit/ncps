@@ -5,8 +5,20 @@ on:
       - "main"
   pull_request:
 jobs:
+  flake-check:
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: "write"
+      contents: "read"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - uses: DeterminateSystems/flake-checker-action@main
+      - run: nix flake check
   docker:
     runs-on: ubuntu-24.04
+    needs: flake-check
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/docker
