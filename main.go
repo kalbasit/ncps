@@ -21,7 +21,7 @@ func realMain() int {
 	c := cmd.New(newLogger())
 
 	if err := c.Run(context.Background(), os.Args); err != nil {
-		log.Printf("error running the application: %s", err)
+		log.Printf("error running  the application: %s", err)
 
 		return 1
 	}
