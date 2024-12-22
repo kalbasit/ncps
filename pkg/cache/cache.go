@@ -1073,7 +1073,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narRecord.Hash); err != nil {
 				log.Error().
 					Err(err).
-					Str("hash", narRecord.Hash).
+					Str("nar-hash", narRecord.Hash).
 					Msg("error removing nar from database")
 			}
 
