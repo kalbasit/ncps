@@ -18,7 +18,6 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -452,7 +451,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	doneC := c.prePullNarInfo(ctx, hash)
 
-	log.
+	zerolog.Ctx(ctx).
 		Debug().
 		Msg("pulling nar in a go-routing and will wait for it")
 	<-doneC
@@ -477,7 +476,10 @@ func (c *Cache) pullNarInfo(
 
 	uc, narInfo, err := c.getNarInfoFromUpstream(ctx, hash)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting the narInfo from upstream caches")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error getting the narInfo from upstream caches")
 
 		done()
 
@@ -486,7 +488,11 @@ func (c *Cache) pullNarInfo(
 
 	narURL, err := nar.ParseURL(narInfo.URL)
 	if err != nil {
-		log.Error().Err(err).Str("nar-url", narInfo.URL).Msg("error parsing the nar URL")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Str("nar-url", narInfo.URL).
+			Msg("error parsing the nar URL")
 
 		done()
 
@@ -517,7 +523,10 @@ func (c *Cache) pullNarInfo(
 	}
 
 	if err := c.signNarInfo(ctx, narInfo); err != nil {
-		log.Error().Err(err).Msg("error signing the narinfo")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error signing the narinfo")
 
 		done()
 
@@ -525,7 +534,10 @@ func (c *Cache) pullNarInfo(
 	}
 
 	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		log.Error().Err(err).Msg("error storing the narInfo in the store")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the narInfo in the store")
 
 		done()
 
@@ -533,14 +545,20 @@ func (c *Cache) pullNarInfo(
 	}
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
-		log.Error().Err(err).Msg("error storing the narinfo in the database")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the narinfo in the database")
 
 		done()
 
 		return
 	}
 
-	log.Info().Dur("elapsed", time.Since(now)).Msg("download of narinfo complete")
+	zerolog.Ctx(ctx).
+		Info().
+		Dur("elapsed", time.Since(now)).
+		Msg("download of narinfo complete")
 
 	done()
 }
@@ -602,7 +620,9 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) chan struct{} {
 
 	doneC, ok := c.upstreamJobs[hash]
 	if ok {
-		log.Info().Msg("waiting for an in-progress download of narinfo to finish")
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("waiting for an in-progress download of narinfo to finish")
 	} else {
 		doneC = make(chan struct{})
 		c.upstreamJobs[hash] = doneC
@@ -668,7 +688,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 
 	narURL, err := nar.ParseURL(ni.URL)
 	if err != nil {
-		log.
+		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
 			Str("nar-url", ni.URL).
@@ -676,7 +696,10 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 
 		// narinfo is invalid, remove it
 		if err := c.purgeNarInfo(ctx, hash, &narURL); err != nil {
-			log.Error().Err(err).Msg("error purging the narinfo")
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error purging the narinfo")
 		}
 
 		return nil, errNarInfoPurged
@@ -687,7 +710,9 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		WithContext(ctx)
 
 	if !c.narStore.HasNar(ctx, narURL) && !c.hasUpstreamJob(narURL.Hash) {
-		log.Error().Msg("narinfo was requested but no nar was found requesting a purge")
+		zerolog.Ctx(ctx).
+			Error().
+			Msg("narinfo was requested but no nar was found requesting a purge")
 
 		if err := c.purgeNarInfo(ctx, hash, &narURL); err != nil {
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
@@ -704,7 +729,10 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	defer func() {
 		if err := tx.Rollback(); err != nil {
 			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error rolling back the transaction")
 			}
 		}
 	}()
@@ -773,7 +801,10 @@ func (c *Cache) purgeNarInfo(
 	defer func() {
 		if err := tx.Rollback(); err != nil {
 			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error rolling back the transaction")
 			}
 		}
 	}()
