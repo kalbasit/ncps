@@ -38,7 +38,6 @@ Priority: 10`
 // Server represents the main HTTP server.
 type Server struct {
 	cache  *cache.Cache
-	logger zerolog.Logger
 	router *chi.Mux
 
 	deletePermitted bool
@@ -46,11 +45,8 @@ type Server struct {
 }
 
 // New returns a new server.
-func New(logger zerolog.Logger, cache *cache.Cache) *Server {
-	s := &Server{
-		cache:  cache,
-		logger: logger,
-	}
+func New(cache *cache.Cache) *Server {
+	s := &Server{cache: cache}
 
 	s.createRouter()
 
@@ -72,7 +68,7 @@ func (s *Server) createRouter() {
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
-	s.router.Use(requestLogger(s.logger))
+	s.router.Use(requestLogger)
 	s.router.Use(middleware.Recoverer)
 
 	s.router.Get(routeIndex, s.getIndex)
@@ -95,42 +91,46 @@ func (s *Server) createRouter() {
 	s.router.Delete(routeNar, s.deleteNar)
 }
 
-func requestLogger(logger zerolog.Logger) func(handler http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		fn := func(w http.ResponseWriter, r *http.Request) {
-			startedAt := time.Now()
-			reqID := middleware.GetReqID(r.Context())
+func requestLogger(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now()
+		reqID := middleware.GetReqID(r.Context())
 
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
-			defer func() {
-				log := logger.With().
-					Str("method", r.Method).
-					Str("request-uri", r.RequestURI).
-					Int("status", ww.Status()).
-					Dur("elapsed", time.Since(startedAt)).
-					Str("from", r.RemoteAddr).
-					Str("reqID", reqID).
-					Logger()
+		log := zerolog.Ctx(r.Context()).With().
+			Str("method", r.Method).
+			Str("request-uri", r.RequestURI).
+			Str("from", r.RemoteAddr).
+			Str("reqID", reqID).
+			Logger()
 
-				switch r.Method {
-				case http.MethodHead, http.MethodGet:
-					log = log.With().Int("bytes", ww.BytesWritten()).Logger()
-				case http.MethodPost, http.MethodPut, http.MethodPatch:
-					log = log.With().Int64("bytes", r.ContentLength).Logger()
-				}
+		defer func() {
+			log = log.With().
+				Int("status", ww.Status()).
+				Dur("elapsed", time.Since(startedAt)).
+				Logger()
 
-				log.Info().Msg("handled request")
-			}()
+			switch r.Method {
+			case http.MethodHead, http.MethodGet:
+				log = log.With().Int("bytes", ww.BytesWritten()).Logger()
+			case http.MethodPost, http.MethodPut, http.MethodPatch:
+				log = log.With().Int64("bytes", r.ContentLength).Logger()
+			}
 
-			next.ServeHTTP(ww, r)
-		}
+			log.Info().Msg("handled request")
+		}()
 
-		return http.HandlerFunc(fn)
+		// embed the modified logger in the request.
+		r = r.WithContext(log.WithContext(r.Context()))
+
+		next.ServeHTTP(ww, r)
 	}
+
+	return http.HandlerFunc(fn)
 }
 
-func (s *Server) getIndex(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add(contentType, contentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 
@@ -143,13 +143,23 @@ func (s *Server) getIndex(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(body); err != nil {
-		s.logger.Error().Err(err).Msg("error writing the body to the response")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error writing the response")
 	}
 }
 
-func (s *Server) getNixCacheInfo(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write([]byte(nixCacheInfo)); err != nil {
-		s.logger.Error().Err(err).Msg("error writing the response")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error writing the response")
 	}
 }
 
@@ -157,26 +167,27 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
-		log := s.logger.With().Str("hash", hash).Logger()
+		r = r.WithContext(
+			zerolog.Ctx(r.Context()).
+				With().
+				Str("narinfo-hash", hash).
+				Logger().
+				WithContext(r.Context()))
 
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				w.WriteHeader(http.StatusNotFound)
-
-				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-					log.Error().Err(err).Msg("error writing the response")
-				}
+				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 
 				return
 			}
 
-			log.Error().Err(err).Msg("error fetching the narinfo")
-			w.WriteHeader(http.StatusInternalServerError)
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error fetching the narinfo")
 
-			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-				log.Error().Err(err).Msg("error writing the response")
-			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 
 			return
 		}
@@ -194,7 +205,12 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 		}
 
 		if _, err := w.Write(narInfoBytes); err != nil {
-			log.Error().Err(err).Msg("error writing the narinfo to the response")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error writing the narinfo to the response")
 		}
 	}
 }
@@ -202,25 +218,26 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
-	log := s.logger.With().Str("hash", hash).Logger()
+	r = r.WithContext(
+		zerolog.Ctx(r.Context()).
+			With().
+			Str("narinfo-hash", hash).
+			Logger().
+			WithContext(r.Context()))
 
 	if !s.putPermitted {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-
-		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 
 		return
 	}
 
 	if err := s.cache.PutNarInfo(r.Context(), hash, r.Body); err != nil {
-		log.Error().Err(err).Msg("error putting the NAR in cache")
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error putting the NAR in cache")
 
 		return
 	}
@@ -231,34 +248,32 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
-	log := s.logger.With().Str("hash", hash).Logger()
+	r = r.WithContext(
+		zerolog.Ctx(r.Context()).
+			With().
+			Str("narinfo-hash", hash).
+			Logger().
+			WithContext(r.Context()))
 
 	if !s.deletePermitted {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-
-		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 
 		return
 	}
 
 	if err := s.cache.DeleteNarInfo(r.Context(), hash); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			w.WriteHeader(http.StatusNotFound)
-
-			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-				log.Error().Err(err).Msg("error writing the body to the response")
-			}
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 
 			return
 		}
 
-		w.WriteHeader(http.StatusInternalServerError)
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error deleting the narinfo")
 
-		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -272,42 +287,37 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
-		log := nu.NewLogger(s.logger)
+		r = r.WithContext(
+			nu.NewLogger(*zerolog.Ctx(r.Context())).
+				WithContext(r.Context()))
 
 		var err error
 
 		nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-
-			if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
-				log.Error().Err(err).Msg("error computing the compression")
-			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
 
 			return
 		}
 
-		log = nu.NewLogger(s.logger) // re-create the logger to avoid dups
+		r = r.WithContext(
+			nu.NewLogger(*zerolog.Ctx(r.Context())).
+				WithContext(r.Context()))
 
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				w.WriteHeader(http.StatusNotFound)
-
-				if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-					log.Error().Err(err).Msg("error writing the response")
-				}
+				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 
 				return
 			}
 
-			log.Error().Err(err).Msg("error fetching the nar")
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error fetching the nar")
 
-			w.WriteHeader(http.StatusInternalServerError)
-
-			if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-				log.Error().Err(err).Msg("error writing the response")
-			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 
 			return
 		}
@@ -324,13 +334,17 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		written, err := io.Copy(w, reader)
 		if err != nil {
-			log.Error().Err(err).Msg("error writing the response")
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error writing the response")
 
 			return
 		}
 
 		if written != size {
-			log.Error().
+			zerolog.Ctx(r.Context()).
+				Error().
 				Int64("expected", size).
 				Int64("written", written).
 				Msg("Bytes copied does not match object size")
@@ -343,40 +357,36 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 
 	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
-	log := nu.NewLogger(s.logger)
+	r = r.WithContext(
+		nu.NewLogger(*zerolog.Ctx(r.Context())).
+			WithContext(r.Context()))
 
 	var err error
 
 	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-
-		if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
-			log.Error().Err(err).Msg("error computing the compression")
-		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
 
 		return
 	}
 
-	log = nu.NewLogger(s.logger) // re-create the logger to avoid dups
+	r = r.WithContext(
+		nu.NewLogger(*zerolog.Ctx(r.Context())).
+			WithContext(r.Context()))
 
 	if !s.putPermitted {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-
-		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 
 		return
 	}
 
 	if err := s.cache.PutNar(r.Context(), nu, r.Body); err != nil {
-		log.Error().Err(err).Msg("error putting the NAR in cache")
-		w.WriteHeader(http.StatusInternalServerError)
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error putting the NAR in cache")
 
-		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}
@@ -389,49 +399,42 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 
 	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
-	log := nu.NewLogger(s.logger)
+	r = r.WithContext(
+		nu.NewLogger(*zerolog.Ctx(r.Context())).
+			WithContext(r.Context()))
 
 	var err error
 
 	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-
-		if _, err := w.Write([]byte(http.StatusText(http.StatusBadRequest))); err != nil {
-			log.Error().Err(err).Msg("error computing the compression")
-		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
 
 		return
 	}
 
-	log = nu.NewLogger(s.logger) // re-create the logger to avoid dups
+	r = r.WithContext(
+		nu.NewLogger(*zerolog.Ctx(r.Context())).
+			WithContext(r.Context()))
 
 	if !s.deletePermitted {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-
-		if _, err := w.Write([]byte(http.StatusText(http.StatusMethodNotAllowed))); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 
 		return
 	}
 
 	if err := s.cache.DeleteNar(r.Context(), nu); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			w.WriteHeader(http.StatusNotFound)
-
-			if _, err := w.Write([]byte(http.StatusText(http.StatusNotFound))); err != nil {
-				log.Error().Err(err).Msg("error writing the body to the response")
-			}
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 
 			return
 		}
 
-		w.WriteHeader(http.StatusInternalServerError)
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error deleting the nar")
 
-		if _, err := w.Write([]byte(http.StatusText(http.StatusInternalServerError) + " " + err.Error())); err != nil {
-			log.Error().Err(err).Msg("error writing the body to the response")
-		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}

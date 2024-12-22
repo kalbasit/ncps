@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -143,11 +144,12 @@ func serveAction() cli.ActionFunc {
 			return err
 		}
 
-		srv := server.New(logger, cache)
+		srv := server.New(cache)
 		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
 		srv.SetPutPermitted(cmd.Bool("allow-put"))
 
 		server := &http.Server{
+			BaseContext:       func(net.Listener) context.Context { return ctx },
 			Addr:              cmd.String("server-addr"),
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
