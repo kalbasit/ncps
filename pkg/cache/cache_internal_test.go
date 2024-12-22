@@ -26,9 +26,6 @@ import (
 
 const cacheName = "cache.example.com"
 
-//nolint:gochecknoglobals
-var logger = zerolog.New(io.Discard)
-
 func TestAddUpstreamCaches(t *testing.T) {
 	t.Run("upstream caches added at once", func(t *testing.T) {
 		t.Parallel()
@@ -51,7 +48,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
 
-			uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
@@ -67,15 +64,13 @@ func TestAddUpstreamCaches(t *testing.T) {
 		db, err := database.Open("sqlite:" + dbFile)
 		require.NoError(t, err)
 
-		ctx := context.Background()
-
-		localStore, err := local.New(ctx, dir)
+		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := New(ctx, cacheName, db, localStore, localStore, localStore)
+		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
-		c.AddUpstreamCaches(ctx, ucs...)
+		c.AddUpstreamCaches(newContext(), ucs...)
 
 		for idx, uc := range c.upstreamCaches {
 			//nolint:gosec
@@ -106,7 +101,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
 
-			uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
@@ -122,16 +117,14 @@ func TestAddUpstreamCaches(t *testing.T) {
 		db, err := database.Open("sqlite:" + dbFile)
 		require.NoError(t, err)
 
-		ctx := context.Background()
-
-		localStore, err := local.New(ctx, dir)
+		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := New(ctx, cacheName, db, localStore, localStore, localStore)
+		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		for _, uc := range ucs {
-			c.AddUpstreamCaches(ctx, uc)
+			c.AddUpstreamCaches(newContext(), uc)
 		}
 
 		for idx, uc := range c.upstreamCaches {
@@ -155,21 +148,19 @@ func TestRunLRU(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
-	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)
 
-	c.AddUpstreamCaches(ctx, uc)
+	c.AddUpstreamCaches(newContext(), uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	// NOTE: For this test, any nar that's explicitly testing the zstd
@@ -220,7 +211,7 @@ func TestRunLRU(t *testing.T) {
 
 	for _, narEntry := range allEntries {
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		assert.True(t, c.narStore.HasNar(ctx, nu), "confirm all nars are in the store")
+		assert.True(t, c.narStore.HasNar(newContext(), nu), "confirm all nars are in the store")
 	}
 
 	// ensure time has moved by one sec for the last_accessed_at work
@@ -259,19 +250,19 @@ func TestRunLRU(t *testing.T) {
 
 	// confirm all narinfos except the last one are in the store
 	for _, nar := range entries {
-		assert.True(t, c.narInfoStore.HasNarInfo(ctx, nar.NarInfoHash))
+		assert.True(t, c.narInfoStore.HasNarInfo(newContext(), nar.NarInfoHash))
 	}
 
-	assert.False(t, c.narInfoStore.HasNarInfo(ctx, lastEntry.NarInfoHash))
+	assert.False(t, c.narInfoStore.HasNarInfo(newContext(), lastEntry.NarInfoHash))
 
 	// confirm all nars except the last one are in the store
 	for _, narEntry := range entries {
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		assert.True(t, c.narStore.HasNar(ctx, nu))
+		assert.True(t, c.narStore.HasNar(newContext(), nu))
 	}
 
 	nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastEntry.NarCompression}
-	assert.False(t, c.narStore.HasNar(ctx, nu))
+	assert.False(t, c.narStore.HasNar(newContext(), nu))
 
 	// all narinfo records except the last one are in the database
 	for _, narEntry := range entries {
@@ -291,4 +282,10 @@ func TestRunLRU(t *testing.T) {
 
 	_, err = c.db.GetNarByHash(context.Background(), lastEntry.NarHash)
 	require.ErrorIs(t, sql.ErrNoRows, err)
+}
+
+func newContext() context.Context {
+	return zerolog.
+		New(io.Discard).
+		WithContext(context.Background())
 }

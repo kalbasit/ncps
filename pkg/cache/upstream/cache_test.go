@@ -18,9 +18,6 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-//nolint:gochecknoglobals
-var logger = zerolog.New(io.Discard)
-
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -31,25 +28,25 @@ func TestNew(t *testing.T) {
 	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
 		//nolint:paralleltest
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := upstream.New(logger, nil, nil)
+			_, err := upstream.New(newContext(), nil, nil)
 			assert.ErrorIs(t, err, upstream.ErrURLRequired)
 		})
 
 		//nolint:paralleltest
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := upstream.New(logger, testhelper.MustParseURL(t, "cache.nixos.org"), nil)
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, "cache.nixos.org"), nil)
 			assert.ErrorIs(t, err, upstream.ErrURLMustContainScheme)
 		})
 
 		t.Run("valid url with no path must not return no error", func(t *testing.T) {
-			_, err := upstream.New(logger,
+			_, err := upstream.New(newContext(),
 				testhelper.MustParseURL(t, ts.URL), nil)
 
 			assert.NoError(t, err)
 		})
 
 		t.Run("valid url with only / must not return no error", func(t *testing.T) {
-			_, err := upstream.New(logger,
+			_, err := upstream.New(newContext(),
 				testhelper.MustParseURL(t, ts.URL), nil)
 
 			assert.NoError(t, err)
@@ -60,14 +57,14 @@ func TestNew(t *testing.T) {
 	t.Run("public keys", func(t *testing.T) {
 		//nolint:paralleltest
 		t.Run("invalid public keys", func(t *testing.T) {
-			_, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), []string{"invalid"})
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), []string{"invalid"})
 			assert.True(t, strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:"))
 		})
 
 		//nolint:paralleltest
 		t.Run("valid public keys", func(t *testing.T) {
 			_, err := upstream.New(
-				logger,
+				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
 				testdata.PublicKeys(),
 			)
@@ -78,7 +75,7 @@ func TestNew(t *testing.T) {
 	//nolint:paralleltest
 	t.Run("priority parsed", func(t *testing.T) {
 		c, err := upstream.New(
-			logger,
+			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
 			testdata.PublicKeys(),
 		)
@@ -105,13 +102,13 @@ func TestGetNarInfo(t *testing.T) {
 
 			if withKeys {
 				c, err = upstream.New(
-					logger,
+					newContext(),
 					testhelper.MustParseURL(t, ts.URL),
 					testdata.PublicKeys(),
 				)
 			} else {
 				c, err = upstream.New(
-					logger,
+					newContext(),
 					testhelper.MustParseURL(t, ts.URL),
 					nil,
 				)
@@ -184,7 +181,7 @@ func TestGetNar(t *testing.T) {
 	defer ts.Close()
 
 	c, err := upstream.New(
-		logger,
+		newContext(),
 		testhelper.MustParseURL(t, ts.URL),
 		testdata.PublicKeys(),
 	)
@@ -220,7 +217,7 @@ func TestGetNarCanMutate(t *testing.T) {
 	defer ts.Close()
 
 	c, err := upstream.New(
-		logger,
+		newContext(),
 		testhelper.MustParseURL(t, ts.URL),
 		testdata.PublicKeys(),
 	)
@@ -243,4 +240,10 @@ func TestGetNarCanMutate(t *testing.T) {
 	}()
 
 	assert.Equal(t, pingV, resp.Header.Get("pong"))
+}
+
+func newContext() context.Context {
+	return zerolog.
+		New(io.Discard).
+		WithContext(context.Background())
 }
