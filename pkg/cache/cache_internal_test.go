@@ -255,7 +255,7 @@ func TestRunLRU(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	c.runLRU()
+	c.runLRU(ctx)()
 
 	// confirm all narinfos except the last one are in the store
 	for _, nar := range entries {

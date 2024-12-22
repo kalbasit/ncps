@@ -159,7 +159,7 @@ func (c *Cache) AddLRUCronJob(ctx context.Context, schedule cron.Schedule) {
 		Time("next-run", schedule.Next(time.Now())).
 		Msg("adding a cronjob for LRU")
 
-	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU))
+	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU(ctx)))
 }
 
 // StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
@@ -976,163 +976,162 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	return ok
 }
 
-func (c *Cache) runLRU() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Cache) runLRU(ctx context.Context) func() {
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
 
-	// TODO: I need a context with a logger here!
-	ctx := context.Background()
+		log := zerolog.Ctx(ctx).With().
+			Str("op", "lru").
+			Uint64("max-size", c.maxSize).
+			Logger()
 
-	log := zerolog.Ctx(ctx).With().
-		Str("op", "lru").
-		Uint64("max-size", c.maxSize).
-		Logger()
+		log.Info().Msg("running LRU")
 
-	log.Info().Msg("running LRU")
+		tx, err := c.db.DB().Begin()
+		if err != nil {
+			log.Error().Err(err).Msg("error beginning a transaction")
 
-	tx, err := c.db.DB().Begin()
-	if err != nil {
-		log.Error().Err(err).Msg("error beginning a transaction")
-
-		return
-	}
-
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
-			}
-		}
-	}()
-
-	narTotalSize, err := c.db.WithTx(tx).GetNarTotalSize(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("error fetching the total nar size")
-
-		return
-	}
-
-	if !narTotalSize.Valid {
-		log.Error().Msg("SUM(file_size) returned NULL")
-
-		return
-	}
-
-	log = log.With().Float64("nar-total-size", narTotalSize.Float64).Logger()
-
-	if uint64(narTotalSize.Float64) <= c.maxSize {
-		log.Info().Msg("store size is less than max-size, not removing any nars")
-
-		return
-	}
-
-	cleanupSize := uint64(narTotalSize.Float64) - c.maxSize
-
-	log = log.With().Uint64("cleanup-size", cleanupSize).Logger()
-
-	log.Info().Msg("going to remove nars")
-
-	nars, err := c.db.WithTx(tx).GetLeastUsedNars(ctx, cleanupSize)
-	if err != nil {
-		log.Error().Err(err).Msg("error getting the least used nars up to cleanup-size")
-
-		return
-	}
-
-	if len(nars) == 0 {
-		log.Warn().Msg("nars needed to be removed but none were returned in the query")
-
-		return
-	}
-
-	log.Info().Int("count-nars", len(nars)).Msg("found this many nars to remove")
-
-	narInfoHashesToRemove := make([]string, 0, len(nars))
-	narURLsToRemove := make([]nar.URL, 0, len(nars))
-
-	for _, narRecord := range nars {
-		narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, narRecord.NarInfoID)
-		if err == nil {
-			log.Info().Str("narinfo-hash", narInfo.Hash).Msg("deleting narinfo record")
-
-			if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
-				log.Error().
-					Err(err).
-					Str("narinfo-hash", narInfo.Hash).
-					Msg("error removing narinfo from database")
-			}
-
-			narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
-		} else {
-			log.Error().
-				Err(err).
-				Int64("ID", narRecord.NarInfoID).
-				Msg("error fetching narinfo from the database")
+			return
 		}
 
-		log.Info().Str("nar-hash", narRecord.Hash).Msg("deleting nar record")
-
-		if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narRecord.Hash); err != nil {
-			log.Error().
-				Err(err).
-				Str("hash", narRecord.Hash).
-				Msg("error removing nar from database")
-		}
-
-		// NOTE: we don't need the query when working with store so it's
-		// explicitly omitted.
-		narURLsToRemove = append(narURLsToRemove, nar.URL{
-			Hash:        narRecord.Hash,
-			Compression: nar.CompressionTypeFromString(narRecord.Compression),
-		})
-	}
-
-	// remove all the files from the store as fast as possible.
-
-	var wg sync.WaitGroup
-
-	for _, hash := range narInfoHashesToRemove {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			log := log.With().Str("narinfo-hash", hash).Logger()
-
-			log.Info().Msg("deleting narinfo from store")
-
-			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
-				log.Error().
-					Err(err).
-					Msg("error removing the narinfo from the store")
+		defer func() {
+			if err := tx.Rollback(); err != nil {
+				if !errors.Is(err, sql.ErrTxDone) {
+					log.Error().Err(err).Msg("error rolling back the transaction")
+				}
 			}
 		}()
-	}
 
-	for _, narURL := range narURLsToRemove {
-		wg.Add(1)
+		narTotalSize, err := c.db.WithTx(tx).GetNarTotalSize(ctx)
+		if err != nil {
+			log.Error().Err(err).Msg("error fetching the total nar size")
 
-		go func() {
-			defer wg.Done()
+			return
+		}
 
-			log := log.With().Str("nar-url", narURL.String()).Logger()
+		if !narTotalSize.Valid {
+			log.Error().Msg("SUM(file_size) returned NULL")
 
-			log.Info().Msg("deleting nar from store")
+			return
+		}
 
-			if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+		log = log.With().Float64("nar-total-size", narTotalSize.Float64).Logger()
+
+		if uint64(narTotalSize.Float64) <= c.maxSize {
+			log.Info().Msg("store size is less than max-size, not removing any nars")
+
+			return
+		}
+
+		cleanupSize := uint64(narTotalSize.Float64) - c.maxSize
+
+		log = log.With().Uint64("cleanup-size", cleanupSize).Logger()
+
+		log.Info().Msg("going to remove nars")
+
+		nars, err := c.db.WithTx(tx).GetLeastUsedNars(ctx, cleanupSize)
+		if err != nil {
+			log.Error().Err(err).Msg("error getting the least used nars up to cleanup-size")
+
+			return
+		}
+
+		if len(nars) == 0 {
+			log.Warn().Msg("nars needed to be removed but none were returned in the query")
+
+			return
+		}
+
+		log.Info().Int("count-nars", len(nars)).Msg("found this many nars to remove")
+
+		narInfoHashesToRemove := make([]string, 0, len(nars))
+		narURLsToRemove := make([]nar.URL, 0, len(nars))
+
+		for _, narRecord := range nars {
+			narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, narRecord.NarInfoID)
+			if err == nil {
+				log.Info().Str("narinfo-hash", narInfo.Hash).Msg("deleting narinfo record")
+
+				if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
+					log.Error().
+						Err(err).
+						Str("narinfo-hash", narInfo.Hash).
+						Msg("error removing narinfo from database")
+				}
+
+				narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
+			} else {
 				log.Error().
 					Err(err).
-					Msg("error removing the nar from the store")
+					Int64("ID", narRecord.NarInfoID).
+					Msg("error fetching narinfo from the database")
 			}
-		}()
-	}
 
-	wg.Wait()
+			log.Info().Str("nar-hash", narRecord.Hash).Msg("deleting nar record")
 
-	// finally commit the database transaction
+			if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narRecord.Hash); err != nil {
+				log.Error().
+					Err(err).
+					Str("hash", narRecord.Hash).
+					Msg("error removing nar from database")
+			}
 
-	if err := tx.Commit(); err != nil {
-		log.Error().Err(err).Msg("error committing the transaction")
+			// NOTE: we don't need the query when working with store so it's
+			// explicitly omitted.
+			narURLsToRemove = append(narURLsToRemove, nar.URL{
+				Hash:        narRecord.Hash,
+				Compression: nar.CompressionTypeFromString(narRecord.Compression),
+			})
+		}
+
+		// remove all the files from the store as fast as possible.
+
+		var wg sync.WaitGroup
+
+		for _, hash := range narInfoHashesToRemove {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				log := log.With().Str("narinfo-hash", hash).Logger()
+
+				log.Info().Msg("deleting narinfo from store")
+
+				if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+					log.Error().
+						Err(err).
+						Msg("error removing the narinfo from the store")
+				}
+			}()
+		}
+
+		for _, narURL := range narURLsToRemove {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				log := log.With().Str("nar-url", narURL.String()).Logger()
+
+				log.Info().Msg("deleting nar from store")
+
+				if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+					log.Error().
+						Err(err).
+						Msg("error removing the nar from the store")
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		// finally commit the database transaction
+
+		if err := tx.Commit(); err != nil {
+			log.Error().Err(err).Msg("error committing the transaction")
+		}
 	}
 }
 
