@@ -60,7 +60,7 @@ func TestServeHTTP(t *testing.T) {
 		c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
-		c.AddUpstreamCaches(uc)
+		c.AddUpstreamCaches(ctx, uc)
 		c.SetRecordAgeIgnoreTouch(0)
 
 		t.Run("DELETE is not permitted", func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("narInfo", func(t *testing.T) {
 				url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-				r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
+				r, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
@@ -85,7 +85,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("nar", func(t *testing.T) {
 				url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
-				r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
+				r, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
@@ -109,7 +109,7 @@ func TestServeHTTP(t *testing.T) {
 					assert.NoFileExists(t, storePath)
 				})
 
-				_, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+				_, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 				require.NoError(t, err)
 
 				t.Run("narinfo does exist in storage", func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("DELETE returns no error", func(t *testing.T) {
 					url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
+					r, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -141,7 +141,7 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz}
-				_, _, err := c.GetNar(context.Background(), nu)
+				_, _, err := c.GetNar(ctx, nu)
 				require.NoError(t, err)
 
 				t.Run("nar does exist in storage", func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("DELETE returns no error", func(t *testing.T) {
 					url := ts.URL + "/nar/" + testdata.Nar2.NarHash + ".nar.xz"
 
-					r, err := http.NewRequestWithContext(context.Background(), "DELETE", url, nil)
+					r, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -186,7 +186,7 @@ func TestServeHTTP(t *testing.T) {
 		c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
-		c.AddUpstreamCaches(uc)
+		c.AddUpstreamCaches(ctx, uc)
 		c.SetRecordAgeIgnoreTouch(0)
 
 		s := server.New(c)
@@ -301,7 +301,7 @@ func TestServeHTTP(t *testing.T) {
 		c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
-		c.AddUpstreamCaches(uc)
+		c.AddUpstreamCaches(ctx, uc)
 		c.SetRecordAgeIgnoreTouch(0)
 
 		t.Run("PUT is not permitted", func(t *testing.T) {
@@ -314,7 +314,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("narInfo", func(t *testing.T) {
 				p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
+				r, err := http.NewRequestWithContext(ctx, "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
@@ -327,7 +327,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("without compression", func(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar"
 
-					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
+					r, err := http.NewRequestWithContext(ctx, "PUT", p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -339,7 +339,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("with compression", func(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar.xz"
 
-					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
+					r, err := http.NewRequestWithContext(ctx, "PUT", p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -367,7 +367,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("putNarInfo does not return an error", func(t *testing.T) {
 					p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-					r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
+					r, err := http.NewRequestWithContext(ctx, "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -414,7 +414,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("putNar does not return an error", func(t *testing.T) {
 				p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
-				r, err := http.NewRequestWithContext(context.Background(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
+				r, err := http.NewRequestWithContext(ctx, "PUT", p, strings.NewReader(testdata.Nar1.NarText))
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
