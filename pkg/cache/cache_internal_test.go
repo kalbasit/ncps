@@ -75,7 +75,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		c, err := New(ctx, cacheName, db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
-		c.AddUpstreamCaches(ucs...)
+		c.AddUpstreamCaches(ctx, ucs...)
 
 		for idx, uc := range c.upstreamCaches {
 			//nolint:gosec
@@ -131,7 +131,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		require.NoError(t, err)
 
 		for _, uc := range ucs {
-			c.AddUpstreamCaches(uc)
+			c.AddUpstreamCaches(ctx, uc)
 		}
 
 		for idx, uc := range c.upstreamCaches {
@@ -169,7 +169,7 @@ func TestRunLRU(t *testing.T) {
 	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)
 
-	c.AddUpstreamCaches(uc)
+	c.AddUpstreamCaches(ctx, uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	// NOTE: For this test, any nar that's explicitly testing the zstd
@@ -255,7 +255,7 @@ func TestRunLRU(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	c.runLRU()
+	c.runLRU(ctx)()
 
 	// confirm all narinfos except the last one are in the store
 	for _, nar := range entries {

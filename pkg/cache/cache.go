@@ -47,7 +47,6 @@ const recordAgeIgnoreTouch = 5 * time.Minute
 // Cache represents the main cache service.
 type Cache struct {
 	hostName       string
-	logger         zerolog.Logger
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
 	maxSize        uint64
@@ -86,7 +85,6 @@ func New(
 	narStore storage.NarStore,
 ) (*Cache, error) {
 	c := &Cache{
-		logger:               *zerolog.Ctx(ctx),
 		db:                   db,
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,
@@ -112,7 +110,7 @@ func New(
 }
 
 // AddUpstreamCaches adds one or more upstream caches.
-func (c *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
+func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...upstream.Cache) {
 	ucss := append(c.upstreamCaches, ucs...)
 
 	slices.SortFunc(ucss, func(a, b upstream.Cache) int {
@@ -120,10 +118,12 @@ func (c *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
 		return int(a.GetPriority() - b.GetPriority())
 	})
 
-	c.logger.Info().Msg("the order of upstream caches has been determined by priority to be")
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("the order of upstream caches has been determined by priority to be")
 
 	for idx, uc := range ucss {
-		c.logger.
+		zerolog.Ctx(ctx).
 			Info().
 			Int("idx", idx).
 			Str("hostname", uc.GetHostname()).
@@ -139,7 +139,7 @@ func (c *Cache) AddUpstreamCaches(ucs ...upstream.Cache) {
 func (c *Cache) SetMaxSize(maxSize uint64) { c.maxSize = maxSize }
 
 // SetupCron creates a cron instance in the cache.
-func (c *Cache) SetupCron(timezone *time.Location) {
+func (c *Cache) SetupCron(ctx context.Context, timezone *time.Location) {
 	var opts []cron.Option
 	if timezone != nil {
 		opts = append(opts, cron.WithLocation(timezone))
@@ -147,21 +147,26 @@ func (c *Cache) SetupCron(timezone *time.Location) {
 
 	c.cron = cron.New(opts...)
 
-	c.logger.Info().Msg("cron setup complete")
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("cron setup complete")
 }
 
 // AddLRUCronJob adds a job for LRU.
-func (c *Cache) AddLRUCronJob(schedule cron.Schedule) {
-	c.logger.Info().
+func (c *Cache) AddLRUCronJob(ctx context.Context, schedule cron.Schedule) {
+	zerolog.Ctx(ctx).
+		Info().
 		Time("next-run", schedule.Next(time.Now())).
 		Msg("adding a cronjob for LRU")
 
-	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU))
+	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU(ctx)))
 }
 
 // StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
-func (c *Cache) StartCron() {
-	c.logger.Info().Msg("starting the cron scheduler")
+func (c *Cache) StartCron(ctx context.Context) {
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("starting the cron scheduler")
 
 	c.cron.Start()
 }
@@ -184,24 +189,32 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	log := narURL.NewLogger(c.logger)
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
 
 	if c.narStore.HasNar(ctx, narURL) {
-		return c.getNarFromStore(ctx, log, &narURL)
+		return c.getNarFromStore(ctx, &narURL)
 	}
 
-	doneC := c.prePullNar(log, &narURL, nil, nil, false)
+	doneC := c.prePullNar(ctx, &narURL, nil, nil, false)
 
-	log.Debug().Msg("pulling nar in a go-routing and will wait for it")
+	zerolog.Ctx(ctx).
+		Debug().
+		Msg("pulling nar in a go-routing and will wait for it")
 	<-doneC
 
-	return c.getNarFromStore(ctx, log, &narURL)
+	return c.getNarFromStore(ctx, &narURL)
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
 func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
 
 	defer func() {
 		//nolint:errcheck
@@ -220,12 +233,15 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
+
 	return c.narStore.DeleteNar(ctx, narURL)
 }
 
 func (c *Cache) pullNar(
 	ctx context.Context,
-	log zerolog.Logger,
 	narURL *nar.URL,
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
@@ -242,11 +258,14 @@ func (c *Cache) pullNar(
 
 	now := time.Now()
 
-	log.Info().Msg("downloading the nar from upstream")
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("downloading the nar from upstream")
 
-	resp, err := c.getNarFromUpstream(log, narURL, uc, narInfo, enableZSTD)
+	resp, err := c.getNarFromUpstream(ctx, narURL, uc, narInfo, enableZSTD)
 	if err != nil {
-		log.Error().
+		zerolog.Ctx(ctx).
+			Error().
 			Err(err).
 			Msg("error getting the narInfo from upstream caches")
 
@@ -264,7 +283,10 @@ func (c *Cache) pullNar(
 
 	written, err := c.narStore.PutNar(ctx, *narURL, resp.Body)
 	if err != nil {
-		log.Error().Err(err).Msg("error storing the narInfo in the store")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the narInfo in the store")
 
 		done()
 
@@ -275,14 +297,16 @@ func (c *Cache) pullNar(
 		narInfo.FileSize = uint64(written)
 	}
 
-	log.Info().Dur("elapsed", time.Since(now)).Msg("download of nar complete")
+	zerolog.Ctx(ctx).
+		Info().
+		Dur("elapsed", time.Since(now)).
+		Msg("download of nar complete")
 
 	done()
 }
 
 func (c *Cache) getNarFromStore(
 	ctx context.Context,
-	log zerolog.Logger,
 	narURL *nar.URL,
 ) (int64, io.ReadCloser, error) {
 	size, r, err := c.narStore.GetNar(ctx, *narURL)
@@ -298,7 +322,10 @@ func (c *Cache) getNarFromStore(
 	defer func() {
 		if err := tx.Rollback(); err != nil {
 			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error rolling back the transaction")
 			}
 		}
 	}()
@@ -327,7 +354,7 @@ func (c *Cache) getNarFromStore(
 }
 
 func (c *Cache) getNarFromUpstream(
-	log zerolog.Logger,
+	ctx context.Context,
 	narURL *nar.URL,
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
@@ -335,12 +362,12 @@ func (c *Cache) getNarFromUpstream(
 ) (*http.Response, error) {
 	// create a new context not associated with any request because we don't want
 	// pulling from upstream to be associated with a user request.
-	ctx := context.Background()
+	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
 	var mutators []func(*http.Request)
 
 	if enableZSTD {
-		mutators = append(mutators, zstdMutator(log, narURL.Compression))
+		mutators = append(mutators, zstdMutator(ctx, narURL.Compression))
 
 		narURL.Compression = nar.CompressionTypeZstd
 
@@ -348,7 +375,9 @@ func (c *Cache) getNarFromUpstream(
 		narInfo.URL = narURL.String()
 	}
 
-	log = narURL.NewLogger(log)
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
 
 	var ucs []upstream.Cache
 	if uc != nil {
@@ -361,7 +390,8 @@ func (c *Cache) getNarFromUpstream(
 		resp, err := uc.GetNar(ctx, *narURL, mutators...)
 		if err != nil {
 			if !errors.Is(err, upstream.ErrNotFound) {
-				log.Error().
+				zerolog.Ctx(ctx).
+					Error().
 					Err(err).
 					Str("hostname", uc.GetHostname()).
 					Msg("error fetching the narInfo from upstream")
@@ -376,10 +406,10 @@ func (c *Cache) getNarFromUpstream(
 	return nil, storage.ErrNotFound
 }
 
-func (c *Cache) deleteNarFromStore(_ zerolog.Logger, narURL *nar.URL) error {
+func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 	// create a new context not associated with any request because we don't want
 	// downstream HTTP request to cancel this.
-	ctx := context.Background()
+	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
 	if !c.narStore.HasNar(ctx, *narURL) {
 		return storage.ErrNotFound
@@ -399,7 +429,11 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	log := c.logger.With().Str("hash", hash).Logger()
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo-hash", hash).
+		Logger().
+		WithContext(ctx)
 
 	var (
 		narInfo *narinfo.NarInfo
@@ -407,7 +441,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	)
 
 	if c.narInfoStore.HasNarInfo(ctx, hash) {
-		narInfo, err = c.getNarInfoFromStore(ctx, log, hash)
+		narInfo, err = c.getNarInfoFromStore(ctx, hash)
 		if err == nil {
 			return narInfo, nil
 		} else if !errors.Is(err, errNarInfoPurged) {
@@ -415,9 +449,11 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		}
 	}
 
-	doneC := c.prePullNarInfo(log, hash)
+	doneC := c.prePullNarInfo(ctx, hash)
 
-	log.Debug().Msg("pulling nar in a go-routing and will wait for it")
+	zerolog.Ctx(ctx).
+		Debug().
+		Msg("pulling nar in a go-routing and will wait for it")
 	<-doneC
 
 	return c.narInfoStore.GetNarInfo(ctx, hash)
@@ -425,7 +461,6 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 func (c *Cache) pullNarInfo(
 	ctx context.Context,
-	log zerolog.Logger,
 	hash string,
 	doneC chan struct{},
 ) {
@@ -439,9 +474,12 @@ func (c *Cache) pullNarInfo(
 
 	now := time.Now()
 
-	uc, narInfo, err := c.getNarInfoFromUpstream(log, hash)
+	uc, narInfo, err := c.getNarInfoFromUpstream(ctx, hash)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting the narInfo from upstream caches")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error getting the narInfo from upstream caches")
 
 		done()
 
@@ -450,7 +488,11 @@ func (c *Cache) pullNarInfo(
 
 	narURL, err := nar.ParseURL(narInfo.URL)
 	if err != nil {
-		log.Error().Err(err).Str("nar-url", narInfo.URL).Msg("error parsing the nar URL")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Str("nar-url", narInfo.URL).
+			Msg("error parsing the nar URL")
 
 		done()
 
@@ -463,10 +505,15 @@ func (c *Cache) pullNarInfo(
 		enableZSTD = true
 	}
 
-	log = log.With().Bool("zstd-support", enableZSTD).Logger()
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("nar-url", narInfo.URL).
+		Bool("zstd-support", enableZSTD).
+		Logger().
+		WithContext(ctx)
 
 	// start a job to also pull the nar but don't wait for it to cme back
-	narDoneC := c.prePullNar(log, &narURL, uc, narInfo, enableZSTD)
+	narDoneC := c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
 
 	// Harmonia, for example, explicitly returns none for compression but does
 	// accept encoding request, if that's the case we should get the compressed
@@ -475,8 +522,11 @@ func (c *Cache) pullNarInfo(
 		<-narDoneC
 	}
 
-	if err := c.signNarInfo(log, narInfo); err != nil {
-		log.Error().Err(err).Msg("error signing the narinfo")
+	if err := c.signNarInfo(ctx, narInfo); err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error signing the narinfo")
 
 		done()
 
@@ -484,22 +534,31 @@ func (c *Cache) pullNarInfo(
 	}
 
 	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		log.Error().Err(err).Msg("error storing the narInfo in the store")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the narInfo in the store")
 
 		done()
 
 		return
 	}
 
-	if err := c.storeInDatabase(log, hash, narInfo); err != nil {
-		log.Error().Err(err).Msg("error storing the narinfo in the database")
+	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the narinfo in the database")
 
 		done()
 
 		return
 	}
 
-	log.Info().Dur("elapsed", time.Since(now)).Msg("download of narinfo complete")
+	zerolog.Ctx(ctx).
+		Info().
+		Dur("elapsed", time.Since(now)).
+		Msg("download of narinfo complete")
 
 	done()
 }
@@ -509,6 +568,12 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo-hash", hash).
+		Logger().
+		WithContext(ctx)
+
 	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, r)
@@ -516,14 +581,12 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		r.Close()
 	}()
 
-	log := c.logger.With().Str("hash", hash).Logger()
-
 	narInfo, err := narinfo.Parse(r)
 	if err != nil {
 		return fmt.Errorf("error parsing narinfo: %w", err)
 	}
 
-	if err := c.signNarInfo(log, narInfo); err != nil {
+	if err := c.signNarInfo(ctx, narInfo); err != nil {
 		return fmt.Errorf("error signing the narinfo: %w", err)
 	}
 
@@ -531,7 +594,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		return fmt.Errorf("error storing the narInfo in the store: %w", err)
 	}
 
-	return c.storeInDatabase(log, hash, narInfo)
+	return c.storeInDatabase(ctx, hash, narInfo)
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
@@ -539,26 +602,32 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	log := c.logger.With().Str("hash", hash).Logger()
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo-hash", hash).
+		Logger().
+		WithContext(ctx)
 
-	return c.deleteNarInfoFromStore(ctx, log, hash)
+	return c.deleteNarInfoFromStore(ctx, hash)
 }
 
-func (c *Cache) prePullNarInfo(log zerolog.Logger, hash string) chan struct{} {
+func (c *Cache) prePullNarInfo(ctx context.Context, hash string) chan struct{} {
 	// create a new context not associated with any request because we don't want
 	// pulling from upstream to be associated with a user request.
-	ctx := context.Background()
+	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
 	c.muUpstreamJobs.Lock()
 
 	doneC, ok := c.upstreamJobs[hash]
 	if ok {
-		log.Info().Msg("waiting for an in-progress download of narinfo to finish")
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("waiting for an in-progress download of narinfo to finish")
 	} else {
 		doneC = make(chan struct{})
 		c.upstreamJobs[hash] = doneC
 
-		go c.pullNarInfo(ctx, log, hash, doneC)
+		go c.pullNarInfo(ctx, hash, doneC)
 	}
 	c.muUpstreamJobs.Unlock()
 
@@ -566,7 +635,7 @@ func (c *Cache) prePullNarInfo(log zerolog.Logger, hash string) chan struct{} {
 }
 
 func (c *Cache) prePullNar(
-	log zerolog.Logger,
+	ctx context.Context,
 	narURL *nar.URL,
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
@@ -574,7 +643,7 @@ func (c *Cache) prePullNar(
 ) chan struct{} {
 	// create a new context not associated with any request because we don't want
 	// pulling from upstream to be associated with a user request.
-	ctx := context.Background()
+	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
 	c.muUpstreamJobs.Lock()
 
@@ -583,14 +652,14 @@ func (c *Cache) prePullNar(
 		doneC = make(chan struct{})
 		c.upstreamJobs[narURL.Hash] = doneC
 
-		go c.pullNar(ctx, log, narURL, uc, narInfo, enableZSTD, doneC)
+		go c.pullNar(ctx, narURL, uc, narInfo, enableZSTD, doneC)
 	}
 	c.muUpstreamJobs.Unlock()
 
 	return doneC
 }
 
-func (c *Cache) signNarInfo(_ zerolog.Logger, narInfo *narinfo.NarInfo) error {
+func (c *Cache) signNarInfo(_ context.Context, narInfo *narinfo.NarInfo) error {
 	var sigs []signature.Signature
 
 	for _, sig := range narInfo.Signatures {
@@ -611,7 +680,7 @@ func (c *Cache) signNarInfo(_ zerolog.Logger, narInfo *narinfo.NarInfo) error {
 	return nil
 }
 
-func (c *Cache) getNarInfoFromStore(ctx context.Context, log zerolog.Logger, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	ni, err := c.narInfoStore.GetNarInfo(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
@@ -619,25 +688,33 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log zerolog.Logger, has
 
 	narURL, err := nar.ParseURL(ni.URL)
 	if err != nil {
-		log.Error().
+		zerolog.Ctx(ctx).
+			Error().
 			Err(err).
 			Str("nar-url", ni.URL).
 			Msg("error parsing the nar-url")
 
 		// narinfo is invalid, remove it
-		if err := c.purgeNarInfo(ctx, log, hash, &narURL); err != nil {
-			log.Error().Err(err).Msg("error purging the narinfo")
+		if err := c.purgeNarInfo(ctx, hash, &narURL); err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error purging the narinfo")
 		}
 
 		return nil, errNarInfoPurged
 	}
 
-	log = narURL.NewLogger(log)
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
 
 	if !c.narStore.HasNar(ctx, narURL) && !c.hasUpstreamJob(narURL.Hash) {
-		log.Error().Msg("narinfo was requested but no nar was found requesting a purge")
+		zerolog.Ctx(ctx).
+			Error().
+			Msg("narinfo was requested but no nar was found requesting a purge")
 
-		if err := c.purgeNarInfo(ctx, log, hash, &narURL); err != nil {
+		if err := c.purgeNarInfo(ctx, hash, &narURL); err != nil {
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
 		}
 
@@ -652,7 +729,10 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log zerolog.Logger, has
 	defer func() {
 		if err := tx.Rollback(); err != nil {
 			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error rolling back the transaction")
 			}
 		}
 	}()
@@ -680,16 +760,20 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, log zerolog.Logger, has
 	return ni, nil
 }
 
-func (c *Cache) getNarInfoFromUpstream(log zerolog.Logger, hash string) (*upstream.Cache, *narinfo.NarInfo, error) {
+func (c *Cache) getNarInfoFromUpstream(
+	ctx context.Context,
+	hash string,
+) (*upstream.Cache, *narinfo.NarInfo, error) {
 	// create a new context not associated with any request because we don't want
 	// downstream HTTP request to cancel this.
-	ctx := context.Background()
+	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
 	for _, uc := range c.upstreamCaches {
 		narInfo, err := uc.GetNarInfo(ctx, hash)
 		if err != nil {
 			if !errors.Is(err, upstream.ErrNotFound) {
-				log.Error().
+				zerolog.Ctx(ctx).
+					Error().
 					Err(err).
 					Str("hostname", uc.GetHostname()).
 					Msg("error fetching the narInfo from upstream")
@@ -704,7 +788,11 @@ func (c *Cache) getNarInfoFromUpstream(log zerolog.Logger, hash string) (*upstre
 	return nil, nil, storage.ErrNotFound
 }
 
-func (c *Cache) purgeNarInfo(ctx context.Context, log zerolog.Logger, hash string, narURL *nar.URL) error {
+func (c *Cache) purgeNarInfo(
+	ctx context.Context,
+	hash string,
+	narURL *nar.URL,
+) error {
 	tx, err := c.db.DB().Begin()
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
@@ -713,7 +801,10 @@ func (c *Cache) purgeNarInfo(ctx context.Context, log zerolog.Logger, hash strin
 	defer func() {
 		if err := tx.Rollback(); err != nil {
 			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error rolling back the transaction")
 			}
 		}
 	}()
@@ -733,14 +824,14 @@ func (c *Cache) purgeNarInfo(ctx context.Context, log zerolog.Logger, hash strin
 	}
 
 	if c.narInfoStore.HasNarInfo(ctx, hash) {
-		if err := c.deleteNarInfoFromStore(ctx, log, hash); err != nil {
+		if err := c.deleteNarInfoFromStore(ctx, hash); err != nil {
 			return fmt.Errorf("error removing narinfo from store: %w", err)
 		}
 	}
 
 	if narURL.Hash != "" {
 		if c.narStore.HasNar(ctx, *narURL) {
-			if err := c.deleteNarFromStore(log, narURL); err != nil {
+			if err := c.deleteNarFromStore(ctx, narURL); err != nil {
 				return fmt.Errorf("error removing nar from store: %w", err)
 			}
 		}
@@ -749,14 +840,18 @@ func (c *Cache) purgeNarInfo(ctx context.Context, log zerolog.Logger, hash strin
 	return nil
 }
 
-func (c *Cache) storeInDatabase(log zerolog.Logger, hash string, narInfo *narinfo.NarInfo) error {
+func (c *Cache) storeInDatabase(
+	ctx context.Context,
+	hash string,
+	narInfo *narinfo.NarInfo,
+) error {
 	// create a new context not associated with any request because we don't want
 	// downstream HTTP request to cancel this.
-	ctx := context.Background()
+	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
-	log = log.With().Str("nar-url", narInfo.URL).Logger()
-
-	log.Info().Msg("storing narinfo and nar record in the database")
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("storing narinfo and nar record in the database")
 
 	tx, err := c.db.DB().Begin()
 	if err != nil {
@@ -766,7 +861,10 @@ func (c *Cache) storeInDatabase(log zerolog.Logger, hash string, narInfo *narinf
 	defer func() {
 		if err := tx.Rollback(); err != nil {
 			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error rolling back the transaction")
 			}
 		}
 	}()
@@ -774,7 +872,9 @@ func (c *Cache) storeInDatabase(log zerolog.Logger, hash string, narInfo *narinf
 	nir, err := c.db.WithTx(tx).CreateNarInfo(ctx, hash)
 	if err != nil {
 		if database.ErrorIsNo(err, sqlite3.ErrConstraint) {
-			log.Warn().Msg("narinfo record was not added to database because it already exists")
+			zerolog.Ctx(ctx).
+				Warn().
+				Msg("narinfo record was not added to database because it already exists")
 
 			return nil
 		}
@@ -796,7 +896,9 @@ func (c *Cache) storeInDatabase(log zerolog.Logger, hash string, narInfo *narinf
 	})
 	if err != nil {
 		if database.ErrorIsNo(err, sqlite3.ErrConstraint) {
-			log.Warn().Msg("nar record was not added to database because it already exists")
+			zerolog.Ctx(ctx).
+				Warn().
+				Msg("nar record was not added to database because it already exists")
 
 			return nil
 		}
@@ -811,7 +913,7 @@ func (c *Cache) storeInDatabase(log zerolog.Logger, hash string, narInfo *narinf
 	return nil
 }
 
-func (c *Cache) deleteNarInfoFromStore(ctx context.Context, _ zerolog.Logger, hash string) error {
+func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 	if !c.narInfoStore.HasNarInfo(ctx, hash) {
 		return storage.ErrNotFound
 	}
@@ -825,33 +927,19 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, _ zerolog.Logger, ha
 
 func (c *Cache) validateHostname(hostName string) error {
 	if hostName == "" {
-		c.logger.Error().Str("hostName", hostName).Msg("given hostname is empty")
-
 		return ErrHostnameRequired
 	}
 
 	u, err := url.Parse(hostName)
 	if err != nil {
-		c.logger.Error().
-			Err(err).
-			Str("hostName", hostName).
-			Msg("failed to parse the hostname")
-
 		return fmt.Errorf("error parsing the hostName %q: %w", hostName, err)
 	}
 
 	if u.Scheme != "" {
-		c.logger.Error().
-			Str("hostName", hostName).
-			Str("scheme", u.Scheme).
-			Msg("hostname should not contain a scheme")
-
 		return ErrHostnameMustNotContainScheme
 	}
 
 	if strings.Contains(hostName, "/") {
-		c.logger.Error().Str("hostName", hostName).Msg("hostname should not contain a path")
-
 		return ErrHostnameMustNotContainPath
 	}
 
@@ -888,169 +976,173 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	return ok
 }
 
-func (c *Cache) runLRU() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Cache) runLRU(ctx context.Context) func() {
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
 
-	log := c.logger.With().
-		Str("op", "lru").
-		Uint64("max-size", c.maxSize).
-		Logger()
+		log := zerolog.Ctx(ctx).With().
+			Str("op", "lru").
+			Uint64("max-size", c.maxSize).
+			Logger()
 
-	log.Info().Msg("running LRU")
+		log.Info().Msg("running LRU")
 
-	// TODO: Possibly trickle ctx down
-	ctx := context.Background()
+		tx, err := c.db.DB().Begin()
+		if err != nil {
+			log.Error().Err(err).Msg("error beginning a transaction")
 
-	tx, err := c.db.DB().Begin()
-	if err != nil {
-		log.Error().Err(err).Msg("error beginning a transaction")
-
-		return
-	}
-
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				log.Error().Err(err).Msg("error rolling back the transaction")
-			}
-		}
-	}()
-
-	narTotalSize, err := c.db.WithTx(tx).GetNarTotalSize(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("error fetching the total nar size")
-
-		return
-	}
-
-	if !narTotalSize.Valid {
-		log.Error().Msg("SUM(file_size) returned NULL")
-
-		return
-	}
-
-	log = log.With().Float64("nar-total-size", narTotalSize.Float64).Logger()
-
-	if uint64(narTotalSize.Float64) <= c.maxSize {
-		log.Info().Msg("store size is less than max-size, not removing any nars")
-
-		return
-	}
-
-	cleanupSize := uint64(narTotalSize.Float64) - c.maxSize
-
-	log = log.With().Uint64("cleanup-size", cleanupSize).Logger()
-
-	log.Info().Msg("going to remove nars")
-
-	nars, err := c.db.WithTx(tx).GetLeastUsedNars(ctx, cleanupSize)
-	if err != nil {
-		log.Error().Err(err).Msg("error getting the least used nars up to cleanup-size")
-
-		return
-	}
-
-	if len(nars) == 0 {
-		log.Warn().Msg("nars needed to be removed but none were returned in the query")
-
-		return
-	}
-
-	log.Info().Int("count-nars", len(nars)).Msg("found this many nars to remove")
-
-	narInfoHashesToRemove := make([]string, 0, len(nars))
-	narURLsToRemove := make([]nar.URL, 0, len(nars))
-
-	for _, narRecord := range nars {
-		narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, narRecord.NarInfoID)
-		if err == nil {
-			log.Info().Str("narinfo-hash", narInfo.Hash).Msg("deleting narinfo record")
-
-			if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
-				log.Error().
-					Err(err).
-					Str("narinfo-hash", narInfo.Hash).
-					Msg("error removing narinfo from database")
-			}
-
-			narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
-		} else {
-			log.Error().
-				Err(err).
-				Int64("ID", narRecord.NarInfoID).
-				Msg("error fetching narinfo from the database")
+			return
 		}
 
-		log.Info().Str("nar-hash", narRecord.Hash).Msg("deleting nar record")
-
-		if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narRecord.Hash); err != nil {
-			log.Error().
-				Err(err).
-				Str("hash", narRecord.Hash).
-				Msg("error removing nar from database")
-		}
-
-		// NOTE: we don't need the query when working with store so it's
-		// explicitly omitted.
-		narURLsToRemove = append(narURLsToRemove, nar.URL{
-			Hash:        narRecord.Hash,
-			Compression: nar.CompressionTypeFromString(narRecord.Compression),
-		})
-	}
-
-	// remove all the files from the store as fast as possible.
-
-	var wg sync.WaitGroup
-
-	for _, hash := range narInfoHashesToRemove {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			log := log.With().Str("narinfo-hash", hash).Logger()
-
-			log.Info().Msg("deleting narinfo from store")
-
-			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
-				log.Error().
-					Err(err).
-					Msg("error removing the narinfo from the store")
+		defer func() {
+			if err := tx.Rollback(); err != nil {
+				if !errors.Is(err, sql.ErrTxDone) {
+					log.Error().Err(err).Msg("error rolling back the transaction")
+				}
 			}
 		}()
-	}
 
-	for _, narURL := range narURLsToRemove {
-		wg.Add(1)
+		narTotalSize, err := c.db.WithTx(tx).GetNarTotalSize(ctx)
+		if err != nil {
+			log.Error().Err(err).Msg("error fetching the total nar size")
 
-		go func() {
-			defer wg.Done()
+			return
+		}
 
-			log := log.With().Str("nar-url", narURL.String()).Logger()
+		if !narTotalSize.Valid {
+			log.Error().Msg("SUM(file_size) returned NULL")
 
-			log.Info().Msg("deleting nar from store")
+			return
+		}
 
-			if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+		log = log.With().Float64("nar-total-size", narTotalSize.Float64).Logger()
+
+		if uint64(narTotalSize.Float64) <= c.maxSize {
+			log.Info().Msg("store size is less than max-size, not removing any nars")
+
+			return
+		}
+
+		cleanupSize := uint64(narTotalSize.Float64) - c.maxSize
+
+		log = log.With().Uint64("cleanup-size", cleanupSize).Logger()
+
+		log.Info().Msg("going to remove nars")
+
+		nars, err := c.db.WithTx(tx).GetLeastUsedNars(ctx, cleanupSize)
+		if err != nil {
+			log.Error().Err(err).Msg("error getting the least used nars up to cleanup-size")
+
+			return
+		}
+
+		if len(nars) == 0 {
+			log.Warn().Msg("nars needed to be removed but none were returned in the query")
+
+			return
+		}
+
+		log.Info().Int("count-nars", len(nars)).Msg("found this many nars to remove")
+
+		narInfoHashesToRemove := make([]string, 0, len(nars))
+		narURLsToRemove := make([]nar.URL, 0, len(nars))
+
+		for _, narRecord := range nars {
+			narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, narRecord.NarInfoID)
+			if err == nil {
+				log.Info().Str("narinfo-hash", narInfo.Hash).Msg("deleting narinfo record")
+
+				if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
+					log.Error().
+						Err(err).
+						Str("narinfo-hash", narInfo.Hash).
+						Msg("error removing narinfo from database")
+				}
+
+				narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
+			} else {
 				log.Error().
 					Err(err).
-					Msg("error removing the nar from the store")
+					Int64("ID", narRecord.NarInfoID).
+					Msg("error fetching narinfo from the database")
 			}
-		}()
-	}
 
-	wg.Wait()
+			log.Info().Str("nar-hash", narRecord.Hash).Msg("deleting nar record")
 
-	// finally commit the database transaction
+			if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narRecord.Hash); err != nil {
+				log.Error().
+					Err(err).
+					Str("nar-hash", narRecord.Hash).
+					Msg("error removing nar from database")
+			}
 
-	if err := tx.Commit(); err != nil {
-		log.Error().Err(err).Msg("error committing the transaction")
+			// NOTE: we don't need the query when working with store so it's
+			// explicitly omitted.
+			narURLsToRemove = append(narURLsToRemove, nar.URL{
+				Hash:        narRecord.Hash,
+				Compression: nar.CompressionTypeFromString(narRecord.Compression),
+			})
+		}
+
+		// remove all the files from the store as fast as possible.
+
+		var wg sync.WaitGroup
+
+		for _, hash := range narInfoHashesToRemove {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				log := log.With().Str("narinfo-hash", hash).Logger()
+
+				log.Info().Msg("deleting narinfo from store")
+
+				if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+					log.Error().
+						Err(err).
+						Msg("error removing the narinfo from the store")
+				}
+			}()
+		}
+
+		for _, narURL := range narURLsToRemove {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				log := log.With().Str("nar-url", narURL.String()).Logger()
+
+				log.Info().Msg("deleting nar from store")
+
+				if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+					log.Error().
+						Err(err).
+						Msg("error removing the nar from the store")
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		// finally commit the database transaction
+
+		if err := tx.Commit(); err != nil {
+			log.Error().Err(err).Msg("error committing the transaction")
+		}
 	}
 }
 
-func zstdMutator(log zerolog.Logger, compression nar.CompressionType) func(r *http.Request) {
+func zstdMutator(
+	ctx context.Context,
+	compression nar.CompressionType,
+) func(r *http.Request) {
 	return func(r *http.Request) {
-		log.Debug().Msg("narinfo compress is none will set Accept-Encoding to zstd")
+		zerolog.Ctx(ctx).
+			Debug().
+			Msg("narinfo compress is none will set Accept-Encoding to zstd")
 
 		r.Header.Set("Accept-Encoding", "zstd")
 

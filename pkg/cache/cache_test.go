@@ -190,7 +190,7 @@ func TestGetNarInfo(t *testing.T) {
 	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
-	c.AddUpstreamCaches(uc)
+	c.AddUpstreamCaches(ctx, uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
@@ -785,7 +785,7 @@ func TestGetNar(t *testing.T) {
 	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
-	c.AddUpstreamCaches(uc)
+	c.AddUpstreamCaches(ctx, uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {

@@ -139,7 +139,7 @@ func serveAction() cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := createCache(ctx, logger, cmd, ucs)
+		cache, err := createCache(ctx, cmd, ucs)
 		if err != nil {
 			return err
 		}
@@ -201,7 +201,6 @@ func getUpstreamCaches(_ context.Context, logger zerolog.Logger, cmd *cli.Comman
 
 func createCache(
 	ctx context.Context,
-	logger zerolog.Logger,
 	cmd *cli.Command,
 	ucs []upstream.Cache,
 ) (*cache.Cache, error) {
@@ -220,7 +219,7 @@ func createCache(
 	}
 
 	c, err := cache.New(
-		logger.WithContext(ctx),
+		ctx,
 		cmd.String("cache-hostname"),
 		db,
 		localStore,
@@ -231,7 +230,7 @@ func createCache(
 		return nil, fmt.Errorf("error creating a new cache: %w", err)
 	}
 
-	c.AddUpstreamCaches(ucs...)
+	c.AddUpstreamCaches(ctx, ucs...)
 
 	if cmd.String("cache-lru-schedule") == "" {
 		return c, nil
@@ -247,7 +246,8 @@ func createCache(
 		return nil, fmt.Errorf("error parsing the size: %w", err)
 	}
 
-	logger.Info().
+	zerolog.Ctx(ctx).
+		Info().
 		Uint64("max-size", maxSize).
 		Msg("setting up the cache max-size")
 
@@ -262,20 +262,21 @@ func createCache(
 		}
 	}
 
-	logger.Info().
+	zerolog.Ctx(ctx).
+		Info().
 		Str("time-zone", loc.String()).
 		Msg("setting up the cache timezone location")
 
-	c.SetupCron(loc)
+	c.SetupCron(ctx, loc)
 
 	schedule, err := cron.ParseStandard(cmd.String("cache-lru-schedule"))
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the cron spec %q: %w", cmd.String("cache-lru-schedule"), err)
 	}
 
-	c.AddLRUCronJob(schedule)
+	c.AddLRUCronJob(ctx, schedule)
 
-	c.StartCron()
+	c.StartCron(ctx)
 
 	return c, nil
 }
