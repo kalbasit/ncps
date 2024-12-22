@@ -96,14 +96,17 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
+
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("upstream-url", c.url.String()).
 		Str("narinfo-hash", hash).
+		Str("narinfo-url", u).
+		Str("upstream-url", c.url.String()).
 		Logger().
 		WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(helper.NarInfoURLPath(hash)).String(), nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
