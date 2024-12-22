@@ -190,6 +190,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
+
 	if c.narStore.HasNar(ctx, narURL) {
 		return c.getNarFromStore(ctx, &narURL)
 	}
@@ -209,6 +213,10 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
+
 	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, r)
@@ -225,6 +233,10 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	ctx = narURL.
+		NewLogger(*zerolog.Ctx(ctx)).
+		WithContext(ctx)
 
 	return c.narStore.DeleteNar(ctx, narURL)
 }
@@ -418,6 +430,12 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo-hash", hash).
+		Logger().
+		WithContext(ctx)
+
 	var (
 		narInfo *narinfo.NarInfo
 		err     error
@@ -532,6 +550,12 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo-hash", hash).
+		Logger().
+		WithContext(ctx)
+
 	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, r)
@@ -559,6 +583,12 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo-hash", hash).
+		Logger().
+		WithContext(ctx)
 
 	return c.deleteNarInfoFromStore(ctx, hash)
 }
