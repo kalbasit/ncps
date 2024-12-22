@@ -111,6 +111,10 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
 
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("download the narinfo from upstream")
+
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		return nil, fmt.Errorf("error performing the request: %w", err)
