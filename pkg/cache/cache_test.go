@@ -34,9 +34,6 @@ import (
 
 const cacheName = "cache.example.com"
 
-//nolint:gochecknoglobals
-var logger = zerolog.New(io.Discard)
-
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -54,12 +51,10 @@ func TestNew(t *testing.T) {
 			db, err := database.Open("sqlite:" + dbFile)
 			require.NoError(t, err)
 
-			ctx := context.Background()
-
-			localStore, err := local.New(ctx, dir)
+			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(ctx, "", db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), "", db, localStore, localStore, localStore)
 			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
@@ -74,12 +69,10 @@ func TestNew(t *testing.T) {
 			db, err := database.Open("sqlite:" + dbFile)
 			require.NoError(t, err)
 
-			ctx := context.Background()
-
-			localStore, err := local.New(ctx, dir)
+			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(ctx, "https://cache.example.com", db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), "https://cache.example.com", db, localStore, localStore, localStore)
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
@@ -94,12 +87,10 @@ func TestNew(t *testing.T) {
 			db, err := database.Open("sqlite:" + dbFile)
 			require.NoError(t, err)
 
-			ctx := context.Background()
-
-			localStore, err := local.New(ctx, dir)
+			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(ctx, "cache.example.com/path/to", db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), "cache.example.com/path/to", db, localStore, localStore, localStore)
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
@@ -114,12 +105,10 @@ func TestNew(t *testing.T) {
 			db, err := database.Open("sqlite:" + dbFile)
 			require.NoError(t, err)
 
-			ctx := context.Background()
-
-			localStore, err := local.New(ctx, dir)
+			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 			require.NoError(t, err)
 		})
 	})
@@ -138,12 +127,10 @@ func TestPublicKey(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
@@ -173,7 +160,7 @@ func TestGetNarInfo(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -182,15 +169,13 @@ func TestGetNarInfo(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
-	c.AddUpstreamCaches(ctx, uc)
+	c.AddUpstreamCaches(newContext(), uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
@@ -563,12 +548,10 @@ func TestPutNarInfo(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -705,12 +688,10 @@ func TestDeleteNarInfo(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -768,7 +749,7 @@ func TestGetNar(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(logger, testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -777,15 +758,13 @@ func TestGetNar(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
-	c.AddUpstreamCaches(ctx, uc)
+	c.AddUpstreamCaches(newContext(), uc)
 	c.SetRecordAgeIgnoreTouch(0)
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
@@ -984,12 +963,10 @@ func TestPutNar(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -1031,12 +1008,10 @@ func TestDeleteNar(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -1084,4 +1059,10 @@ func TestDeleteNar(t *testing.T) {
 			assert.NoFileExists(t, storePath)
 		})
 	})
+}
+
+func newContext() context.Context {
+	return zerolog.
+		New(io.Discard).
+		WithContext(context.Background())
 }

@@ -134,7 +134,7 @@ func serveAction() cli.ActionFunc {
 			return autoMaxProcs(ctx, 30*time.Second, logger)
 		})
 
-		ucs, err := getUpstreamCaches(ctx, logger, cmd)
+		ucs, err := getUpstreamCaches(ctx, cmd)
 		if err != nil {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
@@ -167,7 +167,7 @@ func serveAction() cli.ActionFunc {
 	}
 }
 
-func getUpstreamCaches(_ context.Context, logger zerolog.Logger, cmd *cli.Command) ([]upstream.Cache, error) {
+func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]upstream.Cache, error) {
 	ucSlice := cmd.StringSlice("upstream-cache")
 
 	ucs := make([]upstream.Cache, 0, len(ucSlice))
@@ -188,7 +188,7 @@ func getUpstreamCaches(_ context.Context, logger zerolog.Logger, cmd *cli.Comman
 			}
 		}
 
-		uc, err := upstream.New(logger, u, pubKeys)
+		uc, err := upstream.New(ctx, u, pubKeys)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a new upstream cache: %w", err)
 		}

@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,12 +30,10 @@ func TestSetDeletePermitted(t *testing.T) {
 	db, err := database.Open("sqlite:" + dbFile)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	localStore, err := local.New(ctx, dir)
+	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(ctx, cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	t.Run("false", func(t *testing.T) {
@@ -53,4 +53,10 @@ func TestSetDeletePermitted(t *testing.T) {
 
 		assert.True(t, s.deletePermitted)
 	})
+}
+
+func newContext() context.Context {
+	return zerolog.
+		New(io.Discard).
+		WithContext(context.Background())
 }

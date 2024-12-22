@@ -42,12 +42,11 @@ var (
 type Cache struct {
 	httpClient *http.Client
 	url        *url.URL
-	logger     zerolog.Logger
 	priority   uint64
 	publicKeys []signature.PublicKey
 }
 
-func New(logger zerolog.Logger, u *url.URL, pubKeys []string) (Cache, error) {
+func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
 	c := Cache{}
 
 	if u == nil {
@@ -56,9 +55,11 @@ func New(logger zerolog.Logger, u *url.URL, pubKeys []string) (Cache, error) {
 
 	c.url = u
 
-	c.logger = logger.With().
-		Str("upstream-url", u.String()).
-		Logger()
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("upstream-url", c.url.String()).
+		Logger().
+		WithContext(ctx)
 
 	if err := c.validateURL(u); err != nil {
 		return c, err
@@ -80,7 +81,7 @@ func New(logger zerolog.Logger, u *url.URL, pubKeys []string) (Cache, error) {
 		c.publicKeys = append(c.publicKeys, pk)
 	}
 
-	priority, err := c.parsePriority()
+	priority, err := c.parsePriority(ctx)
 	if err != nil {
 		return c, fmt.Errorf("error parsing the priority for %q: %w", u, err)
 	}
@@ -95,10 +96,24 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath(helper.NarInfoURLPath(hash)).String(), nil)
+	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
+
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo-hash", hash).
+		Str("narinfo-url", u).
+		Str("upstream-url", c.url.String()).
+		Logger().
+		WithContext(ctx)
+
+	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
+
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("download the narinfo from upstream")
 
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
@@ -115,7 +130,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 			return nil, ErrNotFound
 		}
 
-		c.logger.
+		zerolog.Ctx(ctx).
 			Error().
 			Err(ErrUnexpectedHTTPStatusCode).
 			Int("status_code", resp.StatusCode).
@@ -147,6 +162,14 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
+	ctx = narURL.NewLogger(
+		zerolog.Ctx(ctx).
+			With().
+			Str("nar-url", u).
+			Str("upstream-url", c.url.String()).
+			Logger(),
+	).WithContext(ctx)
+
 	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
@@ -156,9 +179,9 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 		mutator(r)
 	}
 
-	log := narURL.NewLogger(c.logger.With().Str("nar-url", u).Logger())
-
-	log.Info().Msg("download the nar from upstream")
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("download the nar from upstream")
 
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
@@ -173,7 +196,7 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 			return nil, ErrNotFound
 		}
 
-		log.
+		zerolog.Ctx(ctx).
 			Error().
 			Err(ErrUnexpectedHTTPStatusCode).
 			Int("status_code", resp.StatusCode).
@@ -188,10 +211,7 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 // GetPriority returns the priority of this upstream cache.
 func (c Cache) GetPriority() uint64 { return c.priority }
 
-func (c Cache) parsePriority() (uint64, error) {
-	// TODO: Should probably pass context around and have things like logger in the context
-	ctx := context.Background()
-
+func (c Cache) parsePriority(ctx context.Context) (uint64, error) {
 	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFn()
 
@@ -208,7 +228,8 @@ func (c Cache) parsePriority() (uint64, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		c.logger.Error().
+		zerolog.Ctx(ctx).
+			Error().
 			Err(ErrUnexpectedHTTPStatusCode).
 			Int("status_code", resp.StatusCode).
 			Send()
@@ -226,16 +247,10 @@ func (c Cache) parsePriority() (uint64, error) {
 
 func (c Cache) validateURL(u *url.URL) error {
 	if u == nil {
-		c.logger.Error().Msg("given url is nil")
-
 		return ErrURLRequired
 	}
 
 	if u.Scheme == "" {
-		c.logger.Error().
-			Str("url", u.String()).
-			Msg("hostname should not contain a scheme")
-
 		return ErrURLMustContainScheme
 	}
 
