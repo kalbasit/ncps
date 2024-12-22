@@ -64,7 +64,7 @@ func TestServeHTTP(t *testing.T) {
 		c.SetRecordAgeIgnoreTouch(0)
 
 		t.Run("DELETE is not permitted", func(t *testing.T) {
-			s := server.New(logger, c)
+			s := server.New(c)
 			s.SetDeletePermitted(false)
 
 			ts := httptest.NewServer(s)
@@ -96,7 +96,7 @@ func TestServeHTTP(t *testing.T) {
 		})
 
 		t.Run("DELETE is permitted", func(t *testing.T) {
-			s := server.New(logger, c)
+			s := server.New(c)
 			s.SetDeletePermitted(true)
 
 			ts := httptest.NewServer(s)
@@ -189,7 +189,7 @@ func TestServeHTTP(t *testing.T) {
 		c.AddUpstreamCaches(uc)
 		c.SetRecordAgeIgnoreTouch(0)
 
-		s := server.New(logger, c)
+		s := server.New(c)
 
 		t.Run("narinfo", func(t *testing.T) {
 			t.Run("narinfo does not exist upstream", func(t *testing.T) {
@@ -305,7 +305,7 @@ func TestServeHTTP(t *testing.T) {
 		c.SetRecordAgeIgnoreTouch(0)
 
 		t.Run("PUT is not permitted", func(t *testing.T) {
-			s := server.New(logger, c)
+			s := server.New(c)
 			s.SetPutPermitted(false)
 
 			ts := httptest.NewServer(s)
@@ -351,7 +351,7 @@ func TestServeHTTP(t *testing.T) {
 		})
 
 		t.Run("PUT is permitted", func(t *testing.T) {
-			s := server.New(logger, c)
+			s := server.New(c)
 			s.SetPutPermitted(true)
 
 			ts := httptest.NewServer(s)

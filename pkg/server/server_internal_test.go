@@ -2,12 +2,10 @@ package server
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,9 +16,6 @@ import (
 )
 
 const cacheName = "cache.example.com"
-
-//nolint:gochecknoglobals
-var logger = zerolog.New(io.Discard)
 
 func TestSetDeletePermitted(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -44,7 +39,7 @@ func TestSetDeletePermitted(t *testing.T) {
 	t.Run("false", func(t *testing.T) {
 		t.Parallel()
 
-		s := New(logger, c)
+		s := New(c)
 		s.SetDeletePermitted(false)
 
 		assert.False(t, s.deletePermitted)
@@ -53,7 +48,7 @@ func TestSetDeletePermitted(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		t.Parallel()
 
-		s := New(logger, c)
+		s := New(c)
 		s.SetDeletePermitted(true)
 
 		assert.True(t, s.deletePermitted)
