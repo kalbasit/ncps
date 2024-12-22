@@ -25,12 +25,12 @@ import (
 // ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
 var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
 
-func serveCommand(logger zerolog.Logger) *cli.Command {
+func serveCommand() *cli.Command {
 	return &cli.Command{
 		Name:    "serve",
 		Aliases: []string{"s"},
 		Usage:   "serve the nix binary cache over http",
-		Action:  serveAction(logger.With().Str("cmd", "serve").Logger()),
+		Action:  serveAction(),
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "allow-delete",
@@ -109,8 +109,12 @@ func serveCommand(logger zerolog.Logger) *cli.Command {
 	}
 }
 
-func serveAction(logger zerolog.Logger) cli.ActionFunc {
+func serveAction() cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
+		logger := zerolog.Ctx(ctx).With().Str("cmd", "serve").Logger()
+
+		ctx = logger.WithContext(ctx)
+
 		ctx, cancel := context.WithCancel(ctx)
 
 		g, ctx := errgroup.WithContext(ctx)
