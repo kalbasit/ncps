@@ -58,7 +58,7 @@ func beforeFunc(ctx context.Context, cmd *cli.Command) (context.Context, error) 
 		return ctx, err
 	}
 
-	var output io.Writer = otelWriter
+	var output io.Writer = zerolog.MultiLevelWriter(os.Stdout, otelWriter)
 
 	if term.IsTerminal(int(os.Stdout.Fd())) {
 		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
