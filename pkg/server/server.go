@@ -186,6 +186,13 @@ func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
+	_, span := s.tracer.Start(
+		r.Context(),
+		"getNixCacheInfo",
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+	defer span.End()
+
 	if _, err := w.Write([]byte(nixCacheInfo)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -261,12 +268,22 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"putNarInfo",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		zerolog.Ctx(r.Context()).
+		zerolog.Ctx(ctx).
 			With().
 			Str("narinfo-hash", hash).
 			Logger().
-			WithContext(r.Context()))
+			WithContext(ctx))
 
 	if !s.putPermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -291,12 +308,22 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"deleteNarInfo",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		zerolog.Ctx(r.Context()).
+		zerolog.Ctx(ctx).
 			With().
 			Str("narinfo-hash", hash).
 			Logger().
-			WithContext(r.Context()))
+			WithContext(ctx))
 
 	if !s.deletePermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -330,9 +357,20 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
+		ctx, span := s.tracer.Start(
+			r.Context(),
+			"getNar",
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("nar_hash", hash),
+				attribute.String("nar_url", nu.String()),
+			),
+		)
+		defer span.End()
+
 		r = r.WithContext(
-			nu.NewLogger(*zerolog.Ctx(r.Context())).
-				WithContext(r.Context()))
+			nu.NewLogger(*zerolog.Ctx(ctx)).
+				WithContext(ctx))
 
 		var err error
 
@@ -400,9 +438,20 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 
 	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"putNar",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("nar_hash", hash),
+			attribute.String("nar_url", nu.String()),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
+		nu.NewLogger(*zerolog.Ctx(ctx)).
+			WithContext(ctx))
 
 	var err error
 
@@ -442,9 +491,20 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 
 	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"deleteNar",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("nar_hash", hash),
+			attribute.String("nar_url", nu.String()),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
+		nu.NewLogger(*zerolog.Ctx(ctx)).
+			WithContext(ctx))
 
 	var err error
 
