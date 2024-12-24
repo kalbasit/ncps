@@ -8,7 +8,7 @@ import (
 	"github.com/XSAM/otelsql"
 	"github.com/mattn/go-sqlite3"
 
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 )
 
 // Open opens a sqlite3 database, and creates it if necessary.
