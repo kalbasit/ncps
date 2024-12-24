@@ -13,6 +13,7 @@ import (
 	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	otelchimetric "github.com/riandyrn/otelchi/metric"
 
@@ -46,13 +47,18 @@ type Server struct {
 	cache  *cache.Cache
 	router *chi.Mux
 
+	tracer trace.Tracer
+
 	deletePermitted bool
 	putPermitted    bool
 }
 
 // New returns a new server.
 func New(cache *cache.Cache) *Server {
-	s := &Server{cache: cache}
+	s := &Server{
+		cache:  cache,
+		tracer: otel.Tracer(serverName),
+	}
 
 	s.createRouter()
 
@@ -179,6 +185,9 @@ func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := s.tracer.Start(r.Context())
+		defer span.End()
+
 		hash := chi.URLParam(r, "hash")
 
 		r = r.WithContext(
