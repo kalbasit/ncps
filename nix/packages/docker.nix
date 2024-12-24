@@ -8,19 +8,41 @@
     {
       packages.docker = pkgs.dockerTools.buildLayeredImage {
         name = "kalbasit/ncps";
-        contents = [
-          # required for TLS certificate validation
-          pkgs.cacert
+        contents =
+          let
+            etc-passwd = pkgs.writeTextFile {
+              name = "passwd";
+              text = ''
+                root:x:0:0:Super User:/root:/dev/null
+              '';
+              destination = "/etc/passwd";
+            };
 
-          # required for working with timezones
-          pkgs.tzdata
+            etc-group = pkgs.writeTextFile {
+              name = "group";
+              text = ''
+                root:x:0:
+              '';
+              destination = "/etc/group";
+            };
+          in
+          [
+            # required for TLS certificate validation
+            pkgs.cacert
 
-          # required for migrating the database
-          pkgs.dbmate
+            # required for working with timezones
+            pkgs.tzdata
 
-          # the ncps package
-          config.packages.ncps
-        ];
+            # required for migrating the database
+            pkgs.dbmate
+
+            # the ncps package
+            config.packages.ncps
+
+            # required for Open-Telemetry auto-detection of process information
+            etc-passwd
+            etc-group
+          ];
         config = {
           Cmd = [ "/bin/ncps" ];
           Env = [
