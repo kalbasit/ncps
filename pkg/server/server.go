@@ -10,7 +10,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/riandyrn/otelchi"
+	otelchimetric "github.com/riandyrn/otelchi/metric"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -64,6 +67,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.Se
 
 func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
+
+	mp := otel.GetMeterProvider()
+	baseCfg := otelchimetric.NewBaseConfig("ncps", otelchimetric.WithMeterProvider(mp))
+
+	s.router.Use(
+		otelchi.Middleware("ncps", otelchi.WithChiRoutes(s.router)),
+		otelchimetric.NewRequestDurationMillis(baseCfg),
+		otelchimetric.NewRequestInFlight(baseCfg),
+		otelchimetric.NewResponseSizeBytes(baseCfg),
+	)
 
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RequestID)
