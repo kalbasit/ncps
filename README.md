@@ -29,6 +29,7 @@ ncps addresses these issues by acting as a central cache on your local network.
 - **Secure caching:** ncps signs cached paths with its own key, ensuring integrity and authenticity.
 - **Cache size management:** Configure a maximum cache size and a cron schedule to automatically remove least recently used (LRU) store paths, preventing the cache from growing indefinitely.
 - **Zstandard compression support:** ncps supports storing NAR files compressed with Zstandard (zstd) as provided by upstream caches like [Harmonia](https://github.com/nix-community/harmonia). It adjusts the `narinfo` metadata accordingly to reflect the correct filesize and compression method.
+- **OpenTelemetry logging:** Forward logs to an OpenTelemetry collector for centralized logging and monitoring.
 
 ## Installation
 
@@ -180,9 +181,16 @@ spec:
 
 </details>
 
-## Configuration
+## Global Options
 
-ncps can be configured using the following flags:
+These options can be used with any `ncps` command:
+
+- `--log-level`: Set the log level (default: "info"). Possible values: "debug", "info", "warn", "error". (Environment variable: `$LOG_LEVEL`)
+- `--log-otel-grpc-endpoint`: Forward logs to an OpenTelemetry gRPC endpoint. (Environment variable: `$LOG_OTEL_GRPC_ENDPOINT`)
+
+## Serve Command Options
+
+These options are specific to the `ncps serve` command:
 
 - `--allow-delete`: Whether to allow the DELETE verb to delete `narinfo` and `nar` files from the cache (default: false). (Environment variable: `$ALLOW_DELETE_VERB`)
 - `--allow-put`: Whether to allow the PUT verb to push `narinfo` and `nar` files directly to the cache (default: false). (Environment variable: `$ALLOW_PUT_VERB`)
