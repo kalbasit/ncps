@@ -200,7 +200,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		"GetNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
-			attribute.String("nar-url", narURL.String()),
+			attribute.String("nar_url", narURL.String()),
 		),
 	)
 	defer span.End()
@@ -233,7 +233,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 		"PutNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
-			attribute.String("nar-url", narURL.String()),
+			attribute.String("nar_url", narURL.String()),
 		),
 	)
 	defer span.End()
@@ -264,7 +264,7 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 		"DeleteNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
-			attribute.String("nar-url", narURL.String()),
+			attribute.String("nar_url", narURL.String()),
 		),
 	)
 	defer span.End()
@@ -363,7 +363,7 @@ func (c *Cache) getNarFromStore(
 		"getNarFromStore",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
-			attribute.String("nar-url", narURL.String()),
+			attribute.String("nar_url", narURL.String()),
 		),
 	)
 	defer span.End()
