@@ -12,6 +12,9 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -38,16 +41,19 @@ var (
 	ErrSignatureValidationFailed = errors.New("signature validation has failed")
 )
 
+const tracerName = "github.com/kalbasit/ncps/pkg/cache/upstream"
+
 // Cache represents the upstream cache service.
 type Cache struct {
 	httpClient *http.Client
 	url        *url.URL
+	tracer     trace.Tracer
 	priority   uint64
 	publicKeys []signature.PublicKey
 }
 
 func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
-	c := Cache{}
+	c := Cache{tracer: otel.Tracer(tracerName)}
 
 	if u == nil {
 		return c, ErrURLRequired
@@ -97,6 +103,16 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"GetNarInfo",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("narinfo-url", u.String()),
+		),
+	)
+	defer span.End()
 
 	ctx = zerolog.Ctx(ctx).
 		With().
