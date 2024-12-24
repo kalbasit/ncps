@@ -126,10 +126,6 @@ func New() *cli.Command {
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
 func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) error, error) {
-	if !cmd.Bool("otel-enabled") {
-		return func(context.Context) error { return nil }, nil
-	}
-
 	var shutdownFuncs []func(context.Context) error
 
 	// shutdown calls cleanup functions registered via shutdownFuncs.
@@ -166,9 +162,10 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	)
 
 	colURL := cmd.String("otel-grpc-url")
+	enabled := cmd.Bool("otel-enabled")
 
 	// Set up trace provider.
-	tracerProvider, err := newTraceProvider(ctx, colURL, res)
+	tracerProvider, err := newTraceProvider(ctx, enabled, colURL, res)
 	if err != nil {
 		return shutdown, handleErr(err)
 	}
@@ -177,7 +174,7 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	otel.SetTracerProvider(tracerProvider)
 
 	// Set up meter provider.
-	meterProvider, err := newMeterProvider(ctx, colURL, res)
+	meterProvider, err := newMeterProvider(ctx, enabled, colURL, res)
 	if err != nil {
 		return shutdown, handleErr(err)
 	}
@@ -186,7 +183,7 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	otel.SetMeterProvider(meterProvider)
 
 	// Set up logger provider.
-	loggerProvider, err := newLoggerProvider(ctx, colURL, res)
+	loggerProvider, err := newLoggerProvider(ctx, enabled, colURL, res)
 	if err != nil {
 		return shutdown, handleErr(err)
 	}
@@ -204,16 +201,23 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
-func newTraceProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdktrace.TracerProvider, error) {
+func newTraceProvider(
+	ctx context.Context,
+	enabled bool,
+	colURL string,
+	res *resource.Resource,
+) (*sdktrace.TracerProvider, error) {
 	var (
 		traceExporter sdktrace.SpanExporter
 		err           error
 	)
 
-	if colURL != "" {
+	if enabled && colURL != "" {
 		traceExporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(colURL))
-	} else {
+	} else if enabled {
 		traceExporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
+	} else {
+		traceExporter, err = stdouttrace.New(stdouttrace.WithWriter(io.Discard))
 	}
 
 	if err != nil {
@@ -228,16 +232,23 @@ func newTraceProvider(ctx context.Context, colURL string, res *resource.Resource
 	return traceProvider, nil
 }
 
-func newMeterProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdkmetric.MeterProvider, error) {
+func newMeterProvider(
+	ctx context.Context,
+	enabled bool,
+	colURL string,
+	res *resource.Resource,
+) (*sdkmetric.MeterProvider, error) {
 	var (
 		metricExporter sdkmetric.Exporter
 		err            error
 	)
 
-	if colURL != "" {
+	if enabled && colURL != "" {
 		metricExporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
-	} else {
+	} else if enabled {
 		metricExporter, err = stdoutmetric.New()
+	} else {
+		metricExporter, err = stdoutmetric.New(stdoutmetric.WithWriter(io.Discard))
 	}
 
 	if err != nil {
@@ -252,16 +263,23 @@ func newMeterProvider(ctx context.Context, colURL string, res *resource.Resource
 	return meterProvider, nil
 }
 
-func newLoggerProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdklog.LoggerProvider, error) {
+func newLoggerProvider(
+	ctx context.Context,
+	enabled bool,
+	colURL string,
+	res *resource.Resource,
+) (*sdklog.LoggerProvider, error) {
 	var (
 		logExporter sdklog.Exporter
 		err         error
 	)
 
-	if colURL != "" {
+	if enabled && colURL != "" {
 		logExporter, err = otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
-	} else {
+	} else if enabled {
 		logExporter, err = stdoutlog.New()
+	} else {
+		logExporter, err = stdoutlog.New(stdoutlog.WithWriter(io.Discard))
 	}
 
 	if err != nil {
