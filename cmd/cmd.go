@@ -11,7 +11,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 
-	"github.com/kalbasit/ncps/pkg/otellogging"
+	"github.com/kalbasit/ncps/pkg/otelzerolog"
 )
 
 // Version defines the version of the binary, and is meant to be set with ldflags at build time.
@@ -53,7 +53,7 @@ func beforeFunc(ctx context.Context, cmd *cli.Command) (context.Context, error) 
 	}
 
 	// Create the OpenTelemetry writer
-	otelWriter, err := otellogging.NewOtelWriter(ctx, "localhost:14317", "ncps")
+	otelWriter, err := otelzerolog.NewOtelWriter(ctx, "localhost:14317", "ncps")
 	if err != nil {
 		return ctx, err
 	}
