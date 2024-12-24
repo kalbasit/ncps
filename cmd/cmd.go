@@ -15,6 +15,9 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -117,10 +120,6 @@ func New() *cli.Command {
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
 func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) error, error) {
-	if colURL := cmd.String("otel-grpc-endpoint"); colURL == "" {
-		return func(context.Context) error { return nil }, nil
-	}
-
 	var shutdownFuncs []func(context.Context) error
 
 	// shutdown calls cleanup functions registered via shutdownFuncs.
@@ -196,7 +195,17 @@ func newPropagator() propagation.TextMapPropagator {
 }
 
 func newTraceProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdktrace.TracerProvider, error) {
-	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(colURL))
+	var (
+		traceExporter sdktrace.SpanExporter
+		err           error
+	)
+
+	if colURL != "" {
+		traceExporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(colURL))
+	} else {
+		traceExporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +219,17 @@ func newTraceProvider(ctx context.Context, colURL string, res *resource.Resource
 }
 
 func newMeterProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdkmetric.MeterProvider, error) {
-	metricExporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
+	var (
+		metricExporter sdkmetric.Exporter
+		err            error
+	)
+
+	if colURL != "" {
+		metricExporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
+	} else {
+		metricExporter, err = stdoutmetric.New()
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +243,17 @@ func newMeterProvider(ctx context.Context, colURL string, res *resource.Resource
 }
 
 func newLoggerProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdklog.LoggerProvider, error) {
-	logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
+	var (
+		logExporter sdklog.Exporter
+		err         error
+	)
+
+	if colURL != "" {
+		logExporter, err = otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
+	} else {
+		logExporter, err = stdoutlog.New()
+	}
+
 	if err != nil {
 		return nil, err
 	}
