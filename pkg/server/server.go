@@ -13,6 +13,7 @@ import (
 	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	otelchimetric "github.com/riandyrn/otelchi/metric"
@@ -47,13 +48,18 @@ type Server struct {
 	cache  *cache.Cache
 	router *chi.Mux
 
+	tracer trace.Tracer
+
 	deletePermitted bool
 	putPermitted    bool
 }
 
 // New returns a new server.
 func New(cache *cache.Cache) *Server {
-	s := &Server{cache: cache}
+	s := &Server{
+		cache:  cache,
+		tracer: otel.Tracer(tracerName),
+	}
 
 	s.createRouter()
 
@@ -194,12 +200,22 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
+		ctx, span := s.tracer.Start(
+			r.Context(),
+			"getNarInfo",
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("narinfo_hash", hash),
+			),
+		)
+		defer span.End()
+
 		r = r.WithContext(
-			zerolog.Ctx(r.Context()).
+			zerolog.Ctx(ctx).
 				With().
 				Str("narinfo-hash", hash).
 				Logger().
-				WithContext(r.Context()))
+				WithContext(ctx))
 
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
