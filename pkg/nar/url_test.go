@@ -315,6 +315,12 @@ func TestString(t *testing.T) {
 	}{
 		{
 			narURL: nar.URL{
+				Hash: "abc123",
+			},
+			string: "nar/abc123.nar",
+		},
+		{
+			narURL: nar.URL{
 				Hash:        "abc123",
 				Compression: nar.CompressionTypeNone,
 			},
