@@ -188,7 +188,7 @@ func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 	_, span := s.tracer.Start(
 		r.Context(),
-		"getNixCacheInfo",
+		"server.getNixCacheInfo",
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
 	defer span.End()
@@ -209,7 +209,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 		ctx, span := s.tracer.Start(
 			r.Context(),
-			"getNarInfo",
+			"server.getNarInfo",
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
 				attribute.String("narinfo_hash", hash),
@@ -270,7 +270,7 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 
 	ctx, span := s.tracer.Start(
 		r.Context(),
-		"putNarInfo",
+		"server.putNarInfo",
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
@@ -310,7 +310,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 
 	ctx, span := s.tracer.Start(
 		r.Context(),
-		"deleteNarInfo",
+		"server.deleteNarInfo",
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
@@ -372,7 +372,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		ctx, span := s.tracer.Start(
 			r.Context(),
-			"getNar",
+			"server.getNar",
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
 				attribute.String("nar_hash", hash),
@@ -453,7 +453,7 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 
 	ctx, span := s.tracer.Start(
 		r.Context(),
-		"putNar",
+		"server.putNar",
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			attribute.String("nar_hash", hash),
@@ -506,7 +506,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 
 	ctx, span := s.tracer.Start(
 		r.Context(),
-		"deleteNar",
+		"server.deleteNar",
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			attribute.String("nar_hash", hash),
