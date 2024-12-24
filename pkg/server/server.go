@@ -39,7 +39,7 @@ const (
 WantMassQuery: 1
 Priority: 10`
 
-	serverName = "github.com/kalbasit/ncps/pkg/server"
+	tracerName = "github.com/kalbasit/ncps/pkg/server"
 )
 
 // Server represents the main HTTP server.
@@ -73,13 +73,13 @@ func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
 
 	mp := otel.GetMeterProvider()
-	baseCfg := otelchimetric.NewBaseConfig(serverName, otelchimetric.WithMeterProvider(mp))
+	baseCfg := otelchimetric.NewBaseConfig(tracerName, otelchimetric.WithMeterProvider(mp))
 
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(
-		otelchi.Middleware(serverName, otelchi.WithChiRoutes(s.router)),
+		otelchi.Middleware(tracerName, otelchi.WithChiRoutes(s.router)),
 		otelchimetric.NewRequestDurationMillis(baseCfg),
 		otelchimetric.NewRequestInFlight(baseCfg),
 		otelchimetric.NewResponseSizeBytes(baseCfg),
