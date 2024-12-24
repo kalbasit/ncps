@@ -942,7 +942,7 @@ func (c *Cache) purgeNarInfo(
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
-			attribute.String("narinfo-url", narURL.String()),
+			attribute.String("narinfo_url", narURL.String()),
 		),
 	)
 	defer span.End()
