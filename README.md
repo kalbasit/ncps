@@ -185,8 +185,9 @@ spec:
 
 These options can be used with any `ncps` command:
 
+- `--otel-enabled`: Enable OpenTelemetry logs, metrics, and tracing (default: false). (Environment variable: `$OTEL_ENABLED`)
 - `--log-level`: Set the log level (default: "info"). Possible values: "debug", "info", "warn", "error". (Environment variable: `$LOG_LEVEL`)
-- `--log-otel-grpc-endpoint`: Forward logs to an OpenTelemetry gRPC endpoint. (Environment variable: `$LOG_OTEL_GRPC_ENDPOINT`)
+- `--otel-grpc-url`: Configure OpenTelemetry gRPC URL. Missing or "https" scheme enables secure gRPC, "insecure" otherwise. Omit to emit telemetry to stdout. (Environment variable: `$OTEL_GRPC_URL`)
 
 ## Serve Command Options
 

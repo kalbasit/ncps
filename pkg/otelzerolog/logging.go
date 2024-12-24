@@ -6,47 +6,25 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/sdk/resource"
-
-	sdklog "go.opentelemetry.io/otel/sdk/log"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	"go.opentelemetry.io/otel/log/global"
 )
 
 // OtelWriter implements zerolog.LevelWriter interface.
 type OtelWriter struct {
-	logger      log.Logger
-	serviceName string
-	logExporter *otlploggrpc.Exporter
+	logger log.Logger
 }
 
 // NewOtelWriter creates a new OpenTelemetry writer for zerolog.
-func NewOtelWriter(ctx context.Context, colURL, serviceName string) (*OtelWriter, error) {
-	// Create OTLP logs exporter
-	logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
-	if err != nil {
-		return nil, err
+func NewOtelWriter(loggerProvider log.LoggerProvider) (*OtelWriter, error) {
+	if loggerProvider == nil {
+		loggerProvider = global.GetLoggerProvider()
 	}
-
-	// Create resource with service name
-	res := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(serviceName),
-	)
-
-	// Create logger provider
-	loggerProvider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
-		sdklog.WithResource(res),
-	)
 
 	logger := loggerProvider.Logger("otel-zerolog")
 
 	return &OtelWriter{
-		logger:      logger,
-		serviceName: serviceName,
-		logExporter: logExporter,
+		logger: logger,
 	}, nil
 }
 
@@ -88,11 +66,6 @@ func (w *OtelWriter) Write(p []byte) (n int, err error) {
 // WriteLevel implements zerolog.LevelWriter.
 func (w *OtelWriter) WriteLevel(_ zerolog.Level, p []byte) (n int, err error) {
 	return w.Write(p)
-}
-
-// Close shuts down the OpenTelemetry exporter.
-func (w *OtelWriter) Close(ctx context.Context) error {
-	return w.logExporter.Shutdown(ctx)
 }
 
 // convertLevel converts zerolog level to OpenTelemetry severity.
