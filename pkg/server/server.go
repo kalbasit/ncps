@@ -83,13 +83,13 @@ func (s *Server) createRouter() {
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(requestLogger)
 	s.router.Use(
 		otelchi.Middleware(serverName, otelchi.WithChiRoutes(s.router)),
 		otelchimetric.NewRequestDurationMillis(baseCfg),
 		otelchimetric.NewRequestInFlight(baseCfg),
 		otelchimetric.NewResponseSizeBytes(baseCfg),
 	)
+	s.router.Use(s.requestLogger)
 
 	s.router.Get(routeIndex, s.getIndex)
 
@@ -111,19 +111,33 @@ func (s *Server) createRouter() {
 	s.router.Delete(routeNar, s.deleteNar)
 }
 
-func requestLogger(next http.Handler) http.Handler {
-	fn := func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
-		reqID := middleware.GetReqID(r.Context())
 
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		span := trace.SpanFromContext(r.Context())
 
 		log := zerolog.Ctx(r.Context()).With().
 			Str("method", r.Method).
 			Str("request-uri", r.RequestURI).
 			Str("from", r.RemoteAddr).
-			Str("reqID", reqID).
 			Logger()
+
+		if span.SpanContext().HasTraceID() {
+			log = log.
+				With().
+				Str("trace-id", span.SpanContext().TraceID().String()).
+				Logger()
+		}
+
+		if span.SpanContext().HasSpanID() {
+			log = log.
+				With().
+				Str("span-id", span.SpanContext().SpanID().String()).
+				Logger()
+		}
+
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
 			log = log.With().
@@ -145,9 +159,7 @@ func requestLogger(next http.Handler) http.Handler {
 		r = r.WithContext(log.WithContext(r.Context()))
 
 		next.ServeHTTP(ww, r)
-	}
-
-	return http.HandlerFunc(fn)
+	})
 }
 
 func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
@@ -185,9 +197,6 @@ func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, span := s.tracer.Start(r.Context())
-		defer span.End()
-
 		hash := chi.URLParam(r, "hash")
 
 		r = r.WithContext(
