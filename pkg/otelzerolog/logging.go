@@ -144,7 +144,7 @@ func getKeyValueForMap(logEntry map[string]interface{}) []log.KeyValue {
 		case []interface{}:
 			kvs = append(kvs, log.Slice(k, getValuesForSlice(val)...))
 		default:
-			panic(fmt.Sprintf("Typeof(%q) => %T: not known", k, v))
+			fmt.Printf("ERROR! Typeof(%q) => %T: not known", k, v)
 		}
 	}
 
@@ -171,7 +171,7 @@ func getValuesForSlice(list []interface{}) []log.Value {
 		case []interface{}:
 			vs = append(vs, log.SliceValue(getValuesForSlice(val)...))
 		default:
-			panic(fmt.Sprintf("Typeof(%#v) => %T: not known", v, v))
+			fmt.Printf("ERROR! Typeof(%#v) => %T: not known", v, v)
 		}
 	}
 
