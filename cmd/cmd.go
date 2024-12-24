@@ -17,13 +17,14 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
+
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 
 	"github.com/kalbasit/ncps/pkg/otelzerolog"
 )
@@ -59,9 +60,9 @@ func New() *cli.Command {
 
 			var output io.Writer = os.Stdout
 
-			colURL := cmd.String("log-otel-grpc-endpoint")
+			colURL := cmd.String("otel-grpc-endpoint")
 			if colURL != "" {
-				otelWriter, err = otelzerolog.NewOtelWriter(ctx, colURL, "ncps")
+				otelWriter, err := otelzerolog.NewOtelWriter(nil)
 				if err != nil {
 					return ctx, err
 				}
@@ -115,7 +116,7 @@ func New() *cli.Command {
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
-func setupOTelSDK(ctx context.Context, cmd *cli.Command) (shutdown func(context.Context) error, err error) {
+func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) error, error) {
 	if colURL := cmd.String("otel-grpc-endpoint"); colURL == "" {
 		return func(context.Context) error { return nil }, nil
 	}
@@ -125,7 +126,7 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (shutdown func(context.
 	// shutdown calls cleanup functions registered via shutdownFuncs.
 	// The errors from the calls are joined.
 	// Each registered cleanup will be invoked once.
-	shutdown = func(ctx context.Context) error {
+	shutdown := func(ctx context.Context) error {
 		defer func() {
 			shutdownFuncs = nil
 		}()
@@ -142,42 +143,49 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (shutdown func(context.
 	}
 
 	// handleErr calls shutdown for cleanup and makes sure that all errors are returned.
-	handleErr := func(inErr error) {
-		err = errors.Join(inErr, shutdown(ctx))
+	handleErr := func(inErr error) error {
+		return errors.Join(inErr, shutdown(ctx))
 	}
 
 	// Set up propagator.
 	prop := newPropagator()
 	otel.SetTextMapPropagator(prop)
 
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceName(cmd.Root().Name),
+	)
+
+	colURL := cmd.String("otel-grpc-endpoint")
+
 	// Set up trace provider.
-	tracerProvider, err := newTraceProvider(ctx, cmd)
+	tracerProvider, err := newTraceProvider(ctx, colURL, res)
 	if err != nil {
-		handleErr(err)
-		return
+		return shutdown, handleErr(err)
 	}
+
 	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
 	otel.SetTracerProvider(tracerProvider)
 
 	// Set up meter provider.
-	meterProvider, err := newMeterProvider(ctx, cmd)
+	meterProvider, err := newMeterProvider(ctx, colURL, res)
 	if err != nil {
-		handleErr(err)
-		return
+		return shutdown, handleErr(err)
 	}
+
 	shutdownFuncs = append(shutdownFuncs, meterProvider.Shutdown)
 	otel.SetMeterProvider(meterProvider)
 
 	// Set up logger provider.
-	loggerProvider, err := newLoggerProvider(ctx, cmd)
+	loggerProvider, err := newLoggerProvider(ctx, colURL, res)
 	if err != nil {
-		handleErr(err)
-		return
+		return shutdown, handleErr(err)
 	}
+
 	shutdownFuncs = append(shutdownFuncs, loggerProvider.Shutdown)
 	global.SetLoggerProvider(loggerProvider)
 
-	return
+	return shutdown, nil
 }
 
 func newPropagator() propagation.TextMapPropagator {
@@ -187,16 +195,11 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
-func newTraceProvider(ctx context.Context, cmd *cli.Command) (*sdktrace.TracerProvider, error) {
-	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(cmd.String("otel-grpc-endpoint")))
+func newTraceProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdktrace.TracerProvider, error) {
+	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(colURL))
 	if err != nil {
 		return nil, err
 	}
-
-	res := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(cmd.Root().Name),
-	)
 
 	traceProvider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(traceExporter),
@@ -206,38 +209,30 @@ func newTraceProvider(ctx context.Context, cmd *cli.Command) (*sdktrace.TracerPr
 	return traceProvider, nil
 }
 
-func newMeterProvider(ctx context.Context, cmd *cli.Command) (*sdkmetric.MeterProvider, error) {
-	metricExporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(cmd.String("otel-grpc-endpoint")))
+func newMeterProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdkmetric.MeterProvider, error) {
+	metricExporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
 	if err != nil {
 		return nil, err
 	}
-
-	res := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(cmd.Root().Name),
-	)
 
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
 	)
+
 	return meterProvider, nil
 }
 
-func newLoggerProvider(ctx context.Context, cmd *cli.Command) (*sdklog.LoggerProvider, error) {
-	logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(cmd.String("otel-grpc-endpoint")))
+func newLoggerProvider(ctx context.Context, colURL string, res *resource.Resource) (*sdklog.LoggerProvider, error) {
+	logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
 	if err != nil {
 		return nil, err
 	}
-
-	res := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(cmd.Root().Name),
-	)
 
 	loggerProvider := sdklog.NewLoggerProvider(
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
 		sdklog.WithResource(res),
 	)
+
 	return loggerProvider, nil
 }

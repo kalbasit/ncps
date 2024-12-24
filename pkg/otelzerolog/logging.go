@@ -16,7 +16,7 @@ type OtelWriter struct {
 }
 
 // NewOtelWriter creates a new OpenTelemetry writer for zerolog.
-func NewOtelWriter(ctx context.Context, loggerProvider log.LoggerProvider) (*OtelWriter, error) {
+func NewOtelWriter(loggerProvider log.LoggerProvider) (*OtelWriter, error) {
 	if loggerProvider == nil {
 		loggerProvider = global.GetLoggerProvider()
 	}
