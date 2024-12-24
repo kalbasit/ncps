@@ -109,7 +109,9 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		"GetNarInfo",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
-			attribute.String("narinfo-url", u.String()),
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_url", u),
+			attribute.String("upstream_url", c.url.String()),
 		),
 	)
 	defer span.End()
@@ -122,11 +124,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		Logger().
 		WithContext(ctx)
 
-	// create a new context not associated with any request because we don't want
-	// downstream HTTP request to cancel this.
-	detachedCtx := zerolog.Ctx(ctx).WithContext(context.Background())
-
-	r, err := http.NewRequestWithContext(detachedCtx, "GET", u, nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -182,6 +180,17 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
+	ctx, span := c.tracer.Start(
+		ctx,
+		"GetNar",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("nar_url", u),
+			attribute.String("upstream_url", c.url.String()),
+		),
+	)
+	defer span.End()
+
 	ctx = narURL.NewLogger(
 		zerolog.Ctx(ctx).
 			With().
@@ -190,11 +199,7 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 			Logger(),
 	).WithContext(ctx)
 
-	// create a new context not associated with any request because we don't want
-	// pulling from upstream to be associated with a user request.
-	detachedCtx := zerolog.Ctx(ctx).WithContext(context.Background())
-
-	r, err := http.NewRequestWithContext(detachedCtx, "GET", u, nil)
+	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
