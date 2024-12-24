@@ -18,6 +18,9 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -42,7 +45,10 @@ var (
 	errNarInfoPurged = errors.New("the narinfo was purged")
 )
 
-const recordAgeIgnoreTouch = 5 * time.Minute
+const (
+	recordAgeIgnoreTouch = 5 * time.Minute
+	tracerName           = "github.com/kalbasit/ncps/pkg/cache"
+)
 
 // Cache represents the main cache service.
 type Cache struct {
@@ -51,6 +57,8 @@ type Cache struct {
 	upstreamCaches []upstream.Cache
 	maxSize        uint64
 	db             *database.Queries
+
+	tracer trace.Tracer
 
 	// stores
 	configStore  storage.ConfigStore
@@ -86,6 +94,7 @@ func New(
 ) (*Cache, error) {
 	c := &Cache{
 		db:                   db,
+		tracer:               otel.Tracer(tracerName),
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
@@ -186,6 +195,16 @@ func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey
 // stored and finally returned.
 // NOTE: It's the caller responsibility to close the body.
 func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"GetNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar-url", narURL.String()),
+		),
+	)
+	defer span.End()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -209,6 +228,16 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 // PutNar records the NAR (given as an io.Reader) into the store.
 func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) error {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"PutNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar-url", narURL.String()),
+		),
+	)
+	defer span.End()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -230,6 +259,16 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 
 // DeleteNar deletes the nar from the store.
 func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"DeleteNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar-url", narURL.String()),
+		),
+	)
+	defer span.End()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -255,6 +294,16 @@ func (c *Cache) pullNar(
 
 		close(doneC)
 	}
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"pullNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+		),
+	)
+	defer span.End()
 
 	now := time.Now()
 
@@ -309,6 +358,16 @@ func (c *Cache) getNarFromStore(
 	ctx context.Context,
 	narURL *nar.URL,
 ) (int64, io.ReadCloser, error) {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"getNarFromStore",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar-url", narURL.String()),
+		),
+	)
+	defer span.End()
+
 	size, r, err := c.narStore.GetNar(ctx, *narURL)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
@@ -360,9 +419,15 @@ func (c *Cache) getNarFromUpstream(
 	narInfo *narinfo.NarInfo,
 	enableZSTD bool,
 ) (*http.Response, error) {
-	// create a new context not associated with any request because we don't want
-	// pulling from upstream to be associated with a user request.
-	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
+	ctx, span := c.tracer.Start(
+		ctx,
+		"getNarFromUpstream",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+		),
+	)
+	defer span.End()
 
 	var mutators []func(*http.Request)
 
@@ -426,6 +491,16 @@ func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
 func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"GetNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -471,6 +546,16 @@ func (c *Cache) pullNarInfo(
 
 		close(doneC)
 	}
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"pullNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
 
 	now := time.Now()
 
@@ -522,7 +607,7 @@ func (c *Cache) pullNarInfo(
 		<-narDoneC
 	}
 
-	if err := c.signNarInfo(ctx, narInfo); err != nil {
+	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
@@ -565,6 +650,16 @@ func (c *Cache) pullNarInfo(
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
 func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) error {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"PutNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -586,7 +681,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		return fmt.Errorf("error parsing narinfo: %w", err)
 	}
 
-	if err := c.signNarInfo(ctx, narInfo); err != nil {
+	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
 		return fmt.Errorf("error signing the narinfo: %w", err)
 	}
 
@@ -599,6 +694,16 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 
 // DeleteNarInfo deletes the narInfo from the store.
 func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"DeleteNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -612,9 +717,15 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 }
 
 func (c *Cache) prePullNarInfo(ctx context.Context, hash string) chan struct{} {
-	// create a new context not associated with any request because we don't want
-	// pulling from upstream to be associated with a user request.
-	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
+	ctx, span := c.tracer.Start(
+		ctx,
+		"prePullNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
 
 	c.muUpstreamJobs.Lock()
 
@@ -641,9 +752,15 @@ func (c *Cache) prePullNar(
 	narInfo *narinfo.NarInfo,
 	enableZSTD bool,
 ) chan struct{} {
-	// create a new context not associated with any request because we don't want
-	// pulling from upstream to be associated with a user request.
-	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
+	ctx, span := c.tracer.Start(
+		ctx,
+		"prePullNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+		),
+	)
+	defer span.End()
 
 	c.muUpstreamJobs.Lock()
 
@@ -659,7 +776,17 @@ func (c *Cache) prePullNar(
 	return doneC
 }
 
-func (c *Cache) signNarInfo(_ context.Context, narInfo *narinfo.NarInfo) error {
+func (c *Cache) signNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
+	_, span := c.tracer.Start(
+		ctx,
+		"signNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	var sigs []signature.Signature
 
 	for _, sig := range narInfo.Signatures {
@@ -681,6 +808,16 @@ func (c *Cache) signNarInfo(_ context.Context, narInfo *narinfo.NarInfo) error {
 }
 
 func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"getNarInfoFromStore",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	ni, err := c.narInfoStore.GetNarInfo(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
@@ -764,9 +901,15 @@ func (c *Cache) getNarInfoFromUpstream(
 	ctx context.Context,
 	hash string,
 ) (*upstream.Cache, *narinfo.NarInfo, error) {
-	// create a new context not associated with any request because we don't want
-	// downstream HTTP request to cancel this.
-	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
+	ctx, span := c.tracer.Start(
+		ctx,
+		"getNarInfoFromUpstream",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
 
 	for _, uc := range c.upstreamCaches {
 		narInfo, err := uc.GetNarInfo(ctx, hash)
@@ -793,6 +936,17 @@ func (c *Cache) purgeNarInfo(
 	hash string,
 	narURL *nar.URL,
 ) error {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"purgeNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo-url", narURL.String()),
+		),
+	)
+	defer span.End()
+
 	tx, err := c.db.DB().Begin()
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
@@ -845,9 +999,15 @@ func (c *Cache) storeInDatabase(
 	hash string,
 	narInfo *narinfo.NarInfo,
 ) error {
-	// create a new context not associated with any request because we don't want
-	// downstream HTTP request to cancel this.
-	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
+	ctx, span := c.tracer.Start(
+		ctx,
+		"storeInDatabase",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
 
 	zerolog.Ctx(ctx).
 		Info().
@@ -914,6 +1074,16 @@ func (c *Cache) storeInDatabase(
 }
 
 func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
+	ctx, span := c.tracer.Start(
+		ctx,
+		"deleteNarInfoFromStore",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	if !c.narInfoStore.HasNarInfo(ctx, hash) {
 		return storage.ErrNotFound
 	}
