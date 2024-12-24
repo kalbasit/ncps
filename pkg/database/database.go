@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/XSAM/otelsql"
 	"github.com/mattn/go-sqlite3"
+
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
 // Open opens a sqlite3 database, and creates it if necessary.
@@ -19,7 +22,9 @@ func Open(dbURL string) (*Queries, error) {
 
 	switch u.Scheme {
 	case "sqlite":
-		sdb, err = sql.Open("sqlite3", u.Path)
+		sdb, err = otelsql.Open("sqlite3", u.Path, otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+		))
 	default:
 		//nolint:err113
 		return nil, fmt.Errorf("driver %q unrecognized", u.Scheme)
