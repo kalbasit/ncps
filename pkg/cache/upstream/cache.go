@@ -106,7 +106,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 
 	ctx, span := c.tracer.Start(
 		ctx,
-		"GetNarInfo",
+		"upstream.GetNarInfo",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
@@ -182,7 +182,7 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 
 	ctx, span := c.tracer.Start(
 		ctx,
-		"GetNar",
+		"upstream.GetNar",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("nar_url", u),
