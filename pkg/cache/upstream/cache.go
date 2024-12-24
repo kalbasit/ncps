@@ -106,7 +106,11 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		Logger().
 		WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	// create a new context not associated with any request because we don't want
+	// downstream HTTP request to cancel this.
+	detachedCtx := zerolog.Ctx(ctx).WithContext(context.Background())
+
+	r, err := http.NewRequestWithContext(detachedCtx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -170,7 +174,11 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 			Logger(),
 	).WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	// create a new context not associated with any request because we don't want
+	// pulling from upstream to be associated with a user request.
+	detachedCtx := zerolog.Ctx(ctx).WithContext(context.Background())
+
+	r, err := http.NewRequestWithContext(detachedCtx, "GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
