@@ -37,6 +37,17 @@ func New() *cli.Command {
 					return err
 				},
 			},
+			&cli.StringFlag{
+				Name:    "log-otel-grpc-endpoint",
+				Usage:   "Forward logs to an OpenTelemetry gRPC endpoint",
+				Sources: cli.EnvVars("LOG_OTEL_GRPC_ENDPOINT"),
+				Value:   "",
+				Validator: func(lvl string) error {
+					_, err := zerolog.ParseLevel(lvl)
+
+					return err
+				},
+			},
 		},
 		Commands: []*cli.Command{
 			serveCommand(),
