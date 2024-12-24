@@ -22,12 +22,9 @@ type OtelWriter struct {
 }
 
 // NewOtelWriter creates a new OpenTelemetry writer for zerolog.
-func NewOtelWriter(ctx context.Context, endpoint, serviceName string) (*OtelWriter, error) {
+func NewOtelWriter(ctx context.Context, colURL, serviceName string) (*OtelWriter, error) {
 	// Create OTLP logs exporter
-	logExporter, err := otlploggrpc.New(ctx,
-		otlploggrpc.WithEndpoint(endpoint),
-		otlploggrpc.WithInsecure(),
-	)
+	logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +41,7 @@ func NewOtelWriter(ctx context.Context, endpoint, serviceName string) (*OtelWrit
 		sdklog.WithResource(res),
 	)
 
-	logger := loggerProvider.Logger("zerolog-otel")
+	logger := loggerProvider.Logger("otel-zerolog")
 
 	return &OtelWriter{
 		logger:      logger,
