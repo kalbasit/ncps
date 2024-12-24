@@ -12,6 +12,9 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -33,19 +36,26 @@ var (
 )
 
 const (
-	fileMode = 0o400
-	dirMode  = 0o700
+	fileMode   = 0o400
+	dirMode    = 0o700
+	tracerName = "github.com/kalbasit/ncps/pkg/storage/local"
 )
 
 // Store represents a local store and implements storage.Store.
-type Store struct{ path string }
+type Store struct {
+	path   string
+	tracer trace.Tracer
+}
 
 func New(ctx context.Context, path string) (*Store, error) {
 	if err := validatePath(ctx, path); err != nil {
 		return nil, err
 	}
 
-	s := &Store{path: path}
+	s := &Store{
+		path:   path,
+		tracer: otel.Tracer(tracerName),
+	}
 
 	if err := s.setupDirs(); err != nil {
 		return nil, fmt.Errorf("error setting up the store directory: %w", err)
@@ -55,8 +65,18 @@ func New(ctx context.Context, path string) (*Store, error) {
 }
 
 // GetSecretKey returns secret key from the store.
-func (s *Store) GetSecretKey(_ context.Context) (signature.SecretKey, error) {
+func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 	skPath := s.secretKeyPath()
+
+	_, span := s.tracer.Start(
+		ctx,
+		"GetSecretKey",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("secret_key_path", skPath),
+		),
+	)
+	defer span.End()
 
 	if _, err := os.Stat(skPath); os.IsNotExist(err) {
 		return signature.SecretKey{}, storage.ErrNotFound
@@ -71,8 +91,18 @@ func (s *Store) GetSecretKey(_ context.Context) (signature.SecretKey, error) {
 }
 
 // PutSecretKey stores the secret key in the store.
-func (s *Store) PutSecretKey(_ context.Context, sk signature.SecretKey) error {
+func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error {
 	skPath := s.secretKeyPath()
+
+	_, span := s.tracer.Start(
+		ctx,
+		"PutSecretKey",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("secret_key_path", skPath),
+		),
+	)
+	defer span.End()
 
 	if _, err := os.Stat(skPath); err == nil {
 		return storage.ErrAlreadyExists
@@ -82,8 +112,18 @@ func (s *Store) PutSecretKey(_ context.Context, sk signature.SecretKey) error {
 }
 
 // DeleteSecretKey deletes the secret key in the store.
-func (s *Store) DeleteSecretKey(_ context.Context) error {
+func (s *Store) DeleteSecretKey(ctx context.Context) error {
 	skPath := s.secretKeyPath()
+
+	_, span := s.tracer.Start(
+		ctx,
+		"DeleteSecretKey",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("secret_key_path", skPath),
+		),
+	)
+	defer span.End()
 
 	if _, err := os.Stat(skPath); os.IsNotExist(err) {
 		return storage.ErrNotFound
@@ -93,7 +133,17 @@ func (s *Store) DeleteSecretKey(_ context.Context) error {
 }
 
 // HasNarInfo returns true if the store has the narinfo.
-func (s *Store) HasNarInfo(_ context.Context, hash string) bool {
+func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
+	_, span := s.tracer.Start(
+		ctx,
+		"HasNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
 	_, err := os.Stat(narInfoPath)
@@ -102,8 +152,19 @@ func (s *Store) HasNarInfo(_ context.Context, hash string) bool {
 }
 
 // GetNarInfo returns narinfo from the store.
-func (s *Store) GetNarInfo(_ context.Context, hash string) (*narinfo.NarInfo, error) {
+func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
+	_, span := s.tracer.Start(
+		ctx,
+		"GetNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_path", narInfoPath),
+		),
+	)
+	defer span.End()
 
 	nif, err := os.Open(narInfoPath)
 	if err != nil {
@@ -120,8 +181,19 @@ func (s *Store) GetNarInfo(_ context.Context, hash string) (*narinfo.NarInfo, er
 }
 
 // PutNarInfo puts the narinfo in the store.
-func (s *Store) PutNarInfo(_ context.Context, hash string, narInfo *narinfo.NarInfo) error {
+func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
+	_, span := s.tracer.Start(
+		ctx,
+		"PutNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_path", narInfoPath),
+		),
+	)
+	defer span.End()
 
 	if err := os.MkdirAll(filepath.Dir(narInfoPath), dirMode); err != nil {
 		return fmt.Errorf("error creating the directories for %q: %w", narInfoPath, err)
@@ -146,8 +218,19 @@ func (s *Store) PutNarInfo(_ context.Context, hash string, narInfo *narinfo.NarI
 }
 
 // DeleteNarInfo deletes the narinfo from the store.
-func (s *Store) DeleteNarInfo(_ context.Context, hash string) error {
+func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
+	_, span := s.tracer.Start(
+		ctx,
+		"DeleteNarInfo",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_path", narInfoPath),
+		),
+	)
+	defer span.End()
 
 	if err := os.Remove(narInfoPath); err != nil {
 		if os.IsNotExist(err) {
@@ -161,8 +244,19 @@ func (s *Store) DeleteNarInfo(_ context.Context, hash string) error {
 }
 
 // HasNar returns true if the store has the nar.
-func (s *Store) HasNar(_ context.Context, narURL nar.URL) bool {
+func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	_, span := s.tracer.Start(
+		ctx,
+		"HasNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+			attribute.String("nar", narPath),
+		),
+	)
+	defer span.End()
 
 	_, err := os.Stat(narPath)
 
@@ -171,8 +265,19 @@ func (s *Store) HasNar(_ context.Context, narURL nar.URL) bool {
 
 // GetNar returns nar from the store.
 // NOTE: The caller must close the returned io.ReadCloser!
-func (s *Store) GetNar(_ context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
+func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	_, span := s.tracer.Start(
+		ctx,
+		"GetNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+			attribute.String("nar", narPath),
+		),
+	)
+	defer span.End()
 
 	info, err := os.Stat(narPath)
 	if err != nil {
@@ -192,8 +297,19 @@ func (s *Store) GetNar(_ context.Context, narURL nar.URL) (int64, io.ReadCloser,
 }
 
 // PutNar puts the nar in the store.
-func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) (int64, error) {
+func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	_, span := s.tracer.Start(
+		ctx,
+		"PutNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+			attribute.String("nar", narPath),
+		),
+	)
+	defer span.End()
 
 	if _, err := os.Stat(narPath); err == nil {
 		return 0, storage.ErrAlreadyExists
@@ -233,8 +349,19 @@ func (s *Store) PutNar(_ context.Context, narURL nar.URL, body io.Reader) (int64
 }
 
 // DeleteNar deletes the nar from the store.
-func (s *Store) DeleteNar(_ context.Context, narURL nar.URL) error {
+func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+
+	_, span := s.tracer.Start(
+		ctx,
+		"DeleteNar",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+			attribute.String("nar", narPath),
+		),
+	)
+	defer span.End()
 
 	if err := os.Remove(narPath); err != nil {
 		if os.IsNotExist(err) {
