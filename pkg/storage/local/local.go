@@ -134,17 +134,18 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // HasNarInfo returns true if the store has the narinfo.
 func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+
 	_, span := s.tracer.Start(
 		ctx,
 		"HasNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_path", narInfoPath),
 		),
 	)
 	defer span.End()
-
-	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
 	_, err := os.Stat(narInfoPath)
 
@@ -253,7 +254,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
-			attribute.String("nar", narPath),
+			attribute.String("nar_path", narPath),
 		),
 	)
 	defer span.End()
@@ -274,7 +275,7 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
-			attribute.String("nar", narPath),
+			attribute.String("nar_path", narPath),
 		),
 	)
 	defer span.End()
@@ -306,7 +307,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
-			attribute.String("nar", narPath),
+			attribute.String("nar_path", narPath),
 		),
 	)
 	defer span.End()
@@ -358,7 +359,7 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
-			attribute.String("nar", narPath),
+			attribute.String("nar_path", narPath),
 		),
 	)
 	defer span.End()
