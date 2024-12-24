@@ -70,7 +70,7 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 
 	_, span := s.tracer.Start(
 		ctx,
-		"GetSecretKey",
+		"local.GetSecretKey",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("secret_key_path", skPath),
@@ -96,7 +96,7 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 
 	_, span := s.tracer.Start(
 		ctx,
-		"PutSecretKey",
+		"local.PutSecretKey",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("secret_key_path", skPath),
@@ -117,7 +117,7 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 	_, span := s.tracer.Start(
 		ctx,
-		"DeleteSecretKey",
+		"local.DeleteSecretKey",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("secret_key_path", skPath),
@@ -138,7 +138,7 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 
 	_, span := s.tracer.Start(
 		ctx,
-		"HasNarInfo",
+		"local.HasNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
@@ -158,7 +158,7 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	_, span := s.tracer.Start(
 		ctx,
-		"GetNarInfo",
+		"local.GetNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
@@ -187,7 +187,7 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 
 	_, span := s.tracer.Start(
 		ctx,
-		"PutNarInfo",
+		"local.PutNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
@@ -224,7 +224,7 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 
 	_, span := s.tracer.Start(
 		ctx,
-		"DeleteNarInfo",
+		"local.DeleteNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("narinfo_hash", hash),
@@ -250,7 +250,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 
 	_, span := s.tracer.Start(
 		ctx,
-		"HasNar",
+		"local.HasNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
@@ -271,7 +271,7 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 	_, span := s.tracer.Start(
 		ctx,
-		"GetNar",
+		"local.GetNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
@@ -303,7 +303,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 
 	_, span := s.tracer.Start(
 		ctx,
-		"PutNar",
+		"local.PutNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
@@ -355,7 +355,7 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 
 	_, span := s.tracer.Start(
 		ctx,
-		"DeleteNar",
+		"local.DeleteNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
