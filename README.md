@@ -186,7 +186,7 @@ spec:
 These options can be used with any `ncps` command:
 
 - `--log-level`: Set the log level (default: "info"). Possible values: "debug", "info", "warn", "error". (Environment variable: `$LOG_LEVEL`)
-- `--log-otel-grpc-endpoint`: Forward logs to an OpenTelemetry gRPC endpoint. (Environment variable: `$LOG_OTEL_GRPC_ENDPOINT`)
+- `---otel-grpc-endpoint`: Configure OpenTelemetry gRPC endpoint, omit to disable OpenTelemetry. (Environment variable: `$LOG_OTEL_GRPC_ENDPOINT`)
 
 ## Serve Command Options
 
