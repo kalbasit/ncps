@@ -10,6 +10,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
+
+	"github.com/kalbasit/ncps/pkg/otelzerolog"
 )
 
 // Version defines the version of the binary, and is meant to be set with ldflags at build time.
@@ -50,7 +52,13 @@ func beforeFunc(ctx context.Context, cmd *cli.Command) (context.Context, error) 
 		return ctx, fmt.Errorf("error parsing the log-level %q: %w", logLvl, err)
 	}
 
-	var output io.Writer = os.Stdout
+	// Create the OpenTelemetry writer
+	otelWriter, err := otelzerolog.NewOtelWriter(ctx, "localhost:14317", "ncps")
+	if err != nil {
+		return ctx, err
+	}
+
+	var output io.Writer = zerolog.MultiLevelWriter(os.Stdout, otelWriter)
 
 	if term.IsTerminal(int(os.Stdout.Fd())) {
 		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
