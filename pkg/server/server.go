@@ -10,7 +10,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+
+	otelchimetric "github.com/riandyrn/otelchi/metric"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -33,6 +38,8 @@ const (
 	nixCacheInfo = `StoreDir: /nix/store
 WantMassQuery: 1
 Priority: 10`
+
+	tracerName = "github.com/kalbasit/ncps/pkg/server"
 )
 
 // Server represents the main HTTP server.
@@ -65,11 +72,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.Se
 func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
 
+	mp := otel.GetMeterProvider()
+	baseCfg := otelchimetric.NewBaseConfig(tracerName, otelchimetric.WithMeterProvider(mp))
+
 	s.router.Use(middleware.Heartbeat("/healthz"))
-	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
-	s.router.Use(requestLogger)
 	s.router.Use(middleware.Recoverer)
+	s.router.Use(
+		otelchi.Middleware(tracerName, otelchi.WithChiRoutes(s.router)),
+		otelchimetric.NewRequestDurationMillis(baseCfg),
+		otelchimetric.NewRequestInFlight(baseCfg),
+		otelchimetric.NewResponseSizeBytes(baseCfg),
+	)
+	s.router.Use(requestLogger)
 
 	s.router.Get(routeIndex, s.getIndex)
 
@@ -92,18 +107,32 @@ func (s *Server) createRouter() {
 }
 
 func requestLogger(next http.Handler) http.Handler {
-	fn := func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
-		reqID := middleware.GetReqID(r.Context())
 
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		span := trace.SpanFromContext(r.Context())
 
 		log := zerolog.Ctx(r.Context()).With().
 			Str("method", r.Method).
 			Str("request-uri", r.RequestURI).
 			Str("from", r.RemoteAddr).
-			Str("reqID", reqID).
 			Logger()
+
+		if span.SpanContext().HasTraceID() {
+			log = log.
+				With().
+				Str("trace-id", span.SpanContext().TraceID().String()).
+				Logger()
+		}
+
+		if span.SpanContext().HasSpanID() {
+			log = log.
+				With().
+				Str("span-id", span.SpanContext().SpanID().String()).
+				Logger()
+		}
+
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
 			log = log.With().
@@ -125,9 +154,7 @@ func requestLogger(next http.Handler) http.Handler {
 		r = r.WithContext(log.WithContext(r.Context()))
 
 		next.ServeHTTP(ww, r)
-	}
-
-	return http.HandlerFunc(fn)
+	})
 }
 
 func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
