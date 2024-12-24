@@ -12,6 +12,9 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -38,16 +41,19 @@ var (
 	ErrSignatureValidationFailed = errors.New("signature validation has failed")
 )
 
+const tracerName = "github.com/kalbasit/ncps/pkg/cache/upstream"
+
 // Cache represents the upstream cache service.
 type Cache struct {
 	httpClient *http.Client
 	url        *url.URL
+	tracer     trace.Tracer
 	priority   uint64
 	publicKeys []signature.PublicKey
 }
 
 func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
-	c := Cache{}
+	c := Cache{tracer: otel.Tracer(tracerName)}
 
 	if u == nil {
 		return c, ErrURLRequired
@@ -97,6 +103,18 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"upstream.GetNarInfo",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_url", u),
+			attribute.String("upstream_url", c.url.String()),
+		),
+	)
+	defer span.End()
 
 	ctx = zerolog.Ctx(ctx).
 		With().
@@ -161,6 +179,17 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"upstream.GetNar",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("nar_url", u),
+			attribute.String("upstream_url", c.url.String()),
+		),
+	)
+	defer span.End()
 
 	ctx = narURL.NewLogger(
 		zerolog.Ctx(ctx).
