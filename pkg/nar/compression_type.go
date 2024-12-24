@@ -49,6 +49,8 @@ func CompressionTypeFromExtension(ext string) (CompressionType, error) {
 // ToFileExtension returns the file extensions associated with the compression type.
 func (ct CompressionType) ToFileExtension() string {
 	switch ct {
+	case CompressionType(""):
+		fallthrough
 	case CompressionTypeNone:
 		return ""
 	case CompressionTypeBzip2:
