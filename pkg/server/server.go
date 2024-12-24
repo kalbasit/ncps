@@ -13,6 +13,7 @@ import (
 	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	otelchimetric "github.com/riandyrn/otelchi/metric"
@@ -47,13 +48,18 @@ type Server struct {
 	cache  *cache.Cache
 	router *chi.Mux
 
+	tracer trace.Tracer
+
 	deletePermitted bool
 	putPermitted    bool
 }
 
 // New returns a new server.
 func New(cache *cache.Cache) *Server {
-	s := &Server{cache: cache}
+	s := &Server{
+		cache:  cache,
+		tracer: otel.Tracer(tracerName),
+	}
 
 	s.createRouter()
 
@@ -180,6 +186,13 @@ func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
+	_, span := s.tracer.Start(
+		r.Context(),
+		"server.getNixCacheInfo",
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+	defer span.End()
+
 	if _, err := w.Write([]byte(nixCacheInfo)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
@@ -194,12 +207,22 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
+		ctx, span := s.tracer.Start(
+			r.Context(),
+			"server.getNarInfo",
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("narinfo_hash", hash),
+			),
+		)
+		defer span.End()
+
 		r = r.WithContext(
-			zerolog.Ctx(r.Context()).
+			zerolog.Ctx(ctx).
 				With().
 				Str("narinfo-hash", hash).
 				Logger().
-				WithContext(r.Context()))
+				WithContext(ctx))
 
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
@@ -245,12 +268,22 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"server.putNarInfo",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		zerolog.Ctx(r.Context()).
+		zerolog.Ctx(ctx).
 			With().
 			Str("narinfo-hash", hash).
 			Logger().
-			WithContext(r.Context()))
+			WithContext(ctx))
 
 	if !s.putPermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -275,12 +308,22 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"server.deleteNarInfo",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		zerolog.Ctx(r.Context()).
+		zerolog.Ctx(ctx).
 			With().
 			Str("narinfo-hash", hash).
 			Logger().
-			WithContext(r.Context()))
+			WithContext(ctx))
 
 	if !s.deletePermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -327,9 +370,20 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
+		ctx, span := s.tracer.Start(
+			r.Context(),
+			"server.getNar",
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("nar_hash", hash),
+				attribute.String("nar_url", nu.String()),
+			),
+		)
+		defer span.End()
+
 		r = r.WithContext(
-			nu.NewLogger(*zerolog.Ctx(r.Context())).
-				WithContext(r.Context()))
+			nu.NewLogger(*zerolog.Ctx(ctx)).
+				WithContext(ctx))
 
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
@@ -397,9 +451,20 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"server.putNar",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("nar_hash", hash),
+			attribute.String("nar_url", nu.String()),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
+		nu.NewLogger(*zerolog.Ctx(ctx)).
+			WithContext(ctx))
 
 	if !s.putPermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -439,9 +504,20 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx, span := s.tracer.Start(
+		r.Context(),
+		"server.deleteNar",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("nar_hash", hash),
+			attribute.String("nar_url", nu.String()),
+		),
+	)
+	defer span.End()
+
 	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
+		nu.NewLogger(*zerolog.Ctx(ctx)).
+			WithContext(ctx))
 
 	if !s.deletePermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
