@@ -44,7 +44,8 @@ func New() *cli.Command {
 
 			var output io.Writer = os.Stdout
 
-			if colURL := cmd.String("log-otel-grpc-endpoint"); colURL != "" {
+			colURL := cmd.String("log-otel-grpc-endpoint")
+			if colURL != "" {
 				otelWriter, err = otelzerolog.NewOtelWriter(ctx, colURL, "ncps")
 				if err != nil {
 					return ctx, err
@@ -59,7 +60,11 @@ func New() *cli.Command {
 
 			log := zerolog.New(output).Level(lvl)
 
-			log.Info().Str("log-level", lvl.String()).Msg("logger created")
+			log.
+				Info().
+				Str("log-otel-grpc-endpoint", colURL).
+				Str("log-level", lvl.String()).
+				Msg("logger created")
 
 			return log.WithContext(ctx), nil
 		},
