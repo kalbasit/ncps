@@ -47,18 +47,13 @@ type Server struct {
 	cache  *cache.Cache
 	router *chi.Mux
 
-	tracer trace.Tracer
-
 	deletePermitted bool
 	putPermitted    bool
 }
 
 // New returns a new server.
 func New(cache *cache.Cache) *Server {
-	s := &Server{
-		cache:  cache,
-		tracer: otel.Tracer(serverName),
-	}
+	s := &Server{cache: cache}
 
 	s.createRouter()
 
@@ -89,7 +84,7 @@ func (s *Server) createRouter() {
 		otelchimetric.NewRequestInFlight(baseCfg),
 		otelchimetric.NewResponseSizeBytes(baseCfg),
 	)
-	s.router.Use(s.requestLogger)
+	s.router.Use(requestLogger)
 
 	s.router.Get(routeIndex, s.getIndex)
 
@@ -111,7 +106,7 @@ func (s *Server) createRouter() {
 	s.router.Delete(routeNar, s.deleteNar)
 }
 
-func (s *Server) requestLogger(next http.Handler) http.Handler {
+func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
 
