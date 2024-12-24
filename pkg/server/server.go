@@ -79,13 +79,13 @@ func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
 
 	mp := otel.GetMeterProvider()
-	baseCfg := otelchimetric.NewBaseConfig(tracerName, otelchimetric.WithMeterProvider(mp))
+	baseCfg := otelchimetric.NewBaseConfig(s.cache.GetHostname(), otelchimetric.WithMeterProvider(mp))
 
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(
-		otelchi.Middleware(tracerName, otelchi.WithChiRoutes(s.router)),
+		otelchi.Middleware(s.cache.GetHostname(), otelchi.WithChiRoutes(s.router)),
 		otelchimetric.NewRequestDurationMillis(baseCfg),
 		otelchimetric.NewRequestInFlight(baseCfg),
 		otelchimetric.NewResponseSizeBytes(baseCfg),
