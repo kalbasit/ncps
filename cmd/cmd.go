@@ -63,7 +63,7 @@ func New() *cli.Command {
 
 			var output io.Writer = os.Stdout
 
-			colURL := cmd.String("otel-grpc-endpoint")
+			colURL := cmd.String("otel-grpc-url")
 			if colURL != "" {
 				otelWriter, err := otelzerolog.NewOtelWriter(nil)
 				if err != nil {
@@ -81,13 +81,18 @@ func New() *cli.Command {
 
 			(zerolog.Ctx(ctx)).
 				Info().
-				Str("log-otel-grpc-endpoint", colURL).
+				Str("otel-grpc-url", colURL).
 				Str("log-level", lvl.String()).
 				Msg("logger created")
 
 			return ctx, nil
 		},
 		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:    "otel-enabled",
+				Usage:   "Enable Open-Telemetry logs, metrics and tracing.",
+				Sources: cli.EnvVars("OTEL_ENABLED"),
+			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set the log level",
@@ -100,9 +105,10 @@ func New() *cli.Command {
 				},
 			},
 			&cli.StringFlag{
-				Name:    "otel-grpc-endpoint",
-				Usage:   "Configure OpenTelemetry gRPC endpoint, omit to disable OpenTelemetry",
-				Sources: cli.EnvVars("OTEL_GRPC_ENDPOINT"),
+				Name: "otel-grpc-url",
+				Usage: "Configure OpenTelemetry gRPC URL; Missing or https " +
+					"scheme enable secure gRPC, insecure otherwize. Omit to emit Telemetry to stdout.",
+				Sources: cli.EnvVars("OTEL_GRPC_URL"),
 				Value:   "",
 				Validator: func(colURL string) error {
 					_, err := url.Parse(colURL)
@@ -120,6 +126,10 @@ func New() *cli.Command {
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
 func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) error, error) {
+	if !cmd.Bool("otel-enabled") {
+		return func(context.Context) error { return nil }, nil
+	}
+
 	var shutdownFuncs []func(context.Context) error
 
 	// shutdown calls cleanup functions registered via shutdownFuncs.
@@ -155,7 +165,7 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 		semconv.ServiceName(cmd.Root().Name),
 	)
 
-	colURL := cmd.String("otel-grpc-endpoint")
+	colURL := cmd.String("otel-grpc-url")
 
 	// Set up trace provider.
 	tracerProvider, err := newTraceProvider(ctx, colURL, res)
