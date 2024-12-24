@@ -357,6 +357,19 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
+		r = r.WithContext(
+			nu.NewLogger(*zerolog.Ctx(r.Context())).
+				WithContext(r.Context()))
+
+		var err error
+
+		nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+
+			return
+		}
+
 		ctx, span := s.tracer.Start(
 			r.Context(),
 			"getNar",
@@ -371,19 +384,6 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		r = r.WithContext(
 			nu.NewLogger(*zerolog.Ctx(ctx)).
 				WithContext(ctx))
-
-		var err error
-
-		nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-
-			return
-		}
-
-		r = r.WithContext(
-			nu.NewLogger(*zerolog.Ctx(r.Context())).
-				WithContext(r.Context()))
 
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
@@ -438,6 +438,19 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 
 	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
+	r = r.WithContext(
+		nu.NewLogger(*zerolog.Ctx(r.Context())).
+			WithContext(r.Context()))
+
+	var err error
+
+	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	ctx, span := s.tracer.Start(
 		r.Context(),
 		"putNar",
@@ -452,19 +465,6 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(
 		nu.NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx))
-
-	var err error
-
-	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
 
 	if !s.putPermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -491,6 +491,19 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 
 	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
+	r = r.WithContext(
+		nu.NewLogger(*zerolog.Ctx(r.Context())).
+			WithContext(r.Context()))
+
+	var err error
+
+	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
 	ctx, span := s.tracer.Start(
 		r.Context(),
 		"deleteNar",
@@ -505,19 +518,6 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(
 		nu.NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx))
-
-	var err error
-
-	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
 
 	if !s.deletePermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
