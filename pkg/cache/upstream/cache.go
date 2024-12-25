@@ -63,7 +63,7 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
 
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("upstream-url", c.url.String()).
+		Str("upstream_url", c.url.String()).
 		Logger().
 		WithContext(ctx)
 
@@ -118,9 +118,9 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("narinfo-hash", hash).
-		Str("narinfo-url", u).
-		Str("upstream-url", c.url.String()).
+		Str("narinfo_hash", hash).
+		Str("narinfo_url", u).
+		Str("upstream_url", c.url.String()).
 		Logger().
 		WithContext(ctx)
 
@@ -194,8 +194,8 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 	ctx = narURL.NewLogger(
 		zerolog.Ctx(ctx).
 			With().
-			Str("nar-url", u).
-			Str("upstream-url", c.url.String()).
+			Str("nar_url", u).
+			Str("upstream_url", c.url.String()).
 			Logger(),
 	).WithContext(ctx)
 

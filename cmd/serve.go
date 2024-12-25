@@ -156,7 +156,7 @@ func serveAction() cli.ActionFunc {
 		}
 
 		logger.Info().
-			Str("server-addr", cmd.String("server-addr")).
+			Str("server_addr", cmd.String("server-addr")).
 			Msg("Server started")
 
 		if err := server.ListenAndServe(); err != nil {
@@ -264,7 +264,7 @@ func createCache(
 
 	zerolog.Ctx(ctx).
 		Info().
-		Str("time-zone", loc.String()).
+		Str("time_zone", loc.String()).
 		Msg("setting up the cache timezone location")
 
 	c.SetupCron(ctx, loc)

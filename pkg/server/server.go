@@ -120,21 +120,21 @@ func requestLogger(next http.Handler) http.Handler {
 
 		log := zerolog.Ctx(r.Context()).With().
 			Str("method", r.Method).
-			Str("request-uri", r.RequestURI).
+			Str("request_uri", r.RequestURI).
 			Str("from", r.RemoteAddr).
 			Logger()
 
 		if span.SpanContext().HasTraceID() {
 			log = log.
 				With().
-				Str("trace-id", span.SpanContext().TraceID().String()).
+				Str("trace_id", span.SpanContext().TraceID().String()).
 				Logger()
 		}
 
 		if span.SpanContext().HasSpanID() {
 			log = log.
 				With().
-				Str("span-id", span.SpanContext().SpanID().String()).
+				Str("span_id", span.SpanContext().SpanID().String()).
 				Logger()
 		}
 
@@ -220,7 +220,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 		r = r.WithContext(
 			zerolog.Ctx(ctx).
 				With().
-				Str("narinfo-hash", hash).
+				Str("narinfo_hash", hash).
 				Logger().
 				WithContext(ctx))
 
@@ -281,7 +281,7 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(
 		zerolog.Ctx(ctx).
 			With().
-			Str("narinfo-hash", hash).
+			Str("narinfo_hash", hash).
 			Logger().
 			WithContext(ctx))
 
@@ -321,7 +321,7 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(
 		zerolog.Ctx(ctx).
 			With().
-			Str("narinfo-hash", hash).
+			Str("narinfo_hash", hash).
 			Logger().
 			WithContext(ctx))
 
