@@ -13,7 +13,7 @@
             etc-passwd = pkgs.writeTextFile {
               name = "passwd";
               text = ''
-                root:x:0:0:Super User:/root:/dev/null
+                root:x:0:0:Super User:/homeless-shelter:/dev/null
               '';
               destination = "/etc/passwd";
             };
