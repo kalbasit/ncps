@@ -27,7 +27,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
 	"github.com/kalbasit/ncps/pkg/otelzerolog"
 )
@@ -156,10 +156,10 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	prop := newPropagator()
 	otel.SetTextMapPropagator(prop)
 
-	res := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(cmd.Root().Name),
-	)
+	res, err := newResource(ctx, cmd)
+	if err != nil {
+		return shutdown, handleErr(err)
+	}
 
 	colURL := cmd.String("otel-grpc-url")
 	enabled := cmd.Bool("otel-enabled")
@@ -192,6 +192,49 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	global.SetLoggerProvider(loggerProvider)
 
 	return shutdown, nil
+}
+
+func newResource(ctx context.Context, cmd *cli.Command) (*resource.Resource, error) {
+	return resource.New(
+		ctx,
+
+		// Set the Schema URL.
+		// NOTE: This will fail if the semconv version being used within the
+		// deterctors is different and it's a check to ensure I am using the
+		// correct semconv version.
+		resource.WithSchemaURL(semconv.SchemaURL),
+
+		// Add Custom attributes.
+		resource.WithAttributes(
+			semconv.ServiceName(cmd.Root().Name),
+			semconv.ServiceVersionKey.String(Version),
+		),
+
+		// Discover and provide command-line information.
+		resource.WithProcessCommandArgs(),
+
+		// Discover and provide runtime information.
+		resource.WithProcessRuntimeVersion(),
+
+		// Discover and provide attributes from OTEL_RESOURCE_ATTRIBUTES and
+		// OTEL_SERVICE_NAME environment variables.
+		resource.WithFromEnv(),
+
+		// Discover and provide information about the OpenTelemetry SDK used.
+		resource.WithTelemetrySDK(),
+
+		// Discover and provide process information.
+		resource.WithProcess(),
+
+		// Discover and provide OS information.
+		resource.WithOS(),
+
+		// Discover and provide container information.
+		resource.WithContainer(),
+
+		// Discover and provide host information.
+		resource.WithHost(),
+	)
 }
 
 func newPropagator() propagation.TextMapPropagator {
