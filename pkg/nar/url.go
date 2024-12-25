@@ -56,9 +56,9 @@ func ParseURL(u string) (URL, error) {
 // NewLogger returns a new logger with the right fields.
 func (u URL) NewLogger(log zerolog.Logger) zerolog.Logger {
 	return log.With().
-		Str("nar-hash", u.Hash).
-		Str("nar-compression", u.Compression.String()).
-		Str("nar-query", u.Query.Encode()).
+		Str("nar_hash", u.Hash).
+		Str("nar_compression", u.Compression.String()).
+		Str("nar_query", u.Query.Encode()).
 		Logger()
 }
 

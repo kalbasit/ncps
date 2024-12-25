@@ -506,7 +506,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("narinfo-hash", hash).
+		Str("narinfo_hash", hash).
 		Logger().
 		WithContext(ctx)
 
@@ -576,7 +576,7 @@ func (c *Cache) pullNarInfo(
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
-			Str("nar-url", narInfo.URL).
+			Str("nar_url", narInfo.URL).
 			Msg("error parsing the nar URL")
 
 		done()
@@ -592,8 +592,8 @@ func (c *Cache) pullNarInfo(
 
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("nar-url", narInfo.URL).
-		Bool("zstd-support", enableZSTD).
+		Str("nar_url", narInfo.URL).
+		Bool("zstd_support", enableZSTD).
 		Logger().
 		WithContext(ctx)
 
@@ -665,7 +665,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("narinfo-hash", hash).
+		Str("narinfo_hash", hash).
 		Logger().
 		WithContext(ctx)
 
@@ -709,7 +709,7 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("narinfo-hash", hash).
+		Str("narinfo_hash", hash).
 		Logger().
 		WithContext(ctx)
 
@@ -828,7 +828,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
-			Str("nar-url", ni.URL).
+			Str("nar_url", ni.URL).
 			Msg("error parsing the nar-url")
 
 		// narinfo is invalid, remove it
@@ -1153,7 +1153,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 
 		log := zerolog.Ctx(ctx).With().
 			Str("op", "lru").
-			Uint64("max-size", c.maxSize).
+			Uint64("max_size", c.maxSize).
 			Logger()
 
 		log.Info().Msg("running LRU")
@@ -1186,7 +1186,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			return
 		}
 
-		log = log.With().Float64("nar-total-size", narTotalSize.Float64).Logger()
+		log = log.With().Float64("nar_total_size", narTotalSize.Float64).Logger()
 
 		if uint64(narTotalSize.Float64) <= c.maxSize {
 			log.Info().Msg("store size is less than max-size, not removing any nars")
@@ -1196,7 +1196,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 
 		cleanupSize := uint64(narTotalSize.Float64) - c.maxSize
 
-		log = log.With().Uint64("cleanup-size", cleanupSize).Logger()
+		log = log.With().Uint64("cleanup_size", cleanupSize).Logger()
 
 		log.Info().Msg("going to remove nars")
 
@@ -1213,7 +1213,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			return
 		}
 
-		log.Info().Int("count-nars", len(nars)).Msg("found this many nars to remove")
+		log.Info().Int("count_nars", len(nars)).Msg("found this many nars to remove")
 
 		narInfoHashesToRemove := make([]string, 0, len(nars))
 		narURLsToRemove := make([]nar.URL, 0, len(nars))
@@ -1221,12 +1221,12 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 		for _, narRecord := range nars {
 			narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, narRecord.NarInfoID)
 			if err == nil {
-				log.Info().Str("narinfo-hash", narInfo.Hash).Msg("deleting narinfo record")
+				log.Info().Str("narinfo_hash", narInfo.Hash).Msg("deleting narinfo record")
 
 				if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
 					log.Error().
 						Err(err).
-						Str("narinfo-hash", narInfo.Hash).
+						Str("narinfo_hash", narInfo.Hash).
 						Msg("error removing narinfo from database")
 				}
 
@@ -1238,12 +1238,12 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 					Msg("error fetching narinfo from the database")
 			}
 
-			log.Info().Str("nar-hash", narRecord.Hash).Msg("deleting nar record")
+			log.Info().Str("nar_hash", narRecord.Hash).Msg("deleting nar record")
 
 			if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narRecord.Hash); err != nil {
 				log.Error().
 					Err(err).
-					Str("nar-hash", narRecord.Hash).
+					Str("nar_hash", narRecord.Hash).
 					Msg("error removing nar from database")
 			}
 
@@ -1265,7 +1265,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			go func() {
 				defer wg.Done()
 
-				log := log.With().Str("narinfo-hash", hash).Logger()
+				log := log.With().Str("narinfo_hash", hash).Logger()
 
 				log.Info().Msg("deleting narinfo from store")
 
@@ -1283,7 +1283,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			go func() {
 				defer wg.Done()
 
-				log := log.With().Str("nar-url", narURL.String()).Logger()
+				log := log.With().Str("nar_url", narURL.String()).Logger()
 
 				log.Info().Msg("deleting nar from store")
 

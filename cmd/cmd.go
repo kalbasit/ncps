@@ -81,8 +81,8 @@ func New() *cli.Command {
 
 			(zerolog.Ctx(ctx)).
 				Info().
-				Str("otel-grpc-url", colURL).
-				Str("log-level", lvl.String()).
+				Str("otel_grpc_url", colURL).
+				Str("log_level", lvl.String()).
 				Msg("logger created")
 
 			return ctx, nil
