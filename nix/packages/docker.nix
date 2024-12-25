@@ -27,6 +27,10 @@
             };
           in
           [
+            # required for Open-Telemetry auto-detection of process information
+            etc-passwd
+            etc-group
+
             # required for TLS certificate validation
             pkgs.cacert
 
@@ -38,10 +42,6 @@
 
             # the ncps package
             config.packages.ncps
-
-            # required for Open-Telemetry auto-detection of process information
-            etc-passwd
-            etc-group
           ];
         config = {
           Cmd = [ "/bin/ncps" ];
