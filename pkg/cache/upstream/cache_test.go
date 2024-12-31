@@ -2,6 +2,7 @@ package upstream_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -156,8 +157,8 @@ func TestGetNarInfo(t *testing.T) {
 				assert.ErrorContains(t, err, "error while checking the narInfo: invalid Reference[0]: notfound-path")
 			})
 
-			for _, entry := range testdata.Entries {
-				t.Run("check does not fail", func(t *testing.T) {
+			for i, entry := range testdata.Entries {
+				t.Run(fmt.Sprintf("check Nar%d does not fail", i+1), func(t *testing.T) {
 					hash := entry.NarInfoHash
 
 					_, err = c.GetNarInfo(context.Background(), hash)
