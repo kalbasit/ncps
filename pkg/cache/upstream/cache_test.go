@@ -178,18 +178,18 @@ func TestGetNarInfo(t *testing.T) {
 func TestHasNarInfo(t *testing.T) {
 	t.Parallel()
 
-	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
-
-	c, err := upstream.New(
-		newContext(),
-		testhelper.MustParseURL(t, ts.URL),
-		testdata.PublicKeys(),
-	)
-	require.NoError(t, err)
-
 	t.Run("narinfo exists", func(t *testing.T) {
 		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		defer ts.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
 
 		exists, err := c.HasNarInfo(context.Background(), "abc123")
 		require.NoError(t, err)
@@ -200,6 +200,16 @@ func TestHasNarInfo(t *testing.T) {
 	for i, narEntry := range testdata.Entries {
 		t.Run(fmt.Sprintf("Nar%d should exist", i+1), func(t *testing.T) {
 			t.Parallel()
+
+			ts := testdata.NewTestServer(t, 40)
+			defer ts.Close()
+
+			c, err := upstream.New(
+				newContext(),
+				testhelper.MustParseURL(t, ts.URL),
+				testdata.PublicKeys(),
+			)
+			require.NoError(t, err)
 
 			exists, err := c.HasNarInfo(context.Background(), narEntry.NarInfoHash)
 			require.NoError(t, err)

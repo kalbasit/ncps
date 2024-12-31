@@ -212,41 +212,13 @@ func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 		return false, fmt.Errorf("error performing the request: %w", err)
 	}
 
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
+	defer func() {
 		//nolint:errcheck
 		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
-		if resp.StatusCode == http.StatusNotFound {
-			return nil, ErrNotFound
-		}
-
-		zerolog.Ctx(ctx).
-			Error().
-			Err(ErrUnexpectedHTTPStatusCode).
-			Int("status_code", resp.StatusCode).
-			Send()
-
-		return nil, ErrUnexpectedHTTPStatusCode
-	}
-
-	ni, err := narinfo.Parse(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
-	}
-
-	if err := ni.Check(); err != nil {
-		return ni, fmt.Errorf("error while checking the narInfo: %w", err)
-	}
-
-	if len(c.publicKeys) > 0 {
-		if !signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, c.publicKeys) {
-			return ni, ErrSignatureValidationFailed
-		}
-	}
-
-	return ni, nil
+	return resp.StatusCode < http.StatusBadRequest, nil
 }
 
 // GetNar returns the NAR archive from the cache server.
