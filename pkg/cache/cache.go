@@ -418,6 +418,15 @@ func (c *Cache) selectNarUpstream(
 	ucs []upstream.Cache,
 	mutators []func(*http.Request),
 ) (*upstream.Cache, error) {
+	if len(ucs) == 0 {
+		//nolint:nilnil
+		return nil, nil
+	}
+
+	if len(ucs) == 1 {
+		return &ucs[0], nil
+	}
+
 	ch := make(chan *upstream.Cache)
 	errC := make(chan error)
 
