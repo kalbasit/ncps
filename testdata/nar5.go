@@ -6,25 +6,25 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 )
 
-// Nar5 is the nar representing a nar from nix-community that was failing to
-// parse because the FileHash is encoded in sha256/base-16.
+// Nar5 is the nar representing hello from release-22.11 with its FileHash
+// converted to base16.
 //
-//nolint:gochecknoglobals,lll
+//nolint:gochecknoglobals
 var Nar5 = Entry{
-	NarInfoHash: "7k3i624w0rfrvcrbbdrw0zrvasywxmz4",
-	NarInfoPath: filepath.Join("7", "7k", "7k3i624w0rfrvcrbbdrw0zrvasywxmz4.narinfo"),
-	NarInfoText: `StorePath: /nix/store/7k3i624w0rfrvcrbbdrw0zrvasywxmz4-check-link-targets.sh
-URL: nar/abf8c1a50684c2d706c991f0d332dec9eff89eb3a3c17687141ce1ddb795cc38.nar.zst
-Compression: zstd
-FileHash: sha256:abf8c1a50684c2d706c991f0d332dec9eff89eb3a3c17687141ce1ddb795cc38
-FileSize: 1156
-NarHash: sha256:0v4mgmqzp5s7mscgad21nr49svk97y7pq0y49i11k1hii04syj74
-NarSize: 2312
-References: 7m5x92fbfc3zxqmbkhl5fqqydsmdpggb-hm-modules-messages zhrjg6wxrxmdlpn6iapzpp2z2vylpvw5-home-manager.sh
-Deriver: 2w91y8xfpfpamqjzy223i8ivhz4dviwz-check-link-targets.sh.drv
-Sig: nix-community.cachix.org-1:RcmngYq9PZMjZVwQdZK8mUmOjmj964GqM18zWkj/Qpw17ns1CmGnYGCrvbj/Q/+K1jU3HbFH9ABtft+3TUgHAA==`,
+	NarInfoHash: "1gxz5nfzfnhyxjdyzi04r86sh61y4i00",
+	NarInfoPath: filepath.Join("1", "1g", "1gxz5nfzfnhyxjdyzi04r86sh61y4i00.narinfo"),
+	NarInfoText: `StorePath: /nix/store/1gxz5nfzfnhyxjdyzi04r86sh61y4i00-hello-2.12.1
+URL: nar/0fn02ls73n5ndgvvclll1lkg0viq4cbmhx8xcgr5flmzrcvjiarn.nar.xz
+Compression: xz
+FileHash: sha256:36ab2837cbbf5257f2631d75581723386ef0260d9452b6f76bb6d8713415c03a
+FileSize: 50264
+NarHash: sha256:1fivi78qzgq3xlm3z59lia9qxw0idwaqmf3ffam83p4392biy5jy
+NarSize: 226504
+References: 1gxz5nfzfnhyxjdyzi04r86sh61y4i00-hello-2.12.1 vnwdak3n1w2jjil119j65k8mw1z23p84-glibc-2.35-224
+Deriver: pf9ff9imvbxb3l4gmav93gbhpx0fj1hv-hello-2.12.1.drv
+Sig: cache.nixos.org-1:zfh0dR5lqsbDKBris0zyDThbw1G1Yb0POTiI0QA9OQRd6FskmYUqAJd85CjS/Lm7eREwCdNnAbkytEj/xw14Bw==`,
 
-	NarHash: "abf8c1a50684c2d706c991f0d332dec9eff89eb3a3c17687141ce1ddb795cc38",
-	NarPath: filepath.Join("a", "ab", "abf8c1a50684c2d706c991f0d332dec9eff89eb3a3c17687141ce1ddb795cc38.nar.xz"),
-	NarText: helper.MustRandString(1156, nil),
+	NarHash: "0fn02ls73n5ndgvvclll1lkg0viq4cbmhx8xcgr5flmzrcvjiarn",
+	NarPath: filepath.Join("0", "0f", "0fn02ls73n5ndgvvclll1lkg0viq4cbmhx8xcgr5flmzrcvjiarn.nar.xz"),
+	NarText: helper.MustRandString(50264, nil),
 }
