@@ -49,6 +49,8 @@ github.com/multiformats/go-varint v0.0.7 h1:sWSGR+f/eu5ABZA2ZpYKBILXTTs9JWpdEM/n
 github.com/multiformats/go-varint v0.0.7/go.mod h1:r8PUYw/fD/SjBCiKOoDlGF6QawOELpZAu9eioSos/OU=
 github.com/nix-community/go-nix v0.0.0-20241220082528-4ad2fe83d684 h1:r4z1TDM6mf46CnkxOErnWxcDVkTx11vXuAQ2nTaaifA=
 github.com/nix-community/go-nix v0.0.0-20241220082528-4ad2fe83d684/go.mod h1:qgCw4bBKZX8qMgGeEZzGFVT3notl42dBjNqO2jut0M0=
+github.com/nix-community/go-nix v0.0.0-20241231094847-b5eacc9958cd h1:SHwu+Di8uuowbCkuYJeRon3ciXAl5pAme1xItHkIf30=
+github.com/nix-community/go-nix v0.0.0-20241231094847-b5eacc9958cd/go.mod h1:qgCw4bBKZX8qMgGeEZzGFVT3notl42dBjNqO2jut0M0=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
