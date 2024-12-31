@@ -290,7 +290,7 @@ func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 
 	ctx, span := c.tracer.Start(
 		ctx,
-		"upstream.HetNar",
+		"upstream.HasNar",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("nar_url", u),
