@@ -175,6 +175,80 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 	return ni, nil
 }
 
+func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
+	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"upstream.HasNarInfo",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_url", u),
+			attribute.String("upstream_url", c.url.String()),
+		),
+	)
+	defer span.End()
+
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo_hash", hash).
+		Str("narinfo_url", u).
+		Str("upstream_url", c.url.String()).
+		Logger().
+		WithContext(ctx)
+
+	r, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+	if err != nil {
+		return false, fmt.Errorf("error creating a new request: %w", err)
+	}
+
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("download the narinfo from upstream")
+
+	resp, err := c.httpClient.Do(r)
+	if err != nil {
+		return false, fmt.Errorf("error performing the request: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, ErrNotFound
+		}
+
+		zerolog.Ctx(ctx).
+			Error().
+			Err(ErrUnexpectedHTTPStatusCode).
+			Int("status_code", resp.StatusCode).
+			Send()
+
+		return nil, ErrUnexpectedHTTPStatusCode
+	}
+
+	ni, err := narinfo.Parse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
+	}
+
+	if err := ni.Check(); err != nil {
+		return ni, fmt.Errorf("error while checking the narInfo: %w", err)
+	}
+
+	if len(c.publicKeys) > 0 {
+		if !signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, c.publicKeys) {
+			return ni, ErrSignatureValidationFailed
+		}
+	}
+
+	return ni, nil
+}
+
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
