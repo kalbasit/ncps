@@ -971,6 +971,58 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	return ni, nil
 }
 
+func (c *Cache) selectNarInfoUpstream(
+	ctx context.Context,
+	hash string,
+	ucs []upstream.Cache,
+) (*upstream.Cache, error) {
+	ch := make(chan *upstream.Cache)
+	errC := make(chan error)
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	var wg sync.WaitGroup
+	for _, uc := range ucs {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			exists, err := uc.HasNarInfo(ctx, hash)
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					errC <- err
+				}
+
+				return
+			}
+
+			if exists {
+				ch <- &uc
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+
+		close(ch)
+	}()
+
+	var errs error
+
+	for {
+		select {
+		case uc := <-ch:
+			cancel()
+
+			return uc, errs
+		case err := <-errC:
+			errs = errors.Join(errs, err)
+		}
+	}
+}
+
 func (c *Cache) getNarInfoFromUpstream(
 	ctx context.Context,
 	hash string,
@@ -985,24 +1037,34 @@ func (c *Cache) getNarInfoFromUpstream(
 	)
 	defer span.End()
 
-	for _, uc := range c.upstreamCaches {
-		narInfo, err := uc.GetNarInfo(ctx, hash)
-		if err != nil {
-			if !errors.Is(err, upstream.ErrNotFound) {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Str("hostname", uc.GetHostname()).
-					Msg("error fetching the narInfo from upstream")
-			}
+	uc, err := c.selectNarInfoUpstream(ctx, hash, c.upstreamCaches)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error selecting an upstream for the narinfo")
 
-			continue
-		}
-
-		return &uc, narInfo, nil
+		return nil, nil, err
 	}
 
-	return nil, nil, storage.ErrNotFound
+	if uc == nil {
+		return nil, nil, storage.ErrNotFound
+	}
+
+	narInfo, err := uc.GetNarInfo(ctx, hash)
+	if err != nil {
+		if !errors.Is(err, upstream.ErrNotFound) {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Str("hostname", uc.GetHostname()).
+				Msg("error fetching the narInfo from upstream")
+		}
+
+		return nil, nil, storage.ErrNotFound
+	}
+
+	return uc, narInfo, nil
 }
 
 func (c *Cache) purgeNarInfo(
