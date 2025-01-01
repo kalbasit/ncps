@@ -324,10 +324,17 @@ func (c *Cache) pullNar(
 
 	resp, err := c.getNarFromUpstream(ctx, narURL, uc, narInfo, enableZSTD)
 	if err != nil {
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error getting the nar from upstream caches")
+		if !errors.Is(err, storage.ErrNotFound) {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error getting the nar from upstream caches")
+		} else {
+			zerolog.Ctx(ctx).
+				Info().
+				Err(err).
+				Msg("error getting the nar from upstream caches")
+		}
 
 		done()
 
