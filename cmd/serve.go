@@ -34,14 +34,14 @@ func serveCommand() *cli.Command {
 		Action:  serveAction(),
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:    "allow-delete",
+				Name:    "cache-allow-delete-verb",
 				Usage:   "Whether to allow the DELETE verb to delete narInfo and nar files",
-				Sources: cli.EnvVars("ALLOW_DELETE_VERB"),
+				Sources: cli.EnvVars("CACHE_ALLOW_DELETE_VERB"),
 			},
 			&cli.BoolFlag{
-				Name:    "allow-put",
+				Name:    "cache-allow-put-verb",
 				Usage:   "Whether to allow the PUT verb to push narInfo and nar files directly",
-				Sources: cli.EnvVars("ALLOW_PUT_VERB"),
+				Sources: cli.EnvVars("CACHE_ALLOW_PUT_VERB"),
 			},
 			&cli.StringFlag{
 				Name:     "cache-hostname",
@@ -145,8 +145,8 @@ func serveAction() cli.ActionFunc {
 		}
 
 		srv := server.New(cache)
-		srv.SetDeletePermitted(cmd.Bool("allow-delete"))
-		srv.SetPutPermitted(cmd.Bool("allow-put"))
+		srv.SetDeletePermitted(cmd.Bool("cache-allow-delete-verb"))
+		srv.SetPutPermitted(cmd.Bool("cache-allow-put-verb"))
 
 		server := &http.Server{
 			BaseContext:       func(net.Listener) context.Context { return ctx },
