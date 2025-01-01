@@ -589,10 +589,17 @@ func (c *Cache) pullNarInfo(
 
 	uc, narInfo, err := c.getNarInfoFromUpstream(ctx, hash)
 	if err != nil {
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error getting the narInfo from upstream caches")
+		if !errors.Is(err, storage.ErrNotFound) {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error getting the narInfo from upstream caches")
+		} else {
+			zerolog.Ctx(ctx).
+				Info().
+				Err(err).
+				Msg("error getting the narInfo from upstream caches")
+		}
 
 		done()
 
