@@ -55,6 +55,7 @@
             description = "Nix binary cache proxy service";
             homepage = "https://github.com/kalbasit/ncps";
             license = lib.licenses.mit;
+            mainProgram = "ncps";
             maintainers = [ lib.maintainers.kalbasit ];
           };
         };
