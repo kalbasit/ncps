@@ -412,70 +412,6 @@ func (c *Cache) getNarFromStore(
 	return size, r, nil
 }
 
-func (c *Cache) selectNarUpstream(
-	ctx context.Context,
-	narURL *nar.URL,
-	ucs []upstream.Cache,
-	mutators []func(*http.Request),
-) (*upstream.Cache, error) {
-	if len(ucs) == 0 {
-		//nolint:nilnil
-		return nil, nil
-	}
-
-	if len(ucs) == 1 {
-		return &ucs[0], nil
-	}
-
-	ch := make(chan *upstream.Cache)
-	errC := make(chan error)
-
-	ctx, cancel := context.WithCancel(ctx)
-
-	var wg sync.WaitGroup
-	for _, uc := range ucs {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			exists, err := uc.HasNar(ctx, *narURL, mutators...)
-			if err != nil {
-				if !errors.Is(err, context.Canceled) {
-					errC <- err
-				}
-
-				return
-			}
-
-			if exists {
-				ch <- &uc
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-
-		close(ch)
-	}()
-
-	var errs error
-
-	for {
-		select {
-		case uc := <-ch:
-			cancel()
-
-			return uc, errs
-		case err := <-errC:
-			if !errors.Is(err, context.Canceled) {
-				errs = errors.Join(errs, err)
-			}
-		}
-	}
-}
-
 func (c *Cache) getNarFromUpstream(
 	ctx context.Context,
 	narURL *nar.URL,
@@ -971,69 +907,6 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	return ni, nil
 }
 
-func (c *Cache) selectNarInfoUpstream(
-	ctx context.Context,
-	hash string,
-	ucs []upstream.Cache,
-) (*upstream.Cache, error) {
-	if len(ucs) == 0 {
-		//nolint:nilnil
-		return nil, nil
-	}
-
-	if len(ucs) == 1 {
-		return &ucs[0], nil
-	}
-
-	ch := make(chan *upstream.Cache)
-	errC := make(chan error)
-
-	ctx, cancel := context.WithCancel(ctx)
-
-	var wg sync.WaitGroup
-	for _, uc := range ucs {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			exists, err := uc.HasNarInfo(ctx, hash)
-			if err != nil {
-				if !errors.Is(err, context.Canceled) {
-					errC <- err
-				}
-
-				return
-			}
-
-			if exists {
-				ch <- &uc
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-
-		close(ch)
-	}()
-
-	var errs error
-
-	for {
-		select {
-		case uc := <-ch:
-			cancel()
-
-			return uc, errs
-		case err := <-errC:
-			if !errors.Is(err, context.Canceled) {
-				errs = errors.Join(errs, err)
-			}
-		}
-	}
-}
-
 func (c *Cache) getNarInfoFromUpstream(
 	ctx context.Context,
 	hash string,
@@ -1474,5 +1347,120 @@ func zstdMutator(
 			cfe,
 			-1,
 		)
+	}
+}
+
+type upstreamSelectionFn func(
+	ctx context.Context,
+	uc *upstream.Cache,
+	wg *sync.WaitGroup,
+	ch chan *upstream.Cache,
+	errC chan error,
+)
+
+func (c *Cache) selectNarInfoUpstream(
+	ctx context.Context,
+	hash string,
+	ucs []upstream.Cache,
+) (*upstream.Cache, error) {
+	return c.selectUpstream(ctx, ucs, func(
+		ctx context.Context,
+		uc *upstream.Cache,
+		wg *sync.WaitGroup,
+		ch chan *upstream.Cache,
+		errC chan error,
+	) {
+		defer wg.Done()
+
+		exists, err := uc.HasNarInfo(ctx, hash)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				errC <- err
+			}
+
+			return
+		}
+
+		if exists {
+			ch <- uc
+		}
+	})
+}
+
+func (c *Cache) selectNarUpstream(
+	ctx context.Context,
+	narURL *nar.URL,
+	ucs []upstream.Cache,
+	mutators []func(*http.Request),
+) (*upstream.Cache, error) {
+	return c.selectUpstream(ctx, ucs, func(
+		ctx context.Context,
+		uc *upstream.Cache,
+		wg *sync.WaitGroup,
+		ch chan *upstream.Cache,
+		errC chan error,
+	) {
+		defer wg.Done()
+
+		exists, err := uc.HasNar(ctx, *narURL, mutators...)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				errC <- err
+			}
+
+			return
+		}
+
+		if exists {
+			ch <- uc
+		}
+	})
+}
+
+func (c *Cache) selectUpstream(
+	ctx context.Context,
+	ucs []upstream.Cache,
+	selectFn upstreamSelectionFn,
+) (*upstream.Cache, error) {
+	if len(ucs) == 0 {
+		//nolint:nilnil
+		return nil, nil
+	}
+
+	if len(ucs) == 1 {
+		return &ucs[0], nil
+	}
+
+	ch := make(chan *upstream.Cache)
+	errC := make(chan error)
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	var wg sync.WaitGroup
+	for _, uc := range ucs {
+		wg.Add(1)
+
+		go selectFn(ctx, &uc, &wg, ch, errC)
+	}
+
+	go func() {
+		wg.Wait()
+
+		close(ch)
+	}()
+
+	var errs error
+
+	for {
+		select {
+		case uc := <-ch:
+			cancel()
+
+			return uc, errs
+		case err := <-errC:
+			if !errors.Is(err, context.Canceled) {
+				errs = errors.Join(errs, err)
+			}
+		}
 	}
 }
