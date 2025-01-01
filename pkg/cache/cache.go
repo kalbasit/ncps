@@ -219,7 +219,15 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		return c.getNarFromStore(ctx, &narURL)
 	}
 
-	doneC := c.prePullNar(ctx, &narURL, nil, nil, false)
+	// create a detachedCtx that has the same span and logger as the main
+	// context but with the baseContext as parent; This context will not cancel
+	// when ctx is canceled allowing us to continue pulling the nar in the
+	// background.
+	detachedCtx := trace.ContextWithSpan(
+		zerolog.Ctx(ctx).WithContext(c.baseContext),
+		trace.SpanFromContext(ctx),
+	)
+	doneC := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
 
 	zerolog.Ctx(ctx).
 		Debug().
