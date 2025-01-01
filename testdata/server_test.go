@@ -23,7 +23,7 @@ func TestNewTestServer(t *testing.T) {
 
 	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
-	r, err := http.NewRequestWithContext(context.Background(), "GET", u, nil)
+	r, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
 	require.NoError(t, err)
 
 	resp, err := http.DefaultClient.Do(r)
@@ -56,7 +56,7 @@ func TestNewTestServerWithZSTD(t *testing.T) {
 
 	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
 
-	r, err := http.NewRequestWithContext(context.Background(), "GET", u, nil)
+	r, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
 	require.NoError(t, err)
 
 	r.Header.Set("Accept-Encoding", "zstd")

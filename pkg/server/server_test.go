@@ -68,7 +68,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("narInfo", func(t *testing.T) {
 				url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-				r, err := http.NewRequestWithContext(newContext(), "DELETE", url, nil)
+				r, err := http.NewRequestWithContext(newContext(), http.MethodDelete, url, nil)
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
@@ -80,7 +80,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("nar", func(t *testing.T) {
 				url := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
-				r, err := http.NewRequestWithContext(newContext(), "DELETE", url, nil)
+				r, err := http.NewRequestWithContext(newContext(), http.MethodDelete, url, nil)
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
@@ -114,7 +114,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("DELETE returns no error", func(t *testing.T) {
 					url := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-					r, err := http.NewRequestWithContext(newContext(), "DELETE", url, nil)
+					r, err := http.NewRequestWithContext(newContext(), http.MethodDelete, url, nil)
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -146,7 +146,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("DELETE returns no error", func(t *testing.T) {
 					url := ts.URL + "/nar/" + testdata.Nar2.NarHash + ".nar.xz"
 
-					r, err := http.NewRequestWithContext(newContext(), "DELETE", url, nil)
+					r, err := http.NewRequestWithContext(newContext(), http.MethodDelete, url, nil)
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -186,7 +186,7 @@ func TestServeHTTP(t *testing.T) {
 
 		t.Run("narinfo", func(t *testing.T) {
 			t.Run("narinfo does not exist upstream", func(t *testing.T) {
-				r := httptest.NewRequest("GET", "/doesnotexist.narinfo", nil)
+				r := httptest.NewRequest(http.MethodGet, "/doesnotexist.narinfo", nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -195,7 +195,7 @@ func TestServeHTTP(t *testing.T) {
 			})
 
 			t.Run("narinfo exists upstream", func(t *testing.T) {
-				r := httptest.NewRequest("GET", helper.NarInfoURLPath(testdata.Nar1.NarInfoHash), nil)
+				r := httptest.NewRequest(http.MethodGet, helper.NarInfoURLPath(testdata.Nar1.NarInfoHash), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -215,7 +215,7 @@ func TestServeHTTP(t *testing.T) {
 
 		t.Run("nar", func(t *testing.T) {
 			t.Run("nar does not exist upstream", func(t *testing.T) {
-				r := httptest.NewRequest("GET", "/nar/doesnotexist.nar", nil)
+				r := httptest.NewRequest(http.MethodGet, "/nar/doesnotexist.nar", nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -228,7 +228,7 @@ func TestServeHTTP(t *testing.T) {
 				require.NoError(t, err)
 
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-				r := httptest.NewRequest("GET", nu.JoinURL(u).String(), nil)
+				r := httptest.NewRequest(http.MethodGet, nu.JoinURL(u).String(), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -255,7 +255,7 @@ func TestServeHTTP(t *testing.T) {
 
 				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz, Query: q}
 
-				r := httptest.NewRequest("GET", nu.JoinURL(u).String(), nil)
+				r := httptest.NewRequest(http.MethodGet, nu.JoinURL(u).String(), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -305,7 +305,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("narInfo", func(t *testing.T) {
 				p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-				r, err := http.NewRequestWithContext(newContext(), "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
+				r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarInfoText))
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)
@@ -318,7 +318,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("without compression", func(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar"
 
-					r, err := http.NewRequestWithContext(newContext(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
+					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -330,7 +330,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("with compression", func(t *testing.T) {
 					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar.xz"
 
-					r, err := http.NewRequestWithContext(newContext(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
+					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -358,7 +358,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("putNarInfo does not return an error", func(t *testing.T) {
 					p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
-					r, err := http.NewRequestWithContext(newContext(), "PUT", p, strings.NewReader(testdata.Nar1.NarInfoText))
+					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarInfoText))
 					require.NoError(t, err)
 
 					resp, err := ts.Client().Do(r)
@@ -405,7 +405,7 @@ func TestServeHTTP(t *testing.T) {
 			t.Run("putNar does not return an error", func(t *testing.T) {
 				p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
-				r, err := http.NewRequestWithContext(newContext(), "PUT", p, strings.NewReader(testdata.Nar1.NarText))
+				r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 				require.NoError(t, err)
 
 				resp, err := ts.Client().Do(r)

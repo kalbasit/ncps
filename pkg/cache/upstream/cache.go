@@ -124,7 +124,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 		Logger().
 		WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -199,7 +199,7 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 			Logger(),
 	).WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
@@ -244,7 +244,7 @@ func (c Cache) parsePriority(ctx context.Context) (uint64, error) {
 	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFn()
 
-	r, err := http.NewRequestWithContext(ctx, "GET", c.url.JoinPath("/nix-cache-info").String(), nil)
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url.JoinPath("/nix-cache-info").String(), nil)
 	if err != nil {
 		return 0, fmt.Errorf("error creating a new request: %w", err)
 	}
