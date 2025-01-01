@@ -77,7 +77,12 @@ func New() *cli.Command {
 				output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
 			}
 
-			ctx = zerolog.New(output).Level(lvl).WithContext(ctx)
+			ctx = zerolog.New(output).
+				Level(lvl).
+				With().
+				Timestamp().
+				Logger().
+				WithContext(ctx)
 
 			(zerolog.Ctx(ctx)).
 				Info().
