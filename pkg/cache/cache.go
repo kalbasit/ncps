@@ -469,7 +469,9 @@ func (c *Cache) selectNarUpstream(
 
 			return uc, errs
 		case err := <-errC:
-			errs = errors.Join(errs, err)
+			if !errors.Is(err, context.Canceled) {
+				errs = errors.Join(errs, err)
+			}
 		}
 	}
 }
