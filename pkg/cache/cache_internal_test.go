@@ -178,6 +178,7 @@ func TestRunLRU(t *testing.T) {
 	entries := allEntries[:len(allEntries)-1]
 	lastEntry := allEntries[len(allEntries)-1]
 
+	assert.Len(t, entries, len(allEntries)-1, "confirm entries length is correct")
 	assert.Equal(t, allEntries, append(entries, lastEntry), "confirm my vars are correct")
 
 	// define the maximum size of our store based on responses of our testdata
