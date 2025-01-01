@@ -412,6 +412,70 @@ func (c *Cache) getNarFromStore(
 	return size, r, nil
 }
 
+func (c *Cache) selectNarUpstream(
+	ctx context.Context,
+	narURL *nar.URL,
+	ucs []upstream.Cache,
+	mutators []func(*http.Request),
+) (*upstream.Cache, error) {
+	if len(ucs) == 0 {
+		//nolint:nilnil
+		return nil, nil
+	}
+
+	if len(ucs) == 1 {
+		return &ucs[0], nil
+	}
+
+	ch := make(chan *upstream.Cache)
+	errC := make(chan error)
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	var wg sync.WaitGroup
+	for _, uc := range ucs {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			exists, err := uc.HasNar(ctx, *narURL, mutators...)
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					errC <- err
+				}
+
+				return
+			}
+
+			if exists {
+				ch <- &uc
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+
+		close(ch)
+	}()
+
+	var errs error
+
+	for {
+		select {
+		case uc := <-ch:
+			cancel()
+
+			return uc, errs
+		case err := <-errC:
+			if !errors.Is(err, context.Canceled) {
+				errs = errors.Join(errs, err)
+			}
+		}
+	}
+}
+
 func (c *Cache) getNarFromUpstream(
 	ctx context.Context,
 	narURL *nar.URL,
@@ -451,24 +515,34 @@ func (c *Cache) getNarFromUpstream(
 		ucs = c.upstreamCaches
 	}
 
-	for _, uc := range ucs {
-		resp, err := uc.GetNar(ctx, *narURL, mutators...)
-		if err != nil {
-			if !errors.Is(err, upstream.ErrNotFound) {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Str("hostname", uc.GetHostname()).
-					Msg("error fetching the narInfo from upstream")
-			}
+	uc, err := c.selectNarUpstream(ctx, narURL, ucs, mutators)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error selecting an upstream for the nar")
 
-			continue
-		}
-
-		return resp, nil
+		return nil, err
 	}
 
-	return nil, storage.ErrNotFound
+	if uc == nil {
+		return nil, storage.ErrNotFound
+	}
+
+	resp, err := uc.GetNar(ctx, *narURL, mutators...)
+	if err != nil {
+		if !errors.Is(err, upstream.ErrNotFound) {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Str("hostname", uc.GetHostname()).
+				Msg("error fetching the nar from upstream")
+		}
+
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
