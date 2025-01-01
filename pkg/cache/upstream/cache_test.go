@@ -175,6 +175,50 @@ func TestGetNarInfo(t *testing.T) {
 	t.Run("upstream with public keys", testFn(true))
 }
 
+func TestHasNarInfo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("narinfo does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		defer ts.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		exists, err := c.HasNarInfo(context.Background(), "abc123")
+		require.NoError(t, err)
+
+		assert.False(t, exists)
+	})
+
+	for i, narEntry := range testdata.Entries {
+		t.Run(fmt.Sprintf("Nar%d should exist", i+1), func(t *testing.T) {
+			t.Parallel()
+
+			ts := testdata.NewTestServer(t, 40)
+			defer ts.Close()
+
+			c, err := upstream.New(
+				newContext(),
+				testhelper.MustParseURL(t, ts.URL),
+				testdata.PublicKeys(),
+			)
+			require.NoError(t, err)
+
+			exists, err := c.HasNarInfo(context.Background(), narEntry.NarInfoHash)
+			require.NoError(t, err)
+
+			assert.True(t, exists)
+		})
+	}
+}
+
 func TestGetNar(t *testing.T) {
 	t.Parallel()
 
@@ -209,6 +253,52 @@ func TestGetNar(t *testing.T) {
 
 		assert.Equal(t, "50160", resp.Header.Get("Content-Length"))
 	})
+}
+
+func TestHasNar(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nar does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		defer ts.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
+		exists, err := c.HasNar(context.Background(), nu)
+		require.NoError(t, err)
+
+		assert.False(t, exists)
+	})
+
+	for i, narEntry := range testdata.Entries {
+		t.Run(fmt.Sprintf("Nar%d should exist", i+1), func(t *testing.T) {
+			t.Parallel()
+
+			ts := testdata.NewTestServer(t, 40)
+			defer ts.Close()
+
+			c, err := upstream.New(
+				newContext(),
+				testhelper.MustParseURL(t, ts.URL),
+				testdata.PublicKeys(),
+			)
+			require.NoError(t, err)
+
+			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+			exists, err := c.HasNar(context.Background(), nu)
+			require.NoError(t, err)
+
+			assert.True(t, exists)
+		})
+	}
 }
 
 func TestGetNarCanMutate(t *testing.T) {

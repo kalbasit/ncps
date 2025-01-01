@@ -175,6 +175,53 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 	return ni, nil
 }
 
+// HasNarInfo returns true if the narinfo exists upstream.
+func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
+	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"upstream.HasNarInfo",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_url", u),
+			attribute.String("upstream_url", c.url.String()),
+		),
+	)
+	defer span.End()
+
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo_hash", hash).
+		Str("narinfo_url", u).
+		Str("upstream_url", c.url.String()).
+		Logger().
+		WithContext(ctx)
+
+	r, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+	if err != nil {
+		return false, fmt.Errorf("error creating a new request: %w", err)
+	}
+
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("download the narinfo from upstream")
+
+	resp, err := c.httpClient.Do(r)
+	if err != nil {
+		return false, fmt.Errorf("error performing the request: %w", err)
+	}
+
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	return resp.StatusCode < http.StatusBadRequest, nil
+}
+
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
@@ -235,6 +282,56 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 	}
 
 	return resp, nil
+}
+
+// HasNar returns true if the NAR exists upstream.
+func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (bool, error) {
+	u := narURL.JoinURL(c.url).String()
+
+	ctx, span := c.tracer.Start(
+		ctx,
+		"upstream.HasNar",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("nar_url", u),
+			attribute.String("upstream_url", c.url.String()),
+		),
+	)
+	defer span.End()
+
+	ctx = narURL.NewLogger(
+		zerolog.Ctx(ctx).
+			With().
+			Str("nar_url", u).
+			Str("upstream_url", c.url.String()).
+			Logger(),
+	).WithContext(ctx)
+
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return false, fmt.Errorf("error creating a new request: %w", err)
+	}
+
+	for _, mutator := range mutators {
+		mutator(r)
+	}
+
+	zerolog.Ctx(ctx).
+		Info().
+		Msg("download the nar from upstream")
+
+	resp, err := c.httpClient.Do(r)
+	if err != nil {
+		return false, fmt.Errorf("error performing the request: %w", err)
+	}
+
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	return resp.StatusCode < http.StatusBadRequest, nil
 }
 
 // GetPriority returns the priority of this upstream cache.
