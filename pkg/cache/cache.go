@@ -52,6 +52,8 @@ const (
 
 // Cache represents the main cache service.
 type Cache struct {
+	baseContext context.Context
+
 	hostName       string
 	secretKey      signature.SecretKey
 	upstreamCaches []upstream.Cache
@@ -93,6 +95,7 @@ func New(
 	narStore storage.NarStore,
 ) (*Cache, error) {
 	c := &Cache{
+		baseContext:          ctx,
 		db:                   db,
 		tracer:               otel.Tracer(tracerName),
 		configStore:          configStore,
@@ -607,14 +610,23 @@ func (c *Cache) pullNarInfo(
 		Logger().
 		WithContext(ctx)
 
-	// start a job to also pull the nar but don't wait for it to cme back
-	narDoneC := c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
-
-	// Harmonia, for example, explicitly returns none for compression but does
-	// accept encoding request, if that's the case we should get the compressed
-	// version and store that instead.
+	// Start a job to also pull the nar but don't wait for it to come back unless
+	// we need to alter the filesize/compression. For instance, Harmonia,
+	// explicitly returns none for compression but does accept encoding request,
+	// if that's the case we should get the compressed version and store that
+	// instead.
 	if enableZSTD {
-		<-narDoneC
+		<-c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
+	} else {
+		// create a detachedCtx that has the same span and logger as the main
+		// context but with the baseContext as parent; This context will not cancel
+		// when ctx is canceled allowing us to continue pulling the nar in the
+		// background.
+		detachedCtx := trace.ContextWithSpan(
+			zerolog.Ctx(ctx).WithContext(c.baseContext),
+			trace.SpanFromContext(ctx),
+		)
+		c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
