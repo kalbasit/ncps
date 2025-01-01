@@ -206,7 +206,7 @@ func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 
 	zerolog.Ctx(ctx).
 		Info().
-		Msg("download the narinfo from upstream")
+		Msg("heading the narinfo from upstream")
 
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
@@ -318,7 +318,7 @@ func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 
 	zerolog.Ctx(ctx).
 		Info().
-		Msg("download the nar from upstream")
+		Msg("heading the nar from upstream")
 
 	resp, err := c.httpClient.Do(r)
 	if err != nil {

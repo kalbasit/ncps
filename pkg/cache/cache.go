@@ -316,7 +316,7 @@ func (c *Cache) pullNar(
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
-			Msg("error getting the narInfo from upstream caches")
+			Msg("error getting the nar from upstream caches")
 
 		done()
 
