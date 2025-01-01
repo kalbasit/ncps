@@ -41,7 +41,7 @@ runs:
       env:
         RELEASE_VERSION: ${{ github.ref_name }}
       run: |
-        nix build --impure .#push-docker-image
+        nix build -L --impure .#push-docker-image
     - name: Push the docker image
       if: ${{ inputs.push }}
       env:
