@@ -1178,7 +1178,7 @@ func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error 
 
 		c.secretKey, err = signature.LoadSecretKey(string(skc))
 		if err != nil {
-			return fmt.Errorf("error reading the given secret key located at %q: %w", secretKeyPath, err)
+			return fmt.Errorf("error loading the given secret key located at %q: %w", secretKeyPath, err)
 		}
 
 		return nil
