@@ -67,7 +67,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore)
+		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), ucs...)
@@ -120,7 +120,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore)
+		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 		require.NoError(t, err)
 
 		for _, uc := range ucs {
@@ -151,7 +151,7 @@ func TestRunLRU(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	ts := testdata.NewTestServer(t, 40)

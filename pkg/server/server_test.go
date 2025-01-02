@@ -52,7 +52,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -176,7 +176,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -289,7 +289,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)

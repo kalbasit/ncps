@@ -90,6 +90,11 @@ func serveCommand() *cli.Command {
 				Value:   "Local",
 			},
 			&cli.StringFlag{
+				Name:    "cache-secret-key-path",
+				Usage:   "The path to the secret key used for signing cached paths",
+				Sources: cli.EnvVars("CACHE_SECRET_KEY_PATH"),
+			},
+			&cli.StringFlag{
 				Name:    "server-addr",
 				Usage:   "The address of the server",
 				Sources: cli.EnvVars("SERVER_ADDR"),
@@ -225,6 +230,7 @@ func createCache(
 		localStore,
 		localStore,
 		localStore,
+		cmd.String("cache-secret-key-path"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new cache: %w", err)

@@ -54,7 +54,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), "", db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), "", db, localStore, localStore, localStore, "")
 			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
@@ -72,7 +72,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), "https://cache.example.com", db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), "https://cache.example.com", db, localStore, localStore, localStore, "")
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
@@ -90,7 +90,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), "cache.example.com/path/to", db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), "cache.example.com/path/to", db, localStore, localStore, localStore, "")
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
@@ -108,8 +108,71 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+			_, err = cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 			require.NoError(t, err)
+		})
+	})
+
+	t.Run("secretKey", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("generated", func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir) // clean up
+
+			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+			testhelper.CreateMigrateDatabase(t, dbFile)
+
+			db, err := database.Open("sqlite:" + dbFile)
+			require.NoError(t, err)
+
+			localStore, err := local.New(newContext(), dir)
+			require.NoError(t, err)
+
+			c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+			require.NoError(t, err)
+
+			sk, err := localStore.GetSecretKey(newContext())
+			require.NoError(t, err)
+
+			assert.Equal(t, sk.ToPublicKey(), c.PublicKey(), "ensure the cache public key matches the one in the local store")
+		})
+
+		t.Run("given", func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir) // clean up
+
+			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+			testhelper.CreateMigrateDatabase(t, dbFile)
+
+			db, err := database.Open("sqlite:" + dbFile)
+			require.NoError(t, err)
+
+			localStore, err := local.New(newContext(), dir)
+			require.NoError(t, err)
+
+			sk, _, err := signature.GenerateKeypair(cacheName, nil)
+			require.NoError(t, err)
+
+			skFile, err := os.CreateTemp("", "secret-key")
+			require.NoError(t, err)
+
+			defer os.Remove(skFile.Name())
+
+			_, err = skFile.WriteString(sk.String())
+			require.NoError(t, err)
+
+			require.NoError(t, skFile.Close())
+
+			c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, skFile.Name())
+			require.NoError(t, err)
+
+			_, err = localStore.GetSecretKey(newContext())
+			require.ErrorIs(t, err, storage.ErrNotFound)
+
+			assert.Equal(t, sk.ToPublicKey(), c.PublicKey(), "ensure the cache public key matches the one given")
 		})
 	})
 }
@@ -130,7 +193,7 @@ func TestPublicKey(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
@@ -172,7 +235,7 @@ func TestGetNarInfo(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -551,7 +614,7 @@ func TestPutNarInfo(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -691,7 +754,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -761,7 +824,7 @@ func TestGetNar(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -966,7 +1029,7 @@ func TestPutNar(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -1011,7 +1074,7 @@ func TestDeleteNar(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore)
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
