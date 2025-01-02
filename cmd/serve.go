@@ -91,7 +91,7 @@ func serveCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "cache-secret-key-path",
-				Usage:   "The path to the secret Key",
+				Usage:   "The path to the secret key used for signing cached paths",
 				Sources: cli.EnvVars("CACHE_SECRET_KEY_PATH"),
 			},
 			&cli.StringFlag{
