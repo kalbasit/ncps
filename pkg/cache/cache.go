@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -93,6 +94,7 @@ func New(
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
+	secretKeyPath string,
 ) (*Cache, error) {
 	c := &Cache{
 		baseContext:          ctx,
@@ -111,12 +113,9 @@ func New(
 
 	c.hostName = hostName
 
-	sk, err := c.setupSecretKey(ctx)
-	if err != nil {
+	if err := c.setupSecretKey(ctx, secretKeyPath); err != nil {
 		return c, fmt.Errorf("error setting up the secret key: %w", err)
 	}
-
-	c.secretKey = sk
 
 	return c, nil
 }
@@ -1170,26 +1169,42 @@ func (c *Cache) validateHostname(hostName string) error {
 	return nil
 }
 
-func (c *Cache) setupSecretKey(ctx context.Context) (signature.SecretKey, error) {
-	sk, err := c.configStore.GetSecretKey(ctx)
+func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error {
+	if secretKeyPath != "" {
+		skc, err := os.ReadFile(secretKeyPath)
+		if err != nil {
+			return fmt.Errorf("error reading the given secret key located at %q: %w", secretKeyPath, err)
+		}
+
+		c.secretKey, err = signature.LoadSecretKey(string(skc))
+		if err != nil {
+			return fmt.Errorf("error reading the given secret key located at %q: %w", secretKeyPath, err)
+		}
+
+		return nil
+	}
+
+	var err error
+
+	c.secretKey, err = c.configStore.GetSecretKey(ctx)
 	if err == nil {
-		return sk, nil
+		return nil
 	}
 
 	if !errors.Is(err, storage.ErrNotFound) {
-		return sk, fmt.Errorf("error fetching the secret key from the store: %w", err)
+		return fmt.Errorf("error fetching the secret key from the store: %w", err)
 	}
 
-	sk, _, err = signature.GenerateKeypair(c.hostName, nil)
+	c.secretKey, _, err = signature.GenerateKeypair(c.hostName, nil)
 	if err != nil {
-		return sk, fmt.Errorf("error generating a secret key pair: %w", err)
+		return fmt.Errorf("error generating a secret key pair: %w", err)
 	}
 
-	if err := c.configStore.PutSecretKey(ctx, sk); err != nil {
-		return sk, fmt.Errorf("error storing the generated secret key in the store: %w", err)
+	if err = c.configStore.PutSecretKey(ctx, c.secretKey); err != nil {
+		return fmt.Errorf("error storing the generated secret key in the store: %w", err)
 	}
 
-	return sk, nil
+	return nil
 }
 
 func (c *Cache) hasUpstreamJob(hash string) bool {
