@@ -16,15 +16,14 @@ jobs:
       - uses: DeterminateSystems/flake-checker-action@main
       - run: nix flake check -L --all-systems
   docker:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/docker.yml
     needs: flake-check
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/docker
-        with:
-          images: kalbasit/ncps
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+    with:
+      systems: "['x86_64-linux', 'aarch64-linux']"
+      images: kalbasit/ncps
+      username: ${{ vars.DOCKERHUB_USERNAME }}
+    secrets:
+      password: ${{ secrets.DOCKERHUB_TOKEN }}
   release:
     runs-on: ubuntu-24.04
     needs: flake-check

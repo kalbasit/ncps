@@ -1,6 +1,8 @@
-name: CI
+name: Docker images
 on:
-  pull_request:
+  push:
+    branches:
+      - "main"
 jobs:
   flake-check:
     runs-on: ubuntu-24.04
@@ -15,6 +17,7 @@ jobs:
       - run: nix flake check -L --all-systems
   docker:
     uses: ./.github/workflows/docker.yml
+    needs: flake-check
     with:
       systems: "['x86_64-linux', 'aarch64-linux']"
       images: kalbasit/ncps
