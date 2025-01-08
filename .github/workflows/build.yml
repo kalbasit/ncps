@@ -1,8 +1,8 @@
-name: Releases
+name: Docker images
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches:
+      - "main"
 jobs:
   flake-check:
     runs-on: ubuntu-24.04
@@ -24,15 +24,3 @@ jobs:
       username: ${{ vars.DOCKERHUB_USERNAME }}
     secrets:
       password: ${{ secrets.DOCKERHUB_TOKEN }}
-  release:
-    runs-on: ubuntu-24.04
-    needs: flake-check
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Release with Notes
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          make_latest: "true"
