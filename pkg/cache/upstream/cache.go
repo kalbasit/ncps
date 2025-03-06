@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
@@ -87,9 +88,24 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
 		c.publicKeys = append(c.publicKeys, pk)
 	}
 
-	priority, err := c.parsePriority(ctx)
-	if err != nil {
-		return c, fmt.Errorf("error parsing the priority for %q: %w", u, err)
+	var priority uint64
+
+	if u.Query().Has("priority") {
+		parsedPriority, err := strconv.ParseUint(u.Query().Get("priority"), 10, 16)
+		if err != nil {
+			return c, fmt.Errorf("error parsing the priority from the URL %q: %w", u, err)
+		}
+
+		priority = parsedPriority
+	}
+
+	if priority < 1 {
+		parsedPriority, err := c.parsePriority(ctx)
+		if err != nil {
+			return c, fmt.Errorf("error parsing the priority for %q: %w", u, err)
+		}
+
+		priority = parsedPriority
 	}
 
 	c.priority = priority
