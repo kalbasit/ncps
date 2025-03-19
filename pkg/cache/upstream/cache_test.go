@@ -84,6 +84,40 @@ func TestNew(t *testing.T) {
 
 		assert.EqualValues(t, 40, c.GetPriority())
 	})
+
+	//nolint:paralleltest
+	t.Run("priority parsed from URL", func(t *testing.T) {
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL+"?priority=42"),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		assert.EqualValues(t, 42, c.GetPriority())
+	})
+
+	//nolint:paralleltest
+	t.Run("priority in URL is zero", func(t *testing.T) {
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL+"?priority=0"),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		assert.EqualValues(t, 40, c.GetPriority())
+	})
+
+	//nolint:paralleltest
+	t.Run("priority in URL is invalid", func(t *testing.T) {
+		_, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL+"?priority=-1"),
+			testdata.PublicKeys(),
+		)
+		assert.ErrorContains(t, err, "error parsing the priority from the URL")
+	})
 }
 
 func TestGetNarInfo(t *testing.T) {
