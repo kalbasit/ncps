@@ -1,0 +1,29 @@
+name: Auto Update Vendor Hash
+on:
+  pull_request:
+    paths:
+      - "go.mod"
+      - "go.sum"
+jobs:
+  update-vendor-hash:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GHA_PAT_TOKEN }}
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - run: |
+          if nix build --print-build-logs .#ncps 2> /tmp/log; then
+            exit 0
+          fi
+
+          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
+          echo "hash=$hash"
+
+          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps.nix
+
+          git diff
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto Update Vendor Hash"
