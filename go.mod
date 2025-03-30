@@ -10,7 +10,7 @@ require (
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
 	github.com/riandyrn/otelchi v0.12.1
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/rs/zerolog v1.33.0
+	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v3 v3.0.0-beta1
 	go.opentelemetry.io/otel v1.35.0
