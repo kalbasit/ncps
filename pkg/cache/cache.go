@@ -68,6 +68,9 @@ type Cache struct {
 	narInfoStore storage.NarInfoStore
 	narStore     storage.NarStore
 
+	// Should the cache sign the narinfos?
+	shouldSignNarinfo bool
+
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
 	// repetitive touching of records in the database which are causing `database
@@ -103,6 +106,7 @@ func New(
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
+		shouldSignNarinfo:    true,
 		upstreamJobs:         make(map[string]chan struct{}),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
@@ -144,6 +148,8 @@ func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...upstream.Cache) {
 
 	c.upstreamCaches = ucss
 }
+
+func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
 
 // SetMaxSize sets the maxsize of the cache. This will be used by the LRU
 // cronjob to automatically clean-up the store.
@@ -820,6 +826,10 @@ func (c *Cache) prePullNar(
 }
 
 func (c *Cache) signNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
+	if !c.shouldSignNarinfo {
+		return nil
+	}
+
 	_, span := c.tracer.Start(
 		ctx,
 		"cache.signNarInfo",

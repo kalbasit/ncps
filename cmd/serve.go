@@ -34,6 +34,11 @@ func serveCommand() *cli.Command {
 		Action:  serveAction(),
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
+				Name:    "cache-sign-narinfo",
+				Sources: cli.EnvVars("CACHE_SIGN_NARINFO"),
+				Value:   true,
+			},
+			&cli.BoolFlag{
 				Name:    "cache-allow-delete-verb",
 				Usage:   "Whether to allow the DELETE verb to delete narInfo and nar files",
 				Sources: cli.EnvVars("CACHE_ALLOW_DELETE_VERB"),
@@ -236,6 +241,7 @@ func createCache(
 		return nil, fmt.Errorf("error creating a new cache: %w", err)
 	}
 
+	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 	c.AddUpstreamCaches(ctx, ucs...)
 
 	if cmd.String("cache-lru-schedule") == "" {
