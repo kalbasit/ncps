@@ -6,7 +6,7 @@ require (
 	github.com/XSAM/otelsql v0.38.0
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/klauspost/compress v1.18.0
-	github.com/mattn/go-sqlite3 v1.14.27
+	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
 	github.com/riandyrn/otelchi v0.12.1
 	github.com/robfig/cron/v3 v3.0.1
