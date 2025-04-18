@@ -47,6 +47,7 @@
           Cmd = [ "/bin/ncps" ];
           Env = [
             "DBMATE_MIGRATIONS_DIR=/share/ncps/db/migrations"
+            "DBMATE_SCHEMA_FILE=/share/ncps/db/schema.sql"
             "DBMATE_NO_DUMP_SCHEMA=true"
           ];
           ExposedPorts = {
