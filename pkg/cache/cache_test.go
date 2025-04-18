@@ -214,6 +214,56 @@ func TestPublicKey(t *testing.T) {
 	})
 }
 
+func TestGetNarInfoWithoutSignature(t *testing.T) {
+	t.Parallel()
+
+	ts := testdata.NewTestServer(t, 40)
+	defer ts.Close()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir) // clean up
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
+	require.NoError(t, err)
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:" + dbFile)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+	c.SetCacheSignNarinfo(false)
+
+	ni, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+
+	var found bool
+
+	require.Len(t, ni.Signatures, 1, "must include our signature and the orignal one")
+
+	var sig signature.Signature
+	for _, sig = range ni.Signatures {
+		if sig.Name == cacheName {
+			found = true
+
+			break
+		}
+	}
+
+	assert.False(t, found)
+
+	assert.False(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
+}
+
 //nolint:paralleltest
 func TestGetNarInfo(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
