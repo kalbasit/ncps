@@ -10,6 +10,7 @@
       settings.global.excludes = [
         ".env"
         ".envrc"
+        "db/schema.sql"
         "LICENSE"
         "renovate.json"
       ];

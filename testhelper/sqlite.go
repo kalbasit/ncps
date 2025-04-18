@@ -26,11 +26,18 @@ func CreateMigrateDatabase(t *testing.T, dbFile string) {
 		"migrations",
 	)
 
+	dbSchema := filepath.Join(
+		filepath.Dir(filepath.Dir(thisFile)),
+		"db",
+		"schema.sql",
+	)
+
 	//nolint:gosec
 	cmd := exec.Command(
 		"dbmate",
 		"--url=sqlite:"+dbFile,
 		"--migrations-dir="+dbMigrationsDir,
+		"--schema-file="+dbSchema,
 		"up",
 	)
 
