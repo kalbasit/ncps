@@ -35,6 +35,7 @@ func serveCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "cache-sign-narinfo",
+				Usage:   "Whether to sign narInfo files or passthru as-is from upstream",
 				Sources: cli.EnvVars("CACHE_SIGN_NARINFO"),
 				Value:   true,
 			},
