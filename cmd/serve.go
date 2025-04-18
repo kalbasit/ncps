@@ -34,12 +34,6 @@ func serveCommand() *cli.Command {
 		Action:  serveAction(),
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:    "cache-sign-narinfo",
-				Usage:   "Whether to sign narInfo files or passthru as-is from upstream",
-				Sources: cli.EnvVars("CACHE_SIGN_NARINFO"),
-				Value:   true,
-			},
-			&cli.BoolFlag{
 				Name:    "cache-allow-delete-verb",
 				Usage:   "Whether to allow the DELETE verb to delete narInfo and nar files",
 				Sources: cli.EnvVars("CACHE_ALLOW_DELETE_VERB"),
@@ -99,6 +93,12 @@ func serveCommand() *cli.Command {
 				Name:    "cache-secret-key-path",
 				Usage:   "The path to the secret key used for signing cached paths",
 				Sources: cli.EnvVars("CACHE_SECRET_KEY_PATH"),
+			},
+			&cli.BoolFlag{
+				Name:    "cache-sign-narinfo",
+				Usage:   "Whether to sign narInfo files or passthru as-is from upstream",
+				Sources: cli.EnvVars("CACHE_SIGN_NARINFO"),
+				Value:   true,
 			},
 			&cli.StringFlag{
 				Name:    "server-addr",
