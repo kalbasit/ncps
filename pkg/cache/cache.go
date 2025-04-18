@@ -149,6 +149,7 @@ func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...upstream.Cache) {
 	c.upstreamCaches = ucss
 }
 
+// SetCacheSignNarinfo configure ncps to sign or not sign narinfos.
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
 
 // SetMaxSize sets the maxsize of the cache. This will be used by the LRU
