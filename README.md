@@ -193,6 +193,7 @@ These options can be used with any `ncps` command:
 
 These options are specific to the `ncps serve` command:
 
+- `--cache-sign-narinfo`: Whether to sign narInfo files or passthru as-is from upstream (default: true). (Environment variable: `$CACHE_SIGN_NARINFO`)
 - `--cache-allow-delete-verb`: Whether to allow the DELETE verb to delete `narinfo` and `nar` files from the cache (default: false). (Environment variable: `$CACHE_ALLOW_DELETE_VERB`)
 - `--cache-allow-put-verb`: Whether to allow the PUT verb to push `narinfo` and `nar` files directly to the cache (default: false). (Environment variable: `$CACHE_ALLOW_PUT_VERB`)
 - `--cache-hostname`: The hostname of the cache server. **This is used to generate the private key used for signing store paths (.narinfo).** (Environment variable: `$CACHE_HOSTNAME`)
