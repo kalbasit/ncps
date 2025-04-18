@@ -45,7 +45,11 @@ func New() *cli.Command {
 		Usage:   "Nix Binary Cache Proxy Service",
 		Version: Version,
 		After: func(ctx context.Context, _ *cli.Command) error {
-			return otelShutdown(ctx)
+			if otelShutdown != nil {
+				return otelShutdown(ctx)
+			}
+
+			return nil
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
