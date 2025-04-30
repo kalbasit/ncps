@@ -38,6 +38,49 @@ func TestServeHTTP(t *testing.T) {
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, hts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
 
+	t.Run("GET /pubkey", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir) // clean up
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open("sqlite:" + dbFile)
+		require.NoError(t, err)
+
+		localStore, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+		require.NoError(t, err)
+
+		c.AddUpstreamCaches(newContext(), uc)
+		c.SetRecordAgeIgnoreTouch(0)
+
+		s := server.New(c)
+
+		ts := httptest.NewServer(s)
+		defer ts.Close()
+
+		url := ts.URL + "/pubkey"
+
+		r, err := http.NewRequestWithContext(newContext(), http.MethodGet, url, nil)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(r)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, c.PublicKey().String(), string(body))
+	})
+
 	t.Run("DELETE requests", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)

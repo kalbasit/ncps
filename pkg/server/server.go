@@ -29,6 +29,7 @@ const (
 	routeNarCompression = "/nar/{hash:[a-z0-9]+}.nar.{compression:*}"
 	routeNarInfo        = "/{hash:[a-z0-9]+}.narinfo"
 	routeCacheInfo      = "/nix-cache-info"
+	routeCachePublicKey = "/pubkey"
 
 	contentLength      = "Content-Length"
 	contentType        = "Content-Type"
@@ -95,6 +96,7 @@ func (s *Server) createRouter() {
 	s.router.Get(routeIndex, s.getIndex)
 
 	s.router.Get(routeCacheInfo, s.getNixCacheInfo)
+	s.router.Get(routeCachePublicKey, s.getNixCachePublicKey)
 
 	s.router.Head(routeNarInfo, s.getNarInfo(false))
 	s.router.Get(routeNarInfo, s.getNarInfo(true))
@@ -194,6 +196,25 @@ func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	if _, err := w.Write([]byte(nixCacheInfo)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error writing the response")
+	}
+}
+
+func (s *Server) getNixCachePublicKey(w http.ResponseWriter, r *http.Request) {
+	_, span := s.tracer.Start(
+
+		r.Context(),
+		"server.getNixCachePublicKey",
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+	defer span.End()
+
+	if _, err := w.Write([]byte(s.cache.PublicKey().String())); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		zerolog.Ctx(r.Context()).
