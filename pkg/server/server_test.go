@@ -284,7 +284,7 @@ func TestServeHTTP(t *testing.T) {
 				body, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)
 
-				if assert.Equal(t, len(testdata.Nar1.NarText), len(string(body))) {
+				if assert.Len(t, testdata.Nar1.NarText, len(string(body))) {
 					assert.Equal(t, testdata.Nar1.NarText, string(body))
 				}
 			})

@@ -1401,11 +1401,10 @@ func zstdMutator(
 			cfe = "." + cfe
 		}
 
-		r.URL.Path = strings.Replace(
+		r.URL.Path = strings.ReplaceAll(
 			r.URL.Path,
 			"."+nar.CompressionTypeZstd.ToFileExtension(),
 			cfe,
-			-1,
 		)
 	}
 }

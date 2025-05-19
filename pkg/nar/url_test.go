@@ -34,9 +34,9 @@ func FuzzParseURL(f *testing.F) {
 	f.Fuzz(func(t *testing.T, url string) {
 		narURL, err := nar.ParseURL(url)
 		if err != nil {
-			assert.Equal(t, "", narURL.Hash)
-			assert.Equal(t, "", string(narURL.Compression))
-			assert.Equal(t, "", narURL.Query.Encode())
+			assert.Empty(t, narURL.Hash)
+			assert.Empty(t, string(narURL.Compression))
+			assert.Empty(t, narURL.Query.Encode())
 		} else {
 			assert.NotEmpty(t, narURL.Hash)
 			assert.NotEmpty(t, string(narURL.Compression))

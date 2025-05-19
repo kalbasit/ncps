@@ -41,6 +41,8 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("hostname must not be empty", func(t *testing.T) {
+			t.Parallel()
+
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
@@ -59,6 +61,8 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
+			t.Parallel()
+
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
@@ -77,6 +81,8 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("hostname must not contain a path", func(t *testing.T) {
+			t.Parallel()
+
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
@@ -95,6 +101,8 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("valid hostName must return no error", func(t *testing.T) {
+			t.Parallel()
+
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
@@ -117,6 +125,8 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		t.Run("generated", func(t *testing.T) {
+			t.Parallel()
+
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
@@ -140,6 +150,8 @@ func TestNew(t *testing.T) {
 		})
 
 		t.Run("given", func(t *testing.T) {
+			t.Parallel()
+
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir) // clean up
@@ -929,7 +941,7 @@ func TestGetNar(t *testing.T) {
 			body, err := io.ReadAll(r)
 			require.NoError(t, err)
 
-			if assert.Equal(t, len(testdata.Nar1.NarText), len(string(body))) {
+			if assert.Len(t, testdata.Nar1.NarText, len(string(body))) {
 				assert.Equal(t, testdata.Nar1.NarText, string(body))
 			}
 		})
