@@ -1,16 +1,14 @@
+version: "2"
 linters:
   enable:
-    - errname
     - err113
+    - errname
     - exhaustive
-    - gci
     - gochecknoglobals
     - gochecknoinits
     - goconst
     - godot
-    - gofumpt
     - goheader
-    - goimports
     - gosec
     - importas
     - lll
@@ -28,9 +26,8 @@ linters:
     - predeclared
     - revive
     - rowserrcheck
-    - stylecheck
+    - staticcheck
     - tagliatelle
-    - tenv
     - testifylint
     - testpackage
     - unconvert
@@ -39,22 +36,35 @@ linters:
     - whitespace
     - wsl
     - zerologlint
-linters-settings:
-  gci:
-    # Section configuration to compare against.
-    # Section names are case-insensitive and may contain parameters in ().
-    # The default order of sections is `standard > default > custom > blank > dot > alias > localmodule`,
-    # If `custom-order` is `true`, it follows the order of `sections` option.
-    # Default: ["standard", "default"]
-    sections:
-      - standard # Standard section: captures all standard packages.
-      - default # Default section: contains all imports that could not be matched to another section type.
-      - alias # Alias section: contains all alias imports. This section is not present unless explicitly enabled.
-      # - prefix(github.com/org/project) # Custom section: groups all imports with the specified Prefix.
-      - localmodule # Local module section: contains all local packages. This section is not present unless explicitly enabled.
-      - blank # Blank section: contains all blank imports. This section is not present unless explicitly enabled.
-      - dot # Dot section: contains all dot imports. This section is not present unless explicitly enabled.
-    # Enable custom order of sections.
-    # If `true`, make the section order the same as the order of `sections`.
-    # Default: false
-    custom-order: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - alias
+        - localmodule
+        - blank
+        - dot
+      custom-order: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

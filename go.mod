@@ -1,6 +1,6 @@
 module github.com/kalbasit/ncps
 
-go 1.23.7
+go 1.24.3
 
 require (
 	github.com/XSAM/otelsql v0.38.0

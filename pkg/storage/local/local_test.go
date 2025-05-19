@@ -97,6 +97,8 @@ func TestNew(t *testing.T) {
 
 		for _, p := range dirs {
 			t.Run("Checking that "+p+" exists", func(t *testing.T) {
+				t.Parallel()
+
 				assert.DirExists(t, filepath.Join(dir, p))
 			})
 		}
@@ -616,7 +618,7 @@ func TestGetNar(t *testing.T) {
 
 		assert.EqualValues(t, len(testdata.Nar1.NarText), size)
 
-		if assert.Equal(t, len(testdata.Nar1.NarText), len(nt)) {
+		if assert.Len(t, testdata.Nar1.NarText, len(nt)) {
 			assert.Equal(t,
 				strings.TrimSpace(testdata.Nar1.NarText),
 				strings.TrimSpace(string(nt)),
@@ -662,7 +664,7 @@ func TestPutNar(t *testing.T) {
 		cs, err := os.ReadFile(narPath)
 		require.NoError(t, err)
 
-		if assert.Equal(t, len(testdata.Nar1.NarText), len(string(cs))) {
+		if assert.Len(t, testdata.Nar1.NarText, len(string(cs))) {
 			assert.Equal(t,
 				strings.TrimSpace(testdata.Nar1.NarText),
 				strings.TrimSpace(string(cs)),
