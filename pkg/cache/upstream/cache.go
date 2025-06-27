@@ -76,6 +76,9 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
 		Transport: &http.Transport{
 			// Disable automatic decompression
 			DisableCompression: true,
+			// Respect proxy environment variables
+			// (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, etc.).
+			Proxy: http.ProxyFromEnvironment,
 		},
 	}
 
