@@ -12,7 +12,7 @@ jobs:
         with:
           token: ${{ secrets.GHA_PAT_TOKEN }}
       - uses: DeterminateSystems/nix-installer-action@v17
-      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: DeterminateSystems/magic-nix-cache-action@v11
       - run: |
           if nix build --print-build-logs .#ncps 2> /tmp/log; then
             exit 0
