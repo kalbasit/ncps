@@ -24,6 +24,6 @@ jobs:
           sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps.nix
 
           git diff
-      - uses: stefanzweifel/git-auto-commit-action@v5
+      - uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "Auto Update Vendor Hash"
