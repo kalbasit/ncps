@@ -48,7 +48,7 @@ jobs:
         if: "${{ matrix.system != 'x86_64-linux' }}"
         run: sudo apt-get install -y qemu-user-static
         shell: bash
-      - uses: DeterminateSystems/nix-installer-action@v17
+      - uses: DeterminateSystems/nix-installer-action@v18
         with:
           extra-conf: |
             extra-platforms = ${{ matrix.system }}
