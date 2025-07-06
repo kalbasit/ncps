@@ -5,6 +5,7 @@ go 1.24.3
 require (
 	github.com/XSAM/otelsql v0.39.0
 	github.com/go-chi/chi/v5 v5.2.2
+	github.com/klauspost/compress v1.12.3
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
 	github.com/riandyrn/otelchi v0.12.1
@@ -35,6 +36,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/golang/snappy v0.0.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
