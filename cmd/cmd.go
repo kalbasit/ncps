@@ -209,8 +209,8 @@ func newResource(ctx context.Context, cmd *cli.Command) (*resource.Resource, err
 
 		// Set the Schema URL.
 		// NOTE: This will fail if the semconv version being used within the
-		// deterctors is different and it's a check to ensure I am using the
-		// correct semconv version.
+		// deterctors is different. If an error occurred, change the import path of
+		// semconv in the imports section at the top of this file.
 		resource.WithSchemaURL(semconv.SchemaURL),
 
 		// Add Custom attributes.
