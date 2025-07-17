@@ -178,10 +178,10 @@ func serveAction() cli.ActionFunc {
 	}
 }
 
-func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]upstream.Cache, error) {
+func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]*upstream.Cache, error) {
 	ucSlice := cmd.StringSlice("upstream-cache")
 
-	ucs := make([]upstream.Cache, 0, len(ucSlice))
+	ucs := make([]*upstream.Cache, 0, len(ucSlice))
 
 	for _, us := range ucSlice {
 		var pubKeys []string
@@ -213,7 +213,7 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]upstream.Cache,
 func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
-	ucs []upstream.Cache,
+	ucs []*upstream.Cache,
 ) (*cache.Cache, error) {
 	dbURL := cmd.String("cache-database-url")
 

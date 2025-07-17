@@ -43,7 +43,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		t.Logf("random order established: %v", randomOrder)
 
-		ucs := make([]upstream.Cache, 0, len(testServers))
+		ucs := make([]*upstream.Cache, 0, len(testServers))
 
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
@@ -96,7 +96,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		t.Logf("random order established: %v", randomOrder)
 
-		ucs := make([]upstream.Cache, 0, len(testServers))
+		ucs := make([]*upstream.Cache, 0, len(testServers))
 
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
