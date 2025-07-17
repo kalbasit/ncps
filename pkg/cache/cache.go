@@ -129,6 +129,12 @@ func New(
 // AddUpstreamCaches adds one or more upstream caches with lazy loading support.
 func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
 	c.upstreamCaches = append(c.upstreamCaches, ucs...)
+
+	// Set priorities for all upstream caches based on their position in the slice
+	for idx, uc := range c.upstreamCaches {
+		uc.SetPriority(uint64(idx + 1))
+	}
+
 	c.healthChecker = healthcheck.New(c.upstreamCaches)
 
 	// Set up health change notifications for dynamic management
