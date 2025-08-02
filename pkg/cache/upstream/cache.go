@@ -94,7 +94,7 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 		c.publicKeys = append(c.publicKeys, pk)
 	}
 
-if u.Query().Has("priority") {
+	if u.Query().Has("priority") {
 		priority, err := strconv.ParseUint(u.Query().Get("priority"), 10, 16)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing the priority from the URL %q: %w", u, err)
