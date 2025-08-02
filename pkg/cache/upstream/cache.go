@@ -94,12 +94,18 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 		c.publicKeys = append(c.publicKeys, pk)
 	}
 
-	if u.Query().Has("priority") {
+if u.Query().Has("priority") {
 		priority, err := strconv.ParseUint(u.Query().Get("priority"), 10, 16)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing the priority from the URL %q: %w", u, err)
 		}
-		c.priority = priority
+		if priority <= 0 {
+			c.priority = 40 // Default priority if zero or negative
+		} else {
+			c.priority = priority
+		}
+	} else {
+		c.priority = 40 // Default priority
 	}
 
 	// Initialize as unhealthy, will be marked healthy by health checker

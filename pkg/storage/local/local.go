@@ -61,6 +61,10 @@ func New(ctx context.Context, path string) (*Store, error) {
 		return nil, fmt.Errorf("error setting up the store directory: %w", err)
 	}
 
+	if err := os.MkdirAll(s.storePath(), dirMode); err != nil {
+		return nil, fmt.Errorf("error ensuring store directory exists: %w", err)
+	}
+
 	return s, nil
 }
 
@@ -383,6 +387,7 @@ func (s *Store) storeNarPath() string     { return filepath.Join(s.storePath(), 
 func (s *Store) storeTMPPath() string     { return filepath.Join(s.storePath(), "tmp") }
 
 func (s *Store) setupDirs() error {
+	// RemoveAll is safe to call on non-existent directories
 	if err := os.RemoveAll(s.storeTMPPath()); err != nil {
 		return fmt.Errorf("error removing the temporary download directory: %w", err)
 	}
