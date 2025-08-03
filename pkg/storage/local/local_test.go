@@ -96,8 +96,8 @@ func TestNew(t *testing.T) {
 		}
 
 		for _, p := range dirs {
+			//nolint:paralleltest
 			t.Run("Checking that "+p+" exists", func(t *testing.T) {
-				// Don't use t.Parallel() here as it causes race condition with defer cleanup
 				assert.DirExists(t, filepath.Join(dir, p))
 			})
 		}
