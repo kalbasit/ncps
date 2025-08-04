@@ -132,7 +132,7 @@ func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
 
 	// Set priorities for all upstream caches based on their position in the slice
 	for idx, uc := range c.upstreamCaches {
-		uc.SetPriority(uint64(idx + 1))
+		uc.SetPriority(uint64(idx) + 1)
 	}
 
 	c.healthChecker = healthcheck.New(c.upstreamCaches)
@@ -147,6 +147,10 @@ func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
 	// Start the health change processor
 	go c.processHealthChanges(ctx, healthChangeCh)
 }
+
+// GetHealthChecker returns the instance of haelth checker used by the cache.
+// It's useful for testing the behavior of ncps.
+func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker { return c.healthChecker }
 
 // SetCacheSignNarinfo configure ncps to sign or not sign narinfos.
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
@@ -1538,7 +1542,7 @@ func (c *Cache) selectUpstream(
 	}
 }
 
-// processHealthChanges handles health status changes for upstreams
+// processHealthChanges handles health status changes for upstreams.
 func (c *Cache) processHealthChanges(ctx context.Context, healthChangeCh <-chan healthcheck.HealthStatusChange) {
 	for {
 		select {

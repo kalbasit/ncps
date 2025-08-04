@@ -14,6 +14,7 @@ type HealthChecker struct {
 	mu        sync.RWMutex
 	upstreams []*upstream.Cache
 	ticker    *time.Ticker
+	trigger   chan chan struct{}
 
 	// healthChangeNotifier is used to notify about health status changes
 	healthChangeNotifier chan<- HealthStatusChange
@@ -30,7 +31,16 @@ func New(upstreams []*upstream.Cache) *HealthChecker {
 	return &HealthChecker{
 		upstreams: upstreams,
 		ticker:    time.NewTicker(1 * time.Minute),
+		trigger:   make(chan chan struct{}),
 	}
+}
+
+// Trigger forces the health check to run now.
+func (hs *HealthChecker) Trigger() chan struct{} {
+	trigC := make(chan struct{})
+	hs.trigger <- trigC
+
+	return trigC
 }
 
 // SetHealthChangeNotifier sets the channel to notify about health status changes
@@ -40,14 +50,14 @@ func (hc *HealthChecker) SetHealthChangeNotifier(ch chan<- HealthStatusChange) {
 	hc.healthChangeNotifier = ch
 }
 
-// AddUpstream adds a new upstream cache to monitor
+// AddUpstream adds a new upstream cache to monitor.
 func (hc *HealthChecker) AddUpstream(upstream *upstream.Cache) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 	hc.upstreams = append(hc.upstreams, upstream)
 }
 
-// RemoveUpstream removes an upstream cache from monitoring
+// RemoveUpstream removes an upstream cache from monitoring.
 func (hc *HealthChecker) RemoveUpstream(upstream *upstream.Cache) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
@@ -70,6 +80,9 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 			case <-ctx.Done():
 				hc.ticker.Stop()
 				return
+			case trigC := <-hc.trigger:
+				hc.check(ctx)
+				close(trigC)
 			case <-hc.ticker.C:
 				hc.check(ctx)
 			}

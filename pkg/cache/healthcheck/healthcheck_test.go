@@ -1,11 +1,13 @@
-package cache_test
+package healthcheck_test
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,6 +19,8 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
+const cacheName = "cache.example.com"
+
 func TestHealthCheck(t *testing.T) {
 	t.Parallel()
 
@@ -25,7 +29,7 @@ func TestHealthCheck(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) // clean up
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
 	require.NoError(t, err)
@@ -44,8 +48,12 @@ func TestHealthCheck(t *testing.T) {
 
 	c.AddUpstreamCaches(newContext(), uc)
 
-	// Wait for the healthcheck to run
-	time.Sleep(1 * time.Second)
+	// Get the instance of healthchecker
+	healthChecker := c.GetHealthChecker()
+
+	// Trigger the HealthCheck
+	trigC := healthChecker.Trigger()
+	<-trigC
 
 	// Check that the upstream is healthy and the priority is updated
 	assert.True(t, uc.IsHealthy())
@@ -54,9 +62,16 @@ func TestHealthCheck(t *testing.T) {
 	// Shutdown the test server
 	ts.Close()
 
-	// Wait for the healthcheck to run again
-	time.Sleep(1 * time.Second)
+	// Trigger the HealthCheck
+	trigC = healthChecker.Trigger()
+	<-trigC
 
 	// Check that the upstream is unhealthy
 	assert.False(t, uc.IsHealthy())
+}
+
+func newContext() context.Context {
+	return zerolog.
+		New(io.Discard).
+		WithContext(context.Background())
 }
