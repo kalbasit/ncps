@@ -8,7 +8,7 @@ jobs:
   update-vendor-hash:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           token: ${{ secrets.GHA_PAT_TOKEN }}
       - uses: DeterminateSystems/nix-installer-action@v18
