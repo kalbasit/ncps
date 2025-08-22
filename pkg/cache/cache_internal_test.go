@@ -38,8 +38,14 @@ func TestAddUpstreamCaches(t *testing.T) {
 			testServers[i] = ts
 		}
 
-		randomOrder := []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
-		rand.Shuffle(len(randomOrder), func(i, j int) { randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i] })
+		randomOrder := make([]int, 0, len(testServers))
+		for idx := range testServers {
+			randomOrder = append(randomOrder, idx)
+		}
+
+		rand.Shuffle(len(randomOrder), func(i, j int) {
+			randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i]
+		})
 
 		t.Logf("random order established: %v", randomOrder)
 
