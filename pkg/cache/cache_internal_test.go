@@ -72,6 +72,9 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		c.AddUpstreamCaches(newContext(), ucs...)
 
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
+
 		for idx, uc := range c.upstreamCaches {
 			//nolint:gosec
 			if want, got := uint64(idx+1), uc.GetPriority(); want != got {
@@ -91,8 +94,14 @@ func TestAddUpstreamCaches(t *testing.T) {
 			testServers[i] = ts
 		}
 
-		randomOrder := []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
-		rand.Shuffle(len(randomOrder), func(i, j int) { randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i] })
+		randomOrder := make([]int, 0, len(testServers))
+		for idx := range testServers {
+			randomOrder = append(randomOrder, idx)
+		}
+
+		rand.Shuffle(len(randomOrder), func(i, j int) {
+			randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i]
+		})
 
 		t.Logf("random order established: %v", randomOrder)
 
@@ -126,6 +135,9 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for _, uc := range ucs {
 			c.AddUpstreamCaches(newContext(), uc)
 		}
+
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
 
 		for idx, uc := range c.upstreamCaches {
 			assert.EqualValues(t, idx+1, uc.GetPriority())
@@ -162,6 +174,9 @@ func TestRunLRU(t *testing.T) {
 
 	c.AddUpstreamCaches(newContext(), uc)
 	c.SetRecordAgeIgnoreTouch(0)
+
+	// Wait for upstream caches to become available
+	<-c.GetHealthChecker().Trigger()
 
 	// NOTE: For this test, any nar that's explicitly testing the zstd
 	// transparent compression support will not be included because its size will

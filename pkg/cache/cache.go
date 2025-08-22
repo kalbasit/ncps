@@ -123,19 +123,7 @@ func New(
 		return c, fmt.Errorf("error setting up the secret key: %w", err)
 	}
 
-	return c, nil
-}
-
-// AddUpstreamCaches adds one or more upstream caches with lazy loading support.
-func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
-	c.upstreamCaches = append(c.upstreamCaches, ucs...)
-
-	// Set priorities for all upstream caches based on their position in the slice
-	for idx, uc := range c.upstreamCaches {
-		uc.SetPriority(uint64(idx) + 1)
-	}
-
-	c.healthChecker = healthcheck.New(c.upstreamCaches)
+	c.healthChecker = healthcheck.New()
 
 	// Set up health change notifications for dynamic management
 	healthChangeCh := make(chan healthcheck.HealthStatusChange, 100)
@@ -146,6 +134,14 @@ func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
 
 	// Start the health change processor
 	go c.processHealthChanges(ctx, healthChangeCh)
+
+	return c, nil
+}
+
+// AddUpstreamCaches adds one or more upstream caches with lazy loading support.
+func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
+	c.upstreamCaches = append(c.upstreamCaches, ucs...)
+	c.healthChecker.AddUpstreams(ucs)
 }
 
 // GetHealthChecker returns the instance of haelth checker used by the cache.

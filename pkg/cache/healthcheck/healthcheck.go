@@ -27,9 +27,9 @@ type HealthStatusChange struct {
 }
 
 // New creates a new HealthChecker.
-func New(upstreams []*upstream.Cache) *HealthChecker {
+func New() *HealthChecker {
 	return &HealthChecker{
-		upstreams: upstreams,
+		upstreams: []*upstream.Cache{},
 		ticker:    time.NewTicker(1 * time.Minute),
 		trigger:   make(chan chan struct{}),
 	}
@@ -51,10 +51,10 @@ func (hc *HealthChecker) SetHealthChangeNotifier(ch chan<- HealthStatusChange) {
 }
 
 // AddUpstream adds a new upstream cache to monitor.
-func (hc *HealthChecker) AddUpstream(upstream *upstream.Cache) {
+func (hc *HealthChecker) AddUpstreams(upstreams []*upstream.Cache) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
-	hc.upstreams = append(hc.upstreams, upstream)
+	hc.upstreams = append(hc.upstreams, upstreams...)
 }
 
 // RemoveUpstream removes an upstream cache from monitoring.
