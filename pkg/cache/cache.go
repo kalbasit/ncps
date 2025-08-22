@@ -140,6 +140,17 @@ func New(
 
 // AddUpstreamCaches adds one or more upstream caches with lazy loading support.
 func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
+	hostnames := make([]string, 0, len(ucs))
+
+	for _, uc := range ucs {
+		hostnames = append(hostnames, uc.GetHostname())
+	}
+
+	zerolog.Ctx(ctx).
+		Debug().
+		Strs("hostnames", hostnames).
+		Msg("adding upstream caches")
+
 	c.upstreamCaches = append(c.upstreamCaches, ucs...)
 	c.healthChecker.AddUpstreams(ucs)
 }
@@ -1418,15 +1429,18 @@ type upstreamSelectionFn func(
 
 func (c *Cache) getHealthyUpstreams() []*upstream.Cache {
 	healthyUpstreams := make([]*upstream.Cache, 0, len(c.upstreamCaches))
+
 	for _, u := range c.upstreamCaches {
 		if u.IsHealthy() {
 			healthyUpstreams = append(healthyUpstreams, u)
 		}
 	}
+
 	slices.SortFunc(healthyUpstreams, func(a, b *upstream.Cache) int {
 		//nolint:gosec
 		return int(a.GetPriority() - b.GetPriority())
 	})
+
 	return healthyUpstreams
 }
 
