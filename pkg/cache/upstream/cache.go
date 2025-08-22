@@ -51,25 +51,26 @@ type Cache struct {
 	tracer     trace.Tracer
 	priority   uint64
 	publicKeys []signature.PublicKey
+	isHealthy  bool
 }
 
-func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
-	c := Cache{tracer: otel.Tracer(tracerName)}
+// New creates a new upstream cache.
+func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
+	c := &Cache{tracer: otel.Tracer(tracerName)}
 
 	if u == nil {
-		return c, ErrURLRequired
+		return nil, ErrURLRequired
 	}
 
 	c.url = u
 
-	ctx = zerolog.Ctx(ctx).
-		With().
+	zerolog.Ctx(ctx).
+		Debug().
 		Str("upstream_url", c.url.String()).
-		Logger().
-		WithContext(ctx)
+		Msg("creating a new upstream cache")
 
 	if err := c.validateURL(u); err != nil {
-		return c, err
+		return nil, err
 	}
 
 	c.httpClient = &http.Client{
@@ -85,35 +86,51 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (Cache, error) {
 	for _, pubKey := range pubKeys {
 		pk, err := signature.ParsePublicKey(pubKey)
 		if err != nil {
-			return c, fmt.Errorf("error parsing the public key: %w", err)
+			return nil, fmt.Errorf("error parsing the public key: %w", err)
 		}
 
 		c.publicKeys = append(c.publicKeys, pk)
 	}
 
-	var priority uint64
-
 	if u.Query().Has("priority") {
-		parsedPriority, err := strconv.ParseUint(u.Query().Get("priority"), 10, 16)
+		priority, err := strconv.ParseUint(u.Query().Get("priority"), 10, 16)
 		if err != nil {
-			return c, fmt.Errorf("error parsing the priority from the URL %q: %w", u, err)
+			return nil, fmt.Errorf("error parsing the priority from the URL %q: %w", u, err)
 		}
 
-		priority = parsedPriority
-	}
-
-	if priority < 1 {
-		parsedPriority, err := c.parsePriority(ctx)
-		if err != nil {
-			return c, fmt.Errorf("error parsing the priority for %q: %w", u, err)
+		if priority <= 0 {
+			c.priority = 40 // Default priority if zero or negative
+		} else {
+			c.priority = priority
 		}
-
-		priority = parsedPriority
+	} else {
+		c.priority = 40 // Default priority
 	}
 
-	c.priority = priority
+	// Initialize as unhealthy, will be marked healthy by health checker
+	c.isHealthy = false
 
 	return c, nil
+}
+
+// IsHealthy returns true if the upstream is healthy.
+func (c *Cache) IsHealthy() bool {
+	return c.isHealthy
+}
+
+// SetHealthy sets the health status of the upstream.
+func (c *Cache) SetHealthy(isHealthy bool) {
+	c.isHealthy = isHealthy
+}
+
+// SetPriority sets the priority of the upstream.
+func (c *Cache) SetPriority(priority uint64) {
+	c.priority = priority
+}
+
+// ParsePriority parses the priority from the upstream.
+func (c *Cache) ParsePriority(ctx context.Context) (uint64, error) {
+	return c.parsePriority(ctx)
 }
 
 // GetHostname returns the hostname.

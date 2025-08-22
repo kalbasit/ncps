@@ -38,12 +38,18 @@ func TestAddUpstreamCaches(t *testing.T) {
 			testServers[i] = ts
 		}
 
-		randomOrder := []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
-		rand.Shuffle(len(randomOrder), func(i, j int) { randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i] })
+		randomOrder := make([]int, 0, len(testServers))
+		for idx := range testServers {
+			randomOrder = append(randomOrder, idx)
+		}
+
+		rand.Shuffle(len(randomOrder), func(i, j int) {
+			randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i]
+		})
 
 		t.Logf("random order established: %v", randomOrder)
 
-		ucs := make([]upstream.Cache, 0, len(testServers))
+		ucs := make([]*upstream.Cache, 0, len(testServers))
 
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
@@ -72,11 +78,11 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		c.AddUpstreamCaches(newContext(), ucs...)
 
-		for idx, uc := range c.upstreamCaches {
-			//nolint:gosec
-			if want, got := uint64(idx+1), uc.GetPriority(); want != got {
-				t.Errorf("expected the priority at index %d to be %d but got %d", idx, want, got)
-			}
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
+
+		for idx, uc := range c.getHealthyUpstreams() {
+			assert.EqualValues(t, idx+1, uc.GetPriority())
 		}
 	})
 
@@ -91,12 +97,18 @@ func TestAddUpstreamCaches(t *testing.T) {
 			testServers[i] = ts
 		}
 
-		randomOrder := []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
-		rand.Shuffle(len(randomOrder), func(i, j int) { randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i] })
+		randomOrder := make([]int, 0, len(testServers))
+		for idx := range testServers {
+			randomOrder = append(randomOrder, idx)
+		}
+
+		rand.Shuffle(len(randomOrder), func(i, j int) {
+			randomOrder[i], randomOrder[j] = randomOrder[j], randomOrder[i]
+		})
 
 		t.Logf("random order established: %v", randomOrder)
 
-		ucs := make([]upstream.Cache, 0, len(testServers))
+		ucs := make([]*upstream.Cache, 0, len(testServers))
 
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
@@ -127,7 +139,10 @@ func TestAddUpstreamCaches(t *testing.T) {
 			c.AddUpstreamCaches(newContext(), uc)
 		}
 
-		for idx, uc := range c.upstreamCaches {
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
+
+		for idx, uc := range c.getHealthyUpstreams() {
 			assert.EqualValues(t, idx+1, uc.GetPriority())
 		}
 	})
@@ -162,6 +177,9 @@ func TestRunLRU(t *testing.T) {
 
 	c.AddUpstreamCaches(newContext(), uc)
 	c.SetRecordAgeIgnoreTouch(0)
+
+	// Wait for upstream caches to become available
+	<-c.GetHealthChecker().Trigger()
 
 	// NOTE: For this test, any nar that's explicitly testing the zstd
 	// transparent compression support will not be included because its size will

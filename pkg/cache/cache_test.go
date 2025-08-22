@@ -255,6 +255,9 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	c.SetRecordAgeIgnoreTouch(0)
 	c.SetCacheSignNarinfo(false)
 
+	// Wait for upstream caches to become available
+	<-c.GetHealthChecker().Trigger()
+
 	ni, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
 	require.NoError(t, err)
 
@@ -302,6 +305,9 @@ func TestGetNarInfo(t *testing.T) {
 
 	c.AddUpstreamCaches(newContext(), uc)
 	c.SetRecordAgeIgnoreTouch(0)
+
+	// Wait for upstream caches to become available
+	<-c.GetHealthChecker().Trigger()
 
 	t.Run("narinfo does not exist upstream", func(t *testing.T) {
 		_, err := c.GetNarInfo(context.Background(), "doesnotexist")
@@ -891,6 +897,9 @@ func TestGetNar(t *testing.T) {
 
 	c.AddUpstreamCaches(newContext(), uc)
 	c.SetRecordAgeIgnoreTouch(0)
+
+	// Wait for upstream caches to become available
+	<-c.GetHealthChecker().Trigger()
 
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}

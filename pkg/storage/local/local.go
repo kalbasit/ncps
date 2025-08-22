@@ -383,6 +383,7 @@ func (s *Store) storeNarPath() string     { return filepath.Join(s.storePath(), 
 func (s *Store) storeTMPPath() string     { return filepath.Join(s.storePath(), "tmp") }
 
 func (s *Store) setupDirs() error {
+	// RemoveAll is safe to call on non-existent directories
 	if err := os.RemoveAll(s.storeTMPPath()); err != nil {
 		return fmt.Errorf("error removing the temporary download directory: %w", err)
 	}

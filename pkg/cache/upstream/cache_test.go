@@ -128,7 +128,7 @@ func TestGetNarInfo(t *testing.T) {
 			t.Parallel()
 
 			var (
-				c   upstream.Cache
+				c   *upstream.Cache
 				err error
 			)
 

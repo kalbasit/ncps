@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/kalbasit/ncps/pkg/cache/healthcheck"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -57,7 +58,8 @@ type Cache struct {
 
 	hostName       string
 	secretKey      signature.SecretKey
-	upstreamCaches []upstream.Cache
+	upstreamCaches []*upstream.Cache
+	healthChecker  *healthcheck.HealthChecker
 	maxSize        uint64
 	db             *database.Queries
 
@@ -83,7 +85,7 @@ type Cache struct {
 	muUpstreamJobs sync.Mutex
 	upstreamJobs   map[string]chan struct{}
 
-	// mu  is used by the LRU garbage collector to freeze access to the cache.
+	// mu is used by the LRU garbage collector to freeze access to the cache.
 	mu sync.RWMutex
 
 	cron *cron.Cron
@@ -121,33 +123,41 @@ func New(
 		return c, fmt.Errorf("error setting up the secret key: %w", err)
 	}
 
+	c.healthChecker = healthcheck.New()
+
+	// Set up health change notifications for dynamic management
+	healthChangeCh := make(chan healthcheck.HealthStatusChange, 100)
+	c.healthChecker.SetHealthChangeNotifier(healthChangeCh)
+
+	// Start the health checker
+	c.healthChecker.Start(c.baseContext)
+
+	// Start the health change processor
+	go c.processHealthChanges(ctx, healthChangeCh)
+
 	return c, nil
 }
 
-// AddUpstreamCaches adds one or more upstream caches.
-func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...upstream.Cache) {
-	ucss := append(c.upstreamCaches, ucs...)
+// AddUpstreamCaches adds one or more upstream caches with lazy loading support.
+func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
+	hostnames := make([]string, 0, len(ucs))
 
-	slices.SortFunc(ucss, func(a, b upstream.Cache) int {
-		//nolint:gosec
-		return int(a.GetPriority() - b.GetPriority())
-	})
-
-	zerolog.Ctx(ctx).
-		Info().
-		Msg("the order of upstream caches has been determined by priority to be")
-
-	for idx, uc := range ucss {
-		zerolog.Ctx(ctx).
-			Info().
-			Int("idx", idx).
-			Str("hostname", uc.GetHostname()).
-			Uint64("priority", uc.GetPriority()).
-			Msg("upstream cache")
+	for _, uc := range ucs {
+		hostnames = append(hostnames, uc.GetHostname())
 	}
 
-	c.upstreamCaches = ucss
+	zerolog.Ctx(ctx).
+		Debug().
+		Strs("hostnames", hostnames).
+		Msg("adding upstream caches")
+
+	c.upstreamCaches = append(c.upstreamCaches, ucs...)
+	c.healthChecker.AddUpstreams(ucs)
 }
+
+// GetHealthChecker returns the instance of haelth checker used by the cache.
+// It's useful for testing the behavior of ncps.
+func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker { return c.healthChecker }
 
 // SetCacheSignNarinfo configure ncps to sign or not sign narinfos.
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
@@ -468,11 +478,11 @@ func (c *Cache) getNarFromUpstream(
 		NewLogger(*zerolog.Ctx(ctx)).
 		WithContext(ctx)
 
-	var ucs []upstream.Cache
+	var ucs []*upstream.Cache
 	if uc != nil {
-		ucs = []upstream.Cache{*uc}
+		ucs = []*upstream.Cache{uc}
 	} else {
-		ucs = c.upstreamCaches
+		ucs = c.getHealthyUpstreams()
 	}
 
 	uc, err := c.selectNarUpstream(ctx, narURL, ucs, mutators)
@@ -965,7 +975,7 @@ func (c *Cache) getNarInfoFromUpstream(
 	)
 	defer span.End()
 
-	uc, err := c.selectNarInfoUpstream(ctx, hash, c.upstreamCaches)
+	uc, err := c.selectNarInfoUpstream(ctx, hash)
 	if err != nil {
 		zerolog.Ctx(ctx).
 			Error().
@@ -1417,12 +1427,28 @@ type upstreamSelectionFn func(
 	errC chan error,
 )
 
+func (c *Cache) getHealthyUpstreams() []*upstream.Cache {
+	healthyUpstreams := make([]*upstream.Cache, 0, len(c.upstreamCaches))
+
+	for _, u := range c.upstreamCaches {
+		if u.IsHealthy() {
+			healthyUpstreams = append(healthyUpstreams, u)
+		}
+	}
+
+	slices.SortFunc(healthyUpstreams, func(a, b *upstream.Cache) int {
+		//nolint:gosec
+		return int(a.GetPriority() - b.GetPriority())
+	})
+
+	return healthyUpstreams
+}
+
 func (c *Cache) selectNarInfoUpstream(
 	ctx context.Context,
 	hash string,
-	ucs []upstream.Cache,
 ) (*upstream.Cache, error) {
-	return c.selectUpstream(ctx, ucs, func(
+	return c.selectUpstream(ctx, c.getHealthyUpstreams(), func(
 		ctx context.Context,
 		uc *upstream.Cache,
 		wg *sync.WaitGroup,
@@ -1449,7 +1475,7 @@ func (c *Cache) selectNarInfoUpstream(
 func (c *Cache) selectNarUpstream(
 	ctx context.Context,
 	narURL *nar.URL,
-	ucs []upstream.Cache,
+	ucs []*upstream.Cache,
 	mutators []func(*http.Request),
 ) (*upstream.Cache, error) {
 	return c.selectUpstream(ctx, ucs, func(
@@ -1478,7 +1504,7 @@ func (c *Cache) selectNarUpstream(
 
 func (c *Cache) selectUpstream(
 	ctx context.Context,
-	ucs []upstream.Cache,
+	ucs []*upstream.Cache,
 	selectFn upstreamSelectionFn,
 ) (*upstream.Cache, error) {
 	if len(ucs) == 0 {
@@ -1487,7 +1513,7 @@ func (c *Cache) selectUpstream(
 	}
 
 	if len(ucs) == 1 {
-		return &ucs[0], nil
+		return ucs[0], nil
 	}
 
 	ch := make(chan *upstream.Cache)
@@ -1499,7 +1525,7 @@ func (c *Cache) selectUpstream(
 	for _, uc := range ucs {
 		wg.Add(1)
 
-		go selectFn(ctx, &uc, &wg, ch, errC)
+		go selectFn(ctx, uc, &wg, ch, errC)
 	}
 
 	go func() {
@@ -1519,6 +1545,28 @@ func (c *Cache) selectUpstream(
 		case err := <-errC:
 			if !errors.Is(err, context.Canceled) {
 				errs = errors.Join(errs, err)
+			}
+		}
+	}
+}
+
+// processHealthChanges handles health status changes for upstreams.
+func (c *Cache) processHealthChanges(ctx context.Context, healthChangeCh <-chan healthcheck.HealthStatusChange) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case change := <-healthChangeCh:
+			if change.IsHealthy {
+				zerolog.Ctx(ctx).
+					Info().
+					Str("upstream", change.Upstream.GetHostname()).
+					Msg("upstream became healthy and is now available for requests")
+			} else {
+				zerolog.Ctx(ctx).
+					Warn().
+					Str("upstream", change.Upstream.GetHostname()).
+					Msg("upstream became unhealthy and is no longer available for requests")
 			}
 		}
 	}
