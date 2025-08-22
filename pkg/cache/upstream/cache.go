@@ -46,13 +46,12 @@ const tracerName = "github.com/kalbasit/ncps/pkg/cache/upstream"
 
 // Cache represents the upstream cache service.
 type Cache struct {
-	httpClient     *http.Client
-	url            *url.URL
-	tracer         trace.Tracer
-	priority       uint64
-	publicKeys     []signature.PublicKey
-	isHealthy      bool
-	circuitBreaker *CircuitBreaker
+	httpClient *http.Client
+	url        *url.URL
+	tracer     trace.Tracer
+	priority   uint64
+	publicKeys []signature.PublicKey
+	isHealthy  bool
 }
 
 // New creates a new upstream cache.
@@ -110,13 +109,6 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 
 	// Initialize as unhealthy, will be marked healthy by health checker
 	c.isHealthy = false
-
-	// Initialize circuit breaker
-	c.circuitBreaker = NewCircuitBreaker(CircuitBreakerConfig{
-		MaxFailures:  3,
-		Timeout:      30 * time.Second,
-		ResetTimeout: 2 * time.Minute,
-	})
 
 	return c, nil
 }
