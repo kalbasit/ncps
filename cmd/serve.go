@@ -245,6 +245,9 @@ func createCache(
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 	c.AddUpstreamCaches(ctx, ucs...)
 
+	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.
+	c.GetHealthChecker().Trigger()
+
 	if cmd.String("cache-lru-schedule") == "" {
 		return c, nil
 	}
