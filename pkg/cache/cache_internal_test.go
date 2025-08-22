@@ -75,11 +75,8 @@ func TestAddUpstreamCaches(t *testing.T) {
 		// Wait for upstream caches to become available
 		<-c.GetHealthChecker().Trigger()
 
-		for idx, uc := range c.upstreamCaches {
-			//nolint:gosec
-			if want, got := uint64(idx+1), uc.GetPriority(); want != got {
-				t.Errorf("expected the priority at index %d to be %d but got %d", idx, want, got)
-			}
+		for idx, uc := range c.getHealthyUpstreams() {
+			assert.EqualValues(t, idx+1, uc.GetPriority())
 		}
 	})
 
@@ -139,7 +136,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		// Wait for upstream caches to become available
 		<-c.GetHealthChecker().Trigger()
 
-		for idx, uc := range c.upstreamCaches {
+		for idx, uc := range c.getHealthyUpstreams() {
 			assert.EqualValues(t, idx+1, uc.GetPriority())
 		}
 	})

@@ -85,7 +85,7 @@ type Cache struct {
 	muUpstreamJobs sync.Mutex
 	upstreamJobs   map[string]chan struct{}
 
-	// mu  is used by the LRU garbage collector to freeze access to the cache.
+	// mu is used by the LRU garbage collector to freeze access to the cache.
 	mu sync.RWMutex
 
 	cron *cron.Cron
@@ -1417,10 +1417,8 @@ type upstreamSelectionFn func(
 )
 
 func (c *Cache) getHealthyUpstreams() []*upstream.Cache {
-	var healthyUpstreams []*upstream.Cache
+	healthyUpstreams := make([]*upstream.Cache, 0, len(c.upstreamCaches))
 	for _, u := range c.upstreamCaches {
-		// With lazy loading, we include all upstreams that are either healthy
-		// or have not been explicitly marked as unhealthy yet
 		if u.IsHealthy() {
 			healthyUpstreams = append(healthyUpstreams, u)
 		}
