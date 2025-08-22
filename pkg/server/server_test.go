@@ -58,6 +58,9 @@ func TestServeHTTP(t *testing.T) {
 		c.AddUpstreamCaches(newContext(), uc)
 		c.SetRecordAgeIgnoreTouch(0)
 
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
+
 		s := server.New(c)
 
 		ts := httptest.NewServer(s)
@@ -100,6 +103,9 @@ func TestServeHTTP(t *testing.T) {
 
 		c.AddUpstreamCaches(newContext(), uc)
 		c.SetRecordAgeIgnoreTouch(0)
+
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
 
 		t.Run("DELETE is not permitted", func(t *testing.T) {
 			s := server.New(c)
@@ -225,6 +231,9 @@ func TestServeHTTP(t *testing.T) {
 		c.AddUpstreamCaches(newContext(), uc)
 		c.SetRecordAgeIgnoreTouch(0)
 
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
+
 		s := server.New(c)
 
 		t.Run("narinfo", func(t *testing.T) {
@@ -337,6 +346,9 @@ func TestServeHTTP(t *testing.T) {
 
 		c.AddUpstreamCaches(newContext(), uc)
 		c.SetRecordAgeIgnoreTouch(0)
+
+		// Wait for upstream caches to become available
+		<-c.GetHealthChecker().Trigger()
 
 		t.Run("PUT is not permitted", func(t *testing.T) {
 			s := server.New(c)
