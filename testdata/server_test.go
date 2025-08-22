@@ -41,7 +41,7 @@ func TestNewTestServer(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		assert.Equal(t, len(string(body)), len(testdata.Nar1.NarText))
+		assert.Len(t, testdata.Nar1.NarText, len(string(body)))
 		assert.Equal(t, testdata.Nar1.NarText, string(body))
 	}
 }
@@ -83,7 +83,7 @@ func TestNewTestServerWithZSTD(t *testing.T) {
 			plain, err := decoder.DecodeAll(body, []byte{})
 			require.NoError(t, err)
 
-			if assert.Equal(t, len(testdata.Nar1.NarText), len(string(plain))) {
+			if assert.Len(t, testdata.Nar1.NarText, len(string(plain))) {
 				assert.Equal(t, testdata.Nar1.NarText, string(plain))
 			}
 		}
