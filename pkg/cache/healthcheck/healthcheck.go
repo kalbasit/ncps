@@ -5,8 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/rs/zerolog"
+
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
 )
 
 // HealthChecker is responsible for checking the health of upstream caches.
@@ -20,7 +21,7 @@ type HealthChecker struct {
 	healthChangeNotifier chan<- HealthStatusChange
 }
 
-// HealthStatusChange represents a change in upstream health status
+// HealthStatusChange represents a change in upstream health status.
 type HealthStatusChange struct {
 	Upstream  *upstream.Cache
 	IsHealthy bool
@@ -36,14 +37,14 @@ func New() *HealthChecker {
 }
 
 // Trigger forces the health check to run now.
-func (hs *HealthChecker) Trigger() chan struct{} {
+func (hc *HealthChecker) Trigger() chan struct{} {
 	trigC := make(chan struct{})
-	hs.trigger <- trigC
+	hc.trigger <- trigC
 
 	return trigC
 }
 
-// SetHealthChangeNotifier sets the channel to notify about health status changes
+// SetHealthChangeNotifier sets the channel to notify about health status changes.
 func (hc *HealthChecker) SetHealthChangeNotifier(ch chan<- HealthStatusChange) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
@@ -61,9 +62,11 @@ func (hc *HealthChecker) AddUpstreams(upstreams []*upstream.Cache) {
 func (hc *HealthChecker) RemoveUpstream(upstream *upstream.Cache) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
+
 	for i, u := range hc.upstreams {
 		if u.GetHostname() == upstream.GetHostname() {
 			hc.upstreams = append(hc.upstreams[:i], hc.upstreams[i+1:]...)
+
 			break
 		}
 	}
@@ -79,6 +82,7 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				hc.ticker.Stop()
+
 				return
 			case trigC := <-hc.trigger:
 				hc.check(ctx)
@@ -99,6 +103,7 @@ func (hc *HealthChecker) check(ctx context.Context) {
 
 	for _, u := range upstreams {
 		previouslyHealthy := u.IsHealthy()
+
 		priority, err := u.ParsePriority(ctx)
 		if err != nil {
 			u.SetHealthy(false)
@@ -109,11 +114,12 @@ func (hc *HealthChecker) check(ctx context.Context) {
 				select {
 				case notifier <- HealthStatusChange{Upstream: u, IsHealthy: false}:
 				default:
-					// Non-blocking send
 				}
 			}
+
 			continue
 		}
+
 		u.SetPriority(priority)
 		u.SetHealthy(true)
 		zerolog.Ctx(ctx).Debug().Str("upstream", u.GetHostname()).Uint64("priority", priority).Msg("upstream is healthy")
@@ -123,7 +129,6 @@ func (hc *HealthChecker) check(ctx context.Context) {
 			select {
 			case notifier <- HealthStatusChange{Upstream: u, IsHealthy: true}:
 			default:
-				// Non-blocking send
 			}
 		}
 	}

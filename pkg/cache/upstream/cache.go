@@ -64,11 +64,10 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 
 	c.url = u
 
-	ctx = zerolog.Ctx(ctx).
-		With().
+	zerolog.Ctx(ctx).
+		Debug().
 		Str("upstream_url", c.url.String()).
-		Logger().
-		WithContext(ctx)
+		Msg("creating a new upstream cache")
 
 	if err := c.validateURL(u); err != nil {
 		return nil, err
@@ -98,6 +97,7 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error parsing the priority from the URL %q: %w", u, err)
 		}
+
 		if priority <= 0 {
 			c.priority = 40 // Default priority if zero or negative
 		} else {
