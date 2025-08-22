@@ -61,10 +61,6 @@ func New(ctx context.Context, path string) (*Store, error) {
 		return nil, fmt.Errorf("error setting up the store directory: %w", err)
 	}
 
-	if err := os.MkdirAll(s.storePath(), dirMode); err != nil {
-		return nil, fmt.Errorf("error ensuring store directory exists: %w", err)
-	}
-
 	return s, nil
 }
 
