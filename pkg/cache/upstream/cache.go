@@ -42,7 +42,11 @@ var (
 	ErrSignatureValidationFailed = errors.New("signature validation has failed")
 )
 
-const tracerName = "github.com/kalbasit/ncps/pkg/cache/upstream"
+const (
+	tracerName = "github.com/kalbasit/ncps/pkg/cache/upstream"
+
+	httpTimeout = 3 * time.Second
+)
 
 // Cache represents the upstream cache service.
 type Cache struct {
@@ -140,7 +144,7 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
-	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
 	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
@@ -218,7 +222,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
-	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
 	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
@@ -269,7 +273,7 @@ func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
-	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
 	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
