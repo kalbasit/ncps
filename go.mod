@@ -1,6 +1,6 @@
 module github.com/kalbasit/ncps
 
-go 1.24.3
+go 1.24.5
 
 require (
 	github.com/XSAM/otelsql v0.39.0
@@ -36,7 +36,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang/snappy v0.0.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
