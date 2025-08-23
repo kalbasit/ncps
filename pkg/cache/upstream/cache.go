@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
@@ -59,7 +60,9 @@ type Cache struct {
 	tracer     trace.Tracer
 	priority   uint64
 	publicKeys []signature.PublicKey
-	isHealthy  bool
+
+	mu        sync.RWMutex
+	isHealthy bool
 
 	dialerTimeout         time.Duration
 	responseHeaderTimeout time.Duration
@@ -115,9 +118,6 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 		c.priority = 40 // Default priority
 	}
 
-	// Initialize as unhealthy, will be marked healthy by health checker
-	c.isHealthy = false
-
 	return c, nil
 }
 
@@ -151,11 +151,17 @@ func (c *Cache) setupHTTPClient() error {
 
 // IsHealthy returns true if the upstream is healthy.
 func (c *Cache) IsHealthy() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	return c.isHealthy
 }
 
 // SetHealthy sets the health status of the upstream.
 func (c *Cache) SetHealthy(isHealthy bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.isHealthy = isHealthy
 }
 
@@ -170,10 +176,10 @@ func (c *Cache) ParsePriority(ctx context.Context) (uint64, error) {
 }
 
 // GetHostname returns the hostname.
-func (c Cache) GetHostname() string { return c.url.Hostname() }
+func (c *Cache) GetHostname() string { return c.url.Hostname() }
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
-func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
 	ctx, span := c.tracer.Start(
@@ -248,7 +254,7 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 }
 
 // HasNarInfo returns true if the narinfo exists upstream.
-func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
+func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
 	ctx, span := c.tracer.Start(
@@ -296,7 +302,7 @@ func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 
 // GetNar returns the NAR archive from the cache server.
 // NOTE: It's the caller responsibility to close the body.
-func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
+func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
 	ctx, span := c.tracer.Start(
@@ -357,7 +363,7 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 }
 
 // HasNar returns true if the NAR exists upstream.
-func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (bool, error) {
+func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (bool, error) {
 	u := narURL.JoinURL(c.url).String()
 
 	ctx, span := c.tracer.Start(
@@ -407,9 +413,9 @@ func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 }
 
 // GetPriority returns the priority of this upstream cache.
-func (c Cache) GetPriority() uint64 { return c.priority }
+func (c *Cache) GetPriority() uint64 { return c.priority }
 
-func (c Cache) parsePriority(ctx context.Context) (uint64, error) {
+func (c *Cache) parsePriority(ctx context.Context) (uint64, error) {
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url.JoinPath("/nix-cache-info").String(), nil)
 	if err != nil {
 		return 0, fmt.Errorf("error creating a new request: %w", err)
@@ -440,7 +446,7 @@ func (c Cache) parsePriority(ctx context.Context) (uint64, error) {
 	return nci.Priority, nil
 }
 
-func (c Cache) validateURL(u *url.URL) error {
+func (c *Cache) validateURL(u *url.URL) error {
 	if u == nil {
 		return ErrURLRequired
 	}

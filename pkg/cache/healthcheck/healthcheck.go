@@ -12,12 +12,11 @@ import (
 
 // HealthChecker is responsible for checking the health of upstream caches.
 type HealthChecker struct {
-	mu        sync.RWMutex
-	upstreams []*upstream.Cache
-	ticker    *time.Ticker
-	trigger   chan chan struct{}
+	ticker  *time.Ticker
+	trigger chan chan struct{}
 
-	// healthChangeNotifier is used to notify about health status changes
+	mu                   sync.RWMutex
+	upstreams            []*upstream.Cache
 	healthChangeNotifier chan<- HealthStatusChange
 }
 
@@ -48,6 +47,7 @@ func (hc *HealthChecker) Trigger() chan struct{} {
 func (hc *HealthChecker) SetHealthChangeNotifier(ch chan<- HealthStatusChange) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
+
 	hc.healthChangeNotifier = ch
 }
 
@@ -55,6 +55,7 @@ func (hc *HealthChecker) SetHealthChangeNotifier(ch chan<- HealthStatusChange) {
 func (hc *HealthChecker) AddUpstreams(upstreams []*upstream.Cache) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
+
 	hc.upstreams = append(hc.upstreams, upstreams...)
 }
 
