@@ -2,9 +2,16 @@
   perSystem =
     {
       config,
+      lib,
       pkgs,
       ...
     }:
+    let
+      package-ncps = config.packages.ncps.overrideAttrs (oa: {
+        # Remove race-condition testing as it does not work on all platforms
+        checkFlags = lib.remove "-race" (oa.checkFlags or [ ]);
+      });
+    in
     {
       packages.docker = pkgs.dockerTools.buildLayeredImage {
         name = "kalbasit/ncps";
@@ -41,7 +48,7 @@
             pkgs.dbmate
 
             # the ncps package
-            config.packages.ncps
+            package-ncps
           ];
         config = {
           Cmd = [ "/bin/ncps" ];
