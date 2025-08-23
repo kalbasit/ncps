@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -40,12 +41,15 @@ var (
 
 	// ErrSignatureValidationFailed is returned if the signature validation of the narinfo has failed.
 	ErrSignatureValidationFailed = errors.New("signature validation has failed")
+
+	// ErrTransportCastError is returned if it was not possible to cast http.DefaultTransport to *http.Transport.
+	ErrTransportCastError = errors.New("unable to cast http.DefaultTransport to *http.Transport")
 )
 
 const (
 	tracerName = "github.com/kalbasit/ncps/pkg/cache/upstream"
 
-	httpTimeout = 3 * time.Second
+	defaultHTTPTimeout = 3 * time.Second
 )
 
 // Cache represents the upstream cache service.
@@ -56,17 +60,27 @@ type Cache struct {
 	priority   uint64
 	publicKeys []signature.PublicKey
 	isHealthy  bool
+
+	dialerTimeout         time.Duration
+	responseHeaderTimeout time.Duration
 }
 
 // New creates a new upstream cache.
 func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
-	c := &Cache{tracer: otel.Tracer(tracerName)}
-
 	if u == nil {
 		return nil, ErrURLRequired
 	}
 
-	c.url = u
+	c := &Cache{
+		url:                   u,
+		tracer:                otel.Tracer(tracerName),
+		dialerTimeout:         defaultHTTPTimeout,
+		responseHeaderTimeout: defaultHTTPTimeout,
+	}
+
+	if err := c.setupHTTPClient(); err != nil {
+		return nil, err
+	}
 
 	zerolog.Ctx(ctx).
 		Debug().
@@ -75,16 +89,6 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 
 	if err := c.validateURL(u); err != nil {
 		return nil, err
-	}
-
-	c.httpClient = &http.Client{
-		Transport: &http.Transport{
-			// Disable automatic decompression
-			DisableCompression: true,
-			// Respect proxy environment variables
-			// (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, etc.).
-			Proxy: http.ProxyFromEnvironment,
-		},
 	}
 
 	for _, pubKey := range pubKeys {
@@ -117,6 +121,34 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 	return c, nil
 }
 
+func (c *Cache) setupHTTPClient() error {
+	dtP, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return ErrTransportCastError
+	}
+
+	// create a copy of the default transport
+	dt := dtP.Clone()
+
+	dialer := &net.Dialer{
+		Timeout:   c.dialerTimeout,
+		KeepAlive: 30 * time.Second,
+	}
+
+	// configure dialer with tighter timeout
+	dt.DialContext = dialer.DialContext
+
+	// Disable automatic compression handling so we can deal with it ourselves (transparent zstd support).
+	dt.DisableCompression = true
+
+	// Set timeout to first byte
+	dt.ResponseHeaderTimeout = c.responseHeaderTimeout
+
+	c.httpClient = &http.Client{Transport: http.RoundTripper(dt)}
+
+	return nil
+}
+
 // IsHealthy returns true if the upstream is healthy.
 func (c *Cache) IsHealthy() bool {
 	return c.isHealthy
@@ -143,9 +175,6 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
-
-	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
-	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
 		ctx,
@@ -222,9 +251,6 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
-	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
-	defer cancelFn()
-
 	ctx, span := c.tracer.Start(
 		ctx,
 		"upstream.HasNarInfo",
@@ -272,9 +298,6 @@ func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
-
-	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
-	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
 		ctx,
@@ -337,9 +360,6 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (bool, error) {
 	u := narURL.JoinURL(c.url).String()
 
-	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
-	defer cancelFn()
-
 	ctx, span := c.tracer.Start(
 		ctx,
 		"upstream.HasNar",
@@ -390,9 +410,6 @@ func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 func (c Cache) GetPriority() uint64 { return c.priority }
 
 func (c Cache) parsePriority(ctx context.Context) (uint64, error) {
-	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
-	defer cancelFn()
-
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url.JoinPath("/nix-cache-info").String(), nil)
 	if err != nil {
 		return 0, fmt.Errorf("error creating a new request: %w", err)

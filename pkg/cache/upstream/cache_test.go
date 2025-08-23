@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -212,7 +213,7 @@ func TestGetNarInfo(t *testing.T) {
 	//nolint:paralleltest
 	t.Run("upstream with public keys", testFn(true))
 
-	t.Run("timeout if connection timed out", func(t *testing.T) {
+	t.Run("net timeout if connection timed out", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := upstream.New(
@@ -223,7 +224,11 @@ func TestGetNarInfo(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = c.GetNarInfo(context.Background(), "hash")
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		var netErr net.Error
+		if assert.ErrorAs(t, err, &netErr, "expected error to be castable as net.Error") {
+			require.True(t, netErr.Timeout(), "netErr is expected a timeout error")
+		}
 	})
 
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
@@ -290,7 +295,7 @@ func TestHasNarInfo(t *testing.T) {
 		})
 	}
 
-	t.Run("timeout if connection timed out", func(t *testing.T) {
+	t.Run("net timeout if connection timed out", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := upstream.New(
@@ -301,7 +306,11 @@ func TestHasNarInfo(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = c.HasNarInfo(context.Background(), "hash")
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		var netErr net.Error
+		if assert.ErrorAs(t, err, &netErr, "expected error to be castable as net.Error") {
+			require.True(t, netErr.Timeout(), "netErr is expected a timeout error")
+		}
 	})
 
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
@@ -360,7 +369,7 @@ func TestGetNar(t *testing.T) {
 		assert.Equal(t, "50160", resp.Header.Get("Content-Length"))
 	})
 
-	t.Run("timeout if connection timed out", func(t *testing.T) {
+	t.Run("net timeout if connection timed out", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := upstream.New(
@@ -372,7 +381,11 @@ func TestGetNar(t *testing.T) {
 
 		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
 		_, err = c.GetNar(context.Background(), nu)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		var netErr net.Error
+		if assert.ErrorAs(t, err, &netErr, "expected error to be castable as net.Error") {
+			require.True(t, netErr.Timeout(), "netErr is expected a timeout error")
+		}
 	})
 
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
@@ -442,7 +455,7 @@ func TestHasNar(t *testing.T) {
 		})
 	}
 
-	t.Run("timeout if connection timed out", func(t *testing.T) {
+	t.Run("net timeout if connection timed out", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := upstream.New(
@@ -454,7 +467,11 @@ func TestHasNar(t *testing.T) {
 
 		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
 		_, err = c.HasNar(context.Background(), nu)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		var netErr net.Error
+		if assert.ErrorAs(t, err, &netErr, "expected error to be castable as net.Error") {
+			require.True(t, netErr.Timeout(), "netErr is expected a timeout error")
+		}
 	})
 
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
