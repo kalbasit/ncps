@@ -337,7 +337,7 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (bool, error) {
 	u := narURL.JoinURL(c.url).String()
 
-	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
 	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
@@ -390,7 +390,7 @@ func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 func (c Cache) GetPriority() uint64 { return c.priority }
 
 func (c Cache) parsePriority(ctx context.Context) (uint64, error) {
-	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancelFn := context.WithTimeout(ctx, httpTimeout)
 	defer cancelFn()
 
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url.JoinPath("/nix-cache-info").String(), nil)
