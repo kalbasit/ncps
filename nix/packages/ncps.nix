@@ -36,8 +36,6 @@
             "-X github.com/kalbasit/ncps/cmd.Version=${version}"
           ];
 
-          subPackages = [ "." ];
-
           vendorHash = "sha256-8sF/FHxbbx/Jeb21X3Aidx7UyAyqJ5Hi/pZnXZu97CU=";
 
           doCheck = true;
