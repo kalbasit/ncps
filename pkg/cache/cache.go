@@ -63,6 +63,9 @@ type Cache struct {
 	maxSize        uint64
 	db             *database.Queries
 
+	// tempDir is used to store nar files temporarily.
+	tempDir string
+
 	tracer trace.Tracer
 
 	// stores
@@ -137,6 +140,9 @@ func New(
 
 	return c, nil
 }
+
+// SetTempDir sets the temporary directory.
+func (c *Cache) SetTempDir(d string) { c.tempDir = d }
 
 // AddUpstreamCaches adds one or more upstream caches with lazy loading support.
 func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
@@ -364,12 +370,61 @@ func (c *Cache) pullNar(
 		resp.Body.Close()
 	}()
 
-	written, err := c.narStore.PutNar(ctx, *narURL, resp.Body)
+	// create a temporary file to store the nar
+	pattern := narURL.Hash + "-*.nar"
+	if cext := narURL.Compression.String(); cext != "" {
+		pattern += "." + cext
+	}
+
+	f, err := os.CreateTemp(c.tempDir, pattern)
 	if err != nil {
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
-			Msg("error storing the narInfo in the store")
+			Msg("error storing the nar in the temporary directory")
+
+		done()
+
+		return
+	}
+
+	defer os.Remove(f.Name())
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the nar in the temporary file")
+
+		done()
+
+		return
+	}
+
+	f.Close()
+
+	f, err = os.Open(f.Name())
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error opening the nar from the temporary directory")
+
+		done()
+
+		return
+	}
+
+	defer f.Close()
+
+	written, err := c.narStore.PutNar(ctx, *narURL, f)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the nar in the store")
 
 		done()
 

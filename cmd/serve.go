@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"time"
 
@@ -99,6 +100,12 @@ func serveCommand() *cli.Command {
 				Usage:   "Whether to sign narInfo files or passthru as-is from upstream",
 				Sources: cli.EnvVars("CACHE_SIGN_NARINFO"),
 				Value:   true,
+			},
+			&cli.StringFlag{
+				Name:    "cache-temp-path",
+				Usage:   "The path to the temporary directory that is used by the cache to download NAR files",
+				Sources: cli.EnvVars("CACHE_TEMP_PATH"),
+				Value:   os.TempDir(),
 			},
 			&cli.StringFlag{
 				Name:    "server-addr",
@@ -242,6 +249,7 @@ func createCache(
 		return nil, fmt.Errorf("error creating a new cache: %w", err)
 	}
 
+	c.SetTempDir(cmd.String("cache-temp-path"))
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 	c.AddUpstreamCaches(ctx, ucs...)
 
