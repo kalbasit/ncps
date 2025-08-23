@@ -913,7 +913,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	if !c.narStore.HasNar(ctx, narURL) && !c.hasUpstreamJob(narURL.Hash) {
 		zerolog.Ctx(ctx).
 			Error().
-			Msg("narinfo was requested but no nar was found requesting a purge")
+			Msg("narinfo was found in the store but no nar was found, requesting a purge")
 
 		if err := c.purgeNarInfo(ctx, hash, &narURL); err != nil {
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
