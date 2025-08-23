@@ -904,7 +904,7 @@ func TestGetNar(t *testing.T) {
 	t.Run("nar does not exist upstream", func(t *testing.T) {
 		nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
 		_, _, err := c.GetNar(context.Background(), nu)
-		assert.ErrorIs(t, err, storage.ErrNotFound)
+		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
 	t.Run("nar exists upstream", func(t *testing.T) {

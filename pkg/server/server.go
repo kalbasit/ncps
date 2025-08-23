@@ -19,6 +19,7 @@ import (
 	otelchimetric "github.com/riandyrn/otelchi/metric"
 
 	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
@@ -408,7 +409,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
+			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, upstream.ErrNotFound) {
 				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 
 				return
