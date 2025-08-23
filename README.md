@@ -250,6 +250,8 @@ nix.settings.trusted-public-keys = [
 
 Contributions are welcome! Feel free to open issues or submit pull requests.
 
+To aid development, a script is provided to start the server at `./dev-scripts/run.sh`, it automatically restarts the server when changes are detected.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](/LICENSE) file for details.
