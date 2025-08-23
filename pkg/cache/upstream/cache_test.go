@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -207,6 +209,26 @@ func TestGetNarInfo(t *testing.T) {
 
 	//nolint:paralleltest
 	t.Run("upstream with public keys", testFn(true))
+
+	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+		t.Parallel()
+
+		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer slowServer.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, slowServer.URL),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		_, err = c.GetNarInfo(context.Background(), "hash")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
 }
 
 func TestHasNarInfo(t *testing.T) {
@@ -251,6 +273,26 @@ func TestHasNarInfo(t *testing.T) {
 			assert.True(t, exists)
 		})
 	}
+
+	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+		t.Parallel()
+
+		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer slowServer.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, slowServer.URL),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		_, err = c.HasNarInfo(context.Background(), "hash")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
 }
 
 func TestGetNar(t *testing.T) {
@@ -286,6 +328,27 @@ func TestGetNar(t *testing.T) {
 		}()
 
 		assert.Equal(t, "50160", resp.Header.Get("Content-Length"))
+	})
+
+	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+		t.Parallel()
+
+		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer slowServer.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, slowServer.URL),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
+		_, err = c.GetNar(context.Background(), nu)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 }
 
@@ -333,6 +396,27 @@ func TestHasNar(t *testing.T) {
 			assert.True(t, exists)
 		})
 	}
+
+	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+		t.Parallel()
+
+		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer slowServer.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, slowServer.URL),
+			testdata.PublicKeys(),
+		)
+		require.NoError(t, err)
+
+		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
+		_, err = c.HasNar(context.Background(), nu)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
 }
 
 func TestGetNarCanMutate(t *testing.T) {

@@ -140,6 +140,9 @@ func (c Cache) GetHostname() string { return c.url.Hostname() }
 func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
+	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelFn()
+
 	ctx, span := c.tracer.Start(
 		ctx,
 		"upstream.GetNarInfo",
@@ -215,6 +218,9 @@ func (c Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, e
 func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
+	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelFn()
+
 	ctx, span := c.tracer.Start(
 		ctx,
 		"upstream.HasNarInfo",
@@ -262,6 +268,9 @@ func (c Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 // NOTE: It's the caller responsibility to close the body.
 func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
+
+	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
 		ctx,
@@ -323,6 +332,9 @@ func (c Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*htt
 // HasNar returns true if the NAR exists upstream.
 func (c Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (bool, error) {
 	u := narURL.JoinURL(c.url).String()
+
+	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelFn()
 
 	ctx, span := c.tracer.Start(
 		ctx,
