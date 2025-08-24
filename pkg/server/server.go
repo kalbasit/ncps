@@ -427,9 +427,31 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		h := w.Header()
 		h.Set(contentType, contentTypeNar)
-		h.Set(contentLength, strconv.FormatInt(size, 10))
+
+		if size > 0 {
+			h.Set(contentLength, strconv.FormatInt(size, 10))
+		}
 
 		if !withBody {
+			// If the size is below zero then copy the entire nar to /dev/null and
+			// compute the size that way. This usually means the NAR is still being
+			// downloaded so the client will have to wait until completion.
+			if size <= 0 {
+				n, err := io.Copy(io.Discard, reader)
+				if err != nil {
+					zerolog.Ctx(r.Context()).
+						Error().
+						Err(err).
+						Msg("error reading the nar to compute its size")
+
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+
+					return
+				}
+
+				h.Set(contentLength, strconv.FormatInt(n, 10))
+			}
+
 			w.WriteHeader(http.StatusNoContent)
 
 			return
@@ -445,7 +467,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		if written != size {
+		if size != -1 && written != size {
 			zerolog.Ctx(r.Context()).
 				Error().
 				Int64("expected", size).
