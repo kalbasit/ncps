@@ -410,7 +410,7 @@ func (c *Cache) pullNar(
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
-			Msg("error opening the nar from the temporary directory")
+			Msg("error opening the nar from the temporary file")
 
 		done()
 
