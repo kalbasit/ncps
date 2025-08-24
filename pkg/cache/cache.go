@@ -346,12 +346,6 @@ func (c *Cache) pullNarIntoStore(
 		c.muUpstreamJobs.Unlock()
 
 		close(ds.done)
-
-		// Wait until nothing is reading from the asset and remove it
-		go func() {
-			ds.wg.Wait()
-			os.Remove(ds.assetPath)
-		}()
 	}
 
 	defer done()
@@ -417,6 +411,15 @@ func (c *Cache) pullNarIntoStore(
 	}
 
 	ds.assetPath = f.Name()
+
+	// Wait until nothing is using the asset and remove it
+	ds.wg.Add(1)
+	defer ds.wg.Done()
+
+	go func() {
+		ds.wg.Wait()
+		os.Remove(ds.assetPath)
+	}()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		f.Close()
