@@ -95,6 +95,9 @@ type Cache struct {
 }
 
 type downloadState struct {
+	// Store any download errors in this field
+	downloadError error
+
 	// Channel to signal completion
 	done chan struct{}
 }
@@ -265,6 +268,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		Msg("pulling nar in a go-routing and will wait for it")
 	<-ds.done
 
+	if ds.downloadError != nil {
+		return 0, nil, ds.downloadError
+	}
+
 	return c.getNarFromStore(ctx, &narURL)
 }
 
@@ -369,6 +376,8 @@ func (c *Cache) pullNarIntoStore(
 				Msg("error getting the nar from upstream caches")
 		}
 
+		ds.downloadError = err
+
 		return
 	}
 
@@ -392,6 +401,8 @@ func (c *Cache) pullNarIntoStore(
 			Err(err).
 			Msg("error storing the nar in the temporary directory")
 
+		ds.downloadError = err
+
 		return
 	}
 
@@ -405,6 +416,8 @@ func (c *Cache) pullNarIntoStore(
 			Err(err).
 			Msg("error storing the nar in the temporary file")
 
+		ds.downloadError = err
+
 		return
 	}
 
@@ -417,6 +430,8 @@ func (c *Cache) pullNarIntoStore(
 			Err(err).
 			Msg("error opening the nar from the temporary file")
 
+		ds.downloadError = err
+
 		return
 	}
 
@@ -428,6 +443,8 @@ func (c *Cache) pullNarIntoStore(
 			Error().
 			Err(err).
 			Msg("error storing the nar in the store")
+
+		ds.downloadError = err
 
 		return
 	}
@@ -629,6 +646,10 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		Msg("pulling nar in a go-routing and will wait for it")
 	<-ds.done
 
+	if ds.downloadError != nil {
+		return nil, ds.downloadError
+	}
+
 	return c.narInfoStore.GetNarInfo(ctx, hash)
 }
 
@@ -673,6 +694,8 @@ func (c *Cache) pullNarInfo(
 				Msg("error getting the narInfo from upstream caches")
 		}
 
+		ds.downloadError = err
+
 		return
 	}
 
@@ -683,6 +706,8 @@ func (c *Cache) pullNarInfo(
 			Err(err).
 			Str("nar_url", narInfo.URL).
 			Msg("error parsing the nar URL")
+
+		ds.downloadError = err
 
 		return
 	}
@@ -708,6 +733,15 @@ func (c *Cache) pullNarInfo(
 	if enableZSTD {
 		ds := c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
 		<-ds.done
+
+		if ds.downloadError != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error pulling the nar")
+
+			return
+		}
 	} else {
 		// create a detachedCtx that has the same span and logger as the main
 		// context but with the baseContext as parent; This context will not cancel
