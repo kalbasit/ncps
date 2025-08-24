@@ -630,36 +630,38 @@ func TestGetNarInfo(t *testing.T) {
 	t.Run("narinfo with transparent encryption", func(t *testing.T) {
 		var allEntries []testdata.Entry
 
+		// Filter for the entries that has `Compression: <something>` that does not
+		// match the listed compression on the narEntry.
 		for _, narEntry := range testdata.Entries {
 			c := fmt.Sprintf("Compression: %s", narEntry.NarCompression)
-			if !strings.Contains(narEntry.NarInfoText, c) {
+			if narEntry.NarCompression == nar.CompressionTypeZstd && !strings.Contains(narEntry.NarInfoText, c) {
 				allEntries = append(allEntries, narEntry)
 			}
 		}
 
 		for i, narEntry := range allEntries {
-			t.Run("nar idx"+strconv.Itoa(i), func(t *testing.T) {
+			t.Run("nar idx"+strconv.Itoa(i)+" narInfoHash="+narEntry.NarInfoHash, func(t *testing.T) {
 				narInfo, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 				require.NoError(t, err)
 
-				if assert.Equal(t, nar.CompressionTypeZstd.String(), narInfo.Compression) {
-					storePath := filepath.Join(dir, "store", "nar", narEntry.NarPath)
-					if assert.FileExists(t, storePath) {
-						body, err := os.ReadFile(storePath)
+				storePath := filepath.Join(dir, "store", "nar", narEntry.NarPath)
+				if assert.FileExists(t, storePath) {
+					body, err := os.ReadFile(storePath)
+					require.NoError(t, err)
+
+					if assert.NotEqual(t, narEntry.NarText, string(body), "narText should be stored compressed in the store") {
+						decoder, err := zstd.NewReader(nil)
 						require.NoError(t, err)
 
-						if assert.NotEqual(t, narEntry.NarText, string(body), "returned body should be compressed") {
-							decoder, err := zstd.NewReader(nil)
-							require.NoError(t, err)
+						plain, err := decoder.DecodeAll(body, []byte{})
+						require.NoError(t, err)
 
-							plain, err := decoder.DecodeAll(body, []byte{})
-							require.NoError(t, err)
+						assert.Equal(t, narEntry.NarText, string(plain),
+							"body stored in the store decompressed should be the same as the narText")
 
-							assert.Equal(t, narEntry.NarText, string(plain))
-
-							//nolint:gosec
-							assert.Len(t, body, int(narInfo.FileSize))
-						}
+						//nolint:gosec
+						assert.Equal(t, int64(narInfo.FileSize), int64(len(body)),
+							"narInfo FileSize should match the compressed file size")
 					}
 				}
 			})
