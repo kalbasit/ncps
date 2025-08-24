@@ -267,6 +267,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		return c.getNarFromStore(ctx, &narURL)
 	}
 
+	zerolog.Ctx(ctx).
+		Debug().
+		Msg("pulling nar in a go-routine and will stream the file back to the client")
+
 	// create a detachedCtx that has the same span and logger as the main
 	// context but with the baseContext as parent; This context will not cancel
 	// when ctx is canceled allowing us to continue pulling the nar in the
@@ -276,16 +280,85 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		trace.SpanFromContext(ctx),
 	)
 	ds := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
+	ds.wg.Add(1)
 
-	zerolog.Ctx(ctx).
-		Debug().
-		Msg("pulling nar in a go-routine and will stream the file back to the client")
+	// double check it still does not exist in the store before we continue
+	if c.narStore.HasNar(ctx, narURL) {
+		ds.wg.Done()
 
-	if ds.downloadError != nil {
-		return 0, nil, ds.downloadError
+		return c.getNarFromStore(ctx, &narURL)
 	}
 
-	return c.getNarFromStore(ctx, &narURL)
+	// create a pipe to stream file down to the http client
+	reader, writer := io.Pipe()
+
+	go func() {
+		defer ds.wg.Done()
+
+		f, err := os.Open(ds.assetPath)
+		if err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error opening the asset path")
+
+			return
+		}
+
+		defer f.Close()
+		defer writer.Close()
+
+		var bytesSent int64
+
+		for {
+			ds.mu.Lock()
+
+			for bytesSent >= ds.bytesWritten && !isDone(ds.done) {
+				ds.cond.Wait() // Put this goroutine to sleep until a broadcast is received from the downloader
+			}
+
+			// Determine how much data is now available to read
+			bytesToRead := ds.bytesWritten - bytesSent
+			isDownloadComplete := isDone(ds.done)
+
+			ds.mu.Unlock() // Unlock while doing I/O
+
+			// If there's data to read, read it from the file
+			if bytesToRead > 0 {
+				// Use io.LimitReader to only read the new chunk
+				lr := io.LimitReader(f, bytesToRead)
+
+				n, err := io.Copy(writer, lr)
+				if err != nil {
+					zerolog.Ctx(ctx).
+						Error().
+						Err(err).
+						Msg("error writing the response to the client")
+
+					return
+				}
+
+				bytesSent += n
+			}
+
+			if isDownloadComplete && bytesSent >= ds.finalSize {
+				fmt.Printf("YES!!!!\n")
+
+				return
+			}
+		}
+	}()
+
+	return reader, nil
+}
+
+func isDone(done chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
@@ -430,6 +503,7 @@ func (c *Cache) pullNarIntoStore(
 
 	// Write the response to the temporary file in chunks so clients can pull early and often
 	buf := make([]byte, 32*1024)
+
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
@@ -461,6 +535,7 @@ func (c *Cache) pullNarIntoStore(
 
 		if err != nil {
 			ds.downloadError = err
+
 			return
 		}
 	}
