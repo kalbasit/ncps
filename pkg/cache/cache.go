@@ -450,12 +450,6 @@ func (c *Cache) pullNarIntoStore(
 
 		// Final broadcast
 		ds.cond.Broadcast()
-
-		// Wait until nothing is reading from the asset and remove it
-		go func() {
-			ds.wg.Wait()
-			os.Remove(ds.assetPath)
-		}()
 	}()
 
 	ctx, span := c.tracer.Start(
