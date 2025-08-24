@@ -86,12 +86,21 @@ type Cache struct {
 	// upstream cache so incomping requests for the same nar can find and wait
 	// for jobs.
 	muUpstreamJobs sync.Mutex
-	upstreamJobs   map[string]chan struct{}
+	upstreamJobs   map[string]*downloadState
 
 	// mu is used by the LRU garbage collector to freeze access to the cache.
 	mu sync.RWMutex
 
 	cron *cron.Cron
+}
+
+type downloadState struct {
+	// Channel to signal completion
+	done chan struct{}
+}
+
+func newDownloadState() *downloadState {
+	return &downloadState{done: make(chan struct{})}
 }
 
 // New returns a new Cache.
@@ -112,7 +121,7 @@ func New(
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
 		shouldSignNarinfo:    true,
-		upstreamJobs:         make(map[string]chan struct{}),
+		upstreamJobs:         make(map[string]*downloadState),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
 
@@ -249,12 +258,12 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		zerolog.Ctx(ctx).WithContext(c.baseContext),
 		trace.SpanFromContext(ctx),
 	)
-	doneC := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
+	ds := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
 
 	zerolog.Ctx(ctx).
 		Debug().
 		Msg("pulling nar in a go-routing and will wait for it")
-	<-doneC
+	<-ds.done
 
 	return c.getNarFromStore(ctx, &narURL)
 }
@@ -312,21 +321,23 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	return c.narStore.DeleteNar(ctx, narURL)
 }
 
-func (c *Cache) pullNar(
+func (c *Cache) pullNarIntoStore(
 	ctx context.Context,
 	narURL *nar.URL,
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
 	enableZSTD bool,
-	doneC chan struct{},
+	ds *downloadState,
 ) {
 	done := func() {
 		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, narURL.Hash)
 		c.muUpstreamJobs.Unlock()
 
-		close(doneC)
+		close(ds.done)
 	}
+
+	defer done()
 
 	ctx, span := c.tracer.Start(
 		ctx,
@@ -358,8 +369,6 @@ func (c *Cache) pullNar(
 				Msg("error getting the nar from upstream caches")
 		}
 
-		done()
-
 		return
 	}
 
@@ -383,8 +392,6 @@ func (c *Cache) pullNar(
 			Err(err).
 			Msg("error storing the nar in the temporary directory")
 
-		done()
-
 		return
 	}
 
@@ -398,8 +405,6 @@ func (c *Cache) pullNar(
 			Err(err).
 			Msg("error storing the nar in the temporary file")
 
-		done()
-
 		return
 	}
 
@@ -411,8 +416,6 @@ func (c *Cache) pullNar(
 			Error().
 			Err(err).
 			Msg("error opening the nar from the temporary file")
-
-		done()
 
 		return
 	}
@@ -426,8 +429,6 @@ func (c *Cache) pullNar(
 			Err(err).
 			Msg("error storing the nar in the store")
 
-		done()
-
 		return
 	}
 
@@ -439,8 +440,6 @@ func (c *Cache) pullNar(
 		Info().
 		Dur("elapsed", time.Since(now)).
 		Msg("download of nar complete")
-
-	done()
 }
 
 func (c *Cache) getNarFromStore(
@@ -623,12 +622,12 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		}
 	}
 
-	doneC := c.prePullNarInfo(ctx, hash)
+	ds := c.prePullNarInfo(ctx, hash)
 
 	zerolog.Ctx(ctx).
 		Debug().
 		Msg("pulling nar in a go-routing and will wait for it")
-	<-doneC
+	<-ds.done
 
 	return c.narInfoStore.GetNarInfo(ctx, hash)
 }
@@ -636,15 +635,17 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 func (c *Cache) pullNarInfo(
 	ctx context.Context,
 	hash string,
-	doneC chan struct{},
+	ds *downloadState,
 ) {
 	done := func() {
 		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, hash)
 		c.muUpstreamJobs.Unlock()
 
-		close(doneC)
+		close(ds.done)
 	}
+
+	defer done()
 
 	ctx, span := c.tracer.Start(
 		ctx,
@@ -672,8 +673,6 @@ func (c *Cache) pullNarInfo(
 				Msg("error getting the narInfo from upstream caches")
 		}
 
-		done()
-
 		return
 	}
 
@@ -684,8 +683,6 @@ func (c *Cache) pullNarInfo(
 			Err(err).
 			Str("nar_url", narInfo.URL).
 			Msg("error parsing the nar URL")
-
-		done()
 
 		return
 	}
@@ -709,7 +706,8 @@ func (c *Cache) pullNarInfo(
 	// if that's the case we should get the compressed version and store that
 	// instead.
 	if enableZSTD {
-		<-c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
+		ds := c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
+		<-ds.done
 	} else {
 		// create a detachedCtx that has the same span and logger as the main
 		// context but with the baseContext as parent; This context will not cancel
@@ -728,8 +726,6 @@ func (c *Cache) pullNarInfo(
 			Err(err).
 			Msg("error signing the narinfo")
 
-		done()
-
 		return
 	}
 
@@ -738,8 +734,6 @@ func (c *Cache) pullNarInfo(
 			Error().
 			Err(err).
 			Msg("error storing the narInfo in the store")
-
-		done()
 
 		return
 	}
@@ -750,8 +744,6 @@ func (c *Cache) pullNarInfo(
 			Err(err).
 			Msg("error storing the narinfo in the database")
 
-		done()
-
 		return
 	}
 
@@ -759,8 +751,6 @@ func (c *Cache) pullNarInfo(
 		Info().
 		Dur("elapsed", time.Since(now)).
 		Msg("download of narinfo complete")
-
-	done()
 }
 
 // PutNarInfo records the narInfo (given as an io.Reader) into the store and signs it.
@@ -831,7 +821,7 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	return c.deleteNarInfoFromStore(ctx, hash)
 }
 
-func (c *Cache) prePullNarInfo(ctx context.Context, hash string) chan struct{} {
+func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState {
 	ctx, span := c.tracer.Start(
 		ctx,
 		"cache.prePullNarInfo",
@@ -844,20 +834,17 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) chan struct{} {
 
 	c.muUpstreamJobs.Lock()
 
-	doneC, ok := c.upstreamJobs[hash]
-	if ok {
-		zerolog.Ctx(ctx).
-			Info().
-			Msg("waiting for an in-progress download of narinfo to finish")
-	} else {
-		doneC = make(chan struct{})
-		c.upstreamJobs[hash] = doneC
+	ds, ok := c.upstreamJobs[hash]
+	if !ok {
+		ds = newDownloadState()
+		c.upstreamJobs[hash] = ds
 
-		go c.pullNarInfo(ctx, hash, doneC)
+		go c.pullNarInfo(ctx, hash, ds)
 	}
+
 	c.muUpstreamJobs.Unlock()
 
-	return doneC
+	return ds
 }
 
 func (c *Cache) prePullNar(
@@ -866,7 +853,7 @@ func (c *Cache) prePullNar(
 	uc *upstream.Cache,
 	narInfo *narinfo.NarInfo,
 	enableZSTD bool,
-) chan struct{} {
+) *downloadState {
 	ctx, span := c.tracer.Start(
 		ctx,
 		"cache.prePullNar",
@@ -879,16 +866,17 @@ func (c *Cache) prePullNar(
 
 	c.muUpstreamJobs.Lock()
 
-	doneC, ok := c.upstreamJobs[narURL.Hash]
+	ds, ok := c.upstreamJobs[narURL.Hash]
 	if !ok {
-		doneC = make(chan struct{})
-		c.upstreamJobs[narURL.Hash] = doneC
+		ds = newDownloadState()
+		c.upstreamJobs[narURL.Hash] = ds
 
-		go c.pullNar(ctx, narURL, uc, narInfo, enableZSTD, doneC)
+		go c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
 	}
+
 	c.muUpstreamJobs.Unlock()
 
-	return doneC
+	return ds
 }
 
 func (c *Cache) signNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
