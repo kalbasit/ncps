@@ -95,9 +95,15 @@ type Cache struct {
 }
 
 type downloadState struct {
+	// Mutex and Condition is used to gate access to this downloadState as well as broadcast chunks
+	mu   sync.Mutex
+	cond *sync.Cond
+
 	// Information about the asset being downloaded
-	wg        sync.WaitGroup
-	assetPath string
+	wg           sync.WaitGroup
+	assetPath    string
+	bytesWritten int64
+	finalSize    int64
 
 	// Store any download errors in this field
 	downloadError error
@@ -107,7 +113,11 @@ type downloadState struct {
 }
 
 func newDownloadState() *downloadState {
-	return &downloadState{done: make(chan struct{})}
+	ds := &downloadState{done: make(chan struct{})}
+
+	ds.cond = sync.NewCond(&ds.mu)
+
+	return ds
 }
 
 // New returns a new Cache.
@@ -269,8 +279,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 	zerolog.Ctx(ctx).
 		Debug().
-		Msg("pulling nar in a go-routing and will wait for it")
-	<-ds.done
+		Msg("pulling nar in a go-routine and will stream the file back to the client")
 
 	if ds.downloadError != nil {
 		return 0, nil, ds.downloadError
@@ -340,15 +349,13 @@ func (c *Cache) pullNarIntoStore(
 	enableZSTD bool,
 	ds *downloadState,
 ) {
-	done := func() {
+	defer func() {
 		c.muUpstreamJobs.Lock()
 		delete(c.upstreamJobs, narURL.Hash)
 		c.muUpstreamJobs.Unlock()
 
 		close(ds.done)
-	}
-
-	defer done()
+	}()
 
 	ctx, span := c.tracer.Start(
 		ctx,
@@ -403,7 +410,7 @@ func (c *Cache) pullNarIntoStore(
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
-			Msg("error storing the nar in the temporary directory")
+			Msg("error creating the nar file in the temporary directory")
 
 		ds.downloadError = err
 
@@ -421,18 +428,49 @@ func (c *Cache) pullNarIntoStore(
 		os.Remove(ds.assetPath)
 	}()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
+	// Write the response to the temporary file in chunks so clients can pull early and often
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
 
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error storing the nar in the temporary file")
+			// Write the chunk read to the file
+			n, writeErr := f.Write(chunk)
+			if writeErr != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error storing the chunk in the temporary file")
 
-		ds.downloadError = err
+				ds.downloadError = writeErr
 
-		return
+				return
+			}
+
+			// Update the state and signal waiting clients
+			ds.mu.Lock()
+			ds.bytesWritten += int64(n)
+			ds.mu.Unlock()
+			ds.cond.Broadcast()
+		}
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			ds.downloadError = err
+			return
+		}
 	}
+
+	// Writing the NAR to a temporary file is now done, final notification to watchers
+	ds.mu.Lock()
+	ds.finalSize = ds.bytesWritten
+	ds.mu.Unlock()
+	close(ds.done)
+	ds.cond.Broadcast()
 
 	f.Close()
 
