@@ -108,12 +108,16 @@ type downloadState struct {
 	// Store any download errors in this field
 	downloadError error
 
-	// Channel to signal completion
-	done chan struct{}
+	// Channel to signal starting the pull and its completion
+	done  chan struct{}
+	start chan struct{}
 }
 
 func newDownloadState() *downloadState {
-	ds := &downloadState{done: make(chan struct{})}
+	ds := &downloadState{
+		done:  make(chan struct{}),
+		start: make(chan struct{}),
+	}
 
 	ds.cond = sync.NewCond(&ds.mu)
 
@@ -289,6 +293,12 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		return c.getNarFromStore(ctx, &narURL)
 	}
 
+	<-ds.start
+
+	if ds.downloadError != nil {
+		return 0, nil, ds.downloadError
+	}
+
 	// create a pipe to stream file down to the http client
 	reader, writer := io.Pipe()
 
@@ -303,11 +313,19 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		for {
 			ds.mu.Lock()
 
-			for bytesSent >= ds.bytesWritten && !isDone(ds.done) {
+			for bytesSent >= ds.bytesWritten && ds.finalSize == 0 {
 				ds.cond.Wait() // Put this goroutine to sleep until a broadcast is received from the downloader
+
+				// check for error just in case otherwise we'd end up sleeping forever
+				// in case an error happened and the downloader bailed after its last
+				// broadcast in the defered function.
+				if ds.downloadError != nil {
+					return
+				}
 			}
 
-			// On first read, open the file
+			// On first read, open the file. It's not guaranteed the file is even
+			// available prior to this point.
 			if f == nil {
 				var err error
 
@@ -324,7 +342,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 			// Determine how much data is now available to read
 			bytesToRead := ds.bytesWritten - bytesSent
-			isDownloadComplete := isDone(ds.done)
+			isDownloadComplete := ds.finalSize != 0
 
 			ds.mu.Unlock() // Unlock while doing I/O
 
@@ -347,23 +365,12 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			}
 
 			if isDownloadComplete && bytesSent >= ds.finalSize {
-				fmt.Printf("YES!!!!\n")
-
 				return
 			}
 		}
 	}()
 
 	return -1, reader, nil
-}
-
-func isDone(done chan struct{}) bool {
-	select {
-	case <-done:
-		return true
-	default:
-		return false
-	}
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
@@ -432,7 +439,23 @@ func (c *Cache) pullNarIntoStore(
 		delete(c.upstreamJobs, narURL.Hash)
 		c.muUpstreamJobs.Unlock()
 
+		select {
+		case <-ds.start:
+		default:
+			close(ds.start)
+		}
+
+		// Inform watchers that we are fully done and the asset is now in the store.
 		close(ds.done)
+
+		// Final broadcast
+		ds.cond.Broadcast()
+
+		// Wait until nothing is reading from the asset and remove it
+		go func() {
+			ds.wg.Wait()
+			os.Remove(ds.assetPath)
+		}()
 	}()
 
 	ctx, span := c.tracer.Start(
@@ -506,6 +529,8 @@ func (c *Cache) pullNarIntoStore(
 		os.Remove(ds.assetPath)
 	}()
 
+	close(ds.start) // inform caller that we started to stream
+
 	// Write the response to the temporary file in chunks so clients can pull early and often
 	buf := make([]byte, 32*1024)
 
@@ -549,7 +574,6 @@ func (c *Cache) pullNarIntoStore(
 	ds.mu.Lock()
 	ds.finalSize = ds.bytesWritten
 	ds.mu.Unlock()
-	close(ds.done)
 	ds.cond.Broadcast()
 
 	f.Close()

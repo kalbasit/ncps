@@ -185,8 +185,20 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz}
-				_, _, err := c.GetNar(newContext(), nu)
+				size, reader, err := c.GetNar(newContext(), nu)
 				require.NoError(t, err)
+
+				// Continusly Get the NAR to ensure it finally makes it to the store
+				// otherwise the test below will never pass.
+				for size < 0 {
+					// discard the contents of the previous reader
+					_, err = io.Copy(io.Discard, reader)
+					require.NoError(t, err)
+
+					// read the NAR again
+					size, reader, err = c.GetNar(newContext(), nu)
+					require.NoError(t, err)
+				}
 
 				t.Run("nar does exist in storage", func(t *testing.T) {
 					assert.FileExists(t, storePath)
