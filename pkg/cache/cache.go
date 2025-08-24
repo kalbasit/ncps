@@ -294,19 +294,9 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 	go func() {
 		defer ds.wg.Done()
-
-		f, err := os.Open(ds.assetPath)
-		if err != nil {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("error opening the asset path")
-
-			return
-		}
-
-		defer f.Close()
 		defer writer.Close()
+
+		var f *os.File
 
 		var bytesSent int64
 
@@ -315,6 +305,21 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 			for bytesSent >= ds.bytesWritten && !isDone(ds.done) {
 				ds.cond.Wait() // Put this goroutine to sleep until a broadcast is received from the downloader
+			}
+
+			// On first read, open the file
+			if f == nil {
+				var err error
+
+				f, err = os.Open(ds.assetPath)
+				if err != nil {
+					zerolog.Ctx(ctx).
+						Error().
+						Err(err).
+						Msg("error opening the asset path")
+
+					return
+				}
 			}
 
 			// Determine how much data is now available to read
@@ -349,7 +354,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		}
 	}()
 
-	return reader, nil
+	return -1, reader, nil
 }
 
 func isDone(done chan struct{}) bool {
