@@ -95,6 +95,10 @@ type Cache struct {
 }
 
 type downloadState struct {
+	// Information about the asset being downloaded
+	wg        sync.WaitGroup
+	assetPath string
+
 	// Store any download errors in this field
 	downloadError error
 
@@ -406,7 +410,16 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
-	defer os.Remove(f.Name())
+	ds.assetPath = f.Name()
+
+	// Wait until nothing is using the asset and remove it
+	ds.wg.Add(1)
+	defer ds.wg.Done()
+
+	go func() {
+		ds.wg.Wait()
+		os.Remove(ds.assetPath)
+	}()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		f.Close()
