@@ -95,6 +95,10 @@ type Cache struct {
 }
 
 type downloadState struct {
+	// Information about the asset being downloaded
+	wg        sync.WaitGroup
+	assetPath string
+
 	// Store any download errors in this field
 	downloadError error
 
@@ -342,6 +346,12 @@ func (c *Cache) pullNarIntoStore(
 		c.muUpstreamJobs.Unlock()
 
 		close(ds.done)
+
+		// Wait until nothing is reading from the asset and remove it
+		go func() {
+			ds.wg.Wait()
+			os.Remove(ds.assetPath)
+		}()
 	}
 
 	defer done()
@@ -406,7 +416,7 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
-	defer os.Remove(f.Name())
+	ds.assetPath = f.Name()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		f.Close()
