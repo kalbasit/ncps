@@ -49,7 +49,7 @@ var (
 
 const (
 	recordAgeIgnoreTouch = 5 * time.Minute
-	tracerName           = "github.com/kalbasit/ncps/pkg/cache"
+	otelPackageName      = "github.com/kalbasit/ncps/pkg/cache"
 )
 
 // Cache represents the main cache service.
@@ -137,7 +137,7 @@ func New(
 	c := &Cache{
 		baseContext:          ctx,
 		db:                   db,
-		tracer:               otel.Tracer(tracerName),
+		tracer:               otel.Tracer(otelPackageName),
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
