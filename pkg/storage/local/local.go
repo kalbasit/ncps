@@ -36,9 +36,9 @@ var (
 )
 
 const (
-	fileMode   = 0o400
-	dirMode    = 0o700
-	tracerName = "github.com/kalbasit/ncps/pkg/storage/local"
+	fileMode        = 0o400
+	dirMode         = 0o700
+	otelPackageName = "github.com/kalbasit/ncps/pkg/storage/local"
 )
 
 // Store represents a local store and implements storage.Store.
@@ -54,7 +54,7 @@ func New(ctx context.Context, path string) (*Store, error) {
 
 	s := &Store{
 		path:   path,
-		tracer: otel.Tracer(tracerName),
+		tracer: otel.Tracer(otelPackageName),
 	}
 
 	if err := s.setupDirs(); err != nil {

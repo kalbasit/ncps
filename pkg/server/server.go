@@ -42,7 +42,7 @@ const (
 WantMassQuery: 1
 Priority: 10`
 
-	tracerName = "github.com/kalbasit/ncps/pkg/server"
+	otelPackageName = "github.com/kalbasit/ncps/pkg/server"
 )
 
 // Server represents the main HTTP server.
@@ -60,7 +60,7 @@ type Server struct {
 func New(cache *cache.Cache) *Server {
 	s := &Server{
 		cache:  cache,
-		tracer: otel.Tracer(tracerName),
+		tracer: otel.Tracer(otelPackageName),
 	}
 
 	s.createRouter()
