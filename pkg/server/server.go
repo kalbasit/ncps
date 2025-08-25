@@ -45,12 +45,18 @@ Priority: 10`
 	otelPackageName = "github.com/kalbasit/ncps/pkg/server"
 )
 
+//nolint:gochecknoglobals
+var tracer trace.Tracer
+
+//nolint:gochecknoinits
+func init() {
+	tracer = otel.Tracer(otelPackageName)
+}
+
 // Server represents the main HTTP server.
 type Server struct {
 	cache  *cache.Cache
 	router *chi.Mux
-
-	tracer trace.Tracer
 
 	deletePermitted bool
 	putPermitted    bool
@@ -58,10 +64,7 @@ type Server struct {
 
 // New returns a new server.
 func New(cache *cache.Cache) *Server {
-	s := &Server{
-		cache:  cache,
-		tracer: otel.Tracer(otelPackageName),
-	}
+	s := &Server{cache: cache}
 
 	s.createRouter()
 
@@ -189,7 +192,7 @@ func (s *Server) getIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		r.Context(),
 		"server.getNixCacheInfo",
 		trace.WithSpanKind(trace.SpanKindServer),
@@ -207,7 +210,7 @@ func (s *Server) getNixCacheInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getNixCachePublicKey(w http.ResponseWriter, r *http.Request) {
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 
 		r.Context(),
 		"server.getNixCachePublicKey",
@@ -229,7 +232,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
-		ctx, span := s.tracer.Start(
+		ctx, span := tracer.Start(
 			r.Context(),
 			"server.getNarInfo",
 			trace.WithSpanKind(trace.SpanKindServer),
@@ -290,7 +293,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
-	ctx, span := s.tracer.Start(
+	ctx, span := tracer.Start(
 		r.Context(),
 		"server.putNarInfo",
 		trace.WithSpanKind(trace.SpanKindServer),
@@ -330,7 +333,7 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 
-	ctx, span := s.tracer.Start(
+	ctx, span := tracer.Start(
 		r.Context(),
 		"server.deleteNarInfo",
 		trace.WithSpanKind(trace.SpanKindServer),
@@ -392,7 +395,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		ctx, span := s.tracer.Start(
+		ctx, span := tracer.Start(
 			r.Context(),
 			"server.getNar",
 			trace.WithSpanKind(trace.SpanKindServer),
@@ -495,7 +498,7 @@ func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, span := s.tracer.Start(
+	ctx, span := tracer.Start(
 		r.Context(),
 		"server.putNar",
 		trace.WithSpanKind(trace.SpanKindServer),
@@ -548,7 +551,7 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, span := s.tracer.Start(
+	ctx, span := tracer.Start(
 		r.Context(),
 		"server.deleteNar",
 		trace.WithSpanKind(trace.SpanKindServer),

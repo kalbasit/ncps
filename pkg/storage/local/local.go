@@ -21,6 +21,12 @@ import (
 	"github.com/kalbasit/ncps/pkg/storage"
 )
 
+const (
+	fileMode        = 0o400
+	dirMode         = 0o700
+	otelPackageName = "github.com/kalbasit/ncps/pkg/storage/local"
+)
+
 var (
 	// ErrPathMustBeAbsolute is returned if the given path to New was not absolute.
 	ErrPathMustBeAbsolute = errors.New("path must be absolute")
@@ -33,18 +39,19 @@ var (
 
 	// ErrPathMustBeWritable is returned if the given path to New is not writable.
 	ErrPathMustBeWritable = errors.New("path must be writable")
+
+	//nolint:gochecknoglobals
+	tracer trace.Tracer
 )
 
-const (
-	fileMode        = 0o400
-	dirMode         = 0o700
-	otelPackageName = "github.com/kalbasit/ncps/pkg/storage/local"
-)
+//nolint:gochecknoinits
+func init() {
+	tracer = otel.Tracer(otelPackageName)
+}
 
 // Store represents a local store and implements storage.Store.
 type Store struct {
-	path   string
-	tracer trace.Tracer
+	path string
 }
 
 func New(ctx context.Context, path string) (*Store, error) {
@@ -52,10 +59,7 @@ func New(ctx context.Context, path string) (*Store, error) {
 		return nil, err
 	}
 
-	s := &Store{
-		path:   path,
-		tracer: otel.Tracer(otelPackageName),
-	}
+	s := &Store{path: path}
 
 	if err := s.setupDirs(); err != nil {
 		return nil, fmt.Errorf("error setting up the store directory: %w", err)
@@ -68,7 +72,7 @@ func New(ctx context.Context, path string) (*Store, error) {
 func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 	skPath := s.secretKeyPath()
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.GetSecretKey",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -94,7 +98,7 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error {
 	skPath := s.secretKeyPath()
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.PutSecretKey",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -115,7 +119,7 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 func (s *Store) DeleteSecretKey(ctx context.Context) error {
 	skPath := s.secretKeyPath()
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.DeleteSecretKey",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -136,7 +140,7 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.HasNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -156,7 +160,7 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.GetNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -185,7 +189,7 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.PutNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -222,7 +226,7 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.DeleteNarInfo",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -248,7 +252,7 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.HasNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -269,7 +273,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.GetNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -301,7 +305,7 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.PutNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -353,7 +357,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
 
-	_, span := s.tracer.Start(
+	_, span := tracer.Start(
 		ctx,
 		"local.DeleteNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
