@@ -174,7 +174,7 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	enabled := cmd.Bool("otel-enabled")
 
 	// Set up trace provider.
-	tracerProvider, err := newTraceProvider(ctx, false, colURL, res)
+	tracerProvider, err := newTraceProvider(ctx, enabled, colURL, res)
 	if err != nil {
 		return shutdown, handleErr(err)
 	}
@@ -192,7 +192,7 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	otel.SetMeterProvider(meterProvider)
 
 	// Set up logger provider.
-	loggerProvider, err := newLoggerProvider(ctx, false, colURL, res)
+	loggerProvider, err := newLoggerProvider(ctx, enabled, colURL, res)
 	if err != nil {
 		return shutdown, handleErr(err)
 	}
