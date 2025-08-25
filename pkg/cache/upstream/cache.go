@@ -48,7 +48,7 @@ var (
 )
 
 const (
-	tracerName = "github.com/kalbasit/ncps/pkg/cache/upstream"
+	otelPackageName = "github.com/kalbasit/ncps/pkg/cache/upstream"
 
 	defaultHTTPTimeout = 3 * time.Second
 )
@@ -76,7 +76,7 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 
 	c := &Cache{
 		url:                   u,
-		tracer:                otel.Tracer(tracerName),
+		tracer:                otel.Tracer(otelPackageName),
 		dialerTimeout:         defaultHTTPTimeout,
 		responseHeaderTimeout: defaultHTTPTimeout,
 	}
