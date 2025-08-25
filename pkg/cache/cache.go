@@ -60,6 +60,9 @@ var (
 
 	//nolint:gochecknoglobals
 	narServedCount metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	narInfoServedCount metric.Int64Counter
 )
 
 //nolint:gochecknoinits
@@ -72,6 +75,15 @@ func init() {
 	narServedCount, err = meter.Int64Counter(
 		"ncps_nar_served_total",
 		metric.WithDescription("Counts the number of NAR files served."),
+		metric.WithUnit("{file}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	narInfoServedCount, err = meter.Int64Counter(
+		"ncps_narinfo_served_total",
+		metric.WithDescription("Counts the number of NAR info files served."),
 		metric.WithUnit("{file}"),
 	)
 	if err != nil {
@@ -820,6 +832,11 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	)
 	defer span.End()
 
+	var metricAttrs []attribute.KeyValue
+	defer func() {
+		narInfoServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
+	}()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -835,13 +852,25 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	)
 
 	if c.narInfoStore.HasNarInfo(ctx, hash) {
+		metricAttrs = append(metricAttrs,
+			attribute.String("result", "hit"),
+			attribute.String("status", "success"),
+		)
+
 		narInfo, err = c.getNarInfoFromStore(ctx, hash)
 		if err == nil {
 			return narInfo, nil
 		} else if !errors.Is(err, errNarInfoPurged) {
+			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
 			return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
 		}
 	}
+
+	metricAttrs = append(metricAttrs,
+		attribute.String("result", "miss"),
+		attribute.String("status", "success"),
+	)
 
 	ds := c.prePullNarInfo(ctx, hash)
 
@@ -851,6 +880,8 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	<-ds.done
 
 	if ds.downloadError != nil {
+		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
 		return nil, ds.downloadError
 	}
 
