@@ -53,14 +53,30 @@ var (
 	errNarInfoPurged = errors.New("the narinfo was purged")
 
 	//nolint:gochecknoglobals
-	meter  metric.Meter
+	meter metric.Meter
+
+	//nolint:gochecknoglobals
 	tracer trace.Tracer
+
+	//nolint:gochecknoglobals
+	narServedCount metric.Int64Counter
 )
 
 //nolint:gochecknoinits
 func init() {
 	meter = otel.Meter(otelPackageName)
 	tracer = otel.Tracer(otelPackageName)
+
+	var err error
+
+	narServedCount, err = meter.Int64Counter(
+		"ncps_nar_served_total",
+		metric.WithDescription("Counts the number of NAR files served."),
+		metric.WithUnit("{file}"),
+	)
+	if err != nil {
+		panic(err)
+	}
 }
 
 // Cache represents the main cache service.
@@ -267,6 +283,11 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	)
 	defer span.End()
 
+	var metricAttrs []attribute.KeyValue
+	defer func() {
+		narServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
+	}()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -275,7 +296,17 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		WithContext(ctx)
 
 	if c.narStore.HasNar(ctx, narURL) {
-		return c.getNarFromStore(ctx, &narURL)
+		metricAttrs = append(metricAttrs,
+			attribute.String("result", "hit"),
+			attribute.String("status", "success"),
+		)
+
+		size, reader, err := c.getNarFromStore(ctx, &narURL)
+		if err != nil {
+			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+		}
+
+		return size, reader, err
 	}
 
 	zerolog.Ctx(ctx).
@@ -297,12 +328,29 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	if c.narStore.HasNar(ctx, narURL) {
 		ds.wg.Done()
 
-		return c.getNarFromStore(ctx, &narURL)
+		metricAttrs = append(metricAttrs,
+			attribute.String("result", "hit"),
+			attribute.String("status", "success"),
+		)
+
+		size, reader, err := c.getNarFromStore(ctx, &narURL)
+		if err != nil {
+			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+		}
+
+		return size, reader, err
 	}
+
+	metricAttrs = append(metricAttrs,
+		attribute.String("result", "miss"),
+		attribute.String("status", "success"),
+	)
 
 	<-ds.start
 
 	if ds.downloadError != nil {
+		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
 		return 0, nil, ds.downloadError
 	}
 
@@ -631,7 +679,7 @@ func (c *Cache) getNarFromStore(
 
 	size, r, err := c.narStore.GetNar(ctx, *narURL)
 	if err != nil {
-		return 0, nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
+		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
 	}
 
 	tx, err := c.db.DB().Begin()
