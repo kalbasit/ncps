@@ -21,6 +21,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kalbasit/ncps/pkg/cache/healthcheck"
@@ -52,11 +53,13 @@ var (
 	errNarInfoPurged = errors.New("the narinfo was purged")
 
 	//nolint:gochecknoglobals
+	meter  metric.Meter
 	tracer trace.Tracer
 )
 
 //nolint:gochecknoinits
 func init() {
+	meter = otel.Meter(otelPackageName)
 	tracer = otel.Tracer(otelPackageName)
 }
 
@@ -73,7 +76,6 @@ type Cache struct {
 
 	// tempDir is used to store nar files temporarily.
 	tempDir string
-
 	// stores
 	configStore  storage.ConfigStore
 	narInfoStore storage.NarInfoStore
