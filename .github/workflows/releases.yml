@@ -36,3 +36,4 @@ jobs:
         with:
           generate_release_notes: true
           make_latest: "true"
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
