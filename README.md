@@ -203,6 +203,7 @@ These options are specific to the `ncps serve` command:
 - `--cache-lru-schedule-timezone`: The name of the timezone to use for the cron schedule (default: "Local"). (Environment variable: `$CACHE_LRU_SCHEDULE_TZ`)
 - `--cache-secret-key-path`: The path to the secret key used for signing cached paths. (Environment variable: `$CACHE_SECRET_KEY_PATH`)
 - `--cache-sign-narinfo`: Whether to sign narInfo files or passthru as-is from upstream (default: true). (Environment variable: `$CACHE_SIGN_NARINFO`)
+- `--cache-temp-path`: The path to the temporary directory that is used by the cache to download NAR files (default: `os.TempDir()`). (Environment variable: `$CACHE_TEMP_PATH`)
 - `--server-addr`: The address and port the server listens on (default: ":8501"). (Environment variable: `$SERVER_ADDR`)
 - `--upstream-cache`: The URL of an upstream binary cache (e.g., `https://cache.nixos.org`). This flag can be used multiple times to specify multiple upstream caches. (Environment variable: `$UPSTREAM_CACHES`)
 - `--upstream-public-key`: The public key of an upstream cache in the format `host:public-key`. This flag is used to verify the signatures of store paths downloaded from upstream caches. This flag can be used multiple times, once for each upstream cache. (Environment variable: `$UPSTREAM_PUBLIC_KEYS`)
