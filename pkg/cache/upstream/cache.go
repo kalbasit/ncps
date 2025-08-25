@@ -15,6 +15,7 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -150,7 +151,9 @@ func (c *Cache) setupHTTPClient() error {
 	// Set timeout to first byte
 	dt.ResponseHeaderTimeout = c.responseHeaderTimeout
 
-	c.httpClient = &http.Client{Transport: http.RoundTripper(dt)}
+	c.httpClient = &http.Client{
+		Transport: otelhttp.NewTransport(dt),
+	}
 
 	return nil
 }
