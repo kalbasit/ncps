@@ -24,6 +24,12 @@ import (
 	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 )
 
+const (
+	otelPackageName = "github.com/kalbasit/ncps/pkg/cache/upstream"
+
+	defaultHTTPTimeout = 3 * time.Second
+)
+
 var (
 	// ErrURLRequired is returned if the given URL to New is not given.
 	ErrURLRequired = errors.New("the URL is required")
@@ -45,19 +51,20 @@ var (
 
 	// ErrTransportCastError is returned if it was not possible to cast http.DefaultTransport to *http.Transport.
 	ErrTransportCastError = errors.New("unable to cast http.DefaultTransport to *http.Transport")
+
+	//nolint:gochecknoglobals
+	tracer trace.Tracer
 )
 
-const (
-	otelPackageName = "github.com/kalbasit/ncps/pkg/cache/upstream"
-
-	defaultHTTPTimeout = 3 * time.Second
-)
+//nolint:gochecknoinits
+func init() {
+	tracer = otel.Tracer(otelPackageName)
+}
 
 // Cache represents the upstream cache service.
 type Cache struct {
 	httpClient *http.Client
 	url        *url.URL
-	tracer     trace.Tracer
 	priority   uint64
 	publicKeys []signature.PublicKey
 
@@ -76,7 +83,6 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 
 	c := &Cache{
 		url:                   u,
-		tracer:                otel.Tracer(otelPackageName),
 		dialerTimeout:         defaultHTTPTimeout,
 		responseHeaderTimeout: defaultHTTPTimeout,
 	}
@@ -182,7 +188,7 @@ func (c *Cache) GetHostname() string { return c.url.Hostname() }
 func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
-	ctx, span := c.tracer.Start(
+	ctx, span := tracer.Start(
 		ctx,
 		"upstream.GetNarInfo",
 		trace.WithSpanKind(trace.SpanKindClient),
@@ -257,7 +263,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
 
-	ctx, span := c.tracer.Start(
+	ctx, span := tracer.Start(
 		ctx,
 		"upstream.HasNarInfo",
 		trace.WithSpanKind(trace.SpanKindClient),
@@ -305,7 +311,7 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
 
-	ctx, span := c.tracer.Start(
+	ctx, span := tracer.Start(
 		ctx,
 		"upstream.GetNar",
 		trace.WithSpanKind(trace.SpanKindClient),
@@ -366,7 +372,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (bool, error) {
 	u := narURL.JoinURL(c.url).String()
 
-	ctx, span := c.tracer.Start(
+	ctx, span := tracer.Start(
 		ctx,
 		"upstream.HasNar",
 		trace.WithSpanKind(trace.SpanKindClient),
