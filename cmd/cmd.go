@@ -125,6 +125,11 @@ func New() *cli.Command {
 					return err
 				},
 			},
+			&cli.BoolFlag{
+				Name:    "prometheus-enabled",
+				Usage:   "Enable Prometheus metrics endpoint at /metrics",
+				Sources: cli.EnvVars("PROMETHEUS_ENABLED"),
+			},
 		},
 		Commands: []*cli.Command{
 			serveCommand(),
