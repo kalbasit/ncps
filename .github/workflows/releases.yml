@@ -37,3 +37,10 @@ jobs:
           generate_release_notes: true
           make_latest: "true"
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          append_body: true
+          body: |
+            ## Docker Images
+            The following image tags were published:
+            ```
+            ${{ needs.docker.outputs.tags }}
+            ```
