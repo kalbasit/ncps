@@ -21,11 +21,18 @@ func SetupPrometheusMetrics(
 	// Create resource with service information
 	res, err := resource.New(
 		ctx,
+
+		// Set the Schema URL.
+		// NOTE: This will fail if the semconv version being used within the
+		// deterctors is different. If an error occurred, change the import path of
+		// semconv in the imports section at the top of this file.
 		resource.WithSchemaURL(semconv.SchemaURL),
+
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersionKey.String(serviceVersion),
 		),
+
 		resource.WithProcessCommandArgs(),
 		resource.WithProcessRuntimeVersion(),
 		resource.WithFromEnv(),

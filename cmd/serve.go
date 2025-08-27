@@ -171,7 +171,7 @@ func serveAction() cli.ActionFunc {
 		var prometheusShutdown func(context.Context) error
 
 		if cmd.Root().Bool("prometheus-enabled") {
-			gatherer, shutdown, err := prometheus.SetupPrometheusMetrics(ctx, "ncps", Version)
+			gatherer, shutdown, err := prometheus.SetupPrometheusMetrics(ctx, cmd.Root().Name, Version)
 			if err != nil {
 				return fmt.Errorf("error setting up Prometheus metrics: %w", err)
 			}
