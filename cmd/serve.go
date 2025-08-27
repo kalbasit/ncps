@@ -20,6 +20,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 )
@@ -165,6 +166,31 @@ func serveAction() cli.ActionFunc {
 		srv := server.New(cache)
 		srv.SetDeletePermitted(cmd.Bool("cache-allow-delete-verb"))
 		srv.SetPutPermitted(cmd.Bool("cache-allow-put-verb"))
+
+		// Setup Prometheus metrics if enabled
+		var prometheusShutdown func(context.Context) error
+
+		if cmd.Root().Bool("prometheus-enabled") {
+			gatherer, shutdown, err := prometheus.SetupPrometheusMetrics(ctx, cmd.Root().Name, Version)
+			if err != nil {
+				return fmt.Errorf("error setting up Prometheus metrics: %w", err)
+			}
+
+			prometheusShutdown = shutdown
+
+			srv.SetPrometheusGatherer(gatherer)
+
+			logger.Info().Msg("Prometheus metrics enabled at /metrics")
+		}
+
+		// Cleanup prometheus if needed
+		defer func() {
+			if prometheusShutdown != nil {
+				if err := prometheusShutdown(ctx); err != nil {
+					logger.Error().Err(err).Msg("error shutting down Prometheus metrics")
+				}
+			}
+		}()
 
 		server := &http.Server{
 			BaseContext:       func(net.Listener) context.Context { return ctx },

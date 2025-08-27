@@ -10,12 +10,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	promclient "github.com/prometheus/client_golang/prometheus"
 	otelchimetric "github.com/riandyrn/otelchi/metric"
 
 	"github.com/kalbasit/ncps/pkg/cache"
@@ -60,6 +62,9 @@ type Server struct {
 
 	deletePermitted bool
 	putPermitted    bool
+
+	// prometheus metrics config
+	prometheusGatherer promclient.Gatherer
 }
 
 // New returns a new server.
@@ -77,6 +82,13 @@ func (s *Server) SetDeletePermitted(dp bool) { s.deletePermitted = dp }
 // SetPutPermitted configures the server to either allow or deny access to PUT.
 func (s *Server) SetPutPermitted(pp bool) { s.putPermitted = pp }
 
+// SetPrometheusGatherer configures the server with a Prometheus gatherer for /metrics endpoint.
+func (s *Server) SetPrometheusGatherer(gatherer promclient.Gatherer) {
+	s.prometheusGatherer = gatherer
+	// Recreate router to add metrics endpoint
+	s.createRouter()
+}
+
 // ServeHTTP implements http.Handler and turns the Server type into a handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
 
@@ -89,13 +101,32 @@ func (s *Server) createRouter() {
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(
-		otelchi.Middleware(s.cache.GetHostname(), otelchi.WithChiRoutes(s.router)),
-		otelchimetric.NewRequestDurationMillis(baseCfg),
-		otelchimetric.NewRequestInFlight(baseCfg),
-		otelchimetric.NewResponseSizeBytes(baseCfg),
-	)
-	s.router.Use(requestLogger)
+
+	// Create a middleware skipper that excludes /metrics and /healthz from telemetry
+	skipTelemetryForInfraRoutes := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip telemetry middleware for infrastructure endpoints
+			if r.URL.Path == "/metrics" || r.URL.Path == "/healthz" {
+				next.ServeHTTP(w, r)
+
+				return
+			}
+
+			// Apply all telemetry middleware for other routes
+			telemetryChain := otelchi.Middleware(s.cache.GetHostname(), otelchi.WithChiRoutes(s.router))(
+				otelchimetric.NewRequestDurationMillis(baseCfg)(
+					otelchimetric.NewRequestInFlight(baseCfg)(
+						otelchimetric.NewResponseSizeBytes(baseCfg)(
+							requestLogger(next),
+						),
+					),
+				),
+			)
+			telemetryChain.ServeHTTP(w, r)
+		})
+	}
+
+	s.router.Use(skipTelemetryForInfraRoutes)
 
 	s.router.Get(routeIndex, s.getIndex)
 
@@ -116,6 +147,11 @@ func (s *Server) createRouter() {
 	s.router.Get(routeNar, s.getNar(true))
 	s.router.Put(routeNar, s.putNar)
 	s.router.Delete(routeNar, s.deleteNar)
+
+	// Add Prometheus metrics endpoint if gatherer is configured
+	if s.prometheusGatherer != nil {
+		s.router.Get("/metrics", promhttp.HandlerFor(s.prometheusGatherer, promhttp.HandlerOpts{}).ServeHTTP)
+	}
 }
 
 func requestLogger(next http.Handler) http.Handler {

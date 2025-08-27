@@ -27,9 +27,9 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 
 	"github.com/kalbasit/ncps/pkg/otelzerolog"
+	"github.com/kalbasit/ncps/pkg/telemetry"
 )
 
 // Version defines the version of the binary, and is meant to be set with ldflags at build time.
@@ -125,6 +125,11 @@ func New() *cli.Command {
 					return err
 				},
 			},
+			&cli.BoolFlag{
+				Name:    "prometheus-enabled",
+				Usage:   "Enable Prometheus metrics endpoint at /metrics",
+				Sources: cli.EnvVars("PROMETHEUS_ENABLED"),
+			},
 		},
 		Commands: []*cli.Command{
 			serveCommand(),
@@ -165,7 +170,7 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	prop := newPropagator()
 	otel.SetTextMapPropagator(prop)
 
-	res, err := newResource(ctx, cmd)
+	res, err := telemetry.NewResource(ctx, cmd.Root().Name, Version)
 	if err != nil {
 		return shutdown, handleErr(err)
 	}
@@ -201,49 +206,6 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	global.SetLoggerProvider(loggerProvider)
 
 	return shutdown, nil
-}
-
-func newResource(ctx context.Context, cmd *cli.Command) (*resource.Resource, error) {
-	return resource.New(
-		ctx,
-
-		// Set the Schema URL.
-		// NOTE: This will fail if the semconv version being used within the
-		// deterctors is different. If an error occurred, change the import path of
-		// semconv in the imports section at the top of this file.
-		resource.WithSchemaURL(semconv.SchemaURL),
-
-		// Add Custom attributes.
-		resource.WithAttributes(
-			semconv.ServiceName(cmd.Root().Name),
-			semconv.ServiceVersionKey.String(Version),
-		),
-
-		// Discover and provide command-line information.
-		resource.WithProcessCommandArgs(),
-
-		// Discover and provide runtime information.
-		resource.WithProcessRuntimeVersion(),
-
-		// Discover and provide attributes from OTEL_RESOURCE_ATTRIBUTES and
-		// OTEL_SERVICE_NAME environment variables.
-		resource.WithFromEnv(),
-
-		// Discover and provide information about the OpenTelemetry SDK used.
-		resource.WithTelemetrySDK(),
-
-		// Discover and provide process information.
-		resource.WithProcess(),
-
-		// Discover and provide OS information.
-		resource.WithOS(),
-
-		// Discover and provide container information.
-		resource.WithContainer(),
-
-		// Discover and provide host information.
-		resource.WithHost(),
-	)
 }
 
 func newPropagator() propagation.TextMapPropagator {
