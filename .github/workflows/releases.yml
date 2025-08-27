@@ -40,7 +40,7 @@ jobs:
           append_body: true
           body: |
             ## Docker Images
-            The following image tags were published:
+            The following image tags were published to [Dockerhub](https://hub.docker.com/r/kalbasit/ncps):
             ```
             ${{ needs.docker.outputs.tags }}
             ```
