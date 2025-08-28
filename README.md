@@ -109,28 +109,6 @@ Your cache will be available at `http://localhost:8501` and the public key at `h
 ## 📦 Installation
 
 <details>
-<summary><strong>🔧 Install with Go</strong></summary>
-
-Ensure you have Go installed, then:
-
-```bash
-go install github.com/kalbasit/ncps@latest
-```
-
-</details>
-
-<details>
-<summary><strong>🏗️ Build from Source</strong></summary>
-
-```bash
-git clone https://github.com/kalbasit/ncps.git
-cd ncps
-go build .
-```
-
-</details>
-
-<details>
 <summary><strong>🐳 Docker</strong></summary>
 
 ### Docker Setup
