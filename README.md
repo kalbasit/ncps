@@ -60,8 +60,94 @@ ncps can be installed in several ways:
 
 - **Docker:**
 
-  - Pull the Docker image: `docker pull kalbasit/ncps`
-  - Run the container with appropriate port mappings and volume mounts for the cache directory.
+  To run ncps with Docker, you need to perform database migration first, then start the main application. Here's a complete setup:
+
+  1. **Pull the Docker image:**
+     ```bash
+     docker pull kalbasit/ncps
+     ```
+
+  2. **Create necessary directories and run database migration:**
+     ```bash
+     # Create a volume for persistent storage
+     docker volume create ncps-storage
+
+     # Create directories and run database migration
+     docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/sh -c \
+       "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db && /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up"
+     ```
+
+  3. **Run the ncps server:**
+     ```bash
+     docker run -d \
+       --name ncps \
+       -p 8501:8501 \
+       -v ncps-storage:/storage \
+       kalbasit/ncps \
+       /bin/ncps serve \
+       --cache-hostname=your-ncps-hostname \
+       --cache-data-path=/storage \
+       --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
+       --upstream-cache=https://cache.nixos.org \
+       --upstream-cache=https://nix-community.cachix.org \
+       --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
+       --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+     ```
+
+- **Docker Compose:**
+
+  For easier management, you can use Docker Compose. Create a `docker-compose.yml` file:
+
+  ```yaml
+  version: '3.8'
+
+  services:
+    ncps-init:
+      image: kalbasit/ncps:latest
+      volumes:
+        - ncps-storage:/storage
+      command: >
+        /bin/sh -c "
+          mkdir -m 0755 -p /storage/var &&
+          mkdir -m 0700 -p /storage/var/ncps &&
+          mkdir -m 0700 -p /storage/var/ncps/db &&
+          /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+        "
+      restart: "no"
+
+    ncps:
+      image: kalbasit/ncps:latest
+      depends_on:
+        ncps-init:
+          condition: service_completed_successfully
+      ports:
+        - "8501:8501"
+      volumes:
+        - ncps-storage:/storage
+      command: >
+        /bin/ncps serve
+        --cache-hostname=your-ncps-hostname
+        --cache-data-path=/storage
+        --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
+        --upstream-cache=https://cache.nixos.org
+        --upstream-cache=https://nix-community.cachix.org
+        --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+        --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+      restart: unless-stopped
+      healthcheck:
+        test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8501/pubkey"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+
+  volumes:
+    ncps-storage:
+  ```
+
+  Then run:
+  ```bash
+  docker compose up -d
+  ```
 
 - **Kubernetes**
 
@@ -246,6 +332,49 @@ nix.settings.trusted-public-keys = [
    ```
    trusted-public-keys = ncps-hostname-<download-ncps-public-key> ... other keys
    ```
+
+## Troubleshooting
+
+### Docker Deployment Issues
+
+**Error: "no such table: nars"**
+
+This error occurs when the SQLite database hasn't been properly initialized with the required tables. This typically happens when:
+
+1. **Database migration wasn't run**: The database file exists but the tables haven't been created.
+
+   **Solution**: Run the database migration step before starting the main application:
+   ```bash
+   docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/sh -c \
+     "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db && /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up"
+   ```
+
+2. **Wrong database path**: The application is looking for the database in a different location than where it was created.
+
+   **Solution**: Ensure both the migration and the application use the same database URL path.
+
+3. **Permissions issues**: The database file or directory has incorrect permissions.
+
+   **Solution**: Ensure the directories are created with the correct permissions (see the commands above).
+
+**Error: "unable to open database file" or permission denied**
+
+This usually indicates a permissions or volume mounting issue.
+
+**Solution**:
+- Ensure the storage volume is properly mounted to `/storage` in both the migration and application containers
+- Verify that the directories are created with the correct permissions (0700 for the database directory)
+- If using bind mounts instead of volumes, ensure the host directory is writable by the container user
+
+**Container exits immediately without error**
+
+This can happen when required parameters are missing.
+
+**Solution**: Ensure you provide at least:
+- `--cache-hostname` (required for key generation)
+- `--cache-data-path` (where to store cache data)
+- `--cache-database-url` (database connection string)
+- At least one `--upstream-cache` and corresponding `--upstream-public-key`
 
 ## Contributing
 
