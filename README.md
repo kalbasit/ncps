@@ -1,71 +1,219 @@
-# ncps: Nix Cache Proxy Server
+# 🚀 ncps: Nix Cache Proxy Server
 
-ncps is a proxy server that speeds up Nix dependency retrieval on your local network. It acts as a local binary cache for Nix, fetching store paths from upstream caches (like cache.nixos.org) and storing them locally. This reduces download times and bandwidth usage, especially when multiple machines share the same dependencies.
+> A high-performance proxy server that accelerates Nix dependency retrieval across your local network by caching and serving packages locally.
 
-## Problem it Solves
+[![Go Report Card](https://goreportcard.com/badge/github.com/kalbasit/ncps)](https://goreportcard.com/report/github.com/kalbasit/ncps)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-When multiple machines running NixOS or Nix pull packages, they often download the same dependencies from remote caches like `cache.nixos.org`. This leads to:
+## 📋 Table of Contents
 
-- **Redundant downloads:** Each machine downloads the same files.
-- **Increased bandwidth usage:** Potentially significant network traffic, especially for large projects.
-- **Slower build times:** Waiting for downloads slows down development and deployments.
+- [Overview](#-overview)
+- [Problem & Solution](#-problem--solution)
+- [Key Features](#-key-features)
+- [How It Works](#-how-it-works)
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Client Setup](#-client-setup)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
 
-ncps addresses these issues by acting as a central cache on your local network.
+## 🎯 Overview
 
-## How it Works
+ncps acts as a local binary cache for Nix, fetching store paths from upstream caches (like cache.nixos.org) and storing them locally. This reduces download times and bandwidth usage, especially beneficial when multiple machines share the same dependencies.
 
-1. **Request:** A Nix client configured to use ncps requests a store path.
-1. **Check Local Cache:** ncps checks if the path is already cached locally. If found, it serves the path directly.
-1. **Fetch from Upstream:** If the path is not found locally, ncps fetches it from the configured upstream caches (e.g., cache.nixos.org).
-1. **Cache and Sign:** ncps stores the downloaded path in its local cache **and signs it with its own private key**, ensuring that all served paths have valid signatures from both the upstream cache and ncps.
-1. **Serve to Client:** ncps serves the downloaded path to the requesting Nix client.
+## 🔍 Problem & Solution
 
-## Features
+### The Problem
 
-- **Easy setup:** ncps is easy to configure and run.
-- **Multiple upstream caches:** Support for multiple upstream caches for redundancy and flexibility.
-- **Reduced bandwidth usage:** Minimizes redundant downloads, saving bandwidth and time.
-- **Improved build times:** Faster access to dependencies speeds up builds.
-- **Secure caching:** ncps signs cached paths with its own key, ensuring integrity and authenticity.
-- **Cache size management:** Configure a maximum cache size and a cron schedule to automatically remove least recently used (LRU) store paths, preventing the cache from growing indefinitely.
-- **Zstandard compression support:** ncps supports storing NAR files compressed with Zstandard (zstd) as provided by upstream caches like [Harmonia](https://github.com/nix-community/harmonia). It adjusts the `narinfo` metadata accordingly to reflect the correct filesize and compression method.
-- **OpenTelemetry logging:** Forward logs to an OpenTelemetry collector for centralized logging and monitoring.
+When multiple machines running NixOS or Nix pull packages, they often download the same dependencies from remote caches, leading to:
 
-## Installation
+- ❌ **Redundant downloads** - Each machine downloads identical files
+- ❌ **High bandwidth usage** - Significant network traffic for large projects
+- ❌ **Slower build times** - Network latency impacts development velocity
 
-ncps can be installed in several ways:
+### The Solution
 
-<!--- **Pre-built binaries:**
+ncps solves these issues by acting as a **centralized cache** on your local network, dramatically reducing redundant downloads and improving build performance.
 
-  - Download the latest release for your platform from the [release page](https://github.com/kalbasit/ncps/releases).
-  - Extract the binary and place it in your desired location.
-  - Make it executable.-->
+## ✨ Key Features
 
-- **Install with Go from GitHub:**
+| Feature | Description |
+| ----------------------- | -------------------------------------------------- |
+| 🚀 **Easy Setup** | Simple configuration and deployment |
+| 🔄 **Multi-Upstream** | Support for multiple upstream caches with failover |
+| 💾 **Smart Caching** | LRU cache management with configurable size limits |
+| 🔐 **Secure Signing** | Signs cached paths with private keys for integrity |
+| 📊 **Monitoring** | OpenTelemetry support for centralized logging |
+| 🗜️ **Compression** | Harmonia's transparent zstd compression support |
+| 💾 **Embedded Storage** | Built-in SQLite database for easy deployment |
 
-  - Ensure you have Go installed and configured.
+## ⚙️ How It Works
 
-  - Run the following command:
+```mermaid
+sequenceDiagram
+    participant Client as Nix Client
+    participant NCPS as ncps Server
+    participant Cache as Local Cache
+    participant Upstream as Upstream Cache
 
-    ```bash
-    go install github.com/kalbasit/ncps@latest
-    ```
+    Client->>NCPS: Request store path
+    NCPS->>Cache: Check local cache
 
-- **Build from source:**
+    alt Path exists locally
+        Cache-->>NCPS: Return cached path
+        NCPS-->>Client: Serve cached path
+    else Path not cached
+        NCPS->>Upstream: Fetch from upstream
+        Upstream-->>NCPS: Return store path
+        NCPS->>Cache: Cache and sign path
+        NCPS-->>Client: Serve downloaded path
+    end
+```
 
-  - Ensure you have Go installed and configured.
-  - Clone the repository: `git clone https://github.com/kalbasit/ncps.git`
-  - Navigate to the root directory of ncps: `cd ncps`
-  - Build the binary: `go build .`
+1. **Request** - Nix client requests a store path from ncps
+1. **Cache Check** - ncps checks if the path exists in local cache
+1. **Upstream Fetch** - If not cached, fetches from configured upstream caches
+1. **Cache & Sign** - Stores and signs the path with ncps private key
+1. **Serve** - Delivers the path to the requesting client
 
-- **Docker:**
+## 🚀 Quick Start
 
-  - Pull the Docker image: `docker pull kalbasit/ncps`
-  - Run the container with appropriate port mappings and volume mounts for the cache directory.
+Get ncps running quickly with Docker:
 
-- **Kubernetes**
+```bash
+# Pull the images
+docker pull alpine
+docker pull kalbasit/ncps
 
-  The following resources are provided as an example for running ncps on Kubernetes. Personally, I run it on my k3s cluster.
+# Create the storage volume
+docker volume create ncps-storage
+docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
+  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
+
+# Initialize database
+docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+
+# Start the server
+docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
+  /bin/ncps serve \
+  --cache-hostname=your-ncps-hostname \
+  --cache-data-path=/storage \
+  --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
+  --upstream-cache=https://cache.nixos.org \
+  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
+Your cache will be available at `http://localhost:8501` and the public key at `http://localhost:8501/pubkey`.
+
+## 📦 Installation
+
+<details>
+<summary><strong>🐳 Docker</strong></summary>
+
+### Docker Setup
+
+**Step 1:** Pull the image
+
+```bash
+docker pull kalbasit/ncps
+```
+
+**Step 2:** Initialize storage and database
+
+```bash
+docker volume create ncps-storage
+
+docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
+  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
+
+docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+```
+
+**Step 3:** Start the server
+
+```bash
+docker run -d \
+  --name ncps \
+  -p 8501:8501 \
+  -v ncps-storage:/storage \
+  kalbasit/ncps \
+  /bin/ncps serve \
+  --cache-hostname=your-ncps-hostname \
+  --cache-data-path=/storage \
+  --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
+  --upstream-cache=https://cache.nixos.org \
+  --upstream-cache=https://nix-community.cachix.org \
+  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
+  --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+```
+
+</details>
+
+<details>
+<summary><strong>🐳 Docker Compose</strong></summary>
+
+Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  create-directories:
+    image: alpine:latest
+    volumes:
+      - ncps-storage:/storage
+    command: >
+      /bin/sh -c "
+        mkdir -m 0755 -p /storage/var &&
+        mkdir -m 0700 -p /storage/var/ncps &&
+        mkdir -m 0700 -p /storage/var/ncps/db
+      "
+    restart: "no"
+
+  migrate-database:
+    image: kalbasit/ncps:latest
+    depends_on:
+      create-directories:
+        condition: service_completed_successfully
+    volumes:
+      - ncps-storage:/storage
+    command: >
+      /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+    restart: "no"
+
+  ncps:
+    image: kalbasit/ncps:latest
+    depends_on:
+      migrate-database:
+        condition: service_completed_successfully
+    ports:
+      - "8501:8501"
+    volumes:
+      - ncps-storage:/storage
+    command: >
+      /bin/ncps serve
+      --cache-hostname=your-ncps-hostname
+      --cache-data-path=/storage
+      --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
+      --upstream-cache=https://cache.nixos.org
+      --upstream-cache=https://nix-community.cachix.org
+      --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+      --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+    restart: unless-stopped
+
+volumes:
+  ncps-storage:
+```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+</details>
+
+<details>
+<summary><strong>☸️ Kubernetes</strong></summary>
 
 <details>
 <summary>PersistentVolumeClaim</summary>
@@ -74,9 +222,9 @@ ncps can be installed in several ways:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: nix-cache
+  name: ncps
   labels:
-    app: nix-cache
+    app: ncps
     tier: proxy
 spec:
   accessModes:
@@ -95,20 +243,20 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: nix-cache
+  name: ncps
   labels:
-    app: nix-cache
+    app: ncps
     tier: proxy
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: nix-cache
+      app: ncps
       tier: proxy
   template:
     metadata:
       labels:
-        app: nix-cache
+        app: ncps
         tier: proxy
     spec:
       initContainers:
@@ -119,7 +267,7 @@ spec:
             - -c
             - "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
           volumeMounts:
-            - name: nix-cache-persistent-storage
+            - name: ncps-persistent-storage
               mountPath: /storage
         - image: kalbasit/ncps:latest # NOTE: It's recommended to use a tag here!
           name: migrate-database
@@ -129,16 +277,17 @@ spec:
             - migrate
             - up
           volumeMounts:
-            - name: nix-cache-persistent-storage
+            - name: ncps-persistent-storage
               mountPath: /storage
       containers:
         - image: kalbasit/ncps:latest # NOTE: It's recommended to use a tag here!
-          name: nix-cache
+          name: ncps
           args:
             - /bin/ncps
             - serve
-            - --cache-hostname=nix-cache.yournetwork.local # TODO: Replace with your own hostname
+            - --cache-hostname=ncps.yournetwork.local # TODO: Replace with your own hostname
             - --cache-data-path=/storage
+            - --cache-temp-path=/nar-temp-dir
             - --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
             - --upstream-cache=https://cache.nixos.org
             - --upstream-cache=https://nix-community.cachix.org
@@ -148,12 +297,17 @@ spec:
             - containerPort: 8501
               name: http-web
           volumeMounts:
-            - name: nix-cache-persistent-storage
+            - name: ncps-persistent-storage
               mountPath: /storage
+            - name: nar-temp-dir
+              mountPath: /nar-temp-dir
       volumes:
-        - name: nix-cache-persistent-storage
+        - name: ncps-persistent-storage
           persistentVolumeClaim:
-            claimName: nix-cache
+            claimName: ncps
+        - name: nar-temp-dir
+          emptyDir:
+            sizeLimit: 5Gi
 ```
 
 </details>
@@ -165,9 +319,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nix-cache
+  name: ncps
   labels:
-    app: nix-cache
+    app: ncps
     tier: proxy
 spec:
   type: ClusterIP
@@ -175,84 +329,219 @@ spec:
     - name: http-web
       port: 8501
   selector:
-    app: nix-cache
+    app: ncps
     tier: proxy
 ```
 
 </details>
+</details>
 
-## Global Options
+## ⚙️ Configuration
 
-These options can be used with any `ncps` command:
+### Global Options
 
-- `--otel-enabled`: Enable OpenTelemetry logs, metrics, and tracing (default: false). (Environment variable: `$OTEL_ENABLED`)
-- `--log-level`: Set the log level (default: "info"). Possible values: "debug", "info", "warn", "error". (Environment variable: `$LOG_LEVEL`)
-- `--otel-grpc-url`: Configure OpenTelemetry gRPC URL. Missing or "https" scheme enables secure gRPC, "insecure" otherwise. Omit to emit telemetry to stdout. (Environment variable: `$OTEL_GRPC_URL`)
+| Option | Description | Environment Variable | Default |
+| ---------------------- | ----------------------------------------------- | -------------------- | ------- |
+| `--otel-enabled` | Enable OpenTelemetry logs, metrics, and tracing | `OTEL_ENABLED` | `false` |
+| `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics | `PROMETHEUS_ENABLED` | `false` |
+| `--log-level` | Set log level: debug, info, warn, error | `LOG_LEVEL` | `info` |
+| `--otel-grpc-url` | OpenTelemetry gRPC URL (omit for stdout) | `OTEL_GRPC_URL` | - |
 
-## Serve Command Options
+### Server Configuration
 
-These options are specific to the `ncps serve` command:
+#### 🔧 Essential Options
 
-- `--cache-allow-delete-verb`: Whether to allow the DELETE verb to delete `narinfo` and `nar` files from the cache (default: false). (Environment variable: `$CACHE_ALLOW_DELETE_VERB`)
-- `--cache-allow-put-verb`: Whether to allow the PUT verb to push `narinfo` and `nar` files directly to the cache (default: false). (Environment variable: `$CACHE_ALLOW_PUT_VERB`)
-- `--cache-hostname`: The hostname of the cache server. **This is used to generate the private key used for signing store paths (.narinfo).** (Environment variable: `$CACHE_HOSTNAME`)
-- `--cache-data-path`: The local directory for storing configuration and cached store paths. (Environment variable: `$CACHE_DATA_PATH`)
-- `--cache-database-url`: The URL of the database (defaults to an embedded SQLite database). (Environment variable: `$CACHE_DATABASE_URL`)
-- `--cache-max-size`: The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T (Environment variable: `$CACHE_MAX_SIZE`)
-- `--cache-lru-schedule`: The cron spec for cleaning the store to keep it under `--cache-max-size`. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation (Environment variable: `$CACHE_LRU_SCHEDULE`)
-- `--cache-lru-schedule-timezone`: The name of the timezone to use for the cron schedule (default: "Local"). (Environment variable: `$CACHE_LRU_SCHEDULE_TZ`)
-- `--cache-secret-key-path`: The path to the secret key used for signing cached paths. (Environment variable: `$CACHE_SECRET_KEY_PATH`)
-- `--cache-sign-narinfo`: Whether to sign narInfo files or passthru as-is from upstream (default: true). (Environment variable: `$CACHE_SIGN_NARINFO`)
-- `--cache-temp-path`: The path to the temporary directory that is used by the cache to download NAR files (default: `os.TempDir()`). (Environment variable: `$CACHE_TEMP_PATH`)
-- `--server-addr`: The address and port the server listens on (default: ":8501"). (Environment variable: `$SERVER_ADDR`)
-- `--upstream-cache`: The URL of an upstream binary cache (e.g., `https://cache.nixos.org`). This flag can be used multiple times to specify multiple upstream caches. (Environment variable: `$UPSTREAM_CACHES`)
-- `--upstream-public-key`: The public key of an upstream cache in the format `host:public-key`. This flag is used to verify the signatures of store paths downloaded from upstream caches. This flag can be used multiple times, once for each upstream cache. (Environment variable: `$UPSTREAM_PUBLIC_KEYS`)
+| Option | Description | Environment Variable | Required |
+| ----------------------- | ------------------------------------- | ---------------------- | -------- |
+| `--cache-hostname` | **Cache hostname for key generation** | `CACHE_HOSTNAME` | ✅ |
+| `--cache-data-path` | Local storage directory | `CACHE_DATA_PATH` | ✅ |
+| `--upstream-cache` | Upstream cache URL (repeatable) | `UPSTREAM_CACHES` | ✅ |
+| `--upstream-public-key` | Upstream public key (repeatable) | `UPSTREAM_PUBLIC_KEYS` | ✅ |
 
-## Nix Configuration
+#### 📊 Storage & Performance
 
-To configure Nix/NixOS, you need the public key generated by ncps. You can retrieve the public key from `http://<ncps-hostname>/pubkey`.
+| Option | Description | Environment Variable | Default |
+| ---------------------- | ------------------------------ | -------------------- | --------------- |
+| `--cache-database-url` | Database URL (SQLite only) | `CACHE_DATABASE_URL` | embedded SQLite |
+| `--cache-max-size` | Max cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE` | unlimited |
+| `--cache-lru-schedule` | Cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
+| `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
-On your NixOS or Nix clients, you need to configure Nix to use ncps as a binary cache.
+#### 🔐 Security & Signing
 
-**On NixOS**, you can configure these settings in your `configuration.nix` file using the `nix.settings` option, like this:
+| Option | Description | Environment Variable | Default |
+| --------------------------- | ----------------------- | ------------------------- | -------------- |
+| `--cache-sign-narinfo` | Sign narInfo files | `CACHE_SIGN_NARINFO` | `true` |
+| `--cache-secret-key-path` | Path to signing key | `CACHE_SECRET_KEY_PATH` | auto-generated |
+| `--cache-allow-put-verb` | Allow PUT uploads | `CACHE_ALLOW_PUT_VERB` | `false` |
+| `--cache-allow-delete-verb` | Allow DELETE operations | `CACHE_ALLOW_DELETE_VERB` | `false` |
 
-```nix
-nix.settings.substituters = [
-  "http://ncps-hostname" // https if ncps is behind a reverse proxy with HTTPS support; You may also need to specify a port.
-  // ... other substituters
-];
+#### 🌐 Network
 
-nix.settings.trusted-public-keys = [
-  "ncps-hostname=<download-ncps-public-key>"
-  "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-  // ... other keys, and the public key of your ncps server
-];
+| Option | Description | Environment Variable | Default |
+| --------------- | ----------------------- | -------------------- | ------- |
+| `--server-addr` | Listen address and port | `SERVER_ADDR` | `:8501` |
+
+## 🔧 Client Setup
+
+### Get Your Public Key
+
+First, retrieve the public key from your running ncps instance:
+
+```bash
+curl http://your-ncps-hostname:8501/pubkey
 ```
 
-**On non-NixOS**, this involves two steps:
+### NixOS Configuration
 
-1. **Add ncps to `substituters`:**
+Add ncps to your `configuration.nix`:
 
-   - In your `nix.conf` file (usually located at `/etc/nix/nix.conf` or `~/.config/nix/nix.conf`), add the URL of your ncps server to the `substituters` list. This tells Nix to try fetching store paths from ncps.
+```nix
+nix.settings = {
+  substituters = [
+    "http://your-ncps-hostname:8501"  # Use https:// if behind reverse proxy
+    "https://cache.nixos.org"
+    # ... other substituters
+  ];
 
+  trusted-public-keys = [
+    "your-ncps-hostname=<paste-public-key-here>"
+    "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    # ... other keys
+  ];
+};
+```
+
+### Non-NixOS Configuration
+
+Edit your `nix.conf` file (typically `/etc/nix/nix.conf` or `~/.config/nix/nix.conf`):
+
+```ini
+substituters = http://your-ncps-hostname:8501 https://cache.nixos.org
+trusted-public-keys = your-ncps-hostname=<paste-public-key-here> cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
+## 🔧 Troubleshooting
+
+<details>
+<summary><strong>🐳 Docker Issues</strong></summary>
+
+### "no such table: nars" Error
+
+**Cause:** Database not properly initialized
+
+**Solutions:**
+
+1. ✅ **Run migration first:**
+
+   ```bash
+   docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/sh -c \
+     "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db && /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up"
    ```
-   substituters = http://ncps-hostname ... other substituters
+
+1. ✅ **Check database path consistency** between migration and application
+
+1. ✅ **Verify directory permissions** (0700 for database directory)
+
+### "unable to open database file" Error
+
+**Cause:** Permissions or volume mounting issues
+
+**Solutions:**
+
+- ✅ Ensure storage volume is mounted to `/storage`
+- ✅ Check directory permissions
+- ✅ For bind mounts, ensure host directory is writable
+
+### Container Exits Immediately
+
+**Cause:** Missing required parameters
+
+**Required options:**
+
+- ✅ `--cache-hostname`
+- ✅ `--cache-data-path`
+- ✅ `--cache-database-url`
+- ✅ At least one `--upstream-cache` and `--upstream-public-key`
+
+</details>
+
+<details>
+<summary><strong>🔍 General Issues</strong></summary>
+
+### Cache Not Working
+
+1. **Check public key setup:**
+
+   ```bash
+   curl http://your-ncps-hostname:8501/pubkey
    ```
 
-1. **Add ncps public key to `trusted-public-keys`:**
+1. **Verify Nix configuration:**
 
-   - Add the public key of your ncps server to the `trusted-public-keys` list in your `nix.conf`. This allows Nix to verify the signatures generated by ncps for cached store paths.
-
+   ```bash
+   nix show-config | grep substituters
+   nix show-config | grep trusted-public-keys
    ```
-   trusted-public-keys = ncps-hostname-<download-ncps-public-key> ... other keys
+
+1. **Test cache connectivity:**
+
+   ```bash
+   curl http://your-ncps-hostname:8501/nix-cache-info
    ```
 
-## Contributing
+### Performance Issues
 
-Contributions are welcome! Feel free to open issues or submit pull requests.
+- ✅ Check available disk space
+- ✅ Monitor cache hit rates in logs
+- ✅ Consider adjusting `--cache-max-size`
+- ✅ Review LRU cleanup schedule
 
-To aid development, a script is provided to start the server at `./dev-scripts/run.sh`, it automatically restarts the server when changes are detected.
+</details>
 
-## License
+## 🤝 Contributing
 
-This project is licensed under the MIT License - see the [LICENSE](/LICENSE) file for details.
+Contributions are welcome! Here's how to get started:
+
+### Development Setup
+
+1. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/kalbasit/ncps.git
+   cd ncps
+   ```
+
+1. **Start development server:**
+
+   ```bash
+   ./dev-scripts/run.sh  # Auto-restarts on changes
+   ```
+
+1. **Submit your changes:**
+
+   - 🐛 Open issues for bugs
+   - ✨ Submit pull requests for features
+   - 📚 Improve documentation
+
+### Getting Help
+
+- 📖 Check existing [issues](https://github.com/kalbasit/ncps/issues)
+- 💬 Start a [discussion](https://github.com/kalbasit/ncps/discussions)
+- 📧 Contact maintainers
+
+______________________________________________________________________
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](/LICENSE) file for details.
+
+______________________________________________________________________
+
+<div align="center">
+
+**⭐ Found this helpful? Give us a star!**
+
+[Report Bug](https://github.com/kalbasit/ncps/issues) • [Request Feature](https://github.com/kalbasit/ncps/issues) • [Contribute](https://github.com/kalbasit/ncps/pulls)
+
+</div>
