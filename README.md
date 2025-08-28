@@ -244,9 +244,9 @@ docker compose up -d
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: nix-cache
+  name: ncps
   labels:
-    app: nix-cache
+    app: ncps
     tier: proxy
 spec:
   accessModes:
@@ -265,20 +265,20 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: nix-cache
+  name: ncps
   labels:
-    app: nix-cache
+    app: ncps
     tier: proxy
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: nix-cache
+      app: ncps
       tier: proxy
   template:
     metadata:
       labels:
-        app: nix-cache
+        app: ncps
         tier: proxy
     spec:
       initContainers:
@@ -289,7 +289,7 @@ spec:
             - -c
             - "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
           volumeMounts:
-            - name: nix-cache-persistent-storage
+            - name: ncps-persistent-storage
               mountPath: /storage
         - image: kalbasit/ncps:latest # NOTE: It's recommended to use a tag here!
           name: migrate-database
@@ -299,15 +299,15 @@ spec:
             - migrate
             - up
           volumeMounts:
-            - name: nix-cache-persistent-storage
+            - name: ncps-persistent-storage
               mountPath: /storage
       containers:
         - image: kalbasit/ncps:latest # NOTE: It's recommended to use a tag here!
-          name: nix-cache
+          name: ncps
           args:
             - /bin/ncps
             - serve
-            - --cache-hostname=nix-cache.yournetwork.local # TODO: Replace with your own hostname
+            - --cache-hostname=ncps.yournetwork.local # TODO: Replace with your own hostname
             - --cache-data-path=/storage
             - --cache-temp-path=/nar-temp-dir
             - --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
@@ -319,14 +319,14 @@ spec:
             - containerPort: 8501
               name: http-web
           volumeMounts:
-            - name: nix-cache-persistent-storage
+            - name: ncps-persistent-storage
               mountPath: /storage
             - name: nar-temp-dir
               mountPath: /nar-temp-dir
       volumes:
-        - name: nix-cache-persistent-storage
+        - name: ncps-persistent-storage
           persistentVolumeClaim:
-            claimName: nix-cache
+            claimName: ncps
         - name: nar-temp-dir
           emptyDir:
             sizeLimit: 5Gi
@@ -341,9 +341,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nix-cache
+  name: ncps
   labels:
-    app: nix-cache
+    app: ncps
     tier: proxy
 spec:
   type: ClusterIP
@@ -351,7 +351,7 @@ spec:
     - name: http-web
       port: 8501
   selector:
-    app: nix-cache
+    app: ncps
     tier: proxy
 ```
 
