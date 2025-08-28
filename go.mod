@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	github.com/XSAM/otelsql v0.39.0
-	github.com/go-chi/chi/v5 v5.2.2
+	github.com/go-chi/chi/v5 v5.2.3
 	github.com/klauspost/compress v1.18.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
