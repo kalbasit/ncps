@@ -178,26 +178,34 @@ docker run -d \
 Create a `docker-compose.yml` file:
 
 ```yaml
-version: "3.8"
-
 services:
-  ncps-init:
-    image: kalbasit/ncps:latest
+  create-directories:
+    image: alpine:latest
     volumes:
       - ncps-storage:/storage
     command: >
       /bin/sh -c "
         mkdir -m 0755 -p /storage/var &&
         mkdir -m 0700 -p /storage/var/ncps &&
-        mkdir -m 0700 -p /storage/var/ncps/db &&
-        /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+        mkdir -m 0700 -p /storage/var/ncps/db
       "
+    restart: "no"
+
+  migrate-database:
+    image: kalbasit/ncps:latest
+    depends_on:
+      create-directories:
+        condition: service_completed_successfully
+    volumes:
+      - ncps-storage:/storage
+    command: >
+      /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
     restart: "no"
 
   ncps:
     image: kalbasit/ncps:latest
     depends_on:
-      ncps-init:
+      migrate-database:
         condition: service_completed_successfully
     ports:
       - "8501:8501"
@@ -213,19 +221,6 @@ services:
       --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
       --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
     restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--quiet",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8501/pubkey",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 volumes:
   ncps-storage:
