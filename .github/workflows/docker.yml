@@ -18,6 +18,13 @@ on:
       password:
         description: "Password or personal access token used to log against the Docker registry"
         required: true
+    outputs:
+      tags:
+        description: "The generated Docker tags"
+        value: ${{ jobs.docker-meta.outputs.tags }}
+      labels:
+        description: "The generated Docker labels"
+        value: ${{ jobs.docker-meta.outputs.labels }}
 jobs:
   docker-meta:
     runs-on: ubuntu-24.04
