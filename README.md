@@ -38,15 +38,15 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 
 ## ✨ Key Features
 
-| Feature                 | Description                                        |
+| Feature | Description |
 | ----------------------- | -------------------------------------------------- |
-| 🚀 **Easy Setup**       | Simple configuration and deployment                |
-| 🔄 **Multi-Upstream**   | Support for multiple upstream caches with failover |
-| 💾 **Smart Caching**    | LRU cache management with configurable size limits |
-| 🔐 **Secure Signing**   | Signs cached paths with private keys for integrity |
-| 📊 **Monitoring**       | OpenTelemetry support for centralized logging      |
-| 🗜️ **Compression**      | Harmonia's transparent zstd compression support    |
-| 💾 **Embedded Storage** | Built-in SQLite database for easy deployment       |
+| 🚀 **Easy Setup** | Simple configuration and deployment |
+| 🔄 **Multi-Upstream** | Support for multiple upstream caches with failover |
+| 💾 **Smart Caching** | LRU cache management with configurable size limits |
+| 🔐 **Secure Signing** | Signs cached paths with private keys for integrity |
+| 📊 **Monitoring** | OpenTelemetry support for centralized logging |
+| 🗜️ **Compression** | Harmonia's transparent zstd compression support |
+| 💾 **Embedded Storage** | Built-in SQLite database for easy deployment |
 
 ## ⚙️ How It Works
 
@@ -72,10 +72,10 @@ sequenceDiagram
 ```
 
 1. **Request** - Nix client requests a store path from ncps
-2. **Cache Check** - ncps checks if the path exists in local cache
-3. **Upstream Fetch** - If not cached, fetches from configured upstream caches
-4. **Cache & Sign** - Stores and signs the path with ncps private key
-5. **Serve** - Delivers the path to the requesting client
+1. **Cache Check** - ncps checks if the path exists in local cache
+1. **Upstream Fetch** - If not cached, fetches from configured upstream caches
+1. **Cache & Sign** - Stores and signs the path with ncps private key
+1. **Serve** - Delivers the path to the requesting client
 
 ## 🚀 Quick Start
 
@@ -360,47 +360,47 @@ spec:
 
 ### Global Options
 
-| Option                 | Description                                     | Environment Variable | Default |
+| Option | Description | Environment Variable | Default |
 | ---------------------- | ----------------------------------------------- | -------------------- | ------- |
-| `--otel-enabled`       | Enable OpenTelemetry logs, metrics, and tracing | `OTEL_ENABLED`       | `false` |
-| `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics  | `PROMETHEUS_ENABLED` | `false` |
-| `--log-level`          | Set log level: debug, info, warn, error         | `LOG_LEVEL`          | `info`  |
-| `--otel-grpc-url`      | OpenTelemetry gRPC URL (omit for stdout)        | `OTEL_GRPC_URL`      | -       |
+| `--otel-enabled` | Enable OpenTelemetry logs, metrics, and tracing | `OTEL_ENABLED` | `false` |
+| `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics | `PROMETHEUS_ENABLED` | `false` |
+| `--log-level` | Set log level: debug, info, warn, error | `LOG_LEVEL` | `info` |
+| `--otel-grpc-url` | OpenTelemetry gRPC URL (omit for stdout) | `OTEL_GRPC_URL` | - |
 
 ### Server Configuration
 
 #### 🔧 Essential Options
 
-| Option                  | Description                           | Environment Variable   | Required |
+| Option | Description | Environment Variable | Required |
 | ----------------------- | ------------------------------------- | ---------------------- | -------- |
-| `--cache-hostname`      | **Cache hostname for key generation** | `CACHE_HOSTNAME`       | ✅       |
-| `--cache-data-path`     | Local storage directory               | `CACHE_DATA_PATH`      | ✅       |
-| `--upstream-cache`      | Upstream cache URL (repeatable)       | `UPSTREAM_CACHES`      | ✅       |
-| `--upstream-public-key` | Upstream public key (repeatable)      | `UPSTREAM_PUBLIC_KEYS` | ✅       |
+| `--cache-hostname` | **Cache hostname for key generation** | `CACHE_HOSTNAME` | ✅ |
+| `--cache-data-path` | Local storage directory | `CACHE_DATA_PATH` | ✅ |
+| `--upstream-cache` | Upstream cache URL (repeatable) | `UPSTREAM_CACHES` | ✅ |
+| `--upstream-public-key` | Upstream public key (repeatable) | `UPSTREAM_PUBLIC_KEYS` | ✅ |
 
 #### 📊 Storage & Performance
 
-| Option                 | Description                    | Environment Variable | Default         |
+| Option | Description | Environment Variable | Default |
 | ---------------------- | ------------------------------ | -------------------- | --------------- |
-| `--cache-database-url` | Database URL (SQLite only)     | `CACHE_DATABASE_URL` | embedded SQLite |
-| `--cache-max-size`     | Max cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE`     | unlimited       |
-| `--cache-lru-schedule` | Cleanup cron schedule          | `CACHE_LRU_SCHEDULE` | -               |
-| `--cache-temp-path`    | Temporary download directory   | `CACHE_TEMP_PATH`    | system temp     |
+| `--cache-database-url` | Database URL (SQLite only) | `CACHE_DATABASE_URL` | embedded SQLite |
+| `--cache-max-size` | Max cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE` | unlimited |
+| `--cache-lru-schedule` | Cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
+| `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
 #### 🔐 Security & Signing
 
-| Option                      | Description             | Environment Variable      | Default        |
+| Option | Description | Environment Variable | Default |
 | --------------------------- | ----------------------- | ------------------------- | -------------- |
-| `--cache-sign-narinfo`      | Sign narInfo files      | `CACHE_SIGN_NARINFO`      | `true`         |
-| `--cache-secret-key-path`   | Path to signing key     | `CACHE_SECRET_KEY_PATH`   | auto-generated |
-| `--cache-allow-put-verb`    | Allow PUT uploads       | `CACHE_ALLOW_PUT_VERB`    | `false`        |
-| `--cache-allow-delete-verb` | Allow DELETE operations | `CACHE_ALLOW_DELETE_VERB` | `false`        |
+| `--cache-sign-narinfo` | Sign narInfo files | `CACHE_SIGN_NARINFO` | `true` |
+| `--cache-secret-key-path` | Path to signing key | `CACHE_SECRET_KEY_PATH` | auto-generated |
+| `--cache-allow-put-verb` | Allow PUT uploads | `CACHE_ALLOW_PUT_VERB` | `false` |
+| `--cache-allow-delete-verb` | Allow DELETE operations | `CACHE_ALLOW_DELETE_VERB` | `false` |
 
 #### 🌐 Network
 
-| Option          | Description             | Environment Variable | Default |
+| Option | Description | Environment Variable | Default |
 | --------------- | ----------------------- | -------------------- | ------- |
-| `--server-addr` | Listen address and port | `SERVER_ADDR`        | `:8501` |
+| `--server-addr` | Listen address and port | `SERVER_ADDR` | `:8501` |
 
 ## 🔧 Client Setup
 
@@ -459,9 +459,9 @@ trusted-public-keys = your-ncps-hostname=<paste-public-key-here> cache.nixos.org
      "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db && /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up"
    ```
 
-2. ✅ **Check database path consistency** between migration and application
+1. ✅ **Check database path consistency** between migration and application
 
-3. ✅ **Verify directory permissions** (0700 for database directory)
+1. ✅ **Verify directory permissions** (0700 for database directory)
 
 ### "unable to open database file" Error
 
@@ -497,14 +497,15 @@ trusted-public-keys = your-ncps-hostname=<paste-public-key-here> cache.nixos.org
    curl http://your-ncps-hostname:8501/pubkey
    ```
 
-2. **Verify Nix configuration:**
+1. **Verify Nix configuration:**
 
    ```bash
    nix show-config | grep substituters
    nix show-config | grep trusted-public-keys
    ```
 
-3. **Test cache connectivity:**
+1. **Test cache connectivity:**
+
    ```bash
    curl http://your-ncps-hostname:8501/nix-cache-info
    ```
@@ -531,13 +532,14 @@ Contributions are welcome! Here's how to get started:
    cd ncps
    ```
 
-2. **Start development server:**
+1. **Start development server:**
 
    ```bash
    ./dev-scripts/run.sh  # Auto-restarts on changes
    ```
 
-3. **Submit your changes:**
+1. **Submit your changes:**
+
    - 🐛 Open issues for bugs
    - ✨ Submit pull requests for features
    - 📚 Improve documentation
@@ -548,13 +550,13 @@ Contributions are welcome! Here's how to get started:
 - 💬 Start a [discussion](https://github.com/kalbasit/ncps/discussions)
 - 📧 Contact maintainers
 
----
+______________________________________________________________________
 
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](/LICENSE) file for details.
 
----
+______________________________________________________________________
 
 <div align="center">
 
