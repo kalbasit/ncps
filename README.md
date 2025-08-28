@@ -82,12 +82,17 @@ sequenceDiagram
 Get ncps running quickly with Docker:
 
 ```bash
-# Pull the image
+# Pull the images
+docker pull alpine
 docker pull kalbasit/ncps
 
+# Create the storage volume
+docker volume create ncps-storage
+docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
+  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
+
 # Initialize database
-docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/sh -c \
-  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db && /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up"
+docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
 
 # Start the server
 docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
@@ -141,8 +146,10 @@ docker pull kalbasit/ncps
 ```bash
 docker volume create ncps-storage
 
-docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/sh -c \
-  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db && /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up"
+docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
+  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
+
+docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
 ```
 
 **Step 3:** Start the server
