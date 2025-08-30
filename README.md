@@ -334,6 +334,7 @@ spec:
 ```
 
 </details>
+</details>
 
 <details>
 <summary><strong>🐧 NixOS</strong></summary>
@@ -348,15 +349,17 @@ ncps is available as a built-in NixOS service module (available in NixOS 25.05+)
 {
   services.ncps = {
     enable = true;
-    hostname = "your-ncps-hostname";
-    upstreamCaches = [
-      "https://cache.nixos.org"
-      "https://nix-community.cachix.org"
-    ];
-    upstreamPublicKeys = [
-      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-    ];
+    cache.hostName = "your-ncps-hostname";
+    upstream = {
+      caches = [
+        "https://cache.nixos.org"
+        "https://nix-community.cachix.org"
+      ];
+      publicKeys = [
+        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      ];
+    };
   };
 }
 ```
@@ -367,30 +370,32 @@ ncps is available as a built-in NixOS service module (available in NixOS 25.05+)
 {
   services.ncps = {
     enable = true;
-    hostname = "your-ncps-hostname";
-    dataPath = "/var/cache/ncps";
-    maxSize = "50G";
-    lruSchedule = "0 2 * * *"; # Clean up daily at 2 AM
-
-    upstreamCaches = [
-      "https://cache.nixos.org"
-      "https://nix-community.cachix.org"
-    ];
-    upstreamPublicKeys = [
-      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-    ];
-
-    settings = {
-      server.addr = "0.0.0.0:8501";
-      cache.allowPutVerb = false;
-      cache.allowDeleteVerb = false;
+    cache = {
+      hostName = "your-ncps-hostname";
+      dataPath = "/path/to/ncps/data";
+      tempPath = "/path/to/ncps/tmp"; # Introduced in NixOS 25.09
+      databaseURL = "sqlite:/path/to/ncps/db/db.sqlite";
+      maxSize = "50G";
+      lru.schedule = "0 2 * * *"; # Clean up daily at 2 AM
+      allowPutVerb = true;
+      allowDeleteVerb = true;
+    };
+    server.addr = "0.0.0.0:8501";
+    upstream = {
+      caches = [
+        "https://cache.nixos.org"
+        "https://nix-community.cachix.org"
+      ];
+      publicKeys = [
+        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      ];
     };
   };
 }
 ```
 
-**Complete Options Reference:** [NixOS Options Search](https://search.nixos.org/options?channel=25.05&query=services.ncps)
+**Complete Options Reference:** [NixOS Options Search](https://search.nixos.org/options?query=services.ncps)
 
 **✅ The NixOS module automatically handles:**
 
@@ -423,7 +428,6 @@ go build .
 
 **Note:** You'll need to handle database setup and service management manually with these methods.
 
-</details>
 </details>
 
 ## ⚙️ Configuration
