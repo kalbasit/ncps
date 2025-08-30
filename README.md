@@ -334,6 +334,96 @@ spec:
 ```
 
 </details>
+
+<details>
+<summary><strong>🐧 NixOS</strong></summary>
+
+### NixOS Service Module
+
+ncps is available as a built-in NixOS service module (available in NixOS 25.05+). No additional installation needed!
+
+**Basic Configuration:**
+
+```nix
+{
+  services.ncps = {
+    enable = true;
+    hostname = "your-ncps-hostname";
+    upstreamCaches = [
+      "https://cache.nixos.org"
+      "https://nix-community.cachix.org"
+    ];
+    upstreamPublicKeys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+  };
+}
+```
+
+**Advanced Configuration:**
+
+```nix
+{
+  services.ncps = {
+    enable = true;
+    hostname = "your-ncps-hostname";
+    dataPath = "/var/cache/ncps";
+    maxSize = "50G";
+    lruSchedule = "0 2 * * *"; # Clean up daily at 2 AM
+
+    upstreamCaches = [
+      "https://cache.nixos.org"
+      "https://nix-community.cachix.org"
+    ];
+    upstreamPublicKeys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+
+    settings = {
+      server.addr = "0.0.0.0:8501";
+      cache.allowPutVerb = false;
+      cache.allowDeleteVerb = false;
+    };
+  };
+}
+```
+
+**Complete Options Reference:** [NixOS Options Search](https://search.nixos.org/options?channel=25.05&query=services.ncps)
+
+**✅ The NixOS module automatically handles:**
+
+- Database initialization and migrations
+- Systemd service configuration
+- User and group creation
+- Directory permissions
+- Service dependencies
+
+**📝 Note:** After enabling the service, configure your clients to use the cache (see [Client Setup](#-client-setup) section).
+
+</details>
+
+<details>
+<summary><strong>🔧 Go Install & Source</strong></summary>
+
+### Install with Go
+
+```bash
+go install github.com/kalbasit/ncps@latest
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/kalbasit/ncps.git
+cd ncps
+go build .
+```
+
+**Note:** You'll need to handle database setup and service management manually with these methods.
+
+</details>
 </details>
 
 ## ⚙️ Configuration
