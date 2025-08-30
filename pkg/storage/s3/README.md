@@ -90,16 +90,21 @@ bucket/
 ## Key Features
 
 ### Sharding
+
 Files are automatically sharded using the first 1-2 characters of their hash to prevent too many files in a single directory, which can cause performance issues with S3.
 
 ### Error Handling
+
 The implementation properly handles S3-specific errors:
+
 - `NoSuchKey` errors are converted to `storage.ErrNotFound`
 - Configuration validation ensures required fields are provided
 - Bucket access is verified during initialization
 
 ### Telemetry
+
 All operations include OpenTelemetry tracing with relevant attributes:
+
 - Operation names (e.g., "s3.GetNarInfo")
 - Object keys and paths
 - Hash values and URLs
@@ -123,9 +128,9 @@ go test ./pkg/storage/s3/...
 To migrate from local storage to S3 storage:
 
 1. Create an S3 bucket or MinIO instance
-2. Configure the S3 storage with appropriate credentials
-3. Replace the local storage initialization with S3 storage
-4. The rest of your application code remains unchanged
+1. Configure the S3 storage with appropriate credentials
+1. Replace the local storage initialization with S3 storage
+1. The rest of your application code remains unchanged
 
 ```go
 // Before (local storage)
@@ -146,4 +151,3 @@ s3Store, err := s3.New(ctx, s3.Config{
 - Consider using temporary credentials for production
 - Enable bucket versioning for data protection
 - Use appropriate bucket policies for access control
-

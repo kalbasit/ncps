@@ -53,6 +53,7 @@ func Example() {
 	if err != nil {
 		log.Fatalf("Failed to get secret key: %v", err)
 	}
+
 	fmt.Printf("Retrieved secret key: %s\n", retrievedKey.String())
 }
 

@@ -72,18 +72,18 @@ type Client interface {
 
 // Store represents an S3 store and implements storage.Store.
 type Store struct {
-	client Client
-	bucket string
+	Client Client
+	Bucket string
 }
 
 // New creates a new S3 store with the given configuration.
 func New(ctx context.Context, cfg Config) (*Store, error) {
-	if err := validateConfig(cfg); err != nil {
+	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
 	}
 
 	// Create AWS config
-	awsCfg, err := createAWSConfig(ctx, cfg)
+	awsCfg, err := CreateAWSConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating AWS config: %w", err)
 	}
@@ -104,14 +104,14 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	}
 
 	return &Store{
-		client: client,
-		bucket: cfg.Bucket,
+		Client: client,
+		Bucket: cfg.Bucket,
 	}, nil
 }
 
 // GetSecretKey returns secret key from the store.
 func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
-	key := s.secretKeyPath()
+	key := s.SecretKeyPath()
 
 	_, span := tracer.Start(
 		ctx,
@@ -123,8 +123,8 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 	)
 	defer span.End()
 
-	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
+	result, err := s.Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 
 // PutSecretKey stores the secret key in the store.
 func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error {
-	key := s.secretKeyPath()
+	key := s.SecretKeyPath()
 
 	_, span := tracer.Start(
 		ctx,
@@ -160,8 +160,8 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err == nil {
@@ -169,8 +169,8 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 	}
 
 	// Put the secret key
-	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err = s.Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 		Body:   strings.NewReader(sk.String()),
 	})
@@ -183,7 +183,7 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 
 // DeleteSecretKey deletes the secret key in the store.
 func (s *Store) DeleteSecretKey(ctx context.Context) error {
-	key := s.secretKeyPath()
+	key := s.SecretKeyPath()
 
 	_, span := tracer.Start(
 		ctx,
@@ -195,8 +195,8 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 	)
 	defer span.End()
 
-	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -213,7 +213,7 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // HasNarInfo returns true if the store has the narinfo.
 func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
-	key := s.narInfoPath(hash)
+	key := s.NarInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -226,8 +226,8 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	)
 	defer span.End()
 
-	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 
@@ -236,7 +236,7 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	key := s.narInfoPath(hash)
+	key := s.NarInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -249,8 +249,8 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	)
 	defer span.End()
 
-	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
+	result, err := s.Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -268,7 +268,7 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 // PutNarInfo puts the narinfo in the store.
 func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
-	key := s.narInfoPath(hash)
+	key := s.NarInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -282,8 +282,8 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err == nil {
@@ -291,8 +291,8 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 	}
 
 	// Put the narinfo
-	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err = s.Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 		Body:   strings.NewReader(narInfo.String()),
 	})
@@ -305,7 +305,7 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 
 // DeleteNarInfo deletes the narinfo from the store.
 func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
-	key := s.narInfoPath(hash)
+	key := s.NarInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -318,8 +318,8 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	)
 	defer span.End()
 
-	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -336,7 +336,7 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 
 // HasNar returns true if the store has the nar.
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
-	key := s.narPath(narURL)
+	key := s.NarPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -349,8 +349,8 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	)
 	defer span.End()
 
-	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 
@@ -360,7 +360,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 // GetNar returns nar from the store.
 // NOTE: The caller must close the returned io.ReadCloser!
 func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
-	key := s.narPath(narURL)
+	key := s.NarPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -373,8 +373,8 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	)
 	defer span.End()
 
-	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
+	result, err := s.Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -395,7 +395,7 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 // PutNar puts the nar in the store.
 func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
-	key := s.narPath(narURL)
+	key := s.NarPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -409,8 +409,8 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err == nil {
@@ -418,8 +418,8 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 	}
 
 	// Put the nar
-	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err = s.Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 		Body:   body,
 	})
@@ -435,7 +435,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 
 // DeleteNar deletes the nar from the store.
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
-	key := s.narPath(narURL)
+	key := s.NarPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -448,8 +448,8 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	)
 	defer span.End()
 
-	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(s.bucket),
+	_, err := s.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -465,26 +465,28 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 }
 
 // Helper methods for key generation.
-func (s *Store) secretKeyPath() string {
+func (s *Store) SecretKeyPath() string {
 	return "config/cache.key"
 }
 
-func (s *Store) narInfoPath(hash string) string {
+func (s *Store) NarInfoPath(hash string) string {
 	return "store/narinfo/" + helper.NarInfoFilePath(hash)
 }
 
-func (s *Store) narPath(narURL nar.URL) string {
+func (s *Store) NarPath(narURL nar.URL) string {
 	return "store/nar/" + narURL.ToFilePath()
 }
 
 // Helper functions.
-func validateConfig(cfg Config) error {
+func ValidateConfig(cfg Config) error {
 	if cfg.Bucket == "" {
 		return fmt.Errorf("%w: bucket name is required", ErrInvalidConfig)
 	}
+
 	if cfg.AccessKeyID == "" {
 		return fmt.Errorf("%w: access key ID is required", ErrInvalidConfig)
 	}
+
 	if cfg.SecretAccessKey == "" {
 		return fmt.Errorf("%w: secret access key is required", ErrInvalidConfig)
 	}
@@ -492,7 +494,7 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
-func createAWSConfig(ctx context.Context, cfg Config) (aws.Config, error) {
+func CreateAWSConfig(ctx context.Context, cfg Config) (aws.Config, error) {
 	var opts []func(*config.LoadOptions) error
 
 	// Set region if provided
