@@ -5,7 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/sdk/resource"
 
-	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 // NewResource creates a new OpenTelemetry resource with standard attributes.
