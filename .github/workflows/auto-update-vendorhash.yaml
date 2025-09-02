@@ -23,6 +23,11 @@ jobs:
           hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
           echo "hash=$hash"
 
+          if [[ -z "$hash" ]]; then
+            echo >@2 hash is empty
+            exit 1
+          fi
+
           sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps.nix
 
           git diff
