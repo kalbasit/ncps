@@ -18,4 +18,5 @@ watchexec -e go -c clear -r go run . \
   --upstream-cache https://cache.nixos.org \
   --upstream-cache https://nix-community.cachix.org \
   --upstream-public-key cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
-  --upstream-public-key nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+  --upstream-public-key nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
+  "$@"
