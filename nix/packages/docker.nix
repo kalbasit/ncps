@@ -70,6 +70,9 @@
             "org.opencontainers.image.title" = "ncps";
             "org.opencontainers.image.url" = "https://github.com/kalbasit/ncps";
           };
+          Volumes = {
+            "/storage" = { };
+          };
         };
 
         fakeRootCommands = ''
