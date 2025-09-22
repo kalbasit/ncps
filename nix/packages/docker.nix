@@ -15,6 +15,7 @@
     {
       packages.docker = pkgs.dockerTools.buildLayeredImage {
         name = "kalbasit/ncps";
+
         contents =
           let
             etc-passwd = pkgs.writeTextFile {
@@ -50,6 +51,7 @@
             # the ncps package
             package-ncps
           ];
+
         config = {
           Cmd = [ "/bin/ncps" ];
           Env = [
@@ -69,6 +71,12 @@
             "org.opencontainers.image.url" = "https://github.com/kalbasit/ncps";
           };
         };
+
+        fakeRootCommands = ''
+          #!${pkgs.runtimeShell}
+          mkdir -p tmp
+          chmod -R 1777 tmp
+        '';
       };
 
       packages.push-docker-image = pkgs.writeShellScript "push-docker-image" ''
