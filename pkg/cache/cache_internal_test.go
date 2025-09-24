@@ -238,7 +238,20 @@ func TestRunLRU(t *testing.T) {
 
 	for _, narEntry := range allEntries {
 		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		assert.True(t, c.narStore.HasNar(newContext(), nu), "confirm all nars are in the store")
+
+		var found bool
+
+		for i := 1; i < 100; i++ {
+			// NOTE: I tried runtime.Gosched() but it makes the test flaky
+			time.Sleep(time.Duration(i) * time.Millisecond)
+
+			found = c.narStore.HasNar(newContext(), nu)
+			if found {
+				break
+			}
+		}
+
+		assert.True(t, found, nu.String()+" should exist in the store")
 	}
 
 	// ensure time has moved by one sec for the last_accessed_at work
