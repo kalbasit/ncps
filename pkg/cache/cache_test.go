@@ -939,8 +939,23 @@ func TestGetNar(t *testing.T) {
 		})
 
 		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-		size, r, err := c.GetNar(context.Background(), nu)
-		require.NoError(t, err)
+
+		var size int64
+
+		var r io.ReadCloser
+
+		for i := 1; i < 100; i++ {
+			// NOTE: I tried runtime.Gosched() but it makes the test flaky
+			time.Sleep(time.Duration(i) * time.Millisecond)
+
+			var err error
+			size, r, err = c.GetNar(context.Background(), nu)
+			require.NoError(t, err)
+
+			if size > 0 {
+				break
+			}
+		}
 
 		defer r.Close()
 
