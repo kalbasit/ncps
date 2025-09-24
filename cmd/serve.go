@@ -34,7 +34,7 @@ var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --ca
 func getDefaultNetrcPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return ".netrc" // fallback to current directory
+		panic(fmt.Sprintf("unable to determine user home directory: %v", err))
 	}
 
 	return filepath.Join(homeDir, ".netrc")
