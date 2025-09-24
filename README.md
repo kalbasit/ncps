@@ -464,12 +464,12 @@ go build .
 #### 🔐 Security & Signing
 
 | Option | Description | Environment Variable | Default |
-| --------------------------- | ----------------------- | ------------------------- | -------------- |
+| --------------------------- | ------------------------------------ | ------------------------- | -------------- |
 | `--cache-sign-narinfo` | Sign narInfo files | `CACHE_SIGN_NARINFO` | `true` |
 | `--cache-secret-key-path` | Path to signing key | `CACHE_SECRET_KEY_PATH` | auto-generated |
-| `--netrc-file` | Path to netrc file for upstream auth | `NETRC_FILE` | `~/.netrc` |
 | `--cache-allow-put-verb` | Allow PUT uploads | `CACHE_ALLOW_PUT_VERB` | `false` |
 | `--cache-allow-delete-verb` | Allow DELETE operations | `CACHE_ALLOW_DELETE_VERB` | `false` |
+| `--netrc-file` | Path to netrc file for upstream auth | `NETRC_FILE` | `~/.netrc` |
 
 #### 🌐 Network
 
