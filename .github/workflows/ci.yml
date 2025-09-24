@@ -19,6 +19,6 @@ jobs:
       systems: "['x86_64-linux']"
       images: kalbasit/ncps
       username: ${{ vars.DOCKERHUB_USERNAME }}
-      push_the_image: ${{ github.event.pull_request.head.repo.fork == false }}
+      push_images: ${{ github.event.pull_request.head.repo.fork == false }}
     secrets:
       password: ${{ secrets.DOCKERHUB_TOKEN }}
