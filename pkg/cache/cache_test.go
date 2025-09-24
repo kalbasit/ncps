@@ -940,36 +940,18 @@ func TestGetNar(t *testing.T) {
 
 		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
-		var size int64
-
-		var r io.ReadCloser
-
-		for i := 1; i < 100; i++ {
-			// NOTE: I tried runtime.Gosched() but it makes the test flaky
-			time.Sleep(time.Duration(i) * time.Millisecond)
-
-			var err error
-			size, r, err = c.GetNar(context.Background(), nu)
+		t.Run("able to get the NAR even in flight from upstream", func(t *testing.T) {
+			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
-			if size > 0 {
-				break
-			}
-		}
+			t.Run("body is the same", func(t *testing.T) {
+				body, err := io.ReadAll(r)
+				require.NoError(t, err)
 
-		defer r.Close()
-
-		t.Run("size is correct", func(t *testing.T) {
-			assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
-		})
-
-		t.Run("body is the same", func(t *testing.T) {
-			body, err := io.ReadAll(r)
-			require.NoError(t, err)
-
-			if assert.Len(t, testdata.Nar1.NarText, len(string(body))) {
-				assert.Equal(t, testdata.Nar1.NarText, string(body))
-			}
+				if assert.Len(t, testdata.Nar1.NarText, len(string(body))) {
+					assert.Equal(t, testdata.Nar1.NarText, string(body))
+				}
+			})
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
@@ -985,11 +967,6 @@ func TestGetNar(t *testing.T) {
 				}
 			}
 
-			assert.NoError(t, err)
-		})
-
-		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
 			assert.NoError(t, err)
 		})
 
@@ -1076,9 +1053,13 @@ func TestGetNar(t *testing.T) {
 
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
-			_, r, err := c.GetNar(context.Background(), nu)
+			size, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 			defer r.Close()
+
+			t.Run("size is correct", func(t *testing.T) {
+				assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
+			})
 
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
 				const query = `
