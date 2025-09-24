@@ -6,6 +6,7 @@ on:
       - "go.sum"
 jobs:
   update-vendor-hash:
+    if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
