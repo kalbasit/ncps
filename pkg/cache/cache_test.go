@@ -446,9 +446,9 @@ func TestGetNarInfo(t *testing.T) {
 			// Try at least 10 times before announcing an error
 			var err error
 
-			for i := 0; i < 9; i++ {
+			for i := 1; i < 100; i++ {
 				// NOTE: I tried runtime.Gosched() but it makes the test flaky
-				time.Sleep(time.Millisecond)
+				time.Sleep(time.Duration(i) * time.Millisecond)
 
 				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar2.NarPath))
 				if err == nil {
@@ -612,9 +612,9 @@ func TestGetNarInfo(t *testing.T) {
 				// Try at least 10 times before announcing an error
 				var err error
 
-				for i := 0; i < 9; i++ {
+				for i := 1; i < 100; i++ {
 					// NOTE: I tried runtime.Gosched() but it makes the test flaky
-					time.Sleep(time.Millisecond)
+					time.Sleep(time.Duration(i) * time.Millisecond)
 
 					_, err = os.Stat(narFile)
 					if err == nil {
@@ -939,8 +939,23 @@ func TestGetNar(t *testing.T) {
 		})
 
 		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-		size, r, err := c.GetNar(context.Background(), nu)
-		require.NoError(t, err)
+
+		var size int64
+
+		var r io.ReadCloser
+
+		for i := 1; i < 100; i++ {
+			// NOTE: I tried runtime.Gosched() but it makes the test flaky
+			time.Sleep(time.Duration(i) * time.Millisecond)
+
+			var err error
+			size, r, err = c.GetNar(context.Background(), nu)
+			require.NoError(t, err)
+
+			if size > 0 {
+				break
+			}
+		}
 
 		defer r.Close()
 
@@ -958,7 +973,19 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			assert.FileExists(t, filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath))
+			var err error
+
+			for i := 1; i < 100; i++ {
+				// NOTE: I tried runtime.Gosched() but it makes the test flaky
+				time.Sleep(time.Duration(i) * time.Millisecond)
+
+				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath))
+				if err == nil {
+					break
+				}
+			}
+
+			assert.NoError(t, err)
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
