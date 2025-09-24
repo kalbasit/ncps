@@ -14,6 +14,10 @@ on:
         description: "Username used to log against the Docker registry"
         required: true
         type: string
+      push_images:
+        description: "Should the job push the image to Dockerhub?"
+        required: true
+        type: boolean
     secrets:
       password:
         description: "Password or personal access token used to log against the Docker registry"
@@ -54,18 +58,15 @@ jobs:
     steps:
       - name: Install required cross-system tool
         if: "${{ matrix.system != 'x86_64-linux' }}"
-        run: sudo apt-get install -y qemu-user-static
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
         shell: bash
-      - uses: DeterminateSystems/nix-installer-action@v19
+      - uses: DeterminateSystems/nix-installer-action@v20
         with:
           extra-conf: |
             extra-platforms = ${{ matrix.system }}
       - uses: DeterminateSystems/magic-nix-cache-action@v13
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ inputs.username }}
-          password: ${{ secrets.password }}
       - uses: actions/checkout@v5
       - name: Build the docker image
         shell: bash
@@ -79,13 +80,21 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           nix build -L --impure .#packages.${{ matrix.system }}.push-docker-image
+      - name: Login to Docker Hub
+        if: inputs.push_images
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.username }}
+          password: ${{ secrets.password }}
       - name: Push the docker image
+        if: inputs.push_images
         env:
           DOCKER_IMAGE_TAGS: ${{ needs.docker-meta.outputs.tags }}
         shell: bash
         run: |
           ./result
   docker-manifest:
+    if: inputs.push_images
     runs-on: ubuntu-24.04
     needs: [docker-meta, docker-images]
     steps:

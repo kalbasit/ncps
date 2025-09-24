@@ -236,7 +236,7 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -288,7 +288,7 @@ func TestGetNarInfo(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -446,9 +446,9 @@ func TestGetNarInfo(t *testing.T) {
 			// Try at least 10 times before announcing an error
 			var err error
 
-			for i := 0; i < 9; i++ {
+			for i := 1; i < 100; i++ {
 				// NOTE: I tried runtime.Gosched() but it makes the test flaky
-				time.Sleep(time.Millisecond)
+				time.Sleep(time.Duration(i) * time.Millisecond)
 
 				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar2.NarPath))
 				if err == nil {
@@ -612,9 +612,9 @@ func TestGetNarInfo(t *testing.T) {
 				// Try at least 10 times before announcing an error
 				var err error
 
-				for i := 0; i < 9; i++ {
+				for i := 1; i < 100; i++ {
 					// NOTE: I tried runtime.Gosched() but it makes the test flaky
-					time.Sleep(time.Millisecond)
+					time.Sleep(time.Duration(i) * time.Millisecond)
 
 					_, err = os.Stat(narFile)
 					if err == nil {
@@ -882,7 +882,7 @@ func TestGetNar(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys())
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -939,30 +939,34 @@ func TestGetNar(t *testing.T) {
 		})
 
 		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-		size, r, err := c.GetNar(context.Background(), nu)
-		require.NoError(t, err)
 
-		defer r.Close()
-
-		t.Run("size is correct", func(t *testing.T) {
-			assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
-		})
-
-		t.Run("body is the same", func(t *testing.T) {
-			body, err := io.ReadAll(r)
+		t.Run("able to get the NAR even in flight from upstream", func(t *testing.T) {
+			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
-			if assert.Len(t, testdata.Nar1.NarText, len(string(body))) {
-				assert.Equal(t, testdata.Nar1.NarText, string(body))
-			}
+			t.Run("body is the same", func(t *testing.T) {
+				body, err := io.ReadAll(r)
+				require.NoError(t, err)
+
+				if assert.Len(t, testdata.Nar1.NarText, len(string(body))) {
+					assert.Equal(t, testdata.Nar1.NarText, string(body))
+				}
+			})
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			assert.FileExists(t, filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath))
-		})
+			var err error
 
-		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
-			_, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+			for i := 1; i < 100; i++ {
+				// NOTE: I tried runtime.Gosched() but it makes the test flaky
+				time.Sleep(time.Duration(i) * time.Millisecond)
+
+				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath))
+				if err == nil {
+					break
+				}
+			}
+
 			assert.NoError(t, err)
 		})
 
@@ -1049,9 +1053,13 @@ func TestGetNar(t *testing.T) {
 
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
-			_, r, err := c.GetNar(context.Background(), nu)
+			size, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 			defer r.Close()
+
+			t.Run("size is correct", func(t *testing.T) {
+				assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
+			})
 
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
 				const query = `

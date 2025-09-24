@@ -11,7 +11,7 @@ jobs:
       contents: "read"
     steps:
       - uses: actions/checkout@v5
-      - uses: DeterminateSystems/nix-installer-action@v19
+      - uses: DeterminateSystems/nix-installer-action@v20
       - uses: DeterminateSystems/magic-nix-cache-action@v13
       - uses: DeterminateSystems/flake-checker-action@main
       - run: nix flake check -L --all-systems
@@ -22,6 +22,7 @@ jobs:
       systems: "['x86_64-linux', 'aarch64-linux']"
       images: kalbasit/ncps
       username: ${{ vars.DOCKERHUB_USERNAME }}
+      push_images: true
     secrets:
       password: ${{ secrets.DOCKERHUB_TOKEN }}
   release:
