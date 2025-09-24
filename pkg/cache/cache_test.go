@@ -446,9 +446,9 @@ func TestGetNarInfo(t *testing.T) {
 			// Try at least 10 times before announcing an error
 			var err error
 
-			for i := 0; i < 9; i++ {
+			for i := 1; i < 100; i++ {
 				// NOTE: I tried runtime.Gosched() but it makes the test flaky
-				time.Sleep(time.Millisecond)
+				time.Sleep(time.Duration(i) * time.Millisecond)
 
 				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar2.NarPath))
 				if err == nil {
