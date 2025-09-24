@@ -973,8 +973,6 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			// Force the other goroutine to run so it actually download the file
-			// Try at least 10 times before announcing an error
 			var err error
 
 			for i := 1; i < 100; i++ {
