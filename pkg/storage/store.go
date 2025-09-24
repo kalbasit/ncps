@@ -63,10 +63,3 @@ type NarStore interface {
 	// DeleteNar deletes the nar from the store.
 	DeleteNar(ctx context.Context, narURL nar.URL) error
 }
-
-// Store represents a store capable of storing narinfos and nars.
-type Store struct {
-	ConfigStore
-	NarInfoStore
-	NarStore
-}
