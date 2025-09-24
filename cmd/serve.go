@@ -137,6 +137,12 @@ func serveCommand() *cli.Command {
 				Value:   os.TempDir(),
 			},
 			&cli.StringFlag{
+				Name:    "netrc-file",
+				Usage:   "Path to netrc file for upstream authentication",
+				Sources: cli.EnvVars("NETRC_FILE"),
+				Value:   getDefaultNetrcPath(),
+			},
+			&cli.StringFlag{
 				Name:    "server-addr",
 				Usage:   "The address of the server",
 				Sources: cli.EnvVars("SERVER_ADDR"),
@@ -152,12 +158,6 @@ func serveCommand() *cli.Command {
 				Name:    "upstream-public-key",
 				Usage:   "Set to host:public-key for each upstream cache",
 				Sources: cli.EnvVars("UPSTREAM_PUBLIC_KEYS"),
-			},
-			&cli.StringFlag{
-				Name:    "netrc-file",
-				Usage:   "Path to netrc file for upstream authentication",
-				Sources: cli.EnvVars("NETRC_FILE"),
-				Value:   getDefaultNetrcPath(),
 			},
 		},
 	}
