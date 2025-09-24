@@ -68,6 +68,7 @@ type Cache struct {
 	url        *url.URL
 	priority   uint64
 	publicKeys []signature.PublicKey
+	netrcAuth  *NetrcCredentials
 
 	mu        sync.RWMutex
 	isHealthy bool
@@ -76,8 +77,14 @@ type Cache struct {
 	responseHeaderTimeout time.Duration
 }
 
-// New creates a new upstream cache.
-func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
+// NetrcCredentials holds authentication credentials.
+type NetrcCredentials struct {
+	Username string
+	Password string
+}
+
+// New creates a new upstream cache. Pass nil for netrcCreds if no authentication is needed.
+func New(ctx context.Context, u *url.URL, pubKeys []string, netrcCreds *NetrcCredentials) (*Cache, error) {
 	if u == nil {
 		return nil, ErrURLRequired
 	}
@@ -86,6 +93,16 @@ func New(ctx context.Context, u *url.URL, pubKeys []string) (*Cache, error) {
 		url:                   u,
 		dialerTimeout:         defaultHTTPTimeout,
 		responseHeaderTimeout: defaultHTTPTimeout,
+	}
+
+	if netrcCreds != nil {
+		c.netrcAuth = netrcCreds
+
+		zerolog.Ctx(ctx).
+			Info().
+			Str("hostname", c.url.Hostname()).
+			Str("username", netrcCreds.Username).
+			Msg("loaded netrc authentication credentials")
 	}
 
 	if err := c.setupHTTPClient(); err != nil {
@@ -216,6 +233,8 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
 
+	c.addAuthToRequest(r)
+
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("download the narinfo from upstream")
@@ -291,6 +310,8 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 		return false, fmt.Errorf("error creating a new request: %w", err)
 	}
 
+	c.addAuthToRequest(r)
+
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("heading the narinfo from upstream")
@@ -337,6 +358,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new request: %w", err)
 	}
+
+	c.addAuthToRequest(r)
 
 	for _, mutator := range mutators {
 		mutator(r)
@@ -399,6 +422,8 @@ func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 		return false, fmt.Errorf("error creating a new request: %w", err)
 	}
 
+	c.addAuthToRequest(r)
+
 	for _, mutator := range mutators {
 		mutator(r)
 	}
@@ -430,6 +455,8 @@ func (c *Cache) parsePriority(ctx context.Context) (uint64, error) {
 		return 0, fmt.Errorf("error creating a new request: %w", err)
 	}
 
+	c.addAuthToRequest(r)
+
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
 		return 0, fmt.Errorf("error performing the request: %w", err)
@@ -453,6 +480,13 @@ func (c *Cache) parsePriority(ctx context.Context) (uint64, error) {
 	}
 
 	return nci.Priority, nil
+}
+
+// addAuthToRequest adds authentication to HTTP request if available.
+func (c *Cache) addAuthToRequest(req *http.Request) {
+	if c.netrcAuth != nil {
+		req.SetBasicAuth(c.netrcAuth.Username, c.netrcAuth.Password)
+	}
 }
 
 func (c *Cache) validateURL(u *url.URL) error {

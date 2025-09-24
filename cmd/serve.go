@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
+	"github.com/sysbot/go-netrc"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
@@ -27,6 +29,32 @@ import (
 
 // ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
 var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
+
+// getDefaultNetrcPath returns the default path to the netrc file.
+func getDefaultNetrcPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(fmt.Sprintf("unable to determine user home directory: %v", err))
+	}
+
+	return filepath.Join(homeDir, ".netrc")
+}
+
+// parseNetrcFile parses the netrc file and returns the parsed netrc object.
+func parseNetrcFile(netrcPath string) (*netrc.Netrc, error) {
+	file, err := os.Open(netrcPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	n, err := netrc.Parse(file)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing netrc file: %w", err)
+	}
+
+	return n, nil
+}
 
 func serveCommand() *cli.Command {
 	return &cli.Command{
@@ -109,6 +137,12 @@ func serveCommand() *cli.Command {
 				Value:   os.TempDir(),
 			},
 			&cli.StringFlag{
+				Name:    "netrc-file",
+				Usage:   "Path to netrc file for upstream authentication",
+				Sources: cli.EnvVars("NETRC_FILE"),
+				Value:   getDefaultNetrcPath(),
+			},
+			&cli.StringFlag{
 				Name:    "server-addr",
 				Usage:   "The address of the server",
 				Sources: cli.EnvVars("SERVER_ADDR"),
@@ -153,7 +187,12 @@ func serveAction() cli.ActionFunc {
 			return autoMaxProcs(ctx, 30*time.Second, logger)
 		})
 
-		ucs, err := getUpstreamCaches(ctx, cmd)
+		netrcData, err := parseNetrcFile(cmd.String("netrc-file"))
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to parse netrc file, proceeding without netrc authentication")
+		}
+
+		ucs, err := getUpstreamCaches(ctx, cmd, netrcData)
 		if err != nil {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
@@ -211,7 +250,7 @@ func serveAction() cli.ActionFunc {
 	}
 }
 
-func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]*upstream.Cache, error) {
+func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.Netrc) ([]*upstream.Cache, error) {
 	ucSlice := cmd.StringSlice("upstream-cache")
 
 	ucs := make([]*upstream.Cache, 0, len(ucSlice))
@@ -232,7 +271,19 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command) ([]*upstream.Cache
 			}
 		}
 
-		uc, err := upstream.New(ctx, u, pubKeys)
+		// Get credentials for this hostname
+		var creds *upstream.NetrcCredentials
+
+		if netrcData != nil {
+			if machine := netrcData.FindMachine(u.Hostname()); machine != nil {
+				creds = &upstream.NetrcCredentials{
+					Username: machine.Login,
+					Password: machine.Password,
+				}
+			}
+		}
+
+		uc, err := upstream.New(ctx, u, pubKeys, creds)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a new upstream cache: %w", err)
 		}

@@ -31,26 +31,26 @@ func TestNew(t *testing.T) {
 	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
 		//nolint:paralleltest
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := upstream.New(newContext(), nil, nil)
+			_, err := upstream.New(newContext(), nil, nil, nil)
 			assert.ErrorIs(t, err, upstream.ErrURLRequired)
 		})
 
 		//nolint:paralleltest
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, "cache.nixos.org"), nil)
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, "cache.nixos.org"), nil, nil)
 			assert.ErrorIs(t, err, upstream.ErrURLMustContainScheme)
 		})
 
 		t.Run("valid url with no path must not return no error", func(t *testing.T) {
 			_, err := upstream.New(newContext(),
-				testhelper.MustParseURL(t, ts.URL), nil)
+				testhelper.MustParseURL(t, ts.URL), nil, nil)
 
 			assert.NoError(t, err)
 		})
 
 		t.Run("valid url with only / must not return no error", func(t *testing.T) {
 			_, err := upstream.New(newContext(),
-				testhelper.MustParseURL(t, ts.URL), nil)
+				testhelper.MustParseURL(t, ts.URL), nil, nil)
 
 			assert.NoError(t, err)
 		})
@@ -60,7 +60,7 @@ func TestNew(t *testing.T) {
 	t.Run("public keys", func(t *testing.T) {
 		//nolint:paralleltest
 		t.Run("invalid public keys", func(t *testing.T) {
-			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), []string{"invalid"})
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), []string{"invalid"}, nil)
 			assert.True(t, strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:"))
 		})
 
@@ -70,6 +70,7 @@ func TestNew(t *testing.T) {
 				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
 				testdata.PublicKeys(),
+				nil,
 			)
 			assert.NoError(t, err)
 		})
@@ -81,6 +82,7 @@ func TestNew(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -93,6 +95,7 @@ func TestNew(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL+"?priority=42"),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -105,6 +108,7 @@ func TestNew(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL+"?priority=0"),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -117,6 +121,7 @@ func TestNew(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL+"?priority=-1"),
 			testdata.PublicKeys(),
+			nil,
 		)
 		assert.ErrorContains(t, err, "error parsing the priority from the URL")
 	})
@@ -142,11 +147,13 @@ func TestGetNarInfo(t *testing.T) {
 					newContext(),
 					testhelper.MustParseURL(t, ts.URL),
 					testdata.PublicKeys(),
+					nil,
 				)
 			} else {
 				c, err = upstream.New(
 					newContext(),
 					testhelper.MustParseURL(t, ts.URL),
+					nil,
 					nil,
 				)
 			}
@@ -223,6 +230,7 @@ func TestGetNarInfo(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -244,6 +252,7 @@ func TestHasNarInfo(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -264,6 +273,7 @@ func TestHasNarInfo(t *testing.T) {
 				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
 				testdata.PublicKeys(),
+				nil,
 			)
 			require.NoError(t, err)
 
@@ -287,6 +297,7 @@ func TestHasNarInfo(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -305,6 +316,7 @@ func TestGetNar(t *testing.T) {
 		newContext(),
 		testhelper.MustParseURL(t, ts.URL),
 		testdata.PublicKeys(),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -343,6 +355,7 @@ func TestGetNar(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -365,6 +378,7 @@ func TestHasNar(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -386,6 +400,7 @@ func TestHasNar(t *testing.T) {
 				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
 				testdata.PublicKeys(),
+				nil,
 			)
 			require.NoError(t, err)
 
@@ -410,6 +425,7 @@ func TestHasNar(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			testdata.PublicKeys(),
+			nil,
 		)
 		require.NoError(t, err)
 
@@ -429,6 +445,7 @@ func TestGetNarCanMutate(t *testing.T) {
 		newContext(),
 		testhelper.MustParseURL(t, ts.URL),
 		testdata.PublicKeys(),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -449,6 +466,97 @@ func TestGetNarCanMutate(t *testing.T) {
 	}()
 
 	assert.Equal(t, pingV, resp.Header.Get("pong"))
+}
+
+// basicAuth is a middleware function that checks for basic authentication credentials.
+func basicAuth(expectedUser, expectedPass string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+
+		if !ok || user != expectedUser || pass != expectedPass {
+			w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+func TestNetrcAuthentication(t *testing.T) {
+	t.Parallel()
+
+	protectedHandler := func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, "StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 30")
+	}
+
+	t.Run("WithCorrectCredentials", func(t *testing.T) {
+		t.Parallel()
+
+		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
+		defer ts.Close()
+
+		creds := &upstream.NetrcCredentials{
+			Username: "testuser",
+			Password: "testpass",
+		}
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL),
+			nil,
+			creds,
+		)
+		require.NoError(t, err)
+
+		priority, err := c.ParsePriority(newContext())
+		require.NoError(t, err)
+		assert.Equal(t, uint64(30), priority)
+	})
+
+	t.Run("WithoutCredentials", func(t *testing.T) {
+		t.Parallel()
+
+		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
+		defer ts.Close()
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL),
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+
+		_, err = c.ParsePriority(newContext())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected HTTP status code")
+	})
+
+	t.Run("WithIncorrectCredentials", func(t *testing.T) {
+		t.Parallel()
+
+		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
+		defer ts.Close()
+
+		creds := &upstream.NetrcCredentials{
+			Username: "testuser",
+			Password: "wrongpass",
+		}
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, ts.URL),
+			nil,
+			creds,
+		)
+		require.NoError(t, err)
+
+		_, err = c.ParsePriority(newContext())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected HTTP status code")
+	})
 }
 
 func newContext() context.Context {
