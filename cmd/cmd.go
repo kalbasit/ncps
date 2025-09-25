@@ -42,6 +42,8 @@ import (
 //nolint:gochecknoglobals
 var Version = "dev"
 
+type flagSourcesFn func(configFileKey, envVar string) cli.ValueSourceChain
+
 func New() *cli.Command {
 	var otelShutdown func(context.Context) error
 
@@ -116,12 +118,12 @@ func New() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "otel-enabled",
 				Usage:   "Enable Open-Telemetry logs, metrics and tracing.",
-				Sources: cli.EnvVars("OTEL_ENABLED"),
+				Sources: flagSources("global.otel.enabled", "OTEL_ENABLED"),
 			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set the log level",
-				Sources: cli.EnvVars("LOG_LEVEL"),
+				Sources: flagSources("global.log.level", "LOG_LEVEL"),
 				Value:   "info",
 				Validator: func(lvl string) error {
 					_, err := zerolog.ParseLevel(lvl)
@@ -133,7 +135,7 @@ func New() *cli.Command {
 				Name: "otel-grpc-url",
 				Usage: "Configure OpenTelemetry gRPC URL; Missing or https " +
 					"scheme enable secure gRPC, insecure otherwize. Omit to emit Telemetry to stdout.",
-				Sources: cli.EnvVars("OTEL_GRPC_URL"),
+				Sources: flagSources("global.otel.grpc-url", "OTEL_GRPC_URL"),
 				Value:   "",
 				Validator: func(colURL string) error {
 					_, err := url.Parse(colURL)
@@ -150,11 +152,11 @@ func New() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "prometheus-enabled",
 				Usage:   "Enable Prometheus metrics endpoint at /metrics",
-				Sources: flagSources("prometheus.enabled", "PROMETHEUS_ENABLED"),
+				Sources: flagSources("global.prometheus.enabled", "PROMETHEUS_ENABLED"),
 			},
 		},
 		Commands: []*cli.Command{
-			serveCommand(),
+			serveCommand(flagSources),
 		},
 	}
 }
