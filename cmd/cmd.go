@@ -63,14 +63,12 @@ func New() (*cli.Command, error) {
 		)
 	}
 
-	commands := make([]*cli.Command, 0)
-
 	srvCmd, err := serveCommand(flagSources)
 	if err != nil {
 		return nil, fmt.Errorf("error creating the serve command: %w", err)
 	}
 
-	commands = append(commands, srvCmd)
+	commands := []*cli.Command{srvCmd}
 
 	c := &cli.Command{
 		Name:    "ncps",
