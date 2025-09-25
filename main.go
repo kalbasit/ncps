@@ -13,7 +13,12 @@ func main() {
 }
 
 func realMain() int {
-	c := cmd.New()
+	c, err := cmd.New()
+	if err != nil {
+		log.Printf("error creating the application: %s", err)
+
+		return 1
+	}
 
 	if err := c.Run(context.Background(), os.Args); err != nil {
 		log.Printf("error running the application: %s", err)
