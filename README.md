@@ -432,6 +432,8 @@ go build .
 
 ## ⚙️ Configuration
 
+All the flags can be set using the configuration file. See config.example.yaml for reference.
+
 ### Global Options
 
 | Option | Description | Environment Variable | Default |
