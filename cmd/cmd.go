@@ -146,6 +146,7 @@ func New() *cli.Command {
 			&cli.StringFlag{
 				Name:        "config",
 				Usage:       "Path to the configuration file (toml, yaml, json)",
+				Sources:     cli.EnvVars("NCPS_CONFIG_FILE"),
 				Value:       getDefaultConfigPath(),
 				Destination: &configPath,
 			},
