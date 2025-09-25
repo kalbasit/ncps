@@ -44,7 +44,12 @@ var Version = "dev"
 
 type flagSourcesFn func(configFileKey, envVar string) cli.ValueSourceChain
 
-func New() *cli.Command {
+type userDirectories struct {
+	configDir string
+	homeDir   string
+}
+
+func New() (*cli.Command, error) {
 	var otelShutdown func(context.Context) error
 
 	var configPath string
@@ -58,7 +63,12 @@ func New() *cli.Command {
 		)
 	}
 
-	return &cli.Command{
+	userDirs, err := getUserDirs()
+	if err != nil {
+		return nil, err
+	}
+
+	c := &cli.Command{
 		Name:    "ncps",
 		Usage:   "Nix Binary Cache Proxy Service",
 		Version: Version,
@@ -147,7 +157,7 @@ func New() *cli.Command {
 				Name:        "config",
 				Usage:       "Path to the configuration file (json, toml, yaml)",
 				Sources:     cli.EnvVars("NCPS_CONFIG_FILE"),
-				Value:       getDefaultConfigPath(),
+				Value:       filepath.Join(userDirs.configDir, "ncps", "config.yaml"),
 				Destination: &configPath,
 			},
 			&cli.BoolFlag{
@@ -156,20 +166,27 @@ func New() *cli.Command {
 				Sources: flagSources("prometheus.enabled", "PROMETHEUS_ENABLED"),
 			},
 		},
-		Commands: []*cli.Command{
-			serveCommand(flagSources),
-		},
+		Commands: []*cli.Command{serveCommand(userDirs, flagSources)},
 	}
+
+	return c, nil
 }
 
-// getDefaultConfigPath returns the default path to the config file.
-func getDefaultConfigPath() string {
+func getUserDirs() (userDirectories, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		panic(fmt.Sprintf("unable to determine user config directory: %v", err))
+		return userDirectories{}, fmt.Errorf("unable to determine user config directory: %w", err)
 	}
 
-	return filepath.Join(configDir, "ncps", "config.yaml")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return userDirectories{}, fmt.Errorf("unable to determine user home directory: %w", err)
+	}
+
+	return userDirectories{
+		configDir: configDir,
+		homeDir:   homeDir,
+	}, nil
 }
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.

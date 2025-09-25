@@ -30,16 +30,6 @@ import (
 // ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
 var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
 
-// getDefaultNetrcPath returns the default path to the netrc file.
-func getDefaultNetrcPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		panic(fmt.Sprintf("unable to determine user home directory: %v", err))
-	}
-
-	return filepath.Join(homeDir, ".netrc")
-}
-
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
 func parseNetrcFile(netrcPath string) (*netrc.Netrc, error) {
 	file, err := os.Open(netrcPath)
@@ -56,7 +46,7 @@ func parseNetrcFile(netrcPath string) (*netrc.Netrc, error) {
 	return n, nil
 }
 
-func serveCommand(flagSources flagSourcesFn) *cli.Command {
+func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Command {
 	return &cli.Command{
 		Name:    "serve",
 		Aliases: []string{"s"},
@@ -140,7 +130,7 @@ func serveCommand(flagSources flagSourcesFn) *cli.Command {
 				Name:    "netrc-file",
 				Usage:   "Path to netrc file for upstream authentication",
 				Sources: flagSources("cache.netrc-file", "NETRC_FILE"),
-				Value:   getDefaultNetrcPath(),
+				Value:   filepath.Join(userDirs.homeDir, ".netrc"),
 			},
 			&cli.StringFlag{
 				Name:    "server-addr",
