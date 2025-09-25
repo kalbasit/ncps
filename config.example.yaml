@@ -1,0 +1,67 @@
+log:
+  # Set the log level. Supported levels:
+  #
+  # - trace
+  # - debug
+  # - info
+  # - warn
+  # - error
+  # - fatal
+  # - panic
+  #
+  level: "error"
+# OpenTelemetry support.
+opentelemetry:
+  enabled: true
+  # Configure open telemetry to connect to a collector with the grpc URL. If
+  # not set, ncps will simply print telemetry to stdout which is not very
+  # useful but can be helpful for debugging.
+  grpc-url: "http://otelcol-collector.monitoring.svc:4317"
+# Prometheus metrics exposed at /metrics on the same port as ncps
+prometheus:
+  enabled: true
+# Configure the cache functionality.
+cache:
+  # Whether to allow the DELETE verb to delete narInfo and nar files
+  allow-delete-verb: true
+  # Whether to allow the PUT verb to push narInfo and nar files directly
+  allow-put-verb: true
+  # The hostname of the cache server
+  hostname: "ncps.mycompany.tld"
+  # The local data path used for configuration and cache storage
+  data-path: "/tmp/data-folder"
+  # The URL of the database
+  database-url: "that-database-url"
+  # The maximum size of the store. It can be given with units such as 5K, 10G
+  # etc. Supported units: B, K, M, G, T
+  max-size: 100G
+  # Configure the LRU to clean the store and purge least used nars. No nars are
+  # removed unless the size approaches max-size.
+  lru:
+    # The cron spec for cleaning the store. Refer to
+    # https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation
+    schedule: "0 0 * * *"
+    # The name of the timezone to use for the cron
+    timezone: America/Los_Angeles
+  # The path to the secret key used for signing cached paths
+  secret-key-path: "/path/to/secret.key"
+  # Whether to sign narInfo files or passthru as-is from upstream
+  sign-narinfo: true
+  # The path to the temporary directory that is used by the cache to download NAR files
+  temp-path: "/path/to/temp"
+  # Path to netrc file for upstream authentication
+  netrc-file: "/path/to/netrc-file"
+  # Configure upstream caches
+  upstream:
+    # Set to URL (with scheme) for each upstream cache
+    caches:
+      - https://cache.nixos.org
+      - https://nix-community.cachix.org
+    # Set to host:public-key for each upstream cache
+    public-keys:
+      - cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+      - nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+# Configure the main server
+server:
+  # The address of the server
+  addr: ":8501"

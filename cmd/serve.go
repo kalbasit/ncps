@@ -66,36 +66,36 @@ func serveCommand(flagSources flagSourcesFn) *cli.Command {
 			&cli.BoolFlag{
 				Name:    "cache-allow-delete-verb",
 				Usage:   "Whether to allow the DELETE verb to delete narInfo and nar files",
-				Sources: flagSources("serve.cache.allow-delete-verb", "CACHE_ALLOW_DELETE_VERB"),
+				Sources: flagSources("cache.allow-delete-verb", "CACHE_ALLOW_DELETE_VERB"),
 			},
 			&cli.BoolFlag{
 				Name:    "cache-allow-put-verb",
 				Usage:   "Whether to allow the PUT verb to push narInfo and nar files directly",
-				Sources: flagSources("serve.cache.allow-put-verb", "CACHE_ALLOW_PUT_VERB"),
+				Sources: flagSources("cache.allow-put-verb", "CACHE_ALLOW_PUT_VERB"),
 			},
 			&cli.StringFlag{
 				Name:     "cache-hostname",
 				Usage:    "The hostname of the cache server",
-				Sources:  flagSources("serve.cache.hostname", "CACHE_HOSTNAME"),
+				Sources:  flagSources("cache.hostname", "CACHE_HOSTNAME"),
 				Required: true,
 			},
 			&cli.StringFlag{
 				Name:     "cache-data-path",
 				Usage:    "The local data path used for configuration and cache storage",
-				Sources:  flagSources("serve.cache.data-path", "CACHE_DATA_PATH"),
+				Sources:  flagSources("cache.data-path", "CACHE_DATA_PATH"),
 				Required: true,
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
 				Usage:    "The URL of the database",
-				Sources:  flagSources("serve.cache.database-url", "CACHE_DATABASE_URL"),
+				Sources:  flagSources("cache.database-url", "CACHE_DATABASE_URL"),
 				Required: true,
 			},
 			&cli.StringFlag{
 				Name: "cache-max-size",
 				//nolint:lll
 				Usage:   "The maximum size of the store. It can be given with units such as 5K, 10G etc. Supported units: B, K, M, G, T",
-				Sources: flagSources("serve.cache.max-size", "CACHE_MAX_SIZE"),
+				Sources: flagSources("cache.max-size", "CACHE_MAX_SIZE"),
 				Validator: func(s string) error {
 					_, err := helper.ParseSize(s)
 
@@ -106,7 +106,7 @@ func serveCommand(flagSources flagSourcesFn) *cli.Command {
 				Name: "cache-lru-schedule",
 				//nolint:lll
 				Usage:   "The cron spec for cleaning the store. Refer to https://pkg.go.dev/github.com/robfig/cron/v3#hdr-Usage for documentation",
-				Sources: flagSources("serve.cache.lru.schedule", "CACHE_LRU_SCHEDULE"),
+				Sources: flagSources("cache.lru.schedule", "CACHE_LRU_SCHEDULE"),
 				Validator: func(s string) error {
 					_, err := cron.ParseStandard(s)
 
@@ -116,48 +116,48 @@ func serveCommand(flagSources flagSourcesFn) *cli.Command {
 			&cli.StringFlag{
 				Name:    "cache-lru-schedule-timezone",
 				Usage:   "The name of the timezone to use for the cron",
-				Sources: flagSources("serve.cache.lru.timezone", "CACHE_LRU_SCHEDULE_TZ"),
+				Sources: flagSources("cache.lru.timezone", "CACHE_LRU_SCHEDULE_TZ"),
 				Value:   "Local",
 			},
 			&cli.StringFlag{
 				Name:    "cache-secret-key-path",
 				Usage:   "The path to the secret key used for signing cached paths",
-				Sources: flagSources("serve.cache.secret-key-path", "CACHE_SECRET_KEY_PATH"),
+				Sources: flagSources("cache.secret-key-path", "CACHE_SECRET_KEY_PATH"),
 			},
 			&cli.BoolFlag{
 				Name:    "cache-sign-narinfo",
 				Usage:   "Whether to sign narInfo files or passthru as-is from upstream",
-				Sources: flagSources("serve.cache.sign-narinfo", "CACHE_SIGN_NARINFO"),
+				Sources: flagSources("cache.sign-narinfo", "CACHE_SIGN_NARINFO"),
 				Value:   true,
 			},
 			&cli.StringFlag{
 				Name:    "cache-temp-path",
 				Usage:   "The path to the temporary directory that is used by the cache to download NAR files",
-				Sources: flagSources("serve.cache.temp-path", "CACHE_TEMP_PATH"),
+				Sources: flagSources("cache.temp-path", "CACHE_TEMP_PATH"),
 				Value:   os.TempDir(),
 			},
 			&cli.StringFlag{
 				Name:    "netrc-file",
 				Usage:   "Path to netrc file for upstream authentication",
-				Sources: flagSources("serve.cache.netrc-file", "NETRC_FILE"),
+				Sources: flagSources("cache.netrc-file", "NETRC_FILE"),
 				Value:   getDefaultNetrcPath(),
 			},
 			&cli.StringFlag{
 				Name:    "server-addr",
 				Usage:   "The address of the server",
-				Sources: flagSources("serve.server.addr", "SERVER_ADDR"),
+				Sources: flagSources("server.addr", "SERVER_ADDR"),
 				Value:   ":8501",
 			},
 			&cli.StringSliceFlag{
 				Name:     "upstream-cache",
 				Usage:    "Set to URL (with scheme) for each upstream cache",
-				Sources:  flagSources("serve.upstream-caches", "UPSTREAM_CACHES"),
+				Sources:  flagSources("cache.upstream.caches", "UPSTREAM_CACHES"),
 				Required: true,
 			},
 			&cli.StringSliceFlag{
 				Name:    "upstream-public-key",
 				Usage:   "Set to host:public-key for each upstream cache",
-				Sources: flagSources("serve.upstream-public-keys", "UPSTREAM_PUBLIC_KEYS"),
+				Sources: flagSources("cache.upstream.public-keys", "UPSTREAM_PUBLIC_KEYS"),
 			},
 		},
 	}
