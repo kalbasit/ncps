@@ -46,13 +46,8 @@ func parseNetrcFile(netrcPath string) (*netrc.Netrc, error) {
 	return n, nil
 }
 
-func serveCommand(flagSources flagSourcesFn) (*cli.Command, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("unable to determine user home directory: %w", err)
-	}
-
-	c := &cli.Command{
+func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Command {
+	return &cli.Command{
 		Name:    "serve",
 		Aliases: []string{"s"},
 		Usage:   "serve the nix binary cache over http",
@@ -135,7 +130,7 @@ func serveCommand(flagSources flagSourcesFn) (*cli.Command, error) {
 				Name:    "netrc-file",
 				Usage:   "Path to netrc file for upstream authentication",
 				Sources: flagSources("cache.netrc-file", "NETRC_FILE"),
-				Value:   filepath.Join(homeDir, ".netrc"),
+				Value:   filepath.Join(userDirs.homeDir, ".netrc"),
 			},
 			&cli.StringFlag{
 				Name:    "server-addr",
@@ -156,8 +151,6 @@ func serveCommand(flagSources flagSourcesFn) (*cli.Command, error) {
 			},
 		},
 	}
-
-	return c, nil
 }
 
 func serveAction() cli.ActionFunc {

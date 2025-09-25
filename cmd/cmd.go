@@ -44,15 +44,15 @@ var Version = "dev"
 
 type flagSourcesFn func(configFileKey, envVar string) cli.ValueSourceChain
 
+type userDirectories struct {
+	configDir string
+	homeDir   string
+}
+
 func New() (*cli.Command, error) {
 	var otelShutdown func(context.Context) error
 
 	var configPath string
-
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return nil, fmt.Errorf("unable to determine user config directory: %w", err)
-	}
 
 	flagSources := func(configFileKey, envVar string) cli.ValueSourceChain {
 		return cli.NewValueSourceChain(
@@ -63,12 +63,10 @@ func New() (*cli.Command, error) {
 		)
 	}
 
-	srvCmd, err := serveCommand(flagSources)
+	userDirs, err := getUserDirs()
 	if err != nil {
-		return nil, fmt.Errorf("error creating the serve command: %w", err)
+		return nil, err
 	}
-
-	commands := []*cli.Command{srvCmd}
 
 	c := &cli.Command{
 		Name:    "ncps",
@@ -159,7 +157,7 @@ func New() (*cli.Command, error) {
 				Name:        "config",
 				Usage:       "Path to the configuration file (json, toml, yaml)",
 				Sources:     cli.EnvVars("NCPS_CONFIG_FILE"),
-				Value:       filepath.Join(configDir, "ncps", "config.yaml"),
+				Value:       filepath.Join(userDirs.configDir, "ncps", "config.yaml"),
 				Destination: &configPath,
 			},
 			&cli.BoolFlag{
@@ -168,10 +166,27 @@ func New() (*cli.Command, error) {
 				Sources: flagSources("prometheus.enabled", "PROMETHEUS_ENABLED"),
 			},
 		},
-		Commands: commands,
+		Commands: []*cli.Command{serveCommand(userDirs, flagSources)},
 	}
 
 	return c, nil
+}
+
+func getUserDirs() (userDirectories, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return userDirectories{}, fmt.Errorf("unable to determine user config directory: %w", err)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return userDirectories{}, fmt.Errorf("unable to determine user home directory: %w", err)
+	}
+
+	return userDirectories{
+		configDir: configDir,
+		homeDir:   homeDir,
+	}, nil
 }
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
