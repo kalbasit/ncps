@@ -2,6 +2,10 @@ module github.com/kalbasit/ncps
 
 go 1.24.6
 
+// TODO: Remove this once the bug is fixed upstream
+// https://github.com/urfave/cli-altsrc/issues/24
+replace github.com/urfave/cli-altsrc/v3 v3.0.1 => github.com/kalbasit/cli-altsrc/v3 v3.0.0-20250925041744-510029350cc6
+
 require (
 	github.com/XSAM/otelsql v0.40.0
 	github.com/go-chi/chi/v5 v5.2.3
