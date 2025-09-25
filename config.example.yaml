@@ -44,7 +44,8 @@ cache:
     # The name of the timezone to use for the cron
     timezone: America/Los_Angeles
   # The path to the secret key used for signing cached paths
-  secret-key-path: "/path/to/secret.key"
+  # XXX: Only set this if you intend to store the key yourself instead of having ncps store it in its config store.
+  secret-key-path: ""
   # Whether to sign narInfo files or passthru as-is from upstream
   sign-narinfo: true
   # The path to the temporary directory that is used by the cache to download NAR files
