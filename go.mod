@@ -2,10 +2,6 @@ module github.com/kalbasit/ncps
 
 go 1.24.6
 
-// TODO: Remove this once the bug is fixed upstream
-// https://github.com/urfave/cli-altsrc/issues/24
-replace github.com/urfave/cli-altsrc/v3 v3.0.1 => github.com/kalbasit/cli-altsrc/v3 v3.0.0-20250925041744-510029350cc6
-
 require (
 	github.com/XSAM/otelsql v0.40.0
 	github.com/go-chi/chi/v5 v5.2.3
@@ -18,7 +14,7 @@ require (
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.11.1
 	github.com/sysbot/go-netrc v0.0.0-20231214061310-8bb3fde9e2d4
-	github.com/urfave/cli-altsrc/v3 v3.0.1
+	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.4.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel v1.38.0
