@@ -62,7 +62,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
         shell: bash
-      - uses: DeterminateSystems/nix-installer-action@v20
+      - uses: DeterminateSystems/nix-installer-action@v21
         with:
           extra-conf: |
             extra-platforms = ${{ matrix.system }}
