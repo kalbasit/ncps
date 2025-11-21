@@ -9,7 +9,7 @@ jobs:
     if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.GHA_PAT_TOKEN }}
           ref: ${{ github.event.pull_request.head.ref }}
