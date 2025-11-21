@@ -67,7 +67,7 @@ jobs:
           extra-conf: |
             extra-platforms = ${{ matrix.system }}
       - uses: DeterminateSystems/magic-nix-cache-action@v13
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Build the docker image
         shell: bash
         env:
