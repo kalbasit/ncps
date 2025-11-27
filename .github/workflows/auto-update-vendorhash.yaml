@@ -9,12 +9,12 @@ jobs:
     if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.GHA_PAT_TOKEN }}
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
-      - uses: DeterminateSystems/nix-installer-action@v20
+      - uses: DeterminateSystems/nix-installer-action@v21
       - uses: DeterminateSystems/magic-nix-cache-action@v13
       - run: |
           if nix build --print-build-logs .#ncps 2> /tmp/log; then
@@ -32,6 +32,6 @@ jobs:
           sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps.nix
 
           git diff
-      - uses: stefanzweifel/git-auto-commit-action@v6
+      - uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "Auto Update Vendor Hash"
