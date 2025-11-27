@@ -162,6 +162,7 @@ func serveAction() cli.ActionFunc {
 		ctx, cancel := context.WithCancel(ctx)
 
 		g, ctx := errgroup.WithContext(ctx)
+
 		defer func() {
 			if err := g.Wait(); err != nil {
 				logger.Error().Err(err).Msg("error returned from g.Wait()")

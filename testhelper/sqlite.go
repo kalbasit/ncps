@@ -1,6 +1,7 @@
 package testhelper
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +34,7 @@ func CreateMigrateDatabase(t *testing.T, dbFile string) {
 	)
 
 	//nolint:gosec
-	cmd := exec.Command(
+	cmd := exec.CommandContext(context.Background(),
 		"dbmate",
 		"--url=sqlite:"+dbFile,
 		"--migrations-dir="+dbMigrationsDir,

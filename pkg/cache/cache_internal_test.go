@@ -35,6 +35,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for i := 1; i < 10; i++ {
 			ts := testdata.NewTestServer(t, i)
 			defer ts.Close()
+
 			testServers[i] = ts
 		}
 
@@ -62,6 +63,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -94,6 +96,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for i := 1; i < 10; i++ {
 			ts := testdata.NewTestServer(t, i)
 			defer ts.Close()
+
 			testServers[i] = ts
 		}
 
@@ -121,6 +124,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -155,6 +159,7 @@ func TestRunLRU(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -224,6 +229,7 @@ func TestRunLRU(t *testing.T) {
 		// compute the size by reading it fully first.
 		if size < 0 {
 			var err error
+
 			size, err = io.Copy(io.Discard, reader)
 			require.NoError(t, err)
 		}
