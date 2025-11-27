@@ -81,6 +81,7 @@ func New() (*cli.Command, error) {
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
+
 			otelShutdown, err = setupOTelSDK(ctx, cmd)
 			if err != nil {
 				return ctx, err

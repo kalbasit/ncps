@@ -296,6 +296,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	defer span.End()
 
 	var metricAttrs []attribute.KeyValue
+
 	defer func() {
 		narServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
@@ -833,6 +834,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	defer span.End()
 
 	var metricAttrs []attribute.KeyValue
+
 	defer func() {
 		narInfoServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()

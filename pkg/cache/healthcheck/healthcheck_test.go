@@ -29,6 +29,7 @@ func TestHealthCheck(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)

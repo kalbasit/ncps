@@ -22,6 +22,7 @@ const cacheName = "cache.example.com"
 func TestSetDeletePermitted(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")

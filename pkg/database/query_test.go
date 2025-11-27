@@ -30,6 +30,7 @@ func TestGetNarInfoByHash(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "database-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -50,6 +51,7 @@ func TestGetNarInfoByHash(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "database-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -75,6 +77,7 @@ func TestGetNarInfoByHash(t *testing.T) {
 func TestInsertNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -180,6 +183,7 @@ func TestInsertNarInfo(t *testing.T) {
 func TestTouchNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -276,6 +280,7 @@ func TestTouchNarInfo(t *testing.T) {
 func TestDeleteNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -346,6 +351,7 @@ func TestGetNarByHash(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "database-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -372,6 +378,7 @@ func TestGetNarByHash(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "database-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -412,6 +419,7 @@ func TestGetNarByHash(t *testing.T) {
 func TestInsertNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -527,6 +535,7 @@ func TestInsertNar(t *testing.T) {
 func TestTouchNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -666,6 +675,7 @@ func TestTouchNar(t *testing.T) {
 func TestDeleteNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -760,6 +770,7 @@ func TestNarTotalSize(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -797,6 +808,7 @@ func TestGetLeastAccessedNars(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")

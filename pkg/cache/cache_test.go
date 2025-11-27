@@ -45,6 +45,7 @@ func TestNew(t *testing.T) {
 
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
+
 			defer os.RemoveAll(dir) // clean up
 
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -65,6 +66,7 @@ func TestNew(t *testing.T) {
 
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
+
 			defer os.RemoveAll(dir) // clean up
 
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -85,6 +87,7 @@ func TestNew(t *testing.T) {
 
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
+
 			defer os.RemoveAll(dir) // clean up
 
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -105,6 +108,7 @@ func TestNew(t *testing.T) {
 
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
+
 			defer os.RemoveAll(dir) // clean up
 
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -129,6 +133,7 @@ func TestNew(t *testing.T) {
 
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
+
 			defer os.RemoveAll(dir) // clean up
 
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -154,6 +159,7 @@ func TestNew(t *testing.T) {
 
 			dir, err := os.MkdirTemp("", "cache-path-")
 			require.NoError(t, err)
+
 			defer os.RemoveAll(dir) // clean up
 
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -194,6 +200,7 @@ func TestPublicKey(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -234,6 +241,7 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
@@ -286,6 +294,7 @@ func TestGetNarInfo(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
@@ -673,6 +682,7 @@ func TestGetNarInfo(t *testing.T) {
 func TestPutNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -813,6 +823,7 @@ func TestPutNarInfo(t *testing.T) {
 func TestDeleteNarInfo(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -880,6 +891,7 @@ func TestGetNar(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
@@ -1014,6 +1026,7 @@ func TestGetNar(t *testing.T) {
 
 			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
+
 			defer r.Close()
 
 			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
@@ -1055,6 +1068,7 @@ func TestGetNar(t *testing.T) {
 
 			size, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
+
 			defer r.Close()
 
 			t.Run("size is correct", func(t *testing.T) {
@@ -1099,6 +1113,7 @@ func TestGetNar(t *testing.T) {
 func TestPutNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -1144,6 +1159,7 @@ func TestPutNar(t *testing.T) {
 func TestDeleteNar(t *testing.T) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir) // clean up
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
