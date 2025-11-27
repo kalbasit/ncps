@@ -694,7 +694,7 @@ func (c *Cache) getNarFromStore(
 		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
 	}
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -1234,7 +1234,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return nil, errNarInfoPurged
 	}
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -1333,7 +1333,7 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -1399,7 +1399,7 @@ func (c *Cache) storeInDatabase(
 		Info().
 		Msg("storing narinfo and nar record in the database")
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -1560,7 +1560,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 
 		log.Info().Msg("running LRU")
 
-		tx, err := c.db.DB().Begin()
+		tx, err := c.db.DB().BeginTx(ctx, nil)
 		if err != nil {
 			log.Error().Err(err).Msg("error beginning a transaction")
 
