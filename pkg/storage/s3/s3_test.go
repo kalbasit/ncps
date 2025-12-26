@@ -220,12 +220,10 @@ func TestNew(t *testing.T) {
 
 // Integration tests - require running MinIO instance
 
+//nolint:paralleltest
 func TestGetSecretKey_Integration(t *testing.T) {
-	t.Parallel()
-
+	// Note: Secret key tests cannot run in parallel as they share the same path
 	t.Run("no secret key is present", func(t *testing.T) {
-		t.Parallel()
-
 		store := getTestStore(t)
 		if store == nil {
 			return
@@ -241,12 +239,10 @@ func TestGetSecretKey_Integration(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest
 func TestPutSecretKey_Integration(t *testing.T) {
-	t.Parallel()
-
+	// Note: Secret key tests cannot run in parallel as they share the same path
 	t.Run("put secret key successfully", func(t *testing.T) {
-		t.Parallel()
-
 		store := getTestStore(t)
 		if store == nil {
 			return
@@ -273,8 +269,6 @@ func TestPutSecretKey_Integration(t *testing.T) {
 	})
 
 	t.Run("put existing secret key returns error", func(t *testing.T) {
-		t.Parallel()
-
 		store := getTestStore(t)
 		if store == nil {
 			return
@@ -301,12 +295,10 @@ func TestPutSecretKey_Integration(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest
 func TestDeleteSecretKey_Integration(t *testing.T) {
-	t.Parallel()
-
+	// Note: Secret key tests cannot run in parallel as they share the same path
 	t.Run("delete non-existent secret key returns error", func(t *testing.T) {
-		t.Parallel()
-
 		store := getTestStore(t)
 		if store == nil {
 			return
@@ -322,8 +314,6 @@ func TestDeleteSecretKey_Integration(t *testing.T) {
 	})
 
 	t.Run("delete existing secret key", func(t *testing.T) {
-		t.Parallel()
-
 		store := getTestStore(t)
 		if store == nil {
 			return
@@ -359,11 +349,12 @@ func TestHasNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		// Make sure it doesn't exist
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		_ = store.DeleteNarInfo(ctx, hash)
 
-		assert.False(t, store.HasNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		assert.False(t, store.HasNarInfo(ctx, hash))
 	})
 
 	t.Run("narinfo exists", func(t *testing.T) {
@@ -375,18 +366,19 @@ func TestHasNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
 		// Clean up first and put the narinfo
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
-		require.NoError(t, store.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni))
+		_ = store.DeleteNarInfo(ctx, hash)
+		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
 
-		assert.True(t, store.HasNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		assert.True(t, store.HasNarInfo(ctx, hash))
 
 		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 }
 
@@ -402,11 +394,12 @@ func TestGetNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		// Make sure it doesn't exist
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		_ = store.DeleteNarInfo(ctx, hash)
 
-		_, err := store.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		_, err := store.GetNarInfo(ctx, hash)
 		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
@@ -419,15 +412,16 @@ func TestGetNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
 		// Clean up first and put the narinfo
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
-		require.NoError(t, store.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni))
+		_ = store.DeleteNarInfo(ctx, hash)
+		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
 
-		ni2, err := store.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		ni2, err := store.GetNarInfo(ctx, hash)
 		require.NoError(t, err)
 
 		assert.Equal(t,
@@ -436,7 +430,7 @@ func TestGetNarInfo_Integration(t *testing.T) {
 		)
 
 		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 }
 
@@ -452,20 +446,21 @@ func TestPutNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
 		// Clean up first
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		_ = store.DeleteNarInfo(ctx, hash)
 
-		require.NoError(t, store.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni))
+		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
 
 		// Verify it was stored
-		assert.True(t, store.HasNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		assert.True(t, store.HasNarInfo(ctx, hash))
 
 		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 
 	t.Run("put existing narinfo returns error", func(t *testing.T) {
@@ -477,20 +472,21 @@ func TestPutNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
 		// Clean up first and put the narinfo
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
-		require.NoError(t, store.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni))
+		_ = store.DeleteNarInfo(ctx, hash)
+		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
 
 		// Try to put again
-		err = store.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni)
+		err = store.PutNarInfo(ctx, hash, ni)
 		require.ErrorIs(t, err, storage.ErrAlreadyExists)
 
 		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 }
 
@@ -506,11 +502,12 @@ func TestDeleteNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		// Make sure it doesn't exist
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		_ = store.DeleteNarInfo(ctx, hash)
 
-		err := store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		err := store.DeleteNarInfo(ctx, hash)
 		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
@@ -523,19 +520,20 @@ func TestDeleteNarInfo_Integration(t *testing.T) {
 		}
 
 		ctx := newContext()
+		hash := getUniqueHash(t, testdata.Nar1.NarInfoHash)
 
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
 		// Clean up first and put the narinfo
-		_ = store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
-		require.NoError(t, store.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni))
+		_ = store.DeleteNarInfo(ctx, hash)
+		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
 
 		// Delete it
-		require.NoError(t, store.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 
 		// Verify it's gone
-		assert.False(t, store.HasNarInfo(ctx, testdata.Nar1.NarInfoHash))
+		assert.False(t, store.HasNarInfo(ctx, hash))
 	})
 }
 
@@ -553,7 +551,7 @@ func TestHasNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -574,7 +572,7 @@ func TestHasNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -604,7 +602,7 @@ func TestGetNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -626,7 +624,7 @@ func TestGetNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -665,7 +663,7 @@ func TestPutNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -694,7 +692,7 @@ func TestPutNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -726,7 +724,7 @@ func TestDeleteNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -748,7 +746,7 @@ func TestDeleteNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testdata.Nar1.NarHash,
+			Hash:        getUniqueHash(t, testdata.Nar1.NarHash),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -769,4 +767,16 @@ func newContext() context.Context {
 	return zerolog.
 		New(io.Discard).
 		WithContext(context.Background())
+}
+
+// getUniqueHash generates a unique hash for testing based on the test name
+// This prevents parallel tests from interfering with each other.
+func getUniqueHash(t *testing.T, base string) string {
+	t.Helper()
+	// Use test name to create a unique hash prefix
+	// Replace slashes and spaces with underscores for valid hash format
+	testName := strings.ReplaceAll(t.Name(), "/", "_")
+	testName = strings.ReplaceAll(testName, " ", "_")
+	// Combine with base hash to create unique hash
+	return testName + "_" + base
 }
