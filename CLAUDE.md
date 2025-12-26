@@ -86,6 +86,53 @@ Uses gofumpt, goimports, and gci for import ordering (standard → default → a
 - Test files use `_test` package suffix (testpackage linter)
 - Parallel tests encouraged (paralleltest linter)
 
+#### S3 Integration Tests
+
+S3 integration tests require MinIO to be running. The tests are automatically skipped if the required environment variables are not set.
+
+**For local development:**
+
+```bash
+# Start MinIO (in a separate terminal)
+nix run .#deps
+
+# Run tests with S3 integration enabled
+export NCPS_TEST_S3_BUCKET="test-bucket"
+export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
+export NCPS_TEST_S3_REGION="us-east-1"
+export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
+export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
+go test -race ./pkg/storage/s3
+```
+
+**For Nix builds and CI:**
+
+MinIO is automatically started during the test phase when building with Nix:
+
+```bash
+# Runs all checks including S3 integration tests
+nix flake check
+
+# Build package (includes test phase with MinIO)
+nix build
+```
+
+The Nix build (`nix/packages/ncps.nix`) automatically:
+
+1. Starts MinIO server in the `preCheck` phase
+1. Creates test bucket and credentials
+1. Exports S3 test environment variables
+1. Runs all tests (including S3 integration tests)
+1. Stops MinIO in the `postCheck` phase
+
+This setup ensures:
+
+- S3 integration tests run in CI/CD (GitHub Actions workflows)
+- `nix flake check` includes S3 testing
+- Runtime usage (`nix run github:kalbasit/ncps`) is unaffected
+- Docker builds (`.#docker`) are unaffected
+- Tests are isolated and don't interfere with each other (unique hash-based keys)
+
 ## Configuration
 
 Supports YAML/TOML/JSON config files. See `config.example.yaml` for all options. Key configuration areas:
