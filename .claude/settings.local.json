@@ -3,8 +3,7 @@
     "allow": [
       "Bash(go build:*)",
       "Bash(golangci-lint run:*)",
-      "Bash(go test:*)",
-      "Bash(chmod:*)"
+      "Bash(go test:*)"
     ]
   }
 }
