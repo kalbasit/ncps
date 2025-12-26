@@ -84,6 +84,26 @@
                   curl -v "$SIGNED_URL" 2>&1 | tail -20
                 fi
                 echo "---------------------------------------------------"
+                echo ""
+                echo "╔═══════════════════════════════════════════════════════════╗"
+                echo "║           NCPS MINIO CONFIGURATION                        ║"
+                echo "╚═══════════════════════════════════════════════════════════╝"
+                echo ""
+                echo "📦 S3-Compatible Storage Configuration:"
+                echo ""
+                echo "  Endpoint:     http://127.0.0.1:9000"
+                echo "  Region:       us-east-1"
+                echo "  Bucket:       test-bucket"
+                echo "  Access Key:   test-access-key"
+                echo "  Secret Key:   test-secret-key"
+                echo "  Use SSL:      false"
+                echo ""
+                echo "🌐 Console UI:"
+                echo "  URL:          http://127.0.0.1:9001"
+                echo "  Username:     admin"
+                echo "  Password:     password"
+                echo ""
+                echo "---------------------------------------------------"
                 sleep infinity
               '';
               depends_on.minio-server.condition = "process_healthy";
