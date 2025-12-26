@@ -42,8 +42,7 @@
                   --access-key "test-access-key" \
                   --secret-key "test-secret-key" \
                   local admin || true
-                echo "This is secret data!" > /tmp/message.txt
-                ${pkgs.minio-client}/bin/mc cp /tmp/message.txt local/test-bucket/message.txt
+                echo "This is secret data!" | ${pkgs.minio-client}/bin/mc cp - local/test-bucket/message.txt
                 echo "---------------------------------------------------"
                 echo "🔍 VERIFICATION CHECKS:"
                 # Check A: Keys (mc handles signing internally)
