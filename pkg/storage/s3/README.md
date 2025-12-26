@@ -155,9 +155,9 @@ go test ./pkg/storage/s3/...
 To migrate from local storage to S3 storage:
 
 1. Create an S3 bucket or MinIO instance
-2. Configure the S3 storage with appropriate credentials
-3. Replace the local storage initialization with S3 storage
-4. The rest of your application code remains unchanged
+1. Configure the S3 storage with appropriate credentials
+1. Replace the local storage initialization with S3 storage
+1. The rest of your application code remains unchanged
 
 ```go
 // Before (local storage)
