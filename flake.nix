@@ -13,7 +13,7 @@
       url = "github:cachix/git-hooks.nix";
     };
 
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     treefmt-nix = {
       inputs.nixpkgs.follows = "nixpkgs";

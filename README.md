@@ -432,10 +432,13 @@ go build .
 
 ## ⚙️ Configuration
 
+All the flags can be set using the configuration file. See config.example.yaml for reference.
+
 ### Global Options
 
 | Option | Description | Environment Variable | Default |
-| ---------------------- | ----------------------------------------------- | -------------------- | ------- |
+| ---------------------- | ------------------------------------------------- | -------------------- | ----------------------------------- |
+| `--config` | Path to the configuration file (json, toml, yaml) | `NCPS_CONFIG_FILE` | `$XDG_CONFIG_HOME/ncps/config.yaml` |
 | `--otel-enabled` | Enable OpenTelemetry logs, metrics, and tracing | `OTEL_ENABLED` | `false` |
 | `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics | `PROMETHEUS_ENABLED` | `false` |
 | `--log-level` | Set log level: debug, info, warn, error | `LOG_LEVEL` | `info` |

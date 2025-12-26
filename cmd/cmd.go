@@ -7,9 +7,13 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/urfave/cli-altsrc/v3/json"
+	"github.com/urfave/cli-altsrc/v3/toml"
+	"github.com/urfave/cli-altsrc/v3/yaml"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -24,6 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 
+	altsrc "github.com/urfave/cli-altsrc/v3"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -37,10 +42,33 @@ import (
 //nolint:gochecknoglobals
 var Version = "dev"
 
-func New() *cli.Command {
+type flagSourcesFn func(configFileKey, envVar string) cli.ValueSourceChain
+
+type userDirectories struct {
+	configDir string
+	homeDir   string
+}
+
+func New() (*cli.Command, error) {
 	var otelShutdown func(context.Context) error
 
-	return &cli.Command{
+	var configPath string
+
+	flagSources := func(configFileKey, envVar string) cli.ValueSourceChain {
+		return cli.NewValueSourceChain(
+			toml.TOML(configFileKey, altsrc.NewStringPtrSourcer(&configPath)),
+			yaml.YAML(configFileKey, altsrc.NewStringPtrSourcer(&configPath)),
+			json.JSON(configFileKey, altsrc.NewStringPtrSourcer(&configPath)),
+			cli.EnvVar(envVar),
+		)
+	}
+
+	userDirs, err := getUserDirs()
+	if err != nil {
+		return nil, err
+	}
+
+	c := &cli.Command{
 		Name:    "ncps",
 		Usage:   "Nix Binary Cache Proxy Service",
 		Version: Version,
@@ -53,6 +81,7 @@ func New() *cli.Command {
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
+
 			otelShutdown, err = setupOTelSDK(ctx, cmd)
 			if err != nil {
 				return ctx, err
@@ -100,12 +129,12 @@ func New() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "otel-enabled",
 				Usage:   "Enable Open-Telemetry logs, metrics and tracing.",
-				Sources: cli.EnvVars("OTEL_ENABLED"),
+				Sources: flagSources("opentelemetry.enabled", "OTEL_ENABLED"),
 			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set the log level",
-				Sources: cli.EnvVars("LOG_LEVEL"),
+				Sources: flagSources("log.level", "LOG_LEVEL"),
 				Value:   "info",
 				Validator: func(lvl string) error {
 					_, err := zerolog.ParseLevel(lvl)
@@ -117,7 +146,7 @@ func New() *cli.Command {
 				Name: "otel-grpc-url",
 				Usage: "Configure OpenTelemetry gRPC URL; Missing or https " +
 					"scheme enable secure gRPC, insecure otherwize. Omit to emit Telemetry to stdout.",
-				Sources: cli.EnvVars("OTEL_GRPC_URL"),
+				Sources: flagSources("opentelemetry.grpc-url", "OTEL_GRPC_URL"),
 				Value:   "",
 				Validator: func(colURL string) error {
 					_, err := url.Parse(colURL)
@@ -125,16 +154,40 @@ func New() *cli.Command {
 					return err
 				},
 			},
+			&cli.StringFlag{
+				Name:        "config",
+				Usage:       "Path to the configuration file (json, toml, yaml)",
+				Sources:     cli.EnvVars("NCPS_CONFIG_FILE"),
+				Value:       filepath.Join(userDirs.configDir, "ncps", "config.yaml"),
+				Destination: &configPath,
+			},
 			&cli.BoolFlag{
 				Name:    "prometheus-enabled",
 				Usage:   "Enable Prometheus metrics endpoint at /metrics",
-				Sources: cli.EnvVars("PROMETHEUS_ENABLED"),
+				Sources: flagSources("prometheus.enabled", "PROMETHEUS_ENABLED"),
 			},
 		},
-		Commands: []*cli.Command{
-			serveCommand(),
-		},
+		Commands: []*cli.Command{serveCommand(userDirs, flagSources)},
 	}
+
+	return c, nil
+}
+
+func getUserDirs() (userDirectories, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return userDirectories{}, fmt.Errorf("unable to determine user config directory: %w", err)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return userDirectories{}, fmt.Errorf("unable to determine user home directory: %w", err)
+	}
+
+	return userDirectories{
+		configDir: configDir,
+		homeDir:   homeDir,
+	}, nil
 }
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.

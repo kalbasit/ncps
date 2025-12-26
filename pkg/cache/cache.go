@@ -296,6 +296,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	defer span.End()
 
 	var metricAttrs []attribute.KeyValue
+
 	defer func() {
 		narServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
@@ -694,7 +695,7 @@ func (c *Cache) getNarFromStore(
 		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
 	}
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -833,6 +834,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	defer span.End()
 
 	var metricAttrs []attribute.KeyValue
+
 	defer func() {
 		narInfoServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
@@ -1234,7 +1236,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return nil, errNarInfoPurged
 	}
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -1333,7 +1335,7 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -1399,7 +1401,7 @@ func (c *Cache) storeInDatabase(
 		Info().
 		Msg("storing narinfo and nar record in the database")
 
-	tx, err := c.db.DB().Begin()
+	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error beginning a transaction: %w", err)
 	}
@@ -1560,7 +1562,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 
 		log.Info().Msg("running LRU")
 
-		tx, err := c.db.DB().Begin()
+		tx, err := c.db.DB().BeginTx(ctx, nil)
 		if err != nil {
 			log.Error().Err(err).Msg("error beginning a transaction")
 

@@ -41,6 +41,7 @@ func TestServeHTTP(t *testing.T) {
 	t.Run("GET /pubkey", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -87,6 +88,7 @@ func TestServeHTTP(t *testing.T) {
 	t.Run("DELETE requests", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -226,6 +228,7 @@ func TestServeHTTP(t *testing.T) {
 	t.Run("GET requests", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -342,6 +345,7 @@ func TestServeHTTP(t *testing.T) {
 	t.Run("PUT requests", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")

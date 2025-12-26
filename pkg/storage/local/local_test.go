@@ -51,6 +51,7 @@ func TestNew(t *testing.T) {
 
 		f, err := os.CreateTemp("", "somefile")
 		require.NoError(t, err)
+
 		defer os.Remove(f.Name())
 
 		_, err = local.New(newContext(), f.Name())
@@ -62,6 +63,7 @@ func TestNew(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		require.NoError(t, os.Chmod(dir, 0o500))
@@ -82,6 +84,7 @@ func TestNew(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		_, err = local.New(newContext(), dir)
@@ -108,6 +111,7 @@ func TestNew(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		// create the directory tmp and add a file inside of it
@@ -132,6 +136,7 @@ func TestGetSecretKey(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		s, err := local.New(newContext(), dir)
@@ -146,6 +151,7 @@ func TestGetSecretKey(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -177,6 +183,7 @@ func TestPutSecretKey(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -206,6 +213,7 @@ func TestPutSecretKey(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -238,6 +246,7 @@ func TestDeleteSecretKey(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		s, err := local.New(newContext(), dir)
@@ -252,6 +261,7 @@ func TestDeleteSecretKey(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -282,6 +292,7 @@ func TestHasNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -297,6 +308,7 @@ func TestHasNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -328,6 +340,7 @@ func TestGetNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -344,6 +357,7 @@ func TestGetNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -381,6 +395,7 @@ func TestPutNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -421,6 +436,7 @@ func TestPutNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -456,6 +472,7 @@ func TestDeleteNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -474,6 +491,7 @@ func TestDeleteNarInfo(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -507,6 +525,7 @@ func TestHasNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -527,6 +546,7 @@ func TestHasNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -563,6 +583,7 @@ func TestGetNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -585,6 +606,7 @@ func TestGetNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -634,6 +656,7 @@ func TestPutNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -676,6 +699,7 @@ func TestPutNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -713,6 +737,7 @@ func TestDeleteNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
@@ -736,6 +761,7 @@ func TestDeleteNar(t *testing.T) {
 
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
+
 		defer os.RemoveAll(dir) // clean up
 
 		ctx := newContext()
