@@ -22,7 +22,7 @@ Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev 
 go test -race ./...
 
 # Run a single test
-go test -race -run TestName ./pkg/package/...
+go test -race -run TestName ./pkg/server/...
 
 # Lint code
 golangci-lint run
@@ -31,7 +31,7 @@ golangci-lint run
 sqlc generate
 
 # Run database migrations manually
-dbmate --url "sqlite:/path/to/db.sqlite" up
+dbmate --url "sqlite:/path/to/your/db.sqlite" up
 
 # Build
 go build .
@@ -62,7 +62,7 @@ Storage uses interface-based abstraction:
 - `NarInfoStore` - NarInfo metadata storage
 - `NarStore` - NAR file storage
 
-The local backend implement these interfaces.
+The local backend implements these interfaces.
 
 ### Database
 
