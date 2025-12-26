@@ -74,7 +74,7 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	}
 
 	// Create MinIO client
-	client, err := minio.New(cfg.Endpoint, &minio.Options{
+client, err := minio.New(GetEndpointWithoutScheme(cfg.Endpoint), &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		Secure: cfg.UseSSL,
 		Region: cfg.Region,
