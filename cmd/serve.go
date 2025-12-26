@@ -389,6 +389,17 @@ func createCache(
 			useSSL = false
 		}
 
+		ctx = zerolog.Ctx(ctx).
+			With().
+			Str("bucket", s3Bucket).
+			Str("endpoint", endpoint).
+			Bool("use_ssl", useSSL).
+			Logger().
+			WithContext(ctx)
+
+		zerolog.Ctx(ctx).Debug().
+			Msg("creating S3 storage")
+
 		s3Cfg := s3.Config{
 			Bucket:          s3Bucket,
 			Region:          cmd.String("storage-s3-region"),
@@ -408,9 +419,6 @@ func createCache(
 		narStore = s3Store
 
 		zerolog.Ctx(ctx).Info().
-			Str("bucket", s3Bucket).
-			Str("endpoint", endpoint).
-			Bool("use_ssl", useSSL).
 			Msg("using S3 storage")
 
 	default:
