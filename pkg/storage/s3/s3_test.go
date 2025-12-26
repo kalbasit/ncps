@@ -168,10 +168,11 @@ func getTestConfig(t *testing.T) *s3.Config {
 	// Skip if S3 test endpoint is not configured
 	endpoint := os.Getenv("NCPS_TEST_S3_ENDPOINT")
 	bucket := os.Getenv("NCPS_TEST_S3_BUCKET")
+	region := os.Getenv("NCPS_TEST_S3_REGION")
 	accessKeyID := os.Getenv("NCPS_TEST_S3_ACCESS_KEY_ID")
 	secretAccessKey := os.Getenv("NCPS_TEST_S3_SECRET_ACCESS_KEY")
 
-	if endpoint == "" || bucket == "" || accessKeyID == "" || secretAccessKey == "" {
+	if endpoint == "" || bucket == "" || region == "" || accessKeyID == "" || secretAccessKey == "" {
 		t.Skip("Skipping S3 integration test: S3 environment variables not set")
 
 		return nil
@@ -179,6 +180,7 @@ func getTestConfig(t *testing.T) *s3.Config {
 
 	return &s3.Config{
 		Bucket:          bucket,
+		Region:          region,
 		Endpoint:        s3.GetEndpointWithoutScheme(endpoint),
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,

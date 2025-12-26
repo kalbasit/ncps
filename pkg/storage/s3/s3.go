@@ -74,7 +74,7 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	}
 
 	// Create MinIO client
-client, err := minio.New(GetEndpointWithoutScheme(cfg.Endpoint), &minio.Options{
+	client, err := minio.New(GetEndpointWithoutScheme(cfg.Endpoint), &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		Secure: cfg.UseSSL,
 		Region: cfg.Region,
@@ -144,6 +144,12 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 		),
 	)
 	defer span.End()
+
+	// TODO: There's a possible race condition here that is only relevant if/when
+	// ncps achieves high availability; It currently only runs as a single
+	// process. If/when that is achieved, we can fixed this with a distributed
+	// lock.
+	// https://github.com/kalbasit/ncps/pull/353#discussion_r2648008530
 
 	// Check if key already exists
 	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
