@@ -29,7 +29,25 @@ cache:
   # The hostname of the cache server
   hostname: "ncps.mycompany.tld"
   # The local data path used for configuration and cache storage
+  # Use this OR S3 storage (storage.s3.bucket) - not both
   data-path: "/var/lib/ncps"
+
+# S3 Storage configuration (alternative to cache.data-path)
+# Use this for storing cache data in S3-compatible storage (AWS S3, MinIO, etc.)
+storage:
+  s3:
+    # S3 bucket name (use this OR cache.data-path - not both)
+    # bucket: "ncps-cache"
+    # S3-compatible endpoint URL (e.g., s3.amazonaws.com or minio.example.com:9000)
+    # endpoint: "s3.amazonaws.com"
+    # AWS region (optional)
+    # region: "us-east-1"
+    # S3 access key ID
+    # access-key-id: "your-access-key"
+    # S3 secret access key
+    # secret-access-key: "your-secret-key"
+    # Use SSL/TLS for S3 connection (default: true)
+    # use-ssl: true
   # The URL of the database
   database-url: "sqlite:/var/lib/ncps/db/db.sqlite"
   # The maximum size of the store. It can be given with units such as 5K, 10G

@@ -1,16 +1,15 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
@@ -25,6 +24,9 @@ import (
 
 const (
 	otelPackageName = "github.com/kalbasit/ncps/pkg/storage/s3"
+
+	// s3NoSuchKey is the S3 error code for objects that don't exist.
+	s3NoSuchKey = "NoSuchKey"
 )
 
 var (
@@ -47,7 +49,7 @@ func init() {
 type Config struct {
 	// Bucket is the S3 bucket name
 	Bucket string
-	// Region is the AWS region (optional, will be auto-detected if empty)
+	// Region is the AWS region (optional)
 	Region string
 	// Endpoint is the S3-compatible endpoint URL (for MinIO, etc.)
 	Endpoint string
@@ -55,25 +57,14 @@ type Config struct {
 	AccessKeyID string
 	// SecretAccessKey is the secret key for authentication
 	SecretAccessKey string
-	// UsePathStyle forces path-style addressing (required for MinIO)
-	UsePathStyle bool
-	// DisableSSL disables SSL/TLS (for local development)
-	DisableSSL bool
-}
-
-// Client interface for easier testing.
-type Client interface {
-	GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)
-	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
-	HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
-	DeleteObject(context.Context, *s3.DeleteObjectInput, ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
-	HeadBucket(context.Context, *s3.HeadBucketInput, ...func(*s3.Options)) (*s3.HeadBucketOutput, error)
+	// UseSSL enables SSL/TLS (default: true)
+	UseSSL bool
 }
 
 // Store represents an S3 store and implements storage.Store.
 type Store struct {
-	Client Client
-	Bucket string
+	client *minio.Client
+	bucket string
 }
 
 // New creates a new S3 store with the given configuration.
@@ -82,20 +73,14 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, err
 	}
 
-	// Create AWS config
-	awsCfg, err := CreateAWSConfig(ctx, cfg)
+	// Create MinIO client
+	client, err := minio.New(cfg.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure: cfg.UseSSL,
+		Region: cfg.Region,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("error creating AWS config: %w", err)
-	}
-
-	// Create S3 client with custom endpoint if provided
-	var client *s3.Client
-	if cfg.Endpoint != "" {
-		client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.Endpoint)
-		})
-	} else {
-		client = s3.NewFromConfig(awsCfg)
+		return nil, fmt.Errorf("error creating MinIO client: %w", err)
 	}
 
 	// Test bucket access
@@ -104,14 +89,14 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	}
 
 	return &Store{
-		Client: client,
-		Bucket: cfg.Bucket,
+		client: client,
+		bucket: cfg.Bucket,
 	}, nil
 }
 
 // GetSecretKey returns secret key from the store.
 func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
-	key := s.SecretKeyPath()
+	key := s.secretKeyPath()
 
 	_, span := tracer.Start(
 		ctx,
@@ -123,22 +108,19 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 	)
 	defer span.End()
 
-	result, err := s.Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
+		return signature.SecretKey{}, fmt.Errorf("error getting secret key from S3: %w", err)
+	}
+	defer obj.Close()
+
+	skc, err := io.ReadAll(obj)
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
 			return signature.SecretKey{}, storage.ErrNotFound
 		}
 
-		return signature.SecretKey{}, fmt.Errorf("error getting secret key from S3: %w", err)
-	}
-	defer result.Body.Close()
-
-	skc, err := io.ReadAll(result.Body)
-	if err != nil {
 		return signature.SecretKey{}, fmt.Errorf("error reading secret key: %w", err)
 	}
 
@@ -147,7 +129,7 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 
 // PutSecretKey stores the secret key in the store.
 func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error {
-	key := s.SecretKeyPath()
+	key := s.secretKeyPath()
 
 	_, span := tracer.Start(
 		ctx,
@@ -160,20 +142,27 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err == nil {
 		return storage.ErrAlreadyExists
 	}
 
+	errResp := minio.ToErrorResponse(err)
+	if errResp.Code != s3NoSuchKey {
+		return fmt.Errorf("error checking if secret key exists: %w", err)
+	}
+
 	// Put the secret key
-	_, err = s.Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-		Body:   strings.NewReader(sk.String()),
-	})
+	data := []byte(sk.String())
+
+	_, err = s.client.PutObject(
+		ctx,
+		s.bucket,
+		key,
+		bytes.NewReader(data),
+		int64(len(data)),
+		minio.PutObjectOptions{ContentType: "text/plain"},
+	)
 	if err != nil {
 		return fmt.Errorf("error putting secret key to S3: %w", err)
 	}
@@ -183,7 +172,7 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 
 // DeleteSecretKey deletes the secret key in the store.
 func (s *Store) DeleteSecretKey(ctx context.Context) error {
-	key := s.SecretKeyPath()
+	key := s.secretKeyPath()
 
 	_, span := tracer.Start(
 		ctx,
@@ -195,16 +184,19 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 	)
 	defer span.End()
 
-	_, err := s.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	// Check if key exists
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
 			return storage.ErrNotFound
 		}
 
+		return fmt.Errorf("error checking if secret key exists: %w", err)
+	}
+
+	err = s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	if err != nil {
 		return fmt.Errorf("error deleting secret key from S3: %w", err)
 	}
 
@@ -213,7 +205,7 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // HasNarInfo returns true if the store has the narinfo.
 func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
-	key := s.NarInfoPath(hash)
+	key := s.narInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -226,17 +218,14 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	)
 	defer span.End()
 
-	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 
 	return err == nil
 }
 
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	key := s.NarInfoPath(hash)
+	key := s.narInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -249,26 +238,29 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	)
 	defer span.End()
 
-	result, err := s.Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
+		return nil, fmt.Errorf("error getting narinfo from S3: %w", err)
+	}
+	defer obj.Close()
+
+	// Try to stat the object to check if it exists
+	_, err = obj.Stat()
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
 			return nil, storage.ErrNotFound
 		}
 
 		return nil, fmt.Errorf("error getting narinfo from S3: %w", err)
 	}
-	defer result.Body.Close()
 
-	return narinfo.Parse(result.Body)
+	return narinfo.Parse(obj)
 }
 
 // PutNarInfo puts the narinfo in the store.
 func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
-	key := s.NarInfoPath(hash)
+	key := s.narInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -282,20 +274,27 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err == nil {
 		return storage.ErrAlreadyExists
 	}
 
+	errResp := minio.ToErrorResponse(err)
+	if errResp.Code != s3NoSuchKey {
+		return fmt.Errorf("error checking if narinfo exists: %w", err)
+	}
+
 	// Put the narinfo
-	_, err = s.Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-		Body:   strings.NewReader(narInfo.String()),
-	})
+	data := []byte(narInfo.String())
+
+	_, err = s.client.PutObject(
+		ctx,
+		s.bucket,
+		key,
+		bytes.NewReader(data),
+		int64(len(data)),
+		minio.PutObjectOptions{ContentType: "text/x-nix-narinfo"},
+	)
 	if err != nil {
 		return fmt.Errorf("error putting narinfo to S3: %w", err)
 	}
@@ -305,7 +304,7 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 
 // DeleteNarInfo deletes the narinfo from the store.
 func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
-	key := s.NarInfoPath(hash)
+	key := s.narInfoPath(hash)
 
 	_, span := tracer.Start(
 		ctx,
@@ -318,16 +317,19 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	)
 	defer span.End()
 
-	_, err := s.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	// Check if key exists
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
 			return storage.ErrNotFound
 		}
 
+		return fmt.Errorf("error checking if narinfo exists: %w", err)
+	}
+
+	err = s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	if err != nil {
 		return fmt.Errorf("error deleting narinfo from S3: %w", err)
 	}
 
@@ -336,7 +338,7 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 
 // HasNar returns true if the store has the nar.
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
-	key := s.NarPath(narURL)
+	key := s.narPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -349,10 +351,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	)
 	defer span.End()
 
-	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 
 	return err == nil
 }
@@ -360,7 +359,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 // GetNar returns nar from the store.
 // NOTE: The caller must close the returned io.ReadCloser!
 func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
-	key := s.NarPath(narURL)
+	key := s.narPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -373,29 +372,30 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	)
 	defer span.End()
 
-	result, err := s.Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
-			return 0, nil, storage.ErrNotFound
-		}
-
 		return 0, nil, fmt.Errorf("error getting nar from S3: %w", err)
 	}
 
-	if result.ContentLength != nil {
-		return *result.ContentLength, result.Body, nil
+	// Get object info for size
+	info, err := obj.Stat()
+	if err != nil {
+		obj.Close()
+
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
+			return 0, nil, storage.ErrNotFound
+		}
+
+		return 0, nil, fmt.Errorf("error getting nar info from S3: %w", err)
 	}
 
-	return 0, result.Body, nil
+	return info.Size, obj, nil
 }
 
 // PutNar puts the nar in the store.
 func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
-	key := s.NarPath(narURL)
+	key := s.narPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -409,33 +409,41 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.Client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err == nil {
 		return 0, storage.ErrAlreadyExists
 	}
 
-	// Put the nar
-	_, err = s.Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-		Body:   body,
-	})
+	errResp := minio.ToErrorResponse(err)
+	if errResp.Code != s3NoSuchKey {
+		return 0, fmt.Errorf("error checking if nar exists: %w", err)
+	}
+
+	// Determine content type based on compression
+	contentType := "application/x-nix-nar"
+	if ext := narURL.Compression.ToFileExtension(); ext != "" {
+		contentType = "application/x-nix-nar-" + ext
+	}
+
+	// Put the nar - MinIO handles streaming uploads
+	info, err := s.client.PutObject(
+		ctx,
+		s.bucket,
+		key,
+		body,
+		-1, // unknown size, MinIO will handle it
+		minio.PutObjectOptions{ContentType: contentType},
+	)
 	if err != nil {
 		return 0, fmt.Errorf("error putting nar to S3: %w", err)
 	}
 
-	// Since we can't get the content length from PutObject, we'll need to read the body
-	// to calculate it. This is not ideal but necessary for the interface.
-	// In a real implementation, you might want to track this separately or use a different approach.
-	return 0, nil
+	return info.Size, nil
 }
 
 // DeleteNar deletes the nar from the store.
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
-	key := s.NarPath(narURL)
+	key := s.narPath(narURL)
 
 	_, span := tracer.Start(
 		ctx,
@@ -448,16 +456,19 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	)
 	defer span.End()
 
-	_, err := s.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(s.Bucket),
-		Key:    aws.String(key),
-	})
+	// Check if key exists
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
-		var noSuchKey *types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
 			return storage.ErrNotFound
 		}
 
+		return fmt.Errorf("error checking if nar exists: %w", err)
+	}
+
+	err = s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	if err != nil {
 		return fmt.Errorf("error deleting nar from S3: %w", err)
 	}
 
@@ -465,22 +476,26 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 }
 
 // Helper methods for key generation.
-func (s *Store) SecretKeyPath() string {
+func (s *Store) secretKeyPath() string {
 	return "config/cache.key"
 }
 
-func (s *Store) NarInfoPath(hash string) string {
+func (s *Store) narInfoPath(hash string) string {
 	return "store/narinfo/" + helper.NarInfoFilePath(hash)
 }
 
-func (s *Store) NarPath(narURL nar.URL) string {
+func (s *Store) narPath(narURL nar.URL) string {
 	return "store/nar/" + narURL.ToFilePath()
 }
 
-// Helper functions.
+// ValidateConfig validates the S3 configuration.
 func ValidateConfig(cfg Config) error {
 	if cfg.Bucket == "" {
 		return fmt.Errorf("%w: bucket name is required", ErrInvalidConfig)
+	}
+
+	if cfg.Endpoint == "" {
+		return fmt.Errorf("%w: endpoint is required", ErrInvalidConfig)
 	}
 
 	if cfg.AccessKeyID == "" {
@@ -494,41 +509,35 @@ func ValidateConfig(cfg Config) error {
 	return nil
 }
 
-func CreateAWSConfig(ctx context.Context, cfg Config) (aws.Config, error) {
-	var opts []func(*config.LoadOptions) error
-
-	// Set region if provided
-	if cfg.Region != "" {
-		opts = append(opts, config.WithRegion(cfg.Region))
-	}
-
-	// Set credentials
-	opts = append(opts, config.WithCredentialsProvider(aws.CredentialsProviderFunc(
-		func(context.Context) (aws.Credentials, error) {
-			return aws.Credentials{
-				AccessKeyID:     cfg.AccessKeyID,
-				SecretAccessKey: cfg.SecretAccessKey,
-			}, nil
-		},
-	)))
-
-	// Set S3 options
-	opts = append(opts, config.WithClientLogMode(aws.LogRequestWithBody|aws.LogResponseWithBody))
-
-	return config.LoadDefaultConfig(ctx, opts...)
-}
-
-func testBucketAccess(ctx context.Context, client *s3.Client, bucket string) error {
+func testBucketAccess(ctx context.Context, client *minio.Client, bucket string) error {
 	log := zerolog.Ctx(ctx)
 
-	_, err := client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: aws.String(bucket),
-	})
+	exists, err := client.BucketExists(ctx, bucket)
 	if err != nil {
-		log.Error().Err(err).Str("bucket", bucket).Msg("error accessing bucket")
+		log.Error().Err(err).Str("bucket", bucket).Msg("error checking bucket existence")
+
+		return fmt.Errorf("error checking bucket existence: %w", err)
+	}
+
+	if !exists {
+		log.Error().Str("bucket", bucket).Msg("bucket does not exist")
 
 		return fmt.Errorf("%w: %s", ErrBucketNotFound, bucket)
 	}
 
 	return nil
+}
+
+// GetEndpointWithoutScheme returns the endpoint without the scheme prefix.
+// This is useful since MinIO SDK expects endpoint without scheme.
+func GetEndpointWithoutScheme(endpoint string) string {
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+
+	return endpoint
+}
+
+// IsHTTPS returns true if the endpoint uses HTTPS.
+func IsHTTPS(endpoint string) bool {
+	return strings.HasPrefix(endpoint, "https://")
 }

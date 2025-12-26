@@ -8,19 +8,18 @@ import (
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 )
 
-// Example demonstrates how to use the S3 storage implementation.
+// Example demonstrates how to use the S3 storage implementation with AWS S3.
 func Example() {
 	ctx := context.Background()
 
-	// Create S3 configuration
+	// Create S3 configuration for AWS S3
 	cfg := Config{
 		Bucket:          "my-nix-cache",
-		Region:          "us-west-2", // Optional, will auto-detect if empty
+		Region:          "us-west-2", // Optional for AWS
+		Endpoint:        "s3.us-west-2.amazonaws.com",
 		AccessKeyID:     "your-access-key",
 		SecretAccessKey: "your-secret-key",
-		// For MinIO, you would also set:
-		// Endpoint: "http://localhost:9000",
-		// UsePathStyle: true,
+		UseSSL:          true, // Always use SSL for AWS
 	}
 
 	// Create S3 store
@@ -62,13 +61,13 @@ func ExampleMinIO() {
 	ctx := context.Background()
 
 	// Create MinIO configuration
+	// For MinIO, the endpoint should be without the scheme
 	cfg := Config{
 		Bucket:          "my-nix-cache",
-		Endpoint:        "http://localhost:9000",
+		Endpoint:        "localhost:9000", // Without scheme
 		AccessKeyID:     "minioadmin",
 		SecretAccessKey: "minioadmin",
-		UsePathStyle:    true, // Required for MinIO
-		DisableSSL:      true, // For local development
+		UseSSL:          false, // Set to false for local development without TLS
 	}
 
 	// Create S3 store
