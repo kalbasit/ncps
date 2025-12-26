@@ -114,13 +114,17 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 	}
 	defer obj.Close()
 
-	skc, err := io.ReadAll(obj)
-	if err != nil {
-		errResp := minio.ToErrorResponse(err)
-		if errResp.Code == s3NoSuchKey {
+	// Check for object existence before reading
+	if _, err := obj.Stat(); err != nil {
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
 			return signature.SecretKey{}, storage.ErrNotFound
 		}
 
+		return signature.SecretKey{}, fmt.Errorf("error getting secret key stat from S3: %w", err)
+	}
+
+	skc, err := io.ReadAll(obj)
+	if err != nil {
 		return signature.SecretKey{}, fmt.Errorf("error reading secret key: %w", err)
 	}
 
