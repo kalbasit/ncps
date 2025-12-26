@@ -15,6 +15,8 @@
 
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
+    process-compose-flake.url = "github:Platonic-Systems/process-compose-flake";
+
     treefmt-nix = {
       inputs.nixpkgs.follows = "nixpkgs";
       url = "github:numtide/treefmt-nix";
@@ -30,6 +32,7 @@
         ./nix/formatter/flake-module.nix
         ./nix/packages/flake-module.nix
         ./nix/pre-commit/flake-module.nix
+        ./nix/process-compose/flake-module.nix
       ];
       systems = [
         "x86_64-linux"
