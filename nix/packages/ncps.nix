@@ -76,13 +76,13 @@
             # Start MinIO server in background
             ${pkgs.minio}/bin/minio server "$MINIO_DATA_DIR" \
               --address "$NCPS_TEST_S3_ENDPOINT" \
-              --console-address "127.0.0.1:$CONSOLE_PORT" > /dev/null 2>&1 &
+              --console-address "127.0.0.1:$CONSOLE_PORT" &
             export MINIO_PID=$!
 
             # Wait for MinIO to be ready
             echo "⏳ Waiting for MinIO to be ready..."
             for i in {1..30}; do
-              if ${pkgs.curl}/bin/curl -sf "$NCPS_TEST_S3_ENDPOINT/minio/health/live" > /dev/null 2>&1; then
+              if ${pkgs.curl}/bin/curl -sf "$NCPS_TEST_S3_ENDPOINT/minio/health/live"; then
                 echo "✅ MinIO is ready"
                 break
               fi
@@ -95,16 +95,16 @@
             done
 
             # Setup admin alias
-            ${pkgs.minio-client}/bin/mc alias set local "$NCPS_TEST_S3_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null
+            ${pkgs.minio-client}/bin/mc alias set local "$NCPS_TEST_S3_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
 
             # Create test bucket
-            ${pkgs.minio-client}/bin/mc mb "local/$NCPS_TEST_S3_BUCKET" > /dev/null 2>&1 || true
+            ${pkgs.minio-client}/bin/mc mb "local/$NCPS_TEST_S3_BUCKET" || true
 
             # Create service account for tests
             ${pkgs.minio-client}/bin/mc admin user svcacct add \
               --access-key "$NCPS_TEST_S3_ACCESS_KEY_ID" \
               --secret-key "$NCPS_TEST_S3_SECRET_ACCESS_KEY" \
-              local admin > /dev/null 2>&1 || true
+              local admin || true
 
             echo "✅ MinIO configured for S3 integration tests"
           '';
