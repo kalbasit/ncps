@@ -48,6 +48,7 @@ nix build
 - `pkg/cache/` - Core caching logic and upstream cache fetching
 - `pkg/storage/` - Storage abstraction layer with implementations:
   - `storage/local/` - Local filesystem storage
+  - `storage/s3/` - S3-compatible storage (including MinIO)
 - `pkg/server/` - HTTP server using Chi router
 - `pkg/database/` - SQLite database layer (sqlc-generated code)
 - `pkg/nar/` - NAR (Nix ARchive) format handling
@@ -62,7 +63,7 @@ Storage uses interface-based abstraction:
 - `NarInfoStore` - NarInfo metadata storage
 - `NarStore` - NAR file storage
 
-The local backend implements these interfaces.
+Both local and S3 backends implement these interfaces.
 
 ### Database
 
