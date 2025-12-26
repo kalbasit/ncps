@@ -38,15 +38,15 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 
 ## ✨ Key Features
 
-| Feature | Description |
+| Feature                 | Description                                        |
 | ----------------------- | -------------------------------------------------- |
-| 🚀 **Easy Setup** | Simple configuration and deployment |
-| 🔄 **Multi-Upstream** | Support for multiple upstream caches with failover |
-| 💾 **Smart Caching** | LRU cache management with configurable size limits |
-| 🔐 **Secure Signing** | Signs cached paths with private keys for integrity |
-| 📊 **Monitoring** | OpenTelemetry support for centralized logging |
-| 🗜️ **Compression** | Harmonia's transparent zstd compression support |
-| 💾 **Embedded Storage** | Built-in SQLite database for easy deployment |
+| 🚀 **Easy Setup**       | Simple configuration and deployment                |
+| 🔄 **Multi-Upstream**   | Support for multiple upstream caches with failover |
+| 💾 **Smart Caching**    | LRU cache management with configurable size limits |
+| 🔐 **Secure Signing**   | Signs cached paths with private keys for integrity |
+| 📊 **Monitoring**       | OpenTelemetry support for centralized logging      |
+| 🗜️ **Compression**      | Harmonia's transparent zstd compression support    |
+| 💾 **Embedded Storage** | Built-in SQLite database for easy deployment       |
 
 ## ⚙️ How It Works
 
@@ -98,7 +98,7 @@ docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/dbmate --url=sqlite:
 docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
   /bin/ncps serve \
   --cache-hostname=your-ncps-hostname \
-  --cache-data-path=/storage \
+  --cache-storage-local=/storage \
   --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
   --upstream-cache=https://cache.nixos.org \
   --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
@@ -140,7 +140,7 @@ docker run -d \
   kalbasit/ncps \
   /bin/ncps serve \
   --cache-hostname=your-ncps-hostname \
-  --cache-data-path=/storage \
+  --cache-storage-local=/storage \
   --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
   --upstream-cache=https://cache.nixos.org \
   --upstream-cache=https://nix-community.cachix.org \
@@ -192,7 +192,7 @@ services:
     command: >
       /bin/ncps serve
       --cache-hostname=your-ncps-hostname
-      --cache-data-path=/storage
+      --cache-storage-local=/storage
       --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
       --upstream-cache=https://cache.nixos.org
       --upstream-cache=https://nix-community.cachix.org
@@ -286,7 +286,7 @@ spec:
             - /bin/ncps
             - serve
             - --cache-hostname=ncps.yournetwork.local # TODO: Replace with your own hostname
-            - --cache-data-path=/storage
+            - --cache-storage-local=/storage
             - --cache-temp-path=/nar-temp-dir
             - --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
             - --upstream-cache=https://cache.nixos.org
@@ -436,49 +436,49 @@ All the flags can be set using the configuration file. See config.example.yaml f
 
 ### Global Options
 
-| Option | Description | Environment Variable | Default |
+| Option                 | Description                                       | Environment Variable | Default                             |
 | ---------------------- | ------------------------------------------------- | -------------------- | ----------------------------------- |
-| `--config` | Path to the configuration file (json, toml, yaml) | `NCPS_CONFIG_FILE` | `$XDG_CONFIG_HOME/ncps/config.yaml` |
-| `--otel-enabled` | Enable OpenTelemetry logs, metrics, and tracing | `OTEL_ENABLED` | `false` |
-| `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics | `PROMETHEUS_ENABLED` | `false` |
-| `--log-level` | Set log level: debug, info, warn, error | `LOG_LEVEL` | `info` |
-| `--otel-grpc-url` | OpenTelemetry gRPC URL (omit for stdout) | `OTEL_GRPC_URL` | - |
+| `--config`             | Path to the configuration file (json, toml, yaml) | `NCPS_CONFIG_FILE`   | `$XDG_CONFIG_HOME/ncps/config.yaml` |
+| `--otel-enabled`       | Enable OpenTelemetry logs, metrics, and tracing   | `OTEL_ENABLED`       | `false`                             |
+| `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics    | `PROMETHEUS_ENABLED` | `false`                             |
+| `--log-level`          | Set log level: debug, info, warn, error           | `LOG_LEVEL`          | `info`                              |
+| `--otel-grpc-url`      | OpenTelemetry gRPC URL (omit for stdout)          | `OTEL_GRPC_URL`      | -                                   |
 
 ### Server Configuration
 
 #### 🔧 Essential Options
 
-| Option | Description | Environment Variable | Required |
+| Option                  | Description                           | Environment Variable   | Required |
 | ----------------------- | ------------------------------------- | ---------------------- | -------- |
-| `--cache-hostname` | **Cache hostname for key generation** | `CACHE_HOSTNAME` | ✅ |
-| `--cache-data-path` | Local storage directory | `CACHE_DATA_PATH` | ✅ |
-| `--upstream-cache` | Upstream cache URL (repeatable) | `UPSTREAM_CACHES` | ✅ |
-| `--upstream-public-key` | Upstream public key (repeatable) | `UPSTREAM_PUBLIC_KEYS` | ✅ |
+| `--cache-hostname`      | **Cache hostname for key generation** | `CACHE_HOSTNAME`       | ✅       |
+| `--cache-storage-local` | Local storage directory               | `CACHE_STORAGE_LOCAL`  | ✅       |
+| `--upstream-cache`      | Upstream cache URL (repeatable)       | `UPSTREAM_CACHES`      | ✅       |
+| `--upstream-public-key` | Upstream public key (repeatable)      | `UPSTREAM_PUBLIC_KEYS` | ✅       |
 
 #### 📊 Storage & Performance
 
-| Option | Description | Environment Variable | Default |
+| Option                 | Description                    | Environment Variable | Default         |
 | ---------------------- | ------------------------------ | -------------------- | --------------- |
-| `--cache-database-url` | Database URL (SQLite only) | `CACHE_DATABASE_URL` | embedded SQLite |
-| `--cache-max-size` | Max cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE` | unlimited |
-| `--cache-lru-schedule` | Cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
-| `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
+| `--cache-database-url` | Database URL (SQLite only)     | `CACHE_DATABASE_URL` | embedded SQLite |
+| `--cache-max-size`     | Max cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE`     | unlimited       |
+| `--cache-lru-schedule` | Cleanup cron schedule          | `CACHE_LRU_SCHEDULE` | -               |
+| `--cache-temp-path`    | Temporary download directory   | `CACHE_TEMP_PATH`    | system temp     |
 
 #### 🔐 Security & Signing
 
-| Option | Description | Environment Variable | Default |
+| Option                      | Description                          | Environment Variable      | Default        |
 | --------------------------- | ------------------------------------ | ------------------------- | -------------- |
-| `--cache-sign-narinfo` | Sign narInfo files | `CACHE_SIGN_NARINFO` | `true` |
-| `--cache-secret-key-path` | Path to signing key | `CACHE_SECRET_KEY_PATH` | auto-generated |
-| `--cache-allow-put-verb` | Allow PUT uploads | `CACHE_ALLOW_PUT_VERB` | `false` |
-| `--cache-allow-delete-verb` | Allow DELETE operations | `CACHE_ALLOW_DELETE_VERB` | `false` |
-| `--netrc-file` | Path to netrc file for upstream auth | `NETRC_FILE` | `~/.netrc` |
+| `--cache-sign-narinfo`      | Sign narInfo files                   | `CACHE_SIGN_NARINFO`      | `true`         |
+| `--cache-secret-key-path`   | Path to signing key                  | `CACHE_SECRET_KEY_PATH`   | auto-generated |
+| `--cache-allow-put-verb`    | Allow PUT uploads                    | `CACHE_ALLOW_PUT_VERB`    | `false`        |
+| `--cache-allow-delete-verb` | Allow DELETE operations              | `CACHE_ALLOW_DELETE_VERB` | `false`        |
+| `--netrc-file`              | Path to netrc file for upstream auth | `NETRC_FILE`              | `~/.netrc`     |
 
 #### 🌐 Network
 
-| Option | Description | Environment Variable | Default |
+| Option          | Description             | Environment Variable | Default |
 | --------------- | ----------------------- | -------------------- | ------- |
-| `--server-addr` | Listen address and port | `SERVER_ADDR` | `:8501` |
+| `--server-addr` | Listen address and port | `SERVER_ADDR`        | `:8501` |
 
 ## 🔧 Client Setup
 
@@ -558,7 +558,7 @@ trusted-public-keys = your-ncps-hostname=<paste-public-key-here> cache.nixos.org
 **Required options:**
 
 - ✅ `--cache-hostname`
-- ✅ `--cache-data-path`
+- ✅ `--cache-storage-local` or (`--cache-storage-s3-bucket` and other `--cache-storage-s3-*` such as endpoint and credentials)
 - ✅ `--cache-database-url`
 - ✅ At least one `--upstream-cache` and `--upstream-public-key`
 
@@ -631,18 +631,15 @@ Contributions are welcome! Here's how to get started:
    The script auto-restarts on code changes using `watchexec`.
 
    **Storage Backends:**
-
    - **local**: Uses local filesystem storage (default, no dependencies)
    - **s3**: Uses S3-compatible storage via MinIO (requires `nix run .#deps`)
 
    **Dependencies Management:**
-
    - `nix run .#deps` starts MinIO server configured for local development
    - MinIO runs with self-validation to ensure proper setup
    - Configuration matches the S3 settings in the dev script
 
 1. **Submit your changes:**
-
    - 🐛 Open issues for bugs
    - ✨ Submit pull requests for features
    - 📚 Improve documentation
@@ -653,13 +650,13 @@ Contributions are welcome! Here's how to get started:
 - 💬 Start a [discussion](https://github.com/kalbasit/ncps/discussions)
 - 📧 Contact maintainers
 
-______________________________________________________________________
+---
 
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](/LICENSE) file for details.
 
-______________________________________________________________________
+---
 
 <div align="center">
 

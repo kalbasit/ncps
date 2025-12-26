@@ -35,14 +35,14 @@ var (
 	ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
 
 	// ErrStorageConfigRequired is returned if neither local nor S3 storage is configured.
-	ErrStorageConfigRequired = errors.New("either --cache-data-path or --cache-storage-s3-bucket is required")
+	ErrStorageConfigRequired = errors.New("either --cache-storage-local or --cache-storage-s3-bucket is required")
 
 	ErrS3ConfigIncomplete = errors.New(
 		"S3 requires --cache-storage-s3-endpoint, --cache-storage-s3-access-key-id, and --cache-storage-s3-secret-access-key",
 	)
 
 	// ErrStorageConflict is returned if both local and S3 storage are configured.
-	ErrStorageConflict = errors.New("cannot use both --cache-data-path and --cache-storage-s3-bucket")
+	ErrStorageConflict = errors.New("cannot use both --cache-storage-local and --cache-storage-s3-bucket")
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -85,14 +85,20 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:    "cache-data-path",
-				Usage:   "The local data path used for configuration and cache storage (use this OR S3 storage)",
+				Name: "cache-data-path",
+				//nolint:lll
+				Usage:   "DEPRECATED: Use --storage-local-data-path instead. The local data path used for configuration and cache storage",
 				Sources: flagSources("cache.data-path", "CACHE_DATA_PATH"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-storage-local",
+				Usage:   "The local data path used for configuration and cache storage (use this OR S3 storage)",
+				Sources: flagSources("cache.storage.local", "CACHE_STORAGE_LOCAL"),
 			},
 			// S3 Storage flags
 			&cli.StringFlag{
 				Name:    "cache-storage-s3-bucket",
-				Usage:   "S3 bucket name for storage (use this OR --cache-data-path for local storage)",
+				Usage:   "S3 bucket name for storage (use this OR --cache-storage-local for local storage)",
 				Sources: flagSources("cache.storage.s3.bucket", "CACHE_STORAGE_S3_BUCKET"),
 			},
 			&cli.StringFlag{
@@ -335,15 +341,28 @@ func getStorageBackend(
 	ctx context.Context,
 	cmd *cli.Command,
 ) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
-	cacheDataPath := cmd.String("cache-data-path")
+	// Handle backward compatibility for cache-data-path (deprecated)
+	deprecatedDataPath := cmd.String("cache-data-path")
+	localDataPath := cmd.String("cache-storage-local")
 	s3Bucket := cmd.String("cache-storage-s3-bucket")
 
+	// Show deprecation warning if old flag is used
+	if deprecatedDataPath != "" {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--cache-data-path is deprecated, please use --cache-storage-local instead")
+
+		// Use deprecated value if new one is not set
+		if localDataPath == "" {
+			localDataPath = deprecatedDataPath
+		}
+	}
+
 	switch {
-	case cacheDataPath != "" && s3Bucket != "":
+	case localDataPath != "" && s3Bucket != "":
 		return nil, nil, nil, ErrStorageConflict
 
-	case cacheDataPath != "":
-		return createLocalStorage(ctx, cacheDataPath)
+	case localDataPath != "":
+		return createLocalStorage(ctx, localDataPath)
 
 	case s3Bucket != "":
 		return createS3Storage(ctx, cmd)
