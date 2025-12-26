@@ -28,6 +28,23 @@ EOF
 # Parse storage backend argument
 STORAGE_BACKEND="${1:-local}"
 
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    local|s3|minio)
+      STORAGE_BACKEND="$1"
+      shift
+      ;;
+    -h|--help|help)
+      usage
+      ;;
+    *)
+      echo "Error: Unknown storage backend '$1'"
+      echo ""
+      usage
+      ;;
+  esac
+fi
+
 case "$STORAGE_BACKEND" in
   local)
     echo "🗂️  Using local filesystem storage"
@@ -36,14 +53,6 @@ case "$STORAGE_BACKEND" in
     echo "☁️  Using S3-compatible storage (MinIO)"
     echo "⚠️  Make sure MinIO is running: nix run .#deps"
     STORAGE_BACKEND="s3"
-    ;;
-  -h|--help|help)
-    usage
-    ;;
-  *)
-    echo "Error: Unknown storage backend '$STORAGE_BACKEND'"
-    echo ""
-    usage
     ;;
 esac
 
