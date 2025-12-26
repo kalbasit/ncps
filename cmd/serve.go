@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -24,11 +25,25 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
+	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
+	"github.com/kalbasit/ncps/pkg/storage/s3"
 )
 
-// ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
-var ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
+var (
+	// ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
+	ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
+
+	// ErrStorageConfigRequired is returned if neither local nor S3 storage is configured.
+	ErrStorageConfigRequired = errors.New("either --cache-data-path or --cache-storage-s3-bucket is required")
+
+	ErrS3ConfigIncomplete = errors.New(
+		"S3 requires --cache-storage-s3-endpoint, --cache-storage-s3-access-key-id, and --cache-storage-s3-secret-access-key",
+	)
+
+	// ErrStorageConflict is returned if both local and S3 storage are configured.
+	ErrStorageConflict = errors.New("cannot use both --cache-data-path and --cache-storage-s3-bucket")
+)
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
 func parseNetrcFile(netrcPath string) (*netrc.Netrc, error) {
@@ -70,10 +85,41 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "cache-data-path",
-				Usage:    "The local data path used for configuration and cache storage",
-				Sources:  flagSources("cache.data-path", "CACHE_DATA_PATH"),
-				Required: true,
+				Name:    "cache-data-path",
+				Usage:   "The local data path used for configuration and cache storage (use this OR S3 storage)",
+				Sources: flagSources("cache.data-path", "CACHE_DATA_PATH"),
+			},
+			// S3 Storage flags
+			&cli.StringFlag{
+				Name:    "cache-storage-s3-bucket",
+				Usage:   "S3 bucket name for storage (use this OR --cache-data-path for local storage)",
+				Sources: flagSources("cache.storage.s3.bucket", "CACHE_STORAGE_S3_BUCKET"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-storage-s3-endpoint",
+				Usage:   "S3-compatible endpoint URL (e.g., s3.amazonaws.com or minio.example.com:9000)",
+				Sources: flagSources("cache.storage.s3.endpoint", "CACHE_STORAGE_S3_ENDPOINT"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-storage-s3-region",
+				Usage:   "S3 region (optional)",
+				Sources: flagSources("cache.storage.s3.region", "CACHE_STORAGE_S3_REGION"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-storage-s3-access-key-id",
+				Usage:   "S3 access key ID",
+				Sources: flagSources("cache.storage.s3.access-key-id", "CACHE_STORAGE_S3_ACCESS_KEY_ID"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-storage-s3-secret-access-key",
+				Usage:   "S3 secret access key",
+				Sources: flagSources("cache.storage.s3.secret-access-key", "CACHE_STORAGE_S3_SECRET_ACCESS_KEY"),
+			},
+			&cli.BoolFlag{
+				Name:    "cache-storage-s3-use-ssl",
+				Usage:   "Use SSL/TLS for S3 connection (default: true)",
+				Sources: flagSources("cache.storage.s3.use-ssl", "CACHE_STORAGE_S3_USE_SSL"),
+				Value:   true,
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
@@ -297,20 +343,97 @@ func createCache(
 		return nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
 	}
 
-	cacheDataPath := cmd.String("cache-data-path")
+	// Determine storage backend
+	var (
+		configStore  storage.ConfigStore
+		narInfoStore storage.NarInfoStore
+		narStore     storage.NarStore
+	)
 
-	localStore, err := local.New(ctx, cacheDataPath)
-	if err != nil {
-		return nil, fmt.Errorf("error creating a new local store at %q: %w", cacheDataPath, err)
+	cacheDataPath := cmd.String("cache-data-path")
+	s3Bucket := cmd.String("cache-storage-s3-bucket")
+
+	switch {
+	case cacheDataPath != "" && s3Bucket != "":
+		return nil, ErrStorageConflict
+
+	case cacheDataPath != "":
+		// Use local storage
+		localStore, err := local.New(ctx, cacheDataPath)
+		if err != nil {
+			return nil, fmt.Errorf("error creating a new local store at %q: %w", cacheDataPath, err)
+		}
+
+		configStore = localStore
+		narInfoStore = localStore
+		narStore = localStore
+
+		zerolog.Ctx(ctx).Info().Str("path", cacheDataPath).Msg("using local storage")
+
+	case s3Bucket != "":
+		// Use S3 storage
+		s3Endpoint := cmd.String("cache-storage-s3-endpoint")
+		s3AccessKeyID := cmd.String("cache-storage-s3-access-key-id")
+		s3SecretAccessKey := cmd.String("cache-storage-s3-secret-access-key")
+
+		if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
+			return nil, ErrS3ConfigIncomplete
+		}
+
+		// Determine SSL usage. The scheme in the endpoint URL (https:// or http://)
+		// takes precedence over the --cache-storage-s3-use-ssl flag.
+		useSSL := cmd.Bool("cache-storage-s3-use-ssl")
+		if s3.IsHTTPS(s3Endpoint) {
+			useSSL = true
+		} else if strings.HasPrefix(s3Endpoint, "http://") {
+			useSSL = false
+		}
+
+		endpoint := s3.GetEndpointWithoutScheme(s3Endpoint)
+
+		ctx = zerolog.Ctx(ctx).
+			With().
+			Str("bucket", s3Bucket).
+			Str("endpoint", endpoint).
+			Bool("use_ssl", useSSL).
+			Logger().
+			WithContext(ctx)
+
+		zerolog.Ctx(ctx).Debug().
+			Msg("creating S3 storage")
+
+		s3Cfg := s3.Config{
+			Bucket:          s3Bucket,
+			Region:          cmd.String("cache-storage-s3-region"),
+			Endpoint:        endpoint,
+			AccessKeyID:     s3AccessKeyID,
+			SecretAccessKey: s3SecretAccessKey,
+			UseSSL:          useSSL,
+		}
+
+		s3Store, err := s3.New(ctx, s3Cfg)
+		if err != nil {
+			return nil, fmt.Errorf("error creating a new S3 store: %w", err)
+		}
+
+		configStore = s3Store
+		narInfoStore = s3Store
+		narStore = s3Store
+
+		zerolog.Ctx(ctx).Info().
+			Msg("using S3 storage")
+
+	default:
+		return nil, ErrStorageConfigRequired
 	}
 
 	c, err := cache.New(
 		ctx,
 		cmd.String("cache-hostname"),
 		db,
-		localStore,
-		localStore,
-		localStore,
+		configStore,
+		narInfoStore,
+		narStore,
 		cmd.String("cache-secret-key-path"),
 	)
 	if err != nil {
