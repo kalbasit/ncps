@@ -42,9 +42,11 @@
           checkFlags = [ "-race" ];
 
           nativeBuildInputs = [
+            pkgs.curl # used for checking MinIO health check
             pkgs.dbmate # used for testing
             pkgs.minio # S3-compatible storage for integration tests
             pkgs.minio-client # mc CLI for MinIO setup
+            pkgs.python3 # used for generating the ports
           ];
 
           # Start MinIO before running tests to enable S3 integration tests
@@ -63,8 +65,8 @@
             # Generate random free ports using python
             # We bind to port 0, get the assigned port, and close the socket immediately.
             # In a Nix sandbox, the race condition risk (port being stolen between check and use) is negligible.
-            export MINIO_PORT=$(${pkgs.python3}/bin/python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-            export CONSOLE_PORT=$(${pkgs.python3}/bin/python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+            export MINIO_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+            export CONSOLE_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
             # Export S3 test environment variables
             export NCPS_TEST_S3_BUCKET="test-bucket"
@@ -74,7 +76,7 @@
             export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
 
             # Start MinIO server in background
-            ${pkgs.minio}/bin/minio server "$MINIO_DATA_DIR" \
+            minio server "$MINIO_DATA_DIR" \
               --address "127.0.0.1:$MINIO_PORT" \
               --console-address "127.0.0.1:$CONSOLE_PORT" &
             export MINIO_PID=$!
@@ -82,7 +84,7 @@
             # Wait for MinIO to be ready
             echo "⏳ Waiting for MinIO to be ready..."
             for i in {1..30}; do
-              if ${pkgs.curl}/bin/curl -sf "$NCPS_TEST_S3_ENDPOINT/minio/health/live"; then
+              if curl -sf "$NCPS_TEST_S3_ENDPOINT/minio/health/live"; then
                 echo "✅ MinIO is ready"
                 break
               fi
@@ -95,13 +97,13 @@
             done
 
             # Setup admin alias
-            ${pkgs.minio-client}/bin/mc alias set local "$NCPS_TEST_S3_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+            mc alias set local "$NCPS_TEST_S3_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
 
             # Create test bucket
-            ${pkgs.minio-client}/bin/mc mb "local/$NCPS_TEST_S3_BUCKET" || true
+            mc mb "local/$NCPS_TEST_S3_BUCKET" || true
 
             # Create service account for tests
-            ${pkgs.minio-client}/bin/mc admin user svcacct add \
+            mc admin user svcacct add \
               --access-key "$NCPS_TEST_S3_ACCESS_KEY_ID" \
               --secret-key "$NCPS_TEST_S3_SECRET_ACCESS_KEY" \
               local admin || true
