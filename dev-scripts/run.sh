@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+# S3/MinIO configuration (matches the settings from nix/process-compose/flake-module.nix)
+S3_BUCKET="test-bucket"
+S3_ENDPOINT="127.0.0.1:9000"
+S3_REGION="us-east-1"
+S3_ACCESS_KEY="test-access-key"
+S3_SECRET_KEY="test-secret-key"
+
 # Display usage information
 usage() {
   cat <<EOF
@@ -85,11 +92,11 @@ if [ "$STORAGE_BACKEND" = "local" ]; then
 else
   # S3/MinIO configuration (matches the settings from nix/process-compose/flake-module.nix)
   storage_args=(
-    --storage-s3-bucket test-bucket
-    --storage-s3-endpoint 127.0.0.1:9000
-    --storage-s3-region us-east-1
-    --storage-s3-access-key-id test-access-key
-    --storage-s3-secret-access-key test-secret-key
+    --storage-s3-bucket "$S3_BUCKET"
+    --storage-s3-endpoint "$S3_ENDPOINT"
+    --storage-s3-region "$S3_REGION"
+    --storage-s3-access-key-id "$S3_ACCESS_KEY"
+    --storage-s3-secret-access-key "$S3_SECRET_KEY"
     --storage-s3-use-ssl=false
   )
 fi
