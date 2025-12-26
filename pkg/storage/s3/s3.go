@@ -57,7 +57,7 @@ type Config struct {
 	AccessKeyID string
 	// SecretAccessKey is the secret key for authentication
 	SecretAccessKey string
-	// UseSSL enables SSL/TLS (default: true)
+	// UseSSL enables SSL/TLS (default: false)
 	UseSSL bool
 }
 
