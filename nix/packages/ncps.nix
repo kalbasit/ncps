@@ -75,7 +75,7 @@
 
             # Start MinIO server in background
             ${pkgs.minio}/bin/minio server "$MINIO_DATA_DIR" \
-              --address "$NCPS_TEST_S3_ENDPOINT" \
+              --address "127.0.0.1:$MINIO_PORT" \
               --console-address "127.0.0.1:$CONSOLE_PORT" &
             export MINIO_PID=$!
 
