@@ -8,6 +8,8 @@
           pkgs.delve
           pkgs.go
           pkgs.golangci-lint
+          pkgs.minio
+          pkgs.minio-client
           pkgs.sqlc
           pkgs.watchexec
         ];
