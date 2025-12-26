@@ -15,7 +15,12 @@ Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev 
 
 ```bash
 # Run development server (hot-reload with watchexec)
-./dev-scripts/run.sh
+./dev-scripts/run.sh              # Uses local filesystem storage (default)
+./dev-scripts/run.sh local        # Explicitly use local storage
+./dev-scripts/run.sh s3           # Use S3/MinIO storage (requires deps to be running)
+
+# Start development dependencies (MinIO for S3 testing)
+nix run .#deps                    # Starts MinIO with self-validation on 127.0.0.1:9000
 
 # Run tests with race detector
 go test -race ./...
@@ -38,6 +43,45 @@ go build .
 # Build with Nix
 nix build
 ```
+
+## Development Workflow
+
+### Storage Backends
+
+The development server (`./dev-scripts/run.sh`) supports two storage backends:
+
+**Local Storage (default):**
+- No external dependencies required
+- Uses temporary directory for cache storage
+- Ideal for quick testing and development
+- Storage is ephemeral (cleaned up on script exit)
+
+**S3 Storage (MinIO):**
+- Requires running MinIO via `nix run .#deps`
+- Tests S3-compatible storage implementation
+- Uses MinIO server on `127.0.0.1:9000`
+- Pre-configured with test credentials and bucket
+- Includes self-validation to ensure proper setup
+
+### Dependency Management (process-compose)
+
+The project uses [process-compose-flake](https://github.com/Platonic-Systems/process-compose-flake) for managing development dependencies. Currently provides:
+
+**`nix run .#deps`** - Starts MinIO server with:
+- Ephemeral storage in temporary directory
+- MinIO server on port 9000, console on port 9001
+- Pre-configured test bucket (`test-bucket`)
+- Test credentials: `test-access-key` / `test-secret-key`
+- Self-validation checks:
+  - Access key authentication
+  - Public access blocking (security verification)
+  - Signed URL generation and access
+
+Configuration in `nix/process-compose/flake-module.nix` defines:
+- `minio-server` process - MinIO server with health checks
+- `create-buckets` process - Bucket creation and validation
+
+The MinIO configuration matches the S3 flags in `dev-scripts/run.sh` to ensure consistency between dependency setup and application configuration.
 
 ## Architecture
 

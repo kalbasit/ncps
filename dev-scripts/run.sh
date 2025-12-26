@@ -2,21 +2,91 @@
 
 set -euo pipefail
 
+# Display usage information
+usage() {
+  cat <<EOF
+Usage: $0 [STORAGE_BACKEND]
+
+Run ncps development server with hot-reload.
+
+STORAGE_BACKEND:
+  local   Use local filesystem storage (default)
+  s3      Use S3-compatible storage (MinIO)
+          Requires running 'nix run .#deps' first to start MinIO
+
+Examples:
+  $0              # Run with local storage
+  $0 local        # Run with local storage
+  $0 s3           # Run with S3 storage (requires MinIO)
+
+Note: When using S3 storage, make sure to start MinIO first:
+  nix run .#deps  # In a separate terminal
+EOF
+  exit 1
+}
+
+# Parse storage backend argument
+STORAGE_BACKEND="${1:-local}"
+
+case "$STORAGE_BACKEND" in
+  local)
+    echo "🗂️  Using local filesystem storage"
+    ;;
+  s3|minio)
+    echo "☁️  Using S3-compatible storage (MinIO)"
+    echo "⚠️  Make sure MinIO is running: nix run .#deps"
+    STORAGE_BACKEND="s3"
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    echo "Error: Unknown storage backend '$STORAGE_BACKEND'"
+    echo ""
+    usage
+    ;;
+esac
+
+# Create temporary data directory
 ncps_datadir="$(mktemp -d)"
 trap "rm -rf $ncps_datadir" EXIT
 
 mkdir -p "$ncps_datadir/var/ncps/db"
 
+# Initialize database
 dbmate --url "sqlite:$ncps_datadir/var/ncps/db/db.sqlite" up
 
+# Common arguments for both backends
+common_args=(
+  serve
+  --cache-allow-put-verb
+  --cache-hostname localhost
+  --cache-database-url "sqlite:$ncps_datadir/var/ncps/db/db.sqlite"
+  --upstream-cache https://cache.nixos.org
+  --upstream-cache https://nix-community.cachix.org
+  --upstream-public-key cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+  --upstream-public-key nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+)
+
+# Storage-specific arguments
+if [ "$STORAGE_BACKEND" = "local" ]; then
+  storage_args=(
+    --cache-data-path "$ncps_datadir"
+  )
+else
+  # S3/MinIO configuration (matches the settings from nix/process-compose/flake-module.nix)
+  storage_args=(
+    --storage-s3-bucket test-bucket
+    --storage-s3-endpoint 127.0.0.1:9000
+    --storage-s3-region us-east-1
+    --storage-s3-access-key-id test-access-key
+    --storage-s3-secret-access-key test-secret-key
+    --storage-s3-use-ssl=false
+  )
+fi
+
+# Run with watchexec for hot-reload
 watchexec -e go -c clear -r go run . \
-  serve \
-  --cache-allow-put-verb \
-  --cache-hostname localhost \
-  --cache-data-path "$ncps_datadir" \
-  --cache-database-url "sqlite:$ncps_datadir/var/ncps/db/db.sqlite" \
-  --upstream-cache https://cache.nixos.org \
-  --upstream-cache https://nix-community.cachix.org \
-  --upstream-public-key cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
-  --upstream-public-key nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
+  "${common_args[@]}" \
+  "${storage_args[@]}" \
   "$@"
