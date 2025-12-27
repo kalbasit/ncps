@@ -351,8 +351,11 @@ func getStorageBackend(
 		zerolog.Ctx(ctx).Warn().
 			Msg("--cache-data-path is deprecated, please use --cache-storage-local instead")
 
-		// Use deprecated value if new one is not set
-		if localDataPath == "" {
+		if localDataPath != "" {
+			zerolog.Ctx(ctx).Warn().
+				Msg("Both --cache-data-path and --cache-storage-local are set; ignoring the deprecated --cache-data-path")
+		} else {
+			// Use deprecated value if new one is not set
 			localDataPath = deprecatedDataPath
 		}
 	}
