@@ -256,6 +256,12 @@ func TestPutSecretKey_Integration(t *testing.T) {
 		// Clean up first
 		_ = store.DeleteSecretKey(ctx)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteSecretKey(ctx)
+		})
+
 		require.NoError(t, store.PutSecretKey(ctx, sk))
 
 		// Verify it was stored
@@ -263,9 +269,6 @@ func TestPutSecretKey_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, sk.String(), sk2.String())
-
-		// Clean up
-		require.NoError(t, store.DeleteSecretKey(ctx))
 	})
 
 	t.Run("put existing secret key returns error", func(t *testing.T) {
@@ -279,6 +282,12 @@ func TestPutSecretKey_Integration(t *testing.T) {
 		sk, _, err := signature.GenerateKeypair(cacheName, nil)
 		require.NoError(t, err)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteSecretKey(ctx)
+		})
+
 		// Clean up first and put the key
 		_ = store.DeleteSecretKey(ctx)
 		require.NoError(t, store.PutSecretKey(ctx, sk))
@@ -289,9 +298,6 @@ func TestPutSecretKey_Integration(t *testing.T) {
 
 		err = store.PutSecretKey(ctx, sk2)
 		require.ErrorIs(t, err, storage.ErrAlreadyExists)
-
-		// Clean up
-		require.NoError(t, store.DeleteSecretKey(ctx))
 	})
 }
 
@@ -371,14 +377,17 @@ func TestHasNarInfo_Integration(t *testing.T) {
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNarInfo(ctx, hash)
+		})
+
 		// Clean up first and put the narinfo
 		_ = store.DeleteNarInfo(ctx, hash)
 		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
 
 		assert.True(t, store.HasNarInfo(ctx, hash))
-
-		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 }
 
@@ -417,6 +426,12 @@ func TestGetNarInfo_Integration(t *testing.T) {
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNarInfo(ctx, hash)
+		})
+
 		// Clean up first and put the narinfo
 		_ = store.DeleteNarInfo(ctx, hash)
 		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
@@ -428,9 +443,6 @@ func TestGetNarInfo_Integration(t *testing.T) {
 			strings.TrimSpace(testdata.Nar1.NarInfoText),
 			strings.TrimSpace(ni2.String()),
 		)
-
-		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 }
 
@@ -451,6 +463,12 @@ func TestPutNarInfo_Integration(t *testing.T) {
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNarInfo(ctx, hash)
+		})
+
 		// Clean up first
 		_ = store.DeleteNarInfo(ctx, hash)
 
@@ -458,9 +476,6 @@ func TestPutNarInfo_Integration(t *testing.T) {
 
 		// Verify it was stored
 		assert.True(t, store.HasNarInfo(ctx, hash))
-
-		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 
 	t.Run("put existing narinfo returns error", func(t *testing.T) {
@@ -477,6 +492,12 @@ func TestPutNarInfo_Integration(t *testing.T) {
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNarInfo(ctx, hash)
+		})
+
 		// Clean up first and put the narinfo
 		_ = store.DeleteNarInfo(ctx, hash)
 		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
@@ -484,9 +505,6 @@ func TestPutNarInfo_Integration(t *testing.T) {
 		// Try to put again
 		err = store.PutNarInfo(ctx, hash, ni)
 		require.ErrorIs(t, err, storage.ErrAlreadyExists)
-
-		// Clean up
-		require.NoError(t, store.DeleteNarInfo(ctx, hash))
 	})
 }
 
@@ -576,15 +594,18 @@ func TestHasNar_Integration(t *testing.T) {
 			Compression: testdata.Nar1.NarCompression,
 		}
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNar(ctx, narURL)
+		})
+
 		// Clean up first and put the nar
 		_ = store.DeleteNar(ctx, narURL)
 		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
 		require.NoError(t, err)
 
 		assert.True(t, store.HasNar(ctx, narURL))
-
-		// Clean up
-		require.NoError(t, store.DeleteNar(ctx, narURL))
 	})
 }
 
@@ -633,6 +654,12 @@ func TestGetNar_Integration(t *testing.T) {
 		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
 		require.NoError(t, err)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNar(ctx, narURL)
+		})
+
 		size, r, err := store.GetNar(ctx, narURL)
 		require.NoError(t, err)
 
@@ -643,9 +670,6 @@ func TestGetNar_Integration(t *testing.T) {
 
 		assert.EqualValues(t, len(testdata.Nar1.NarText), size)
 		assert.Equal(t, testdata.Nar1.NarText, string(content))
-
-		// Clean up
-		require.NoError(t, store.DeleteNar(ctx, narURL))
 	})
 }
 
@@ -670,15 +694,18 @@ func TestPutNar_Integration(t *testing.T) {
 		// Clean up first
 		_ = store.DeleteNar(ctx, narURL)
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNar(ctx, narURL)
+		})
+
 		written, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
 		require.NoError(t, err)
 		assert.EqualValues(t, len(testdata.Nar1.NarText), written)
 
 		// Verify it was stored
 		assert.True(t, store.HasNar(ctx, narURL))
-
-		// Clean up
-		require.NoError(t, store.DeleteNar(ctx, narURL))
 	})
 
 	t.Run("put existing nar returns error", func(t *testing.T) {
@@ -696,6 +723,12 @@ func TestPutNar_Integration(t *testing.T) {
 			Compression: testdata.Nar1.NarCompression,
 		}
 
+		// Register the Clean up
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNar(ctx, narURL)
+		})
+
 		// Clean up first and put the nar
 		_ = store.DeleteNar(ctx, narURL)
 		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
@@ -704,9 +737,6 @@ func TestPutNar_Integration(t *testing.T) {
 		// Try to put again
 		_, err = store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
 		require.ErrorIs(t, err, storage.ErrAlreadyExists)
-
-		// Clean up
-		require.NoError(t, store.DeleteNar(ctx, narURL))
 	})
 }
 
