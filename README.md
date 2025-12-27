@@ -39,10 +39,11 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 ## ✨ Key Features
 
 | Feature | Description |
-| ----------------------- | -------------------------------------------------- |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
 | 🚀 **Easy Setup** | Simple configuration and deployment |
 | 🔄 **Multi-Upstream** | Support for multiple upstream caches with failover |
 | 💾 **Smart Caching** | LRU cache management with configurable size limits |
+| ☁️ **Flexible Storage** | **NEW in v0.5.0:** Choose between local filesystem or S3-compatible storage (AWS S3, MinIO, etc.) |
 | 🔐 **Secure Signing** | Signs cached paths with private keys for integrity |
 | 📊 **Monitoring** | OpenTelemetry support for centralized logging |
 | 🗜️ **Compression** | Harmonia's transparent zstd compression support |
@@ -50,17 +51,19 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 
 ## ⚙️ How It Works
 
+### Request Flow
+
 ```mermaid
 sequenceDiagram
     participant Client as Nix Client
     participant NCPS as ncps Server
-    participant Cache as Local Cache
+    participant Cache as Cache Storage
     participant Upstream as Upstream Cache
 
     Client->>NCPS: Request store path
-    NCPS->>Cache: Check local cache
+    NCPS->>Cache: Check cache
 
-    alt Path exists locally
+    alt Path exists in cache
         Cache-->>NCPS: Return cached path
         NCPS-->>Client: Serve cached path
     else Path not cached
@@ -72,14 +75,52 @@ sequenceDiagram
 ```
 
 1. **Request** - Nix client requests a store path from ncps
-1. **Cache Check** - ncps checks if the path exists in local cache
+1. **Cache Check** - ncps checks if the path exists in cache storage
 1. **Upstream Fetch** - If not cached, fetches from configured upstream caches
 1. **Cache & Sign** - Stores and signs the path with ncps private key
 1. **Serve** - Delivers the path to the requesting client
 
+### Storage Architecture
+
+**NEW in v0.5.0:** ncps now supports flexible storage backends!
+
+```mermaid
+graph TB
+    NCPS[ncps Server]
+    DB[(SQLite Database)]
+
+    subgraph Storage["Storage Backends (Choose One)"]
+        Local[Local Filesystem<br/>--cache-storage-local]
+        S3[S3-Compatible Storage<br/>--cache-storage-s3-*]
+    end
+
+    subgraph S3Detail["S3-Compatible Options"]
+        AWS[AWS S3]
+        MinIO[MinIO]
+        Other[Other S3-Compatible]
+    end
+
+    NCPS --> DB
+    NCPS -.->|Option 1| Local
+    NCPS -.->|Option 2| S3
+    S3 --> S3Detail
+
+    style Storage fill:#e1f5ff
+    style S3Detail fill:#fff4e1
+    style NCPS fill:#d4edda
+```
+
+**Storage Options:**
+
+- **Local Filesystem** - Traditional file-based storage for single-server deployments
+- **S3-Compatible Storage** - Scalable cloud storage supporting AWS S3, MinIO, and other S3-compatible services
+
 ## 🚀 Quick Start
 
 Get ncps running quickly with Docker:
+
+<details open>
+<summary><strong>Using Local Storage</strong></summary>
 
 ```bash
 # Pull the images
@@ -103,6 +144,45 @@ docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
   --upstream-cache=https://cache.nixos.org \
   --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
+
+</details>
+
+<details>
+<summary><strong>Using S3 Storage (NEW in v0.5.0)</strong></summary>
+
+```bash
+# Pull the image
+docker pull kalbasit/ncps
+
+# Create volume for database only (cache data goes to S3)
+docker volume create ncps-db
+docker run --rm -v ncps-db:/db alpine mkdir -m 0700 -p /db
+
+# Initialize database
+docker run --rm -v ncps-db:/db kalbasit/ncps /bin/dbmate --url=sqlite:/db/db.sqlite migrate up
+
+# Start the server with S3 storage
+docker run -d --name ncps -p 8501:8501 -v ncps-db:/db kalbasit/ncps \
+  /bin/ncps serve \
+  --cache-hostname=your-ncps-hostname \
+  --cache-storage-s3-bucket=my-ncps-cache \
+  --cache-storage-s3-endpoint=s3.amazonaws.com \
+  --cache-storage-s3-region=us-east-1 \
+  --cache-storage-s3-access-key-id=YOUR_ACCESS_KEY \
+  --cache-storage-s3-secret-access-key=YOUR_SECRET_KEY \
+  --cache-database-url=sqlite:/db/db.sqlite \
+  --upstream-cache=https://cache.nixos.org \
+  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
+**Benefits of S3 storage:**
+
+- Scales independently of server resources
+- Shared storage across multiple ncps instances
+- Built-in durability and redundancy
+- Works with AWS S3, MinIO, and other S3-compatible services
+
+</details>
 
 Your cache will be available at `http://localhost:8501` and the public key at `http://localhost:8501/pubkey`.
 
@@ -395,6 +475,10 @@ ncps is available as a built-in NixOS service module (available in NixOS 25.05+)
 }
 ```
 
+**S3 Storage Support:**
+
+S3 storage configuration in the NixOS module will be available in a future release. For now, use the Docker or standalone installation methods for S3 storage.
+
 **Complete Options Reference:** [NixOS Options Search](https://search.nixos.org/options?query=services.ncps)
 
 **✅ The NixOS module automatically handles:**
@@ -432,7 +516,7 @@ go build .
 
 ## ⚙️ Configuration
 
-All the flags can be set using the configuration file. See config.example.yaml for reference.
+All the flags can be set using the configuration file. See [config.example.yaml](config.example.yaml) for a complete reference including S3 storage configuration examples.
 
 ### Global Options
 
@@ -449,13 +533,69 @@ All the flags can be set using the configuration file. See config.example.yaml f
 #### 🔧 Essential Options
 
 | Option | Description | Environment Variable | Required |
-| ----------------------- | ------------------------------------- | ---------------------- | -------- |
+| ----------------------- | ------------------------------------------------ | ---------------------- | -------- |
 | `--cache-hostname` | **Cache hostname for key generation** | `CACHE_HOSTNAME` | ✅ |
-| `--cache-storage-local` | Local storage directory | `CACHE_STORAGE_LOCAL` | ✅ |
+| `--cache-storage-local` | Local storage directory (use this OR S3 storage) | `CACHE_STORAGE_LOCAL` | ✅ (1) |
 | `--upstream-cache` | Upstream cache URL (repeatable) | `UPSTREAM_CACHES` | ✅ |
 | `--upstream-public-key` | Upstream public key (repeatable) | `UPSTREAM_PUBLIC_KEYS` | ✅ |
 
-#### 📊 Storage & Performance
+**Note (1):** Either `--cache-storage-local` OR S3 storage flags (see below) are required, but not both.
+
+#### ☁️ S3 Storage Options (NEW in v0.5.0)
+
+Use these options for S3-compatible storage instead of `--cache-storage-local`:
+
+| Option | Description | Environment Variable | Required for S3 |
+| -------------------------------------- | -------------------------------------------------------- | ------------------------------------ | ------------------ |
+| `--cache-storage-s3-bucket` | S3 bucket name | `CACHE_STORAGE_S3_BUCKET` | ✅ |
+| `--cache-storage-s3-endpoint` | S3 endpoint URL (e.g., s3.amazonaws.com, localhost:9000) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ |
+| `--cache-storage-s3-access-key-id` | S3 access key ID | `CACHE_STORAGE_S3_ACCESS_KEY_ID` | ✅ |
+| `--cache-storage-s3-secret-access-key` | S3 secret access key | `CACHE_STORAGE_S3_SECRET_ACCESS_KEY` | ✅ |
+| `--cache-storage-s3-region` | S3 region (optional for some providers) | `CACHE_STORAGE_S3_REGION` | - |
+| `--cache-storage-s3-use-ssl` | Use SSL/TLS for S3 connection | `CACHE_STORAGE_S3_USE_SSL` | defaults to `true` |
+
+**S3 Storage Examples:**
+
+<details>
+<summary><strong>AWS S3</strong></summary>
+
+```bash
+ncps serve \
+  --cache-hostname=ncps.example.com \
+  --cache-storage-s3-bucket=my-ncps-cache \
+  --cache-storage-s3-endpoint=s3.amazonaws.com \
+  --cache-storage-s3-region=us-east-1 \
+  --cache-storage-s3-access-key-id=AKIAIOSFODNN7EXAMPLE \
+  --cache-storage-s3-secret-access-key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
+  --cache-database-url=sqlite:/var/lib/ncps/db.sqlite \
+  --upstream-cache=https://cache.nixos.org \
+  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
+</details>
+
+<details>
+<summary><strong>MinIO</strong></summary>
+
+```bash
+ncps serve \
+  --cache-hostname=ncps.example.com \
+  --cache-storage-s3-bucket=ncps-cache \
+  --cache-storage-s3-endpoint=http://minio.example.com:9000 \
+  --cache-storage-s3-access-key-id=minioadmin \
+  --cache-storage-s3-secret-access-key=minioadmin \
+  --cache-storage-s3-use-ssl=false \
+  --cache-database-url=sqlite:/var/lib/ncps/db.sqlite \
+  --upstream-cache=https://cache.nixos.org \
+  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
+> [!IMPORTANT]
+> The endpoint URL scheme (http:// or https://) takes precedence over `--cache-storage-s3-use-ssl`.
+
+</details>
+
+#### 📊 Database & Performance
 
 | Option | Description | Environment Variable | Default |
 | ---------------------- | ------------------------------ | -------------------- | --------------- |
