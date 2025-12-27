@@ -28,8 +28,6 @@ cache:
   allow-put-verb: true
   # The hostname of the cache server
   hostname: "ncps.mycompany.tld"
-  # The local data path used for configuration and cache storage
-  data-path: "/var/lib/ncps"
   # The URL of the database
   database-url: "sqlite:/var/lib/ncps/db/db.sqlite"
   # The maximum size of the store. It can be given with units such as 5K, 10G
@@ -43,6 +41,25 @@ cache:
     schedule: "0 0 * * *"
     # The name of the timezone to use for the cron
     timezone: America/Los_Angeles
+  storage:
+    # The local data path used for configuration and cache storage
+    # Use this OR S3 storage (cache.storage.s3.bucket) - not both
+    local: "/var/lib/ncps"
+    # S3 Storage configuration (alternative to cache.storage.local)
+    # Use this for storing cache data in S3-compatible storage (AWS S3, MinIO, etc.)
+    # s3:
+    #   # S3 bucket name (use this OR cache.storage.local - not both)
+    #   bucket: "ncps-cache"
+    #   # S3-compatible endpoint URL (e.g., s3.amazonaws.com or minio.example.com:9000)
+    #   endpoint: "s3.amazonaws.com"
+    #   # AWS region (optional)
+    #   region: "us-east-1"
+    #   # S3 access key ID
+    #   access-key-id: "your-access-key"
+    #   # S3 secret access key
+    #   secret-access-key: "your-secret-key"
+    #   # Use SSL/TLS for S3 connection (default: true)
+    #   use-ssl: true
   # The path to the secret key used for signing cached paths
   # XXX: Only set this if you intend to store the key yourself instead of having ncps store it in its config store.
   secret-key-path: ""
