@@ -612,9 +612,34 @@ Contributions are welcome! Here's how to get started:
 
 1. **Start development server:**
 
+   The development script supports both local filesystem and S3-compatible storage:
+
    ```bash
-   ./dev-scripts/run.sh  # Auto-restarts on changes
+   # Using local filesystem storage (default)
+   ./dev-scripts/run.sh
+   # or explicitly
+   ./dev-scripts/run.sh local
+
+   # Using S3/MinIO storage (requires MinIO to be running)
+   # First, start dependencies in a separate terminal:
+   nix run .#deps  # Starts MinIO with self-validation
+
+   # Then run the dev server with S3 backend:
+   ./dev-scripts/run.sh s3
    ```
+
+   The script auto-restarts on code changes using `watchexec`.
+
+   **Storage Backends:**
+
+   - **local**: Uses local filesystem storage (default, no dependencies)
+   - **s3**: Uses S3-compatible storage via MinIO (requires `nix run .#deps`)
+
+   **Dependencies Management:**
+
+   - `nix run .#deps` starts MinIO server configured for local development
+   - MinIO runs with self-validation to ensure proper setup
+   - Configuration matches the S3 settings in the dev script
 
 1. **Submit your changes:**
 
