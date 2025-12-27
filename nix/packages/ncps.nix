@@ -36,7 +36,7 @@
             "-X github.com/kalbasit/ncps/cmd.Version=${version}"
           ];
 
-          vendorHash = "sha256-hSC2/KWZLk2KtN31tam0ZmYp/eUtPpc6DAeJExvaeGw=";
+          vendorHash = "sha256-rCBYi0BzMnBmOsbTYbC+Cl6Iqsqz7sfKCymA5wjoZrA=";
 
           doCheck = true;
           checkFlags = [ "-race" ];
