@@ -590,8 +590,7 @@ ncps serve \
   --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
-> [!IMPORTANT]
-> The endpoint URL scheme (http:// or https://) takes precedence over `--cache-storage-s3-use-ssl`.
+**Note:** The endpoint URL scheme (http:// or https://) takes precedence over `--cache-storage-s3-use-ssl`.
 
 </details>
 
