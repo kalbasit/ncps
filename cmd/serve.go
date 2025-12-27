@@ -331,6 +331,95 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 	return ucs, nil
 }
 
+func getStorageBackend(
+	ctx context.Context,
+	cmd *cli.Command,
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+	cacheDataPath := cmd.String("cache-data-path")
+	s3Bucket := cmd.String("cache-storage-s3-bucket")
+
+	switch {
+	case cacheDataPath != "" && s3Bucket != "":
+		return nil, nil, nil, ErrStorageConflict
+
+	case cacheDataPath != "":
+		return createLocalStorage(ctx, cacheDataPath)
+
+	case s3Bucket != "":
+		return createS3Storage(ctx, cmd)
+
+	default:
+		return nil, nil, nil, ErrStorageConfigRequired
+	}
+}
+
+func createLocalStorage(
+	ctx context.Context,
+	dataPath string,
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+	localStore, err := local.New(ctx, dataPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error creating a new local store at %q: %w", dataPath, err)
+	}
+
+	zerolog.Ctx(ctx).Info().Str("path", dataPath).Msg("using local storage")
+
+	return localStore, localStore, localStore, nil
+}
+
+func createS3Storage(
+	ctx context.Context,
+	cmd *cli.Command,
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+	s3Bucket := cmd.String("cache-storage-s3-bucket")
+	s3Endpoint := cmd.String("cache-storage-s3-endpoint")
+	s3AccessKeyID := cmd.String("cache-storage-s3-access-key-id")
+	s3SecretAccessKey := cmd.String("cache-storage-s3-secret-access-key")
+
+	if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
+		return nil, nil, nil, ErrS3ConfigIncomplete
+	}
+
+	// Determine SSL usage. The scheme in the endpoint URL (https:// or http://)
+	// takes precedence over the --cache-storage-s3-use-ssl flag.
+	useSSL := cmd.Bool("cache-storage-s3-use-ssl")
+	if s3.IsHTTPS(s3Endpoint) {
+		useSSL = true
+	} else if strings.HasPrefix(s3Endpoint, "http://") {
+		useSSL = false
+	}
+
+	endpoint := s3.GetEndpointWithoutScheme(s3Endpoint)
+
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("bucket", s3Bucket).
+		Str("endpoint", endpoint).
+		Bool("use_ssl", useSSL).
+		Logger().
+		WithContext(ctx)
+
+	zerolog.Ctx(ctx).Debug().Msg("creating S3 storage")
+
+	s3Cfg := s3.Config{
+		Bucket:          s3Bucket,
+		Region:          cmd.String("cache-storage-s3-region"),
+		Endpoint:        endpoint,
+		AccessKeyID:     s3AccessKeyID,
+		SecretAccessKey: s3SecretAccessKey,
+		UseSSL:          useSSL,
+	}
+
+	s3Store, err := s3.New(ctx, s3Cfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error creating a new S3 store: %w", err)
+	}
+
+	zerolog.Ctx(ctx).Info().Msg("using S3 storage")
+
+	return s3Store, s3Store, s3Store, nil
+}
+
 func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
@@ -343,88 +432,9 @@ func createCache(
 		return nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
 	}
 
-	// Determine storage backend
-	var (
-		configStore  storage.ConfigStore
-		narInfoStore storage.NarInfoStore
-		narStore     storage.NarStore
-	)
-
-	cacheDataPath := cmd.String("cache-data-path")
-	s3Bucket := cmd.String("cache-storage-s3-bucket")
-
-	switch {
-	case cacheDataPath != "" && s3Bucket != "":
-		return nil, ErrStorageConflict
-
-	case cacheDataPath != "":
-		// Use local storage
-		localStore, err := local.New(ctx, cacheDataPath)
-		if err != nil {
-			return nil, fmt.Errorf("error creating a new local store at %q: %w", cacheDataPath, err)
-		}
-
-		configStore = localStore
-		narInfoStore = localStore
-		narStore = localStore
-
-		zerolog.Ctx(ctx).Info().Str("path", cacheDataPath).Msg("using local storage")
-
-	case s3Bucket != "":
-		// Use S3 storage
-		s3Endpoint := cmd.String("cache-storage-s3-endpoint")
-		s3AccessKeyID := cmd.String("cache-storage-s3-access-key-id")
-		s3SecretAccessKey := cmd.String("cache-storage-s3-secret-access-key")
-
-		if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
-			return nil, ErrS3ConfigIncomplete
-		}
-
-		// Determine SSL usage. The scheme in the endpoint URL (https:// or http://)
-		// takes precedence over the --cache-storage-s3-use-ssl flag.
-		useSSL := cmd.Bool("cache-storage-s3-use-ssl")
-		if s3.IsHTTPS(s3Endpoint) {
-			useSSL = true
-		} else if strings.HasPrefix(s3Endpoint, "http://") {
-			useSSL = false
-		}
-
-		endpoint := s3.GetEndpointWithoutScheme(s3Endpoint)
-
-		ctx = zerolog.Ctx(ctx).
-			With().
-			Str("bucket", s3Bucket).
-			Str("endpoint", endpoint).
-			Bool("use_ssl", useSSL).
-			Logger().
-			WithContext(ctx)
-
-		zerolog.Ctx(ctx).Debug().
-			Msg("creating S3 storage")
-
-		s3Cfg := s3.Config{
-			Bucket:          s3Bucket,
-			Region:          cmd.String("cache-storage-s3-region"),
-			Endpoint:        endpoint,
-			AccessKeyID:     s3AccessKeyID,
-			SecretAccessKey: s3SecretAccessKey,
-			UseSSL:          useSSL,
-		}
-
-		s3Store, err := s3.New(ctx, s3Cfg)
-		if err != nil {
-			return nil, fmt.Errorf("error creating a new S3 store: %w", err)
-		}
-
-		configStore = s3Store
-		narInfoStore = s3Store
-		narStore = s3Store
-
-		zerolog.Ctx(ctx).Info().
-			Msg("using S3 storage")
-
-	default:
-		return nil, ErrStorageConfigRequired
+	configStore, narInfoStore, narStore, err := getStorageBackend(ctx, cmd)
+	if err != nil {
+		return nil, err
 	}
 
 	c, err := cache.New(
