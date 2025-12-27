@@ -545,14 +545,14 @@ All the flags can be set using the configuration file. See [config.example.yaml]
 
 Use these options for S3-compatible storage instead of `--cache-storage-local`:
 
-| Option | Description | Environment Variable | Required for S3 |
-| -------------------------------------- | -------------------------------------------------------- | ------------------------------------ | ------------------ |
-| `--cache-storage-s3-bucket` | S3 bucket name | `CACHE_STORAGE_S3_BUCKET` | ✅ |
-| `--cache-storage-s3-endpoint` | S3 endpoint URL (e.g., s3.amazonaws.com, localhost:9000) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ |
-| `--cache-storage-s3-access-key-id` | S3 access key ID | `CACHE_STORAGE_S3_ACCESS_KEY_ID` | ✅ |
-| `--cache-storage-s3-secret-access-key` | S3 secret access key | `CACHE_STORAGE_S3_SECRET_ACCESS_KEY` | ✅ |
-| `--cache-storage-s3-region` | S3 region (optional for some providers) | `CACHE_STORAGE_S3_REGION` | - |
-| `--cache-storage-s3-use-ssl` | Use SSL/TLS for S3 connection | `CACHE_STORAGE_S3_USE_SSL` | defaults to `true` |
+| Option | Description | Environment Variable | Required for S3 | Default |
+| -------------------------------------- | -------------------------------------------------------- | ------------------------------------ | --------------- | ------- |
+| `--cache-storage-s3-bucket` | S3 bucket name | `CACHE_STORAGE_S3_BUCKET` | ✅ | - |
+| `--cache-storage-s3-endpoint` | S3 endpoint URL (e.g., s3.amazonaws.com, localhost:9000) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ | - |
+| `--cache-storage-s3-access-key-id` | S3 access key ID | `CACHE_STORAGE_S3_ACCESS_KEY_ID` | ✅ | - |
+| `--cache-storage-s3-secret-access-key` | S3 secret access key | `CACHE_STORAGE_S3_SECRET_ACCESS_KEY` | ✅ | - |
+| `--cache-storage-s3-region` | S3 region (optional for some providers) | `CACHE_STORAGE_S3_REGION` | - | - |
+| `--cache-storage-s3-use-ssl` | Use SSL/TLS for S3 connection | `CACHE_STORAGE_S3_USE_SSL` | - | `true` |
 
 **S3 Storage Examples:**
 
