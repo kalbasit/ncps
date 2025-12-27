@@ -92,12 +92,12 @@ if [ "$STORAGE_BACKEND" = "local" ]; then
 else
   # S3/MinIO configuration (matches the settings from nix/process-compose/flake-module.nix)
   storage_args=(
-    --storage-s3-bucket "$S3_BUCKET"
-    --storage-s3-endpoint "$S3_ENDPOINT"
-    --storage-s3-region "$S3_REGION"
-    --storage-s3-access-key-id "$S3_ACCESS_KEY"
-    --storage-s3-secret-access-key "$S3_SECRET_KEY"
-    --storage-s3-use-ssl=false
+    --cache-storage-s3-bucket "$S3_BUCKET"
+    --cache-storage-s3-endpoint "$S3_ENDPOINT"
+    --cache-storage-s3-region "$S3_REGION"
+    --cache-storage-s3-access-key-id "$S3_ACCESS_KEY"
+    --cache-storage-s3-secret-access-key "$S3_SECRET_KEY"
+    --cache-storage-s3-use-ssl=false
   )
 fi
 
