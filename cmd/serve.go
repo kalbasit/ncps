@@ -87,7 +87,7 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 			&cli.StringFlag{
 				Name: "cache-data-path",
 				//nolint:lll
-				Usage:   "DEPRECATED: Use --storage-local-data-path instead. The local data path used for configuration and cache storage",
+				Usage:   "DEPRECATED: Use --cache-storage-local instead. The local data path used for configuration and cache storage",
 				Sources: flagSources("cache.data-path", "CACHE_DATA_PATH"),
 			},
 			&cli.StringFlag{
