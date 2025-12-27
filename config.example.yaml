@@ -43,9 +43,9 @@ cache:
     timezone: America/Los_Angeles
   storage:
     # The local data path used for configuration and cache storage
-    # Use this OR S3 storage (storage.s3.bucket) - not both
+    # Use this OR S3 storage (cache.storage.s3.bucket) - not both
     local: "/var/lib/ncps"
-    # S3 Storage configuration (alternative to cache.data-path)
+    # S3 Storage configuration (alternative to cache.storage.local)
     # Use this for storing cache data in S3-compatible storage (AWS S3, MinIO, etc.)
     # s3:
     #   # S3 bucket name (use this OR cache.data-path - not both)
