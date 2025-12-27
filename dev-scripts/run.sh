@@ -89,7 +89,7 @@ common_args=(
 # Storage-specific arguments
 if [ "$STORAGE_BACKEND" = "local" ]; then
   storage_args=(
-    --cache-data-path "$ncps_datadir"
+    --cache-storage-local "$ncps_datadir"
   )
 else
   # S3/MinIO configuration (matches the settings from nix/process-compose/flake-module.nix)

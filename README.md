@@ -98,7 +98,7 @@ docker run --rm -v ncps-storage:/storage kalbasit/ncps /bin/dbmate --url=sqlite:
 docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
   /bin/ncps serve \
   --cache-hostname=your-ncps-hostname \
-  --cache-data-path=/storage \
+  --cache-storage-local=/storage \
   --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
   --upstream-cache=https://cache.nixos.org \
   --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
@@ -140,7 +140,7 @@ docker run -d \
   kalbasit/ncps \
   /bin/ncps serve \
   --cache-hostname=your-ncps-hostname \
-  --cache-data-path=/storage \
+  --cache-storage-local=/storage \
   --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
   --upstream-cache=https://cache.nixos.org \
   --upstream-cache=https://nix-community.cachix.org \
@@ -192,7 +192,7 @@ services:
     command: >
       /bin/ncps serve
       --cache-hostname=your-ncps-hostname
-      --cache-data-path=/storage
+      --cache-storage-local=/storage
       --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
       --upstream-cache=https://cache.nixos.org
       --upstream-cache=https://nix-community.cachix.org
@@ -286,7 +286,7 @@ spec:
             - /bin/ncps
             - serve
             - --cache-hostname=ncps.yournetwork.local # TODO: Replace with your own hostname
-            - --cache-data-path=/storage
+            - --cache-storage-local=/storage
             - --cache-temp-path=/nar-temp-dir
             - --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
             - --upstream-cache=https://cache.nixos.org
@@ -451,7 +451,7 @@ All the flags can be set using the configuration file. See config.example.yaml f
 | Option | Description | Environment Variable | Required |
 | ----------------------- | ------------------------------------- | ---------------------- | -------- |
 | `--cache-hostname` | **Cache hostname for key generation** | `CACHE_HOSTNAME` | ✅ |
-| `--cache-data-path` | Local storage directory | `CACHE_DATA_PATH` | ✅ |
+| `--cache-storage-local` | Local storage directory | `CACHE_STORAGE_LOCAL` | ✅ |
 | `--upstream-cache` | Upstream cache URL (repeatable) | `UPSTREAM_CACHES` | ✅ |
 | `--upstream-public-key` | Upstream public key (repeatable) | `UPSTREAM_PUBLIC_KEYS` | ✅ |
 
@@ -558,7 +558,7 @@ trusted-public-keys = your-ncps-hostname=<paste-public-key-here> cache.nixos.org
 **Required options:**
 
 - ✅ `--cache-hostname`
-- ✅ `--cache-data-path`
+- ✅ `--cache-storage-local` or (`--cache-storage-s3-bucket` and other `--cache-storage-s3-*` such as endpoint and credentials)
 - ✅ `--cache-database-url`
 - ✅ At least one `--upstream-cache` and `--upstream-public-key`
 
