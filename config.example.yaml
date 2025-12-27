@@ -48,7 +48,7 @@ cache:
     # S3 Storage configuration (alternative to cache.storage.local)
     # Use this for storing cache data in S3-compatible storage (AWS S3, MinIO, etc.)
     # s3:
-    #   # S3 bucket name (use this OR cache.data-path - not both)
+    #   # S3 bucket name (use this OR cache.storage.local - not both)
     #   bucket: "ncps-cache"
     #   # S3-compatible endpoint URL (e.g., s3.amazonaws.com or minio.example.com:9000)
     #   endpoint: "s3.amazonaws.com"
