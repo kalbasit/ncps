@@ -18,7 +18,7 @@ Run ncps development server with hot-reload.
 
 STORAGE_BACKEND:
   local   Use local filesystem storage (default)
-  s3      Use S3-compatible storage (MinIO)
+  s3|minio Use S3-compatible storage (MinIO)
           Requires running 'nix run .#deps' first to start MinIO
 
 Examples:
@@ -42,6 +42,14 @@ if [[ $# -gt 0 ]]; then
       ;;
     -h|--help|help)
       usage
+      ;;
+    *)
+      # If the first argument is not a flag, treat it as an invalid backend.
+      if [[ "$1" != -* ]]; then
+        echo "Error: Invalid storage backend: '$1'" >&2
+        echo "Run '$0 --help' for usage." >&2
+        exit 1
+      fi
       ;;
   esac
 fi
