@@ -33,8 +33,7 @@ EOF
 }
 
 # Parse storage backend argument
-STORAGE_BACKEND="${1:-local}"
-
+STORAGE_BACKEND="local"
 if [[ $# -gt 0 ]]; then
   case "$1" in
     local|s3|minio)
@@ -42,11 +41,6 @@ if [[ $# -gt 0 ]]; then
       shift
       ;;
     -h|--help|help)
-      usage
-      ;;
-    *)
-      echo "Error: Unknown storage backend '$1'"
-      echo ""
       usage
       ;;
   esac
