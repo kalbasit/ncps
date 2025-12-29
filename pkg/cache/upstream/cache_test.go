@@ -661,7 +661,8 @@ func TestNewWithOptions(t *testing.T) {
 
 		// With custom longer timeout (6s), connection should succeed
 		opts := &upstream.Options{
-			DialerTimeout: 6 * time.Second,
+			DialerTimeout:         6 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second, // Set this too so we don't timeout waiting for headers
 		}
 
 		cCustom, err := upstream.NewWithOptions(
