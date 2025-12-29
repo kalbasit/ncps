@@ -85,12 +85,6 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name: "cache-data-path",
-				//nolint:lll
-				Usage:   "DEPRECATED: Use --cache-storage-local instead. The local data path used for configuration and cache storage",
-				Sources: flagSources("cache.data-path", "CACHE_DATA_PATH"),
-			},
-			&cli.StringFlag{
 				Name:    "cache-storage-local",
 				Usage:   "The local data path used for configuration and cache storage (use this OR S3 storage)",
 				Sources: flagSources("cache.storage.local", "CACHE_STORAGE_LOCAL"),
@@ -178,6 +172,29 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Sources: flagSources("cache.temp-path", "CACHE_TEMP_PATH"),
 				Value:   os.TempDir(),
 			},
+			&cli.StringSliceFlag{
+				Name:     "cache-upstream-url",
+				Usage:    "Set to URL (with scheme) for each upstream cache",
+				Sources:  flagSources("cache.upstream.urls", "CACHE_UPSTREAM_URLS"),
+				Required: true,
+			},
+			&cli.StringSliceFlag{
+				Name:    "cache-upstream-public-key",
+				Usage:   "Set to host:public-key for each upstream cache",
+				Sources: flagSources("cache.upstream.public-keys", "CACHE_UPSTREAM_PUBLIC_KEYS"),
+			},
+			&cli.DurationFlag{
+				Name:    "cache-upstream-dialer-timeout",
+				Usage:   "Timeout for establishing TCP connections to upstream caches (e.g., 3s, 5s, 10s)",
+				Sources: flagSources("cache.upstream.dialer-timeout", "CACHE_UPSTREAM_DIALER_TIMEOUT"),
+				Value:   3 * time.Second,
+			},
+			&cli.DurationFlag{
+				Name:    "cache-upstream-response-header-timeout",
+				Usage:   "Timeout for waiting for upstream server's response headers (e.g., 3s, 5s, 10s)",
+				Sources: flagSources("cache.upstream.response-header-timeout", "CACHE_UPSTREAM_RESPONSE_HEADER_TIMEOUT"),
+				Value:   3 * time.Second,
+			},
 			&cli.StringFlag{
 				Name:    "netrc-file",
 				Usage:   "Path to netrc file for upstream authentication",
@@ -190,27 +207,34 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Sources: flagSources("server.addr", "SERVER_ADDR"),
 				Value:   ":8501",
 			},
+
+			// DEPRECATED FLAGS BELOW
+
+			&cli.StringFlag{
+				Name:    "cache-data-path",
+				Usage:   "DEPRECATED: Use --cache-storage-local instead.",
+				Sources: flagSources("cache.data-path", "CACHE_DATA_PATH"),
+			},
 			&cli.StringSliceFlag{
-				Name:     "upstream-cache",
-				Usage:    "Set to URL (with scheme) for each upstream cache",
-				Sources:  flagSources("cache.upstream.caches", "UPSTREAM_CACHES"),
-				Required: true,
+				Name:    "upstream-cache",
+				Usage:   "DEPRECATED: Use --cache-upstream-url instead.",
+				Sources: cli.EnvVars("UPSTREAM_CACHES"),
 			},
 			&cli.StringSliceFlag{
 				Name:    "upstream-public-key",
-				Usage:   "Set to host:public-key for each upstream cache",
-				Sources: flagSources("cache.upstream.public-keys", "UPSTREAM_PUBLIC_KEYS"),
+				Usage:   "DEPRECATED: Use --cache-upstream-public-key instead.",
+				Sources: cli.EnvVars("UPSTREAM_PUBLIC_KEYS"),
 			},
 			&cli.DurationFlag{
 				Name:    "upstream-dialer-timeout",
-				Usage:   "Timeout for establishing TCP connections to upstream caches (e.g., 3s, 5s, 10s)",
-				Sources: flagSources("cache.upstream.dialer-timeout", "UPSTREAM_DIALER_TIMEOUT"),
+				Usage:   "DEPRECATED: Use --cache-upstream-dialer-timeout instead.",
+				Sources: cli.EnvVars("UPSTREAM_DIALER_TIMEOUT"),
 				Value:   3 * time.Second,
 			},
 			&cli.DurationFlag{
 				Name:    "upstream-response-header-timeout",
-				Usage:   "Timeout for waiting for upstream server's response headers (e.g., 3s, 5s, 10s)",
-				Sources: flagSources("cache.upstream.response-header-timeout", "UPSTREAM_RESPONSE_HEADER_TIMEOUT"),
+				Usage:   "DEPRECATED: Use --cache-upstream-response-header-timeout instead.",
+				Sources: cli.EnvVars("UPSTREAM_RESPONSE_HEADER_TIMEOUT"),
 				Value:   3 * time.Second,
 			},
 		},
@@ -306,25 +330,95 @@ func serveAction() cli.ActionFunc {
 }
 
 func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.Netrc) ([]*upstream.Cache, error) {
-	ucSlice := cmd.StringSlice("upstream-cache")
+	// Handle backward compatibility for upstream flags (deprecated)
+	deprecatedUpstreamCache := cmd.StringSlice("upstream-cache")
+	upstreamURL := cmd.StringSlice("cache-upstream-url")
+	deprecatedPublicKey := cmd.StringSlice("upstream-public-key")
+	upstreamPublicKey := cmd.StringSlice("cache-upstream-public-key")
+	deprecatedDialerTimeout := cmd.Duration("upstream-dialer-timeout")
+	dialerTimeout := cmd.Duration("cache-upstream-dialer-timeout")
+	deprecatedResponseHeaderTimeout := cmd.Duration("upstream-response-header-timeout")
+	responseHeaderTimeout := cmd.Duration("cache-upstream-response-header-timeout")
 
-	ucs := make([]*upstream.Cache, 0, len(ucSlice))
+	// Show deprecation warning for upstream-cache
+	if len(deprecatedUpstreamCache) > 0 {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--upstream-cache is deprecated, please use --cache-upstream-url instead")
 
-	for _, us := range ucSlice {
+		if len(upstreamURL) > 0 {
+			zerolog.Ctx(ctx).Warn().
+				Msg("Both --upstream-cache and --cache-upstream-url are set; ignoring the deprecated --upstream-cache")
+		} else {
+			// Use deprecated value if new one is not set
+			upstreamURL = deprecatedUpstreamCache
+		}
+	}
+
+	// Show deprecation warning for upstream-public-key
+	if len(deprecatedPublicKey) > 0 {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--upstream-public-key is deprecated, please use --cache-upstream-public-key instead")
+
+		if len(upstreamPublicKey) > 0 {
+			zerolog.Ctx(ctx).Warn().
+				Msg("Both --upstream-public-key and --cache-upstream-public-key are set; " +
+					"ignoring the deprecated --upstream-public-key")
+		} else {
+			// Use deprecated value if new one is not set
+			upstreamPublicKey = deprecatedPublicKey
+		}
+	}
+
+	// Show deprecation warning for upstream-dialer-timeout
+	// Only warn if the value differs from the default (3s)
+	if deprecatedDialerTimeout != 3*time.Second {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--upstream-dialer-timeout is deprecated, please use --cache-upstream-dialer-timeout instead")
+
+		if dialerTimeout != 3*time.Second {
+			zerolog.Ctx(ctx).Warn().
+				Msg("Both --upstream-dialer-timeout and --cache-upstream-dialer-timeout are set; " +
+					"ignoring the deprecated --upstream-dialer-timeout")
+		} else {
+			// Use deprecated value if new one is not set
+			dialerTimeout = deprecatedDialerTimeout
+		}
+	}
+
+	// Show deprecation warning for upstream-response-header-timeout
+	// Only warn if the value differs from the default (3s)
+	if deprecatedResponseHeaderTimeout != 3*time.Second {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--upstream-response-header-timeout is deprecated, " +
+				"please use --cache-upstream-response-header-timeout instead")
+
+		if responseHeaderTimeout != 3*time.Second {
+			zerolog.Ctx(ctx).Warn().
+				Msg("Both --upstream-response-header-timeout and --cache-upstream-response-header-timeout are set; " +
+					"ignoring the deprecated --upstream-response-header-timeout")
+		} else {
+			// Use deprecated value if new one is not set
+			responseHeaderTimeout = deprecatedResponseHeaderTimeout
+		}
+	}
+
+	ucs := make([]*upstream.Cache, 0, len(upstreamURL))
+
+	for _, us := range upstreamURL {
 		u, err := url.Parse(us)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing --upstream-cache=%q: %w", us, err)
+			return nil, fmt.Errorf("error parsing --cache-upstream-url=%q: %w", us, err)
 		}
 
 		// Build options for this upstream cache
 		opts := &upstream.Options{
-			DialerTimeout:         cmd.Duration("upstream-dialer-timeout"),
-			ResponseHeaderTimeout: cmd.Duration("upstream-response-header-timeout"),
+			DialerTimeout:         dialerTimeout,
+			ResponseHeaderTimeout: responseHeaderTimeout,
 		}
 
 		// Find public keys for this upstream
 		rx := regexp.MustCompile(fmt.Sprintf(`^%s-[0-9]+:[A-Za-z0-9+/=]+$`, regexp.QuoteMeta(u.Host)))
-		for _, pubKey := range cmd.StringSlice("upstream-public-key") {
+		for _, pubKey := range upstreamPublicKey {
 			if rx.MatchString(pubKey) {
 				opts.PublicKeys = append(opts.PublicKeys, pubKey)
 			}
