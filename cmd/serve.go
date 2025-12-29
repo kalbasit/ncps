@@ -179,6 +179,9 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Name:    "cache-upstream-url",
 				Usage:   "Set to URL (with scheme) for each upstream cache",
 				Sources: flagSources("cache.upstream.urls", "CACHE_UPSTREAM_URLS"),
+				// TODO: Once --upstream-cache is removed, mark this as required and
+				// remove the custom validation block below.
+				// Required: true,
 			},
 			&cli.StringSliceFlag{
 				Name:    "cache-upstream-public-key",
@@ -356,9 +359,27 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 		}
 	}
 
-	// Validate that at least one upstream cache is configured
-	if len(upstreamURL) == 0 {
-		return nil, ErrUpstreamCacheRequired
+	// This block is a workaround the fact that --cache-upstream-url cannot be
+	// marked as required in order to support the deprecated flag
+	// --upstream-cache.
+	// TODO: Remove this block and the custom error once the --cache-upstream-url
+	// flag is marked as required above.
+	{
+		// Filter out empty upstream URLs before validation.
+		var validUpstreamURLs []string
+
+		for _, u := range upstreamURL {
+			if u != "" {
+				validUpstreamURLs = append(validUpstreamURLs, u)
+			}
+		}
+
+		upstreamURL = validUpstreamURLs
+
+		// Validate that at least one upstream cache is configured
+		if len(upstreamURL) == 0 {
+			return nil, ErrUpstreamCacheRequired
+		}
 	}
 
 	// Show deprecation warning for upstream-public-key
