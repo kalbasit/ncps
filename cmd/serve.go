@@ -43,6 +43,9 @@ var (
 
 	// ErrStorageConflict is returned if both local and S3 storage are configured.
 	ErrStorageConflict = errors.New("cannot use both --cache-storage-local and --cache-storage-s3-bucket")
+
+	// ErrUpstreamCacheRequired is returned if no upstream cache is configured.
+	ErrUpstreamCacheRequired = errors.New("at least one --cache-upstream-url is required")
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -173,10 +176,9 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Value:   os.TempDir(),
 			},
 			&cli.StringSliceFlag{
-				Name:     "cache-upstream-url",
-				Usage:    "Set to URL (with scheme) for each upstream cache",
-				Sources:  flagSources("cache.upstream.urls", "CACHE_UPSTREAM_URLS"),
-				Required: true,
+				Name:    "cache-upstream-url",
+				Usage:   "Set to URL (with scheme) for each upstream cache",
+				Sources: flagSources("cache.upstream.urls", "CACHE_UPSTREAM_URLS"),
 			},
 			&cli.StringSliceFlag{
 				Name:    "cache-upstream-public-key",
@@ -352,6 +354,11 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 			// Use deprecated value if new one is not set
 			upstreamURL = deprecatedUpstreamCache
 		}
+	}
+
+	// Validate that at least one upstream cache is configured
+	if len(upstreamURL) == 0 {
+		return nil, ErrUpstreamCacheRequired
 	}
 
 	// Show deprecation warning for upstream-public-key
