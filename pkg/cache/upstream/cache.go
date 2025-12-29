@@ -109,18 +109,20 @@ func New(ctx context.Context, u *url.URL, opts *Options) (*Cache, error) {
 		return nil, ErrURLRequired
 	}
 
+	if opts == nil {
+		opts = &Options{}
+	}
+
 	// Set default timeouts and override if options are provided
 	dialerTimeout := defaultHTTPTimeout
 	responseHeaderTimeout := defaultHTTPTimeout
 
-	if opts != nil {
-		if opts.DialerTimeout > 0 {
-			dialerTimeout = opts.DialerTimeout
-		}
+	if opts.DialerTimeout > 0 {
+		dialerTimeout = opts.DialerTimeout
+	}
 
-		if opts.ResponseHeaderTimeout > 0 {
-			responseHeaderTimeout = opts.ResponseHeaderTimeout
-		}
+	if opts.ResponseHeaderTimeout > 0 {
+		responseHeaderTimeout = opts.ResponseHeaderTimeout
 	}
 
 	c := &Cache{
