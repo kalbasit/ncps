@@ -674,7 +674,7 @@ func TestNewWithOptions(t *testing.T) {
 		_, err = cCustom.GetNarInfo(context.Background(), "test")
 		// It will error with parsing, but not with connection timeout
 		require.Error(t, err)
-		assert.False(t, errors.Is(err, context.DeadlineExceeded) && strings.Contains(err.Error(), "dial"))
+		assert.NotErrorIs(t, err, context.DeadlineExceeded)
 	})
 
 	t.Run("custom response header timeout is respected - slow server succeeds with longer timeout", func(t *testing.T) {

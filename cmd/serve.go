@@ -201,17 +201,17 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Usage:   "Set to host:public-key for each upstream cache",
 				Sources: flagSources("cache.upstream.public-keys", "UPSTREAM_PUBLIC_KEYS"),
 			},
-			&cli.StringFlag{
+			&cli.DurationFlag{
 				Name:    "upstream-dialer-timeout",
 				Usage:   "Timeout for establishing TCP connections to upstream caches (e.g., 3s, 5s, 10s)",
 				Sources: flagSources("cache.upstream.dialer-timeout", "UPSTREAM_DIALER_TIMEOUT"),
-				Value:   "3s",
+				Value:   3 * time.Second,
 			},
-			&cli.StringFlag{
+			&cli.DurationFlag{
 				Name:    "upstream-response-header-timeout",
 				Usage:   "Timeout for waiting for upstream server's response headers (e.g., 3s, 5s, 10s)",
 				Sources: flagSources("cache.upstream.response-header-timeout", "UPSTREAM_RESPONSE_HEADER_TIMEOUT"),
-				Value:   "3s",
+				Value:   3 * time.Second,
 			},
 		},
 	}
