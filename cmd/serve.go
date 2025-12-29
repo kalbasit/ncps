@@ -43,6 +43,9 @@ var (
 
 	// ErrStorageConflict is returned if both local and S3 storage are configured.
 	ErrStorageConflict = errors.New("cannot use both --cache-storage-local and --cache-storage-s3-bucket")
+
+	// ErrUpstreamCacheRequired is returned if no upstream cache is configured.
+	ErrUpstreamCacheRequired = errors.New("at least one --cache-upstream-url is required")
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -173,10 +176,12 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Value:   os.TempDir(),
 			},
 			&cli.StringSliceFlag{
-				Name:     "cache-upstream-url",
-				Usage:    "Set to URL (with scheme) for each upstream cache",
-				Sources:  flagSources("cache.upstream.urls", "CACHE_UPSTREAM_URLS"),
-				Required: true,
+				Name:    "cache-upstream-url",
+				Usage:   "Set to URL (with scheme) for each upstream cache",
+				Sources: flagSources("cache.upstream.urls", "CACHE_UPSTREAM_URLS"),
+				// TODO: Once --upstream-cache is removed, mark this as required and
+				// remove the custom validation block below.
+				// Required: true,
 			},
 			&cli.StringSliceFlag{
 				Name:    "cache-upstream-public-key",
@@ -218,7 +223,7 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 			&cli.StringSliceFlag{
 				Name:    "upstream-cache",
 				Usage:   "DEPRECATED: Use --cache-upstream-url instead.",
-				Sources: cli.EnvVars("UPSTREAM_CACHES"),
+				Sources: flagSources("cache.upstream.caches", "UPSTREAM_CACHES"),
 			},
 			&cli.StringSliceFlag{
 				Name:    "upstream-public-key",
@@ -351,6 +356,29 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 		} else {
 			// Use deprecated value if new one is not set
 			upstreamURL = deprecatedUpstreamCache
+		}
+	}
+
+	// This block is a workaround the fact that --cache-upstream-url cannot be
+	// marked as required in order to support the deprecated flag
+	// --upstream-cache.
+	// TODO: Remove this block and the custom error once the --cache-upstream-url
+	// flag is marked as required above.
+	{
+		// Filter out empty upstream URLs before validation.
+		var validUpstreamURLs []string
+
+		for _, u := range upstreamURL {
+			if u != "" {
+				validUpstreamURLs = append(validUpstreamURLs, u)
+			}
+		}
+
+		upstreamURL = validUpstreamURLs
+
+		// Validate that at least one upstream cache is configured
+		if len(upstreamURL) == 0 {
+			return nil, ErrUpstreamCacheRequired
 		}
 	}
 
