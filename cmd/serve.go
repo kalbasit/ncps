@@ -220,7 +220,7 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 			&cli.StringSliceFlag{
 				Name:    "upstream-cache",
 				Usage:   "DEPRECATED: Use --cache-upstream-url instead.",
-				Sources: cli.EnvVars("UPSTREAM_CACHES"),
+				Sources: flagSources("cache.upstream.caches", "UPSTREAM_CACHES"),
 			},
 			&cli.StringSliceFlag{
 				Name:    "upstream-public-key",
