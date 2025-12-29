@@ -35,7 +35,9 @@ func TestServeHTTP(t *testing.T) {
 	hts := testdata.NewTestServer(t, 40)
 	defer hts.Close()
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, hts.URL), testdata.PublicKeys(), nil)
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, hts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
 	require.NoError(t, err)
 
 	t.Run("GET /pubkey", func(t *testing.T) {

@@ -55,7 +55,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
 
-			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil, nil)
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
@@ -116,7 +116,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		for _, idx := range randomOrder {
 			ts := testServers[idx]
 
-			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil, nil)
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			ucs = append(ucs, uc)
@@ -177,7 +177,7 @@ func TestRunLRU(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil, nil)
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
