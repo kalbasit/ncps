@@ -94,8 +94,8 @@ type Options struct {
 	ResponseHeaderTimeout time.Duration
 }
 
-// New creates a new upstream cache. Pass nil for netrcCreds if no authentication is needed.
-// Pass nil for opts to use default timeout values.
+// New creates a new upstream cache with default timeout values.
+// Pass nil for netrcCreds if no authentication is needed.
 func New(ctx context.Context, u *url.URL, pubKeys []string, netrcCreds *NetrcCredentials) (*Cache, error) {
 	return NewWithOptions(ctx, u, pubKeys, netrcCreds, nil)
 }
