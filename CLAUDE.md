@@ -20,8 +20,8 @@ Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev 
 ./dev-scripts/run.sh local        # Explicitly use local storage
 ./dev-scripts/run.sh s3           # Use S3/MinIO storage (requires deps to be running)
 
-# Start development dependencies (MinIO for S3 testing)
-nix run .#deps                    # Starts MinIO with self-validation on 127.0.0.1:9000
+# Start development dependencies (MinIO for S3 testing, PostgreSQL for database testing)
+nix run .#deps                    # Starts MinIO and PostgreSQL with self-validation
 
 # Run tests with race detector
 go test -race ./...
@@ -31,12 +31,17 @@ go test -race -run TestName ./pkg/server/...
 
 # Lint code
 golangci-lint run
+golangci-lint run --fix  # Automatically fix fixable linter issues
+
+# Format code
+nix fmt                  # Format Nix files automatically
 
 # Generate SQL code (after modifying db/query.sql or migrations)
 sqlc generate
 
 # Run database migrations manually
-dbmate --url "sqlite:/path/to/your/db.sqlite" up
+dbmate --url "sqlite:/path/to/your/db.sqlite" --migrations-dir db/migrations/sqlite up
+dbmate --url "postgresql://user:pass@localhost:5432/ncps" --migrations-dir db/migrations/postgres up
 
 # Build
 go build .
@@ -70,8 +75,9 @@ The development server (`./dev-scripts/run.sh`) supports two storage backends:
 
 The project uses [process-compose-flake](https://github.com/Platonic-Systems/process-compose-flake) for managing development dependencies. Currently provides:
 
-**`nix run .#deps`** - Starts MinIO server with:
+**`nix run .#deps`** - Starts development services:
 
+**MinIO (S3-compatible storage):**
 - Ephemeral storage in temporary directory
 - MinIO server on port 9000, console on port 9001
 - Pre-configured test bucket (`test-bucket`)
@@ -81,12 +87,25 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
   - Public access blocking (security verification)
   - Signed URL generation and access
 
+**PostgreSQL (database):**
+- Ephemeral storage in temporary directory
+- PostgreSQL server on port 5432
+- Pre-configured test database (`test-db`)
+- Test credentials: `test-user` / `test-password`
+- Connection URL: `postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable`
+- Self-validation checks:
+  - Connection test
+  - Table operations (CREATE, INSERT)
+  - Query verification
+
 Configuration in `nix/process-compose/flake-module.nix` defines:
 
 - `minio-server` process - MinIO server with health checks
 - `create-buckets` process - Bucket creation and validation
+- `postgres-server` process - PostgreSQL server with health checks
+- `init-database` process - Database and user creation with validation
 
-The MinIO configuration matches the S3 flags in `dev-scripts/run.sh` to ensure consistency between dependency setup and application configuration.
+The service configurations match the test environment variables to ensure consistency between dependency setup and application configuration.
 
 ## Architecture
 
@@ -98,10 +117,15 @@ The MinIO configuration matches the S3 flags in `dev-scripts/run.sh` to ensure c
   - `storage/local/` - Local filesystem storage
   - `storage/s3/` - S3-compatible storage (including MinIO)
 - `pkg/server/` - HTTP server using Chi router
-- `pkg/database/` - SQLite database layer (sqlc-generated code)
+- `pkg/database/` - Database abstraction layer supporting multiple engines (sqlc-generated code)
+  - `database/sqlitedb/` - SQLite-specific implementation
+  - `database/postgresdb/` - PostgreSQL-specific implementation
 - `pkg/nar/` - NAR (Nix ARchive) format handling
 - `db/migrations/` - Database migration files
-- `db/query.sql` - SQL queries for sqlc code generation
+  - `migrations/sqlite/` - SQLite migration files
+  - `migrations/postgres/` - PostgreSQL migration files
+- `db/query.sqlite.sql` - SQLite queries for sqlc code generation
+- `db/query.postgres.sql` - PostgreSQL queries for sqlc code generation
 
 ### Key Interfaces (pkg/storage/store.go)
 
@@ -115,7 +139,15 @@ Both local and S3 backends implement these interfaces.
 
 ### Database
 
-SQLite with sqlc for type-safe SQL. Schema in `db/schema.sql`, queries in `db/query.sql`. Run `sqlc generate` after modifying queries.
+Supports multiple database engines via sqlc for type-safe SQL:
+- **SQLite** (default): Embedded database, no external dependencies
+- **PostgreSQL**: Scalable relational database for production deployments
+
+Database selection is done via URL scheme in the `--cache-database-url` flag:
+- SQLite: `sqlite:/path/to/db.sqlite`
+- PostgreSQL: `postgresql://user:password@host:port/database`
+
+Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql` and `db/query.postgres.sql`. Run `sqlc generate` after modifying queries.
 
 ## Code Quality
 
@@ -123,9 +155,13 @@ SQLite with sqlc for type-safe SQL. Schema in `db/schema.sql`, queries in `db/qu
 
 Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`). Key linters: err113, exhaustive, gosec, paralleltest, testpackage.
 
+**IMPORTANT**: Always use `golangci-lint run --fix` first to automatically fix fixable issues before doing manual fixes. This saves tokens and is more efficient.
+
 ### Formatting
 
 Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule).
+
+**IMPORTANT**: Always use `nix fmt` to automatically format Nix files before making manual edits.
 
 ### Testing
 
@@ -180,6 +216,49 @@ This setup ensures:
 - Runtime usage (`nix run github:kalbasit/ncps`) is unaffected
 - Docker builds (`.#docker`) are unaffected
 - Tests are isolated and don't interfere with each other (unique hash-based keys)
+
+#### PostgreSQL Integration Tests
+
+PostgreSQL integration tests require PostgreSQL to be running. The tests are automatically skipped if the required environment variable is not set.
+
+**For local development:**
+
+```bash
+# Start PostgreSQL (in a separate terminal)
+nix run .#deps
+
+# Run tests with PostgreSQL integration enabled
+export NCPS_TEST_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
+go test -race ./pkg/database
+```
+
+**For Nix builds and CI:**
+
+PostgreSQL is automatically started during the test phase when building with Nix:
+
+```bash
+# Runs all checks including PostgreSQL integration tests
+nix flake check
+
+# Build package (includes test phase with PostgreSQL)
+nix build
+```
+
+The Nix build (`nix/packages/ncps.nix`) automatically:
+
+1. Starts PostgreSQL server in the `preCheck` phase
+1. Creates test database and user
+1. Exports PostgreSQL test environment variable
+1. Runs all tests (including PostgreSQL integration tests)
+1. Stops PostgreSQL in the `postCheck` phase
+
+This setup ensures:
+
+- PostgreSQL integration tests run in CI/CD (GitHub Actions workflows)
+- `nix flake check` includes PostgreSQL testing
+- Both SQLite and PostgreSQL database implementations are tested
+- Tests are isolated with unique random hashes
+- Migrations are validated against both database engines
 
 ## Configuration
 

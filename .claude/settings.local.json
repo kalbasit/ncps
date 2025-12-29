@@ -13,7 +13,14 @@
       "Bash(nix fmt:*)",
       "WebFetch(domain:github.com)",
       "Bash(gt ls:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(sqlc generate:*)",
+      "Bash(go get:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(nix build:*)",
+      "Bash(git add:*)",
+      "Bash(export NCPS_TEST_POSTGRES_URL:*)",
+      "Bash(dbmate:*)"
     ]
   }
 }

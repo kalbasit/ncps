@@ -1,13 +1,30 @@
 version: "2"
 sql:
+  # SQLite engine
   - engine: "sqlite"
-    queries: "db/query.sql"
-    schema: "db/migrations"
+    queries: "db/query.sqlite.sql"
+    schema: "db/migrations/sqlite"
     gen:
       go:
         emit_sql_as_comment: true
-        package: "database"
-        out: "pkg/database"
+        emit_interface: true
+        package: "sqlitedb"
+        out: "pkg/database/sqlitedb"
+        overrides:
+          - column: nars.file_size
+            go_type: uint64
+        rename:
+          narinfo_id: NarInfoID
+  # PostgreSQL engine
+  - engine: "postgresql"
+    queries: "db/query.postgres.sql"
+    schema: "db/migrations/postgres"
+    gen:
+      go:
+        emit_sql_as_comment: true
+        emit_interface: true
+        package: "postgresdb"
+        out: "pkg/database/postgresdb"
         overrides:
           - column: nars.file_size
             go_type: uint64

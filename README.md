@@ -47,7 +47,7 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 | 🔐 **Secure Signing** | Signs cached paths with private keys for integrity |
 | 📊 **Monitoring** | OpenTelemetry support for centralized logging |
 | 🗜️ **Compression** | Harmonia's transparent zstd compression support |
-| 💾 **Embedded Storage** | Built-in SQLite database for easy deployment |
+| 🗄️ **Database Support** | SQLite (embedded) or PostgreSQL for metadata storage |
 
 ## ⚙️ How It Works
 
@@ -87,7 +87,11 @@ sequenceDiagram
 ```mermaid
 graph TB
     NCPS[ncps Server]
-    DB[(SQLite Database)]
+
+    subgraph Database["Database Backends (Choose One)"]
+        SQLite[(SQLite<br/>--cache-database-url sqlite:...)]
+        Postgres[(PostgreSQL<br/>--cache-database-url postgresql:...)]
+    end
 
     subgraph Storage["Storage Backends (Choose One)"]
         Local[Local Filesystem<br/>--cache-storage-local]
@@ -100,15 +104,22 @@ graph TB
         Other[Other S3-Compatible]
     end
 
-    NCPS --> DB
-    NCPS -.->|Option 1| Local
-    NCPS -.->|Option 2| S3
+    NCPS -.->|Option 1| SQLite
+    NCPS -.->|Option 2| Postgres
+    NCPS -.->|Option A| Local
+    NCPS -.->|Option B| S3
     S3 --> S3Detail
 
+    style Database fill:#ffe1f5
     style Storage fill:#e1f5ff
     style S3Detail fill:#fff4e1
     style NCPS fill:#d4edda
 ```
+
+**Database Options:**
+
+- **SQLite** (default) - Embedded database for single-server deployments, no external dependencies
+- **PostgreSQL** - Scalable relational database for production deployments
 
 **Storage Options:**
 
