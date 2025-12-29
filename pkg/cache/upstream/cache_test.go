@@ -2,8 +2,10 @@ package upstream_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -557,6 +559,184 @@ func TestNetrcAuthentication(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unexpected HTTP status code")
 	})
+}
+
+func TestNewWithOptions(t *testing.T) {
+	t.Parallel()
+
+	ts := testdata.NewTestServer(t, 40)
+	defer ts.Close()
+
+	testCases := []struct {
+		name string
+		opts *upstream.Options
+	}{
+		{
+			name: "default timeouts when opts is nil",
+			opts: nil,
+		},
+		{
+			name: "default timeouts when opts fields are zero",
+			opts: &upstream.Options{},
+		},
+		{
+			name: "custom dialer timeout",
+			opts: &upstream.Options{
+				DialerTimeout: 10 * time.Second,
+			},
+		},
+		{
+			name: "custom response header timeout",
+			opts: &upstream.Options{
+				ResponseHeaderTimeout: 10 * time.Second,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			c, err := upstream.NewWithOptions(
+				newContext(),
+				testhelper.MustParseURL(t, ts.URL),
+				nil,
+				nil,
+				tc.opts,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, c)
+		})
+	}
+
+	t.Run("custom dialer timeout is respected - slow connection succeeds with longer timeout", func(t *testing.T) {
+		t.Parallel()
+
+		// Create a listener that delays accepting connections
+		//nolint:noctx // Using net.Listen is fine in tests
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		defer listener.Close()
+
+		slowListener := &slowAcceptListener{
+			Listener: listener,
+			delay:    4 * time.Second, // Longer than default 3s timeout
+		}
+
+		// Start a server with the slow listener
+		server := &http.Server{
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "StorePath: /nix/store/test")
+			}),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+
+		go func() {
+			//nolint:errcheck
+			server.Serve(slowListener)
+		}()
+
+		// Allow the server goroutine to start before making a connection.
+		time.Sleep(100 * time.Millisecond)
+
+		defer server.Close()
+
+		serverURL := fmt.Sprintf("http://%s", listener.Addr().String())
+
+		// With default timeout (3s), connection should fail
+		cDefault, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, serverURL),
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+
+		_, err = cDefault.GetNarInfo(context.Background(), "test")
+		require.Error(t, err)
+		// The error might be deadline exceeded or connection refused depending on timing
+		assert.True(t, errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout"))
+
+		// With custom longer timeout (6s), connection should succeed
+		opts := &upstream.Options{
+			DialerTimeout:         6 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second, // Set this too so we don't timeout waiting for headers
+		}
+
+		cCustom, err := upstream.NewWithOptions(
+			newContext(),
+			testhelper.MustParseURL(t, serverURL),
+			nil,
+			nil,
+			opts,
+		)
+		require.NoError(t, err)
+
+		// This should NOT timeout during connection because we have a longer timeout
+		_, err = cCustom.GetNarInfo(context.Background(), "test")
+		// It will error with parsing, but not with connection timeout
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	t.Run("custom response header timeout is respected - slow server succeeds with longer timeout", func(t *testing.T) {
+		t.Parallel()
+
+		// Server that takes 4 seconds to respond (longer than default 3s timeout)
+		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(4 * time.Second)
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "StorePath: /nix/store/test")
+		}))
+		defer slowServer.Close()
+
+		// With default timeout (3s), this should fail
+		cDefault, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, slowServer.URL),
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+
+		_, err = cDefault.GetNarInfo(context.Background(), "test")
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		// With custom longer timeout (6s), this should succeed
+		opts := &upstream.Options{
+			ResponseHeaderTimeout: 6 * time.Second,
+		}
+
+		cCustom, err := upstream.NewWithOptions(
+			newContext(),
+			testhelper.MustParseURL(t, slowServer.URL),
+			nil,
+			nil,
+			opts,
+		)
+		require.NoError(t, err)
+
+		// This should NOT timeout because we have a longer timeout
+		_, err = cCustom.GetNarInfo(context.Background(), "test")
+		// It will error with parsing, but not with timeout
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, context.DeadlineExceeded)
+	})
+}
+
+// slowAcceptListener wraps a net.Listener to delay accepting connections.
+type slowAcceptListener struct {
+	net.Listener
+	delay time.Duration
+}
+
+func (l *slowAcceptListener) Accept() (net.Conn, error) {
+	time.Sleep(l.delay)
+
+	return l.Listener.Accept()
 }
 
 func newContext() context.Context {

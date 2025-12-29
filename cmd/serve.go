@@ -201,6 +201,18 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Usage:   "Set to host:public-key for each upstream cache",
 				Sources: flagSources("cache.upstream.public-keys", "UPSTREAM_PUBLIC_KEYS"),
 			},
+			&cli.DurationFlag{
+				Name:    "upstream-dialer-timeout",
+				Usage:   "Timeout for establishing TCP connections to upstream caches (e.g., 3s, 5s, 10s)",
+				Sources: flagSources("cache.upstream.dialer-timeout", "UPSTREAM_DIALER_TIMEOUT"),
+				Value:   3 * time.Second,
+			},
+			&cli.DurationFlag{
+				Name:    "upstream-response-header-timeout",
+				Usage:   "Timeout for waiting for upstream server's response headers (e.g., 3s, 5s, 10s)",
+				Sources: flagSources("cache.upstream.response-header-timeout", "UPSTREAM_RESPONSE_HEADER_TIMEOUT"),
+				Value:   3 * time.Second,
+			},
 		},
 	}
 }
@@ -296,6 +308,11 @@ func serveAction() cli.ActionFunc {
 func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.Netrc) ([]*upstream.Cache, error) {
 	ucSlice := cmd.StringSlice("upstream-cache")
 
+	opts := &upstream.Options{
+		DialerTimeout:         cmd.Duration("upstream-dialer-timeout"),
+		ResponseHeaderTimeout: cmd.Duration("upstream-response-header-timeout"),
+	}
+
 	ucs := make([]*upstream.Cache, 0, len(ucSlice))
 
 	for _, us := range ucSlice {
@@ -326,7 +343,7 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 			}
 		}
 
-		uc, err := upstream.New(ctx, u, pubKeys, creds)
+		uc, err := upstream.NewWithOptions(ctx, u, pubKeys, creds, opts)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a new upstream cache: %w", err)
 		}
