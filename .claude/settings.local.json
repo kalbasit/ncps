@@ -10,7 +10,8 @@
       "Bash(export NCPS_TEST_S3_ACCESS_KEY_ID=\"test-access-key\")",
       "Bash(export NCPS_TEST_S3_SECRET_ACCESS_KEY=\"test-secret-key\")",
       "Bash(nix flake check:*)",
-      "Bash(nix fmt:*)"
+      "Bash(nix fmt:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
