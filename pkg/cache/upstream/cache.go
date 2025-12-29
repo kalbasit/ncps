@@ -114,19 +114,18 @@ func NewWithOptions(
 		return nil, ErrURLRequired
 	}
 
-	// Set default options if not provided
-	if opts == nil {
-		opts = &Options{}
-	}
+	// Set default timeouts and override if options are provided
+	dialerTimeout := defaultHTTPTimeout
+	responseHeaderTimeout := defaultHTTPTimeout
 
-	dialerTimeout := opts.DialerTimeout
-	if dialerTimeout == 0 {
-		dialerTimeout = defaultHTTPTimeout
-	}
+	if opts != nil {
+		if opts.DialerTimeout != 0 {
+			dialerTimeout = opts.DialerTimeout
+		}
 
-	responseHeaderTimeout := opts.ResponseHeaderTimeout
-	if responseHeaderTimeout == 0 {
-		responseHeaderTimeout = defaultHTTPTimeout
+		if opts.ResponseHeaderTimeout != 0 {
+			responseHeaderTimeout = opts.ResponseHeaderTimeout
+		}
 	}
 
 	c := &Cache{
