@@ -623,6 +623,7 @@ Configure timeout values for upstream cache connections. Increase these values i
 | `--upstream-response-header-timeout` | Timeout for waiting for upstream server's response headers | `UPSTREAM_RESPONSE_HEADER_TIMEOUT` | `3s` |
 
 **Common timeout values:**
+
 - `3s` - Default, works for most local/fast upstreams
 - `10s` - Recommended for slow networks or distant upstreams
 - `30s` - For very slow connections (e.g., satellite, slow VPN)
