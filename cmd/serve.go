@@ -308,20 +308,9 @@ func serveAction() cli.ActionFunc {
 func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.Netrc) ([]*upstream.Cache, error) {
 	ucSlice := cmd.StringSlice("upstream-cache")
 
-	// Parse timeout flags
-	dialerTimeout, err := time.ParseDuration(cmd.String("upstream-dialer-timeout"))
-	if err != nil {
-		return nil, fmt.Errorf("error parsing --upstream-dialer-timeout: %w", err)
-	}
-
-	responseHeaderTimeout, err := time.ParseDuration(cmd.String("upstream-response-header-timeout"))
-	if err != nil {
-		return nil, fmt.Errorf("error parsing --upstream-response-header-timeout: %w", err)
-	}
-
 	opts := &upstream.Options{
-		DialerTimeout:         dialerTimeout,
-		ResponseHeaderTimeout: responseHeaderTimeout,
+		DialerTimeout:         cmd.Duration("upstream-dialer-timeout"),
+		ResponseHeaderTimeout: cmd.Duration("upstream-response-header-timeout"),
 	}
 
 	ucs := make([]*upstream.Cache, 0, len(ucSlice))
