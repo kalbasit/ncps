@@ -244,7 +244,9 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -297,7 +299,9 @@ func TestGetNarInfo(t *testing.T) {
 
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
@@ -894,7 +898,9 @@ func TestGetNar(t *testing.T) {
 
 	defer os.RemoveAll(dir) // clean up
 
-	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), testdata.PublicKeys(), nil)
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
 	require.NoError(t, err)
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")

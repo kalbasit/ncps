@@ -33,26 +33,24 @@ func TestNew(t *testing.T) {
 	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
 		//nolint:paralleltest
 		t.Run("hostname must not be empty", func(t *testing.T) {
-			_, err := upstream.New(newContext(), nil, nil, nil)
+			_, err := upstream.New(newContext(), nil, nil)
 			assert.ErrorIs(t, err, upstream.ErrURLRequired)
 		})
 
 		//nolint:paralleltest
 		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, "cache.nixos.org"), nil, nil)
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, "cache.nixos.org"), nil)
 			assert.ErrorIs(t, err, upstream.ErrURLMustContainScheme)
 		})
 
 		t.Run("valid url with no path must not return no error", func(t *testing.T) {
-			_, err := upstream.New(newContext(),
-				testhelper.MustParseURL(t, ts.URL), nil, nil)
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 
 			assert.NoError(t, err)
 		})
 
 		t.Run("valid url with only / must not return no error", func(t *testing.T) {
-			_, err := upstream.New(newContext(),
-				testhelper.MustParseURL(t, ts.URL), nil, nil)
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 
 			assert.NoError(t, err)
 		})
@@ -62,7 +60,9 @@ func TestNew(t *testing.T) {
 	t.Run("public keys", func(t *testing.T) {
 		//nolint:paralleltest
 		t.Run("invalid public keys", func(t *testing.T) {
-			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), []string{"invalid"}, nil)
+			_, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+				PublicKeys: []string{"invalid"},
+			})
 			assert.True(t, strings.HasPrefix(err.Error(), "error parsing the public key: public key is corrupt:"))
 		})
 
@@ -71,8 +71,9 @@ func TestNew(t *testing.T) {
 			_, err := upstream.New(
 				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
-				testdata.PublicKeys(),
-				nil,
+				&upstream.Options{
+					PublicKeys: testdata.PublicKeys(),
+				},
 			)
 			assert.NoError(t, err)
 		})
@@ -83,8 +84,9 @@ func TestNew(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -96,8 +98,9 @@ func TestNew(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL+"?priority=42"),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -109,8 +112,9 @@ func TestNew(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL+"?priority=0"),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -122,8 +126,9 @@ func TestNew(t *testing.T) {
 		_, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL+"?priority=-1"),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		assert.ErrorContains(t, err, "error parsing the priority from the URL")
 	})
@@ -144,21 +149,16 @@ func TestGetNarInfo(t *testing.T) {
 			ts := testdata.NewTestServer(t, 40)
 			defer ts.Close()
 
+			opts := &upstream.Options{}
 			if withKeys {
-				c, err = upstream.New(
-					newContext(),
-					testhelper.MustParseURL(t, ts.URL),
-					testdata.PublicKeys(),
-					nil,
-				)
-			} else {
-				c, err = upstream.New(
-					newContext(),
-					testhelper.MustParseURL(t, ts.URL),
-					nil,
-					nil,
-				)
+				opts.PublicKeys = testdata.PublicKeys()
 			}
+
+			c, err = upstream.New(
+				newContext(),
+				testhelper.MustParseURL(t, ts.URL),
+				opts,
+			)
 
 			require.NoError(t, err)
 
@@ -231,8 +231,9 @@ func TestGetNarInfo(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -253,8 +254,9 @@ func TestHasNarInfo(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -274,8 +276,9 @@ func TestHasNarInfo(t *testing.T) {
 			c, err := upstream.New(
 				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
-				testdata.PublicKeys(),
-				nil,
+				&upstream.Options{
+					PublicKeys: testdata.PublicKeys(),
+				},
 			)
 			require.NoError(t, err)
 
@@ -298,8 +301,9 @@ func TestHasNarInfo(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -317,8 +321,9 @@ func TestGetNar(t *testing.T) {
 	c, err := upstream.New(
 		newContext(),
 		testhelper.MustParseURL(t, ts.URL),
-		testdata.PublicKeys(),
-		nil,
+		&upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		},
 	)
 	require.NoError(t, err)
 
@@ -356,8 +361,9 @@ func TestGetNar(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -379,8 +385,9 @@ func TestHasNar(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -401,8 +408,9 @@ func TestHasNar(t *testing.T) {
 			c, err := upstream.New(
 				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
-				testdata.PublicKeys(),
-				nil,
+				&upstream.Options{
+					PublicKeys: testdata.PublicKeys(),
+				},
 			)
 			require.NoError(t, err)
 
@@ -426,8 +434,9 @@ func TestHasNar(t *testing.T) {
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
-			testdata.PublicKeys(),
-			nil,
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
 		)
 		require.NoError(t, err)
 
@@ -446,8 +455,9 @@ func TestGetNarCanMutate(t *testing.T) {
 	c, err := upstream.New(
 		newContext(),
 		testhelper.MustParseURL(t, ts.URL),
-		testdata.PublicKeys(),
-		nil,
+		&upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		},
 	)
 	require.NoError(t, err)
 
@@ -499,16 +509,15 @@ func TestNetrcAuthentication(t *testing.T) {
 		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
 		defer ts.Close()
 
-		creds := &upstream.NetrcCredentials{
-			Username: "testuser",
-			Password: "testpass",
-		}
-
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
-			nil,
-			creds,
+			&upstream.Options{
+				NetrcCredentials: &upstream.NetrcCredentials{
+					Username: "testuser",
+					Password: "testpass",
+				},
+			},
 		)
 		require.NoError(t, err)
 
@@ -527,7 +536,6 @@ func TestNetrcAuthentication(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
 			nil,
-			nil,
 		)
 		require.NoError(t, err)
 
@@ -542,16 +550,15 @@ func TestNetrcAuthentication(t *testing.T) {
 		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
 		defer ts.Close()
 
-		creds := &upstream.NetrcCredentials{
-			Username: "testuser",
-			Password: "wrongpass",
-		}
-
 		c, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, ts.URL),
-			nil,
-			creds,
+			&upstream.Options{
+				NetrcCredentials: &upstream.NetrcCredentials{
+					Username: "testuser",
+					Password: "wrongpass",
+				},
+			},
 		)
 		require.NoError(t, err)
 
@@ -597,11 +604,9 @@ func TestNewWithOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			c, err := upstream.NewWithOptions(
+			c, err := upstream.New(
 				newContext(),
 				testhelper.MustParseURL(t, ts.URL),
-				nil,
-				nil,
 				tc.opts,
 			)
 			require.NoError(t, err)
@@ -650,7 +655,6 @@ func TestNewWithOptions(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, serverURL),
 			nil,
-			nil,
 		)
 		require.NoError(t, err)
 
@@ -665,11 +669,9 @@ func TestNewWithOptions(t *testing.T) {
 			ResponseHeaderTimeout: 10 * time.Second, // Set this too so we don't timeout waiting for headers
 		}
 
-		cCustom, err := upstream.NewWithOptions(
+		cCustom, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, serverURL),
-			nil,
-			nil,
 			opts,
 		)
 		require.NoError(t, err)
@@ -697,7 +699,6 @@ func TestNewWithOptions(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			nil,
-			nil,
 		)
 		require.NoError(t, err)
 
@@ -710,11 +711,9 @@ func TestNewWithOptions(t *testing.T) {
 			ResponseHeaderTimeout: 6 * time.Second,
 		}
 
-		cCustom, err := upstream.NewWithOptions(
+		cCustom, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
-			nil,
-			nil,
 			opts,
 		)
 		require.NoError(t, err)

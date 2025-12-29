@@ -308,42 +308,39 @@ func serveAction() cli.ActionFunc {
 func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.Netrc) ([]*upstream.Cache, error) {
 	ucSlice := cmd.StringSlice("upstream-cache")
 
-	opts := &upstream.Options{
-		DialerTimeout:         cmd.Duration("upstream-dialer-timeout"),
-		ResponseHeaderTimeout: cmd.Duration("upstream-response-header-timeout"),
-	}
-
 	ucs := make([]*upstream.Cache, 0, len(ucSlice))
 
 	for _, us := range ucSlice {
-		var pubKeys []string
-
 		u, err := url.Parse(us)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing --upstream-cache=%q: %w", us, err)
 		}
 
-		rx := regexp.MustCompile(fmt.Sprintf(`^%s-[0-9]+:[A-Za-z0-9+/=]+$`, regexp.QuoteMeta(u.Host)))
+		// Build options for this upstream cache
+		opts := &upstream.Options{
+			DialerTimeout:         cmd.Duration("upstream-dialer-timeout"),
+			ResponseHeaderTimeout: cmd.Duration("upstream-response-header-timeout"),
+		}
 
+		// Find public keys for this upstream
+		rx := regexp.MustCompile(fmt.Sprintf(`^%s-[0-9]+:[A-Za-z0-9+/=]+$`, regexp.QuoteMeta(u.Host)))
 		for _, pubKey := range cmd.StringSlice("upstream-public-key") {
 			if rx.MatchString(pubKey) {
-				pubKeys = append(pubKeys, pubKey)
+				opts.PublicKeys = append(opts.PublicKeys, pubKey)
 			}
 		}
 
 		// Get credentials for this hostname
-		var creds *upstream.NetrcCredentials
-
 		if netrcData != nil {
 			if machine := netrcData.FindMachine(u.Hostname()); machine != nil {
-				creds = &upstream.NetrcCredentials{
+				opts.NetrcCredentials = &upstream.NetrcCredentials{
 					Username: machine.Login,
 					Password: machine.Password,
 				}
 			}
 		}
 
-		uc, err := upstream.NewWithOptions(ctx, u, pubKeys, creds, opts)
+		uc, err := upstream.New(ctx, u, opts)
 		if err != nil {
 			return nil, fmt.Errorf("error creating a new upstream cache: %w", err)
 		}

@@ -85,6 +85,14 @@ type NetrcCredentials struct {
 
 // Options contains optional configuration for creating an upstream cache.
 type Options struct {
+	// PublicKeys is a list of public keys for verifying signatures.
+	// If empty, signature verification will be skipped.
+	PublicKeys []string
+
+	// NetrcCredentials holds authentication credentials for the upstream cache.
+	// If nil, no authentication will be used.
+	NetrcCredentials *NetrcCredentials
+
 	// DialerTimeout is the timeout for establishing a TCP connection.
 	// If zero, defaults to defaultHTTPTimeout (3s).
 	DialerTimeout time.Duration
@@ -94,22 +102,9 @@ type Options struct {
 	ResponseHeaderTimeout time.Duration
 }
 
-// New creates a new upstream cache with default timeout values.
-// Pass nil for netrcCreds if no authentication is needed.
-func New(ctx context.Context, u *url.URL, pubKeys []string, netrcCreds *NetrcCredentials) (*Cache, error) {
-	return NewWithOptions(ctx, u, pubKeys, netrcCreds, nil)
-}
-
-// NewWithOptions creates a new upstream cache with custom options.
-// Pass nil for netrcCreds if no authentication is needed.
-// Pass nil for opts to use default timeout values.
-func NewWithOptions(
-	ctx context.Context,
-	u *url.URL,
-	pubKeys []string,
-	netrcCreds *NetrcCredentials,
-	opts *Options,
-) (*Cache, error) {
+// New creates a new upstream cache with the given URL and options.
+// Pass nil for opts to use default values.
+func New(ctx context.Context, u *url.URL, opts *Options) (*Cache, error) {
 	if u == nil {
 		return nil, ErrURLRequired
 	}
@@ -134,13 +129,13 @@ func NewWithOptions(
 		responseHeaderTimeout: responseHeaderTimeout,
 	}
 
-	if netrcCreds != nil {
-		c.netrcAuth = netrcCreds
+	if opts.NetrcCredentials != nil {
+		c.netrcAuth = opts.NetrcCredentials
 
 		zerolog.Ctx(ctx).
 			Info().
 			Str("hostname", c.url.Hostname()).
-			Str("username", netrcCreds.Username).
+			Str("username", opts.NetrcCredentials.Username).
 			Msg("loaded netrc authentication credentials")
 	}
 
@@ -157,7 +152,7 @@ func NewWithOptions(
 		return nil, err
 	}
 
-	for _, pubKey := range pubKeys {
+	for _, pubKey := range opts.PublicKeys {
 		pk, err := signature.ParsePublicKey(pubKey)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing the public key: %w", err)
