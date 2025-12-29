@@ -41,6 +41,11 @@ cache:
     schedule: "0 0 * * *"
     # The name of the timezone to use for the cron
     timezone: America/Los_Angeles
+  # The path to the secret key used for signing cached paths
+  # XXX: Only set this if you intend to store the key yourself instead of having ncps store it in its config store.
+  secret-key-path: ""
+  # Whether to sign narInfo files or passthru as-is from upstream
+  sign-narinfo: true
   storage:
     # The local data path used for configuration and cache storage
     # Use this OR S3 storage (cache.storage.s3.bucket) - not both
@@ -60,11 +65,6 @@ cache:
     #   secret-access-key: "your-secret-key"
     #   # Use SSL/TLS for S3 connection (default: true)
     #   use-ssl: true
-  # The path to the secret key used for signing cached paths
-  # XXX: Only set this if you intend to store the key yourself instead of having ncps store it in its config store.
-  secret-key-path: ""
-  # Whether to sign narInfo files or passthru as-is from upstream
-  sign-narinfo: true
   # The path to the temporary directory that is used by the cache to download NAR files
   temp-path: "/tmp"
   # Path to netrc file for upstream authentication
@@ -72,7 +72,7 @@ cache:
   # Configure upstream caches
   upstream:
     # Set to URL (with scheme) for each upstream cache
-    caches:
+    urls:
       - https://cache.nixos.org
       - https://nix-community.cachix.org
     # Set to host:public-key for each upstream cache

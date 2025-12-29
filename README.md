@@ -141,8 +141,8 @@ docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
   --cache-hostname=your-ncps-hostname \
   --cache-storage-local=/storage \
   --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
-  --upstream-cache=https://cache.nixos.org \
-  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+  --cache-upstream-url=https://cache.nixos.org \
+  --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
 </details>
@@ -171,8 +171,8 @@ docker run -d --name ncps -p 8501:8501 -v ncps-db:/db kalbasit/ncps \
   --cache-storage-s3-access-key-id=YOUR_ACCESS_KEY \
   --cache-storage-s3-secret-access-key=YOUR_SECRET_KEY \
   --cache-database-url=sqlite:/db/db.sqlite \
-  --upstream-cache=https://cache.nixos.org \
-  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+  --cache-upstream-url=https://cache.nixos.org \
+  --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
 **Benefits of S3 storage:**
@@ -222,10 +222,10 @@ docker run -d \
   --cache-hostname=your-ncps-hostname \
   --cache-storage-local=/storage \
   --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite \
-  --upstream-cache=https://cache.nixos.org \
-  --upstream-cache=https://nix-community.cachix.org \
-  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
-  --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+  --cache-upstream-url=https://cache.nixos.org \
+  --cache-upstream-url=https://nix-community.cachix.org \
+  --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
+  --cache-upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
 ```
 
 </details>
@@ -274,10 +274,10 @@ services:
       --cache-hostname=your-ncps-hostname
       --cache-storage-local=/storage
       --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
-      --upstream-cache=https://cache.nixos.org
-      --upstream-cache=https://nix-community.cachix.org
-      --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-      --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+      --cache-upstream-url=https://cache.nixos.org
+      --cache-upstream-url=https://nix-community.cachix.org
+      --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+      --cache-upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
     restart: unless-stopped
 
 volumes:
@@ -369,10 +369,10 @@ spec:
             - --cache-storage-local=/storage
             - --cache-temp-path=/nar-temp-dir
             - --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
-            - --upstream-cache=https://cache.nixos.org
-            - --upstream-cache=https://nix-community.cachix.org
-            - --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            - --upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+            - --cache-upstream-url=https://cache.nixos.org
+            - --cache-upstream-url=https://nix-community.cachix.org
+            - --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            - --cache-upstream-public-key=nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
           ports:
             - containerPort: 8501
               name: http-web
@@ -536,8 +536,8 @@ All the flags can be set using the configuration file. See [config.example.yaml]
 | ----------------------- | ------------------------------------------------ | ---------------------- | -------- |
 | `--cache-hostname` | **Cache hostname for key generation** | `CACHE_HOSTNAME` | ✅ |
 | `--cache-storage-local` | Local storage directory (use this OR S3 storage) | `CACHE_STORAGE_LOCAL` | ✅ (1) |
-| `--upstream-cache` | Upstream cache URL (repeatable) | `UPSTREAM_CACHES` | ✅ |
-| `--upstream-public-key` | Upstream public key (repeatable) | `UPSTREAM_PUBLIC_KEYS` | ✅ |
+| `--cache-upstream-url` | Upstream cache URL (repeatable) | `CACHE_UPSTREAM_URLS` | ✅ |
+| `--cache-upstream-public-key` | Upstream public key (repeatable) | `CACHE_UPSTREAM_PUBLIC_KEYS` | ✅ |
 
 **Note (1):** Either `--cache-storage-local` OR S3 storage flags (see below) are required, but not both.
 
@@ -568,8 +568,8 @@ ncps serve \
   --cache-storage-s3-access-key-id=AKIAIOSFODNN7EXAMPLE \
   --cache-storage-s3-secret-access-key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
   --cache-database-url=sqlite:/var/lib/ncps/db.sqlite \
-  --upstream-cache=https://cache.nixos.org \
-  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+  --cache-upstream-url=https://cache.nixos.org \
+  --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
 </details>
@@ -586,8 +586,8 @@ ncps serve \
   --cache-storage-s3-secret-access-key=minioadmin \
   --cache-storage-s3-use-ssl=false \
   --cache-database-url=sqlite:/var/lib/ncps/db.sqlite \
-  --upstream-cache=https://cache.nixos.org \
-  --upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+  --cache-upstream-url=https://cache.nixos.org \
+  --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
 **Note:** The endpoint URL scheme (http:// or https://) takes precedence over `--cache-storage-s3-use-ssl`.
@@ -618,9 +618,9 @@ ncps serve \
 Configure timeout values for upstream cache connections. Increase these values if you experience timeout errors with slow or remote upstream caches.
 
 | Option | Description | Environment Variable | Default |
-| ------------------------------------ | ---------------------------------------------------------- | --------------------------------------- | ------- |
-| `--upstream-dialer-timeout` | Timeout for establishing TCP connections to upstream caches | `UPSTREAM_DIALER_TIMEOUT` | `3s` |
-| `--upstream-response-header-timeout` | Timeout for waiting for upstream server's response headers | `UPSTREAM_RESPONSE_HEADER_TIMEOUT` | `3s` |
+| -------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------- | ------- |
+| `--cache-upstream-dialer-timeout` | Timeout for establishing TCP connections to upstream caches | `CACHE_UPSTREAM_DIALER_TIMEOUT` | `3s` |
+| `--cache-upstream-response-header-timeout` | Timeout for waiting for upstream server's response headers | `CACHE_UPSTREAM_RESPONSE_HEADER_TIMEOUT` | `3s` |
 
 **Common timeout values:**
 
@@ -634,9 +634,9 @@ Configure timeout values for upstream cache connections. Increase these values i
 ncps serve \
   --cache-hostname=ncps.example.com \
   --cache-storage-local=/var/lib/ncps \
-  --upstream-cache=https://cache.nixos.org \
-  --upstream-dialer-timeout=10s \
-  --upstream-response-header-timeout=10s
+  --cache-upstream-url=https://cache.nixos.org \
+  --cache-upstream-dialer-timeout=10s \
+  --cache-upstream-response-header-timeout=10s
 ```
 
 #### 🌐 Network
@@ -725,7 +725,7 @@ trusted-public-keys = your-ncps-hostname=<paste-public-key-here> cache.nixos.org
 - ✅ `--cache-hostname`
 - ✅ `--cache-storage-local` or (`--cache-storage-s3-bucket` and other `--cache-storage-s3-*` such as endpoint and credentials)
 - ✅ `--cache-database-url`
-- ✅ At least one `--upstream-cache` and `--upstream-public-key`
+- ✅ At least one `--cache-upstream-url` and `--cache-upstream-public-key`
 
 </details>
 
