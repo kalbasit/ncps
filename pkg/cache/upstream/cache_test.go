@@ -638,6 +638,9 @@ func TestNewWithOptions(t *testing.T) {
 			server.Serve(slowListener)
 		}()
 
+		// Allow the server goroutine to start before making a connection.
+		time.Sleep(100 * time.Millisecond)
+
 		defer server.Close()
 
 		serverURL := fmt.Sprintf("http://%s", listener.Addr().String())
