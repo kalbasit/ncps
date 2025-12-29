@@ -80,10 +80,10 @@ common_args=(
   --cache-allow-put-verb
   --cache-hostname localhost
   --cache-database-url "sqlite:$ncps_datadir/var/ncps/db/db.sqlite"
-  --upstream-cache https://cache.nixos.org
-  --upstream-cache https://nix-community.cachix.org
-  --upstream-public-key cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-  --upstream-public-key nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+  --cache-upstream-url https://cache.nixos.org
+  --cache-upstream-url https://nix-community.cachix.org
+  --cache-upstream-public-key cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+  --cache-upstream-public-key nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
 )
 
 # Storage-specific arguments
