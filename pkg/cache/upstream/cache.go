@@ -119,11 +119,11 @@ func NewWithOptions(
 	responseHeaderTimeout := defaultHTTPTimeout
 
 	if opts != nil {
-		if opts.DialerTimeout != 0 {
+if opts.DialerTimeout > 0 {
 			dialerTimeout = opts.DialerTimeout
 		}
 
-		if opts.ResponseHeaderTimeout != 0 {
+		if opts.ResponseHeaderTimeout > 0 {
 			responseHeaderTimeout = opts.ResponseHeaderTimeout
 		}
 	}
