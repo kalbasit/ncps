@@ -613,6 +613,31 @@ ncps serve \
 | `--cache-allow-delete-verb` | Allow DELETE operations | `CACHE_ALLOW_DELETE_VERB` | `false` |
 | `--netrc-file` | Path to netrc file for upstream auth | `NETRC_FILE` | `~/.netrc` |
 
+#### ⏱️ Upstream Connection Timeouts
+
+Configure timeout values for upstream cache connections. Increase these values if you experience timeout errors with slow or remote upstream caches.
+
+| Option | Description | Environment Variable | Default |
+| ------------------------------------ | ---------------------------------------------------------- | --------------------------------------- | ------- |
+| `--upstream-dialer-timeout` | Timeout for establishing TCP connections to upstream caches | `UPSTREAM_DIALER_TIMEOUT` | `3s` |
+| `--upstream-response-header-timeout` | Timeout for waiting for upstream server's response headers | `UPSTREAM_RESPONSE_HEADER_TIMEOUT` | `3s` |
+
+**Common timeout values:**
+- `3s` - Default, works for most local/fast upstreams
+- `10s` - Recommended for slow networks or distant upstreams
+- `30s` - For very slow connections (e.g., satellite, slow VPN)
+
+**Example:** For slow upstream connections, increase timeouts:
+
+```bash
+ncps serve \
+  --cache-hostname=ncps.example.com \
+  --cache-storage-local=/var/lib/ncps \
+  --upstream-cache=https://cache.nixos.org \
+  --upstream-dialer-timeout=10s \
+  --upstream-response-header-timeout=10s
+```
+
 #### 🌐 Network
 
 | Option | Description | Environment Variable | Default |

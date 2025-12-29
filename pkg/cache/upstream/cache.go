@@ -83,16 +83,56 @@ type NetrcCredentials struct {
 	Password string
 }
 
+// Options contains optional configuration for creating an upstream cache.
+type Options struct {
+	// DialerTimeout is the timeout for establishing a TCP connection.
+	// If zero, defaults to defaultHTTPTimeout (3s).
+	DialerTimeout time.Duration
+
+	// ResponseHeaderTimeout is the timeout for waiting for the server's response headers.
+	// If zero, defaults to defaultHTTPTimeout (3s).
+	ResponseHeaderTimeout time.Duration
+}
+
 // New creates a new upstream cache. Pass nil for netrcCreds if no authentication is needed.
+// Pass nil for opts to use default timeout values.
 func New(ctx context.Context, u *url.URL, pubKeys []string, netrcCreds *NetrcCredentials) (*Cache, error) {
+	return NewWithOptions(ctx, u, pubKeys, netrcCreds, nil)
+}
+
+// NewWithOptions creates a new upstream cache with custom options.
+// Pass nil for netrcCreds if no authentication is needed.
+// Pass nil for opts to use default timeout values.
+func NewWithOptions(
+	ctx context.Context,
+	u *url.URL,
+	pubKeys []string,
+	netrcCreds *NetrcCredentials,
+	opts *Options,
+) (*Cache, error) {
 	if u == nil {
 		return nil, ErrURLRequired
 	}
 
+	// Set default options if not provided
+	if opts == nil {
+		opts = &Options{}
+	}
+
+	dialerTimeout := opts.DialerTimeout
+	if dialerTimeout == 0 {
+		dialerTimeout = defaultHTTPTimeout
+	}
+
+	responseHeaderTimeout := opts.ResponseHeaderTimeout
+	if responseHeaderTimeout == 0 {
+		responseHeaderTimeout = defaultHTTPTimeout
+	}
+
 	c := &Cache{
 		url:                   u,
-		dialerTimeout:         defaultHTTPTimeout,
-		responseHeaderTimeout: defaultHTTPTimeout,
+		dialerTimeout:         dialerTimeout,
+		responseHeaderTimeout: responseHeaderTimeout,
 	}
 
 	if netrcCreds != nil {
