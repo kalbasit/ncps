@@ -3,6 +3,8 @@ package database_test
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -14,6 +16,8 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/testhelper"
 )
+
+var errDBMigrationPanic = errors.New("database migration panicked")
 
 //nolint:gochecknoglobals
 var (
@@ -40,9 +44,10 @@ func getTestPostgresDB(t *testing.T) database.Querier {
 		// on a non-migrated database.
 		defer func() {
 			if r := recover(); r != nil {
-				errPostgresMigration = fmt.Errorf("DB migration panic: %v", r)
+				errPostgresMigration = fmt.Errorf("%w: %v", errDBMigrationPanic, r)
 			}
 		}()
+
 		testhelper.MigratePostgresDatabase(t, postgresURL)
 	})
 
