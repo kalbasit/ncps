@@ -49,7 +49,7 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
@@ -96,7 +96,7 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
@@ -236,7 +236,7 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
@@ -353,7 +353,7 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)

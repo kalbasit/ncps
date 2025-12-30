@@ -55,7 +55,7 @@ func getTestPostgresDB(t *testing.T) database.Querier {
 		t.Fatalf("Failed to migrate PostgreSQL database: %v", errPostgresMigration)
 	}
 
-	db, err := database.Open(postgresURL)
+	db, err := database.Open(postgresURL, nil)
 	require.NoError(t, err)
 
 	return db

@@ -130,6 +130,16 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Sources:  flagSources("cache.database-url", "CACHE_DATABASE_URL"),
 				Required: true,
 			},
+			&cli.IntFlag{
+				Name:    "cache-database-pool-max-open-conns",
+				Usage:   "Maximum number of open connections to the database (0 = use database-specific defaults)",
+				Sources: flagSources("cache.database.pool.max-open-conns", "CACHE_DATABASE_POOL_MAX_OPEN_CONNS"),
+			},
+			&cli.IntFlag{
+				Name:    "cache-database-pool-max-idle-conns",
+				Usage:   "Maximum number of idle connections in the pool (0 = use database-specific defaults)",
+				Sources: flagSources("cache.database.pool.max-idle-conns", "CACHE_DATABASE_POOL_MAX_IDLE_CONNS"),
+			},
 			&cli.StringFlag{
 				Name: "cache-max-size",
 				//nolint:lll
@@ -585,7 +595,20 @@ func createCache(
 ) (*cache.Cache, error) {
 	dbURL := cmd.String("cache-database-url")
 
-	db, err := database.Open(dbURL)
+	// Build pool configuration from flags
+	var poolCfg *database.PoolConfig
+
+	maxOpen := cmd.Int("cache-database-pool-max-open-conns")
+
+	maxIdle := cmd.Int("cache-database-pool-max-idle-conns")
+	if maxOpen > 0 || maxIdle > 0 {
+		poolCfg = &database.PoolConfig{
+			MaxOpenConns: maxOpen,
+			MaxIdleConns: maxIdle,
+		}
+	}
+
+	db, err := database.Open(dbURL, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
 	}

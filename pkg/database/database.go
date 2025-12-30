@@ -19,12 +19,25 @@ import (
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 )
 
+// PoolConfig holds database connection pool settings.
+type PoolConfig struct {
+	// MaxOpenConns is the maximum number of open connections to the database.
+	// If <= 0, defaults are used based on database type.
+	MaxOpenConns int
+	// MaxIdleConns is the maximum number of connections in the idle connection pool.
+	// If <= 0, defaults are used based on database type.
+	MaxIdleConns int
+}
+
 // Open opens a database connection and returns a Querier implementation.
 // The database type is determined from the URL scheme:
 //   - sqlite:// or sqlite3:// for SQLite
 //   - postgres:// or postgresql:// for PostgreSQL
 //   - mysql:// for MySQL/MariaDB
-func Open(dbURL string) (Querier, error) {
+//
+// The poolCfg parameter is optional. If nil, sensible defaults are used based on
+// the database type. SQLite uses MaxOpenConns=1, PostgreSQL and MySQL use higher values.
+func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
 	u, err := url.Parse(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the database URL %q: %w", dbURL, err)
@@ -36,11 +49,11 @@ func Open(dbURL string) (Querier, error) {
 
 	switch scheme {
 	case "sqlite", "sqlite3":
-		sdb, err = openSQLite(u)
+		sdb, err = openSQLite(u, poolCfg)
 	case "postgres", "postgresql":
-		sdb, err = openPostgreSQL(dbURL)
+		sdb, err = openPostgreSQL(dbURL, poolCfg)
 	case "mysql":
-		sdb, err = openMySQL(dbURL)
+		sdb, err = openMySQL(dbURL, poolCfg)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDriver, scheme)
 	}
@@ -63,7 +76,7 @@ func Open(dbURL string) (Querier, error) {
 	}
 }
 
-func openSQLite(u *url.URL) (*sql.DB, error) {
+func openSQLite(u *url.URL, poolCfg *PoolConfig) (*sql.DB, error) {
 	sdb, err := otelsql.Open("sqlite3", u.Path, otelsql.WithAttributes(
 		semconv.DBSystemSqlite,
 	))
@@ -74,12 +87,22 @@ func openSQLite(u *url.URL) (*sql.DB, error) {
 	// Getting an error `database is locked` when data is being inserted in the
 	// database at a fast rate. This will slow down read/write from the database
 	// but at least none of them will fail due to connection issues.
-	sdb.SetMaxOpenConns(1)
+	// SQLite requires MaxOpenConns=1 to avoid "database is locked" errors
+	maxOpen := 1
+	if poolCfg != nil && poolCfg.MaxOpenConns > 0 {
+		maxOpen = poolCfg.MaxOpenConns
+	}
+
+	sdb.SetMaxOpenConns(maxOpen)
+
+	if poolCfg != nil && poolCfg.MaxIdleConns > 0 {
+		sdb.SetMaxIdleConns(poolCfg.MaxIdleConns)
+	}
 
 	return sdb, nil
 }
 
-func openPostgreSQL(dbURL string) (*sql.DB, error) {
+func openPostgreSQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	sdb, err := otelsql.Open("pgx", dbURL, otelsql.WithAttributes(
 		semconv.DBSystemPostgreSQL,
 	))
@@ -89,13 +112,26 @@ func openPostgreSQL(dbURL string) (*sql.DB, error) {
 
 	// PostgreSQL can handle concurrent connections well
 	// Set reasonable defaults for connection pooling
-	sdb.SetMaxOpenConns(25)
-	sdb.SetMaxIdleConns(5)
+	maxOpen := 25
+	maxIdle := 5
+
+	if poolCfg != nil {
+		if poolCfg.MaxOpenConns > 0 {
+			maxOpen = poolCfg.MaxOpenConns
+		}
+
+		if poolCfg.MaxIdleConns > 0 {
+			maxIdle = poolCfg.MaxIdleConns
+		}
+	}
+
+	sdb.SetMaxOpenConns(maxOpen)
+	sdb.SetMaxIdleConns(maxIdle)
 
 	return sdb, nil
 }
 
-func openMySQL(dbURL string) (*sql.DB, error) {
+func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	// Convert mysql://user:pass@host:port/database to the format expected by go-sql-driver/mysql
 	// mysql://user:pass@tcp(host:port)/database?params
 	u, err := url.Parse(dbURL)
@@ -156,8 +192,21 @@ func openMySQL(dbURL string) (*sql.DB, error) {
 
 	// MySQL can handle concurrent connections well
 	// Set reasonable defaults for connection pooling
-	sdb.SetMaxOpenConns(25)
-	sdb.SetMaxIdleConns(5)
+	maxOpen := 25
+	maxIdle := 5
+
+	if poolCfg != nil {
+		if poolCfg.MaxOpenConns > 0 {
+			maxOpen = poolCfg.MaxOpenConns
+		}
+
+		if poolCfg.MaxIdleConns > 0 {
+			maxIdle = poolCfg.MaxIdleConns
+		}
+	}
+
+	sdb.SetMaxOpenConns(maxOpen)
+	sdb.SetMaxIdleConns(maxIdle)
 
 	return sdb, nil
 }

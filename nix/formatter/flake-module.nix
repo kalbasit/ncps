@@ -11,6 +11,7 @@
         ".env"
         ".envrc"
         "db/schema.sql"
+        "db/migrations/sqlite/20241230000000_add-cascade-to-nars-fk.sql" # sqlfluff has parsing issues with complex table recreation
         "LICENSE"
         "renovate.json"
       ];

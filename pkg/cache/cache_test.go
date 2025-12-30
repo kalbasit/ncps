@@ -51,7 +51,7 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			db, err := database.Open("sqlite:" + dbFile)
+			db, err := database.Open("sqlite:"+dbFile, nil)
 			require.NoError(t, err)
 
 			localStore, err := local.New(newContext(), dir)
@@ -72,7 +72,7 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			db, err := database.Open("sqlite:" + dbFile)
+			db, err := database.Open("sqlite:"+dbFile, nil)
 			require.NoError(t, err)
 
 			localStore, err := local.New(newContext(), dir)
@@ -93,7 +93,7 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			db, err := database.Open("sqlite:" + dbFile)
+			db, err := database.Open("sqlite:"+dbFile, nil)
 			require.NoError(t, err)
 
 			localStore, err := local.New(newContext(), dir)
@@ -114,7 +114,7 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			db, err := database.Open("sqlite:" + dbFile)
+			db, err := database.Open("sqlite:"+dbFile, nil)
 			require.NoError(t, err)
 
 			localStore, err := local.New(newContext(), dir)
@@ -139,7 +139,7 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			db, err := database.Open("sqlite:" + dbFile)
+			db, err := database.Open("sqlite:"+dbFile, nil)
 			require.NoError(t, err)
 
 			localStore, err := local.New(newContext(), dir)
@@ -165,7 +165,7 @@ func TestNew(t *testing.T) {
 			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 			testhelper.CreateMigrateDatabase(t, dbFile)
 
-			db, err := database.Open("sqlite:" + dbFile)
+			db, err := database.Open("sqlite:"+dbFile, nil)
 			require.NoError(t, err)
 
 			localStore, err := local.New(newContext(), dir)
@@ -206,7 +206,7 @@ func TestPublicKey(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
@@ -252,7 +252,7 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
@@ -307,7 +307,7 @@ func TestGetNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
@@ -692,7 +692,7 @@ func TestPutNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
@@ -833,7 +833,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
@@ -906,7 +906,7 @@ func TestGetNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
@@ -1125,7 +1125,7 @@ func TestPutNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
@@ -1171,7 +1171,7 @@ func TestDeleteNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)

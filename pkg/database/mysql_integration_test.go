@@ -35,7 +35,7 @@ func getTestMySQLDB(t *testing.T) database.Querier {
 		testhelper.MigrateMySQLDatabase(t, mysqlURL)
 	})
 
-	db, err := database.Open(mysqlURL)
+	db, err := database.Open(mysqlURL, nil)
 	require.NoError(t, err)
 
 	return db
