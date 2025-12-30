@@ -41,6 +41,7 @@ sqlc generate
 
 # Run database migrations manually
 dbmate --url "sqlite:/path/to/your/db.sqlite" --migrations-dir db/migrations/sqlite up
+dbmate --url "postgresql://user:pass@localhost:5432/ncps" --migrations-dir db/migrations/postgres up
 
 # Build
 go build .
@@ -151,10 +152,13 @@ PR #5: feature-e → feature-f     ← ❌ CI skipped
 - `pkg/server/` - HTTP server using Chi router
 - `pkg/database/` - Database abstraction layer supporting multiple engines (sqlc-generated code)
   - `database/sqlitedb/` - SQLite-specific implementation
+  - `database/postgresdb/` - PostgreSQL-specific implementation
 - `pkg/nar/` - NAR (Nix ARchive) format handling
 - `db/migrations/` - Database migration files
   - `migrations/sqlite/` - SQLite migration files
+  - `migrations/postgres/` - PostgreSQL migration files
 - `db/query.sqlite.sql` - SQLite queries for sqlc code generation
+- `db/query.postgres.sql` - PostgreSQL queries for sqlc code generation
 
 ### Key Interfaces (pkg/storage/store.go)
 
@@ -171,12 +175,14 @@ Both local and S3 backends implement these interfaces.
 Supports multiple database engines via sqlc for type-safe SQL:
 
 - **SQLite** (default): Embedded database, no external dependencies
+- **PostgreSQL**: Scalable relational database for production deployments
 
 Database selection is done via URL scheme in the `--cache-database-url` flag:
 
 - SQLite: `sqlite:/path/to/db.sqlite`
+- PostgreSQL: `postgresql://user:password@host:port/database`
 
-Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`. Run `sqlc generate` after modifying queries.
+Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql` and `db/query.postgres.sql`. Run `sqlc generate` after modifying queries.
 
 ## Code Quality
 

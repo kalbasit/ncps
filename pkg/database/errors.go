@@ -3,11 +3,12 @@ package database
 import (
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mattn/go-sqlite3"
 )
 
 // IsDuplicateKeyError checks if the error is a unique constraint violation
-// Works across SQLite.
+// Works across SQLite, PostgreSQL.
 func IsDuplicateKeyError(err error) bool {
 	if err == nil {
 		return false
@@ -17,6 +18,13 @@ func IsDuplicateKeyError(err error) bool {
 	var sqliteErr sqlite3.Error
 	if errors.As(err, &sqliteErr) {
 		return sqliteErr.Code == sqlite3.ErrConstraint
+	}
+
+	// PostgreSQL
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		// 23505 is unique_violation in PostgreSQL
+		return pgErr.Code == "23505"
 	}
 
 	return false
