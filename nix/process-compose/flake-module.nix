@@ -51,7 +51,7 @@
               command = ''
                 DATA_DIR=$(mktemp -d)
                 echo "Storing ephemeral PostgreSQL data in $DATA_DIR"
-                ${pkgs.postgresql}/bin/initdb -D $DATA_DIR
+                ${pkgs.postgresql}/bin/initdb -D $DATA_DIR --no-locale --encoding=UTF8
                 echo "host all all 127.0.0.1/32 trust" >> $DATA_DIR/pg_hba.conf
                 echo "listen_addresses = '127.0.0.1'" >> $DATA_DIR/postgresql.conf
                 echo "port = 5432" >> $DATA_DIR/postgresql.conf
@@ -76,9 +76,6 @@
                   };
                 in
                 "${initPostgres}/bin/init-postgres";
-              environment = {
-                PGPASSWORD = "test-password";
-              };
               depends_on.postgres-server.condition = "process_healthy";
             };
           };
