@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/XSAM/otelsql"
+	"github.com/go-sql-driver/mysql"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/database/postgresdb"
 	"github.com/kalbasit/ncps/pkg/database/sqlitedb"
 
-	_ "github.com/go-sql-driver/mysql" // MySQL driver
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 )
@@ -103,28 +103,49 @@ func openMySQL(dbURL string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// Build DSN in the format: user:pass@tcp(host:port)/database?params
-	dsn := ""
+	// Build DSN using mysql.Config for safer handling of special characters
+	cfg := mysql.NewConfig()
 
 	if u.User != nil {
-		password, _ := u.User.Password()
-		dsn = u.User.Username() + ":" + password + "@"
+		cfg.User = u.User.Username()
+		if password, ok := u.User.Password(); ok {
+			cfg.Passwd = password
+		}
 	}
 
-	host := u.Host
-	if host != "" {
-		dsn += "tcp(" + host + ")"
+	if u.Host != "" {
+		cfg.Net = "tcp"
+		cfg.Addr = u.Host
 	}
 
-	dsn += u.Path
+	// Remove leading slash from path to get database name
+	if u.Path != "" {
+		cfg.DBName = strings.TrimPrefix(u.Path, "/")
+	}
 
-	// Add query parameters
+	// Parse query parameters into cfg.Params
 	if u.RawQuery != "" {
-		dsn += "?" + u.RawQuery
+		query, err := url.ParseQuery(u.RawQuery)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing MySQL query parameters: %w", err)
+		}
+
+		cfg.Params = make(map[string]string)
+
+		for k, v := range query {
+			if len(v) > 0 {
+				cfg.Params[k] = v[0]
+			}
+		}
 	} else {
 		// Set sensible defaults for MySQL
-		dsn += "?parseTime=true&loc=UTC"
+		cfg.Params = map[string]string{
+			"parseTime": "true",
+			"loc":       "UTC",
+		}
 	}
+
+	dsn := cfg.FormatDSN()
 
 	sdb, err := otelsql.Open("mysql", dsn, otelsql.WithAttributes(
 		semconv.DBSystemMySQL,

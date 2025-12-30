@@ -16,10 +16,7 @@ import (
 )
 
 //nolint:gochecknoglobals
-var (
-	mysqlMigrationOnce sync.Once
-	errMySQLMigration  error
-)
+var mysqlMigrationOnce sync.Once
 
 // getTestMySQLDB returns a MySQL database connection for testing
 // or skips the test if NCPS_TEST_MYSQL_URL is not set.
@@ -37,10 +34,6 @@ func getTestMySQLDB(t *testing.T) database.Querier {
 	mysqlMigrationOnce.Do(func() {
 		testhelper.MigrateMySQLDatabase(t, mysqlURL)
 	})
-
-	if errMySQLMigration != nil {
-		t.Fatalf("Failed to migrate MySQL database: %v", errMySQLMigration)
-	}
 
 	db, err := database.Open(mysqlURL)
 	require.NoError(t, err)
@@ -290,6 +283,9 @@ func TestMySQL_GetNarTotalSize(t *testing.T) {
 			return
 		}
 
+		initialSize, err := db.GetNarTotalSize(context.Background())
+		require.NoError(t, err)
+
 		// Create multiple nars
 		var narIDs []int64
 
@@ -342,10 +338,10 @@ func TestMySQL_GetNarTotalSize(t *testing.T) {
 			}
 		})
 
-		size, err := db.GetNarTotalSize(context.Background())
+		finalSize, err := db.GetNarTotalSize(context.Background())
 		require.NoError(t, err)
 		//nolint:gosec
-		assert.LessOrEqual(t, totalSize, uint64(size)) // Should be at least our nars
+		assert.Equal(t, int64(totalSize), finalSize-initialSize)
 	})
 }
 
