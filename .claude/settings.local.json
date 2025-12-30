@@ -16,6 +16,7 @@
       "Bash(go test:*)",
       "Bash(golangci-lint run:*)",
       "Bash(gt ls:*)",
+      "Bash(ls:*)",
       "Bash(nix build:*)",
       "Bash(nix flake check:*)",
       "Bash(nix fmt:*)",
