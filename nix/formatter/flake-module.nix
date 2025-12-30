@@ -11,7 +11,6 @@
         ".env"
         ".envrc"
         "db/schema.sql"
-        "db/query.*.sql" # sqlc query files use special syntax
         "LICENSE"
         "renovate.json"
       ];
@@ -22,6 +21,7 @@
         mdformat.enable = true;
         nixfmt.enable = true;
         sqlfluff.enable = true;
+        sqlfluff-lint.enable = true;
         statix.enable = true;
         yamlfmt.enable = true;
       };
