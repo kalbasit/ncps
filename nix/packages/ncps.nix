@@ -242,6 +242,13 @@
                 fi
                 sleep 0.5
               done
+
+              # If it's still alive, force kill it
+              if kill -0 $MYSQL_PID 2>/dev/null; then
+                echo "MariaDB did not shut down gracefully, force killing..."
+                kill -9 $MYSQL_PID 2>/dev/null || true
+                sleep 1 # Give a moment for the OS to clean up after SIGKILL
+              fi
             fi
             # Give it an extra moment to release file handles
             sleep 1
