@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -133,7 +132,7 @@ func TestInsertNarInfo(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = db.CreateNarInfo(context.Background(), hash)
-		assert.True(t, database.ErrorIsNo(err, sqlite3.ErrConstraint))
+		assert.True(t, database.IsDuplicateKeyError(err))
 	})
 
 	t.Run("can write many narinfos", func(t *testing.T) {
@@ -525,7 +524,7 @@ func TestInsertNar(t *testing.T) {
 					FileSize:    123,
 				})
 
-				assert.True(t, database.ErrorIsNo(err, sqlite3.ErrConstraint))
+				assert.True(t, database.IsDuplicateKeyError(err))
 			})
 		})
 	}
@@ -798,9 +797,7 @@ func TestNarTotalSize(t *testing.T) {
 	size, err := db.GetNarTotalSize(context.Background())
 	require.NoError(t, err)
 
-	if assert.True(t, size.Valid) {
-		assert.Equal(t, expectedSize, uint64(size.Float64))
-	}
+	assert.EqualValues(t, expectedSize, size)
 }
 
 func TestGetLeastAccessedNars(t *testing.T) {
