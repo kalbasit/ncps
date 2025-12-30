@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mattn/go-sqlite3"
 )
@@ -28,7 +29,14 @@ func IsDuplicateKeyError(err error) bool {
 		return pgErr.Code == "23505"
 	}
 
-	// MySQL/MariaDB (for future support)
+	// MySQL/MariaDB
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		// 1062 is ER_DUP_ENTRY - Duplicate entry for key
+		return mysqlErr.Number == 1062
+	}
+
+	// Fallback to string matching for MySQL errors that don't unwrap properly
 	if strings.Contains(err.Error(), "Error 1062") || strings.Contains(err.Error(), "Duplicate entry") {
 		return true
 	}

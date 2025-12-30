@@ -34,6 +34,7 @@ cache:
   #   PostgreSQL: postgresql://user:password@localhost:5432/ncps?sslmode=require
   #   PostgreSQL: postgres://user:password@localhost:5432/ncps?sslmode=require
   #   PostgreSQL (local dev, no SSL): postgresql://user:password@localhost:5432/ncps?sslmode=disable
+  #   MySQL/MariaDB: mysql://user:password@localhost:3306/ncps
   database-url: "sqlite:/var/lib/ncps/db/db.sqlite"
   # The maximum size of the store. It can be given with units such as 5K, 10G
   # etc. Supported units: B, K, M, G, T

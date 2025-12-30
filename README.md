@@ -47,7 +47,7 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 | 🔐 **Secure Signing** | Signs cached paths with private keys for integrity |
 | 📊 **Monitoring** | OpenTelemetry support for centralized logging |
 | 🗜️ **Compression** | Harmonia's transparent zstd compression support |
-| 🗄️ **Database Support** | SQLite (embedded) or PostgreSQL for metadata storage |
+| 🗄️ **Database Support** | SQLite (embedded), PostgreSQL, or MySQL/MariaDB for metadata storage |
 
 ## ⚙️ How It Works
 
@@ -91,6 +91,7 @@ graph TB
     subgraph Database["Database Backends (Choose One)"]
         SQLite[(SQLite<br/>--cache-database-url sqlite:...)]
         Postgres[(PostgreSQL<br/>--cache-database-url postgresql:...)]
+        MySQL[(MySQL/MariaDB<br/>--cache-database-url mysql:...)]
     end
 
     subgraph Storage["Storage Backends (Choose One)"]
@@ -106,6 +107,7 @@ graph TB
 
     NCPS -.->|Option 1| SQLite
     NCPS -.->|Option 2| Postgres
+    NCPS -.->|Option 3| MySQL
     NCPS -.->|Option A| Local
     NCPS -.->|Option B| S3
     S3 --> S3Detail
@@ -120,6 +122,7 @@ graph TB
 
 - **SQLite** (default) - Embedded database for single-server deployments, no external dependencies
 - **PostgreSQL** - Scalable relational database for production deployments
+- **MySQL/MariaDB** - Popular open-source relational database for production deployments
 
 **Storage Options:**
 
@@ -608,8 +611,8 @@ ncps serve \
 #### 📊 Database & Performance
 
 | Option | Description | Environment Variable | Default |
-| ---------------------- | ------------------------------ | -------------------- | --------------- |
-| `--cache-database-url` | Database URL (SQLite only) | `CACHE_DATABASE_URL` | embedded SQLite |
+| ---------------------- | ---------------------------------------------------------- | -------------------- | --------------- |
+| `--cache-database-url` | Database URL (sqlite://, postgresql://, or mysql://) | `CACHE_DATABASE_URL` | embedded SQLite |
 | `--cache-max-size` | Max cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE` | unlimited |
 | `--cache-lru-schedule` | Cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
 | `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
