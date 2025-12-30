@@ -2,13 +2,15 @@ package database
 
 import (
 	"errors"
+	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mattn/go-sqlite3"
 )
 
 // IsDuplicateKeyError checks if the error is a unique constraint violation
-// Works across SQLite, PostgreSQL.
+// Works across SQLite, PostgreSQL, and MySQL.
 func IsDuplicateKeyError(err error) bool {
 	if err == nil {
 		return false
@@ -25,6 +27,18 @@ func IsDuplicateKeyError(err error) bool {
 	if errors.As(err, &pgErr) {
 		// 23505 is unique_violation in PostgreSQL
 		return pgErr.Code == "23505"
+	}
+
+	// MySQL/MariaDB
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		// 1062 is ER_DUP_ENTRY - Duplicate entry for key
+		return mysqlErr.Number == 1062
+	}
+
+	// Fallback to string matching for MySQL errors that don't unwrap properly
+	if strings.Contains(err.Error(), "Error 1062") || strings.Contains(err.Error(), "Duplicate entry") {
+		return true
 	}
 
 	return false
