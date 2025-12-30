@@ -122,9 +122,10 @@
             echo "host all all 127.0.0.1/32 trust" >> "$POSTGRES_DATA_DIR/pg_hba.conf"
             echo "listen_addresses = '127.0.0.1'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
             echo "port = $POSTGRES_PORT" >> "$POSTGRES_DATA_DIR/postgresql.conf"
+            echo "unix_socket_directories = '$POSTGRES_DATA_DIR'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
 
             # Start PostgreSQL server in background
-            postgres -D "$POSTGRES_DATA_DIR" &
+            postgres -D "$POSTGRES_DATA_DIR" -k "$POSTGRES_DATA_DIR" &
             export POSTGRES_PID=$!
 
             # Wait for PostgreSQL to be ready

@@ -55,7 +55,8 @@
                 echo "host all all 127.0.0.1/32 trust" >> $DATA_DIR/pg_hba.conf
                 echo "listen_addresses = '127.0.0.1'" >> $DATA_DIR/postgresql.conf
                 echo "port = 5432" >> $DATA_DIR/postgresql.conf
-                ${pkgs.postgresql}/bin/postgres -D $DATA_DIR
+                echo "unix_socket_directories = '$DATA_DIR'" >> $DATA_DIR/postgresql.conf
+                ${pkgs.postgresql}/bin/postgres -D $DATA_DIR -k $DATA_DIR
               '';
               readiness_probe = {
                 exec = {
