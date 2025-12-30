@@ -20,8 +20,8 @@ Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev 
 ./dev-scripts/run.sh local        # Explicitly use local storage
 ./dev-scripts/run.sh s3           # Use S3/MinIO storage (requires deps to be running)
 
-# Start development dependencies (MinIO for S3 testing)
-nix run .#deps                    # Starts MinIO with self-validation on 127.0.0.1:9000
+# Start development dependencies (MinIO for S3 testing, PostgreSQL for database testing)
+nix run .#deps                    # Starts MinIO and PostgreSQL with self-validation
 
 # Run tests with race detector
 go test -race ./...
@@ -74,7 +74,9 @@ The development server (`./dev-scripts/run.sh`) supports two storage backends:
 
 The project uses [process-compose-flake](https://github.com/Platonic-Systems/process-compose-flake) for managing development dependencies. Currently provides:
 
-**`nix run .#deps`** - Starts MinIO server with:
+**`nix run .#deps`** - Starts development services:
+
+**MinIO (S3-compatible storage):**
 
 - Ephemeral storage in temporary directory
 - MinIO server on port 9000, console on port 9001
@@ -85,12 +87,26 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
   - Public access blocking (security verification)
   - Signed URL generation and access
 
+**PostgreSQL (database):**
+
+- Ephemeral storage in temporary directory
+- PostgreSQL server on port 5432
+- Pre-configured test database (`test-db`)
+- Test credentials: `test-user` / `test-password`
+- Connection URL: `postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable`
+- Self-validation checks:
+  - Connection test
+  - Table operations (CREATE, INSERT)
+  - Query verification
+
 Configuration in `nix/process-compose/flake-module.nix` defines:
 
 - `minio-server` process - MinIO server with health checks
 - `create-buckets` process - Bucket creation and validation
+- `postgres-server` process - PostgreSQL server with health checks
+- `init-database` process - Database and user creation with validation
 
-The MinIO configuration matches the S3 flags in `dev-scripts/run.sh` to ensure consistency between dependency setup and application configuration.
+The service configurations match the test environment variables to ensure consistency between dependency setup and application configuration.
 
 ### CI/CD and GitHub Actions
 
@@ -229,6 +245,49 @@ This setup ensures:
 - Runtime usage (`nix run github:kalbasit/ncps`) is unaffected
 - Docker builds (`.#docker`) are unaffected
 - Tests are isolated and don't interfere with each other (unique hash-based keys)
+
+#### PostgreSQL Integration Tests
+
+PostgreSQL integration tests require PostgreSQL to be running. The tests are automatically skipped if the required environment variable is not set.
+
+**For local development:**
+
+```bash
+# Start PostgreSQL (in a separate terminal)
+nix run .#deps
+
+# Run tests with PostgreSQL integration enabled
+export NCPS_TEST_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
+go test -race ./pkg/database
+```
+
+**For Nix builds and CI:**
+
+PostgreSQL is automatically started during the test phase when building with Nix:
+
+```bash
+# Runs all checks including PostgreSQL integration tests
+nix flake check
+
+# Build package (includes test phase with PostgreSQL)
+nix build
+```
+
+The Nix build (`nix/packages/ncps.nix`) automatically:
+
+1. Starts PostgreSQL server in the `preCheck` phase
+1. Creates test database and user
+1. Exports PostgreSQL test environment variable
+1. Runs all tests (including PostgreSQL integration tests)
+1. Stops PostgreSQL in the `postCheck` phase
+
+This setup ensures:
+
+- PostgreSQL integration tests run in CI/CD (GitHub Actions workflows)
+- `nix flake check` includes PostgreSQL testing
+- Both SQLite and PostgreSQL database implementations are tested
+- Tests are isolated with unique random hashes
+- Migrations are validated against both database engines
 
 ## Configuration
 

@@ -101,6 +101,79 @@
             rm -rf "$MINIO_DATA_DIR" 2>/dev/null || true
             echo "✅ MinIO stopped and cleaned up"
           '';
+
+          # Start PostgreSQL before running tests to enable PostgreSQL integration tests
+          postgresPreCheck = ''
+            echo "🚀 Starting PostgreSQL for integration tests..."
+
+            # Create temporary directory for PostgreSQL data
+            export POSTGRES_DATA_DIR=$(mktemp -d)
+
+            # Generate random free port using python
+            export POSTGRES_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+
+            # Export PostgreSQL test environment variable
+            export NCPS_TEST_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:$POSTGRES_PORT/test-db?sslmode=disable"
+
+            # Initialize PostgreSQL database
+            initdb -D "$POSTGRES_DATA_DIR" -U postgres --no-locale --encoding=UTF8
+
+            # Configure PostgreSQL
+            echo "host all all 127.0.0.1/32 trust" >> "$POSTGRES_DATA_DIR/pg_hba.conf"
+            echo "listen_addresses = '127.0.0.1'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
+            echo "port = $POSTGRES_PORT" >> "$POSTGRES_DATA_DIR/postgresql.conf"
+            echo "unix_socket_directories = '$POSTGRES_DATA_DIR'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
+
+            # Start PostgreSQL server in background
+            postgres -D "$POSTGRES_DATA_DIR" -k "$POSTGRES_DATA_DIR" &
+            export POSTGRES_PID=$!
+
+            # Wait for PostgreSQL to be ready
+            echo "⏳ Waiting for PostgreSQL to be ready..."
+            for i in {1..30}; do
+              if pg_isready -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres >/dev/null 2>&1; then
+                echo "✅ PostgreSQL is ready"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "❌ PostgreSQL failed to start"
+                kill $POSTGRES_PID 2>/dev/null || true
+                exit 1
+              fi
+              sleep 1
+            done
+
+            # Create test user and database
+            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';"
+            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE DATABASE \"test-db\" OWNER \"test-user\";"
+
+            echo "✅ PostgreSQL configured for integration tests"
+          '';
+
+          # Stop PostgreSQL after tests complete
+          postgresPostCheck = ''
+            echo "🛑 Stopping PostgreSQL..."
+            if [ -n "$POSTGRES_PID" ]; then
+              kill $POSTGRES_PID 2>/dev/null || true
+              # Wait for PostgreSQL to fully shut down
+              for i in {1..30}; do
+                if ! kill -0 $POSTGRES_PID 2>/dev/null; then
+                  break
+                fi
+                sleep 0.5
+              done
+
+              # If it's still alive, force kill it
+              if kill -0 $POSTGRES_PID 2>/dev/null; then
+                echo "PostgreSQL did not shut down gracefully, force killing..."
+                kill -9 $POSTGRES_PID 2>/dev/null || true
+                sleep 1 # Give a moment for the OS to clean up after SIGKILL
+              fi
+            fi
+            sleep 1
+            rm -rf "$POSTGRES_DATA_DIR" 2>/dev/null || true
+            echo "✅ PostgreSQL stopped and cleaned up"
+          '';
         in
         pkgs.buildGoModule {
           name = "ncps-${shortRev}";
@@ -119,11 +192,11 @@
             root = ../..;
           };
 
+          vendorHash = "sha256-3YPKlz7+x7nYCqKmOroaiUyZGKIQMGFxcNyPnrA9Tio=";
+
           ldflags = [
             "-X github.com/kalbasit/ncps/cmd.Version=${version}"
           ];
-
-          vendorHash = "sha256-3YPKlz7+x7nYCqKmOroaiUyZGKIQMGFxcNyPnrA9Tio=";
 
           doCheck = true;
           checkFlags = [ "-race" ];
@@ -133,12 +206,13 @@
             pkgs.dbmate # used for testing
             pkgs.minio # S3-compatible storage for integration tests
             pkgs.minio-client # mc CLI for MinIO setup
+            pkgs.postgresql # PostgreSQL for integration tests
             pkgs.python3 # used for generating the ports
           ];
 
           # pre and post checks
-          preCheck = minioPreCheck;
-          postCheck = minioPostCheck;
+          preCheck = minioPreCheck + "\n" + postgresPreCheck;
+          postCheck = postgresPostCheck + "\n" + minioPostCheck;
 
           postInstall = ''
             mkdir -p $out/share/ncps
