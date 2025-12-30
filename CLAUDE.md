@@ -34,7 +34,7 @@ golangci-lint run
 golangci-lint run --fix  # Automatically fix fixable linter issues
 
 # Format code
-nix fmt                  # Format Nix files automatically
+nix fmt                  # Format all project files (Go, Nix, SQL, etc.)
 
 # Generate SQL code (after modifying db/query.sql or migrations)
 sqlc generate
@@ -133,7 +133,7 @@ Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`).
 
 Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule).
 
-**IMPORTANT**: Always use `nix fmt` to automatically format Nix files before making manual edits.
+**IMPORTANT**: Always use `nix fmt` to automatically format project files (Go, Nix, etc.) before making manual edits.
 
 ### Testing
 
