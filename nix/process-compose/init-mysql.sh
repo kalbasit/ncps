@@ -7,15 +7,13 @@ mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u root <<EOF
 CREATE DATABASE IF NOT EXISTS \`test-db\`;
 CREATE USER IF NOT EXISTS 'test-user'@'localhost' IDENTIFIED BY 'test-password';
 CREATE USER IF NOT EXISTS 'test-user'@'127.0.0.1' IDENTIFIED BY 'test-password';
-CREATE USER IF NOT EXISTS 'test-user'@'%' IDENTIFIED BY 'test-password';
 GRANT ALL PRIVILEGES ON \`test-db\`.* TO 'test-user'@'localhost';
 GRANT ALL PRIVILEGES ON \`test-db\`.* TO 'test-user'@'127.0.0.1';
-GRANT ALL PRIVILEGES ON \`test-db\`.* TO 'test-user'@'%';
 FLUSH PRIVILEGES;
 EOF
 
 echo "Verifying user creation..."
-mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u root -e "SELECT user, host FROM mysql.user WHERE user='test-user';" || echo "Failed to query users"
+mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u root -e "SELECT user, host FROM mysql.user WHERE user='test-user';"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"
