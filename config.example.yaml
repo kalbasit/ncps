@@ -29,6 +29,11 @@ cache:
   # The hostname of the cache server
   hostname: "ncps.mycompany.tld"
   # The URL of the database
+  # Supports multiple database engines via URL scheme:
+  #   SQLite:     sqlite:/var/lib/ncps/db/db.sqlite
+  #   PostgreSQL: postgresql://user:password@localhost:5432/ncps?sslmode=require
+  #   PostgreSQL: postgres://user:password@localhost:5432/ncps?sslmode=require
+  #   PostgreSQL (local dev, no SSL): postgresql://user:password@localhost:5432/ncps?sslmode=disable
   database-url: "sqlite:/var/lib/ncps/db/db.sqlite"
   # The maximum size of the store. It can be given with units such as 5K, 10G
   # etc. Supported units: B, K, M, G, T

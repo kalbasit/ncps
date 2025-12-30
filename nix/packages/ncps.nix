@@ -192,7 +192,7 @@
             root = ../..;
           };
 
-          vendorHash = "sha256-3YPKlz7+x7nYCqKmOroaiUyZGKIQMGFxcNyPnrA9Tio=";
+          vendorHash = "sha256-mKZE4clwgt50Z2b1Cr9iGxGR2PFth/C3RrCwTML+E6s=";
 
           ldflags = [
             "-X github.com/kalbasit/ncps/cmd.Version=${version}"
