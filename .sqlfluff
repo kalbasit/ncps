@@ -1,0 +1,7 @@
+[sqlfluff]
+# Default dialect for SQLite files
+dialect = sqlite
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4
