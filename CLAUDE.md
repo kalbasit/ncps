@@ -10,7 +10,7 @@ ncps (Nix Cache Proxy Server) is a Go application that acts as a local binary ca
 
 ### Prerequisites
 
-Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, golangci-lint, sqlc, dbmate, delve, watchexec.
+Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, golangci-lint, sqlc, sqlfluff, dbmate, delve, watchexec.
 
 ### Common Commands
 
@@ -35,6 +35,14 @@ golangci-lint run --fix  # Automatically fix fixable linter issues
 
 # Format code
 nix fmt                  # Format all project files (Go, Nix, SQL, etc.)
+
+# Lint SQL files
+sqlfluff lint db/query.*.sql              # Lint all SQL query files
+sqlfluff lint db/migrations/              # Lint all migration files
+
+# Format SQL files
+sqlfluff format db/query.*.sql            # Format all SQL query files
+sqlfluff format db/migrations/            # Format all migration files
 
 # Generate SQL code (after modifying db/query.sql or migrations)
 sqlc generate
@@ -213,9 +221,9 @@ Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`).
 
 ### Formatting
 
-Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule).
+Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule). SQL files are formatted using sqlfluff.
 
-**IMPORTANT**: Always use `nix fmt` to automatically format project files (Go, Nix, etc.) before making manual edits.
+**IMPORTANT**: Always use `nix fmt` to automatically format project files (Go, Nix, etc.) before making manual edits. For SQL files specifically, use `sqlfluff format` to fix formatting issues.
 
 ### Testing
 
