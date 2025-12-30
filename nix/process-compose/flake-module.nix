@@ -78,6 +78,38 @@
                 "${initPostgres}/bin/init-postgres";
               depends_on.postgres-server.condition = "process_healthy";
             };
+            mariadb-server = {
+              command = ''
+                DATA_DIR=$(mktemp -d)
+                echo "Storing ephemeral MariaDB data in $DATA_DIR"
+                ${pkgs.mariadb}/bin/mariadb-install-db --datadir=$DATA_DIR --auth-root-authentication-method=normal
+                ${pkgs.mariadb}/bin/mariadbd \
+                  --datadir=$DATA_DIR \
+                  --bind-address=127.0.0.1 \
+                  --port=3306 \
+                  --socket=$DATA_DIR/mysql.sock \
+                  --skip-networking=0
+              '';
+              readiness_probe = {
+                exec = {
+                  command = "${pkgs.mariadb}/bin/mariadb-admin -h 127.0.0.1 -P 3306 --protocol=TCP ping";
+                };
+                initial_delay_seconds = 3;
+                period_seconds = 5;
+              };
+            };
+            init-mariadb = {
+              command =
+                let
+                  initMySQL = pkgs.writeShellApplication {
+                    name = "init-mysql";
+                    runtimeInputs = [ pkgs.mariadb ];
+                    text = builtins.readFile ./init-mysql.sh;
+                  };
+                in
+                "${initMySQL}/bin/init-mysql";
+              depends_on.mariadb-server.condition = "process_healthy";
+            };
           };
         };
       };
