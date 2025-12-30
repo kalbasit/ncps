@@ -92,6 +92,37 @@ Configuration in `nix/process-compose/flake-module.nix` defines:
 
 The MinIO configuration matches the S3 flags in `dev-scripts/run.sh` to ensure consistency between dependency setup and application configuration.
 
+### CI/CD and GitHub Actions
+
+The project uses GitHub Actions for continuous integration. The workflows are configured to optimize for **Graphite-style stacked PRs**.
+
+**Key Workflows:**
+
+- `.github/workflows/ci.yml` - Main CI workflow (runs `nix flake check` and Docker builds)
+- `.github/workflows/semantic-pull-request.yml` - PR title validation
+- `.github/workflows/build.yml` - Docker image builds on main branch
+- `.github/workflows/releases.yml` - Release automation
+
+**Important:** CI workflows are configured to **only run on PRs targeting `main`**:
+
+```yaml
+on:
+  pull_request:
+    branches:
+      - main
+```
+
+This prevents wasted CI resources when using Graphite stacks where PRs merge into each other:
+
+```
+PR #7: feature-g → main          ← ✅ CI runs (only this one)
+PR #6: feature-f → feature-g     ← ❌ CI skipped
+PR #5: feature-e → feature-f     ← ❌ CI skipped
+...
+```
+
+**When modifying workflows:** Maintain the `branches: [main]` restriction to keep CI efficient for stacked PR workflows.
+
 ## Architecture
 
 ### Package Structure
