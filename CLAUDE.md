@@ -105,7 +105,9 @@ Configuration in `nix/process-compose/flake-module.nix` defines:
 - `minio-server` process - MinIO server with health checks
 - `create-buckets` process - Bucket creation and validation
 - `postgres-server` process - PostgreSQL server with health checks
-- `init-database` process - Database and user creation with validation
+- `init-database` process - PostgreSQL database and user creation with validation
+- `mariadb-server` process - MariaDB server with health checks
+- `init-mariadb` process - MariaDB database and user creation with validation
 
 The service configurations match the test environment variables to ensure consistency between dependency setup and application configuration.
 
