@@ -50,7 +50,7 @@
                 exec = {
                   command = "test -f /tmp/ncps-minio-ready";
                 };
-                initial_delay_seconds = 1;
+                initial_delay_seconds = 3;
                 period_seconds = 1;
               };
             };
@@ -88,7 +88,7 @@
                 exec = {
                   command = "test -f /tmp/ncps-postgres-ready";
                 };
-                initial_delay_seconds = 1;
+                initial_delay_seconds = 3;
                 period_seconds = 1;
               };
             };
@@ -127,7 +127,7 @@
                 exec = {
                   command = "test -f /tmp/ncps-mysql-ready";
                 };
-                initial_delay_seconds = 1;
+                initial_delay_seconds = 3;
                 period_seconds = 1;
               };
             };
