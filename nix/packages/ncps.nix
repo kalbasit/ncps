@@ -14,43 +14,9 @@
           tag = builtins.getEnv "RELEASE_VERSION";
 
           version = if tag != "" then tag else rev;
-        in
-        pkgs.buildGoModule {
-          name = "ncps-${shortRev}";
-
-          src = lib.fileset.toSource {
-            fileset = lib.fileset.unions [
-              ../../cmd
-              ../../db/migrations
-              ../../go.mod
-              ../../go.sum
-              ../../main.go
-              ../../pkg
-              ../../testdata
-              ../../testhelper
-            ];
-            root = ../..;
-          };
-
-          ldflags = [
-            "-X github.com/kalbasit/ncps/cmd.Version=${version}"
-          ];
-
-          vendorHash = "sha256-3YPKlz7+x7nYCqKmOroaiUyZGKIQMGFxcNyPnrA9Tio=";
-
-          doCheck = true;
-          checkFlags = [ "-race" ];
-
-          nativeBuildInputs = [
-            pkgs.curl # used for checking MinIO health check
-            pkgs.dbmate # used for testing
-            pkgs.minio # S3-compatible storage for integration tests
-            pkgs.minio-client # mc CLI for MinIO setup
-            pkgs.python3 # used for generating the ports
-          ];
 
           # Start MinIO before running tests to enable S3 integration tests
-          preCheck = ''
+          minioPreCheck = ''
             echo "🚀 Starting MinIO for S3 integration tests..."
 
             # Create temporary directories for MinIO data and config
@@ -112,12 +78,67 @@
           '';
 
           # Stop MinIO after tests complete
-          postCheck = ''
+          minioPostCheck = ''
             echo "🛑 Stopping MinIO..."
-            kill $MINIO_PID 2>/dev/null || true
-            rm -rf "$MINIO_DATA_DIR"
+            if [ -n "$MINIO_PID" ]; then
+              kill $MINIO_PID 2>/dev/null || true
+              # Wait for MinIO to fully shut down
+              for i in {1..30}; do
+                if ! kill -0 $MINIO_PID 2>/dev/null; then
+                  break
+                fi
+                sleep 0.5
+              done
+
+              # If it's still alive, force kill it
+              if kill -0 $MINIO_PID 2>/dev/null; then
+                echo "MinIO did not shut down gracefully, force killing..."
+                kill -9 $MINIO_PID 2>/dev/null || true
+                sleep 1 # Give a moment for the OS to clean up after SIGKILL
+              fi
+            fi
+            sleep 1
+            rm -rf "$MINIO_DATA_DIR" 2>/dev/null || true
             echo "✅ MinIO stopped and cleaned up"
           '';
+        in
+        pkgs.buildGoModule {
+          name = "ncps-${shortRev}";
+
+          src = lib.fileset.toSource {
+            fileset = lib.fileset.unions [
+              ../../cmd
+              ../../db/migrations
+              ../../go.mod
+              ../../go.sum
+              ../../main.go
+              ../../pkg
+              ../../testdata
+              ../../testhelper
+            ];
+            root = ../..;
+          };
+
+          ldflags = [
+            "-X github.com/kalbasit/ncps/cmd.Version=${version}"
+          ];
+
+          vendorHash = "sha256-3YPKlz7+x7nYCqKmOroaiUyZGKIQMGFxcNyPnrA9Tio=";
+
+          doCheck = true;
+          checkFlags = [ "-race" ];
+
+          nativeBuildInputs = [
+            pkgs.curl # used for checking MinIO health check
+            pkgs.dbmate # used for testing
+            pkgs.minio # S3-compatible storage for integration tests
+            pkgs.minio-client # mc CLI for MinIO setup
+            pkgs.python3 # used for generating the ports
+          ];
+
+          # pre and post checks
+          preCheck = minioPreCheck;
+          postCheck = minioPostCheck;
 
           postInstall = ''
             mkdir -p $out/share/ncps
