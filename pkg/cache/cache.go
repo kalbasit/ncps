@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mattn/go-sqlite3"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/robfig/cron/v3"
@@ -100,7 +99,7 @@ type Cache struct {
 	upstreamCaches []*upstream.Cache
 	healthChecker  *healthcheck.HealthChecker
 	maxSize        uint64
-	db             *database.Queries
+	db             database.Querier
 
 	// tempDir is used to store nar files temporarily.
 	tempDir string
@@ -164,7 +163,7 @@ func newDownloadState() *downloadState {
 func New(
 	ctx context.Context,
 	hostName string,
-	db *database.Queries,
+	db database.Querier,
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
@@ -1419,7 +1418,7 @@ func (c *Cache) storeInDatabase(
 
 	nir, err := c.db.WithTx(tx).CreateNarInfo(ctx, hash)
 	if err != nil {
-		if database.ErrorIsNo(err, sqlite3.ErrConstraint) {
+		if database.IsDuplicateKeyError(err) {
 			zerolog.Ctx(ctx).
 				Warn().
 				Msg("narinfo record was not added to database because it already exists")
@@ -1443,7 +1442,7 @@ func (c *Cache) storeInDatabase(
 		FileSize:    narInfo.FileSize,
 	})
 	if err != nil {
-		if database.ErrorIsNo(err, sqlite3.ErrConstraint) {
+		if database.IsDuplicateKeyError(err) {
 			zerolog.Ctx(ctx).
 				Warn().
 				Msg("nar record was not added to database because it already exists")
@@ -1584,21 +1583,23 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			return
 		}
 
-		if !narTotalSize.Valid {
-			log.Error().Msg("SUM(file_size) returned NULL")
+		if narTotalSize == 0 {
+			log.Info().Msg("SUM(file_size) is zero, nothing to clean up")
 
 			return
 		}
 
-		log = log.With().Float64("nar_total_size", narTotalSize.Float64).Logger()
+		log = log.With().Int64("nar_total_size", narTotalSize).Logger()
 
-		if uint64(narTotalSize.Float64) <= c.maxSize {
+		//nolint:gosec
+		if uint64(narTotalSize) <= c.maxSize {
 			log.Info().Msg("store size is less than max-size, not removing any nars")
 
 			return
 		}
 
-		cleanupSize := uint64(narTotalSize.Float64) - c.maxSize
+		//nolint:gosec
+		cleanupSize := uint64(narTotalSize) - c.maxSize
 
 		log = log.With().Uint64("cleanup_size", cleanupSize).Logger()
 
