@@ -46,6 +46,13 @@
                 in
                 "${initMinio}/bin/init-minio";
               depends_on.minio-server.condition = "process_healthy";
+              readiness_probe = {
+                exec = {
+                  command = "test -f /tmp/ncps-minio-ready";
+                };
+                initial_delay_seconds = 1;
+                period_seconds = 1;
+              };
             };
             postgres-server = {
               command = ''
@@ -77,6 +84,13 @@
                 in
                 "${initPostgres}/bin/init-postgres";
               depends_on.postgres-server.condition = "process_healthy";
+              readiness_probe = {
+                exec = {
+                  command = "test -f /tmp/ncps-postgres-ready";
+                };
+                initial_delay_seconds = 1;
+                period_seconds = 1;
+              };
             };
             mariadb-server = {
               command = ''
@@ -109,6 +123,13 @@
                 in
                 "${initMySQL}/bin/init-mysql";
               depends_on.mariadb-server.condition = "process_healthy";
+              readiness_probe = {
+                exec = {
+                  command = "test -f /tmp/ncps-mysql-ready";
+                };
+                initial_delay_seconds = 1;
+                period_seconds = 1;
+              };
             };
           };
         };

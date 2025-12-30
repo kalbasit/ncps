@@ -2,6 +2,9 @@
 
 set -e
 
+# Remove stale marker file from previous runs
+rm -f /tmp/ncps-postgres-ready
+
 # Create test user and database
 echo "Creating test user and database..."
 psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';"
@@ -66,5 +69,8 @@ echo "💡 Environment Variables (for testing):"
 echo "  export NCPS_TEST_POSTGRES_URL=\"postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable\""
 echo ""
 echo "---------------------------------------------------"
+
+# Create ready marker file for process-compose health check
+touch /tmp/ncps-postgres-ready
 
 sleep infinity
