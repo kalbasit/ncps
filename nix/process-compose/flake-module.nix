@@ -65,7 +65,7 @@
                 period_seconds = 5;
               };
             };
-            init-database = {
+            init-postgres = {
               command =
                 let
                   initPostgres = pkgs.writeShellApplication {
