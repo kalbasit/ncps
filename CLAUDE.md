@@ -31,6 +31,10 @@ go test -race -run TestName ./pkg/server/...
 
 # Lint code
 golangci-lint run
+golangci-lint run --fix  # Automatically fix fixable linter issues
+
+# Format code
+nix fmt                  # Format all project files (Go, Nix, SQL, etc.)
 
 # Generate SQL code (after modifying db/query.sql or migrations)
 sqlc generate
@@ -123,9 +127,13 @@ SQLite with sqlc for type-safe SQL. Schema in `db/schema.sql`, queries in `db/qu
 
 Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`). Key linters: err113, exhaustive, gosec, paralleltest, testpackage.
 
+**IMPORTANT**: Always use `golangci-lint run --fix` first to automatically fix fixable issues before doing manual fixes. This saves tokens and is more efficient.
+
 ### Formatting
 
 Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule).
+
+**IMPORTANT**: Always use `nix fmt` to automatically format project files (Go, Nix, etc.) before making manual edits.
 
 ### Testing
 
