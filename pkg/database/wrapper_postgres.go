@@ -4,16 +4,16 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/kalbasit/ncps/pkg/database/sqlitedb"
+	"github.com/kalbasit/ncps/pkg/database/postgresdb"
 )
 
-// sqliteWrapper wraps a SQLite adapter to provide type conversion.
-type sqliteWrapper struct {
-	adapter *sqlitedb.Adapter
+// postgresWrapper wraps a PostgreSQL adapter to provide type conversion.
+type postgresWrapper struct {
+	adapter *postgresdb.Adapter
 }
 
-func (w *sqliteWrapper) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
-	p := sqlitedb.CreateNarParams{
+func (w *postgresWrapper) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
+	p := postgresdb.CreateNarParams{
 		NarInfoID:   arg.NarInfoID,
 		Hash:        arg.Hash,
 		Compression: arg.Compression,
@@ -39,7 +39,7 @@ func (w *sqliteWrapper) CreateNar(ctx context.Context, arg CreateNarParams) (Nar
 	}, nil
 }
 
-func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
+func (w *postgresWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
 	ni, err := w.adapter.CreateNarInfo(ctx, hash)
 	if err != nil {
 		return NarInfo{}, err
@@ -54,23 +54,23 @@ func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo
 	}, nil
 }
 
-func (w *sqliteWrapper) DeleteNarByHash(ctx context.Context, hash string) (int64, error) {
+func (w *postgresWrapper) DeleteNarByHash(ctx context.Context, hash string) (int64, error) {
 	return w.adapter.DeleteNarByHash(ctx, hash)
 }
 
-func (w *sqliteWrapper) DeleteNarByID(ctx context.Context, id int64) (int64, error) {
+func (w *postgresWrapper) DeleteNarByID(ctx context.Context, id int64) (int64, error) {
 	return w.adapter.DeleteNarByID(ctx, id)
 }
 
-func (w *sqliteWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
+func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
 	return w.adapter.DeleteNarInfoByHash(ctx, hash)
 }
 
-func (w *sqliteWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
+func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
 	return w.adapter.DeleteNarInfoByID(ctx, id)
 }
 
-func (w *sqliteWrapper) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error) {
+func (w *postgresWrapper) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error) {
 	nars, err := w.adapter.GetLeastUsedNars(ctx, fileSize)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func (w *sqliteWrapper) GetLeastUsedNars(ctx context.Context, fileSize uint64) (
 	return result, nil
 }
 
-func (w *sqliteWrapper) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
+func (w *postgresWrapper) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
 	nar, err := w.adapter.GetNarByHash(ctx, hash)
 	if err != nil {
 		return Nar{}, err
@@ -113,7 +113,7 @@ func (w *sqliteWrapper) GetNarByHash(ctx context.Context, hash string) (Nar, err
 	}, nil
 }
 
-func (w *sqliteWrapper) GetNarByID(ctx context.Context, id int64) (Nar, error) {
+func (w *postgresWrapper) GetNarByID(ctx context.Context, id int64) (Nar, error) {
 	nar, err := w.adapter.GetNarByID(ctx, id)
 	if err != nil {
 		return Nar{}, err
@@ -132,7 +132,7 @@ func (w *sqliteWrapper) GetNarByID(ctx context.Context, id int64) (Nar, error) {
 	}, nil
 }
 
-func (w *sqliteWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
+func (w *postgresWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	ni, err := w.adapter.GetNarInfoByHash(ctx, hash)
 	if err != nil {
 		return NarInfo{}, err
@@ -147,7 +147,7 @@ func (w *sqliteWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarI
 	}, nil
 }
 
-func (w *sqliteWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
+func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
 	ni, err := w.adapter.GetNarInfoByID(ctx, id)
 	if err != nil {
 		return NarInfo{}, err
@@ -162,22 +162,22 @@ func (w *sqliteWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, 
 	}, nil
 }
 
-func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
+func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return w.adapter.GetNarTotalSize(ctx)
 }
 
-func (w *sqliteWrapper) TouchNar(ctx context.Context, hash string) (int64, error) {
+func (w *postgresWrapper) TouchNar(ctx context.Context, hash string) (int64, error) {
 	return w.adapter.TouchNar(ctx, hash)
 }
 
-func (w *sqliteWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
+func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
 	return w.adapter.TouchNarInfo(ctx, hash)
 }
 
-func (w *sqliteWrapper) WithTx(tx *sql.Tx) Querier {
-	return &sqliteWrapper{adapter: w.adapter.WithTx(tx)}
+func (w *postgresWrapper) WithTx(tx *sql.Tx) Querier {
+	return &postgresWrapper{adapter: w.adapter.WithTx(tx)}
 }
 
-func (w *sqliteWrapper) DB() *sql.DB {
+func (w *postgresWrapper) DB() *sql.DB {
 	return w.adapter.DB()
 }
