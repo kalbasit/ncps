@@ -35,6 +35,14 @@ func getTestPostgresDB(t *testing.T) database.Querier {
 
 	// Run migrations once for all tests
 	postgresMigrationOnce.Do(func() {
+		// The testhelper uses `require` which panics on failure. We must recover
+		// from this to capture the error and prevent other tests from running
+		// on a non-migrated database.
+		defer func() {
+			if r := recover(); r != nil {
+				errPostgresMigration = fmt.Errorf("DB migration panic: %v", r)
+			}
+		}()
 		testhelper.MigratePostgresDatabase(t, postgresURL)
 	})
 
