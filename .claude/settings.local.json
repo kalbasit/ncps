@@ -1,19 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "Bash(go build:*)",
-      "Bash(golangci-lint run:*)",
-      "Bash(go test:*)",
+      "Bash(dbmate:*)",
+      "Bash(export NCPS_TEST_POSTGRES_URL:*)",
+      "Bash(export NCPS_TEST_S3_ACCESS_KEY_ID=\"test-access-key\")",
       "Bash(export NCPS_TEST_S3_BUCKET=\"test-bucket\")",
       "Bash(export NCPS_TEST_S3_ENDPOINT=\"http://127.0.0.1:9000\")",
       "Bash(export NCPS_TEST_S3_REGION=\"us-east-1\")",
-      "Bash(export NCPS_TEST_S3_ACCESS_KEY_ID=\"test-access-key\")",
       "Bash(export NCPS_TEST_S3_SECRET_ACCESS_KEY=\"test-secret-key\")",
+      "Bash(git add:*)",
+      "Bash(git checkout:*)",
+      "Bash(go build:*)",
+      "Bash(go get:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go test:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(gt ls:*)",
+      "Bash(nix build:*)",
       "Bash(nix flake check:*)",
       "Bash(nix fmt:*)",
-      "WebFetch(domain:github.com)",
-      "Bash(gt ls:*)",
-      "Bash(git checkout:*)"
+      "Bash(sqlc generate:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
