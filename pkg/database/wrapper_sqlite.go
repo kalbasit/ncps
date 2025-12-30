@@ -1,0 +1,183 @@
+package database
+
+import (
+	"context"
+	"database/sql"
+
+	"github.com/kalbasit/ncps/pkg/database/sqlitedb"
+)
+
+// sqliteWrapper wraps a SQLite adapter to provide type conversion.
+type sqliteWrapper struct {
+	adapter *sqlitedb.Adapter
+}
+
+func (w *sqliteWrapper) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
+	p := sqlitedb.CreateNarParams{
+		NarInfoID:   arg.NarInfoID,
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+		FileSize:    arg.FileSize,
+	}
+
+	nar, err := w.adapter.CreateNar(ctx, p)
+	if err != nil {
+		return Nar{}, err
+	}
+
+	return Nar{
+		ID:             nar.ID,
+		NarInfoID:      nar.NarInfoID,
+		Hash:           nar.Hash,
+		Compression:    nar.Compression,
+		FileSize:       nar.FileSize,
+		CreatedAt:      nar.CreatedAt,
+		UpdatedAt:      nar.UpdatedAt,
+		LastAccessedAt: nar.LastAccessedAt,
+		Query:          nar.Query,
+	}, nil
+}
+
+func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
+	ni, err := w.adapter.CreateNarInfo(ctx, hash)
+	if err != nil {
+		return NarInfo{}, err
+	}
+
+	return NarInfo{
+		ID:             ni.ID,
+		Hash:           ni.Hash,
+		CreatedAt:      ni.CreatedAt,
+		UpdatedAt:      ni.UpdatedAt,
+		LastAccessedAt: ni.LastAccessedAt,
+	}, nil
+}
+
+func (w *sqliteWrapper) DeleteNarByHash(ctx context.Context, hash string) (int64, error) {
+	return w.adapter.DeleteNarByHash(ctx, hash)
+}
+
+func (w *sqliteWrapper) DeleteNarByID(ctx context.Context, id int64) (int64, error) {
+	return w.adapter.DeleteNarByID(ctx, id)
+}
+
+func (w *sqliteWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
+	return w.adapter.DeleteNarInfoByHash(ctx, hash)
+}
+
+func (w *sqliteWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
+	return w.adapter.DeleteNarInfoByID(ctx, id)
+}
+
+func (w *sqliteWrapper) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error) {
+	nars, err := w.adapter.GetLeastUsedNars(ctx, fileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]Nar, len(nars))
+	for i, n := range nars {
+		result[i] = Nar{
+			ID:             n.ID,
+			NarInfoID:      n.NarInfoID,
+			Hash:           n.Hash,
+			Compression:    n.Compression,
+			FileSize:       n.FileSize,
+			CreatedAt:      n.CreatedAt,
+			UpdatedAt:      n.UpdatedAt,
+			LastAccessedAt: n.LastAccessedAt,
+			Query:          n.Query,
+		}
+	}
+
+	return result, nil
+}
+
+func (w *sqliteWrapper) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
+	nar, err := w.adapter.GetNarByHash(ctx, hash)
+	if err != nil {
+		return Nar{}, err
+	}
+
+	return Nar{
+		ID:             nar.ID,
+		NarInfoID:      nar.NarInfoID,
+		Hash:           nar.Hash,
+		Compression:    nar.Compression,
+		FileSize:       nar.FileSize,
+		CreatedAt:      nar.CreatedAt,
+		UpdatedAt:      nar.UpdatedAt,
+		LastAccessedAt: nar.LastAccessedAt,
+		Query:          nar.Query,
+	}, nil
+}
+
+func (w *sqliteWrapper) GetNarByID(ctx context.Context, id int64) (Nar, error) {
+	nar, err := w.adapter.GetNarByID(ctx, id)
+	if err != nil {
+		return Nar{}, err
+	}
+
+	return Nar{
+		ID:             nar.ID,
+		NarInfoID:      nar.NarInfoID,
+		Hash:           nar.Hash,
+		Compression:    nar.Compression,
+		FileSize:       nar.FileSize,
+		CreatedAt:      nar.CreatedAt,
+		UpdatedAt:      nar.UpdatedAt,
+		LastAccessedAt: nar.LastAccessedAt,
+		Query:          nar.Query,
+	}, nil
+}
+
+func (w *sqliteWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
+	ni, err := w.adapter.GetNarInfoByHash(ctx, hash)
+	if err != nil {
+		return NarInfo{}, err
+	}
+
+	return NarInfo{
+		ID:             ni.ID,
+		Hash:           ni.Hash,
+		CreatedAt:      ni.CreatedAt,
+		UpdatedAt:      ni.UpdatedAt,
+		LastAccessedAt: ni.LastAccessedAt,
+	}, nil
+}
+
+func (w *sqliteWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
+	ni, err := w.adapter.GetNarInfoByID(ctx, id)
+	if err != nil {
+		return NarInfo{}, err
+	}
+
+	return NarInfo{
+		ID:             ni.ID,
+		Hash:           ni.Hash,
+		CreatedAt:      ni.CreatedAt,
+		UpdatedAt:      ni.UpdatedAt,
+		LastAccessedAt: ni.LastAccessedAt,
+	}, nil
+}
+
+func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
+	return w.adapter.GetNarTotalSize(ctx)
+}
+
+func (w *sqliteWrapper) TouchNar(ctx context.Context, hash string) (int64, error) {
+	return w.adapter.TouchNar(ctx, hash)
+}
+
+func (w *sqliteWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
+	return w.adapter.TouchNarInfo(ctx, hash)
+}
+
+func (w *sqliteWrapper) WithTx(tx *sql.Tx) Querier {
+	return &sqliteWrapper{adapter: w.adapter.WithTx(tx)}
+}
+
+func (w *sqliteWrapper) DB() *sql.DB {
+	return w.adapter.DB()
+}

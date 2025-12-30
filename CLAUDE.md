@@ -40,7 +40,7 @@ nix fmt                  # Format all project files (Go, Nix, SQL, etc.)
 sqlc generate
 
 # Run database migrations manually
-dbmate --url "sqlite:/path/to/your/db.sqlite" up
+dbmate --url "sqlite:/path/to/your/db.sqlite" --migrations-dir db/migrations/sqlite up
 
 # Build
 go build .
@@ -133,10 +133,12 @@ PR #5: feature-e → feature-f     ← ❌ CI skipped
   - `storage/local/` - Local filesystem storage
   - `storage/s3/` - S3-compatible storage (including MinIO)
 - `pkg/server/` - HTTP server using Chi router
-- `pkg/database/` - SQLite database layer (sqlc-generated code)
+- `pkg/database/` - Database abstraction layer supporting multiple engines (sqlc-generated code)
+  - `database/sqlitedb/` - SQLite-specific implementation
 - `pkg/nar/` - NAR (Nix ARchive) format handling
 - `db/migrations/` - Database migration files
-- `db/query.sql` - SQL queries for sqlc code generation
+  - `migrations/sqlite/` - SQLite migration files
+- `db/query.sqlite.sql` - SQLite queries for sqlc code generation
 
 ### Key Interfaces (pkg/storage/store.go)
 
@@ -150,7 +152,15 @@ Both local and S3 backends implement these interfaces.
 
 ### Database
 
-SQLite with sqlc for type-safe SQL. Schema in `db/schema.sql`, queries in `db/query.sql`. Run `sqlc generate` after modifying queries.
+Supports multiple database engines via sqlc for type-safe SQL:
+
+- **SQLite** (default): Embedded database, no external dependencies
+
+Database selection is done via URL scheme in the `--cache-database-url` flag:
+
+- SQLite: `sqlite:/path/to/db.sqlite`
+
+Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`. Run `sqlc generate` after modifying queries.
 
 ## Code Quality
 

@@ -4,15 +4,21 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/XSAM/otelsql"
-	"github.com/mattn/go-sqlite3"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
+
+	"github.com/kalbasit/ncps/pkg/database/sqlitedb"
+
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
 
-// Open opens a sqlite3 database, and creates it if necessary.
-func Open(dbURL string) (*Queries, error) {
+// Open opens a database connection and returns a Querier implementation.
+// The database type is determined from the URL scheme:
+//   - sqlite:// or sqlite3:// for SQLite
+func Open(dbURL string) (Querier, error) {
 	u, err := url.Parse(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing the database URL %q: %w", dbURL, err)
@@ -20,18 +26,35 @@ func Open(dbURL string) (*Queries, error) {
 
 	var sdb *sql.DB
 
-	switch u.Scheme {
-	case "sqlite":
-		sdb, err = otelsql.Open("sqlite3", u.Path, otelsql.WithAttributes(
-			semconv.DBSystemSqlite,
-		))
+	scheme := strings.ToLower(u.Scheme)
+
+	switch scheme {
+	case "sqlite", "sqlite3":
+		sdb, err = openSQLite(u)
 	default:
-		//nolint:err113
-		return nil, fmt.Errorf("driver %q unrecognized", u.Scheme)
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDriver, scheme)
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("error opening the database at %q: %w", dbURL, err)
+	}
+
+	// Return the appropriate wrapper based on the scheme
+	switch scheme {
+	case "sqlite", "sqlite3":
+		return &sqliteWrapper{adapter: sqlitedb.NewAdapter(sdb)}, nil
+	default:
+		// This should never happen due to the switch above, but included for safety
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDriver, scheme)
+	}
+}
+
+func openSQLite(u *url.URL) (*sql.DB, error) {
+	sdb, err := otelsql.Open("sqlite3", u.Path, otelsql.WithAttributes(
+		semconv.DBSystemSqlite,
+	))
+	if err != nil {
+		return nil, err
 	}
 
 	// Getting an error `database is locked` when data is being inserted in the
@@ -39,18 +62,5 @@ func Open(dbURL string) (*Queries, error) {
 	// but at least none of them will fail due to connection issues.
 	sdb.SetMaxOpenConns(1)
 
-	return New(sdb), nil
-}
-
-func (q *Queries) DB() *sql.DB { return q.db.(*sql.DB) }
-
-// ErrorIsNo returns true if the error is an sqlite3 error and its code match
-// the errNo code.
-func ErrorIsNo(err error, errNo sqlite3.ErrNo) bool {
-	sqliteErr, ok := err.(sqlite3.Error)
-	if !ok {
-		return false
-	}
-
-	return sqliteErr.Code == errNo
+	return sdb, nil
 }

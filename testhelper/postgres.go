@@ -2,7 +2,6 @@ package testhelper
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -11,12 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// CreateMigrateDatabase will create all necessary directories, and will create
-// the sqlite3 database (if necessary) and migrate it.
-func CreateMigrateDatabase(t *testing.T, dbFile string) {
+// MigratePostgresDatabase will migrate the PostgreSQL database using dbmate.
+// The database URL should be in the format: postgresql://user:password@host:port/database
+func MigratePostgresDatabase(t *testing.T, dbURL string) {
 	t.Helper()
-
-	require.NoError(t, os.MkdirAll(filepath.Dir(dbFile), 0o700))
 
 	_, thisFile, _, ok := runtime.Caller(0)
 	require.True(t, ok)
@@ -25,7 +22,7 @@ func CreateMigrateDatabase(t *testing.T, dbFile string) {
 		filepath.Dir(filepath.Dir(thisFile)),
 		"db",
 		"migrations",
-		"sqlite",
+		"postgres",
 	)
 
 	dbSchema := filepath.Join(
@@ -37,7 +34,7 @@ func CreateMigrateDatabase(t *testing.T, dbFile string) {
 	//nolint:gosec
 	cmd := exec.CommandContext(context.Background(),
 		"dbmate",
-		"--url=sqlite:"+dbFile,
+		"--url="+dbURL,
 		"--migrations-dir="+dbMigrationsDir,
 		"--schema-file="+dbSchema,
 		"up",
