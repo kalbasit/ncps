@@ -11,6 +11,8 @@
         ".env"
         ".envrc"
         "db/schema.sql"
+        "db/query.*.sql" # sqlc query files use special syntax
+        "db/migrations/postgres/**" # postgres migrations use postgres dialect
         "LICENSE"
         "renovate.json"
       ];
@@ -20,8 +22,12 @@
         gofumpt.enable = true;
         mdformat.enable = true;
         nixfmt.enable = true;
-        sqlfluff.enable = true;
-        sqlfluff.dialect = "sqlite";
+        sqlfluff = {
+          enable = true;
+          # Default dialect for SQLite migration files
+          # PostgreSQL files are excluded above
+          dialect = "sqlite";
+        };
         statix.enable = true;
         yamlfmt.enable = true;
       };
