@@ -2,13 +2,10 @@
 
 set -e
 
-# Wait a bit for PostgreSQL to fully initialize
-sleep 2
-
 # Create test user and database
 echo "Creating test user and database..."
-psql -h 127.0.0.1 -p 5432 -U "$USER" -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';" 2>/dev/null || true
-psql -h 127.0.0.1 -p 5432 -U "$USER" -d postgres -c "CREATE DATABASE \"test-db\" OWNER \"test-user\";" 2>/dev/null || true
+psql -h 127.0.0.1 -p 5432 -U "$USER" -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';"
+psql -h 127.0.0.1 -p 5432 -U "$USER" -d postgres -c "CREATE DATABASE \"test-db\" OWNER \"test-user\";"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"
