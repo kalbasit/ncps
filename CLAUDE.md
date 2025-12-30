@@ -127,9 +127,13 @@ SQLite with sqlc for type-safe SQL. Schema in `db/schema.sql`, queries in `db/qu
 
 Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`). Key linters: err113, exhaustive, gosec, paralleltest, testpackage.
 
+**IMPORTANT**: Always use `golangci-lint run --fix` first to automatically fix fixable issues before doing manual fixes. This saves tokens and is more efficient.
+
 ### Formatting
 
 Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule).
+
+**IMPORTANT**: Always use `nix fmt` to automatically format Nix files before making manual edits.
 
 ### Testing
 
