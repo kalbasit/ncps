@@ -2,9 +2,6 @@
 
 set -e
 
-# Wait for MySQL/MariaDB to be ready
-sleep 3
-
 echo "Creating test user and database..."
 mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u root <<EOF
 CREATE DATABASE IF NOT EXISTS \`test-db\`;
