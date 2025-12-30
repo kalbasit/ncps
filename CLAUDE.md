@@ -153,9 +153,11 @@ Both local and S3 backends implement these interfaces.
 ### Database
 
 Supports multiple database engines via sqlc for type-safe SQL:
+
 - **SQLite** (default): Embedded database, no external dependencies
 
 Database selection is done via URL scheme in the `--cache-database-url` flag:
+
 - SQLite: `sqlite:/path/to/db.sqlite`
 
 Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`. Run `sqlc generate` after modifying queries.
