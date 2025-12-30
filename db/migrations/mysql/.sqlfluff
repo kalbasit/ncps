@@ -1,0 +1,5 @@
+[sqlfluff]
+# MariaDB dialect for MySQL/MariaDB migrations
+dialect = mariadb
+# Disable keyword identifier check - hash, compression, query are common column names
+exclude_rules = RF04

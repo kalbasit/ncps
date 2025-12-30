@@ -100,6 +100,18 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
   - Table operations (CREATE, INSERT)
   - Query verification
 
+**MySQL/MariaDB (database):**
+
+- Ephemeral storage in temporary directory
+- MariaDB server on port 3306
+- Pre-configured test database (`test-db`)
+- Test credentials: `test-user` / `test-password`
+- Connection URL: `mysql://test-user:test-password@127.0.0.1:3306/test-db`
+- Self-validation checks:
+  - Connection test
+  - Table operations (CREATE, INSERT)
+  - Query verification
+
 Configuration in `nix/process-compose/flake-module.nix` defines:
 
 - `minio-server` process - MinIO server with health checks
@@ -155,12 +167,15 @@ PR #5: feature-e → feature-f     ← ❌ CI skipped
 - `pkg/database/` - Database abstraction layer supporting multiple engines (sqlc-generated code)
   - `database/sqlitedb/` - SQLite-specific implementation
   - `database/postgresdb/` - PostgreSQL-specific implementation
+  - `database/mysqldb/` - MySQL/MariaDB-specific implementation
 - `pkg/nar/` - NAR (Nix ARchive) format handling
 - `db/migrations/` - Database migration files
   - `migrations/sqlite/` - SQLite migration files
   - `migrations/postgres/` - PostgreSQL migration files
+  - `migrations/mysql/` - MySQL/MariaDB migration files
 - `db/query.sqlite.sql` - SQLite queries for sqlc code generation
 - `db/query.postgres.sql` - PostgreSQL queries for sqlc code generation
+- `db/query.mysql.sql` - MySQL/MariaDB queries for sqlc code generation
 
 ### Key Interfaces (pkg/storage/store.go)
 
@@ -178,13 +193,15 @@ Supports multiple database engines via sqlc for type-safe SQL:
 
 - **SQLite** (default): Embedded database, no external dependencies
 - **PostgreSQL**: Scalable relational database for production deployments
+- **MySQL/MariaDB**: Popular open-source relational database for production deployments
 
 Database selection is done via URL scheme in the `--cache-database-url` flag:
 
 - SQLite: `sqlite:/path/to/db.sqlite`
 - PostgreSQL: `postgresql://user:password@host:port/database`
+- MySQL/MariaDB: `mysql://user:password@host:port/database`
 
-Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql` and `db/query.postgres.sql`. Run `sqlc generate` after modifying queries.
+Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db/query.postgres.sql`, and `db/query.mysql.sql`. Run `sqlc generate` after modifying queries.
 
 ## Code Quality
 
@@ -296,6 +313,49 @@ This setup ensures:
 - Both SQLite and PostgreSQL database implementations are tested
 - Tests are isolated with unique random hashes
 - Migrations are validated against both database engines
+
+#### MySQL/MariaDB Integration Tests
+
+MySQL/MariaDB integration tests require MariaDB to be running. The tests are automatically skipped if the required environment variable is not set.
+
+**For local development:**
+
+```bash
+# Start MariaDB (in a separate terminal)
+nix run .#deps
+
+# Run tests with MySQL integration enabled
+export NCPS_TEST_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
+go test -race ./pkg/database
+```
+
+**For Nix builds and CI:**
+
+MariaDB is automatically started during the test phase when building with Nix:
+
+```bash
+# Runs all checks including MySQL integration tests
+nix flake check
+
+# Build package (includes test phase with MariaDB)
+nix build
+```
+
+The Nix build (`nix/packages/ncps.nix`) automatically:
+
+1. Starts MariaDB server in the `preCheck` phase
+1. Creates test database and user
+1. Exports MySQL test environment variable
+1. Runs all tests (including MySQL integration tests)
+1. Stops MariaDB in the `postCheck` phase
+
+This setup ensures:
+
+- MySQL/MariaDB integration tests run in CI/CD (GitHub Actions workflows)
+- `nix flake check` includes MySQL testing
+- All three database implementations (SQLite, PostgreSQL, MySQL) are tested
+- Tests are isolated with unique random hashes
+- Migrations are validated against all database engines
 
 ## Configuration
 
