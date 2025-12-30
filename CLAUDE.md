@@ -31,6 +31,10 @@ go test -race -run TestName ./pkg/server/...
 
 # Lint code
 golangci-lint run
+golangci-lint run --fix  # Automatically fix fixable linter issues
+
+# Format code
+nix fmt                  # Format Nix files automatically
 
 # Generate SQL code (after modifying db/query.sql or migrations)
 sqlc generate
