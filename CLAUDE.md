@@ -47,9 +47,15 @@ sqlfluff format db/migrations/            # Format all migration files
 # Generate SQL code (after modifying db/query.sql or migrations)
 sqlc generate
 
+# Create new database migrations (creates timestamped migration files)
+dbmate --migrations-dir db/migrations/sqlite new migration_name
+dbmate --migrations-dir db/migrations/postgres new migration_name
+dbmate --migrations-dir db/migrations/mysql new migration_name
+
 # Run database migrations manually
 dbmate --url "sqlite:/path/to/your/db.sqlite" --migrations-dir db/migrations/sqlite up
 dbmate --url "postgresql://user:pass@localhost:5432/ncps" --migrations-dir db/migrations/postgres up
+dbmate --url "mysql://user:pass@localhost:3306/ncps" --migrations-dir db/migrations/mysql up
 
 # Build
 go build .
@@ -210,6 +216,28 @@ Database selection is done via URL scheme in the `--cache-database-url` flag:
 - MySQL/MariaDB: `mysql://user:password@host:port/database`
 
 Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db/query.postgres.sql`, and `db/query.mysql.sql`. Run `sqlc generate` after modifying queries.
+
+**Creating Database Migrations:**
+
+When creating new database migrations, always use `dbmate new` to generate properly timestamped migration files:
+
+```bash
+dbmate --migrations-dir db/migrations/sqlite new migration_name
+dbmate --migrations-dir db/migrations/postgres new migration_name
+dbmate --migrations-dir db/migrations/mysql new migration_name
+```
+
+This creates timestamped migration files (e.g., `20251230223951_migration_name.sql`) with the standard dbmate template:
+
+```sql
+-- migrate:up
+
+
+-- migrate:down
+
+```
+
+**IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `dbmate new` to ensure proper chronological ordering.
 
 ## Code Quality
 
