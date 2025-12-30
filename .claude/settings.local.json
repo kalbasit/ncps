@@ -20,6 +20,7 @@
       "Bash(nix flake check:*)",
       "Bash(nix fmt:*)",
       "Bash(sqlc generate:*)",
+      "Bash(sqlfluff:*)",
       "WebFetch(domain:github.com)"
     ]
   }

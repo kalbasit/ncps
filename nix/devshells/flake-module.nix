@@ -11,6 +11,7 @@
           pkgs.minio
           pkgs.minio-client
           pkgs.sqlc
+          pkgs.sqlfluff
           pkgs.watchexec
         ];
 
