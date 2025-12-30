@@ -2,6 +2,9 @@
 
 set -e
 
+# Remove stale marker file from previous runs
+rm -f /tmp/ncps-mysql-ready
+
 echo "Creating test user and database..."
 mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u root <<EOF
 CREATE DATABASE IF NOT EXISTS \`test-db\`;
@@ -79,5 +82,8 @@ echo "💡 Environment Variables (for testing):"
 echo "  export NCPS_TEST_MYSQL_URL=\"mysql://test-user:test-password@127.0.0.1:3306/test-db\""
 echo ""
 echo "---------------------------------------------------"
+
+# Create ready marker file for process-compose health check
+touch /tmp/ncps-mysql-ready
 
 sleep infinity

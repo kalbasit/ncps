@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
 set -e
+
+# Remove stale marker file from previous runs
+rm -f /tmp/ncps-minio-ready
+
 # 1. Setup Admin Alias (Strictly use 127.0.0.1)
 mc alias set local http://127.0.0.1:9000 admin password
 # 2. Setup Resources
@@ -70,4 +74,8 @@ echo "  Username:     admin"
 echo "  Password:     password"
 echo ""
 echo "---------------------------------------------------"
+
+# Create ready marker file for process-compose health check
+touch /tmp/ncps-minio-ready
+
 sleep infinity
