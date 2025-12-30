@@ -77,6 +77,7 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
 **`nix run .#deps`** - Starts development services:
 
 **MinIO (S3-compatible storage):**
+
 - Ephemeral storage in temporary directory
 - MinIO server on port 9000, console on port 9001
 - Pre-configured test bucket (`test-bucket`)
@@ -87,6 +88,7 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
   - Signed URL generation and access
 
 **PostgreSQL (database):**
+
 - Ephemeral storage in temporary directory
 - PostgreSQL server on port 5432
 - Pre-configured test database (`test-db`)
