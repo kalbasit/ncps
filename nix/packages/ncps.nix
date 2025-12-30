@@ -80,8 +80,18 @@
           # Stop MinIO after tests complete
           minioPostCheck = ''
             echo "🛑 Stopping MinIO..."
-            kill $MINIO_PID 2>/dev/null || true
-            rm -rf "$MINIO_DATA_DIR"
+            if [ -n "$MINIO_PID" ]; then
+              kill $MINIO_PID 2>/dev/null || true
+              # Wait for MinIO to fully shut down
+              for i in {1..30}; do
+                if ! kill -0 $MINIO_PID 2>/dev/null; then
+                  break
+                fi
+                sleep 0.5
+              done
+            fi
+            sleep 1
+            rm -rf "$MINIO_DATA_DIR" 2>/dev/null || true
             echo "✅ MinIO stopped and cleaned up"
           '';
         in
