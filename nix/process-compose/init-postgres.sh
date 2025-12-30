@@ -4,8 +4,8 @@ set -e
 
 # Create test user and database
 echo "Creating test user and database..."
-psql -h 127.0.0.1 -p 5432 -U "$USER" -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';"
-psql -h 127.0.0.1 -p 5432 -U "$USER" -d postgres -c "CREATE DATABASE \"test-db\" OWNER \"test-user\";"
+psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';"
+psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE DATABASE \"test-db\" OWNER \"test-user\";"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"
