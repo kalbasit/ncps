@@ -1,0 +1,3 @@
+[sqlfluff]
+# MySQL dialect for MySQL migrations
+dialect = mysql
