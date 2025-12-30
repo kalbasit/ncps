@@ -1,6 +1,8 @@
 name: CI
 on:
   pull_request:
+    branches:
+      - main
 jobs:
   flake-check:
     runs-on: ubuntu-24.04
