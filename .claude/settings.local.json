@@ -2,7 +2,6 @@
   "permissions": {
     "allow": [
       "Bash(dbmate:*)",
-      "Bash(export NCPS_TEST_POSTGRES_URL:*)",
       "Bash(export NCPS_TEST_S3_ACCESS_KEY_ID=\"test-access-key\")",
       "Bash(export NCPS_TEST_S3_BUCKET=\"test-bucket\")",
       "Bash(export NCPS_TEST_S3_ENDPOINT=\"http://127.0.0.1:9000\")",
