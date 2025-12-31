@@ -11,10 +11,21 @@
         ".env"
         ".envrc"
         "db/schema.sql"
-        "db/query.*.sql" # sqlc query files use special syntax
         "LICENSE"
         "renovate.json"
       ];
+
+      # Exclude sqlc query files from sqlfluff - they use sqlc-specific syntax
+      settings.formatter = {
+        sqlfluff.excludes = [
+          "db/query.sql"
+          "db/query.*.sql"
+        ];
+        sqlfluff-lint.excludes = [
+          "db/query.sql"
+          "db/query.*.sql"
+        ];
+      };
 
       programs = {
         deadnix.enable = true;
@@ -22,6 +33,7 @@
         mdformat.enable = true;
         nixfmt.enable = true;
         sqlfluff.enable = true;
+        sqlfluff-lint.enable = true;
         statix.enable = true;
         yamlfmt.enable = true;
       };

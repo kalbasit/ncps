@@ -1,7 +1,14 @@
 [sqlfluff]
 # Default dialect for SQLite files
 dialect = sqlite
+# Set line length limit to 120 instead of 80
+max_line_length = 120
+# Exclude rules that don't apply to migration files or cause false positives
+exclude_rules = RF04,AM04,AL01,LT05
 
 [sqlfluff:indentation]
 indent_unit = space
 tab_space_size = 4
+
+[sqlfluff:layout:type:comma]
+line_position = trailing
