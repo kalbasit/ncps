@@ -73,10 +73,9 @@ func (l *Locker) TryLock(ctx context.Context, key string, _ time.Duration) (bool
 type RWLocker struct {
 	mu sync.RWMutex
 
-	// Track lock acquisition times for metrics (key -> acquisition time)
-	// For write locks and read locks separately
+	// Track lock acquisition times for duration metrics (write locks only)
+	// Note: Read lock duration tracking is not supported due to concurrent access
 	writeAcquisitionTimes sync.Map
-	readAcquisitionTimes  sync.Map
 }
 
 // NewRWLocker creates a new local read-write locker.
@@ -97,12 +96,12 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error
 
 // Unlock releases an exclusive lock. The key parameter is ignored.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
-if val, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
-	if startTime, ok := val.(time.Time); ok {
-		duration := time.Since(startTime).Seconds()
-		lock.RecordLockDuration(ctx, "write", "local", duration)
+	if val, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
+		if startTime, ok := val.(time.Time); ok {
+			duration := time.Since(startTime).Seconds()
+			lock.RecordLockDuration(ctx, "write", "local", duration)
+		}
 	}
-}
 
 	rw.mu.Unlock()
 
@@ -125,23 +124,16 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 }
 
 // RLock acquires a shared read lock. The key and ttl parameters are ignored.
-func (rw *RWLocker) RLock(ctx context.Context, key string, _ time.Duration) error {
+func (rw *RWLocker) RLock(ctx context.Context, _ string, _ time.Duration) error {
 	rw.mu.RLock()
 
 	lock.RecordLockAcquisition(ctx, "read", "local", "success")
 
-	rw.readAcquisitionTimes.Store(key, time.Now())
-
 	return nil
 }
 
-// RUnlock releases a shared read lock. The key parameter is ignored.
-func (rw *RWLocker) RUnlock(ctx context.Context, key string) error {
-	if startTime, ok := rw.readAcquisitionTimes.LoadAndDelete(key); ok {
-		duration := time.Since(startTime.(time.Time)).Seconds()
-		lock.RecordLockDuration(ctx, "read", "local", duration)
-	}
-
+// RUnlock releases a shared read lock. The ctx and key parameters are ignored.
+func (rw *RWLocker) RUnlock(_ context.Context, _ string) error {
 	rw.mu.RUnlock()
 
 	return nil

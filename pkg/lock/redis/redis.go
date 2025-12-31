@@ -452,9 +452,9 @@ type RWLocker struct {
 	// circuitBreaker tracks Redis health
 	circuitBreaker *circuitBreaker
 
-	// Track lock acquisition times for duration metrics
+	// Track lock acquisition times for duration metrics (write locks only)
+	// Note: Read lock duration tracking is not supported due to concurrent access
 	writeAcquisitionTimes sync.Map
-	readAcquisitionTimes  sync.Map
 }
 
 // NewRWLocker creates a new Redis-based read-write locker.
@@ -856,19 +856,12 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 
 	// Record successful acquisition
 	lock.RecordLockAcquisition(ctx, "read", "distributed", "success")
-	rw.readAcquisitionTimes.Store(key, time.Now())
 
 	return nil
 }
 
 // RUnlock releases a shared read lock.
 func (rw *RWLocker) RUnlock(ctx context.Context, key string) error {
-	// Record lock duration
-	if startTime, ok := rw.readAcquisitionTimes.LoadAndDelete(key); ok {
-		duration := time.Since(startTime.(time.Time)).Seconds()
-		lock.RecordLockDuration(ctx, "read", "distributed", duration)
-	}
-
 	if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
 		return rw.fallbackLocker.RUnlock(ctx, key)
 	}
