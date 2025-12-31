@@ -291,8 +291,17 @@
           ];
 
           # pre and post checks
-          preCheck = minioPreCheck + "\n" + postgresPreCheck + "\n" + mysqlPreCheck;
-          postCheck = mysqlPostCheck + "\n" + postgresPostCheck + "\n" + minioPostCheck;
+          preCheck = builtins.concatStringsSep "\n" [
+            minioPreCheck
+            postgresPreCheck
+            mysqlPreCheck
+          ];
+
+          postCheck = builtins.concatStringsSep "\n" [
+            mysqlPostCheck
+            postgresPostCheck
+            minioPostCheck
+          ];
 
           postInstall = ''
             mkdir -p $out/share/ncps
