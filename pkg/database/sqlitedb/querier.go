@@ -47,14 +47,18 @@ type Querier interface {
 	//  DELETE FROM narinfos
 	//  WHERE id = ?
 	DeleteNarInfoByID(ctx context.Context, id int64) (int64, error)
-	//GetLeastUsedNars
+	// NOTE: This query uses a correlated subquery which is not optimal for performance.
+	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
+	// does not properly support filtering on window function results in subqueries.
 	//
 	//  SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1."query", n1.created_at, n1.updated_at, n1.last_accessed_at
 	//  FROM nars n1
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
 	//      FROM nars n2
-	//      WHERE n2.last_accessed_at <= n1.last_accessed_at
+	//      WHERE
+	//          n2.last_accessed_at < n1.last_accessed_at
+	//          OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 	//  ) <= ?
 	GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error)
 	//GetNarByHash

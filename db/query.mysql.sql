@@ -75,7 +75,6 @@ FROM nars n1
 WHERE (
     SELECT SUM(n2.file_size)
     FROM nars n2
-    WHERE
-        n2.last_accessed_at < n1.last_accessed_at
+    WHERE n2.last_accessed_at < n1.last_accessed_at
         OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 ) <= ?;

@@ -826,10 +826,7 @@ func TestGetLeastAccessedNars(t *testing.T) {
 		}
 	}
 
-	var totalSize uint64
 	for _, narEntry := range allEntries {
-		totalSize += uint64(len(narEntry.NarText))
-
 		narInfo, err := db.CreateNarInfo(context.Background(), narEntry.NarInfoHash)
 		require.NoError(t, err)
 
@@ -851,7 +848,11 @@ func TestGetLeastAccessedNars(t *testing.T) {
 
 	lastEntry := allEntries[len(allEntries)-1]
 
-	nms, err := db.GetLeastUsedNars(context.Background(), totalSize-uint64(len(lastEntry.NarText)))
+	// Ask for nars up to the size of the last entry (the least-accessed one)
+	// This should return only the last entry since it's the least accessed
+	sizeParam := uint64(len(lastEntry.NarText))
+
+	nms, err := db.GetLeastUsedNars(context.Background(), sizeParam)
 	require.NoError(t, err)
 
 	if assert.Len(t, nms, 1) {

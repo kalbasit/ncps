@@ -169,7 +169,6 @@ WHERE (
 // NOTE: This query uses a correlated subquery which is not optimal for performance.
 // The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 // does not properly support filtering on window function results in subqueries.
-// See: https://github.com/sqlc-dev/sqlc/issues (potential future optimization)
 //
 //	SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.query
 //	FROM nars n1
