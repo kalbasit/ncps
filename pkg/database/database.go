@@ -76,6 +76,26 @@ func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
 	}
 }
 
+// applyPoolSettings applies connection pool settings to the database connection.
+// It uses the provided defaults and overrides them with values from poolCfg if they are positive.
+func applyPoolSettings(sdb *sql.DB, poolCfg *PoolConfig, defaultMaxOpen, defaultMaxIdle int) {
+	maxOpen := defaultMaxOpen
+	maxIdle := defaultMaxIdle
+
+	if poolCfg != nil {
+		if poolCfg.MaxOpenConns > 0 {
+			maxOpen = poolCfg.MaxOpenConns
+		}
+
+		if poolCfg.MaxIdleConns > 0 {
+			maxIdle = poolCfg.MaxIdleConns
+		}
+	}
+
+	sdb.SetMaxOpenConns(maxOpen)
+	sdb.SetMaxIdleConns(maxIdle)
+}
+
 func openSQLite(u *url.URL, poolCfg *PoolConfig) (*sql.DB, error) {
 	sdb, err := otelsql.Open("sqlite3", u.Path, otelsql.WithAttributes(
 		semconv.DBSystemSqlite,
@@ -87,14 +107,11 @@ func openSQLite(u *url.URL, poolCfg *PoolConfig) (*sql.DB, error) {
 	// Getting an error `database is locked` when data is being inserted in the
 	// database at a fast rate. This will slow down read/write from the database
 	// but at least none of them will fail due to connection issues.
-	// SQLite requires MaxOpenConns=1 to avoid "database is locked" errors
-	maxOpen := 1
-	if poolCfg != nil && poolCfg.MaxOpenConns > 0 {
-		maxOpen = poolCfg.MaxOpenConns
-	}
+	// SQLite requires MaxOpenConns=1 to avoid "database is locked" errors.
+	// This value is enforced and cannot be overridden by the user.
+	sdb.SetMaxOpenConns(1)
 
-	sdb.SetMaxOpenConns(maxOpen)
-
+	// Allow user to configure MaxIdleConns if desired
 	if poolCfg != nil && poolCfg.MaxIdleConns > 0 {
 		sdb.SetMaxIdleConns(poolCfg.MaxIdleConns)
 	}
@@ -112,21 +129,7 @@ func openPostgreSQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 
 	// PostgreSQL can handle concurrent connections well
 	// Set reasonable defaults for connection pooling
-	maxOpen := 25
-	maxIdle := 5
-
-	if poolCfg != nil {
-		if poolCfg.MaxOpenConns > 0 {
-			maxOpen = poolCfg.MaxOpenConns
-		}
-
-		if poolCfg.MaxIdleConns > 0 {
-			maxIdle = poolCfg.MaxIdleConns
-		}
-	}
-
-	sdb.SetMaxOpenConns(maxOpen)
-	sdb.SetMaxIdleConns(maxIdle)
+	applyPoolSettings(sdb, poolCfg, 25, 5)
 
 	return sdb, nil
 }
@@ -192,21 +195,7 @@ func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 
 	// MySQL can handle concurrent connections well
 	// Set reasonable defaults for connection pooling
-	maxOpen := 25
-	maxIdle := 5
-
-	if poolCfg != nil {
-		if poolCfg.MaxOpenConns > 0 {
-			maxOpen = poolCfg.MaxOpenConns
-		}
-
-		if poolCfg.MaxIdleConns > 0 {
-			maxIdle = poolCfg.MaxIdleConns
-		}
-	}
-
-	sdb.SetMaxOpenConns(maxOpen)
-	sdb.SetMaxIdleConns(maxIdle)
+	applyPoolSettings(sdb, poolCfg, 25, 5)
 
 	return sdb, nil
 }
