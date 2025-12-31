@@ -97,10 +97,12 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error
 
 // Unlock releases an exclusive lock. The key parameter is ignored.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
-	if startTime, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
-		duration := time.Since(startTime.(time.Time)).Seconds()
+if val, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
+	if startTime, ok := val.(time.Time); ok {
+		duration := time.Since(startTime).Seconds()
 		lock.RecordLockDuration(ctx, "write", "local", duration)
 	}
+}
 
 	rw.mu.Unlock()
 
