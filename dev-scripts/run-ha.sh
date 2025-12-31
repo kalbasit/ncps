@@ -52,7 +52,6 @@ cleanup() {
   done
 
   echo -e "${GREEN}All instances stopped${NC}"
-  exit 0
 }
 
 # Set up cleanup trap
