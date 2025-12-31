@@ -318,7 +318,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
-			Msg("failed to acquire read lock for GetNar, continuing without lock")
+			Msg("failed to acquire read lock for GetNar")
 
 		return 0, nil, fmt.Errorf("failed to acquire read lock for GetNar: %w", err)
 	}
@@ -486,7 +486,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
-			Msg("failed to acquire read lock for PutNar, continuing without lock")
+			Msg("failed to acquire read lock for PutNar")
 
 		return fmt.Errorf("failed to acquire read lock for PutNar: %w", err)
 	}
@@ -533,7 +533,7 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
-			Msg("failed to acquire read lock for DeleteNar, continuing without lock")
+			Msg("failed to acquire read lock for DeleteNar")
 
 		return fmt.Errorf("failed to acquire read lock for DeleteNar: %w", err)
 	}
@@ -917,7 +917,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
-			Msg("failed to acquire read lock for GetNarInfo, continuing without lock")
+			Msg("failed to acquire read lock for GetNarInfo")
 
 		return nil, fmt.Errorf("failed to acquire read lock for GetNarInfo: %w", err)
 	}
@@ -1143,7 +1143,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
-			Msg("failed to acquire read lock for PutNarInfo, continuing without lock")
+			Msg("failed to acquire read lock for PutNarInfo")
 
 		return fmt.Errorf("failed to acquire read lock for PutNarInfo: %w", err)
 	}
@@ -1203,7 +1203,7 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
-			Msg("failed to acquire read lock for DeleteNarInfo, continuing without lock")
+			Msg("failed to acquire read lock for DeleteNarInfo")
 
 		return fmt.Errorf("failed to acquire read lock for DeleteNarInfo: %w", err)
 	}
