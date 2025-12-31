@@ -1,20 +1,18 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 func main() {
-	os.Exit(run(context.Background()))
+	os.Exit(run())
 }
 
-func run(ctx context.Context) int {
+func run() int {
 	// Parse args to find --url value and check if --migrations-dir is provided
 	var dbURL string
 
@@ -35,7 +33,7 @@ func run(ctx context.Context) int {
 	// If --migrations-dir is already provided via flag, don't override it
 	// If DBMATE_MIGRATIONS_DIR is already set, respect it (user has explicitly configured it)
 	if hasMigrationsDir || os.Getenv("DBMATE_MIGRATIONS_DIR") != "" {
-		return execDbmate(ctx, os.Args[1:])
+		return execDbmate(os.Args[1:])
 	}
 
 	// Determine database type from URL scheme
@@ -50,7 +48,7 @@ func run(ctx context.Context) int {
 		migrationsSubdir = "mysql"
 	default:
 		// If we can't determine the database type, just pass through
-		return execDbmate(ctx, os.Args[1:])
+		return execDbmate(os.Args[1:])
 	}
 
 	// Determine the base migrations directory
@@ -76,11 +74,11 @@ func run(ctx context.Context) int {
 		return 1
 	}
 
-	return execDbmate(ctx, os.Args[1:])
+	return execDbmate(os.Args[1:])
 }
 
 // execDbmate executes the real dbmate binary with the given arguments.
-func execDbmate(ctx context.Context, args []string) int {
+func execDbmate(args []string) int {
 	// Look for the real dbmate binary
 	// Consistently named as "dbmate.real" in both dev and Docker environments
 	dbmatePath, err := exec.LookPath("dbmate.real")
@@ -90,10 +88,8 @@ func execDbmate(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, dbmatePath, args...)
+	//nolint:noctx
+	cmd := exec.Command(dbmatePath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
