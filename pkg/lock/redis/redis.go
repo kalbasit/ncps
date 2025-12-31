@@ -51,6 +51,8 @@ const (
 	stateClosed = "closed"
 )
 
+const jitterFactor = 0.1
+
 // Config holds Redis configuration for distributed locking.
 type Config struct {
 	// Addrs is a list of Redis server addresses.
@@ -380,7 +382,7 @@ func (l *Locker) calculateBackoff(attempt int) time.Duration {
 
 	// Add jitter to prevent thundering herd
 	if l.retryConfig.Jitter {
-		jitter := mathrand.Float64() * delay * 0.1 //nolint:gosec // jitter doesn't need crypto randomness
+		jitter := mathrand.Float64() * delay * jitterFactor //nolint:gosec // jitter doesn't need crypto randomness
 		delay += jitter
 	}
 
