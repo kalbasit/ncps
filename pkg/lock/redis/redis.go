@@ -524,13 +524,11 @@ func NewRWLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDeg
 func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if rw.circuitBreaker.isOpen() {
-		if rw.allowDegradedMode {
-			lock.RecordLockFailure(ctx, "write", "distributed", "circuit_breaker")
+		lock.RecordLockFailure(ctx, "write", "distributed", "circuit_breaker")
 
+		if rw.allowDegradedMode {
 			return rw.fallbackLocker.Lock(ctx, key, ttl)
 		}
-
-		lock.RecordLockFailure(ctx, "write", "distributed", "circuit_breaker")
 
 		return ErrCircuitBreakerOpen
 	}
@@ -686,9 +684,11 @@ func (rw *RWLocker) calculateBackoff(attempt int) time.Duration {
 // Unlock releases an exclusive write lock.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 	// Record lock duration
-	if startTime, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
-		duration := time.Since(startTime.(time.Time)).Seconds()
-		lock.RecordLockDuration(ctx, "write", "distributed", duration)
+	if val, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
+		if startTime, ok := val.(time.Time); ok {
+			duration := time.Since(startTime).Seconds()
+			lock.RecordLockDuration(ctx, "write", "distributed", duration)
+		}
 	}
 
 	if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
@@ -704,13 +704,11 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 // TryLock attempts to acquire an exclusive write lock without blocking.
 func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	if rw.circuitBreaker.isOpen() {
-		if rw.allowDegradedMode {
-			lock.RecordLockFailure(ctx, "write", "distributed", "circuit_breaker")
+		lock.RecordLockFailure(ctx, "write", "distributed", "circuit_breaker")
 
+		if rw.allowDegradedMode {
 			return rw.fallbackLocker.TryLock(ctx, key, ttl)
 		}
-
-		lock.RecordLockFailure(ctx, "write", "distributed", "circuit_breaker")
 
 		return false, ErrCircuitBreakerOpen
 	}
@@ -794,13 +792,11 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 // RLock acquires a shared read lock.
 func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) error {
 	if rw.circuitBreaker.isOpen() {
-		if rw.allowDegradedMode {
-			lock.RecordLockFailure(ctx, "read", "distributed", "circuit_breaker")
+		lock.RecordLockFailure(ctx, "read", "distributed", "circuit_breaker")
 
+		if rw.allowDegradedMode {
 			return rw.fallbackLocker.RLock(ctx, key, ttl)
 		}
-
-		lock.RecordLockFailure(ctx, "read", "distributed", "circuit_breaker")
 
 		return ErrCircuitBreakerOpen
 	}
