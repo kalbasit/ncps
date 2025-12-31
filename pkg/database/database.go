@@ -92,8 +92,13 @@ func applyPoolSettings(sdb *sql.DB, poolCfg *PoolConfig, defaultMaxOpen, default
 		}
 	}
 
-	sdb.SetMaxOpenConns(maxOpen)
-	sdb.SetMaxIdleConns(maxIdle)
+	if maxOpen > 0 {
+		sdb.SetMaxOpenConns(maxOpen)
+	}
+
+	if maxIdle > 0 {
+		sdb.SetMaxIdleConns(maxIdle)
+	}
 }
 
 func openSQLite(u *url.URL, poolCfg *PoolConfig) (*sql.DB, error) {
