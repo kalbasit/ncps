@@ -466,17 +466,18 @@ dbmate --url "mysql://localhost/test" new add_new_feature
 # - db/migrations/postgres/TIMESTAMP_add_new_feature.sql
 # - db/migrations/mysql/TIMESTAMP_add_new_feature.sql
 
-# Important: Wrap migrations in transactions for atomicity
-# SQLite example:
+# IMPORTANT: Do NOT wrap migrations in BEGIN/COMMIT blocks
+# dbmate automatically wraps each migration in a transaction
+# Adding manual transactions will cause "cannot start a transaction within a transaction" errors
+#
+# Example migration:
 # -- migrate:up
-# BEGIN;
-# ... your DDL/DML statements ...
-# COMMIT;
+# CREATE TABLE example (...);
+# CREATE INDEX idx_example ON example (column);
 #
 # -- migrate:down
-# BEGIN;
-# ... your rollback statements ...
-# COMMIT;
+# DROP INDEX idx_example;
+# DROP TABLE example;
 
 # Test the migration
 dbmate --url "sqlite:./test.db" up

@@ -237,6 +237,24 @@ This creates timestamped migration files (e.g., `20251230223951_migration_name.s
 
 ```
 
+**Transaction Handling:**
+
+**IMPORTANT:** Do NOT wrap migrations in `BEGIN`/`COMMIT` blocks. dbmate automatically wraps each migration in a transaction for atomicity. Adding manual transaction blocks will cause "cannot start a transaction within a transaction" errors.
+
+```sql
+-- ❌ WRONG - Don't add manual transactions
+-- migrate:up
+BEGIN;
+CREATE TABLE example (...);
+COMMIT;
+
+-- ✅ CORRECT - Let dbmate handle transactions
+-- migrate:up
+CREATE TABLE example (...);
+```
+
+dbmate's automatic transaction handling ensures that if any part of a migration fails, the entire migration is rolled back, preventing partial migrations from corrupting your database.
+
 **How the dbmate wrapper works:**
 
 The `dbmate` command in the development environment and Docker images is actually a wrapper (separate `dbmate-wrapper` binary in `nix/dbmate-wrapper/`). The wrapper automatically detects the migrations directory based on the database URL scheme:
