@@ -91,10 +91,12 @@ Examples:
   $0            # Start ${NUM_INSTANCES} instances in HA mode
 
 After starting, test with:
-  curl http://localhost:8501/pubkey  # Instance 1
-  curl http://localhost:8502/pubkey  # Instance 2
-  curl http://localhost:8503/pubkey  # Instance 3
 EOF
+  for ((i=1; i<=NUM_INSTANCES; i++)); do
+    port=$((BASE_PORT + i - 1))
+    echo "  curl http://localhost:$port/pubkey  # Instance $i"
+  done
+
   exit 1
 }
 
@@ -204,9 +206,10 @@ echo -e "  ${BLUE}Storage:${NC}     MinIO (S3) on 127.0.0.1:9000"
 echo -e "  ${BLUE}Locks:${NC}       Redis on 127.0.0.1:6379"
 echo ""
 echo -e "${YELLOW}Test endpoints:${NC}"
-echo -e "  curl http://localhost:8501/pubkey"
-echo -e "  curl http://localhost:8502/pubkey"
-echo -e "  curl http://localhost:8503/pubkey"
+for ((i=1; i<=NUM_INSTANCES; i++)); do
+  port=$((BASE_PORT + i - 1))
+  echo -e "  curl http://localhost:$port/pubkey  # Instance $i"
+done
 echo ""
 echo -e "${YELLOW}Monitor Redis locks:${NC}"
 echo -e "  redis-cli --scan --pattern 'ncps:lock:*'"
