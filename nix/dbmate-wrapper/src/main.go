@@ -1,20 +1,23 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(context.Background()))
 }
 
-func run() int {
+func run(ctx context.Context) int {
 	// Parse args to find --url value and check if --migrations-dir is provided
 	var dbURL string
+
 	hasMigrationsDir := false
 
 	for i, arg := range os.Args[1:] {
@@ -32,11 +35,12 @@ func run() int {
 	// If --migrations-dir is already provided via flag, don't override it
 	// If DBMATE_MIGRATIONS_DIR is already set, respect it (user has explicitly configured it)
 	if hasMigrationsDir || os.Getenv("DBMATE_MIGRATIONS_DIR") != "" {
-		return execDbmate(os.Args[1:])
+		return execDbmate(ctx, os.Args[1:])
 	}
 
 	// Determine database type from URL scheme
 	var migrationsSubdir string
+
 	switch {
 	case strings.HasPrefix(dbURL, "sqlite:"):
 		migrationsSubdir = "sqlite"
@@ -46,7 +50,7 @@ func run() int {
 		migrationsSubdir = "mysql"
 	default:
 		// If we can't determine the database type, just pass through
-		return execDbmate(os.Args[1:])
+		return execDbmate(ctx, os.Args[1:])
 	}
 
 	// Determine the base migrations directory
@@ -68,23 +72,28 @@ func run() int {
 	// Set DBMATE_MIGRATIONS_DIR for dbmate to use
 	if err := os.Setenv("DBMATE_MIGRATIONS_DIR", fullMigrationsPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error setting DBMATE_MIGRATIONS_DIR: %v\n", err)
+
 		return 1
 	}
 
-	return execDbmate(os.Args[1:])
+	return execDbmate(ctx, os.Args[1:])
 }
 
 // execDbmate executes the real dbmate binary with the given arguments.
-func execDbmate(args []string) int {
+func execDbmate(ctx context.Context, args []string) int {
 	// Look for the real dbmate binary
 	// Consistently named as "dbmate.real" in both dev and Docker environments
 	dbmatePath, err := exec.LookPath("dbmate.real")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: could not find dbmate.real in PATH: %v\n", err)
+
 		return 1
 	}
 
-	cmd := exec.Command(dbmatePath, args...)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, dbmatePath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -94,7 +103,9 @@ func execDbmate(args []string) int {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode()
 		}
+
 		fmt.Fprintf(os.Stderr, "Error executing dbmate: %v\n", err)
+
 		return 1
 	}
 
