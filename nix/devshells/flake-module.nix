@@ -55,16 +55,15 @@
             export NCPS_ENABLE_REDIS_TESTS=1
             EOF
           '')
-          (pkgs.writeShellScriptBin "enable-all-integration-tests" ''
+          (pkgs.writeShellScriptBin "enable-integration-tests" ''
             if [ -t 1 ]; then
-              echo "🛑 Run 'eval \"\$(enable-all-integration-tests)\"' to enable all integration tests." >&2
+              echo "🛑 Run 'eval \"\$(enable-integration-tests)\"' to enable all integration tests." >&2
               exit 0
             fi
 
             enable-s3-tests
             enable-postgres-tests
             enable-mysql-tests
-            enable-redis-tests
           '')
           (pkgs.writeShellScriptBin "disable-integration-tests" ''
             if [ -t 1 ]; then
@@ -112,11 +111,11 @@
 
           echo ""
           echo "🧪 Integration test helpers available:"
-          echo "  eval \"\$(enable-s3-tests)\"          - Enable S3/MinIO tests"
-          echo "  eval \"\$(enable-postgres-tests)\"    - Enable PostgreSQL tests"
-          echo "  eval \"\$(enable-mysql-tests)\"       - Enable MySQL tests"
-          echo "  eval \"\$(enable-redis-tests)\"       - Enable Redis tests"
-          echo "  eval \"\$(enable-all-integration-tests)\" - Enable all integration tests"
+          echo "  eval \"\$(enable-s3-tests)\"           - Enable S3/MinIO tests"
+          echo "  eval \"\$(enable-postgres-tests)\"     - Enable PostgreSQL tests"
+          echo "  eval \"\$(enable-mysql-tests)\"        - Enable MySQL tests"
+          echo "  eval \"\$(enable-redis-tests)\"        - Enable Redis tests"
+          echo "  eval \"\$(enable-integration-tests)\"  - Enable all integration tests"
           echo "  eval \"\$(disable-integration-tests)\" - Disable all integration tests"
           echo ""
           echo "💡 Start dependencies with: nix run .#deps"
