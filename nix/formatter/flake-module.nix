@@ -15,6 +15,18 @@
         "renovate.json"
       ];
 
+      # Exclude sqlc query files from sqlfluff - they use sqlc-specific syntax
+      settings.formatter = {
+        sqlfluff.excludes = [
+          "db/query.sql"
+          "db/query.*.sql"
+        ];
+        sqlfluff-lint.excludes = [
+          "db/query.sql"
+          "db/query.*.sql"
+        ];
+      };
+
       programs = {
         deadnix.enable = true;
         gofumpt.enable = true;
