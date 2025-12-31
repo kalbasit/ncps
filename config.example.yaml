@@ -36,6 +36,22 @@ cache:
   #   PostgreSQL (local dev, no SSL): postgresql://user:password@localhost:5432/ncps?sslmode=disable
   #   MySQL/MariaDB: mysql://user:password@localhost:3306/ncps
   database-url: "sqlite:/var/lib/ncps/db/db.sqlite"
+  # Database connection pool configuration (optional)
+  # Tune these based on your database server capacity and application workload
+  database:
+    pool:
+    # Maximum number of open connections to the database
+    # If not set or 0, defaults are used based on database type:
+    #   SQLite: 1 (required to avoid "database is locked" errors)
+    #   PostgreSQL: 25
+    #   MySQL/MariaDB: 25
+    # max-open-conns: 25
+    # Maximum number of idle connections in the pool
+    # If not set or 0, defaults are used based on database type:
+    #   SQLite: not configured (uses Go's default)
+    #   PostgreSQL: 5
+    #   MySQL/MariaDB: 5
+    # max-idle-conns: 5
   # The maximum size of the store. It can be given with units such as 5K, 10G
   # etc. Supported units: B, K, M, G, T
   max-size: 100G

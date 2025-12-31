@@ -35,7 +35,7 @@ func TestGetNarInfoByHash(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		hash, err := helper.RandString(32, nil)
@@ -56,7 +56,7 @@ func TestGetNarInfoByHash(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		hash, err := helper.RandString(32, nil)
@@ -82,7 +82,7 @@ func TestInsertNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	t.Run("inserting one record", func(t *testing.T) {
@@ -188,7 +188,7 @@ func TestTouchNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
@@ -285,7 +285,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	t.Run("narinfo not existing", func(t *testing.T) {
@@ -356,7 +356,7 @@ func TestGetNarByHash(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		narInfoHash, err := helper.RandString(32, nil)
@@ -383,7 +383,7 @@ func TestGetNarByHash(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:" + dbFile)
+		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		narInfoHash, err := helper.RandString(32, nil)
@@ -424,7 +424,7 @@ func TestInsertNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	// create a narinfo
@@ -540,7 +540,7 @@ func TestTouchNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -680,7 +680,7 @@ func TestDeleteNar(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -775,7 +775,7 @@ func TestNarTotalSize(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	var expectedSize uint64
@@ -811,7 +811,7 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:" + dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	// NOTE: For this test, any nar that's explicitly testing the zstd
