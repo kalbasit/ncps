@@ -264,8 +264,9 @@
             # Generate random free port using python
             export REDIS_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
-            # Export Redis test environment variable
+            # Export Redis test environment variables
             export NCPS_ENABLE_REDIS_TESTS=1
+            export NCPS_TEST_REDIS_ADDRS="127.0.0.1:$REDIS_PORT"
 
             # Start Redis server in background
             redis-server \

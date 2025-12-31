@@ -25,8 +25,16 @@ func skipIfRedisNotAvailable(t *testing.T) {
 
 // getTestConfig returns a Redis configuration for testing.
 func getTestConfig() redis.Config {
+	// Default to localhost:6379 for local development
+	addrs := []string{"localhost:6379"}
+
+	// Use environment variable if set (for CI with dynamic ports)
+	if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+		addrs = []string{envAddrs}
+	}
+
 	return redis.Config{
-		Addrs:     []string{"localhost:6379"},
+		Addrs:     addrs,
 		Username:  "",
 		Password:  "",
 		DB:        0,

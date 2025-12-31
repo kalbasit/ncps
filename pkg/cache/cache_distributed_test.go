@@ -86,8 +86,15 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create Redis locks with unique prefix for this test
+	// Default to localhost:6379 for local development
+	redisAddrs := []string{"localhost:6379"}
+	// Use environment variable if set (for CI with dynamic ports)
+	if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+		redisAddrs = []string{envAddrs}
+	}
+
 	redisCfg := redis.Config{
-		Addrs:     []string{"127.0.0.1:6379"},
+		Addrs:     redisAddrs,
 		KeyPrefix: "ncps:test:dedup:",
 	}
 
@@ -333,8 +340,15 @@ func TestDistributedLockFailover(t *testing.T) {
 	ctx := newContext()
 
 	// Create Redis locks with short TTL for faster test
+	// Default to localhost:6379 for local development
+	redisAddrs := []string{"localhost:6379"}
+	// Use environment variable if set (for CI with dynamic ports)
+	if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+		redisAddrs = []string{envAddrs}
+	}
+
 	redisCfg := redis.Config{
-		Addrs:     []string{"127.0.0.1:6379"},
+		Addrs:     redisAddrs,
 		KeyPrefix: "ncps:test:failover:",
 	}
 
