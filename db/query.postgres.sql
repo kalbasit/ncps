@@ -72,7 +72,6 @@ FROM nars;
 -- NOTE: This query uses a correlated subquery which is not optimal for performance.
 -- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 -- does not properly support filtering on window function results in subqueries.
--- See: https://github.com/sqlc-dev/sqlc/issues (potential future optimization)
 SELECT n1.*
 FROM nars n1
 WHERE (
