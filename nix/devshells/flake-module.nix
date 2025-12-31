@@ -59,6 +59,7 @@
             enable-s3-tests
             enable-postgres-tests
             enable-mysql-tests
+            enable-redis-tests
           '')
           (pkgs.writeShellScriptBin "disable-integration-tests" ''
             if [ -t 1 ]; then
