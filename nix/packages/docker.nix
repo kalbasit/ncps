@@ -47,6 +47,7 @@
 
             # required for migrating the database
             pkgs.dbmate
+            config.packages.dbmate-wrapper
 
             # the ncps package
             package-ncps
@@ -79,6 +80,11 @@
           #!${pkgs.runtimeShell}
           mkdir -p tmp
           chmod -R 1777 tmp
+
+          # Rename real dbmate binary and create symlink to dbmate-wrapper
+          # The wrapper auto-detects the migrations directory based on the database URL
+          mv bin/dbmate bin/.dbmate.bin
+          ln -s dbmate-wrapper bin/dbmate
         '';
       };
 

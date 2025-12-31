@@ -4,7 +4,14 @@
     {
       devShells.default = pkgs.mkShell {
         buildInputs = [
-          pkgs.dbmate
+          # Use real dbmate for the wrapper to call
+          (pkgs.writeShellScriptBin "dbmate.real" ''
+            exec ${pkgs.dbmate}/bin/dbmate "$@"
+          '')
+          # dbmate-wrapper provides the dbmate command
+          (pkgs.writeShellScriptBin "dbmate" ''
+            exec ${config.packages.dbmate-wrapper}/bin/dbmate-wrapper "$@"
+          '')
           pkgs.delve
           pkgs.go
           pkgs.golangci-lint
@@ -25,6 +32,7 @@
           ${config.pre-commit.installationScript}
 
           ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i go.mod
+          ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i nix/dbmate-wrapper/src/go.mod
         '';
       };
     };
