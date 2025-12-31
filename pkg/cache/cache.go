@@ -319,6 +319,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Msg("failed to acquire read lock for GetNar, continuing without lock")
+
+		return 0, nil, fmt.Errorf("failed to acquire read lock for GetNar: %w", err)
 	}
 
 	defer func() {
@@ -485,6 +487,8 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Msg("failed to acquire read lock for PutNar, continuing without lock")
+
+		return fmt.Errorf("failed to acquire read lock for PutNar: %w", err)
 	}
 
 	defer func() {
@@ -530,6 +534,8 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Msg("failed to acquire read lock for DeleteNar, continuing without lock")
+
+		return fmt.Errorf("failed to acquire read lock for DeleteNar: %w", err)
 	}
 
 	defer func() {
@@ -912,6 +918,8 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Msg("failed to acquire read lock for GetNarInfo, continuing without lock")
+
+		return nil, fmt.Errorf("failed to acquire read lock for GetNarInfo: %w", err)
 	}
 
 	defer func() {
@@ -1136,6 +1144,8 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Msg("failed to acquire read lock for PutNarInfo, continuing without lock")
+
+		return fmt.Errorf("failed to acquire read lock for PutNarInfo: %w", err)
 	}
 
 	defer func() {
@@ -1194,6 +1204,8 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Msg("failed to acquire read lock for DeleteNarInfo, continuing without lock")
+
+		return fmt.Errorf("failed to acquire read lock for DeleteNarInfo: %w", err)
 	}
 
 	defer func() {
