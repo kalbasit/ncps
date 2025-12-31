@@ -31,8 +31,13 @@
         shellHook = ''
           ${config.pre-commit.installationScript}
 
-          ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i go.mod
-          ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i nix/dbmate-wrapper/src/go.mod
+          if [[ "$(${pkgs.gnugrep}/bin/grep '^\(go \)[0-9.]*$' go.mod)" != "go ''${_GO_VERSION}" ]]; then
+            ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i go.mod
+          fi
+
+          if [[ "$(${pkgs.gnugrep}/bin/grep '^\(go \)[0-9.]*$' nix/dbmate-wrapper/src/go.mod)" != "go ''${_GO_VERSION}" ]]; then
+            ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i nix/dbmate-wrapper/src/go.mod
+          fi
         '';
       };
     };
