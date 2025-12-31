@@ -316,7 +316,7 @@ Integration tests are **disabled by default** and must be explicitly enabled usi
 nix run .#deps
 
 # Enable all integration tests using the helper command
-eval "$(enable-all-integration-tests)"
+eval "$(enable-integration-tests)"
 
 # Run all tests including integration tests
 go test -race ./...
@@ -335,7 +335,7 @@ eval "$(disable-integration-tests)"
 - `eval "$(enable-s3-tests)"` - Sets S3 test environment variables
 - `eval "$(enable-postgres-tests)"` - Sets PostgreSQL test environment variable
 - `eval "$(enable-mysql-tests)"` - Sets MySQL test environment variable
-- `eval "$(enable-all-integration-tests)"` - Enables all integration tests at once
+- `eval "$(enable-integration-tests)"` - Enables all integration tests at once
 - `eval "$(disable-integration-tests)"` - Unsets all integration test variables
 
 These commands output export statements that you evaluate in your current shell to set the appropriate environment variables. When entering the dev shell, you'll see a message listing these available helpers.

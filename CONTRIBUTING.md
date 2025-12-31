@@ -246,7 +246,7 @@ The project includes integration tests for S3, PostgreSQL, and MySQL. Integratio
 nix run .#deps
 
 # In terminal 2: Enable integration tests and run tests
-eval "$(enable-all-integration-tests)"
+eval "$(enable-integration-tests)"
 go test -race ./...
 ```
 
@@ -255,11 +255,11 @@ go test -race ./...
 The development shell provides commands to easily enable/disable integration tests:
 
 | Command | Description |
-|---------|-------------|
+| ------------------------------------- | ------------------------------------ |
 | `eval "$(enable-s3-tests)"` | Enable S3/MinIO integration tests |
 | `eval "$(enable-postgres-tests)"` | Enable PostgreSQL integration tests |
 | `eval "$(enable-mysql-tests)"` | Enable MySQL integration tests |
-| `eval "$(enable-all-integration-tests)"` | Enable all integration tests at once |
+| `eval "$(enable-integration-tests)"` | Enable all integration tests at once |
 | `eval "$(disable-integration-tests)"` | Disable all integration tests |
 
 **Running Specific Integration Tests:**
@@ -278,7 +278,7 @@ eval "$(enable-mysql-tests)"
 go test -race ./pkg/database
 
 # Enable all tests and run everything
-eval "$(enable-all-integration-tests)"
+eval "$(enable-integration-tests)"
 go test -race ./...
 
 # Disable integration tests when done
