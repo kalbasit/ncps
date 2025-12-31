@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
+
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -75,7 +77,12 @@ func TestAddUpstreamCaches(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+		// Use local locks for tests
+		downloadLocker := locklocal.NewLocker()
+		lruLocker := locklocal.NewRWLocker()
+
+		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+			downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), ucs...)
@@ -136,7 +143,12 @@ func TestAddUpstreamCaches(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+		// Use local locks for tests
+		downloadLocker := locklocal.NewLocker()
+		lruLocker := locklocal.NewRWLocker()
+
+		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+			downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
 		require.NoError(t, err)
 
 		for _, uc := range ucs {
@@ -171,7 +183,12 @@ func TestRunLRU(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	// Use local locks for tests
+	downloadLocker := locklocal.NewLocker()
+	lruLocker := locklocal.NewRWLocker()
+
+	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
 	require.NoError(t, err)
 
 	ts := testdata.NewTestServer(t, 40)

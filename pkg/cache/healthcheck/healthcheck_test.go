@@ -6,10 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -46,7 +49,12 @@ func TestHealthCheck(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	// Use local locks for tests
+	downloadLocker := locklocal.NewLocker()
+	lruLocker := locklocal.NewRWLocker()
+
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)

@@ -19,14 +19,18 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
+	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
+
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/lock"
+	"github.com/kalbasit/ncps/pkg/lock/local"
+	"github.com/kalbasit/ncps/pkg/lock/redis"
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
-	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/pkg/storage/s3"
 )
 
@@ -221,6 +225,89 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Usage:   "The address of the server",
 				Sources: flagSources("server.addr", "SERVER_ADDR"),
 				Value:   ":8501",
+			},
+
+			// Redis Configuration (optional - for distributed locking in HA deployments)
+			&cli.StringSliceFlag{
+				Name:    "cache-redis-addrs",
+				Usage:   "Redis server addresses for distributed locking (e.g., localhost:6379). If not set, local locks are used.",
+				Sources: flagSources("cache.redis.addrs", "CACHE_REDIS_ADDRS"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-redis-username",
+				Usage:   "Redis username for authentication (for Redis ACL)",
+				Sources: flagSources("cache.redis.username", "CACHE_REDIS_USERNAME"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-redis-password",
+				Usage:   "Redis password for authentication",
+				Sources: flagSources("cache.redis.password", "CACHE_REDIS_PASSWORD"),
+			},
+			&cli.IntFlag{
+				Name:    "cache-redis-db",
+				Usage:   "Redis database number (0-15)",
+				Sources: flagSources("cache.redis.db", "CACHE_REDIS_DB"),
+				Value:   0,
+			},
+			&cli.BoolFlag{
+				Name:    "cache-redis-use-tls",
+				Usage:   "Use TLS for Redis connection",
+				Sources: flagSources("cache.redis.use-tls", "CACHE_REDIS_USE_TLS"),
+			},
+			&cli.IntFlag{
+				Name:    "cache-redis-pool-size",
+				Usage:   "Redis connection pool size",
+				Sources: flagSources("cache.redis.pool-size", "CACHE_REDIS_POOL_SIZE"),
+				Value:   10,
+			},
+			&cli.StringFlag{
+				Name:    "cache-redis-key-prefix",
+				Usage:   "Prefix for all Redis lock keys",
+				Sources: flagSources("cache.redis.key-prefix", "CACHE_REDIS_KEY_PREFIX"),
+				Value:   "ncps:lock:",
+			},
+
+			// Lock Configuration
+			&cli.DurationFlag{
+				Name:    "cache-lock-download-ttl",
+				Usage:   "TTL for download locks (per-hash locks)",
+				Sources: flagSources("cache.lock.download-lock-ttl", "CACHE_LOCK_DOWNLOAD_TTL"),
+				Value:   5 * time.Minute,
+			},
+			&cli.DurationFlag{
+				Name:    "cache-lock-lru-ttl",
+				Usage:   "TTL for LRU lock (global exclusive lock)",
+				Sources: flagSources("cache.lock.lru-lock-ttl", "CACHE_LOCK_LRU_TTL"),
+				Value:   30 * time.Minute,
+			},
+			&cli.IntFlag{
+				Name:    "cache-lock-retry-max-attempts",
+				Usage:   "Maximum number of retry attempts for distributed locks",
+				Sources: flagSources("cache.lock.retry.max-attempts", "CACHE_LOCK_RETRY_MAX_ATTEMPTS"),
+				Value:   3,
+			},
+			&cli.DurationFlag{
+				Name:    "cache-lock-retry-initial-delay",
+				Usage:   "Initial retry delay for distributed locks",
+				Sources: flagSources("cache.lock.retry.initial-delay", "CACHE_LOCK_RETRY_INITIAL_DELAY"),
+				Value:   100 * time.Millisecond,
+			},
+			&cli.DurationFlag{
+				Name:    "cache-lock-retry-max-delay",
+				Usage:   "Maximum retry delay for distributed locks (exponential backoff caps at this)",
+				Sources: flagSources("cache.lock.retry.max-delay", "CACHE_LOCK_RETRY_MAX_DELAY"),
+				Value:   2 * time.Second,
+			},
+			&cli.BoolFlag{
+				Name:    "cache-lock-retry-jitter",
+				Usage:   "Enable jitter in retry delays to prevent thundering herd",
+				Sources: flagSources("cache.lock.retry.jitter", "CACHE_LOCK_RETRY_JITTER"),
+				Value:   true,
+			},
+			&cli.BoolFlag{
+				Name:    "cache-lock-allow-degraded-mode",
+				Usage:   "Allow falling back to local locks if Redis is unavailable (WARNING: breaks HA guarantees)",
+				Sources: flagSources("cache.lock.allow-degraded-mode", "CACHE_LOCK_ALLOW_DEGRADED_MODE"),
 			},
 
 			// DEPRECATED FLAGS BELOW
@@ -525,7 +612,7 @@ func createLocalStorage(
 	ctx context.Context,
 	dataPath string,
 ) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
-	localStore, err := local.New(ctx, dataPath)
+	localStore, err := localstorage.New(ctx, dataPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error creating a new local store at %q: %w", dataPath, err)
 	}
@@ -618,6 +705,64 @@ func createCache(
 		return nil, err
 	}
 
+	// Initialize distributed or local locks based on Redis configuration
+	var (
+		downloadLocker lock.Locker
+		lruLocker      lock.RWLocker
+	)
+
+	redisAddrs := cmd.StringSlice("cache-redis-addrs")
+	// Filter out empty addresses
+	var validRedisAddrs []string
+
+	for _, addr := range redisAddrs {
+		if addr != "" {
+			validRedisAddrs = append(validRedisAddrs, addr)
+		}
+	}
+
+	if len(validRedisAddrs) > 0 {
+		// Redis configured - use distributed locks
+		redisCfg := redis.Config{
+			Addrs:     validRedisAddrs,
+			Username:  cmd.String("cache-redis-username"),
+			Password:  cmd.String("cache-redis-password"),
+			DB:        cmd.Int("cache-redis-db"),
+			UseTLS:    cmd.Bool("cache-redis-use-tls"),
+			PoolSize:  cmd.Int("cache-redis-pool-size"),
+			KeyPrefix: cmd.String("cache-redis-key-prefix"),
+		}
+
+		retryCfg := redis.RetryConfig{
+			MaxAttempts:  cmd.Int("cache-lock-retry-max-attempts"),
+			InitialDelay: cmd.Duration("cache-lock-retry-initial-delay"),
+			MaxDelay:     cmd.Duration("cache-lock-retry-max-delay"),
+			Jitter:       cmd.Bool("cache-lock-retry-jitter"),
+		}
+
+		allowDegradedMode := cmd.Bool("cache-lock-allow-degraded-mode")
+
+		downloadLocker, err = redis.NewLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
+		if err != nil {
+			return nil, fmt.Errorf("error creating Redis download locker: %w", err)
+		}
+
+		lruLocker, err = redis.NewRWLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
+		if err != nil {
+			return nil, fmt.Errorf("error creating Redis LRU locker: %w", err)
+		}
+
+		zerolog.Ctx(ctx).Info().
+			Strs("addrs", redisCfg.Addrs).
+			Msg("distributed locking enabled with Redis")
+	} else {
+		// No Redis - use local locks (single-instance mode)
+		downloadLocker = local.NewLocker()
+		lruLocker = local.NewRWLocker()
+
+		zerolog.Ctx(ctx).Info().Msg("using local locks (single-instance mode)")
+	}
+
 	c, err := cache.New(
 		ctx,
 		cmd.String("cache-hostname"),
@@ -626,6 +771,10 @@ func createCache(
 		narInfoStore,
 		narStore,
 		cmd.String("cache-secret-key-path"),
+		downloadLocker,
+		lruLocker,
+		cmd.Duration("cache-lock-download-ttl"),
+		cmd.Duration("cache-lock-lru-ttl"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating a new cache: %w", err)

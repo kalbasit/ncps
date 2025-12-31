@@ -14,6 +14,7 @@
 - [Quick Start](#-quick-start)
 - [Installation](#-installation)
 - [Configuration](#-configuration)
+- [High Availability Deployments](#-high-availability-deployments)
 - [Client Setup](#-client-setup)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
@@ -48,6 +49,7 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 | 📊 **Monitoring** | OpenTelemetry support for centralized logging |
 | 🗜️ **Compression** | Harmonia's transparent zstd compression support |
 | 🗄️ **Database Support** | SQLite (embedded), PostgreSQL, or MySQL/MariaDB for metadata storage |
+| 🏗️ **High Availability** | **NEW:** Run multiple instances with Redis-based distributed locking for zero-downtime deployments |
 
 ## ⚙️ How It Works
 
@@ -658,6 +660,133 @@ ncps serve \
 | Option | Description | Environment Variable | Default |
 | --------------- | ----------------------- | -------------------- | ------- |
 | `--server-addr` | Listen address and port | `SERVER_ADDR` | `:8501` |
+
+## 🏗️ High Availability Deployments
+
+**NEW in distributed-lock branch:** ncps now supports running multiple instances for high availability!
+
+### Why High Availability?
+
+Running multiple ncps instances provides:
+
+- ✅ **Zero Downtime** - Instance failures don't interrupt service
+- ✅ **Load Distribution** - Requests spread across multiple servers
+- ✅ **Horizontal Scaling** - Add instances to handle more traffic
+- ✅ **Geographic Distribution** - Deploy instances closer to clients
+
+### Requirements for HA
+
+To run ncps in high-availability mode, you need:
+
+1. **Shared Storage** - All instances must access the same storage:
+   - **S3-compatible storage** (AWS S3, MinIO, etc.), OR
+   - **Shared filesystem** (NFS, GlusterFS, etc.) mounted on all instances
+1. **Shared Database** - All instances must connect to the same PostgreSQL or MySQL database
+   - **SQLite is NOT supported** in HA mode (doesn't support concurrent writes from multiple processes)
+1. **Redis Server** - Provides distributed locking for coordination between instances
+
+### Quick Start (HA Setup)
+
+**Option 1: Using S3-compatible storage**
+
+```bash
+# Start Redis for distributed locking
+redis-server
+
+# Configure and start instance 1
+docker run -d \
+  --name ncps-1 \
+  -p 8501:8501 \
+  kalbasit/ncps:latest serve \
+  --cache-hostname=cache.example.com \
+  --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
+  --cache-storage-s3-bucket=ncps-cache \
+  --cache-storage-s3-endpoint=https://s3.amazonaws.com \
+  --cache-storage-s3-region=us-east-1 \
+  --cache-redis-addrs=redis:6379
+
+# Start instance 2 (same configuration, different port)
+docker run -d \
+  --name ncps-2 \
+  -p 8502:8501 \
+  kalbasit/ncps:latest serve \
+  --cache-hostname=cache.example.com \
+  --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
+  --cache-storage-s3-bucket=ncps-cache \
+  --cache-storage-s3-endpoint=https://s3.amazonaws.com \
+  --cache-storage-s3-region=us-east-1 \
+  --cache-redis-addrs=redis:6379
+
+# Set up load balancer (nginx, haproxy, etc.) to distribute traffic
+```
+
+**Option 2: Using shared filesystem (NFS)**
+
+```bash
+# Ensure NFS share is mounted on all instances at /mnt/ncps-cache
+
+# Start instance 1
+docker run -d \
+  --name ncps-1 \
+  -p 8501:8501 \
+  -v /mnt/ncps-cache:/var/lib/ncps \
+  kalbasit/ncps:latest serve \
+  --cache-hostname=cache.example.com \
+  --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
+  --cache-storage-local=/var/lib/ncps \
+  --cache-redis-addrs=redis:6379
+
+# Start instance 2 (mounting the same NFS share)
+docker run -d \
+  --name ncps-2 \
+  -p 8502:8501 \
+  -v /mnt/ncps-cache:/var/lib/ncps \
+  kalbasit/ncps:latest serve \
+  --cache-hostname=cache.example.com \
+  --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
+  --cache-storage-local=/var/lib/ncps \
+  --cache-redis-addrs=redis:6379
+```
+
+### Redis Configuration
+
+| Option | Description | Environment Variable | Default |
+| -------------------------------- | ---------------------------------------------------- | -------------------------------- | -------------- |
+| `--cache-redis-addrs` | Redis server addresses (comma-separated for cluster) | `CACHE_REDIS_ADDRS` | (none) |
+| `--cache-redis-username` | Redis username (for ACL authentication) | `CACHE_REDIS_USERNAME` | "" |
+| `--cache-redis-password` | Redis password | `CACHE_REDIS_PASSWORD` | "" |
+| `--cache-redis-db` | Redis database number (0-15) | `CACHE_REDIS_DB` | 0 |
+| `--cache-redis-use-tls` | Enable TLS for Redis connections | `CACHE_REDIS_USE_TLS` | false |
+| `--cache-redis-pool-size` | Connection pool size | `CACHE_REDIS_POOL_SIZE` | 10 |
+| `--cache-redis-key-prefix` | Key prefix for all locks | `CACHE_REDIS_KEY_PREFIX` | "ncps:lock:" |
+| `--cache-lock-download-ttl` | Lock timeout for downloads | `CACHE_LOCK_DOWNLOAD_TTL` | 5m |
+| `--cache-lock-lru-ttl` | Lock timeout for LRU operations | `CACHE_LOCK_LRU_TTL` | 30m |
+| `--cache-lock-retry-max-attempts` | Maximum lock retry attempts | `CACHE_LOCK_RETRY_MAX_ATTEMPTS` | 3 |
+| `--cache-lock-retry-initial-delay` | Initial retry delay | `CACHE_LOCK_RETRY_INITIAL_DELAY` | 100ms |
+| `--cache-lock-retry-max-delay` | Maximum retry delay (exponential backoff cap) | `CACHE_LOCK_RETRY_MAX_DELAY` | 2s |
+| `--cache-lock-retry-jitter` | Enable jitter in retry delays | `CACHE_LOCK_RETRY_JITTER` | true |
+
+**Note:** If `--cache-redis-addrs` is not provided, ncps runs in single-instance mode using local locks.
+
+### How Distributed Locking Works
+
+ncps uses Redis to coordinate multiple instances:
+
+- **Download Deduplication** - Only one instance downloads each package, others wait and share the result
+- **LRU Coordination** - Only one instance runs cache cleanup at a time
+- **Retry with Backoff** - Failed lock acquisitions retry with exponential backoff and jitter
+- **Lock Expiry** - Locks automatically expire (via TTL) to prevent deadlocks
+
+This prevents duplicate downloads and ensures cache consistency across all instances.
+
+### Monitoring HA Deployments
+
+See the [distributed locking documentation](docs/distributed-locking.md) for:
+
+- OpenTelemetry metrics for lock operations
+- Monitoring dashboards
+- Troubleshooting guide
+- Performance tuning
 
 ## 🔧 Client Setup
 

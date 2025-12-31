@@ -126,6 +126,15 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
   - Table operations (CREATE, INSERT)
   - Query verification
 
+**Redis (distributed locking):**
+
+- Ephemeral storage in temporary directory
+- Redis server on port 6379
+- No authentication required (test environment)
+- Used for distributed lock testing
+- Self-validation checks:
+  - Connection test (PING)
+
 Configuration in `nix/process-compose/flake-module.nix` defines:
 
 - `minio-server` process - MinIO server with health checks
@@ -134,6 +143,7 @@ Configuration in `nix/process-compose/flake-module.nix` defines:
 - `init-database` process - PostgreSQL database and user creation with validation
 - `mariadb-server` process - MariaDB server with health checks
 - `init-mariadb` process - MariaDB database and user creation with validation
+- `redis-server` process - Redis server with health checks
 
 The service configurations match the test environment variables to ensure consistency between dependency setup and application configuration.
 
@@ -305,7 +315,7 @@ Uses gofumpt, goimports, and gci for import ordering (standard → default → a
 - Test files use `_test` package suffix (testpackage linter)
 - Parallel tests encouraged (paralleltest linter)
 
-#### Integration Tests (S3, PostgreSQL, MySQL)
+#### Integration Tests (S3, PostgreSQL, MySQL, Redis)
 
 Integration tests are **disabled by default** and must be explicitly enabled using shell helper functions provided by the development environment. The tests are automatically skipped if the required environment variables are not set.
 
@@ -325,6 +335,7 @@ go test -race ./...
 eval "$(enable-s3-tests)"          # Enable S3/MinIO tests only
 eval "$(enable-postgres-tests)"    # Enable PostgreSQL tests only
 eval "$(enable-mysql-tests)"       # Enable MySQL tests only
+eval "$(enable-redis-tests)"       # Enable Redis tests only
 
 # Disable integration tests when done
 eval "$(disable-integration-tests)"
@@ -335,6 +346,7 @@ eval "$(disable-integration-tests)"
 - `eval "$(enable-s3-tests)"` - Sets S3 test environment variables
 - `eval "$(enable-postgres-tests)"` - Sets PostgreSQL test environment variable
 - `eval "$(enable-mysql-tests)"` - Sets MySQL test environment variable
+- `eval "$(enable-redis-tests)"` - Sets Redis test environment variable
 - `eval "$(enable-integration-tests)"` - Enables all integration tests at once
 - `eval "$(disable-integration-tests)"` - Unsets all integration test variables
 
@@ -342,7 +354,7 @@ These commands output export statements that you evaluate in your current shell 
 
 **For Nix builds and CI:**
 
-All integration test dependencies (MinIO, PostgreSQL, MariaDB) are automatically started during the test phase when building with Nix:
+All integration test dependencies (MinIO, PostgreSQL, MariaDB, Redis) are automatically started during the test phase when building with Nix:
 
 ```bash
 # Runs all checks including all integration tests
@@ -354,7 +366,7 @@ nix build
 
 The Nix build (`nix/packages/ncps.nix`) automatically:
 
-1. Starts MinIO, PostgreSQL, and MariaDB servers in the `preCheck` phase
+1. Starts MinIO, PostgreSQL, MariaDB, and Redis servers in the `preCheck` phase
 1. Creates test databases, buckets, and credentials
 1. Exports all integration test environment variables
 1. Runs all tests (including all integration tests)
@@ -366,6 +378,7 @@ This setup ensures:
 - `nix flake check` includes comprehensive testing across all backends
 - All three database implementations (SQLite, PostgreSQL, MySQL) are tested
 - S3 storage backend is tested against MinIO
+- Redis distributed locks are tested for high-availability deployments
 - Runtime usage (`nix run github:kalbasit/ncps`) is unaffected
 - Docker builds (`.#docker`) are unaffected
 - Tests are isolated and don't interfere with each other (unique hash-based keys)
