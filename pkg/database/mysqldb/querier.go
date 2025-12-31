@@ -55,8 +55,9 @@ type Querier interface {
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
 	//      FROM nars n2
-	//      WHERE n2.last_accessed_at < n1.last_accessed_at
-	//         OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
+	//      WHERE
+	//          n2.last_accessed_at < n1.last_accessed_at
+	//          OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 	//  ) <= ?
 	GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error)
 	//GetNarByHash
