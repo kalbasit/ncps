@@ -11,7 +11,7 @@
       "Bash(git add:*)",
       "Bash(git checkout:*)",
       "Bash(git revert:*)",
-      "Bash(go build:*)",,
+      "Bash(go build:*)",
       "Bash(go doc:*)",
       "Bash(go get:*)",
       "Bash(go mod tidy:*)",
