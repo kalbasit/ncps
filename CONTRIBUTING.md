@@ -405,34 +405,34 @@ The project uses GitHub Actions for CI/CD:
 ```
 ncps/
 ├── cmd/                        # CLI commands
-│   └── serve.go               # Main serve command
+│   └── serve.go                # Main serve command
 ├── pkg/
-│   ├── cache/                 # Core caching logic
-│   ├── storage/               # Storage abstraction
-│   │   ├── local/            # Local filesystem storage
-│   │   └── s3/               # S3-compatible storage
-│   ├── database/              # Database abstraction
-│   │   ├── sqlitedb/         # SQLite implementation
-│   │   ├── postgresdb/       # PostgreSQL implementation
-│   │   └── mysqldb/          # MySQL/MariaDB implementation
-│   ├── server/                # HTTP server (Chi router)
-│   └── nar/                   # NAR format handling
+│   ├── cache/                  # Core caching logic
+│   ├── storage/                # Storage abstraction
+│   │   ├── local/              # Local filesystem storage
+│   │   └── s3/                 # S3-compatible storage
+│   ├── database/               # Database abstraction
+│   │   ├── sqlitedb/           # SQLite implementation
+│   │   ├── postgresdb/         # PostgreSQL implementation
+│   │   └── mysqldb/            # MySQL/MariaDB implementation
+│   ├── server/                 # HTTP server (Chi router)
+│   └── nar/                    # NAR format handling
 ├── db/
-│   ├── migrations/            # Database migrations
-│   │   ├── sqlite/           # SQLite migrations
-│   │   ├── postgres/         # PostgreSQL migrations
-│   │   └── mysql/            # MySQL migrations
-│   ├── query.sqlite.sql       # SQLite queries (sqlc)
-│   ├── query.postgres.sql     # PostgreSQL queries (sqlc)
-│   └── query.mysql.sql        # MySQL queries (sqlc)
-├── nix/                       # Nix configuration
-│   ├── packages/              # Package definitions
-│   ├── devshells/            # Development shells
-│   ├── formatter/            # Formatter configuration
-│   ├── process-compose/      # Development services
-│   └── dbmate-wrapper/       # Database migration wrapper
-└── dev-scripts/               # Development helper scripts
-    └── run.sh                # Development server script
+│   ├── migrations/             # Database migrations
+│   │   ├── sqlite/             # SQLite migrations
+│   │   ├── postgres/           # PostgreSQL migrations
+│   │   └── mysql/              # MySQL migrations
+│   ├── query.sqlite.sql        # SQLite queries (sqlc)
+│   ├── query.postgres.sql        # PostgreSQL queries (sqlc)
+│   └── query.mysql.sql         # MySQL queries (sqlc)
+├── nix/                        # Nix configuration
+│   ├── packages/               # Package definitions
+│   ├── devshells/              # Development shells
+│   ├── formatter/              # Formatter configuration
+│   ├── process-compose/        # Development services
+│   └── dbmate-wrapper/         # Database migration wrapper
+└── dev-scripts/                # Development helper scripts
+    └── run.sh                  # Development server script
 ```
 
 ### Key Interfaces
