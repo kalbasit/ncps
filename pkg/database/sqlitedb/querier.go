@@ -12,11 +12,11 @@ type Querier interface {
 	//CreateNar
 	//
 	//  INSERT INTO nars (
-	//      narinfo_id, hash, compression, `query`, file_size
+	//      narinfo_id, hash, compression, "query", file_size
 	//  ) VALUES (
 	//      ?, ?, ?, ?, ?
 	//  )
-	//  RETURNING id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
+	//  RETURNING id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 	CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error)
 	//CreateNarInfo
 	//
@@ -49,7 +49,7 @@ type Querier interface {
 	DeleteNarInfoByID(ctx context.Context, id int64) (int64, error)
 	//GetLeastUsedNars
 	//
-	//  SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.`query`
+	//  SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1."query", n1.created_at, n1.updated_at, n1.last_accessed_at
 	//  FROM nars n1
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
@@ -59,13 +59,13 @@ type Querier interface {
 	GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error)
 	//GetNarByHash
 	//
-	//  SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
+	//  SELECT id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 	//  FROM nars
 	//  WHERE hash = ?
 	GetNarByHash(ctx context.Context, hash string) (Nar, error)
 	//GetNarByID
 	//
-	//  SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
+	//  SELECT id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 	//  FROM nars
 	//  WHERE id = ?
 	GetNarByID(ctx context.Context, id int64) (Nar, error)

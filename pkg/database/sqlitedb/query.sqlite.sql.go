@@ -11,11 +11,11 @@ import (
 
 const createNar = `-- name: CreateNar :one
 INSERT INTO nars (
-    narinfo_id, hash, compression, ` + "`" + `query` + "`" + `, file_size
+    narinfo_id, hash, compression, "query", file_size
 ) VALUES (
     ?, ?, ?, ?, ?
 )
-RETURNING id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, ` + "`" + `query` + "`" + `
+RETURNING id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 `
 
 type CreateNarParams struct {
@@ -29,11 +29,11 @@ type CreateNarParams struct {
 // CreateNar
 //
 //	INSERT INTO nars (
-//	    narinfo_id, hash, compression, `query`, file_size
+//	    narinfo_id, hash, compression, "query", file_size
 //	) VALUES (
 //	    ?, ?, ?, ?, ?
 //	)
-//	RETURNING id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
+//	RETURNING id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 func (q *Queries) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
 	row := q.db.QueryRowContext(ctx, createNar,
 		arg.NarInfoID,
@@ -49,10 +49,10 @@ func (q *Queries) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, erro
 		&i.Hash,
 		&i.Compression,
 		&i.FileSize,
+		&i.Query,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
-		&i.Query,
 	)
 	return i, err
 }
@@ -156,7 +156,7 @@ func (q *Queries) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error
 }
 
 const getLeastUsedNars = `-- name: GetLeastUsedNars :many
-SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.` + "`" + `query` + "`" + `
+SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1."query", n1.created_at, n1.updated_at, n1.last_accessed_at
 FROM nars n1
 WHERE (
     SELECT SUM(n2.file_size)
@@ -167,7 +167,7 @@ WHERE (
 
 // GetLeastUsedNars
 //
-//	SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.`query`
+//	SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1."query", n1.created_at, n1.updated_at, n1.last_accessed_at
 //	FROM nars n1
 //	WHERE (
 //	    SELECT SUM(n2.file_size)
@@ -189,10 +189,10 @@ func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar,
 			&i.Hash,
 			&i.Compression,
 			&i.FileSize,
+			&i.Query,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LastAccessedAt,
-			&i.Query,
 		); err != nil {
 			return nil, err
 		}
@@ -208,14 +208,14 @@ func (q *Queries) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar,
 }
 
 const getNarByHash = `-- name: GetNarByHash :one
-SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, ` + "`" + `query` + "`" + `
+SELECT id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 FROM nars
 WHERE hash = ?
 `
 
 // GetNarByHash
 //
-//	SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
+//	SELECT id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 //	FROM nars
 //	WHERE hash = ?
 func (q *Queries) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
@@ -227,23 +227,23 @@ func (q *Queries) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
 		&i.Hash,
 		&i.Compression,
 		&i.FileSize,
+		&i.Query,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
-		&i.Query,
 	)
 	return i, err
 }
 
 const getNarByID = `-- name: GetNarByID :one
-SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, ` + "`" + `query` + "`" + `
+SELECT id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 FROM nars
 WHERE id = ?
 `
 
 // GetNarByID
 //
-//	SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
+//	SELECT id, narinfo_id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 //	FROM nars
 //	WHERE id = ?
 func (q *Queries) GetNarByID(ctx context.Context, id int64) (Nar, error) {
@@ -255,10 +255,10 @@ func (q *Queries) GetNarByID(ctx context.Context, id int64) (Nar, error) {
 		&i.Hash,
 		&i.Compression,
 		&i.FileSize,
+		&i.Query,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
-		&i.Query,
 	)
 	return i, err
 }
