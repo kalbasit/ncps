@@ -1240,12 +1240,17 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 
 	// Acquire lock with retry (handled internally by Redis locker)
 	// If using local locks, this returns immediately
-	// If using Redis and lock fails, logs error but continues (lock will auto-expire)
+	// If using Redis and lock fails, this returns immediately (lock will auto-expire)
 	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Str("hash", hash).
-			Msg("failed to acquire download lock for narinfo, continuing without lock")
+			Msg("failed to acquire download lock for narinfo")
+
+		ds := newDownloadState()
+		ds.downloadError = fmt.Errorf("failed to acquire download lock for narinfo: %w", err)
+
+		return ds
 	}
 
 	defer func() {
@@ -1290,12 +1295,17 @@ func (c *Cache) prePullNar(
 
 	// Acquire lock with retry (handled internally by Redis locker)
 	// If using local locks, this returns immediately
-	// If using Redis and lock fails, logs error but continues (lock will auto-expire)
+	// If using Redis and lock fails, this returns immediately (lock will auto-expire)
 	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Str("hash", narURL.Hash).
-			Msg("failed to acquire download lock for nar, continuing without lock")
+			Msg("failed to acquire download lock for nar")
+
+		ds := newDownloadState()
+		ds.downloadError = fmt.Errorf("failed to acquire download lock for nar: %w", err)
+
+		return ds
 	}
 
 	defer func() {
