@@ -344,8 +344,12 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 
 	var (
 		wg            sync.WaitGroup
+		barrier       sync.WaitGroup
 		readersActive int64
 	)
+
+	// Use barrier to ensure all readers acquire locks before checking
+	barrier.Add(len(lockers))
 
 	// All readers should be able to acquire simultaneously
 
@@ -363,11 +367,17 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 			assert.NoError(t, err)
 
 			atomic.AddInt64(&readersActive, 1)
-			time.Sleep(100 * time.Millisecond)
 
-			// Check that multiple readers are active
+			// Wait for all readers to acquire their locks
+			barrier.Done()
+			barrier.Wait()
+
+			// Now all readers should be active
 			active := atomic.LoadInt64(&readersActive)
-			assert.Greater(t, active, int64(1), "multiple readers should be active")
+			assert.GreaterOrEqual(t, active, int64(len(lockers)), "all readers should be active simultaneously")
+
+			// Hold the lock briefly to ensure readers can coexist
+			time.Sleep(50 * time.Millisecond)
 
 			atomic.AddInt64(&readersActive, -1)
 
