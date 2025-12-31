@@ -67,16 +67,16 @@
             enable-redis-tests
           '')
           (pkgs.writeShellScriptBin "disable-integration-tests" ''
-            cat <<'EOF'
-            unset NCPS_TEST_S3_BUCKET
-            unset NCPS_TEST_S3_ENDPOINT
-            unset NCPS_TEST_S3_REGION
-            unset NCPS_TEST_S3_ACCESS_KEY_ID
-            unset NCPS_TEST_S3_SECRET_ACCESS_KEY
-            unset NCPS_TEST_POSTGRES_URL
-            unset NCPS_TEST_MYSQL_URL
-            unset NCPS_ENABLE_REDIS_TESTS
-            EOF
+            if [ -t 1 ]; then
+              echo "🛑 Run 'eval \"\$(disable-integration-tests)\"' to disable all integration tests." >&2
+              exit 0
+            fi
+
+            if ! env | grep -q '^NCPS_TEST_'; then
+              exit 0
+            fi
+
+            echo unset $(env | grep '^NCPS_TEST_' | cut -d= -f1)
           '')
           pkgs.delve
           pkgs.go
