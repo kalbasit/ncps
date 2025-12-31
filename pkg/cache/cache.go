@@ -1262,6 +1262,21 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		}
 	}()
 
+	// Check if NarInfo is already in storage (critical for distributed deduplication)
+	// Another instance may have downloaded it while we were waiting for the lock
+	if c.narInfoStore.HasNarInfo(ctx, hash) {
+		zerolog.Ctx(ctx).Debug().
+			Str("hash", hash).
+			Msg("NarInfo already in storage, skipping download")
+
+		// Return a completed downloadState
+		ds := newDownloadState()
+		close(ds.start)
+		close(ds.done)
+
+		return ds
+	}
+
 	// Check upstreamJobs map and create downloadState if needed
 	ds, ok := c.upstreamJobs[hash]
 	if !ok {
@@ -1316,6 +1331,21 @@ func (c *Cache) prePullNar(
 				Msg("failed to release download lock for nar")
 		}
 	}()
+
+	// Check if NAR is already in storage (critical for distributed deduplication)
+	// Another instance may have downloaded it while we were waiting for the lock
+	if c.narStore.HasNar(ctx, *narURL) {
+		zerolog.Ctx(ctx).Debug().
+			Str("hash", narURL.Hash).
+			Msg("NAR already in storage, skipping download")
+
+		// Return a completed downloadState
+		ds := newDownloadState()
+		close(ds.start)
+		close(ds.done)
+
+		return ds
+	}
 
 	// Check upstreamJobs map and create downloadState if needed
 	ds, ok := c.upstreamJobs[narURL.Hash]

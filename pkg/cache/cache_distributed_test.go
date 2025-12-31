@@ -3,6 +3,7 @@ package cache_test
 import (
 	"context"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -40,7 +41,7 @@ func skipIfRedisNotAvailable(t *testing.T) {
 }
 
 // TestDistributedDownloadDeduplication verifies that when multiple cache instances
-// request the same package, only one instance downloads it.
+// request the same package, only one instance downloads it from the upstream source.
 func TestDistributedDownloadDeduplication(t *testing.T) {
 	t.Parallel()
 	skipIfRedisNotAvailable(t)
@@ -50,6 +51,22 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 	// Start test server
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
+
+	// Track actual upstream downloads by instrumenting the test server
+	var upstreamDownloads atomic.Int32
+
+	narEntry := testdata.Entries[0]
+	narPath := "/nar/" + narEntry.NarHash + ".nar." + narEntry.NarCompression.ToFileExtension()
+
+	// Add a handler to count NAR downloads from upstream
+	handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == narPath {
+			upstreamDownloads.Add(1)
+		}
+
+		return false // Let the default handler process the request
+	})
+	defer ts.RemoveMaybeHandler(handlerID)
 
 	// Create shared directory for all instances
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
@@ -121,13 +138,11 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 		caches = append(caches, c)
 	}
 
-	// Track download attempts
-	var downloadAttempts atomic.Int32
+	// Track GetNar attempts from all instances
+	var getNarAttempts atomic.Int32
 
 	// Simulate concurrent requests from all instances for the same NAR
 	var wg sync.WaitGroup
-
-	narEntry := testdata.Entries[0]
 
 	for i, c := range caches {
 		wg.Add(1)
@@ -135,7 +150,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 		go func(instanceNum int, cacheInstance *cache.Cache) {
 			defer wg.Done()
 
-			downloadAttempts.Add(1)
+			getNarAttempts.Add(1)
 
 			// All instances request the same NAR
 			narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
@@ -151,10 +166,15 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 
 	wg.Wait()
 
-	// All instances should have attempted the download
-	attempts := downloadAttempts.Load()
+	// All instances should have attempted the GetNar operation
+	attempts := getNarAttempts.Load()
 	assert.Equal(t, int32(numInstances), attempts,
-		"all instances should attempt download")
+		"all instances should attempt GetNar")
+
+	// Verify deduplication: only ONE instance should have downloaded from upstream
+	upstreamCount := upstreamDownloads.Load()
+	assert.Equal(t, int32(1), upstreamCount,
+		"only one instance should download from upstream (deduplication)")
 
 	// Verify all instances can now read the cached file
 	for i, c := range caches {

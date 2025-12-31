@@ -46,6 +46,13 @@ func getTestRetryConfig() redis.RetryConfig {
 	}
 }
 
+// getUniqueKey generates a unique test key to avoid conflicts in parallel tests.
+func getUniqueKey(t *testing.T, prefix string) string {
+	t.Helper()
+
+	return prefix + "-" + t.Name() + "-" + time.Now().Format("20060102-150405.000000")
+}
+
 func TestLocker_BasicLockUnlock(t *testing.T) {
 	t.Parallel()
 	skipIfRedisNotAvailable(t)
@@ -57,12 +64,14 @@ func TestLocker_BasicLockUnlock(t *testing.T) {
 	locker, err := redis.NewLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
+	key := getUniqueKey(t, "basic-lock")
+
 	// Acquire lock
-	err = locker.Lock(ctx, "test-basic-lock", 10*time.Second)
+	err = locker.Lock(ctx, key, 10*time.Second)
 	require.NoError(t, err)
 
 	// Release lock
-	err = locker.Unlock(ctx, "test-basic-lock")
+	err = locker.Unlock(ctx, key)
 	require.NoError(t, err)
 }
 
@@ -81,7 +90,7 @@ func TestLocker_ConcurrentLockContention(t *testing.T) {
 	locker2, err := redis.NewLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
-	key := "test-contention"
+	key := getUniqueKey(t, "contention")
 
 	// First locker acquires lock
 	err = locker1.Lock(ctx, key, 2*time.Second)
@@ -120,7 +129,7 @@ func TestLocker_TryLock(t *testing.T) {
 	locker2, err := redis.NewLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
-	key := "test-trylock"
+	key := getUniqueKey(t, "trylock")
 
 	// First locker tries to acquire
 	acquired, err := locker1.TryLock(ctx, key, 5*time.Second)
@@ -160,7 +169,7 @@ func TestLocker_LockExpiry(t *testing.T) {
 	locker2, err := redis.NewLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
-	key := "test-expiry"
+	key := getUniqueKey(t, "expiry")
 
 	// Acquire lock with short TTL
 	err = locker1.Lock(ctx, key, 1*time.Second)
@@ -196,7 +205,7 @@ func TestLocker_RetryWithBackoff(t *testing.T) {
 	locker2, err := redis.NewLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
-	key := "test-retry"
+	key := getUniqueKey(t, "retry")
 
 	// First locker acquires lock
 	err = locker1.Lock(ctx, key, 3*time.Second)
@@ -239,11 +248,13 @@ func TestLocker_DegradedMode(t *testing.T) {
 	locker, err := redis.NewLocker(ctx, cfg, retryCfg, true)
 	require.NoError(t, err, "should create locker in degraded mode")
 
+	key := getUniqueKey(t, "degraded")
+
 	// Should still be able to lock (using local fallback)
-	err = locker.Lock(ctx, "test-degraded", 5*time.Second)
+	err = locker.Lock(ctx, key, 5*time.Second)
 	require.NoError(t, err)
 
-	err = locker.Unlock(ctx, "test-degraded")
+	err = locker.Unlock(ctx, key)
 	require.NoError(t, err)
 }
 
@@ -289,7 +300,7 @@ func TestRWLocker_BasicReadWriteLock(t *testing.T) {
 	locker, err := redis.NewRWLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
-	key := "test-rw-basic"
+	key := getUniqueKey(t, "rw-basic")
 
 	// Acquire read lock
 	err = locker.RLock(ctx, key, 10*time.Second)
@@ -329,7 +340,7 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 		lockers = append(lockers, locker)
 	}
 
-	key := "test-rw-readers"
+	key := getUniqueKey(t, "rw-readers")
 
 	var (
 		wg            sync.WaitGroup
@@ -382,7 +393,7 @@ func TestRWLocker_WriterBlocksReaders(t *testing.T) {
 	locker2, err := redis.NewRWLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
-	key := "test-rw-writer-blocks"
+	key := getUniqueKey(t, "rw-writer-blocks")
 
 	// Acquire write lock
 	err = locker1.Lock(ctx, key, 5*time.Second)
@@ -421,7 +432,7 @@ func TestRWLocker_TryLockWithReaders(t *testing.T) {
 	locker2, err := redis.NewRWLocker(ctx, cfg, retryCfg, false)
 	require.NoError(t, err)
 
-	key := "test-rw-trylock-readers"
+	key := getUniqueKey(t, "rw-trylock-readers")
 
 	// Acquire read lock
 	err = locker1.RLock(ctx, key, 5*time.Second)

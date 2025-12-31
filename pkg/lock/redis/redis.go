@@ -260,7 +260,8 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 				}
 			}
 
-			if errors.Is(err, redsync.ErrFailed) {
+			// Check if lock is already taken (normal failure, retry)
+			if errors.Is(err, redsync.ErrFailed) || isLockAlreadyTakenError(err) {
 				// Lock is held by someone else, retry
 				continue
 			}
@@ -343,12 +344,13 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	)
 
 	err := mutex.LockContext(ctx)
-	if errors.Is(err, redsync.ErrFailed) {
-		// Lock is held by someone else
-		return false, nil
-	}
-
 	if err != nil {
+		// Check if lock is already taken (normal failure condition)
+		if errors.Is(err, redsync.ErrFailed) || isLockAlreadyTakenError(err) {
+			// Lock is held by someone else
+			return false, nil
+		}
+
 		if isConnectionError(err) {
 			l.circuitBreaker.recordFailure()
 
@@ -846,4 +848,16 @@ func isConnectionError(err error) bool {
 		strings.Contains(errStr, "connection reset") ||
 		strings.Contains(errStr, "i/o timeout") ||
 		strings.Contains(errStr, "no such host")
+}
+
+// isLockAlreadyTakenError checks if an error indicates the lock is already taken.
+func isLockAlreadyTakenError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	return strings.Contains(errStr, "lock already taken") ||
+		strings.Contains(errStr, "already taken")
 }
