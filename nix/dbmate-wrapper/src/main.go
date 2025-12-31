@@ -13,7 +13,7 @@ func main() {
 }
 
 func run() int {
-	// Parse args to find --url value
+	// Parse args to find --url value and check if --migrations-dir is provided
 	var dbURL string
 	hasMigrationsDir := false
 
@@ -29,20 +29,21 @@ func run() int {
 		}
 	}
 
-	// If --migrations-dir is already provided, don't override it
-	if hasMigrationsDir {
+	// If --migrations-dir is already provided via flag, don't override it
+	// If DBMATE_MIGRATIONS_DIR is already set, respect it (user has explicitly configured it)
+	if hasMigrationsDir || os.Getenv("DBMATE_MIGRATIONS_DIR") != "" {
 		return execDbmate(os.Args[1:])
 	}
 
 	// Determine database type from URL scheme
-	var migrationsDir string
+	var migrationsSubdir string
 	switch {
 	case strings.HasPrefix(dbURL, "sqlite:"):
-		migrationsDir = "sqlite"
+		migrationsSubdir = "sqlite"
 	case strings.HasPrefix(dbURL, "postgresql:"), strings.HasPrefix(dbURL, "postgres:"):
-		migrationsDir = "postgres"
+		migrationsSubdir = "postgres"
 	case strings.HasPrefix(dbURL, "mysql:"):
-		migrationsDir = "mysql"
+		migrationsSubdir = "mysql"
 	default:
 		// If we can't determine the database type, just pass through
 		return execDbmate(os.Args[1:])
@@ -55,12 +56,16 @@ func run() int {
 		basePath = "db/migrations"
 	}
 
-	fullMigrationsPath := filepath.Join(basePath, migrationsDir)
+	// Build the full migrations path with database-specific subdirectory
+	fullMigrationsPath := filepath.Join(basePath, migrationsSubdir)
 
-	// Build new args with --migrations-dir inserted
-	newArgs := append([]string{"--migrations-dir", fullMigrationsPath}, os.Args[1:]...)
+	// Set DBMATE_MIGRATIONS_DIR for dbmate to use
+	if err := os.Setenv("DBMATE_MIGRATIONS_DIR", fullMigrationsPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error setting DBMATE_MIGRATIONS_DIR: %v\n", err)
+		return 1
+	}
 
-	return execDbmate(newArgs)
+	return execDbmate(os.Args[1:])
 }
 
 // execDbmate executes the real dbmate binary with the given arguments.
@@ -77,6 +82,7 @@ func execDbmate(args []string) int {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ() // Pass through all environment variables including DBMATE_MIGRATIONS_DIR
 
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
