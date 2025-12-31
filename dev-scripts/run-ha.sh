@@ -155,40 +155,31 @@ echo ""
 start_instance() {
   local instance_num=$1
   local port=$((BASE_PORT + instance_num - 1))
-  local data_dir="/tmp/ncps-ha-instance-${instance_num}"
+  local args=(
+    serve
+    --cache-allow-put-verb
+    --cache-hostname="cache-ha-${instance_num}.example.com"
+    --cache-database-url="'${POSTGRES_URL}'"
+    --cache-upstream-url="https://cache.nixos.org"
+    --cache-upstream-public-key="cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    --cache-storage-s3-bucket="$S3_BUCKET"
+    --cache-storage-s3-endpoint="$S3_ENDPOINT"
+    --cache-storage-s3-region="$S3_REGION"
+    --cache-storage-s3-access-key-id="$S3_ACCESS_KEY"
+    --cache-storage-s3-secret-access-key="$S3_SECRET_KEY"
+    --cache-storage-s3-use-ssl="false"
+    --cache-redis-addrs="${REDIS_ADDR}"
+    --cache-lock-download-ttl="5m"
+    --cache-lock-lru-ttl="30m"
+    --server-addr=":${port}"
+  )
 
   echo -e "${BLUE}Starting instance ${instance_num} on port ${port}...${NC}"
 
-  # Clean up old data directory
-  rm -rf "$data_dir"
-  mkdir -p "$data_dir"
-
   # Start instance with watchexec for hot-reload
-  watchexec \
-    --restart \
-    --clear \
-    --watch . \
-    --exts go \
-    --ignore 'bin/*' \
-    --ignore 'result*' \
-    --ignore '.git/*' \
-    -- bash -c "
-      AWS_ACCESS_KEY_ID='${S3_ACCESS_KEY}' \
-      AWS_SECRET_ACCESS_KEY='${S3_SECRET_KEY}' \
-      ./bin/ncps serve \
-        --cache-hostname=cache-ha-${instance_num}.example.com \
-        --cache-data-path=${data_dir} \
-        --cache-database-url='${POSTGRES_URL}' \
-        --cache-storage-s3-bucket=${S3_BUCKET} \
-        --cache-storage-s3-endpoint=http://${S3_ENDPOINT} \
-        --cache-storage-s3-region=${S3_REGION} \
-        --cache-redis-addrs=${REDIS_ADDR} \
-        --cache-lock-download-ttl=5m \
-        --cache-lock-lru-ttl=30m \
-        --server-addr=:${port} \
-        --cache-upstream=https://cache.nixos.org \
-        2>&1 | sed 's/^/[Instance ${instance_num}] /'
-    " &
+  watchexec -e go -c clear -r go run . \
+    "${args[@]}" \
+    2>&1 | sed "s/^/[Instance ${instance_num}] /" &
 
   INSTANCE_PIDS+=($!)
   echo -e "${GREEN}✓ Instance ${instance_num} started (PID: ${INSTANCE_PIDS[-1]}, Port: ${port})${NC}"
