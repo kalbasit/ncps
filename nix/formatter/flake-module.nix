@@ -18,6 +18,9 @@
 
       # Exclude sqlc query files from sqlfluff - they use sqlc-specific syntax
       settings.formatter = {
+        yamlfmt.excludes = [
+          "helm/**/*.yaml"
+        ];
         sqlfluff.excludes = [
           "db/query.sql"
           "db/query.*.sql"
