@@ -252,6 +252,7 @@ If you need to override the auto-detection, you can still provide `--migrations-
 **Implementation details:**
 
 The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
+
 - Parses the `--url` flag to determine the database type (sqlite, postgres, mysql)
 - Uses the `NCPS_DB_MIGRATIONS_DIR` environment variable to locate the base migrations directory
   - In Docker: set to `/share/ncps/db/migrations` (static path in container)
