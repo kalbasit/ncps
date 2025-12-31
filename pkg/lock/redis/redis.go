@@ -27,6 +27,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
+	redsyncredis "github.com/go-redsync/redsync/v4/redis"
 	goredislib "github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	mathrand "math/rand"
 
@@ -36,11 +37,12 @@ import (
 
 // Errors returned by Redis lock operations.
 var (
-	ErrNoRedisAddrs       = errors.New("at least one Redis address is required")
-	ErrCircuitBreakerOpen = errors.New("circuit breaker open: Redis is unavailable")
-	ErrWriteLockHeld      = errors.New("write lock already held")
-	ErrReadersTimeout     = errors.New("timeout waiting for readers to finish")
-	ErrWriteLockTimeout   = errors.New("timeout waiting for write lock to clear")
+	ErrNoRedisAddrs            = errors.New("at least one Redis address is required")
+	ErrInsufficientNodesQuorum = errors.New("insufficient Redis nodes for quorum")
+	ErrCircuitBreakerOpen      = errors.New("circuit breaker open: Redis is unavailable")
+	ErrWriteLockHeld           = errors.New("write lock already held")
+	ErrReadersTimeout          = errors.New("timeout waiting for readers to finish")
+	ErrWriteLockTimeout        = errors.New("timeout waiting for write lock to clear")
 )
 
 // Circuit breaker states.
@@ -92,7 +94,7 @@ type RetryConfig struct {
 
 // Locker implements lock.Locker using Redis with Redlock algorithm.
 type Locker struct {
-	client            *redis.Client
+	clients           []*redis.Client // All connected Redis clients for HA
 	redsync           *redsync.Redsync
 	keyPrefix         string
 	retryConfig       RetryConfig
@@ -115,36 +117,77 @@ func NewLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDegra
 		return nil, ErrNoRedisAddrs
 	}
 
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addrs[0], // Use first addr for single-node
-		Username: cfg.Username,
-		Password: cfg.Password,
-		DB:       cfg.DB,
-		PoolSize: cfg.PoolSize,
-	})
+	// Connect to all Redis nodes for Redlock HA
+	clients := make([]*redis.Client, 0, len(cfg.Addrs))
+	pools := make([]redsyncredis.Pool, 0, len(cfg.Addrs))
 
-	// Test connection
-	if err := client.Ping(ctx).Err(); err != nil {
-		if allowDegradedMode {
+	var firstErr error
+
+	for _, addr := range cfg.Addrs {
+		client := redis.NewClient(&redis.Options{
+			Addr:     addr,
+			Username: cfg.Username,
+			Password: cfg.Password,
+			DB:       cfg.DB,
+			PoolSize: cfg.PoolSize,
+		})
+
+		// Test connection
+		if err := client.Ping(ctx).Err(); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+
 			zerolog.Ctx(ctx).Warn().
 				Err(err).
-				Msg("Redis unavailable, running in degraded mode with local locks")
+				Str("addr", addr).
+				Msg("failed to connect to Redis node")
+
+			continue
+		}
+
+		clients = append(clients, client)
+		pools = append(pools, goredislib.NewPool(client))
+	}
+
+	// Check if we have a quorum (majority) of nodes
+	quorum := len(cfg.Addrs)/2 + 1
+	if len(pools) < quorum {
+		// Close all connected clients
+		for _, client := range clients {
+			_ = client.Close()
+		}
+
+		if allowDegradedMode {
+			zerolog.Ctx(ctx).Warn().
+				Int("connected", len(pools)).
+				Int("required", quorum).
+				Msg("insufficient Redis nodes for quorum, running in degraded mode")
 
 			return local.NewLocker(), nil
 		}
 
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+		if firstErr != nil {
+			return nil, fmt.Errorf("failed to connect to sufficient Redis nodes (%d/%d): %w",
+				len(pools), quorum, firstErr)
+		}
+
+		return nil, fmt.Errorf("%w: %d/%d", ErrInsufficientNodesQuorum, len(pools), quorum)
 	}
 
-	pool := goredislib.NewPool(client)
-	rs := redsync.New(pool)
+	rs := redsync.New(pools...)
 
 	if cfg.KeyPrefix == "" {
 		cfg.KeyPrefix = "ncps:lock:"
 	}
 
+	zerolog.Ctx(ctx).Info().
+		Int("connected_nodes", len(clients)).
+		Int("total_nodes", len(cfg.Addrs)).
+		Msg("connected to Redis nodes for distributed locking")
+
 	return &Locker{
-		client:            client,
+		clients:           clients,
 		redsync:           rs,
 		keyPrefix:         cfg.KeyPrefix,
 		retryConfig:       retryCfg,
@@ -346,7 +389,7 @@ func (l *Locker) calculateBackoff(attempt int) time.Duration {
 
 // RWLocker implements lock.RWLocker using Redis sets for readers.
 type RWLocker struct {
-	client            *redis.Client
+	client            redis.UniversalClient // Supports both single-node and cluster
 	keyPrefix         string
 	retryConfig       RetryConfig
 	allowDegradedMode bool
@@ -368,13 +411,25 @@ func NewRWLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDeg
 		return nil, ErrNoRedisAddrs
 	}
 
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addrs[0],
-		Username: cfg.Username,
-		Password: cfg.Password,
-		DB:       cfg.DB,
-		PoolSize: cfg.PoolSize,
-	})
+	var client redis.UniversalClient
+
+	// If multiple addresses are provided, use cluster client for HA
+	if len(cfg.Addrs) > 1 {
+		client = redis.NewClusterClient(&redis.ClusterOptions{
+			Addrs:    cfg.Addrs,
+			Username: cfg.Username,
+			Password: cfg.Password,
+			PoolSize: cfg.PoolSize,
+		})
+	} else {
+		client = redis.NewClient(&redis.Options{
+			Addr:     cfg.Addrs[0],
+			Username: cfg.Username,
+			Password: cfg.Password,
+			DB:       cfg.DB,
+			PoolSize: cfg.PoolSize,
+		})
+	}
 
 	// Test connection
 	if err := client.Ping(ctx).Err(); err != nil {
@@ -393,6 +448,16 @@ func NewRWLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDeg
 		cfg.KeyPrefix = "ncps:lock:"
 	}
 
+	mode := "single-node"
+	if len(cfg.Addrs) > 1 {
+		mode = "cluster"
+	}
+
+	zerolog.Ctx(ctx).Info().
+		Str("mode", mode).
+		Int("nodes", len(cfg.Addrs)).
+		Msg("connected to Redis for read-write locking")
+
 	return &RWLocker{
 		client:            client,
 		keyPrefix:         cfg.KeyPrefix,
@@ -403,7 +468,7 @@ func NewRWLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDeg
 	}, nil
 }
 
-// Lock acquires an exclusive write lock.
+// Lock acquires an exclusive write lock with retry and exponential backoff.
 func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if rw.circuitBreaker.isOpen() {
@@ -414,54 +479,129 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 		return ErrCircuitBreakerOpen
 	}
 
-	writerKey := rw.keyPrefix + key + ":writer"
-	readersKey := rw.keyPrefix + key + ":readers"
+	// Use hash tags to ensure keys land on same cluster node
+	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
+	readersKey := fmt.Sprintf("%s{%s}:readers", rw.keyPrefix, key)
 
-	// Try to acquire writer lock
-	success, err := rw.client.SetNX(ctx, writerKey, "1", ttl).Result()
-	if err != nil {
-		if isConnectionError(err) {
-			rw.circuitBreaker.recordFailure()
+	var lastErr error
 
-			if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
-				return rw.fallbackLocker.Lock(ctx, key, ttl)
+	for attempt := 0; attempt < rw.retryConfig.MaxAttempts; attempt++ {
+		if attempt > 0 {
+			// Calculate backoff delay
+			delay := rw.calculateBackoff(attempt)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
 			}
 		}
 
-		return fmt.Errorf("error acquiring write lock: %w", err)
-	}
-
-	if !success {
-		return ErrWriteLockHeld
-	}
-
-	// Wait for all readers to finish
-	deadline := time.Now().Add(ttl)
-
-	for {
-		count, err := rw.client.SCard(ctx, readersKey).Result()
+		// Try to acquire writer lock
+		success, err := rw.client.SetNX(ctx, writerKey, "1", ttl).Result()
 		if err != nil {
-			rw.client.Del(ctx, writerKey) // Clean up
+			lastErr = err
 
-			return fmt.Errorf("error checking readers: %w", err)
+			if isConnectionError(err) {
+				rw.circuitBreaker.recordFailure()
+
+				if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+					return rw.fallbackLocker.Lock(ctx, key, ttl)
+				}
+			}
+
+			// Connection error, retry
+			continue
 		}
 
-		if count == 0 {
-			break
+		if !success {
+			// Lock is held by someone else, retry
+			lastErr = ErrWriteLockHeld
+
+			continue
 		}
 
-		if time.Now().After(deadline) {
-			rw.client.Del(ctx, writerKey) // Clean up
+		// Wait for all readers to finish
+		deadline := time.Now().Add(ttl)
 
-			return ErrReadersTimeout
+		for {
+			// Get all readers and their expiration times (stored as hash)
+			readers, err := rw.client.HGetAll(ctx, readersKey).Result()
+			if err != nil {
+				rw.client.Del(ctx, writerKey) // Clean up
+
+				lastErr = fmt.Errorf("error checking readers: %w", err)
+
+				break
+			}
+
+			// Count active (non-expired) readers
+			now := time.Now().Unix()
+			activeReaders := 0
+
+			for readerID, expiresAtStr := range readers {
+				expiresAt, err := time.Parse(time.RFC3339, expiresAtStr)
+				if err != nil {
+					// Invalid expiration, consider it expired
+					rw.client.HDel(ctx, readersKey, readerID)
+
+					continue
+				}
+
+				if expiresAt.Unix() > now {
+					activeReaders++
+				} else {
+					// Remove expired reader
+					rw.client.HDel(ctx, readersKey, readerID)
+				}
+			}
+
+			if activeReaders == 0 {
+				// Success!
+				rw.circuitBreaker.recordSuccess()
+
+				return nil
+			}
+
+			if time.Now().After(deadline) {
+				rw.client.Del(ctx, writerKey) // Clean up
+
+				lastErr = ErrReadersTimeout
+
+				break
+			}
+
+			select {
+			case <-ctx.Done():
+				rw.client.Del(ctx, writerKey) // Clean up
+
+				return ctx.Err()
+			case <-time.After(10 * time.Millisecond):
+			}
 		}
-
-		time.Sleep(10 * time.Millisecond)
 	}
 
-	rw.circuitBreaker.recordSuccess()
+	return fmt.Errorf("failed to acquire write lock after %d attempts: %w",
+		rw.retryConfig.MaxAttempts, lastErr)
+}
 
-	return nil
+// calculateBackoff calculates the backoff delay with exponential backoff and optional jitter.
+func (rw *RWLocker) calculateBackoff(attempt int) time.Duration {
+	// Exponential backoff: initialDelay * 2^attempt
+	delay := float64(rw.retryConfig.InitialDelay) * math.Pow(2, float64(attempt))
+
+	// Cap at max delay
+	if delay > float64(rw.retryConfig.MaxDelay) {
+		delay = float64(rw.retryConfig.MaxDelay)
+	}
+
+	// Add jitter to prevent thundering herd
+	if rw.retryConfig.Jitter {
+		jitter := mathrand.Float64() * delay * 0.1 //nolint:gosec // jitter doesn't need crypto randomness
+		delay += jitter
+	}
+
+	return time.Duration(delay)
 }
 
 // Unlock releases an exclusive write lock.
@@ -470,7 +610,8 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 		return rw.fallbackLocker.Unlock(ctx, key)
 	}
 
-	writerKey := rw.keyPrefix + key + ":writer"
+	// Use hash tag to ensure key lands on same cluster node
+	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
 
 	return rw.client.Del(ctx, writerKey).Err()
 }
@@ -485,8 +626,9 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 		return false, ErrCircuitBreakerOpen
 	}
 
-	writerKey := rw.keyPrefix + key + ":writer"
-	readersKey := rw.keyPrefix + key + ":readers"
+	// Use hash tags to ensure keys land on same cluster node
+	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
+	readersKey := fmt.Sprintf("%s{%s}:readers", rw.keyPrefix, key)
 
 	// Try to acquire writer lock
 	success, err := rw.client.SetNX(ctx, writerKey, "1", ttl).Result()
@@ -506,15 +648,36 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 		return false, nil // Lock is held
 	}
 
-	// Check if there are any readers
-	count, err := rw.client.SCard(ctx, readersKey).Result()
+	// Check if there are any active readers
+	readers, err := rw.client.HGetAll(ctx, readersKey).Result()
 	if err != nil {
 		rw.client.Del(ctx, writerKey) // Clean up
 
 		return false, fmt.Errorf("error checking readers: %w", err)
 	}
 
-	if count > 0 {
+	// Count active (non-expired) readers
+	now := time.Now().Unix()
+	activeReaders := 0
+
+	for readerID, expiresAtStr := range readers {
+		expiresAt, err := time.Parse(time.RFC3339, expiresAtStr)
+		if err != nil {
+			// Invalid expiration, consider it expired
+			rw.client.HDel(ctx, readersKey, readerID)
+
+			continue
+		}
+
+		if expiresAt.Unix() > now {
+			activeReaders++
+		} else {
+			// Remove expired reader
+			rw.client.HDel(ctx, readersKey, readerID)
+		}
+	}
+
+	if activeReaders > 0 {
 		rw.client.Del(ctx, writerKey) // Clean up, readers present
 
 		return false, nil
@@ -535,8 +698,9 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		return ErrCircuitBreakerOpen
 	}
 
-	lockKey := rw.keyPrefix + key + ":readers"
-	writerKey := rw.keyPrefix + key + ":writer"
+	// Use hash tags to ensure keys land on same cluster node
+	lockKey := fmt.Sprintf("%s{%s}:readers", rw.keyPrefix, key)
+	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
 
 	// Generate unique reader ID
 	readerID := rw.getOrCreateReaderID()
@@ -569,12 +733,10 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Add to reader set with expiry
-	pipe := rw.client.Pipeline()
-	pipe.SAdd(ctx, lockKey, readerID)
-	pipe.Expire(ctx, lockKey, ttl)
+	// Add to reader hash with per-reader expiration timestamp
+	expiresAt := time.Now().Add(ttl).Format(time.RFC3339)
 
-	_, err := pipe.Exec(ctx)
+	err := rw.client.HSet(ctx, lockKey, readerID, expiresAt).Err()
 	if err != nil {
 		return fmt.Errorf("error acquiring read lock: %w", err)
 	}
@@ -590,10 +752,11 @@ func (rw *RWLocker) RUnlock(ctx context.Context, key string) error {
 		return rw.fallbackLocker.RUnlock(ctx, key)
 	}
 
-	lockKey := rw.keyPrefix + key + ":readers"
+	// Use hash tag to ensure key lands on same cluster node
+	lockKey := fmt.Sprintf("%s{%s}:readers", rw.keyPrefix, key)
 	readerID := rw.getOrCreateReaderID()
 
-	return rw.client.SRem(ctx, lockKey, readerID).Err()
+	return rw.client.HDel(ctx, lockKey, readerID).Err()
 }
 
 // getOrCreateReaderID returns a unique reader ID for this locker instance.
@@ -649,19 +812,13 @@ func (cb *circuitBreaker) recordSuccess() {
 }
 
 func (cb *circuitBreaker) isOpen() bool {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
-	if cb.state == stateOpen {
-		// Check if we should reset
-		if time.Since(cb.lastFailure) > cb.resetTimeout {
-			cb.mu.RUnlock()
-			cb.mu.Lock()
-			cb.state = stateClosed
-			cb.failureCount = 0
-			cb.mu.Unlock()
-			cb.mu.RLock()
-		}
+	if cb.state == stateOpen && time.Since(cb.lastFailure) > cb.resetTimeout {
+		// The timeout has passed, so we can transition back to closed.
+		cb.state = stateClosed
+		cb.failureCount = 0
 	}
 
 	return cb.state == stateOpen
