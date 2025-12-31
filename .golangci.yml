@@ -44,9 +44,7 @@ linters:
       - legacy
       - std-error-handling
     paths:
-      - third_party$
-      - builtin$
-      - examples$
+      - nix/dbmate-wrapper/src/
   settings:
     wsl_v5:
       allow-first-in-block: true
@@ -62,13 +60,11 @@ formatters:
         - standard
         - default
         - alias
-        - localmodule
+        - prefix(github.com/kalbasit/ncps)
         - blank
         - dot
       custom-order: true
   exclusions:
     generated: lax
     paths:
-      - third_party$
-      - builtin$
-      - examples$
+      - nix/dbmate-wrapper/src/
