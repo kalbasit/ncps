@@ -545,7 +545,14 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 				expiresAt, err := time.Parse(time.RFC3339, expiresAtStr)
 				if err != nil {
 					// Invalid expiration, consider it expired
-					rw.client.HDel(ctx, readersKey, readerID)
+					if err := rw.client.HDel(ctx, readersKey, readerID).Err(); err != nil {
+						zerolog.Ctx(ctx).
+							Warn().
+							Err(err).
+							Str("key", key).
+							Str("readerID", readerID).
+							Msg("failed to remove invalid reader from lock")
+					}
 
 					continue
 				}
