@@ -10,16 +10,20 @@
       "Bash(export NCPS_TEST_S3_SECRET_ACCESS_KEY=\"test-secret-key\")",
       "Bash(git add:*)",
       "Bash(git checkout:*)",
+      "Bash(git revert:*)",
       "Bash(go build:*)",
       "Bash(go get:*)",
       "Bash(go mod tidy:*)",
       "Bash(go test:*)",
       "Bash(golangci-lint run:*)",
       "Bash(gt ls:*)",
+      "Bash(ln:*)",
+      "Bash(ls:*)",
       "Bash(nix build:*)",
       "Bash(nix flake check:*)",
       "Bash(nix fmt:*)",
       "Bash(sqlc generate:*)",
+      "Bash(sqlfluff:*)",
       "WebFetch(domain:github.com)"
     ]
   }

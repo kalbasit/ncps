@@ -10,7 +10,7 @@ ncps (Nix Cache Proxy Server) is a Go application that acts as a local binary ca
 
 ### Prerequisites
 
-Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, golangci-lint, sqlc, dbmate, delve, watchexec.
+Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, golangci-lint, sqlc, sqlfluff, dbmate, delve, watchexec.
 
 ### Common Commands
 
@@ -36,12 +36,26 @@ golangci-lint run --fix  # Automatically fix fixable linter issues
 # Format code
 nix fmt                  # Format all project files (Go, Nix, SQL, etc.)
 
+# Lint SQL files
+sqlfluff lint db/query.*.sql              # Lint all SQL query files
+sqlfluff lint db/migrations/              # Lint all migration files
+
+# Format SQL files
+sqlfluff format db/query.*.sql            # Format all SQL query files
+sqlfluff format db/migrations/            # Format all migration files
+
 # Generate SQL code (after modifying db/query.sql or migrations)
 sqlc generate
+
+# Create new database migrations (creates timestamped migration files)
+dbmate --migrations-dir db/migrations/sqlite new migration_name
+dbmate --migrations-dir db/migrations/postgres new migration_name
+dbmate --migrations-dir db/migrations/mysql new migration_name
 
 # Run database migrations manually
 dbmate --url "sqlite:/path/to/your/db.sqlite" --migrations-dir db/migrations/sqlite up
 dbmate --url "postgresql://user:pass@localhost:5432/ncps" --migrations-dir db/migrations/postgres up
+dbmate --url "mysql://user:pass@localhost:3306/ncps" --migrations-dir db/migrations/mysql up
 
 # Build
 go build .
@@ -203,6 +217,28 @@ Database selection is done via URL scheme in the `--cache-database-url` flag:
 
 Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db/query.postgres.sql`, and `db/query.mysql.sql`. Run `sqlc generate` after modifying queries.
 
+**Creating Database Migrations:**
+
+When creating new database migrations, always use `dbmate new` to generate properly timestamped migration files:
+
+```bash
+dbmate --migrations-dir db/migrations/sqlite new migration_name
+dbmate --migrations-dir db/migrations/postgres new migration_name
+dbmate --migrations-dir db/migrations/mysql new migration_name
+```
+
+This creates timestamped migration files (e.g., `20251230223951_migration_name.sql`) with the standard dbmate template:
+
+```sql
+-- migrate:up
+
+
+-- migrate:down
+
+```
+
+**IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `dbmate new` to ensure proper chronological ordering.
+
 ## Code Quality
 
 ### Linting
@@ -213,9 +249,9 @@ Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`).
 
 ### Formatting
 
-Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule).
+Uses gofumpt, goimports, and gci for import ordering (standard → default → alias → localmodule). SQL files are formatted using sqlfluff.
 
-**IMPORTANT**: Always use `nix fmt` to automatically format project files (Go, Nix, etc.) before making manual edits.
+**IMPORTANT**: Always use `nix fmt` to automatically format project files (Go, Nix, etc.) before making manual edits. For SQL files specifically, use `sqlfluff format` to fix formatting issues.
 
 ### Testing
 
