@@ -11,7 +11,7 @@ import (
 
 const createNar = `-- name: CreateNar :one
 INSERT INTO nars (
-    narinfo_id, hash, compression, query, file_size
+    narinfo_id, hash, compression, "query", file_size
 ) VALUES (
     ?, ?, ?, ?, ?
 )
@@ -29,7 +29,7 @@ type CreateNarParams struct {
 // CreateNar
 //
 //	INSERT INTO nars (
-//	    narinfo_id, hash, compression, query, file_size
+//	    narinfo_id, hash, compression, "query", file_size
 //	) VALUES (
 //	    ?, ?, ?, ?, ?
 //	)

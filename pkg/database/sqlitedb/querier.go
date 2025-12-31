@@ -12,7 +12,7 @@ type Querier interface {
 	//CreateNar
 	//
 	//  INSERT INTO nars (
-	//      narinfo_id, hash, compression, query, file_size
+	//      narinfo_id, hash, compression, "query", file_size
 	//  ) VALUES (
 	//      ?, ?, ?, ?, ?
 	//  )

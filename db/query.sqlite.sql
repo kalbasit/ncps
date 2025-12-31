@@ -28,7 +28,7 @@ RETURNING *;
 
 -- name: CreateNar :one
 INSERT INTO nars (
-    narinfo_id, hash, compression, query, file_size
+    narinfo_id, hash, compression, "query", file_size
 ) VALUES (
     ?, ?, ?, ?, ?
 )
