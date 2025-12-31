@@ -258,6 +258,7 @@ The development shell provides commands to easily enable/disable integration tes
 | ------------------------------------- | ------------------------------------ |
 | `eval "$(enable-s3-tests)"` | Enable S3/MinIO integration tests |
 | `eval "$(enable-postgres-tests)"` | Enable PostgreSQL integration tests |
+| `eval "$(enable-redis-tests)"` | Enable Redis integration tests |
 | `eval "$(enable-mysql-tests)"` | Enable MySQL integration tests |
 | `eval "$(enable-integration-tests)"` | Enable all integration tests at once |
 | `eval "$(disable-integration-tests)"` | Disable all integration tests |
