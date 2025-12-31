@@ -107,6 +107,45 @@ cache:
     # Timeout for waiting for upstream server's response headers (default: 3s)
     # Increase this if you see "timeout awaiting response headers" errors
     response-header-timeout: 3s
+  # Redis configuration for distributed locking (OPTIONAL - for HA deployments only)
+  # If not configured, local locks are used (single-instance mode)
+  redis:
+    # List of Redis server addresses (omit this entire section to use local locks)
+    # For single node: ["localhost:6379"]
+    # For cluster: ["node1:6379", "node2:6379", "node3:6379"]
+    addrs:
+      - "localhost:6379"
+    # Username for authentication (optional, required for Redis ACL)
+    username: ""
+    # Password for authentication (optional)
+    password: ""
+    # Database number (0-15)
+    db: 0
+    # Enable TLS connection
+    use-tls: false
+    # Connection pool size (default: 10)
+    pool-size: 10
+    # Key prefix for all distributed locks (default: "ncps:lock:")
+    key-prefix: "ncps:lock:"
+  # Lock configuration
+  lock:
+    # Timeout for download locks (per-hash locks)
+    download-lock-ttl: 5m
+    # Timeout for LRU lock (global exclusive lock)
+    lru-lock-ttl: 30m
+    # Retry configuration for distributed locks
+    retry:
+      # Maximum number of retry attempts
+      max-attempts: 3
+      # Initial retry delay
+      initial-delay: 100ms
+      # Maximum retry delay (exponential backoff caps at this)
+      max-delay: 2s
+      # Enable jitter to prevent thundering herd
+      jitter: true
+    # Degraded mode: allow falling back to local locks if Redis is unavailable
+    # WARNING: Only enable in emergencies - breaks HA guarantees
+    allow-degraded-mode: false
 # Configure the main server
 server:
   # The address of the server

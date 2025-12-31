@@ -253,6 +253,71 @@
             rm -rf "$MYSQL_DATA_DIR" 2>/dev/null || true
             echo "✅ MariaDB stopped and cleaned up"
           '';
+
+          # Start Redis before running tests to enable Redis integration tests
+          redisPreCheck = ''
+            echo "🚀 Starting Redis for integration tests..."
+
+            # Create temporary directory for Redis data
+            export REDIS_DATA_DIR=$(mktemp -d)
+
+            # Generate random free port using python
+            export REDIS_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+
+            # Export Redis test environment variable
+            export NCPS_ENABLE_REDIS_TESTS=1
+
+            # Start Redis server in background
+            redis-server \
+              --dir "$REDIS_DATA_DIR" \
+              --bind 127.0.0.1 \
+              --port "$REDIS_PORT" \
+              --save "" \
+              --appendonly no &
+            export REDIS_PID=$!
+
+            # Wait for Redis to be ready
+            echo "⏳ Waiting for Redis to be ready..."
+            for i in {1..30}; do
+              if redis-cli -h 127.0.0.1 -p "$REDIS_PORT" ping >/dev/null 2>&1; then
+                echo "✅ Redis is ready on port $REDIS_PORT"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "❌ Redis failed to start"
+                kill $REDIS_PID 2>/dev/null || true
+                exit 1
+              fi
+              sleep 1
+            done
+
+            echo "✅ Redis configured for integration tests"
+          '';
+
+          # Stop Redis after tests complete
+          redisPostCheck = ''
+            echo "🛑 Stopping Redis..."
+            if [ -n "$REDIS_PID" ]; then
+              kill $REDIS_PID 2>/dev/null || true
+              # Wait for Redis to fully shut down
+              for i in {1..30}; do
+                if ! kill -0 $REDIS_PID 2>/dev/null; then
+                  break
+                fi
+                sleep 0.5
+              done
+
+              # If it's still alive, force kill it
+              if kill -0 $REDIS_PID 2>/dev/null; then
+                echo "Redis did not shut down gracefully, force killing..."
+                kill -9 $REDIS_PID 2>/dev/null || true
+                sleep 1 # Give a moment for the OS to clean up after SIGKILL
+              fi
+            fi
+            sleep 1
+            rm -rf "$REDIS_DATA_DIR" 2>/dev/null || true
+            echo "✅ Redis stopped and cleaned up"
+          '';
         in
         pkgs.buildGoModule {
           name = "ncps-${shortRev}";
@@ -271,7 +336,7 @@
             root = ../..;
           };
 
-          vendorHash = "sha256-UuviEbA+a7Op8KMGB2QRLxfecRutpN+359L+iMVjEt4=";
+          vendorHash = "sha256-EopZ2zZFUkXXvXVzNQ1D/Tuku0aTqx7WPrt5dDHujz0=";
 
           ldflags = [
             "-X github.com/kalbasit/ncps/cmd.Version=${version}"
@@ -288,12 +353,14 @@
             pkgs.minio-client # mc CLI for MinIO setup
             pkgs.postgresql # PostgreSQL for integration tests
             pkgs.python3 # used for generating the ports
+            pkgs.redis # Redis for distributed locking integration tests
           ];
 
           # pre and post checks
           preCheck = ''
             # Set up cleanup trap to ensure background processes are killed even if tests fail
             cleanup() {
+              ${redisPostCheck}
               ${mysqlPostCheck}
               ${postgresPostCheck}
               ${minioPostCheck}
@@ -303,6 +370,7 @@
             ${minioPreCheck}
             ${postgresPreCheck}
             ${mysqlPreCheck}
+            ${redisPreCheck}
           '';
 
           postInstall = ''

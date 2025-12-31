@@ -22,6 +22,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
+	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
@@ -33,6 +34,23 @@ import (
 )
 
 const cacheName = "cache.example.com"
+
+// newTestCache is a helper function that creates a cache with local locks for testing.
+func newTestCache(
+	ctx context.Context,
+	hostName string,
+	db database.Querier,
+	configStore storage.ConfigStore,
+	narInfoStore storage.NarInfoStore,
+	narStore storage.NarStore,
+	secretKeyPath string,
+) (*cache.Cache, error) {
+	downloadLocker := locklocal.NewLocker()
+	lruLocker := locklocal.NewRWLocker()
+
+	return cache.New(ctx, hostName, db, configStore, narInfoStore, narStore, secretKeyPath,
+		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+}
 
 func TestNew(t *testing.T) {
 	t.Parallel()
@@ -57,7 +75,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), "", db, localStore, localStore, localStore, "")
+			_, err = newTestCache(newContext(), "", db, localStore, localStore, localStore, "")
 			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
 		})
 
@@ -78,7 +96,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), "https://cache.example.com", db, localStore, localStore, localStore, "")
+			_, err = newTestCache(newContext(), "https://cache.example.com", db, localStore, localStore, localStore, "")
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
 		})
 
@@ -99,7 +117,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), "cache.example.com/path/to", db, localStore, localStore, localStore, "")
+			_, err = newTestCache(newContext(), "cache.example.com/path/to", db, localStore, localStore, localStore, "")
 			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
 		})
 
@@ -120,7 +138,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			_, err = cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+			_, err = newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 			require.NoError(t, err)
 		})
 	})
@@ -145,7 +163,7 @@ func TestNew(t *testing.T) {
 			localStore, err := local.New(newContext(), dir)
 			require.NoError(t, err)
 
-			c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 			require.NoError(t, err)
 
 			sk, err := localStore.GetSecretKey(newContext())
@@ -184,7 +202,7 @@ func TestNew(t *testing.T) {
 
 			require.NoError(t, skFile.Close())
 
-			c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, skFile.Name())
+			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, skFile.Name())
 			require.NoError(t, err)
 
 			_, err = localStore.GetSecretKey(newContext())
@@ -212,7 +230,7 @@ func TestPublicKey(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	pubKey := c.PublicKey().String()
@@ -258,7 +276,7 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -313,7 +331,7 @@ func TestGetNarInfo(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -698,7 +716,7 @@ func TestPutNarInfo(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -839,7 +857,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -912,7 +930,7 @@ func TestGetNar(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1131,7 +1149,7 @@ func TestPutNar(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)
@@ -1177,7 +1195,7 @@ func TestDeleteNar(t *testing.T) {
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.SetRecordAgeIgnoreTouch(0)

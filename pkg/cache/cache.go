@@ -26,6 +26,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/healthcheck"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
@@ -33,6 +34,7 @@ import (
 const (
 	recordAgeIgnoreTouch = 5 * time.Minute
 	otelPackageName      = "github.com/kalbasit/ncps/pkg/cache"
+	cacheLockKey         = "cache"
 )
 
 var (
@@ -117,14 +119,16 @@ type Cache struct {
 	// is locked` errors
 	recordAgeIgnoreTouch time.Duration
 
+	// Lock abstraction (can be local or distributed)
+	downloadLocker  lock.Locker
+	lruLocker       lock.RWLocker
+	downloadLockTTL time.Duration
+	lruLockTTL      time.Duration
+
 	// upstreamJobs is used to store in-progress jobs for pulling nars from
 	// upstream cache so incomping requests for the same nar can find and wait
 	// for jobs.
-	muUpstreamJobs sync.Mutex
-	upstreamJobs   map[string]*downloadState
-
-	// mu is used by the LRU garbage collector to freeze access to the cache.
-	mu sync.RWMutex
+	upstreamJobs map[string]*downloadState
 
 	cron *cron.Cron
 }
@@ -168,6 +172,10 @@ func New(
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
 	secretKeyPath string,
+	downloadLocker lock.Locker,
+	lruLocker lock.RWLocker,
+	downloadLockTTL time.Duration,
+	lruLockTTL time.Duration,
 ) (*Cache, error) {
 	c := &Cache{
 		baseContext:          ctx,
@@ -176,6 +184,10 @@ func New(
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
 		shouldSignNarinfo:    true,
+		downloadLocker:       downloadLocker,
+		lruLocker:            lruLocker,
+		downloadLockTTL:      downloadLockTTL,
+		lruLockTTL:           lruLockTTL,
 		upstreamJobs:         make(map[string]*downloadState),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
@@ -300,8 +312,22 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		narServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	lockKey := cacheLockKey
+
+	// Acquire read lock to prevent LRU from deleting files during access
+	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Msg("failed to acquire read lock for GetNar, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Msg("failed to release read lock for GetNar")
+		}
+	}()
 
 	ctx = narURL.
 		NewLogger(*zerolog.Ctx(ctx)).
@@ -452,8 +478,22 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 	)
 	defer span.End()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	lockKey := cacheLockKey
+
+	// Acquire read lock to prevent LRU from deleting files during access
+	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Msg("failed to acquire read lock for PutNar, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Msg("failed to release read lock for PutNar")
+		}
+	}()
 
 	ctx = narURL.
 		NewLogger(*zerolog.Ctx(ctx)).
@@ -483,8 +523,22 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	)
 	defer span.End()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	lockKey := cacheLockKey
+
+	// Acquire read lock to prevent LRU from deleting files during access
+	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Msg("failed to acquire read lock for DeleteNar, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Msg("failed to release read lock for DeleteNar")
+		}
+	}()
 
 	ctx = narURL.
 		NewLogger(*zerolog.Ctx(ctx)).
@@ -502,9 +556,22 @@ func (c *Cache) pullNarIntoStore(
 	ds *downloadState,
 ) {
 	defer func() {
-		c.muUpstreamJobs.Lock()
+		lockKey := "download:nar:" + narURL.Hash
+		if err := c.downloadLocker.Lock(context.Background(), lockKey, c.downloadLockTTL); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", narURL.Hash).
+				Msg("failed to acquire lock for cleanup, continuing anyway")
+		}
+
 		delete(c.upstreamJobs, narURL.Hash)
-		c.muUpstreamJobs.Unlock()
+
+		if err := c.downloadLocker.Unlock(context.Background(), lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", narURL.Hash).
+				Msg("failed to release lock after cleanup")
+		}
 
 		select {
 		case <-ds.start:
@@ -838,8 +905,22 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		narInfoServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	lockKey := cacheLockKey
+
+	// Acquire read lock to prevent LRU from deleting files during access
+	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Msg("failed to acquire read lock for GetNarInfo, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Msg("failed to release read lock for GetNarInfo")
+		}
+	}()
 
 	ctx = zerolog.Ctx(ctx).
 		With().
@@ -895,9 +976,22 @@ func (c *Cache) pullNarInfo(
 	ds *downloadState,
 ) {
 	done := func() {
-		c.muUpstreamJobs.Lock()
+		lockKey := "download:narinfo:" + hash
+		if err := c.downloadLocker.Lock(context.Background(), lockKey, c.downloadLockTTL); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", hash).
+				Msg("failed to acquire lock for cleanup, continuing anyway")
+		}
+
 		delete(c.upstreamJobs, hash)
-		c.muUpstreamJobs.Unlock()
+
+		if err := c.downloadLocker.Unlock(context.Background(), lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", hash).
+				Msg("failed to release lock after cleanup")
+		}
 
 		close(ds.done)
 	}
@@ -1035,8 +1129,22 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	)
 	defer span.End()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	lockKey := cacheLockKey
+
+	// Acquire read lock to prevent LRU from deleting files during access
+	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Msg("failed to acquire read lock for PutNarInfo, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Msg("failed to release read lock for PutNarInfo")
+		}
+	}()
 
 	ctx = zerolog.Ctx(ctx).
 		With().
@@ -1079,8 +1187,22 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	)
 	defer span.End()
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	lockKey := cacheLockKey
+
+	// Acquire read lock to prevent LRU from deleting files during access
+	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Msg("failed to acquire read lock for DeleteNarInfo, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Msg("failed to release read lock for DeleteNarInfo")
+		}
+	}()
 
 	ctx = zerolog.Ctx(ctx).
 		With().
@@ -1102,8 +1224,28 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 	)
 	defer span.End()
 
-	c.muUpstreamJobs.Lock()
+	lockKey := "download:narinfo:" + hash
 
+	// Acquire lock with retry (handled internally by Redis locker)
+	// If using local locks, this returns immediately
+	// If using Redis and lock fails, logs error but continues (lock will auto-expire)
+	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("hash", hash).
+			Msg("failed to acquire download lock for narinfo, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", hash).
+				Msg("failed to release download lock for narinfo")
+		}
+	}()
+
+	// Check upstreamJobs map and create downloadState if needed
 	ds, ok := c.upstreamJobs[hash]
 	if !ok {
 		ds = newDownloadState()
@@ -1111,8 +1253,6 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 
 		go c.pullNarInfo(ctx, hash, ds)
 	}
-
-	c.muUpstreamJobs.Unlock()
 
 	return ds
 }
@@ -1134,8 +1274,28 @@ func (c *Cache) prePullNar(
 	)
 	defer span.End()
 
-	c.muUpstreamJobs.Lock()
+	lockKey := "download:nar:" + narURL.Hash
 
+	// Acquire lock with retry (handled internally by Redis locker)
+	// If using local locks, this returns immediately
+	// If using Redis and lock fails, logs error but continues (lock will auto-expire)
+	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("hash", narURL.Hash).
+			Msg("failed to acquire download lock for nar, continuing without lock")
+	}
+
+	defer func() {
+		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", narURL.Hash).
+				Msg("failed to release download lock for nar")
+		}
+	}()
+
+	// Check upstreamJobs map and create downloadState if needed
 	ds, ok := c.upstreamJobs[narURL.Hash]
 	if !ok {
 		ds = newDownloadState()
@@ -1143,8 +1303,6 @@ func (c *Cache) prePullNar(
 
 		go c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
 	}
-
-	c.muUpstreamJobs.Unlock()
 
 	return ds
 }
@@ -1542,17 +1700,52 @@ func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error 
 }
 
 func (c *Cache) hasUpstreamJob(hash string) bool {
-	c.muUpstreamJobs.Lock()
+	lockKey := "download:nar:" + hash
+	ctx := context.Background()
+
+	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
+		// If we can't acquire the lock, assume there's a job running
+		return true
+	}
+
+	defer func() {
+		_ = c.downloadLocker.Unlock(ctx, lockKey)
+	}()
+
 	_, ok := c.upstreamJobs[hash]
-	c.muUpstreamJobs.Unlock()
 
 	return ok
 }
 
 func (c *Cache) runLRU(ctx context.Context) func() {
 	return func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
+		lockKey := "lru"
+
+		// Try to acquire LRU lock (non-blocking)
+		acquired, err := c.lruLocker.TryLock(ctx, lockKey, c.lruLockTTL)
+		if err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Msg("error trying to acquire LRU lock, skipping LRU run")
+
+			return
+		}
+
+		if !acquired {
+			// Another instance is running LRU, skip this run
+			zerolog.Ctx(ctx).Info().
+				Msg("another instance is running LRU, skipping")
+
+			return
+		}
+
+		defer func() {
+			if err := c.lruLocker.Unlock(ctx, lockKey); err != nil {
+				zerolog.Ctx(ctx).Error().
+					Err(err).
+					Msg("failed to release LRU lock")
+			}
+		}()
 
 		log := zerolog.Ctx(ctx).With().
 			Str("op", "lru").

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
@@ -21,14 +22,30 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/server"
+	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
 
 const cacheName = "cache.example.com"
+
+func newTestCache(
+	ctx context.Context,
+	db database.Querier,
+	configStore storage.ConfigStore,
+	narInfoStore storage.NarInfoStore,
+	narStore storage.NarStore,
+) (*cache.Cache, error) {
+	downloadLocker := locklocal.NewLocker()
+	lruLocker := locklocal.NewRWLocker()
+
+	return cache.New(ctx, cacheName, db, configStore, narInfoStore, narStore, "",
+		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+}
 
 //nolint:paralleltest
 func TestServeHTTP(t *testing.T) {
@@ -55,7 +72,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -102,7 +119,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -242,7 +259,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -359,7 +376,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "")
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)

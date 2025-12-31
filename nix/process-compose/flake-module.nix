@@ -131,6 +131,25 @@
                 period_seconds = 1;
               };
             };
+            redis-server = {
+              command = ''
+                DATA_DIR=$(mktemp -d)
+                echo "Storing ephemeral Redis data in $DATA_DIR"
+                ${pkgs.redis}/bin/redis-server \
+                  --dir $DATA_DIR \
+                  --bind 127.0.0.1 \
+                  --port 6379 \
+                  --save "" \
+                  --appendonly no
+              '';
+              readiness_probe = {
+                exec = {
+                  command = "${pkgs.redis}/bin/redis-cli -h 127.0.0.1 -p 6379 ping";
+                };
+                initial_delay_seconds = 1;
+                period_seconds = 2;
+              };
+            };
           };
         };
       };
