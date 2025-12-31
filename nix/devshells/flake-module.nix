@@ -66,11 +66,13 @@
               exit 0
             fi
 
-            if ! env | grep -q '^NCPS_TEST_'; then
-              exit 0
+            vars_to_unset=$(env | grep '^NCPS_TEST_' | cut -d= -f1)
+            if [ -n "$vars_to_unset" ]; then
+              echo "✅ Integration tests disabled." >&2
+              echo unset $vars_to_unset
+            else
+              echo "✅ No integration test variables to disable." >&2
             fi
-
-            echo unset $(env | grep '^NCPS_TEST_' | cut -d= -f1)
           '')
           pkgs.delve
           pkgs.go
