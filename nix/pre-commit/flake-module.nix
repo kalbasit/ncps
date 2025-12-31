@@ -10,7 +10,6 @@
     pre-commit.settings.hooks = {
       check-merge-conflicts.enable = true;
       deadnix.enable = true;
-      gofmt.enable = true;
       golangci-lint = {
         enable = true;
 
