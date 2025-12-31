@@ -678,13 +678,16 @@ Running multiple ncps instances provides:
 
 To run ncps in high-availability mode, you need:
 
-1. **Shared Storage** - All instances must access the same S3 bucket
+1. **Shared Storage** - All instances must access the same storage:
+   - **S3-compatible storage** (AWS S3, MinIO, etc.), OR
+   - **Shared filesystem** (NFS, GlusterFS, etc.) mounted on all instances
 1. **Shared Database** - All instances must connect to the same PostgreSQL or MySQL database
-1. **Redis Server** - Provides distributed locking for coordination
-
-**Note:** SQLite is not supported in HA mode as it doesn't support concurrent access from multiple processes.
+   - **SQLite is NOT supported** in HA mode (doesn't support concurrent writes from multiple processes)
+1. **Redis Server** - Provides distributed locking for coordination between instances
 
 ### Quick Start (HA Setup)
+
+**Option 1: Using S3-compatible storage**
 
 ```bash
 # Start Redis for distributed locking
@@ -715,6 +718,34 @@ docker run -d \
   --cache-redis-addrs=redis:6379
 
 # Set up load balancer (nginx, haproxy, etc.) to distribute traffic
+```
+
+**Option 2: Using shared filesystem (NFS)**
+
+```bash
+# Ensure NFS share is mounted on all instances at /mnt/ncps-cache
+
+# Start instance 1
+docker run -d \
+  --name ncps-1 \
+  -p 8501:8501 \
+  -v /mnt/ncps-cache:/var/lib/ncps \
+  kalbasit/ncps:latest serve \
+  --cache-hostname=cache.example.com \
+  --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
+  --cache-storage-local=/var/lib/ncps \
+  --cache-redis-addrs=redis:6379
+
+# Start instance 2 (mounting the same NFS share)
+docker run -d \
+  --name ncps-2 \
+  -p 8502:8501 \
+  -v /mnt/ncps-cache:/var/lib/ncps \
+  kalbasit/ncps:latest serve \
+  --cache-hostname=cache.example.com \
+  --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
+  --cache-storage-local=/var/lib/ncps \
+  --cache-redis-addrs=redis:6379
 ```
 
 ### Redis Configuration
