@@ -176,6 +176,11 @@ start_instance() {
   echo -e "${GREEN}✓ Instance ${instance_num} started (PID: ${INSTANCE_PIDS[-1]}, Port: ${port})${NC}"
 }
 
+# Migrating the database
+echo -e "${YELLOW}Migrating the database...${NC}"
+echo ""
+DBMATE_NO_DUMP_SCHEMA=true dbmate --url "${POSTGRES_URL}" up
+
 # Start all instances
 echo -e "${YELLOW}Starting ${NUM_INSTANCES} ncps instances in HA mode...${NC}"
 echo ""
