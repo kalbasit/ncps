@@ -69,10 +69,15 @@ SELECT CAST(COALESCE(SUM(file_size), 0) AS INTEGER) AS total_size
 FROM nars;
 
 -- name: GetLeastUsedNars :many
+-- NOTE: This query uses a correlated subquery which is not optimal for performance.
+-- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
+-- does not properly support filtering on window function results in subqueries.
 SELECT n1.*
 FROM nars n1
 WHERE (
     SELECT SUM(n2.file_size)
     FROM nars n2
-    WHERE n2.last_accessed_at <= n1.last_accessed_at
+    WHERE
+        n2.last_accessed_at < n1.last_accessed_at
+        OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 ) <= ?;
