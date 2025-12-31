@@ -280,9 +280,10 @@ ncps uses two types of distributed locks:
 ncps uses the [Redlock algorithm](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/) via [go-redsync](https://github.com/go-redsync/redsync):
 
 1. **Acquire**: Try to SET with NX (only if not exists) and PX (expiry time)
-1. **Extend**: Automatically extend lock before TTL expires (if operation ongoing)
 1. **Release**: Delete the key when operation completes
-1. **Expire**: Lock auto-expires after TTL if instance crashes
+1. **Expire**: Lock auto-expires after TTL if instance crashes (important for long-running downloads)
+
+**Note**: Lock extension is not currently implemented. The TTL should be set long enough to accommodate the longest expected download operation.
 
 ### Retry Strategy
 

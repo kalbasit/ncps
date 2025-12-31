@@ -126,9 +126,10 @@ type Cache struct {
 	lruLockTTL      time.Duration
 
 	// upstreamJobs is used to store in-progress jobs for pulling nars from
-	// upstream cache so incomping requests for the same nar can find and wait
-	// for jobs.
-	upstreamJobs map[string]*downloadState
+	// upstream cache so incoming requests for the same nar can find and wait
+	// for jobs. Protected by upstreamJobsMu for local synchronization.
+	upstreamJobsMu sync.Mutex
+	upstreamJobs   map[string]*downloadState
 
 	cron *cron.Cron
 }
@@ -562,22 +563,10 @@ func (c *Cache) pullNarIntoStore(
 	ds *downloadState,
 ) {
 	defer func() {
-		lockKey := "download:nar:" + narURL.Hash
-		if err := c.downloadLocker.Lock(context.Background(), lockKey, c.downloadLockTTL); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Str("hash", narURL.Hash).
-				Msg("failed to acquire lock for cleanup, continuing anyway")
-		}
-
+		// Clean up local job tracking
+		c.upstreamJobsMu.Lock()
 		delete(c.upstreamJobs, narURL.Hash)
-
-		if err := c.downloadLocker.Unlock(context.Background(), lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Str("hash", narURL.Hash).
-				Msg("failed to release lock after cleanup")
-		}
+		c.upstreamJobsMu.Unlock()
 
 		select {
 		case <-ds.start:
@@ -984,22 +973,10 @@ func (c *Cache) pullNarInfo(
 	ds *downloadState,
 ) {
 	done := func() {
-		lockKey := "download:narinfo:" + hash
-		if err := c.downloadLocker.Lock(context.Background(), lockKey, c.downloadLockTTL); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Str("hash", hash).
-				Msg("failed to acquire lock for cleanup, continuing anyway")
-		}
-
+		// Clean up local job tracking
+		c.upstreamJobsMu.Lock()
 		delete(c.upstreamJobs, hash)
-
-		if err := c.downloadLocker.Unlock(context.Background(), lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Str("hash", hash).
-				Msg("failed to release lock after cleanup")
-		}
+		c.upstreamJobsMu.Unlock()
 
 		close(ds.done)
 	}
@@ -1277,14 +1254,20 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		return ds
 	}
 
-	// Check upstreamJobs map and create downloadState if needed
+	// Check upstreamJobs map (protected by local mutex) and create downloadState if needed
+	c.upstreamJobsMu.Lock()
+
 	ds, ok := c.upstreamJobs[hash]
 	if !ok {
 		ds = newDownloadState()
 		c.upstreamJobs[hash] = ds
 
+		// Start download in background (must be done while holding the lock to ensure
+		// the job is registered before we release the distributed lock)
 		go c.pullNarInfo(ctx, hash, ds)
 	}
+
+	c.upstreamJobsMu.Unlock()
 
 	return ds
 }
@@ -1347,14 +1330,20 @@ func (c *Cache) prePullNar(
 		return ds
 	}
 
-	// Check upstreamJobs map and create downloadState if needed
+	// Check upstreamJobs map (protected by local mutex) and create downloadState if needed
+	c.upstreamJobsMu.Lock()
+
 	ds, ok := c.upstreamJobs[narURL.Hash]
 	if !ok {
 		ds = newDownloadState()
 		c.upstreamJobs[narURL.Hash] = ds
 
+		// Start download in background (must be done while holding the lock to ensure
+		// the job is registered before we release the distributed lock)
 		go c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
 	}
+
+	c.upstreamJobsMu.Unlock()
 
 	return ds
 }
@@ -1752,17 +1741,8 @@ func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error 
 }
 
 func (c *Cache) hasUpstreamJob(hash string) bool {
-	lockKey := "download:nar:" + hash
-	ctx := context.Background()
-
-	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
-		// If we can't acquire the lock, assume there's a job running
-		return true
-	}
-
-	defer func() {
-		_ = c.downloadLocker.Unlock(ctx, lockKey)
-	}()
+	c.upstreamJobsMu.Lock()
+	defer c.upstreamJobsMu.Unlock()
 
 	_, ok := c.upstreamJobs[hash]
 
