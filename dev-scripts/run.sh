@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Ensure the script runs in the context of the root directory
+readonly root_dir="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root_dir"
+
 # S3/MinIO configuration (matches the settings from nix/process-compose/flake-module.nix)
 S3_BUCKET="test-bucket"
 S3_ENDPOINT="127.0.0.1:9000"
