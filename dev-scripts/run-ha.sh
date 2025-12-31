@@ -182,7 +182,6 @@ start_instance() {
         --cache-storage-s3-bucket=${S3_BUCKET} \
         --cache-storage-s3-endpoint=http://${S3_ENDPOINT} \
         --cache-storage-s3-region=${S3_REGION} \
-        --cache-storage-s3-force-path-style=true \
         --cache-redis-addrs=${REDIS_ADDR} \
         --cache-lock-download-ttl=5m \
         --cache-lock-lru-ttl=30m \
