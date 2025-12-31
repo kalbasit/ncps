@@ -14,20 +14,38 @@
           '')
           # Helper scripts for enabling integration tests
           (pkgs.writeShellScriptBin "enable-s3-tests" ''
+            if [ -t 1 ]; then
+              echo "🛑 Run 'eval \"\$(enable-s3-tests)\"' to enable S3 tests." >&2
+              exit 0
+            fi
+
+            echo "✅ S3 tests enabled, don't forget to run 'nix run .#deps' to start MinIO." >&2
             cat <<'EOF'
-            export NCPS_TEST_S3_BUCKET="test-bucket"
-            export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
-            export NCPS_TEST_S3_REGION="us-east-1"
-            export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
-            export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
+              export NCPS_TEST_S3_BUCKET="test-bucket"
+              export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
+              export NCPS_TEST_S3_REGION="us-east-1"
+              export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
+              export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
             EOF
           '')
           (pkgs.writeShellScriptBin "enable-postgres-tests" ''
+            if [ -t 1 ]; then
+              echo "🛑 Run 'eval \"\$(enable-postgres-tests)\"' to enable PostgreSQL tests." >&2
+              exit 0
+            fi
+
+            echo "✅ PostgreSQL tests enabled, don't forget to run 'nix run .#deps' to start PostgreSQL." >&2
             cat <<'EOF'
             export NCPS_TEST_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
             EOF
           '')
           (pkgs.writeShellScriptBin "enable-mysql-tests" ''
+            if [ -t 1 ]; then
+              echo "🛑 Run 'eval \"\$(enable-mysql-tests)\"' to enable MySQL tests." >&2
+              exit 0
+            fi
+
+            echo "✅ MySQL tests enabled, don't forget to run 'nix run .#deps' to start MySQL." >&2
             cat <<'EOF'
             export NCPS_TEST_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
             EOF
@@ -38,16 +56,15 @@
             EOF
           '')
           (pkgs.writeShellScriptBin "enable-all-integration-tests" ''
-            cat <<'EOF'
-            export NCPS_TEST_S3_BUCKET="test-bucket"
-            export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
-            export NCPS_TEST_S3_REGION="us-east-1"
-            export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
-            export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
-            export NCPS_TEST_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
-            export NCPS_TEST_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
-            export NCPS_ENABLE_REDIS_TESTS=1
-            EOF
+            if [ -t 1 ]; then
+              echo "🛑 Run 'eval \"\$(enable-all-integration-tests)\"' to enable all integration tests." >&2
+              exit 0
+            fi
+
+            enable-s3-tests
+            enable-postgres-tests
+            enable-mysql-tests
+            enable-redis-tests
           '')
           (pkgs.writeShellScriptBin "disable-integration-tests" ''
             cat <<'EOF'
