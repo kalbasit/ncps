@@ -111,6 +111,9 @@ type Locker struct {
 
 	// circuitBreaker tracks Redis health
 	circuitBreaker *circuitBreaker
+
+	// Track lock acquisition times for duration metrics
+	acquisitionTimes sync.Map
 }
 
 // NewLocker creates a new Redis-based locker.
@@ -221,6 +224,9 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 	for attempt := 0; attempt < l.retryConfig.MaxAttempts; attempt++ {
 		if attempt > 0 {
+			// Record retry attempt for metrics
+			lock.RecordLockRetryAttempt(ctx, lock.LockTypeExclusive)
+
 			// Calculate backoff delay
 			delay := l.calculateBackoff(attempt)
 
@@ -232,6 +238,8 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 			select {
 			case <-ctx.Done():
+				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureContextCanceled)
+
 				return ctx.Err()
 			case <-time.After(delay):
 			}
@@ -256,6 +264,8 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 						Str("key", key).
 						Msg("Redis connection failed, switching to degraded mode")
 
+					lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 					return l.fallbackLocker.Lock(ctx, key, ttl)
 				}
 			}
@@ -267,6 +277,8 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			}
 
 			// Other error, fail immediately
+			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureRedisError)
+
 			return fmt.Errorf("failed to acquire lock %s: %w", key, err)
 		}
 
@@ -277,6 +289,10 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 		l.circuitBreaker.recordSuccess()
 
+		// Record metrics
+		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockResultSuccess)
+		l.acquisitionTimes.Store(key, time.Now())
+
 		zerolog.Ctx(ctx).Debug().
 			Str("key", key).
 			Dur("ttl", ttl).
@@ -286,12 +302,23 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		return nil
 	}
 
+	// All retries exhausted
+	lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureMaxRetries)
+
 	return fmt.Errorf("failed to acquire lock %s after %d attempts: %w",
 		key, l.retryConfig.MaxAttempts, lastErr)
 }
 
 // Unlock releases an exclusive lock.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
+	// Record lock duration
+	if val, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
+		if startTime, ok := val.(time.Time); ok {
+			duration := time.Since(startTime).Seconds()
+			lock.RecordLockDuration(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, duration)
+		}
+	}
+
 	// Check if we're in degraded mode
 	if l.circuitBreaker.isOpen() && l.allowDegradedMode {
 		return l.fallbackLocker.Unlock(ctx, key)
@@ -328,6 +355,8 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
 	if l.circuitBreaker.isOpen() {
+		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 		if l.allowDegradedMode {
 			return l.fallbackLocker.TryLock(ctx, key, ttl)
 		}
@@ -344,6 +373,13 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	)
 
 	err := mutex.LockContext(ctx)
+	if errors.Is(err, redsync.ErrFailed) {
+		// Lock is held by someone else
+		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockResultContention)
+
+		return false, nil
+	}
+
 	if err != nil {
 		// Check if lock is already taken (normal failure condition)
 		if errors.Is(err, redsync.ErrFailed) || isLockAlreadyTakenError(err) {
@@ -355,9 +391,13 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 			l.circuitBreaker.recordFailure()
 
 			if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 				return l.fallbackLocker.TryLock(ctx, key, ttl)
 			}
 		}
+
+		lock.RecordLockFailure(ctx, "exclusive", "distributed", "redis_error")
 
 		return false, fmt.Errorf("error trying lock %s: %w", key, err)
 	}
@@ -368,6 +408,10 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	l.mu.Unlock()
 
 	l.circuitBreaker.recordSuccess()
+
+	// Record metrics
+	lock.RecordLockAcquisition(ctx, "exclusive", "distributed", "success")
+	l.acquisitionTimes.Store(key, time.Now())
 
 	return true, nil
 }
@@ -407,6 +451,10 @@ type RWLocker struct {
 
 	// circuitBreaker tracks Redis health
 	circuitBreaker *circuitBreaker
+
+	// Track lock acquisition times for duration metrics (write locks only)
+	// Note: Read lock duration tracking is not supported due to concurrent access
+	writeAcquisitionTimes sync.Map
 }
 
 // NewRWLocker creates a new Redis-based read-write locker.
@@ -476,6 +524,8 @@ func NewRWLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDeg
 func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if rw.circuitBreaker.isOpen() {
+		lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 		if rw.allowDegradedMode {
 			return rw.fallbackLocker.Lock(ctx, key, ttl)
 		}
@@ -491,11 +541,16 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 
 	for attempt := 0; attempt < rw.retryConfig.MaxAttempts; attempt++ {
 		if attempt > 0 {
+			// Record retry attempt for metrics
+			lock.RecordLockRetryAttempt(ctx, lock.LockTypeWrite)
+
 			// Calculate backoff delay
 			delay := rw.calculateBackoff(attempt)
 
 			select {
 			case <-ctx.Done():
+				lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureContextCanceled)
+
 				return ctx.Err()
 			case <-time.After(delay):
 			}
@@ -510,6 +565,8 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 				rw.circuitBreaker.recordFailure()
 
 				if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+					lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 					return rw.fallbackLocker.Lock(ctx, key, ttl)
 				}
 			}
@@ -571,6 +628,10 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 				// Success!
 				rw.circuitBreaker.recordSuccess()
 
+				// Record successful acquisition
+				lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultSuccess)
+				rw.writeAcquisitionTimes.Store(key, time.Now())
+
 				return nil
 			}
 
@@ -586,11 +647,16 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 			case <-ctx.Done():
 				rw.client.Del(ctx, writerKey) // Clean up
 
+				lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureContextCanceled)
+
 				return ctx.Err()
 			case <-time.After(10 * time.Millisecond):
 			}
 		}
 	}
+
+	// All retries exhausted
+	lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureMaxRetries)
 
 	return fmt.Errorf("failed to acquire write lock after %d attempts: %w",
 		rw.retryConfig.MaxAttempts, lastErr)
@@ -617,6 +683,14 @@ func (rw *RWLocker) calculateBackoff(attempt int) time.Duration {
 
 // Unlock releases an exclusive write lock.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
+	// Record lock duration
+	if val, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
+		if startTime, ok := val.(time.Time); ok {
+			duration := time.Since(startTime).Seconds()
+			lock.RecordLockDuration(ctx, lock.LockTypeWrite, lock.LockModeDistributed, duration)
+		}
+	}
+
 	if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
 		return rw.fallbackLocker.Unlock(ctx, key)
 	}
@@ -630,6 +704,8 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 // TryLock attempts to acquire an exclusive write lock without blocking.
 func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	if rw.circuitBreaker.isOpen() {
+		lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 		if rw.allowDegradedMode {
 			return rw.fallbackLocker.TryLock(ctx, key, ttl)
 		}
@@ -648,14 +724,20 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 			rw.circuitBreaker.recordFailure()
 
 			if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+				lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 				return rw.fallbackLocker.TryLock(ctx, key, ttl)
 			}
 		}
+
+		lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureRedisError)
 
 		return false, fmt.Errorf("error trying write lock: %w", err)
 	}
 
 	if !success {
+		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultContention)
+
 		return false, nil // Lock is held
 	}
 
@@ -663,6 +745,8 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 	readers, err := rw.client.HGetAll(ctx, readersKey).Result()
 	if err != nil {
 		rw.client.Del(ctx, writerKey) // Clean up
+
+		lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureRedisError)
 
 		return false, fmt.Errorf("error checking readers: %w", err)
 	}
@@ -691,10 +775,16 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 	if activeReaders > 0 {
 		rw.client.Del(ctx, writerKey) // Clean up, readers present
 
+		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultContention)
+
 		return false, nil
 	}
 
 	rw.circuitBreaker.recordSuccess()
+
+	// Record successful acquisition
+	lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultSuccess)
+	rw.writeAcquisitionTimes.Store(key, time.Now())
 
 	return true, nil
 }
@@ -702,6 +792,8 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 // RLock acquires a shared read lock.
 func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) error {
 	if rw.circuitBreaker.isOpen() {
+		lock.RecordLockFailure(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 		if rw.allowDegradedMode {
 			return rw.fallbackLocker.RLock(ctx, key, ttl)
 		}
@@ -726,9 +818,13 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 				rw.circuitBreaker.recordFailure()
 
 				if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+					lock.RecordLockFailure(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
+
 					return rw.fallbackLocker.RLock(ctx, key, ttl)
 				}
 			}
+
+			lock.RecordLockFailure(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockFailureRedisError)
 
 			return fmt.Errorf("error checking writer lock: %w", err)
 		}
@@ -738,6 +834,8 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		}
 
 		if time.Now().After(deadline) {
+			lock.RecordLockFailure(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockFailureTimeout)
+
 			return ErrWriteLockTimeout
 		}
 
@@ -749,10 +847,15 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 
 	err := rw.client.HSet(ctx, lockKey, readerID, expiresAt).Err()
 	if err != nil {
+		lock.RecordLockFailure(ctx, "read", "distributed", "redis_error")
+
 		return fmt.Errorf("error acquiring read lock: %w", err)
 	}
 
 	rw.circuitBreaker.recordSuccess()
+
+	// Record successful acquisition
+	lock.RecordLockAcquisition(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockResultSuccess)
 
 	return nil
 }
