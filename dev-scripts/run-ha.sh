@@ -40,8 +40,13 @@ cleanup() {
     fi
   done
 
-  # Wait for processes to terminate
-  sleep 1
+  # Wait up to 5 seconds for processes to terminate
+  for _ in {1..5}; do
+    if ! kill -0 "${INSTANCE_PIDS[@]}" 2>/dev/null; then
+      break # All processes terminated
+    fi
+    sleep 1
+  done
 
   # Force kill if still running
   for pid in "${INSTANCE_PIDS[@]}"; do
