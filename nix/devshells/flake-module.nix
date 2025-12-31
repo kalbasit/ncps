@@ -50,11 +50,6 @@
             export NCPS_TEST_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
             EOF
           '')
-          (pkgs.writeShellScriptBin "enable-redis-tests" ''
-            cat <<'EOF'
-            export NCPS_ENABLE_REDIS_TESTS=1
-            EOF
-          '')
           (pkgs.writeShellScriptBin "enable-integration-tests" ''
             if [ -t 1 ]; then
               echo "🛑 Run 'eval \"\$(enable-integration-tests)\"' to enable all integration tests." >&2
@@ -82,7 +77,6 @@
           pkgs.golangci-lint
           pkgs.minio
           pkgs.minio-client
-          pkgs.redis
           pkgs.sqlc
           pkgs.sqlfluff
           pkgs.watchexec
@@ -114,7 +108,6 @@
           echo "  eval \"\$(enable-s3-tests)\"           - Enable S3/MinIO tests"
           echo "  eval \"\$(enable-postgres-tests)\"     - Enable PostgreSQL tests"
           echo "  eval \"\$(enable-mysql-tests)\"        - Enable MySQL tests"
-          echo "  eval \"\$(enable-redis-tests)\"        - Enable Redis tests"
           echo "  eval \"\$(enable-integration-tests)\"  - Enable all integration tests"
           echo "  eval \"\$(disable-integration-tests)\" - Disable all integration tests"
           echo ""
