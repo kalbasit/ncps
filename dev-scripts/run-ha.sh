@@ -178,7 +178,7 @@ start_instance() {
       ./bin/ncps serve \
         --cache-hostname=cache-ha-${instance_num}.example.com \
         --cache-data-path=${data_dir} \
-        --cache-database-url=${POSTGRES_URL} \
+        --cache-database-url='${POSTGRES_URL}' \
         --cache-storage-s3-bucket=${S3_BUCKET} \
         --cache-storage-s3-endpoint=http://${S3_ENDPOINT} \
         --cache-storage-s3-region=${S3_REGION} \
