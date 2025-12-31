@@ -100,6 +100,18 @@ EOF
   exit 1
 }
 
+check_dependency() {
+  local name="$1"
+  shift
+
+  if ! "$@" >/dev/null 2>&1; then
+    echo -e "${RED}ERROR: ${name} is not running${NC}"
+    echo -e "${YELLOW}Start dependencies with: nix run .#deps${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✓ ${name} is ready${NC}"
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -116,30 +128,9 @@ done
 
 # Check if dependencies are running
 echo -e "${BLUE}Checking dependencies...${NC}"
-
-# Check PostgreSQL
-if ! pg_isready -h 127.0.0.1 -p 5432 -U test-user >/dev/null 2>&1; then
-  echo -e "${RED}ERROR: PostgreSQL is not running${NC}"
-  echo -e "${YELLOW}Start dependencies with: nix run .#deps${NC}"
-  exit 1
-fi
-echo -e "${GREEN}✓ PostgreSQL is ready${NC}"
-
-# Check MinIO
-if ! curl -s http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
-  echo -e "${RED}ERROR: MinIO is not running${NC}"
-  echo -e "${YELLOW}Start dependencies with: nix run .#deps${NC}"
-  exit 1
-fi
-echo -e "${GREEN}✓ MinIO is ready${NC}"
-
-# Check Redis
-if ! redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null 2>&1; then
-  echo -e "${RED}ERROR: Redis is not running${NC}"
-  echo -e "${YELLOW}Start dependencies with: nix run .#deps${NC}"
-  exit 1
-fi
-echo -e "${GREEN}✓ Redis is ready${NC}"
+check_dependency "PostgreSQL" pg_isready -h 127.0.0.1 -p 5432 -U test-user
+check_dependency "MinIO" curl -s http://127.0.0.1:9000/minio/health/live
+check_dependency "Redis" redis-cli -h 127.0.0.1 -p 6379 ping
 
 echo ""
 
