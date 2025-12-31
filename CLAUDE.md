@@ -222,9 +222,9 @@ Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db
 When creating new database migrations, always use `dbmate new` to generate properly timestamped migration files:
 
 ```bash
-dbmate --migrations-dir db/migrations/sqlite new migration_name
-dbmate --migrations-dir db/migrations/postgres new migration_name
-dbmate --migrations-dir db/migrations/mysql new migration_name
+dbmate --url sqlite:/path/to/db.sqlite new migration_name
+dbmate --url postgresql://user:pass@localhost:5432/ncps new migration_name
+dbmate --url mysql://user:pass@localhost:3306/ncps new migration_name
 ```
 
 This creates timestamped migration files (e.g., `20251230223951_migration_name.sql`) with the standard dbmate template:
@@ -236,6 +236,33 @@ This creates timestamped migration files (e.g., `20251230223951_migration_name.s
 -- migrate:down
 
 ```
+
+**How the dbmate wrapper works:**
+
+The `dbmate` command in the development environment and Docker images is actually a wrapper (separate `dbmate-wrapper` binary in `nix/dbmate-wrapper/`). The wrapper automatically detects the migrations directory based on the database URL scheme:
+
+- `sqlite:` → uses `db/migrations/sqlite`
+- `postgresql:` or `postgres:` → uses `db/migrations/postgres`
+- `mysql:` → uses `db/migrations/mysql`
+
+This means you **don't need to specify `--migrations-dir` manually** - the wrapper handles it automatically!
+
+If you need to override the auto-detection, you can still provide `--migrations-dir` explicitly.
+
+**Implementation details:**
+
+The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
+
+- Parses the `--url` flag to determine the database type (sqlite, postgres, mysql)
+- Uses the `NCPS_DB_MIGRATIONS_DIR` environment variable to locate the base migrations directory
+  - In Docker: set to `/share/ncps/db/migrations` (static path in container)
+  - In dev shell: set dynamically via `shellHook` to `$(git rev-parse --show-toplevel)/db/migrations` (repo root)
+  - This ensures migration changes are immediately visible without rebuilding
+- Automatically sets the `DBMATE_MIGRATIONS_DIR` environment variable to the appropriate database-specific path:
+  - Example: `${NCPS_DB_MIGRATIONS_DIR}/sqlite` or `${NCPS_DB_MIGRATIONS_DIR}/postgres`
+- Calls the real `dbmate` binary (consistently renamed to `dbmate.real` in both dev and Docker)
+- Respects user overrides: if `DBMATE_MIGRATIONS_DIR` is already set or `--migrations-dir` is provided, the wrapper passes through without modification
+- This keeps the wrapper simple and doesn't require rebuilding ncps to update it
 
 **IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `dbmate new` to ensure proper chronological ordering.
 

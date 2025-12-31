@@ -47,6 +47,7 @@
 
             # required for migrating the database
             pkgs.dbmate
+            config.packages.dbmate-wrapper
 
             # the ncps package
             package-ncps
@@ -55,7 +56,9 @@
         config = {
           Cmd = [ "/bin/ncps" ];
           Env = [
-            "DBMATE_MIGRATIONS_DIR=/share/ncps/db/migrations"
+            # NCPS_DB_MIGRATIONS_DIR tells dbmate-wrapper where to find migrations
+            "NCPS_DB_MIGRATIONS_DIR=/share/ncps/db/migrations"
+            # DBMATE_MIGRATIONS_DIR is set dynamically by dbmate-wrapper based on --url
             "DBMATE_SCHEMA_FILE=/share/ncps/db/schema.sql"
             "DBMATE_NO_DUMP_SCHEMA=true"
           ];
@@ -79,6 +82,11 @@
           #!${pkgs.runtimeShell}
           mkdir -p tmp
           chmod -R 1777 tmp
+
+          # Rename real dbmate binary and create symlink to dbmate-wrapper
+          # The wrapper auto-detects the migrations directory based on the database URL
+          mv bin/dbmate bin/dbmate.real
+          ln -s dbmate-wrapper bin/dbmate
         '';
       };
 
