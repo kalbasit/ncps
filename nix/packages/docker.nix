@@ -83,7 +83,7 @@
 
           # Rename real dbmate binary and create symlink to dbmate-wrapper
           # The wrapper auto-detects the migrations directory based on the database URL
-          mv bin/dbmate bin/.dbmate.bin
+          mv bin/dbmate bin/dbmate.real
           ln -s dbmate-wrapper bin/dbmate
         '';
       };

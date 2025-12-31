@@ -66,17 +66,11 @@ func run() int {
 // execDbmate executes the real dbmate binary with the given arguments.
 func execDbmate(args []string) int {
 	// Look for the real dbmate binary
-	// In the Docker image, it's at /bin/.dbmate.bin
-	// In dev environment, it's dbmate.real in PATH
-	dbmatePath := "/bin/.dbmate.bin"
-	if _, err := os.Stat(dbmatePath); os.IsNotExist(err) {
-		// Fall back to looking for dbmate.real in PATH
-		var findErr error
-		dbmatePath, findErr = exec.LookPath("dbmate.real")
-		if findErr != nil {
-			fmt.Fprintf(os.Stderr, "Error: could not find dbmate binary (tried /bin/.dbmate.bin and dbmate.real in PATH): %v\n", findErr)
-			return 1
-		}
+	// Consistently named as "dbmate.real" in both dev and Docker environments
+	dbmatePath, err := exec.LookPath("dbmate.real")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not find dbmate.real in PATH: %v\n", err)
+		return 1
 	}
 
 	cmd := exec.Command(dbmatePath, args...)

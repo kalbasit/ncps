@@ -254,7 +254,7 @@ If you need to override the auto-detection, you can still provide `--migrations-
 The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
 - Parses the `--url` flag to determine the database type
 - Automatically injects the appropriate `--migrations-dir` flag
-- Calls the real `dbmate` binary (renamed to `dbmate.real` in dev, `.dbmate.bin` in Docker)
+- Calls the real `dbmate` binary (consistently renamed to `dbmate.real` in both dev and Docker)
 - This keeps the wrapper simple and doesn't require rebuilding ncps to update it
 
 **IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `dbmate new` to ensure proper chronological ordering.
