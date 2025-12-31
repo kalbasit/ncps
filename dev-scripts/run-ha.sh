@@ -142,15 +142,6 @@ echo -e "${GREEN}✓ Redis is ready${NC}"
 
 echo ""
 
-# Build the application first
-echo -e "${BLUE}Building ncps...${NC}"
-if ! go build -o ./bin/ncps .; then
-  echo -e "${RED}Build failed${NC}"
-  exit 1
-fi
-echo -e "${GREEN}✓ Build successful${NC}"
-echo ""
-
 # Function to start a single instance
 start_instance() {
   local instance_num=$1
