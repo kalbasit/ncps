@@ -312,9 +312,11 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 // Unlock releases an exclusive lock.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
 	// Record lock duration
-	if startTime, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
-		duration := time.Since(startTime.(time.Time)).Seconds()
-		lock.RecordLockDuration(ctx, "exclusive", "distributed", duration)
+	if val, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
+		if startTime, ok := val.(time.Time); ok {
+			duration := time.Since(startTime).Seconds()
+			lock.RecordLockDuration(ctx, "exclusive", "distributed", duration)
+		}
 	}
 
 	// Check if we're in degraded mode
@@ -353,13 +355,11 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
 	if l.circuitBreaker.isOpen() {
-		if l.allowDegradedMode {
-			lock.RecordLockFailure(ctx, "exclusive", "distributed", "circuit_breaker")
+		lock.RecordLockFailure(ctx, "exclusive", "distributed", "circuit_breaker")
 
+		if l.allowDegradedMode {
 			return l.fallbackLocker.TryLock(ctx, key, ttl)
 		}
-
-		lock.RecordLockFailure(ctx, "exclusive", "distributed", "circuit_breaker")
 
 		return false, ErrCircuitBreakerOpen
 	}

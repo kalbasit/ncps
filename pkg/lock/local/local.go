@@ -26,12 +26,12 @@ func NewLocker() lock.Locker {
 	return &Locker{}
 }
 
-// Lock acquires an exclusive lock. The key and ttl parameters are ignored.
+// Lock acquires an exclusive lock. The ttl parameter is ignored, but the key is used for metrics.
 func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
+	l.mu.Lock()
+
 	// Record acquisition attempt
 	lock.RecordLockAcquisition(ctx, "exclusive", "local", "success")
-
-	l.mu.Lock()
 
 	// Track acquisition time for duration metrics
 	l.acquisitionTimes.Store(key, time.Now())
@@ -42,9 +42,11 @@ func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
 // Unlock releases an exclusive lock. The key parameter is ignored.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
 	// Calculate and record lock hold duration
-	if startTime, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
-		duration := time.Since(startTime.(time.Time)).Seconds()
-		lock.RecordLockDuration(ctx, "exclusive", "local", duration)
+	if val, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
+		if startTime, ok := val.(time.Time); ok {
+			duration := time.Since(startTime).Seconds()
+			lock.RecordLockDuration(ctx, "exclusive", "local", duration)
+		}
 	}
 
 	l.mu.Unlock()
@@ -84,9 +86,9 @@ func NewRWLocker() lock.RWLocker {
 
 // Lock acquires an exclusive lock. The key and ttl parameters are ignored.
 func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error {
-	lock.RecordLockAcquisition(ctx, "write", "local", "success")
-
 	rw.mu.Lock()
+
+	lock.RecordLockAcquisition(ctx, "write", "local", "success")
 
 	rw.writeAcquisitionTimes.Store(key, time.Now())
 
@@ -122,9 +124,9 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 
 // RLock acquires a shared read lock. The key and ttl parameters are ignored.
 func (rw *RWLocker) RLock(ctx context.Context, key string, _ time.Duration) error {
-	lock.RecordLockAcquisition(ctx, "read", "local", "success")
-
 	rw.mu.RLock()
+
+	lock.RecordLockAcquisition(ctx, "read", "local", "success")
 
 	rw.readAcquisitionTimes.Store(key, time.Now())
 
