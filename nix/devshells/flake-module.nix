@@ -51,6 +51,12 @@
             EOF
           '')
           (pkgs.writeShellScriptBin "enable-redis-tests" ''
+            if [ -t 1 ]; then
+              echo "🛑 Run 'eval \"\$(enable-redis-tests)\"' to enable Redis tests." >&2
+              exit 0
+            fi
+
+            echo "✅ Redis tests enabled, don't forget to run 'nix run .#deps' to start Redis." >&2
             cat <<'EOF'
             export NCPS_ENABLE_REDIS_TESTS=1
             EOF
