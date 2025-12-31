@@ -18,12 +18,15 @@ type Locker struct {
 	mu sync.Mutex
 
 	// Track lock acquisition times for metrics (key -> acquisition time)
-	acquisitionTimes sync.Map
+	// Protected by mu, so no need for sync.Map
+	acquisitionTimes map[string]time.Time
 }
 
 // NewLocker creates a new local locker.
 func NewLocker() lock.Locker {
-	return &Locker{}
+	return &Locker{
+		acquisitionTimes: make(map[string]time.Time),
+	}
 }
 
 // Lock acquires an exclusive lock. The ttl parameter is ignored, but the key is used for metrics.
@@ -31,10 +34,10 @@ func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
 	l.mu.Lock()
 
 	// Record acquisition attempt
-	lock.RecordLockAcquisition(ctx, "exclusive", "local", "success")
+	lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultSuccess)
 
 	// Track acquisition time for duration metrics
-	l.acquisitionTimes.Store(key, time.Now())
+	l.acquisitionTimes[key] = time.Now()
 
 	return nil
 }
@@ -42,11 +45,10 @@ func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
 // Unlock releases an exclusive lock. The key parameter is ignored.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
 	// Calculate and record lock hold duration
-	if val, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
-		if startTime, ok := val.(time.Time); ok {
-			duration := time.Since(startTime).Seconds()
-			lock.RecordLockDuration(ctx, "exclusive", "local", duration)
-		}
+	if startTime, ok := l.acquisitionTimes[key]; ok {
+		duration := time.Since(startTime).Seconds()
+		lock.RecordLockDuration(ctx, lock.LockTypeExclusive, lock.LockModeLocal, duration)
+		delete(l.acquisitionTimes, key)
 	}
 
 	l.mu.Unlock()
@@ -60,10 +62,11 @@ func (l *Locker) TryLock(ctx context.Context, key string, _ time.Duration) (bool
 	acquired := l.mu.TryLock()
 
 	if acquired {
-		lock.RecordLockAcquisition(ctx, "exclusive", "local", "success")
-		l.acquisitionTimes.Store(key, time.Now())
+		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultSuccess)
+
+		l.acquisitionTimes[key] = time.Now()
 	} else {
-		lock.RecordLockAcquisition(ctx, "exclusive", "local", "contention")
+		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultContention)
 	}
 
 	return acquired, nil
@@ -75,32 +78,34 @@ type RWLocker struct {
 
 	// Track lock acquisition times for duration metrics (write locks only)
 	// Note: Read lock duration tracking is not supported due to concurrent access
-	writeAcquisitionTimes sync.Map
+	// Protected by mu (write locks are exclusive), so no need for sync.Map
+	writeAcquisitionTimes map[string]time.Time
 }
 
 // NewRWLocker creates a new local read-write locker.
 func NewRWLocker() lock.RWLocker {
-	return &RWLocker{}
+	return &RWLocker{
+		writeAcquisitionTimes: make(map[string]time.Time),
+	}
 }
 
 // Lock acquires an exclusive lock. The key and ttl parameters are ignored.
 func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error {
 	rw.mu.Lock()
 
-	lock.RecordLockAcquisition(ctx, "write", "local", "success")
+	lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultSuccess)
 
-	rw.writeAcquisitionTimes.Store(key, time.Now())
+	rw.writeAcquisitionTimes[key] = time.Now()
 
 	return nil
 }
 
 // Unlock releases an exclusive lock. The key parameter is ignored.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
-	if val, ok := rw.writeAcquisitionTimes.LoadAndDelete(key); ok {
-		if startTime, ok := val.(time.Time); ok {
-			duration := time.Since(startTime).Seconds()
-			lock.RecordLockDuration(ctx, "write", "local", duration)
-		}
+	if startTime, ok := rw.writeAcquisitionTimes[key]; ok {
+		duration := time.Since(startTime).Seconds()
+		lock.RecordLockDuration(ctx, lock.LockTypeWrite, lock.LockModeLocal, duration)
+		delete(rw.writeAcquisitionTimes, key)
 	}
 
 	rw.mu.Unlock()
@@ -114,10 +119,11 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 	acquired := rw.mu.TryLock()
 
 	if acquired {
-		lock.RecordLockAcquisition(ctx, "write", "local", "success")
-		rw.writeAcquisitionTimes.Store(key, time.Now())
+		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultSuccess)
+
+		rw.writeAcquisitionTimes[key] = time.Now()
 	} else {
-		lock.RecordLockAcquisition(ctx, "write", "local", "contention")
+		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultContention)
 	}
 
 	return acquired, nil
@@ -127,7 +133,7 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 func (rw *RWLocker) RLock(ctx context.Context, _ string, _ time.Duration) error {
 	rw.mu.RLock()
 
-	lock.RecordLockAcquisition(ctx, "read", "local", "success")
+	lock.RecordLockAcquisition(ctx, lock.LockTypeRead, lock.LockModeLocal, lock.LockResultSuccess)
 
 	return nil
 }

@@ -10,6 +10,27 @@ import (
 
 const (
 	otelPackageName = "github.com/kalbasit/ncps/pkg/lock"
+
+	// Lock type constants for metrics.
+	LockTypeExclusive = "exclusive"
+	LockTypeRead      = "read"
+	LockTypeWrite     = "write"
+
+	// Lock mode constants for metrics.
+	LockModeLocal       = "local"
+	LockModeDistributed = "distributed"
+
+	// Lock result constants for metrics.
+	LockResultSuccess    = "success"
+	LockResultFailure    = "failure"
+	LockResultContention = "contention"
+
+	// Lock failure reason constants for metrics.
+	LockFailureTimeout         = "timeout"
+	LockFailureRedisError      = "redis_error"
+	LockFailureContextCanceled = "context_canceled"
+	LockFailureCircuitBreaker  = "circuit_breaker"
+	LockFailureMaxRetries      = "max_retries"
 )
 
 var (
@@ -77,9 +98,9 @@ func init() {
 }
 
 // RecordLockAcquisition records a lock acquisition attempt.
-// lockType should be "exclusive", "read", or "write".
-// mode should be "local" or "distributed".
-// result should be "success", "failure", or "contention".
+// lockType should be one of LockType* constants.
+// mode should be one of LockMode* constants.
+// result should be one of LockResult* constants.
 func RecordLockAcquisition(ctx context.Context, lockType, mode, result string) {
 	if lockAcquisitionsTotal == nil {
 		return
@@ -95,8 +116,8 @@ func RecordLockAcquisition(ctx context.Context, lockType, mode, result string) {
 }
 
 // RecordLockDuration records how long a lock was held.
-// lockType should be "exclusive", "read", or "write".
-// mode should be "local" or "distributed".
+// lockType should be one of LockType* constants.
+// mode should be one of LockMode* constants.
 // duration should be in seconds.
 func RecordLockDuration(ctx context.Context, lockType, mode string, duration float64) {
 	if lockHoldDuration == nil {
@@ -112,9 +133,9 @@ func RecordLockDuration(ctx context.Context, lockType, mode string, duration flo
 }
 
 // RecordLockFailure records a lock failure.
-// lockType should be "exclusive", "read", or "write".
-// mode should be "local" or "distributed".
-// reason describes why the lock failed (e.g., "timeout", "redis_error", "context_canceled").
+// lockType should be one of LockType* constants.
+// mode should be one of LockMode* constants.
+// reason should be one of LockFailure* constants.
 func RecordLockFailure(ctx context.Context, lockType, mode, reason string) {
 	if lockFailuresTotal == nil {
 		return
@@ -130,7 +151,7 @@ func RecordLockFailure(ctx context.Context, lockType, mode, reason string) {
 }
 
 // RecordLockRetryAttempt records a lock retry attempt.
-// lockType should be "exclusive", "read", or "write".
+// lockType should be one of LockType* constants.
 func RecordLockRetryAttempt(ctx context.Context, lockType string) {
 	if lockRetryAttemptsTotal == nil {
 		return
