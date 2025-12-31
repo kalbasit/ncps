@@ -1,3 +1,3 @@
-module github.com/kalbasit/ncps/nix/dbmate-wrapper/src
+module dbmate-wrapper
 
 go 1.25.5
