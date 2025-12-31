@@ -75,8 +75,10 @@
           pkgs.delve
           pkgs.go
           pkgs.golangci-lint
+          pkgs.mariadb
           pkgs.minio
           pkgs.minio-client
+          pkgs.postgresql
           pkgs.sqlc
           pkgs.sqlfluff
           pkgs.watchexec
