@@ -4,6 +4,8 @@
 -- recreate the table. This ensures that when a narinfo is deleted,
 -- its related nars are automatically deleted
 
+BEGIN;
+
 -- Create new table with CASCADE constraint
 CREATE TABLE nars_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,10 +55,14 @@ CREATE UNIQUE INDEX idx_nars_hash ON nars (hash);
 CREATE INDEX idx_nars_narinfo_id ON nars (narinfo_id);
 CREATE INDEX idx_nars_last_accessed_at ON nars (last_accessed_at);
 
+COMMIT;
+
 -- migrate:down
 -- Revert to foreign key without CASCADE
 -- SQLite doesn't support ALTER TABLE for foreign keys, so we need to
 -- recreate the table
+
+BEGIN;
 
 -- Create table without CASCADE constraint
 CREATE TABLE nars_old (
@@ -106,3 +112,5 @@ CREATE UNIQUE INDEX idx_nars_id ON nars (id);
 CREATE UNIQUE INDEX idx_nars_hash ON nars (hash);
 CREATE INDEX idx_nars_narinfo_id ON nars (narinfo_id);
 CREATE INDEX idx_nars_last_accessed_at ON nars (last_accessed_at);
+
+COMMIT;
