@@ -1,4 +1,22 @@
 version: "2"
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - alias
+        - prefix(github.com/kalbasit/ncps)
+        - blank
+        - dot
+      custom-order: true
+  exclusions:
+    generated: lax
+    paths:
+      - nix/dbmate-wrapper/src/
 linters:
   enable:
     - err113
@@ -44,32 +62,9 @@ linters:
       - legacy
       - std-error-handling
     paths:
-      - third_party$
-      - builtin$
-      - examples$
+      - nix/dbmate-wrapper/src/
   settings:
     wsl_v5:
       allow-first-in-block: true
       allow-whole-block: false
       branch-max-lines: 2
-formatters:
-  enable:
-    - gci
-    - gofumpt
-    - goimports
-  settings:
-    gci:
-      sections:
-        - standard
-        - default
-        - alias
-        - localmodule
-        - blank
-        - dot
-      custom-order: true
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
