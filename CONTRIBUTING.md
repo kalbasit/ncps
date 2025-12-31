@@ -49,6 +49,7 @@ The project uses **Nix flakes** with **direnv** for reproducible development env
    - MinIO (for S3 testing)
    - PostgreSQL (for database testing)
    - MySQL/MariaDB (for database testing)
+   - Redis (for distributed locking testing)
 
 ## Development Environment
 
@@ -68,6 +69,7 @@ Once in the development shell, you have access to:
 | `minio` | S3-compatible object storage |
 | `postgresql` | PostgreSQL database server |
 | `mariadb` | MySQL/MariaDB database server |
+| `redis` | Redis server for distributed locks |
 
 ### Development Dependencies
 
@@ -96,6 +98,11 @@ This starts:
   - Test database: `test-db`
   - Credentials: `test-user` / `test-password`
   - Connection URL: `mysql://test-user:test-password@127.0.0.1:3306/test-db`
+
+- **Redis** - Distributed locking server (port 6379)
+
+  - No authentication required (test environment)
+  - Used for distributed lock testing
 
 ## Development Workflow
 
@@ -237,7 +244,7 @@ go test -race -run TestName ./pkg/server/...
 
 ### Integration Tests
 
-The project includes integration tests for S3, PostgreSQL, and MySQL. Integration tests are **disabled by default** and must be explicitly enabled using shell helper functions.
+The project includes integration tests for S3, PostgreSQL, MySQL, and Redis. Integration tests are **disabled by default** and must be explicitly enabled using shell helper functions.
 
 **Quick Start:**
 
@@ -306,6 +313,10 @@ The helper commands output shell export statements that you evaluate in your cur
 
   - `NCPS_TEST_MYSQL_URL=mysql://test-user:test-password@127.0.0.1:3306/test-db`
 
+- **`enable-redis-tests`** exports:
+
+  - `NCPS_ENABLE_REDIS_TESTS=1`
+
 Tests automatically skip if these environment variables aren't set, so you can run `go test -race ./...` without enabling integration tests and only unit tests will run.
 
 ### Test Requirements
@@ -328,7 +339,7 @@ nix build
 
 The Nix build automatically:
 
-1. Starts MinIO, PostgreSQL, and MariaDB in `preCheck` phase
+1. Starts MinIO, PostgreSQL, MariaDB, and Redis in `preCheck` phase
 1. Creates test databases and buckets
 1. Exports test environment variables
 1. Runs all tests (including integration tests)
@@ -416,6 +427,9 @@ ncps/
 │   │   ├── sqlitedb/           # SQLite implementation
 │   │   ├── postgresdb/         # PostgreSQL implementation
 │   │   └── mysqldb/            # MySQL/MariaDB implementation
+│   ├── lock/                   # Lock abstraction
+│   │   ├── local/              # Local locks (single-instance)
+│   │   └── redis/              # Redis distributed locks (HA)
 │   ├── server/                 # HTTP server (Chi router)
 │   └── nar/                    # NAR format handling
 ├── db/
@@ -445,6 +459,13 @@ ncps/
 - `NarStore` - NAR file storage
 
 Both local and S3 backends implement these interfaces.
+
+**Locks (`pkg/lock/lock.go`):**
+
+- `Locker` - Exclusive locking for download deduplication
+- `RWLocker` - Read-write locking for LRU coordination
+
+Both local (sync.Mutex) and Redis (Redlock) backends implement these interfaces. Redis locks enable high-availability deployments with multiple instances.
 
 **Database:**
 
