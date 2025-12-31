@@ -31,6 +31,10 @@
         shellHook = ''
           ${config.pre-commit.installationScript}
 
+          # Set NCPS_DB_MIGRATIONS_DIR to the repo root's db/migrations
+          # This avoids requiring the ncps package to be built for dev shell
+          export NCPS_DB_MIGRATIONS_DIR="$(git rev-parse --show-toplevel)/db/migrations"
+
           if [[ "$(${pkgs.gnugrep}/bin/grep '^\(go \)[0-9.]*$' go.mod)" != "go ''${_GO_VERSION}" ]]; then
             ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i go.mod
           fi

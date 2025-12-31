@@ -56,6 +56,8 @@
         config = {
           Cmd = [ "/bin/ncps" ];
           Env = [
+            # NCPS_DB_MIGRATIONS_DIR tells dbmate-wrapper where to find migrations
+            "NCPS_DB_MIGRATIONS_DIR=/share/ncps/db/migrations"
             # DBMATE_MIGRATIONS_DIR is set dynamically by dbmate-wrapper based on --url
             "DBMATE_SCHEMA_FILE=/share/ncps/db/schema.sql"
             "DBMATE_NO_DUMP_SCHEMA=true"

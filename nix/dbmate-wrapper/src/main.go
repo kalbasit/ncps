@@ -50,10 +50,16 @@ func run() int {
 	}
 
 	// Determine the base migrations directory
-	// Try Docker path first, fall back to local dev path
-	basePath := "/share/ncps/db/migrations"
-	if _, err := os.Stat(basePath); os.IsNotExist(err) {
-		basePath = "db/migrations"
+	// Priority order:
+	// 1. NCPS_DB_MIGRATIONS_DIR environment variable (set by devshell or Docker)
+	// 2. Fallback to /share/ncps/db/migrations (Docker default)
+	// 3. Fallback to db/migrations (relative path, only works from repo root)
+	basePath := os.Getenv("NCPS_DB_MIGRATIONS_DIR")
+	if basePath == "" {
+		basePath = "/share/ncps/db/migrations"
+		if _, err := os.Stat(basePath); os.IsNotExist(err) {
+			basePath = "db/migrations"
+		}
 	}
 
 	// Build the full migrations path with database-specific subdirectory

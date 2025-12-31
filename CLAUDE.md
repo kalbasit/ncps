@@ -253,9 +253,12 @@ If you need to override the auto-detection, you can still provide `--migrations-
 
 The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
 - Parses the `--url` flag to determine the database type (sqlite, postgres, mysql)
-- Automatically sets the `DBMATE_MIGRATIONS_DIR` environment variable to the appropriate path:
-  - Docker: `/share/ncps/db/migrations/{sqlite|postgres|mysql}`
-  - Dev: `db/migrations/{sqlite|postgres|mysql}`
+- Uses the `NCPS_DB_MIGRATIONS_DIR` environment variable to locate the base migrations directory
+  - In Docker: set to `/share/ncps/db/migrations` (static path in container)
+  - In dev shell: set dynamically via `shellHook` to `$(git rev-parse --show-toplevel)/db/migrations` (repo root)
+  - This ensures migration changes are immediately visible without rebuilding
+- Automatically sets the `DBMATE_MIGRATIONS_DIR` environment variable to the appropriate database-specific path:
+  - Example: `${NCPS_DB_MIGRATIONS_DIR}/sqlite` or `${NCPS_DB_MIGRATIONS_DIR}/postgres`
 - Calls the real `dbmate` binary (consistently renamed to `dbmate.real` in both dev and Docker)
 - Respects user overrides: if `DBMATE_MIGRATIONS_DIR` is already set or `--migrations-dir` is provided, the wrapper passes through without modification
 - This keeps the wrapper simple and doesn't require rebuilding ncps to update it
