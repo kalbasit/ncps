@@ -291,17 +291,19 @@
           ];
 
           # pre and post checks
-          preCheck = builtins.concatStringsSep "\n" [
-            minioPreCheck
-            postgresPreCheck
-            mysqlPreCheck
-          ];
+          preCheck = ''
+            # Set up cleanup trap to ensure background processes are killed even if tests fail
+            cleanup() {
+              ${mysqlPostCheck}
+              ${postgresPostCheck}
+              ${minioPostCheck}
+            }
+            trap cleanup EXIT
 
-          postCheck = builtins.concatStringsSep "\n" [
-            mysqlPostCheck
-            postgresPostCheck
-            minioPostCheck
-          ];
+            ${minioPreCheck}
+            ${postgresPreCheck}
+            ${mysqlPreCheck}
+          '';
 
           postInstall = ''
             mkdir -p $out/share/ncps
