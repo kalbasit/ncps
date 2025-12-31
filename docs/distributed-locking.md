@@ -136,15 +136,18 @@ ncps supports running multiple instances in a high-availability configuration us
 For high-availability mode, you need:
 
 1. **Redis Server** (version 5.0 or later)
+
    - Single node or cluster
    - Persistent storage recommended but not required
    - Authentication via username/password (optional)
 
-2. **Shared Storage** (S3-compatible)
+1. **Shared Storage** (S3-compatible)
+
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
    - All instances must access the same bucket
 
-3. **Shared Database** (PostgreSQL or MySQL)
+1. **Shared Database** (PostgreSQL or MySQL)
+
    - PostgreSQL 12+ or MySQL 8.0+
    - All instances must connect to the same database
    - SQLite is NOT supported in HA mode
@@ -249,6 +252,7 @@ ncps uses two types of distributed locks:
 **Lock Key Pattern:** `ncps:lock:download:nar:{hash}` or `ncps:lock:download:narinfo:{hash}`
 
 **Behavior:**
+
 - When instance A starts downloading a package, it acquires the lock
 - Instance B requesting the same package will retry acquiring the lock
 - Once instance A completes the download, it releases the lock
@@ -263,6 +267,7 @@ ncps uses two types of distributed locks:
 **Lock Key Pattern:** `ncps:lock:lru`
 
 **Behavior:**
+
 - Uses `TryLock()` - non-blocking acquisition
 - If locked, the instance skips LRU and tries again next cycle
 - Only one instance runs LRU cleanup at a time
@@ -275,9 +280,9 @@ ncps uses two types of distributed locks:
 ncps uses the [Redlock algorithm](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/) via [go-redsync](https://github.com/go-redsync/redsync):
 
 1. **Acquire**: Try to SET with NX (only if not exists) and PX (expiry time)
-2. **Extend**: Automatically extend lock before TTL expires (if operation ongoing)
-3. **Release**: Delete the key when operation completes
-4. **Expire**: Lock auto-expires after TTL if instance crashes
+1. **Extend**: Automatically extend lock before TTL expires (if operation ongoing)
+1. **Release**: Delete the key when operation completes
+1. **Expire**: Lock auto-expires after TTL if instance crashes
 
 ### Retry Strategy
 
@@ -291,12 +296,14 @@ Attempt 3: Wait 400ms + random jitter (0-400ms)
 ```
 
 **Exponential Backoff Formula:**
+
 ```
 delay = min(initial_delay * 2^attempt, max_delay)
 actual_delay = delay + random(0, delay * jitter_factor)
 ```
 
 **Why Jitter?**
+
 - Prevents thundering herd when lock is released
 - Distributes retry attempts across time
 - Improves fairness in lock acquisition
@@ -334,19 +341,23 @@ Read operations (GetNar, GetNarInfo) acquire read locks to prevent the LRU from 
 The following OpenTelemetry metrics will be available for monitoring lock operations:
 
 - `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisition attempts
+
   - `type`: "download" or "lru"
   - `result`: "success" or "failure"
   - `mode`: "local" or "distributed"
 
 - `ncps_lock_hold_duration_seconds{type,mode}` - Time locks are held
+
   - Histogram of lock hold times
   - Helps identify slow operations
 
 - `ncps_lock_failures_total{type,reason,mode}` - Lock failures
+
   - `reason`: "timeout", "redis_error", "circuit_breaker"
   - Indicates infrastructure issues
 
 - `ncps_lock_retry_attempts_total{type}` - Retry attempts before success/failure
+
   - Shows lock contention levels
   - High values indicate scaling needs
 
@@ -413,9 +424,9 @@ grep "acquired download lock" /var/log/ncps.log | wc -l
 **Common Causes:**
 
 1. **Redis not configured** - Verify `--cache-redis-addrs` is set
-2. **Network issues** - Check firewall rules, DNS resolution
-3. **Redis authentication** - Verify username/password if ACL is enabled
-4. **Different key prefixes** - Ensure all instances use the same `--cache-redis-key-prefix`
+1. **Network issues** - Check firewall rules, DNS resolution
+1. **Redis authentication** - Verify username/password if ACL is enabled
+1. **Different key prefixes** - Ensure all instances use the same `--cache-redis-key-prefix`
 
 **Solution:**
 
@@ -448,14 +459,16 @@ redis-cli --scan --pattern "ncps:lock:download:*" | wc -l
 **Solutions:**
 
 1. **Increase retry settings:**
+
    ```bash
    --cache-lock-retry-max-attempts=5 \
    --cache-lock-retry-max-delay=5s
    ```
 
-2. **Scale down instances** (if too many instances competing)
+1. **Scale down instances** (if too many instances competing)
 
-3. **Increase lock TTL** for long-running operations:
+1. **Increase lock TTL** for long-running operations:
+
    ```bash
    --cache-lock-download-ttl=10m
    ```
@@ -480,7 +493,7 @@ redis-cli GET "ncps:lock:lru"
 **Common Causes:**
 
 1. **LRU lock stuck** - Lock held by crashed instance
-2. **All instances skipping** - Each thinks another is running
+1. **All instances skipping** - Each thinks another is running
 
 **Solution:**
 
@@ -512,16 +525,19 @@ nc -zv redis-host 6379
 **Solutions:**
 
 1. **Verify Redis is running:**
+
    ```bash
    systemctl start redis
    ```
 
-2. **Check firewall rules:**
+1. **Check firewall rules:**
+
    ```bash
    sudo iptables -L | grep 6379
    ```
 
-3. **Verify TLS configuration** if using `--cache-redis-use-tls`:
+1. **Verify TLS configuration** if using `--cache-redis-use-tls`:
+
    ```bash
    openssl s_client -connect redis-host:6380
    ```
@@ -579,25 +595,30 @@ nc -zv redis-host 6379
 ### Deployment
 
 1. **Start Redis First**
+
    - Ensure Redis is healthy before starting ncps instances
    - Use health checks in orchestration (Kubernetes, Docker Compose)
 
-2. **Gradual Rollout**
+1. **Gradual Rollout**
+
    - Update instances one at a time
    - Verify each instance is healthy before updating the next
    - Monitor lock metrics during rollout
 
-3. **Load Balancer Configuration**
+1. **Load Balancer Configuration**
+
    - Use health check endpoint: `GET /pubkey`
    - Configure session affinity if needed (not required)
    - Set reasonable timeouts (downloads can be large)
 
-4. **Shared Storage**
+1. **Shared Storage**
+
    - Ensure all instances have identical S3 configuration
    - Use IAM roles or credentials with proper permissions
    - Enable S3 server-side encryption for security
 
-5. **Database**
+1. **Database**
+
    - Use connection pooling in PostgreSQL/MySQL
    - Configure appropriate timeouts
    - Monitor connection counts
@@ -605,17 +626,20 @@ nc -zv redis-host 6379
 ### Monitoring
 
 1. **Key Metrics to Watch**
+
    - Lock acquisition latency
    - Retry attempt rates
    - Redis connectivity
    - Cache hit rates
 
-2. **Alerting**
+1. **Alerting**
+
    - Alert on high lock failures
    - Alert on Redis unavailability
    - Alert on excessive retry attempts
 
-3. **Logging**
+1. **Logging**
+
    - Centralize logs (ELK, Loki, CloudWatch)
    - Include structured fields for filtering
    - Set appropriate log levels
@@ -623,16 +647,19 @@ nc -zv redis-host 6379
 ### Operations
 
 1. **Backup Strategy**
+
    - Redis: Optional (locks are ephemeral)
    - Database: Regular backups (contains metadata)
    - S3: Enable versioning for disaster recovery
 
-2. **Scaling**
+1. **Scaling**
+
    - Add instances during high traffic
    - Remove instances during maintenance
    - Monitor for lock contention when scaling
 
-3. **Maintenance**
+1. **Maintenance**
+
    - Update one instance at a time
    - Redis can be restarted (locks will regenerate)
    - Database migrations should be backward-compatible
@@ -644,19 +671,21 @@ nc -zv redis-host 6379
 **Prerequisites:**
 
 1. ✅ Set up PostgreSQL or MySQL database
-2. ✅ Migrate from SQLite (if applicable)
-3. ✅ Set up S3-compatible storage
-4. ✅ Deploy Redis server
+1. ✅ Migrate from SQLite (if applicable)
+1. ✅ Set up S3-compatible storage
+1. ✅ Deploy Redis server
 
 **Migration Steps:**
 
 1. **Migrate to S3 Storage:**
+
    ```bash
    # Sync local storage to S3
    aws s3 sync /var/lib/ncps/storage s3://ncps-cache/
    ```
 
-2. **Migrate Database:**
+1. **Migrate Database:**
+
    ```bash
    # Export SQLite data
    sqlite3 ncps.db .dump > backup.sql
@@ -665,7 +694,8 @@ nc -zv redis-host 6379
    psql ncps < converted.sql
    ```
 
-3. **Configure First Instance:**
+1. **Configure First Instance:**
+
    ```bash
    ncps serve \
      --cache-database-url=postgresql://... \
@@ -673,12 +703,14 @@ nc -zv redis-host 6379
      --cache-redis-addrs=redis:6379
    ```
 
-4. **Verify Functionality:**
+1. **Verify Functionality:**
+
    - Test package downloads
    - Check Redis for lock keys
    - Verify cache hits
 
-5. **Add Additional Instances:**
+1. **Add Additional Instances:**
+
    - Use identical configuration
    - Point to same Redis, S3, and database
    - Add to load balancer
@@ -688,19 +720,20 @@ nc -zv redis-host 6379
 If issues occur:
 
 1. **Stop new instances** (keep first instance)
-2. **Continue using first instance** with Redis
-3. **Or temporarily disable Redis:**
+1. **Continue using first instance** with Redis
+1. **Or temporarily disable Redis:**
    ```bash
    # Remove --cache-redis-addrs flag
    # Falls back to local locks
    ```
 
 **Note:** Rollback from S3 to local storage requires data sync:
+
 ```bash
 aws s3 sync s3://ncps-cache/ /var/lib/ncps/storage
 ```
 
----
+______________________________________________________________________
 
 ## Additional Resources
 
