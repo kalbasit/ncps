@@ -13,10 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
+
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
-	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/local"
@@ -53,6 +54,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 	// Create shared directory for all instances
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(sharedDir)
 
 	// Create shared database
@@ -81,6 +83,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 
 	// Create multiple cache instances
 	var caches []*cache.Cache
+
 	for i := 0; i < numInstances; i++ {
 		downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
 		require.NoError(t, err)
@@ -123,6 +126,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 
 	// Simulate concurrent requests from all instances for the same NAR
 	var wg sync.WaitGroup
+
 	narEntry := testdata.Entries[0]
 
 	for i, c := range caches {
@@ -136,11 +140,11 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 			// All instances request the same NAR
 			narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
 			_, reader, err := cacheInstance.GetNar(ctx, narURL)
-			assert.NoError(t, err)
+			assert.NoError(t, err, "instance %d read failed", instanceNum)
 
 			if reader != nil {
 				_, err := io.Copy(io.Discard, reader)
-				assert.NoError(t, err)
+				assert.NoError(t, err, "instance %d discarding body failed", instanceNum)
 			}
 		}(i, c)
 	}
@@ -157,11 +161,11 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 		narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
 		size, reader, err := c.GetNar(ctx, narURL)
 		require.NoError(t, err, "instance %d should read cached NAR", i)
-		assert.Greater(t, size, int64(0), "instance %d should have positive size", i)
+		assert.Positive(t, size, "instance %d should have positive size", i)
 
 		data, err := io.ReadAll(reader)
 		require.NoError(t, err)
-		assert.Equal(t, len(narEntry.NarText), len(data),
+		assert.Len(t, data, len(narEntry.NarText),
 			"instance %d should read complete NAR", i)
 	}
 }
@@ -187,6 +191,7 @@ func TestDistributedConcurrentReads(t *testing.T) {
 	// Create shared directory for all instances
 	sharedDir, err := os.MkdirTemp("", "cache-reads-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(sharedDir)
 
 	// Create shared database
@@ -241,6 +246,7 @@ func TestDistributedConcurrentReads(t *testing.T) {
 
 	// Now create multiple instances that will read concurrently
 	var caches []*cache.Cache
+
 	for i := 0; i < numInstances; i++ {
 		downloadLocker := locklocal.NewLocker()
 		lruLocker := locklocal.NewRWLocker()
@@ -265,8 +271,10 @@ func TestDistributedConcurrentReads(t *testing.T) {
 	}
 
 	// All instances read the same NAR concurrently
-	var wg sync.WaitGroup
-	var readCount atomic.Int32
+	var (
+		wg        sync.WaitGroup
+		readCount atomic.Int32
+	)
 
 	for i, c := range caches {
 		wg.Add(1)
@@ -276,12 +284,12 @@ func TestDistributedConcurrentReads(t *testing.T) {
 
 			size, reader, err := cacheInstance.GetNar(ctx, narURL)
 			assert.NoError(t, err, "instance %d read failed", instanceNum)
-			assert.Greater(t, size, int64(0), "instance %d got zero size", instanceNum)
+			assert.Positive(t, size, "instance %d got zero size", instanceNum)
 
 			if reader != nil {
 				data, err := io.ReadAll(reader)
 				assert.NoError(t, err, "instance %d read body failed", instanceNum)
-				assert.Equal(t, len(narEntry.NarText), len(data),
+				assert.Len(t, data, len(narEntry.NarText),
 					"instance %d read wrong size", instanceNum)
 			}
 
@@ -337,7 +345,7 @@ func TestDistributedLockFailover(t *testing.T) {
 	defer cancel()
 
 	err = locker2.Lock(ctx2, testKey, shortTTL)
-	assert.Error(t, err, "locker2 should fail to acquire lock held by locker1")
+	require.Error(t, err, "locker2 should fail to acquire lock held by locker1")
 
 	// Simulate locker1 failure (don't unlock, let it expire)
 	// Wait for TTL to expire
@@ -345,7 +353,7 @@ func TestDistributedLockFailover(t *testing.T) {
 
 	// Now locker2 should be able to acquire the lock
 	err = locker2.Lock(ctx, testKey, shortTTL)
-	assert.NoError(t, err, "locker2 should acquire lock after TTL expiry")
+	require.NoError(t, err, "locker2 should acquire lock after TTL expiry")
 
 	// Clean up
 	err = locker2.Unlock(ctx, testKey)

@@ -16,9 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
+
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
-	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"

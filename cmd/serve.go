@@ -19,6 +19,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
+	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
+
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -29,7 +31,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
-	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/pkg/storage/s3"
 )
 
