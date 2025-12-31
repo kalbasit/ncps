@@ -287,137 +287,70 @@ Uses gofumpt, goimports, and gci for import ordering (standard → default → a
 - Test files use `_test` package suffix (testpackage linter)
 - Parallel tests encouraged (paralleltest linter)
 
-#### S3 Integration Tests
+#### Integration Tests (S3, PostgreSQL, MySQL)
 
-S3 integration tests require MinIO to be running. The tests are automatically skipped if the required environment variables are not set.
+Integration tests are **disabled by default** and must be explicitly enabled using shell helper functions provided by the development environment. The tests are automatically skipped if the required environment variables are not set.
 
 **For local development:**
 
 ```bash
-# Start MinIO (in a separate terminal)
+# Start dependencies (in a separate terminal)
 nix run .#deps
 
-# Run tests with S3 integration enabled
-export NCPS_TEST_S3_BUCKET="test-bucket"
-export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
-export NCPS_TEST_S3_REGION="us-east-1"
-export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
-export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
-go test -race ./pkg/storage/s3
+# Enable all integration tests using the helper command
+eval "$(enable-all-integration-tests)"
+
+# Run all tests including integration tests
+go test -race ./...
+
+# Or enable specific integration tests only:
+eval "$(enable-s3-tests)"          # Enable S3/MinIO tests only
+eval "$(enable-postgres-tests)"    # Enable PostgreSQL tests only
+eval "$(enable-mysql-tests)"       # Enable MySQL tests only
+
+# Disable integration tests when done
+eval "$(disable-integration-tests)"
 ```
+
+**Available helper commands** (automatically available in PATH within the dev shell):
+
+- `eval "$(enable-s3-tests)"` - Sets S3 test environment variables
+- `eval "$(enable-postgres-tests)"` - Sets PostgreSQL test environment variable
+- `eval "$(enable-mysql-tests)"` - Sets MySQL test environment variable
+- `eval "$(enable-all-integration-tests)"` - Enables all integration tests at once
+- `eval "$(disable-integration-tests)"` - Unsets all integration test variables
+
+These commands output export statements that you evaluate in your current shell to set the appropriate environment variables. When entering the dev shell, you'll see a message listing these available helpers.
 
 **For Nix builds and CI:**
 
-MinIO is automatically started during the test phase when building with Nix:
+All integration test dependencies (MinIO, PostgreSQL, MariaDB) are automatically started during the test phase when building with Nix:
 
 ```bash
-# Runs all checks including S3 integration tests
+# Runs all checks including all integration tests
 nix flake check
 
-# Build package (includes test phase with MinIO)
+# Build package (includes test phase with all dependencies)
 nix build
 ```
 
 The Nix build (`nix/packages/ncps.nix`) automatically:
 
-1. Starts MinIO server in the `preCheck` phase
-1. Creates test bucket and credentials
-1. Exports S3 test environment variables
-1. Runs all tests (including S3 integration tests)
-1. Stops MinIO in the `postCheck` phase
+1. Starts MinIO, PostgreSQL, and MariaDB servers in the `preCheck` phase
+1. Creates test databases, buckets, and credentials
+1. Exports all integration test environment variables
+1. Runs all tests (including all integration tests)
+1. Stops all services in the `postCheck` phase
 
 This setup ensures:
 
-- S3 integration tests run in CI/CD (GitHub Actions workflows)
-- `nix flake check` includes S3 testing
+- All integration tests run in CI/CD (GitHub Actions workflows)
+- `nix flake check` includes comprehensive testing across all backends
+- All three database implementations (SQLite, PostgreSQL, MySQL) are tested
+- S3 storage backend is tested against MinIO
 - Runtime usage (`nix run github:kalbasit/ncps`) is unaffected
 - Docker builds (`.#docker`) are unaffected
 - Tests are isolated and don't interfere with each other (unique hash-based keys)
-
-#### PostgreSQL Integration Tests
-
-PostgreSQL integration tests require PostgreSQL to be running. The tests are automatically skipped if the required environment variable is not set.
-
-**For local development:**
-
-```bash
-# Start PostgreSQL (in a separate terminal)
-nix run .#deps
-
-# Run tests with PostgreSQL integration enabled
-export NCPS_TEST_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
-go test -race ./pkg/database
-```
-
-**For Nix builds and CI:**
-
-PostgreSQL is automatically started during the test phase when building with Nix:
-
-```bash
-# Runs all checks including PostgreSQL integration tests
-nix flake check
-
-# Build package (includes test phase with PostgreSQL)
-nix build
-```
-
-The Nix build (`nix/packages/ncps.nix`) automatically:
-
-1. Starts PostgreSQL server in the `preCheck` phase
-1. Creates test database and user
-1. Exports PostgreSQL test environment variable
-1. Runs all tests (including PostgreSQL integration tests)
-1. Stops PostgreSQL in the `postCheck` phase
-
-This setup ensures:
-
-- PostgreSQL integration tests run in CI/CD (GitHub Actions workflows)
-- `nix flake check` includes PostgreSQL testing
-- Both SQLite and PostgreSQL database implementations are tested
-- Tests are isolated with unique random hashes
-- Migrations are validated against both database engines
-
-#### MySQL/MariaDB Integration Tests
-
-MySQL/MariaDB integration tests require MariaDB to be running. The tests are automatically skipped if the required environment variable is not set.
-
-**For local development:**
-
-```bash
-# Start MariaDB (in a separate terminal)
-nix run .#deps
-
-# Run tests with MySQL integration enabled
-export NCPS_TEST_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
-go test -race ./pkg/database
-```
-
-**For Nix builds and CI:**
-
-MariaDB is automatically started during the test phase when building with Nix:
-
-```bash
-# Runs all checks including MySQL integration tests
-nix flake check
-
-# Build package (includes test phase with MariaDB)
-nix build
-```
-
-The Nix build (`nix/packages/ncps.nix`) automatically:
-
-1. Starts MariaDB server in the `preCheck` phase
-1. Creates test database and user
-1. Exports MySQL test environment variable
-1. Runs all tests (including MySQL integration tests)
-1. Stops MariaDB in the `postCheck` phase
-
-This setup ensures:
-
-- MySQL/MariaDB integration tests run in CI/CD (GitHub Actions workflows)
-- `nix flake check` includes MySQL testing
-- All three database implementations (SQLite, PostgreSQL, MySQL) are tested
-- Tests are isolated with unique random hashes
 - Migrations are validated against all database engines
 
 ## Configuration
