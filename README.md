@@ -778,9 +778,9 @@ trusted-public-keys = your-ncps-hostname=<paste-public-key-here> cache.nixos.org
 
 ## 🤝 Contributing
 
-Contributions are welcome! Here's how to get started:
+Contributions are welcome! We appreciate bug reports, feature requests, documentation improvements, and code contributions.
 
-### Development Setup
+### Quick Start for Contributors
 
 1. **Clone the repository:**
 
@@ -791,46 +791,38 @@ Contributions are welcome! Here's how to get started:
 
 1. **Start development server:**
 
-   The development script supports both local filesystem and S3-compatible storage:
-
    ```bash
-   # Using local filesystem storage (default)
+   # Using local filesystem storage (default, no dependencies required)
    ./dev-scripts/run.sh
-   # or explicitly
-   ./dev-scripts/run.sh local
 
-   # Using S3/MinIO storage (requires MinIO to be running)
-   # First, start dependencies in a separate terminal:
-   nix run .#deps  # Starts MinIO with self-validation
-
-   # Then run the dev server with S3 backend:
+   # Using S3/MinIO storage (requires dependencies)
+   nix run .#deps  # In a separate terminal
    ./dev-scripts/run.sh s3
    ```
 
-   The script auto-restarts on code changes using `watchexec`.
+1. **Make your changes and test:**
 
-   **Storage Backends:**
+   ```bash
+   # Format code
+   nix fmt
 
-   - **local**: Uses local filesystem storage (default, no dependencies)
-   - **s3**: Uses S3-compatible storage via MinIO (requires `nix run .#deps`)
+   # Run linter with auto-fix
+   golangci-lint run --fix
 
-   **Dependencies Management:**
+   # Run tests with race detector
+   go test -race ./...
+   ```
 
-   - `nix run .#deps` starts MinIO server configured for local development
-   - MinIO runs with self-validation to ensure proper setup
-   - Configuration matches the S3 settings in the dev script
+1. **Submit a pull request**
 
-1. **Submit your changes:**
-
-   - 🐛 Open issues for bugs
-   - ✨ Submit pull requests for features
-   - 📚 Improve documentation
+For detailed contribution guidelines, development workflow, code quality standards, and testing procedures, please see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ### Getting Help
 
-- 📖 Check existing [issues](https://github.com/kalbasit/ncps/issues)
-- 💬 Start a [discussion](https://github.com/kalbasit/ncps/discussions)
-- 📧 Contact maintainers
+- 📖 Read the [Contributing Guide](CONTRIBUTING.md)
+- 🐛 Report bugs via [issues](https://github.com/kalbasit/ncps/issues)
+- 💬 Ask questions in [discussions](https://github.com/kalbasit/ncps/discussions)
+- 📧 Contact maintainers for security issues
 
 ______________________________________________________________________
 
