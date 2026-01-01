@@ -31,27 +31,31 @@ check_command() {
 wait_for_pods() {
     local label="$1"
     local ns="$2"
-    local timeout=120
+    local creation_timeout=120
+    local ready_timeout=180s
+
+    echo -n "   - Waiting for pods ($label) to be created..."
     local count=0
-
-    echo -n "   - Waiting for pods ($label)..."
-
-    # grep -q ensures we actually found output, not just a successful empty return
     until kubectl get pod -n "$ns" -l "$label" -o name 2>/dev/null | grep -q .; do
-        if [ "$count" -ge "$timeout" ]; then
+        if [ "$count" -ge "$creation_timeout" ]; then
             echo ""
-            echo " ⚠️  Timed out waiting for Running status. Checking if pods exist..." >&2
-            kubectl get pods -n "$ns" -l "$label" >&2
-            # We don't exit here because sometimes they are just slow
-            break
+            echo " ⚠️  Timed out waiting for pods to be created by the operator." >&2
+            return 1
         fi
         sleep 2
         count=$((count + 2))
     done
-
     echo " ✅ Found."
-    # Now we can safely wait for the Ready condition
-    kubectl wait --for=condition=Ready pod -l "$label" -n "$ns" --timeout=60s > /dev/null 2>&1 || true
+
+    echo -n "   - Waiting for pods ($label) to become Ready..."
+    if kubectl wait --for=condition=Ready pod -l "$label" -n "$ns" --timeout="$ready_timeout" >/dev/null 2>&1; then
+        echo " ✅ Ready."
+    else
+        echo "" # Newline for better formatting
+        echo " ⚠️  Timed out waiting for pods to become Ready. Please check their status:" >&2
+        kubectl get pods -n "$ns" -l "$label" >&2
+        return 1
+    fi
 }
 
 # Extract and display connection information
