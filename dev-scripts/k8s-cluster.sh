@@ -3,8 +3,9 @@ set -euo pipefail
 
 # --- Configuration ---
 CLUSTER_NAME="ncps-cluster"
-CPUS=4
-MEMORY="8192mb"
+# Talos local clusters run in Docker, so we configure the Docker provisioner
+# You can adjust worker counts if you want to test HA (e.g. --workers 2)
+WORKERS=1
 
 # --- Helper Functions ---
 check_command() {
@@ -14,37 +15,47 @@ check_command() {
     fi
 }
 
-echo "🚀 Initializing NCPS Lab Environment..."
+echo "🚀 Initializing NCPS Lab (Talos Edition)..."
 
 # 1. Pre-flight Checks
 echo "🔍 Checking prerequisites..."
 check_command docker
-check_command minikube
+check_command talosctl
 check_command kubectl
 check_command helm
 
 if ! docker info > /dev/null 2>&1; then
-    echo "❌ Error: Docker is installed but not running. Please start Docker."
+    echo "❌ Error: Docker is installed but not running."
     exit 1
 fi
-echo "✅ Prerequisites met."
 
-# 2. Start Minikube
-if ! minikube status -p "$CLUSTER_NAME" | grep -q "Running"; then
-    echo "Starting Minikube ($CLUSTER_NAME)..."
-    minikube start -p "$CLUSTER_NAME" \
-        --driver=docker \
-        --cpus="$CPUS" \
-        --memory="$MEMORY" \
-        --addons=storage-provisioner,default-storageclass
+# 2. Start Talos Cluster
+# We check if the cluster exists by looking for its container
+if ! docker ps | grep -q "$CLUSTER_NAME-controlplane"; then
+    echo "Starting Talos Cluster ($CLUSTER_NAME)..."
+    # Create cluster using Docker provisioner
+    # This automatically handles the kubeconfig merge
+    talosctl cluster create \
+        --name "$CLUSTER_NAME" \
+        --workers "$WORKERS" \
+        --provisioner docker
 else
-    echo "✅ Minikube cluster '$CLUSTER_NAME' is already running."
+    echo "✅ Talos cluster '$CLUSTER_NAME' is already running."
 fi
 
-# Ensure kubectl context is set
-minikube profile "$CLUSTER_NAME"
+# 3. Configure Kubeconfig
+# talosctl cluster create usually merges kubeconfig into ~/.kube/config
+# but we ensure the context is correct
+kubectl config use-context "admin@$CLUSTER_NAME"
 
-# 3. Add Helm Repositories
+# 4. Install Storage Class (Crucial for Talos Local)
+# Talos in Docker doesn't have a default SC. We install Rancher Local Path Provisioner.
+echo "💾 Installing Local Path Storage Class..."
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
+# Patch it to be default
+kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+# 5. Add Helm Repositories
 echo "📦 Updating Helm Repositories..."
 helm repo add minio https://charts.min.io/
 helm repo add cnpg https://cloudnative-pg.io/charts/
@@ -52,7 +63,7 @@ helm repo add mariadb-operator https://mariadb-operator.github.io/mariadb-operat
 helm repo add ot-helm https://ot-container-kit.github.io/helm-charts/
 helm repo update > /dev/null
 
-# 4. Install Infrastructure
+# 6. Install Infrastructure
 echo "🏗️  Installing Infrastructure Components..."
 
 # MinIO (S3)
@@ -84,7 +95,7 @@ helm upgrade --install redis-operator ot-helm/redis-operator \
     --namespace redis-system --create-namespace \
     --wait
 
-# 5. Deploy Database Instances
+# 7. Deploy Database Instances
 echo "🔥 Deploying Database Instances..."
 kubectl create namespace data --dry-run=client -o yaml | kubectl apply -f -
 
@@ -126,7 +137,7 @@ spec:
   database: ncps
   storage:
     size: 1Gi
-    storageClassName: standard
+    storageClassName: local-path
   replicas: 1
 EOF
 
@@ -144,7 +155,7 @@ spec:
   storage:
     volumeClaimTemplate:
       spec:
-        storageClassName: standard
+        storageClassName: local-path
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
@@ -152,9 +163,9 @@ spec:
 EOF
 
 echo "⏳ Waiting for databases to become ready (this may take 1-2 mins)..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=postgresql -n data --timeout=120s
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mariadb -n data --timeout=120s
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=redis -n data --timeout=120s
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=postgresql -n data --timeout=180s
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mariadb -n data --timeout=180s
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=redis -n data --timeout=180s
 
 # --- EXTRACT CREDENTIALS ---
 
@@ -166,7 +177,6 @@ MINIO_SECRET="password123"
 # Postgres
 PG_HOST="pg17-ncps-rw.data.svc.cluster.local"
 PG_USER="ncps"
-# CNPG creates a secret named <cluster-name>-app
 PG_PASS=$(kubectl get secret -n data pg17-ncps-app -o jsonpath="{.data.password}" | base64 -d)
 
 # MariaDB
@@ -176,14 +186,11 @@ MARIA_PASS=$(kubectl get secret -n data mariadb-ncps-password -o jsonpath="{.dat
 
 # Redis
 REDIS_HOST="redis-ncps-master.data.svc.cluster.local"
-# Redis operator often uses the default user or just a password.
-# Checking the standard secret pattern for this operator:
 REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" | base64 -d)
-
 
 echo ""
 echo "========================================================"
-echo "✅ NCPS Lab Environment Ready!"
+echo "✅ NCPS Lab (Talos) Environment Ready!"
 echo "========================================================"
 echo ""
 echo "--- 🪣 S3 Storage (MinIO) ---"
@@ -191,7 +198,7 @@ echo "config.storage.s3:"
 echo "  endpoint: \"$MINIO_ENDPOINT\""
 echo "  accessKeyId: \"$MINIO_ACCESS\""
 echo "  secretAccessKey: \"$MINIO_SECRET\""
-echo "  bucket: \"ncps-bucket\" (You need to create this via MinIO Console or MC)"
+echo "  bucket: \"ncps-bucket\" (Create this via console)"
 echo "  region: \"us-east-1\""
 echo "  useSSL: false"
 echo ""
@@ -218,7 +225,7 @@ echo "    - \"$REDIS_HOST:6379\""
 echo "  password: \"$REDIS_PASS\""
 echo ""
 echo "========================================================"
-echo "To access MinIO Console locally (to create buckets):"
+echo "To access MinIO Console locally:"
 echo "  kubectl port-forward -n minio svc/minio-console 9001:9001"
 echo "  Open http://localhost:9001 (User: admin, Pass: password123)"
 echo "========================================================"
