@@ -1,2 +1,2 @@
 exclude:
-  - helm/
+  - charts/
