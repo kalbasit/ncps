@@ -34,6 +34,7 @@
               name = "passwd";
               text = ''
                 root:x:0:0:Super User:/homeless-shelter:/dev/null
+                ncps:x:1000:1000:NCPS:/homeless-shelter:/dev/null
               '';
               destination = "/etc/passwd";
             };
@@ -42,6 +43,7 @@
               name = "group";
               text = ''
                 root:x:0:
+                ncps:x:1000:
               '';
               destination = "/etc/group";
             };
