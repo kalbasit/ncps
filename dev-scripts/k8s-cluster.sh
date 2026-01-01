@@ -1,21 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- Auto-Escalate to Root ---
-# Talos local needs root for CNI networking and HVF acceleration.
-# We use -E to preserve your environment variables (PATH, etc).
-if [ "$EUID" -ne 0 ]; then
-  echo "🔐 Escalating to root (required for CNI/HVF)..."
-  exec sudo -E "$0" "$@"
-fi
-
-# Get original user for permission fixups later
-REAL_USER=${SUDO_USER:-$USER}
-REAL_HOME=$(eval echo "~$REAL_USER")
-
-# --- Configuration ---
-CLUSTER_NAME="ncps-cluster"
-WORKERS=1
+CLUSTER_NAME="ncps-kind"
 
 # --- Helper Functions ---
 check_command() {
@@ -25,62 +11,61 @@ check_command() {
     fi
 }
 
-echo "🚀 Initializing NCPS Lab (Talos Edition)..."
+echo "🚀 Initializing NCPS Lab (Kind Edition)..."
 
 # 1. Pre-flight Checks
-echo "🔍 Checking prerequisites..."
 check_command docker
-check_command talosctl
+check_command kind
 check_command kubectl
 check_command helm
 
 if ! docker info > /dev/null 2>&1; then
-    echo "❌ Error: Docker is installed but not running."
+    echo "❌ Error: Docker is not running."
     exit 1
 fi
 
-# 2. Start Talos Cluster
-if ! docker ps | grep -q "$CLUSTER_NAME-controlplane"; then
-    echo "Starting Talos Cluster ($CLUSTER_NAME)..."
-    talosctl cluster create dev \
-        --name "$CLUSTER_NAME" \
-        --workers "$WORKERS" \
-        --provisioner docker
+# 2. Create Kind Cluster
+# We use a config to ensure ports are exposed if we ever need Ingress (optional but good practice)
+if ! kind get clusters | grep -q "^$CLUSTER_NAME$"; then
+    echo "📦 Creating Kind cluster..."
+    cat <<EOF | kind create cluster --name "$CLUSTER_NAME" --config=-
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30000
+    hostPort: 30000
+    listenAddress: "127.0.0.1"
+    protocol: TCP
+EOF
 else
-    echo "✅ Talos cluster '$CLUSTER_NAME' is already running."
+    echo "✅ Kind cluster '$CLUSTER_NAME' is already running."
 fi
 
-# 3. Configure Kubeconfig & Fix Permissions
-echo "🔧 Setting up kubeconfig..."
-kubectl config use-context "admin@$CLUSTER_NAME"
+# 3. Context & Storage
+kubectl config use-context "kind-$CLUSTER_NAME"
 
-# FIX: Ensure the user owns their config file again, otherwise it becomes root-only
-if [ -f "$REAL_HOME/.kube/config" ]; then
-    chown "$REAL_USER" "$REAL_HOME/.kube/config"
+# Kind comes with a 'standard' storage class, but let's ensure it's default
+echo "💾 Verifying Storage Class..."
+if ! kubectl get sc standard > /dev/null 2>&1; then
+    # Fallback if standard is missing (rare in new kind versions)
+    kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+    kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 fi
-if [ -f "$REAL_HOME/.talos/config" ]; then
-    chown -R "$REAL_USER" "$REAL_HOME/.talos"
-fi
 
-# 4. Install Storage Class (Crucial for Talos Local)
-echo "💾 Installing Local Path Storage Class..."
-kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
-# Patch it to be default
-kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-
-# 5. Add Helm Repositories
-echo "📦 Updating Helm Repositories..."
+# 4. Install Helm Repos
+echo "📦 Updating Helm Repos..."
 helm repo add minio https://charts.min.io/
 helm repo add cnpg https://cloudnative-pg.io/charts/
 helm repo add mariadb-operator https://mariadb-operator.github.io/mariadb-operator/
 helm repo add ot-helm https://ot-container-kit.github.io/helm-charts/
 helm repo update > /dev/null
 
-# 6. Install Infrastructure
-echo "🏗️  Installing Infrastructure Components..."
+# 5. Install Infrastructure
+echo "🏗️  Installing Infrastructure..."
 
-# MinIO (S3)
-echo "   - MinIO..."
+# MinIO
 helm upgrade --install minio minio/minio \
     --namespace minio --create-namespace \
     --set resources.requests.memory=256Mi \
@@ -92,7 +77,7 @@ helm upgrade --install minio minio/minio \
     --wait
 
 # Operators
-echo "   - CloudNativePG Operator..."
+echo "   - CNPG (Postgres)..."
 helm upgrade --install cnpg cnpg/cloudnative-pg \
     --namespace cnpg-system --create-namespace \
     --wait
@@ -108,11 +93,11 @@ helm upgrade --install redis-operator ot-helm/redis-operator \
     --namespace redis-system --create-namespace \
     --wait
 
-# 7. Deploy Database Instances
+# 6. Deploy Databases
 echo "🔥 Deploying Database Instances..."
 kubectl create namespace data --dry-run=client -o yaml | kubectl apply -f -
 
-# Postgres 17 (CNPG)
+# Postgres 17
 cat <<EOF | kubectl apply -f -
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -130,7 +115,7 @@ spec:
       owner: ncps
 EOF
 
-# MariaDB (MariaDB Operator)
+# MariaDB
 cat <<EOF | kubectl apply -f -
 apiVersion: k8s.mariadb.com/v1alpha1
 kind: MariaDB
@@ -150,11 +135,11 @@ spec:
   database: ncps
   storage:
     size: 1Gi
-    storageClassName: local-path
+    storageClassName: standard
   replicas: 1
 EOF
 
-# Redis (OT-Container-Kit)
+# Redis
 cat <<EOF | kubectl apply -f -
 apiVersion: redis.redis.opstreelabs.in/v1beta2
 kind: Redis
@@ -168,77 +153,47 @@ spec:
   storage:
     volumeClaimTemplate:
       spec:
-        storageClassName: local-path
+        storageClassName: standard
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
             storage: 1Gi
 EOF
 
-echo "⏳ Waiting for databases to become ready (this may take 1-2 mins)..."
+echo "⏳ Waiting for databases..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=postgresql -n data --timeout=180s
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mariadb -n data --timeout=180s
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=redis -n data --timeout=180s
 
 # --- EXTRACT CREDENTIALS ---
-
-# MinIO
 MINIO_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
-MINIO_ACCESS="admin"
-MINIO_SECRET="password123"
-
-# Postgres
-PG_HOST="pg17-ncps-rw.data.svc.cluster.local"
-PG_USER="ncps"
 PG_PASS=$(kubectl get secret -n data pg17-ncps-app -o jsonpath="{.data.password}" | base64 -d)
-
-# MariaDB
-MARIA_HOST="mariadb-ncps.data.svc.cluster.local"
-MARIA_USER="ncps"
 MARIA_PASS=$(kubectl get secret -n data mariadb-ncps-password -o jsonpath="{.data.password}" | base64 -d)
-
-# Redis
-REDIS_HOST="redis-ncps-master.data.svc.cluster.local"
 REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" | base64 -d)
 
 echo ""
 echo "========================================================"
-echo "✅ NCPS Lab (Talos) Environment Ready!"
+echo "✅ Kind Environment Ready!"
 echo "========================================================"
+echo "Cluster Name: ncps-kind"
 echo ""
-echo "--- 🪣 S3 Storage (MinIO) ---"
-echo "config.storage.s3:"
-echo "  endpoint: \"$MINIO_ENDPOINT\""
-echo "  accessKeyId: \"$MINIO_ACCESS\""
-echo "  secretAccessKey: \"$MINIO_SECRET\""
-echo "  bucket: \"ncps-bucket\" (Create this via console)"
-echo "  region: \"us-east-1\""
-echo "  useSSL: false"
+echo "--- 🪣 S3 (MinIO) ---"
+echo "  Endpoint: $MINIO_ENDPOINT"
+echo "  User: admin"
+echo "  Pass: password123"
+echo "  (Port forward: kubectl port-forward -n minio svc/minio 9000:9000)"
 echo ""
-echo "--- 🐘 PostgreSQL ---"
-echo "config.database.postgresql:"
-echo "  host: \"$PG_HOST\""
-echo "  port: 5432"
-echo "  username: \"$PG_USER\""
-echo "  password: \"$PG_PASS\""
-echo "  database: \"ncps\""
+echo "--- 🐘 Postgres ---"
+echo "  Host: pg17-ncps-rw.data.svc.cluster.local"
+echo "  User: ncps"
+echo "  Pass: $PG_PASS"
 echo ""
 echo "--- 🐬 MariaDB ---"
-echo "config.database.mysql:"
-echo "  host: \"$MARIA_HOST\""
-echo "  port: 3306"
-echo "  username: \"$MARIA_USER\""
-echo "  password: \"$MARIA_PASS\""
-echo "  database: \"ncps\""
+echo "  Host: mariadb-ncps.data.svc.cluster.local"
+echo "  User: ncps"
+echo "  Pass: $MARIA_PASS"
 echo ""
 echo "--- 🔺 Redis ---"
-echo "config.redis:"
-echo "  addresses:"
-echo "    - \"$REDIS_HOST:6379\""
-echo "  password: \"$REDIS_PASS\""
-echo ""
-echo "========================================================"
-echo "To access MinIO Console locally:"
-echo "  kubectl port-forward -n minio svc/minio-console 9001:9001"
-echo "  Open http://localhost:9001 (User: admin, Pass: password123)"
+echo "  Host: redis-ncps-master.data.svc.cluster.local"
+echo "  Pass: $REDIS_PASS"
 echo "========================================================"
