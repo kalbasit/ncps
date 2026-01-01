@@ -248,16 +248,23 @@ EOF
         --restart=Never \
         --rm -i \
         --command -- /bin/sh -c "
-            sleep 5;
-            mc alias set internal http://minio.minio.svc.cluster.local:9000 admin password123;
-            echo 'Creating bucket ncps-bucket...'
-            mc mb internal/ncps-bucket || true;
-            echo 'Creating access keys...'
+            set -e
+            echo '--> Waiting for MinIO service...'
+            until mc alias set internal http://minio.minio.svc.cluster.local:9000 admin password123; do
+                echo '    MinIO not ready yet, retrying in 2s...'
+                sleep 2
+            done
+            echo '--> MinIO is ready. Configuring...'
+
+            echo '    Creating bucket ncps-bucket...'
+            mc mb internal/ncps-bucket
+
+            echo '    Creating access keys...'
             mc admin user svcacct add \
                 --access-key 'ncps-access-key' \
                 --secret-key 'ncps-secret-key' \
-                internal admin || echo 'Key probably exists, skipping creation.'
-        " 2>/dev/null || true
+                internal admin
+        "
 
     # Operators
     echo "   - Installing CNPG (PostgreSQL Operator)..."
