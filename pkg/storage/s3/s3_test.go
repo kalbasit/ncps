@@ -181,10 +181,10 @@ func getTestConfig(t *testing.T) *s3.Config {
 	return &s3.Config{
 		Bucket:          bucket,
 		Region:          region,
-		Endpoint:        s3.GetEndpointWithoutScheme(endpoint),
+		Endpoint:        endpoint,
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
-		UseSSL:          s3.IsHTTPS(endpoint),
+		ForcePathStyle:  true, // MinIO requires path-style addressing
 	}
 }
 

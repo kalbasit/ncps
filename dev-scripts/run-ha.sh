@@ -15,7 +15,7 @@ readonly NC='\033[0m' # No Color
 
 # Configuration (matches nix/process-compose/flake-module.nix)
 readonly S3_BUCKET="test-bucket"
-readonly S3_ENDPOINT="127.0.0.1:9000"
+readonly S3_ENDPOINT="http://127.0.0.1:9000"
 readonly S3_REGION="us-east-1"
 readonly S3_ACCESS_KEY="test-access-key"
 readonly S3_SECRET_KEY="test-secret-key"
@@ -155,7 +155,7 @@ start_instance() {
     --cache-storage-s3-region="$S3_REGION"
     --cache-storage-s3-access-key-id="$S3_ACCESS_KEY"
     --cache-storage-s3-secret-access-key="$S3_SECRET_KEY"
-    --cache-storage-s3-use-ssl="false"
+    --cache-storage-s3-force-path-style
     --cache-redis-addrs="${REDIS_ADDR}"
     --cache-lock-download-ttl="5m"
     --cache-lock-lru-ttl="30m"

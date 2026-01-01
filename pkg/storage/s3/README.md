@@ -18,18 +18,18 @@ The S3 storage is configured using the `Config` struct:
 type Config struct {
     Bucket          string // S3 bucket name (required)
     Region          string // AWS region (optional, can be empty for MinIO)
-    Endpoint        string // S3 endpoint URL without scheme (required)
+    Endpoint        string // S3 endpoint URL with scheme (required)
     AccessKeyID     string // Access key for authentication (required)
     SecretAccessKey string // Secret key for authentication (required)
-    UseSSL          bool   // Enable SSL/TLS (default: false)
+    ForcePathStyle  bool   // Force path-style addressing (required for MinIO, optional for AWS S3)
 }
 ```
 
 ### Important Notes
 
-- **Endpoint Format**: The endpoint should be provided **without** the URL scheme (e.g., `"localhost:9000"` or `"s3.us-west-2.amazonaws.com"`). Use the helper functions `GetEndpointWithoutScheme()` and `IsHTTPS()` if you need to parse endpoints with schemes.
+- **Endpoint Format**: The endpoint **must** include the URL scheme (e.g., `"http://localhost:9000"` or `"https://s3.us-west-2.amazonaws.com"`). The scheme determines whether SSL/TLS is used.
 - **Region**: Optional for MinIO, but typically required for AWS S3.
-- **UseSSL**: Set to `true` for AWS S3 and production environments, `false` for local development.
+- **ForcePathStyle**: Set to `true` for MinIO and other S3-compatible services that require path-style addressing. Set to `false` for AWS S3 (which uses virtual-hosted-style by default).
 
 ## Usage
 
@@ -46,10 +46,10 @@ ctx := context.Background()
 // Create MinIO configuration
 cfg := s3.Config{
     Bucket:          "my-nix-cache",
-    Endpoint:        "localhost:9000",      // Without scheme
+    Endpoint:        "http://localhost:9000", // Must include scheme
     AccessKeyID:     "minioadmin",
     SecretAccessKey: "minioadmin",
-    UseSSL:          false,                 // For local development
+    ForcePathStyle:  true,                    // MinIO requires path-style addressing
 }
 
 // Create S3 store
@@ -69,30 +69,15 @@ exists := store.HasNarInfo(ctx, "abc123")
 cfg := s3.Config{
     Bucket:          "my-nix-cache",
     Region:          "us-west-2",
-    Endpoint:        "s3.us-west-2.amazonaws.com",  // Without scheme
+    Endpoint:        "https://s3.us-west-2.amazonaws.com", // Must include scheme
     AccessKeyID:     "your-access-key",
     SecretAccessKey: "your-secret-key",
-    UseSSL:          true,                          // Always use SSL for AWS
+    ForcePathStyle:  false,                                // AWS S3 uses virtual-hosted-style
 }
 
 store, err := s3.New(ctx, cfg)
 ```
 
-### Handling Endpoints with Schemes
-
-If you have an endpoint URL that includes the scheme (e.g., from configuration), use the helper functions:
-
-```go
-fullEndpoint := "https://s3.us-west-2.amazonaws.com"
-
-cfg := s3.Config{
-    Bucket:          "my-nix-cache",
-    Endpoint:        s3.GetEndpointWithoutScheme(fullEndpoint),
-    AccessKeyID:     "your-access-key",
-    SecretAccessKey: "your-secret-key",
-    UseSSL:          s3.IsHTTPS(fullEndpoint),
-}
-```
 
 ## Storage Structure
 
@@ -166,10 +151,10 @@ localStore, err := local.New(ctx, "/path/to/local/storage")
 // After (S3 storage)
 s3Store, err := s3.New(ctx, s3.Config{
     Bucket:          "my-nix-cache",
-    Endpoint:        "s3.us-west-2.amazonaws.com",
+    Endpoint:        "https://s3.us-west-2.amazonaws.com",
     AccessKeyID:     "your-key",
     SecretAccessKey: "your-secret",
-    UseSSL:          true,
+    ForcePathStyle:  false,
 })
 ```
 
@@ -180,4 +165,4 @@ s3Store, err := s3.New(ctx, s3.Config{
 - Consider using temporary credentials for production
 - Enable bucket versioning for data protection
 - Use appropriate bucket policies for access control
-- Always use SSL/TLS in production (`UseSSL: true`)
+- Always use HTTPS in production (e.g., `Endpoint: "https://s3.amazonaws.com"`)

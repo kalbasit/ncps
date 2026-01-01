@@ -51,14 +51,16 @@ type Config struct {
 	Bucket string
 	// Region is the AWS region (optional)
 	Region string
-	// Endpoint is the S3-compatible endpoint URL (for MinIO, etc.)
+	// Endpoint is the S3-compatible endpoint URL with scheme (http:// or https://)
 	Endpoint string
 	// AccessKeyID is the access key for authentication
 	AccessKeyID string
 	// SecretAccessKey is the secret key for authentication
 	SecretAccessKey string
-	// UseSSL enables SSL/TLS (default: false)
-	UseSSL bool
+	// ForcePathStyle forces path-style addressing (bucket.s3.com/key vs s3.com/bucket/key)
+	// Set to true for MinIO and other S3-compatible services
+	// Set to false for AWS S3 (default)
+	ForcePathStyle bool
 }
 
 // Store represents an S3 store and implements storage.Store.
@@ -73,11 +75,22 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, err
 	}
 
+	// Parse SSL from endpoint scheme
+	useSSL := IsHTTPS(cfg.Endpoint)
+	endpoint := GetEndpointWithoutScheme(cfg.Endpoint)
+
+	// Determine bucket lookup type based on ForcePathStyle
+	bucketLookup := minio.BucketLookupAuto
+	if cfg.ForcePathStyle {
+		bucketLookup = minio.BucketLookupPath
+	}
+
 	// Create MinIO client
-	client, err := minio.New(GetEndpointWithoutScheme(cfg.Endpoint), &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
-		Secure: cfg.UseSSL,
-		Region: cfg.Region,
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:        credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure:       useSSL,
+		Region:       cfg.Region,
+		BucketLookup: bucketLookup,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating MinIO client: %w", err)
