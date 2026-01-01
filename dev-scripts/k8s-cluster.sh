@@ -82,7 +82,10 @@ helm upgrade --install cnpg cnpg/cloudnative-pg \
     --namespace cnpg-system --create-namespace \
     --wait
 
-echo "   - MariaDB Operator..."
+echo "   - MariaDB Operator (CRDs + Controller)..."
+helm upgrade --install mariadb-operator-crds mariadb-operator/mariadb-operator-crds \
+    --namespace mariadb-system --create-namespace \
+    --wait
 helm upgrade --install mariadb-operator mariadb-operator/mariadb-operator \
     --namespace mariadb-system --create-namespace \
     --set webhook.cert.certManager.enabled=false \
