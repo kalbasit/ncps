@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --- Auto-Escalate to Root ---
+# Talos local needs root for CNI networking and HVF acceleration.
+# We use -E to preserve your environment variables (PATH, etc).
+if [ "$EUID" -ne 0 ]; then
+  echo "🔐 Escalating to root (required for CNI/HVF)..."
+  exec sudo -E "$0" "$@"
+fi
+
+# Get original user for permission fixups later
+REAL_USER=${SUDO_USER:-$USER}
+REAL_HOME=$(eval echo "~$REAL_USER")
+
 # --- Configuration ---
 CLUSTER_NAME="ncps-cluster"
-# Talos local clusters run in Docker, so we configure the Docker provisioner
-# You can adjust worker counts if you want to test HA (e.g. --workers 2)
 WORKERS=1
 
 # --- Helper Functions ---
@@ -30,12 +40,9 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 # 2. Start Talos Cluster
-# We check if the cluster exists by looking for its container
 if ! docker ps | grep -q "$CLUSTER_NAME-controlplane"; then
     echo "Starting Talos Cluster ($CLUSTER_NAME)..."
-    # Create cluster using Docker provisioner
-    # This automatically handles the kubeconfig merge
-    talosctl cluster create \
+    talosctl cluster create dev \
         --name "$CLUSTER_NAME" \
         --workers "$WORKERS" \
         --provisioner docker
@@ -43,13 +50,19 @@ else
     echo "✅ Talos cluster '$CLUSTER_NAME' is already running."
 fi
 
-# 3. Configure Kubeconfig
-# talosctl cluster create usually merges kubeconfig into ~/.kube/config
-# but we ensure the context is correct
+# 3. Configure Kubeconfig & Fix Permissions
+echo "🔧 Setting up kubeconfig..."
 kubectl config use-context "admin@$CLUSTER_NAME"
 
+# FIX: Ensure the user owns their config file again, otherwise it becomes root-only
+if [ -f "$REAL_HOME/.kube/config" ]; then
+    chown "$REAL_USER" "$REAL_HOME/.kube/config"
+fi
+if [ -f "$REAL_HOME/.talos/config" ]; then
+    chown -R "$REAL_USER" "$REAL_HOME/.talos"
+fi
+
 # 4. Install Storage Class (Crucial for Talos Local)
-# Talos in Docker doesn't have a default SC. We install Rancher Local Path Provisioner.
 echo "💾 Installing Local Path Storage Class..."
 kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
 # Patch it to be default
