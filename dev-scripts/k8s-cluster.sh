@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
+#
+# k8s-cluster.sh - NCPS Kubernetes Development Environment
+#
+# This script sets up a local Kind cluster with MinIO, PostgreSQL, MariaDB, and Redis
+# for testing NCPS in a Kubernetes environment.
+#
+# SECURITY WARNING: This script uses hardcoded credentials and is intended for
+# development/testing purposes ONLY. Do NOT use in production environments.
+#
+# Usage:
+#   ./dev-scripts/k8s-cluster.sh create   - Create and configure the cluster
+#   ./dev-scripts/k8s-cluster.sh destroy  - Destroy the cluster
+#   ./dev-scripts/k8s-cluster.sh info     - Show connection information
+#   ./dev-scripts/k8s-cluster.sh help     - Show this help message
+#
+
 set -euo pipefail
 
 CLUSTER_NAME="ncps-kind"
@@ -6,7 +22,7 @@ CLUSTER_NAME="ncps-kind"
 # --- Helper Functions ---
 check_command() {
     if ! command -v "$1" &> /dev/null; then
-        echo "❌ Error: '$1' is not installed. Please install it first."
+        echo "❌ Error: '$1' is not installed. Please install it first." >&2
         exit 1
     fi
 }
@@ -24,8 +40,8 @@ wait_for_pods() {
     until kubectl get pod -n "$ns" -l "$label" 2>/dev/null | grep -q "Running"; do
         if [ "$count" -ge "$timeout" ]; then
             echo ""
-            echo " ⚠️  Timed out waiting for Running status. Checking if pods exist..."
-            kubectl get pods -n "$ns" -l "$label"
+            echo " ⚠️  Timed out waiting for Running status. Checking if pods exist..." >&2
+            kubectl get pods -n "$ns" -l "$label" >&2
             # We don't exit here because sometimes they are just slow
             break
         fi
@@ -38,24 +54,135 @@ wait_for_pods() {
     kubectl wait --for=condition=Ready pod -l "$label" -n "$ns" --timeout=60s > /dev/null 2>&1 || true
 }
 
-echo "🚀 Initializing NCPS Lab (Kind Edition)..."
+# Extract and display connection information
+show_info() {
+    if ! kind get clusters 2>/dev/null | grep -q "^$CLUSTER_NAME$"; then
+        echo "❌ Error: Cluster '$CLUSTER_NAME' does not exist." >&2
+        echo "Run './dev-scripts/k8s-cluster.sh create' first." >&2
+        exit 1
+    fi
 
-# 1. Pre-flight Checks
-check_command docker
-check_command kind
-check_command kubectl
-check_command helm
+    # Switch to cluster context
+    kubectl config use-context "kind-$CLUSTER_NAME" >/dev/null
 
-if ! docker info > /dev/null 2>&1; then
-    echo "❌ Error: Docker is not running."
-    exit 1
-fi
+    # Extract credentials
+    local MINIO_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
 
-# 2. Create Kind Cluster
-# We use a config to ensure ports are exposed if we ever need Ingress (optional but good practice)
-if ! kind get clusters | grep -q "^$CLUSTER_NAME$"; then
-    echo "📦 Creating Kind cluster..."
-    cat <<EOF | kind create cluster --name "$CLUSTER_NAME" --config=-
+    local PG_PASS=""
+    if kubectl get secret -n data pg17-ncps-app >/dev/null 2>&1; then
+        PG_PASS=$(kubectl get secret -n data pg17-ncps-app -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
+    fi
+
+    local MARIA_PASS=""
+    if kubectl get secret -n data mariadb-ncps-password >/dev/null 2>&1; then
+        MARIA_PASS=$(kubectl get secret -n data mariadb-ncps-password -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
+    fi
+
+    local REDIS_AUTH_MSG="Password: <none> (No Auth)"
+    if kubectl get secret -n data redis-ncps >/dev/null 2>&1; then
+        local REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
+        REDIS_AUTH_MSG="Password: $REDIS_PASS"
+    fi
+
+    echo ""
+    echo "========================================================"
+    echo "✅ NCPS Kubernetes Development Environment"
+    echo "========================================================"
+    echo "Cluster: $CLUSTER_NAME"
+    echo "Context: kind-$CLUSTER_NAME"
+    echo ""
+    echo "--- 🪣 S3 (MinIO) ---"
+    echo "  Endpoint: $MINIO_ENDPOINT"
+    echo "  Bucket:   ncps-bucket"
+    echo "  Access:   ncps-access-key"
+    echo "  Secret:   ncps-secret-key"
+    echo "  Port forward: kubectl port-forward -n minio svc/minio 9000:9000"
+    echo ""
+    echo "--- 🐘 PostgreSQL 17 ---"
+    echo "  Host: pg17-ncps-rw.data.svc.cluster.local"
+    echo "  Port: 5432"
+    echo "  User: ncps"
+    echo "  Pass: $PG_PASS"
+    echo "  DB:   ncps"
+    echo ""
+    echo "--- 🐬 MariaDB ---"
+    echo "  Host: mariadb-ncps.data.svc.cluster.local"
+    echo "  Port: 3306"
+    echo "  User: ncps"
+    echo "  Pass: $MARIA_PASS"
+    echo "  DB:   ncps"
+    echo ""
+    echo "--- 🔺 Redis ---"
+    echo "  Host: redis-ncps.data.svc.cluster.local"
+    echo "  Port: 6379"
+    echo "  $REDIS_AUTH_MSG"
+    echo "========================================================"
+    echo ""
+}
+
+# Destroy the cluster
+destroy_cluster() {
+    if ! kind get clusters 2>/dev/null | grep -q "^$CLUSTER_NAME$"; then
+        echo "✅ Cluster '$CLUSTER_NAME' does not exist. Nothing to destroy."
+        exit 0
+    fi
+
+    echo "🗑️  Destroying Kind cluster '$CLUSTER_NAME'..."
+    kind delete cluster --name "$CLUSTER_NAME"
+    echo "✅ Cluster destroyed successfully."
+}
+
+# Show help message
+show_help() {
+    cat <<EOF
+NCPS Kubernetes Development Environment
+
+Usage: $0 <command>
+
+Commands:
+  create   - Create and configure the Kind cluster with all dependencies
+  destroy  - Destroy the Kind cluster and all resources
+  info     - Display connection information for the cluster
+  help     - Show this help message
+
+Examples:
+  # Create a new cluster
+  $0 create
+
+  # Show connection information
+  $0 info
+
+  # Destroy the cluster when done testing
+  $0 destroy
+
+Note: This environment is for DEVELOPMENT/TESTING only. It uses hardcoded
+credentials and should never be used in production.
+EOF
+}
+
+# Create the cluster
+create_cluster() {
+    echo "🚀 Initializing NCPS Kubernetes Development Environment..."
+    echo ""
+
+    # 1. Pre-flight Checks
+    echo "🔍 Checking prerequisites..."
+    check_command docker
+    check_command kind
+    check_command kubectl
+    check_command helm
+
+    if ! docker info > /dev/null 2>&1; then
+        echo "❌ Error: Docker is not running." >&2
+        exit 1
+    fi
+    echo "✅ All prerequisites met."
+    echo ""
+
+    # 2. Create Kind Cluster
+    if ! kind get clusters 2>/dev/null | grep -q "^$CLUSTER_NAME$"; then
+        echo "📦 Creating Kind cluster..."
+        cat <<EOF | kind create cluster --name "$CLUSTER_NAME" --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -66,96 +193,96 @@ nodes:
     listenAddress: "127.0.0.1"
     protocol: TCP
 EOF
-else
-    echo "✅ Kind cluster '$CLUSTER_NAME' is already running."
-fi
+        echo "✅ Cluster created."
+    else
+        echo "✅ Cluster '$CLUSTER_NAME' already exists. Skipping creation."
+    fi
+    echo ""
 
-# 3. Context & Storage
-kubectl config use-context "kind-$CLUSTER_NAME"
+    # 3. Context & Storage
+    kubectl config use-context "kind-$CLUSTER_NAME"
 
-# Kind comes with a 'standard' storage class, but let's ensure it's default
-echo "💾 Verifying Storage Class..."
-if ! kubectl get sc standard > /dev/null 2>&1; then
-    # Fallback if standard is missing (rare in new kind versions)
-    kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
-    kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-fi
+    echo "💾 Verifying storage class..."
+    if ! kubectl get sc standard > /dev/null 2>&1; then
+        # Fallback if standard is missing (rare in new kind versions)
+        kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+        kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+    fi
+    echo ""
 
-# 4. Install Helm Repos
-echo "📦 Updating Helm Repos..."
-helm repo add minio https://charts.min.io/ --force-update
-helm repo add cnpg https://cloudnative-pg.io/charts/ --force-update
-helm repo add mariadb-operator https://mariadb-operator.github.io/mariadb-operator/ --force-update
-helm repo add ot-helm https://ot-container-kit.github.io/helm-charts/ --force-update
-helm repo update > /dev/null
+    # 4. Install Helm Repos
+    echo "📦 Updating Helm repositories..."
+    helm repo add minio https://charts.min.io/ --force-update >/dev/null 2>&1
+    helm repo add cnpg https://cloudnative-pg.io/charts/ --force-update >/dev/null 2>&1
+    helm repo add mariadb-operator https://mariadb-operator.github.io/mariadb-operator/ --force-update >/dev/null 2>&1
+    helm repo add ot-helm https://ot-container-kit.github.io/helm-charts/ --force-update >/dev/null 2>&1
+    helm repo update > /dev/null
+    echo "✅ Helm repositories updated."
+    echo ""
 
-# 5. Install Infrastructure
-echo "🏗️  Installing Infrastructure..."
+    # 5. Install Infrastructure
+    echo "🏗️  Installing infrastructure components..."
+    echo ""
 
-# MinIO
-helm upgrade --install minio minio/minio \
-    --namespace minio --create-namespace \
-    --set resources.requests.memory=256Mi \
-    --set mode=standalone \
-    --set rootUser=admin \
-    --set rootPassword=password123 \
-    --set persistence.enabled=true \
-    --set persistence.size=5Gi \
-    --wait
+    # MinIO
+    echo "   - Installing MinIO..."
+    helm upgrade --install minio minio/minio \
+        --namespace minio --create-namespace \
+        --set resources.requests.memory=256Mi \
+        --set mode=standalone \
+        --set rootUser=admin \
+        --set rootPassword=password123 \
+        --set persistence.enabled=true \
+        --set persistence.size=5Gi \
+        --wait
 
-# ---  Configure MinIO (Bucket & Keys) ---
-echo "⚙️  Configuring MinIO (Bucket & Access Keys)..."
-# We run a one-off pod with 'mc' to configure the internal MinIO instance
-kubectl run minio-configurator \
-    --namespace minio \
-    --image=minio/mc \
-    --restart=Never \
-    --rm -i \
-    --command -- /bin/sh -c "
-        # Wait a moment for service DNS
-        sleep 5;
-        # 1. Alias the internal service
-        mc alias set internal http://minio.minio.svc.cluster.local:9000 admin password123;
+    # Configure MinIO (Bucket & Keys)
+    echo "   ⚙️  Configuring MinIO (bucket and access keys)..."
+    kubectl run minio-configurator \
+        --namespace minio \
+        --image=minio/mc \
+        --restart=Never \
+        --rm -i \
+        --command -- /bin/sh -c "
+            sleep 5;
+            mc alias set internal http://minio.minio.svc.cluster.local:9000 admin password123;
+            echo 'Creating bucket ncps-bucket...'
+            mc mb internal/ncps-bucket || true;
+            echo 'Creating access keys...'
+            mc admin user svcacct add \
+                --access-key 'ncps-access-key' \
+                --secret-key 'ncps-secret-key' \
+                internal admin || echo 'Key probably exists, skipping creation.'
+        " 2>/dev/null || true
 
-        # 2. Create Bucket (ignore if exists)
-        echo 'Creating bucket ncps-bucket...'
-        mc mb internal/ncps-bucket || true;
+    # Operators
+    echo "   - Installing CNPG (PostgreSQL Operator)..."
+    helm upgrade --install cnpg cnpg/cloudnative-pg \
+        --namespace cnpg-system --create-namespace \
+        --wait
 
-        # 3. Create Service Account (Access/Secret Keys)
-        # We try to add it; if it fails (already exists), we ignore
-        echo 'Creating access keys...'
-        mc admin user svcacct add \
-            --access-key 'ncps-access-key' \
-            --secret-key 'ncps-secret-key' \
-            internal admin || echo 'Key probably exists, skipping creation.'
-    " || true
+    echo "   - Installing MariaDB Operator..."
+    helm upgrade --install mariadb-operator-crds mariadb-operator/mariadb-operator-crds \
+        --namespace mariadb-system --create-namespace \
+        --wait >/dev/null 2>&1
+    helm upgrade --install mariadb-operator mariadb-operator/mariadb-operator \
+        --namespace mariadb-system --create-namespace \
+        --set webhook.cert.certManager.enabled=false \
+        --wait
 
-# Operators
-echo "   - CNPG (Postgres)..."
-helm upgrade --install cnpg cnpg/cloudnative-pg \
-    --namespace cnpg-system --create-namespace \
-    --wait
+    echo "   - Installing Redis Operator..."
+    helm upgrade --install redis-operator ot-helm/redis-operator \
+        --namespace redis-system --create-namespace \
+        --wait
+    echo ""
 
-echo "   - MariaDB Operator (CRDs + Controller)..."
-helm upgrade --install mariadb-operator-crds mariadb-operator/mariadb-operator-crds \
-    --namespace mariadb-system --create-namespace \
-    --wait
-helm upgrade --install mariadb-operator mariadb-operator/mariadb-operator \
-    --namespace mariadb-system --create-namespace \
-    --set webhook.cert.certManager.enabled=false \
-    --wait
+    # 6. Deploy Databases
+    echo "🔥 Deploying database instances..."
+    kubectl create namespace data --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-echo "   - Redis Operator..."
-helm upgrade --install redis-operator ot-helm/redis-operator \
-    --namespace redis-system --create-namespace \
-    --wait
-
-# 6. Deploy Databases
-echo "🔥 Deploying Database Instances..."
-kubectl create namespace data --dry-run=client -o yaml | kubectl apply -f -
-
-# Postgres 17
-cat <<EOF | kubectl apply -f -
+    # Postgres 17
+    echo "   - PostgreSQL 17..."
+    cat <<EOF | kubectl apply -f - >/dev/null
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -172,8 +299,9 @@ spec:
       owner: ncps
 EOF
 
-# MariaDB
-cat <<EOF | kubectl apply -f -
+    # MariaDB
+    echo "   - MariaDB..."
+    cat <<EOF | kubectl apply -f - >/dev/null
 apiVersion: k8s.mariadb.com/v1alpha1
 kind: MariaDB
 metadata:
@@ -196,8 +324,9 @@ spec:
   replicas: 1
 EOF
 
-# Redis
-cat <<EOF | kubectl apply -f -
+    # Redis
+    echo "   - Redis..."
+    cat <<EOF | kubectl apply -f - >/dev/null
 apiVersion: redis.redis.opstreelabs.in/v1beta2
 kind: Redis
 metadata:
@@ -216,56 +345,54 @@ spec:
           requests:
             storage: 1Gi
 EOF
+    echo ""
 
-# 7. Robust Wait Logic
-echo "⏳ Waiting for databases to initialize..."
-wait_for_pods "cnpg.io/cluster=pg17-ncps" "data"
-wait_for_pods "app.kubernetes.io/instance=mariadb-ncps" "data"
-wait_for_pods "app=redis-ncps" "data"
+    # 7. Wait for databases to be ready
+    echo "⏳ Waiting for databases to initialize (this may take a few minutes)..."
+    wait_for_pods "cnpg.io/cluster=pg17-ncps" "data"
+    wait_for_pods "app.kubernetes.io/instance=mariadb-ncps" "data"
+    wait_for_pods "app=redis-ncps" "data"
+    echo ""
 
-# --- EXTRACT CREDENTIALS ---
-MINIO_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
+    echo "========================================================"
+    echo "✅ Cluster created successfully!"
+    echo "========================================================"
+    echo ""
 
-# Postgres (CNPG creates a secret ending in -app for the app user)
-PG_PASS=$(kubectl get secret -n data pg17-ncps-app -o jsonpath="{.data.password}" | base64 -d)
+    # Show connection information
+    show_info
 
-# MariaDB (We defined this secret name in the YAML)
-MARIA_PASS=$(kubectl get secret -n data mariadb-ncps-password -o jsonpath="{.data.password}" | base64 -d)
+    echo ""
+    echo "📋 NEXT STEPS:"
+    echo ""
+    echo "1. Test NCPS with different storage backends and databases"
+    echo "2. Deploy NCPS Helm chart: helm install ncps ./helm/ncps"
+    echo "3. View cluster info: $0 info"
+    echo ""
+    echo "🧹 CLEANUP:"
+    echo "When you're done testing, destroy the cluster to free resources:"
+    echo "  $0 destroy"
+    echo ""
+}
 
-# Redis
-# Check if secret exists; if not, assume No Auth (default for this operator)
-if kubectl get secret -n data redis-ncps >/dev/null 2>&1; then
-    REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" | base64 -d)
-    REDIS_AUTH_MSG="Password: $REDIS_PASS"
-else
-    REDIS_PASS=""
-    REDIS_AUTH_MSG="Password: <none> (Default: No Auth)"
-fi
-
-echo ""
-echo "========================================================"
-echo "✅ Kind Environment Ready!"
-echo "========================================================"
-echo "Cluster Name: ncps-kind"
-echo ""
-echo "--- 🪣 S3 (MinIO) ---"
-echo "  Endpoint: $MINIO_ENDPOINT"
-echo "  Bucket:   ncps-bucket"
-echo "  Access:   ncps-access-key"
-echo "  Secret:   ncps-secret-key"
-echo "  (Port forward: kubectl port-forward -n minio svc/minio 9000:9000)"
-echo ""
-echo "--- 🐘 Postgres ---"
-echo "  Host: pg17-ncps-rw.data.svc.cluster.local"
-echo "  User: ncps"
-echo "  Pass: $PG_PASS"
-echo ""
-echo "--- 🐬 MariaDB ---"
-echo "  Host: mariadb-ncps.data.svc.cluster.local"
-echo "  User: ncps"
-echo "  Pass: $MARIA_PASS"
-echo ""
-echo "--- 🔺 Redis ---"
-echo "  Host: redis-ncps-master.data.svc.cluster.local"
-echo "  $REDIS_AUTH_MSG"
-echo "========================================================"
+# --- Main Command Router ---
+case "${1:-}" in
+    create)
+        create_cluster
+        ;;
+    destroy)
+        destroy_cluster
+        ;;
+    info)
+        show_info
+        ;;
+    help|--help|-h|"")
+        show_help
+        ;;
+    *)
+        echo "❌ Error: Unknown command '$1'" >&2
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac
