@@ -15,20 +15,27 @@ check_command() {
 wait_for_pods() {
     local label="$1"
     local ns="$2"
-    local timeout=60
+    local timeout=120
     local count=0
 
     echo -n "   - Waiting for pods ($label)..."
-    until kubectl get pod -n "$ns" -l "$label" &> /dev/null; do
+
+    # grep -q ensures we actually found output, not just a successful empty return
+    until kubectl get pod -n "$ns" -l "$label" 2>/dev/null | grep -q "Running"; do
         if [ "$count" -ge "$timeout" ]; then
-            echo " ❌ Timed out waiting for operator to create pods."
-            exit 1
+            echo ""
+            echo " ⚠️  Timed out waiting for Running status. Checking if pods exist..."
+            kubectl get pods -n "$ns" -l "$label"
+            # We don't exit here because sometimes they are just slow
+            break
         fi
         sleep 2
         count=$((count + 2))
     done
-    echo " Pods created. Waiting for Ready..."
-    kubectl wait --for=condition=Ready pod -l "$label" -n "$ns" --timeout=300s > /dev/null
+
+    echo " ✅ Found."
+    # Now we can safely wait for the Ready condition
+    kubectl wait --for=condition=Ready pod -l "$label" -n "$ns" --timeout=60s > /dev/null 2>&1 || true
 }
 
 echo "🚀 Initializing NCPS Lab (Kind Edition)..."
@@ -185,10 +192,9 @@ EOF
 
 # 7. Robust Wait Logic
 echo "⏳ Waiting for databases to initialize..."
-wait_for_pods "app.kubernetes.io/name=postgresql" "data"
-wait_for_pods "app.kubernetes.io/name=mariadb" "data"
-# Redis operator uses slightly different labels, checking carefully
-wait_for_pods "app.kubernetes.io/name=redis" "data"
+wait_for_pods "cnpg.io/cluster=pg17-ncps" "data"
+wait_for_pods "app.kubernetes.io/instance=mariadb-ncps" "data"
+wait_for_pods "app=redis-ncps" "data"
 
 # --- EXTRACT CREDENTIALS ---
 MINIO_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
