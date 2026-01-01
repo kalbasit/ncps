@@ -10,6 +10,18 @@
       package-ncps = config.packages.ncps.overrideAttrs (oa: {
         # Remove race-condition testing as it does not work on all platforms
         checkFlags = lib.remove "-race" (oa.checkFlags or [ ]);
+
+        # No need to run integration tests for the docker image, they are
+        # covered by the other tests. Additionally, there seems to be a
+        # incompatibility issue between Redis and GitHub actions that is
+        # blocking the image build:
+        # WARNING Your kernel has a bug that could lead to data corruption
+        # during background save. Please upgrade to the latest stable kernel.
+        # Redis will now exit to prevent data corruption. Note that it is
+        # possible to suppress this warning by setting the following config:
+        # ignore-warnings ARM64-COW-BUG
+        preCheck = "";
+        postCheck = "";
       });
     in
     {
