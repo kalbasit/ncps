@@ -37,7 +37,7 @@ wait_for_pods() {
     echo -n "   - Waiting for pods ($label)..."
 
     # grep -q ensures we actually found output, not just a successful empty return
-    until kubectl get pod -n "$ns" -l "$label" 2>/dev/null | grep -q "Running"; do
+    until kubectl get pod -n "$ns" -l "$label" -o name 2>/dev/null | grep -q .; do
         if [ "$count" -ge "$timeout" ]; then
             echo ""
             echo " ⚠️  Timed out waiting for Running status. Checking if pods exist..." >&2
