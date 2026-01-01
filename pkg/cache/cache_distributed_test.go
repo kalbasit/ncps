@@ -59,8 +59,9 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 	narPath := "/nar/" + narEntry.NarHash + ".nar." + narEntry.NarCompression.ToFileExtension()
 
 	// Add a handler to count NAR downloads from upstream
+	// Only count GET requests (actual downloads), not HEAD requests
 	handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
-		if r.URL.Path == narPath {
+		if r.URL.Path == narPath && r.Method == http.MethodGet {
 			upstreamDownloads.Add(1)
 		}
 
