@@ -978,6 +978,13 @@ func (c *Cache) pullNarInfo(
 		delete(c.upstreamJobs, hash)
 		c.upstreamJobsMu.Unlock()
 
+		// Ensure ds.start is closed to unblock waiters
+		select {
+		case <-ds.start:
+		default:
+			close(ds.start)
+		}
+
 		close(ds.done)
 	}
 
@@ -1026,6 +1033,10 @@ func (c *Cache) pullNarInfo(
 
 		return
 	}
+
+	// Signal that we've successfully fetched the narinfo and are about to process it
+	// This allows prePullNarInfo to release the distributed lock
+	close(ds.start)
 
 	var enableZSTD bool
 
