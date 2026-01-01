@@ -103,6 +103,33 @@ helm upgrade --install minio minio/minio \
     --set persistence.size=5Gi \
     --wait
 
+# ---  Configure MinIO (Bucket & Keys) ---
+echo "⚙️  Configuring MinIO (Bucket & Access Keys)..."
+# We run a one-off pod with 'mc' to configure the internal MinIO instance
+kubectl run minio-configurator \
+    --namespace minio \
+    --image=minio/mc \
+    --restart=Never \
+    --rm -i \
+    --command -- /bin/sh -c "
+        # Wait a moment for service DNS
+        sleep 5;
+        # 1. Alias the internal service
+        mc alias set internal http://minio.minio.svc.cluster.local:9000 admin password123;
+
+        # 2. Create Bucket (ignore if exists)
+        echo 'Creating bucket ncps-bucket...'
+        mc mb internal/ncps-bucket || true;
+
+        # 3. Create Service Account (Access/Secret Keys)
+        # We try to add it; if it fails (already exists), we ignore
+        echo 'Creating access keys...'
+        mc admin user svcacct add \
+            --access-key 'ncps-access-key' \
+            --secret-key 'ncps-secret-key' \
+            internal admin || echo 'Key probably exists, skipping creation.'
+    " || true
+
 # Operators
 echo "   - CNPG (Postgres)..."
 helm upgrade --install cnpg cnpg/cloudnative-pg \
@@ -223,8 +250,9 @@ echo "Cluster Name: ncps-kind"
 echo ""
 echo "--- 🪣 S3 (MinIO) ---"
 echo "  Endpoint: $MINIO_ENDPOINT"
-echo "  User: admin"
-echo "  Pass: password123"
+echo "  Bucket:   ncps-bucket"
+echo "  Access:   ncps-access-key"
+echo "  Secret:   ncps-secret-key"
 echo "  (Port forward: kubectl port-forward -n minio svc/minio 9000:9000)"
 echo ""
 echo "--- 🐘 Postgres ---"
