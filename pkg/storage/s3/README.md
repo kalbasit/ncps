@@ -78,7 +78,6 @@ cfg := s3.Config{
 store, err := s3.New(ctx, cfg)
 ```
 
-
 ## Storage Structure
 
 The S3 storage organizes data in the following structure within the bucket:
