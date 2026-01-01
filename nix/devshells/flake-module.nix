@@ -93,6 +93,7 @@
           pkgs.minio
           pkgs.minio-client
           pkgs.postgresql
+          pkgs.pre-commit
           pkgs.redis
           pkgs.sqlc
           pkgs.sqlfluff
