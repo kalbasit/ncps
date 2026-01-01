@@ -56,10 +56,10 @@ fi
 
 # 4. Install Helm Repos
 echo "📦 Updating Helm Repos..."
-helm repo add minio https://charts.min.io/
-helm repo add cnpg https://cloudnative-pg.io/charts/
-helm repo add mariadb-operator https://mariadb-operator.github.io/mariadb-operator/
-helm repo add ot-helm https://ot-container-kit.github.io/helm-charts/
+helm repo add minio https://charts.min.io/ --force-update
+helm repo add cnpg https://cloudnative-pg.io/charts/ --force-update
+helm repo add mariadb-operator https://mariadb-operator.github.io/mariadb-operator/ --force-update
+helm repo add ot-helm https://ot-container-kit.github.io/helm-charts/ --force-update
 helm repo update > /dev/null
 
 # 5. Install Infrastructure
