@@ -11,6 +11,26 @@ check_command() {
     fi
 }
 
+# Function to safely wait for pods to appear before waiting for them to be ready
+wait_for_pods() {
+    local label="$1"
+    local ns="$2"
+    local timeout=60
+    local count=0
+
+    echo -n "   - Waiting for pods ($label)..."
+    until kubectl get pod -n "$ns" -l "$label" &> /dev/null; do
+        if [ "$count" -ge "$timeout" ]; then
+            echo " ❌ Timed out waiting for operator to create pods."
+            exit 1
+        fi
+        sleep 2
+        count=$((count + 2))
+    done
+    echo " Pods created. Waiting for Ready..."
+    kubectl wait --for=condition=Ready pod -l "$label" -n "$ns" --timeout=300s > /dev/null
+}
+
 echo "🚀 Initializing NCPS Lab (Kind Edition)..."
 
 # 1. Pre-flight Checks
@@ -163,10 +183,12 @@ spec:
             storage: 1Gi
 EOF
 
-echo "⏳ Waiting for databases..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=postgresql -n data --timeout=180s
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mariadb -n data --timeout=180s
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=redis -n data --timeout=180s
+# 7. Robust Wait Logic
+echo "⏳ Waiting for databases to initialize..."
+wait_for_pods "app.kubernetes.io/name=postgresql" "data"
+wait_for_pods "app.kubernetes.io/name=mariadb" "data"
+# Redis operator uses slightly different labels, checking carefully
+wait_for_pods "app.kubernetes.io/name=redis" "data"
 
 # --- EXTRACT CREDENTIALS ---
 MINIO_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
