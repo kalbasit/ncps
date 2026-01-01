@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -104,7 +103,7 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 			},
 			&cli.StringFlag{
 				Name:    "cache-storage-s3-endpoint",
-				Usage:   "S3-compatible endpoint URL (e.g., s3.amazonaws.com or minio.example.com:9000)",
+				Usage:   "S3-compatible endpoint URL with scheme (e.g., https://s3.amazonaws.com or http://minio.example.com:9000)",
 				Sources: flagSources("cache.storage.s3.endpoint", "CACHE_STORAGE_S3_ENDPOINT"),
 			},
 			&cli.StringFlag{
@@ -123,10 +122,9 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Sources: flagSources("cache.storage.s3.secret-access-key", "CACHE_STORAGE_S3_SECRET_ACCESS_KEY"),
 			},
 			&cli.BoolFlag{
-				Name:    "cache-storage-s3-use-ssl",
-				Usage:   "Use SSL/TLS for S3 connection (default: true)",
-				Sources: flagSources("cache.storage.s3.use-ssl", "CACHE_STORAGE_S3_USE_SSL"),
-				Value:   true,
+				Name:    "cache-storage-s3-force-path-style",
+				Usage:   "Force path-style S3 addressing (bucket/key vs key.bucket) - required for MinIO, optional for AWS S3",
+				Sources: flagSources("cache.storage.s3.force-path-style", "CACHE_STORAGE_S3_FORCE_PATH_STYLE"),
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
@@ -630,27 +628,17 @@ func createS3Storage(
 	s3Endpoint := cmd.String("cache-storage-s3-endpoint")
 	s3AccessKeyID := cmd.String("cache-storage-s3-access-key-id")
 	s3SecretAccessKey := cmd.String("cache-storage-s3-secret-access-key")
+	s3ForcePathStyle := cmd.Bool("cache-storage-s3-force-path-style")
 
 	if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
 		return nil, nil, nil, ErrS3ConfigIncomplete
 	}
 
-	// Determine SSL usage. The scheme in the endpoint URL (https:// or http://)
-	// takes precedence over the --cache-storage-s3-use-ssl flag.
-	useSSL := cmd.Bool("cache-storage-s3-use-ssl")
-	if s3.IsHTTPS(s3Endpoint) {
-		useSSL = true
-	} else if strings.HasPrefix(s3Endpoint, "http://") {
-		useSSL = false
-	}
-
-	endpoint := s3.GetEndpointWithoutScheme(s3Endpoint)
-
 	ctx = zerolog.Ctx(ctx).
 		With().
 		Str("bucket", s3Bucket).
-		Str("endpoint", endpoint).
-		Bool("use_ssl", useSSL).
+		Str("endpoint", s3Endpoint).
+		Bool("force_path_style", s3ForcePathStyle).
 		Logger().
 		WithContext(ctx)
 
@@ -659,10 +647,10 @@ func createS3Storage(
 	s3Cfg := s3.Config{
 		Bucket:          s3Bucket,
 		Region:          cmd.String("cache-storage-s3-region"),
-		Endpoint:        endpoint,
+		Endpoint:        s3Endpoint,
 		AccessKeyID:     s3AccessKeyID,
 		SecretAccessKey: s3SecretAccessKey,
-		UseSSL:          useSSL,
+		ForcePathStyle:  s3ForcePathStyle,
 	}
 
 	s3Store, err := s3.New(ctx, s3Cfg)
