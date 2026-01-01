@@ -15,11 +15,11 @@ func Example() {
 	// Create S3 configuration for AWS S3
 	cfg := Config{
 		Bucket:          "my-nix-cache",
-		Region:          "us-west-2", // Optional for AWS
-		Endpoint:        "s3.us-west-2.amazonaws.com",
+		Region:          "us-west-2",
+		Endpoint:        "https://s3.us-west-2.amazonaws.com", // Must include scheme
 		AccessKeyID:     "your-access-key",
 		SecretAccessKey: "your-secret-key",
-		UseSSL:          true, // Always use SSL for AWS
+		ForcePathStyle:  false, // AWS S3 uses virtual-hosted-style by default
 	}
 
 	// Create S3 store
@@ -61,13 +61,12 @@ func ExampleMinIO() {
 	ctx := context.Background()
 
 	// Create MinIO configuration
-	// For MinIO, the endpoint should be without the scheme
 	cfg := Config{
 		Bucket:          "my-nix-cache",
-		Endpoint:        "localhost:9000", // Without scheme
+		Endpoint:        "http://localhost:9000", // Must include scheme
 		AccessKeyID:     "minioadmin",
 		SecretAccessKey: "minioadmin",
-		UseSSL:          false, // Set to false for local development without TLS
+		ForcePathStyle:  true, // MinIO requires path-style addressing
 	}
 
 	// Create S3 store

@@ -546,13 +546,13 @@ All the flags can be set using the configuration file. See [config.example.yaml]
 Use these options for S3-compatible storage instead of `--cache-storage-local`:
 
 | Option | Description | Environment Variable | Required for S3 | Default |
-| -------------------------------------- | -------------------------------------------------------- | ------------------------------------ | --------------- | ------- |
+| ----------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------- | --------------- | ------- |
 | `--cache-storage-s3-bucket` | S3 bucket name | `CACHE_STORAGE_S3_BUCKET` | ✅ | - |
-| `--cache-storage-s3-endpoint` | S3 endpoint URL (e.g., s3.amazonaws.com, localhost:9000) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ | - |
+| `--cache-storage-s3-endpoint` | S3 endpoint URL with scheme (e.g., https://s3.amazonaws.com, http://localhost:9000) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ | - |
 | `--cache-storage-s3-access-key-id` | S3 access key ID | `CACHE_STORAGE_S3_ACCESS_KEY_ID` | ✅ | - |
 | `--cache-storage-s3-secret-access-key` | S3 secret access key | `CACHE_STORAGE_S3_SECRET_ACCESS_KEY` | ✅ | - |
 | `--cache-storage-s3-region` | S3 region (optional for some providers) | `CACHE_STORAGE_S3_REGION` | - | - |
-| `--cache-storage-s3-use-ssl` | Use SSL/TLS for S3 connection | `CACHE_STORAGE_S3_USE_SSL` | - | `true` |
+| `--cache-storage-s3-force-path-style` | Force path-style S3 addressing (required for MinIO) | `CACHE_STORAGE_S3_FORCE_PATH_STYLE` | - | `false` |
 
 **S3 Storage Examples:**
 
@@ -563,7 +563,7 @@ Use these options for S3-compatible storage instead of `--cache-storage-local`:
 ncps serve \
   --cache-hostname=ncps.example.com \
   --cache-storage-s3-bucket=my-ncps-cache \
-  --cache-storage-s3-endpoint=s3.amazonaws.com \
+  --cache-storage-s3-endpoint=https://s3.amazonaws.com \
   --cache-storage-s3-region=us-east-1 \
   --cache-storage-s3-access-key-id=AKIAIOSFODNN7EXAMPLE \
   --cache-storage-s3-secret-access-key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
@@ -584,13 +584,11 @@ ncps serve \
   --cache-storage-s3-endpoint=http://minio.example.com:9000 \
   --cache-storage-s3-access-key-id=minioadmin \
   --cache-storage-s3-secret-access-key=minioadmin \
-  --cache-storage-s3-use-ssl=false \
+  --cache-storage-s3-force-path-style \
   --cache-database-url=sqlite:/var/lib/ncps/db.sqlite \
   --cache-upstream-url=https://cache.nixos.org \
   --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
-
-**Note:** The endpoint URL scheme (http:// or https://) takes precedence over `--cache-storage-s3-use-ssl`.
 
 </details>
 

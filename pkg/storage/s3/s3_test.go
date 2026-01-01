@@ -52,12 +52,26 @@ func TestValidateConfig(t *testing.T) {
 		assert.Contains(t, err.Error(), "endpoint is required")
 	})
 
-	t.Run("access key ID is required", func(t *testing.T) {
+	t.Run("endpoint should include scheme", func(t *testing.T) {
 		t.Parallel()
 
 		cfg := s3.Config{
 			Bucket:          "test-bucket",
 			Endpoint:        "localhost:9000",
+			AccessKeyID:     "minioadmin",
+			SecretAccessKey: "minioadmin",
+		}
+
+		err := s3.ValidateConfig(cfg)
+		assert.ErrorIs(t, err, s3.ErrS3EndpointMissingScheme)
+	})
+
+	t.Run("access key ID is required", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := s3.Config{
+			Bucket:          "test-bucket",
+			Endpoint:        "http://localhost:9000",
 			SecretAccessKey: "minioadmin",
 		}
 
@@ -71,7 +85,7 @@ func TestValidateConfig(t *testing.T) {
 
 		cfg := s3.Config{
 			Bucket:      "test-bucket",
-			Endpoint:    "localhost:9000",
+			Endpoint:    "http://localhost:9000",
 			AccessKeyID: "minioadmin",
 		}
 
@@ -85,7 +99,7 @@ func TestValidateConfig(t *testing.T) {
 
 		cfg := s3.Config{
 			Bucket:          "test-bucket",
-			Endpoint:        "localhost:9000",
+			Endpoint:        "http://localhost:9000",
 			AccessKeyID:     "minioadmin",
 			SecretAccessKey: "minioadmin",
 		}
@@ -181,10 +195,10 @@ func getTestConfig(t *testing.T) *s3.Config {
 	return &s3.Config{
 		Bucket:          bucket,
 		Region:          region,
-		Endpoint:        s3.GetEndpointWithoutScheme(endpoint),
+		Endpoint:        endpoint,
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey,
-		UseSSL:          s3.IsHTTPS(endpoint),
+		ForcePathStyle:  true, // MinIO requires path-style addressing
 	}
 }
 

@@ -55,16 +55,18 @@ cache:
     # s3:
     #   # S3 bucket name (use this OR cache.storage.local - not both)
     #   bucket: "ncps-cache"
-    #   # S3-compatible endpoint URL (e.g., s3.amazonaws.com or minio.example.com:9000)
-    #   endpoint: "s3.amazonaws.com"
+    #   # S3-compatible endpoint URL with scheme (e.g., https://s3.amazonaws.com or http://minio.example.com:9000)
+    #   endpoint: "https://s3.amazonaws.com"
     #   # AWS region (optional)
     #   region: "us-east-1"
     #   # S3 access key ID
     #   access-key-id: "your-access-key"
     #   # S3 secret access key
     #   secret-access-key: "your-secret-key"
-    #   # Use SSL/TLS for S3 connection (default: true)
-    #   use-ssl: true
+    #   # Force path-style S3 addressing (required for MinIO, optional for AWS S3)
+    #   # Set to true for MinIO and other S3-compatible services
+    #   # Set to false for AWS S3 (default)
+    #   force-path-style: false
   # The path to the temporary directory that is used by the cache to download NAR files
   temp-path: "/tmp"
   # Path to netrc file for upstream authentication

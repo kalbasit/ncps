@@ -4,7 +4,7 @@ set -euo pipefail
 
 # S3/MinIO configuration (matches the settings from nix/process-compose/flake-module.nix)
 S3_BUCKET="test-bucket"
-S3_ENDPOINT="127.0.0.1:9000"
+S3_ENDPOINT="http://127.0.0.1:9000"
 S3_REGION="us-east-1"
 S3_ACCESS_KEY="test-access-key"
 S3_SECRET_KEY="test-secret-key"
@@ -99,7 +99,7 @@ else
     --cache-storage-s3-region "$S3_REGION"
     --cache-storage-s3-access-key-id "$S3_ACCESS_KEY"
     --cache-storage-s3-secret-access-key "$S3_SECRET_KEY"
-    --cache-storage-s3-use-ssl=false
+    --cache-storage-s3-force-path-style
   )
 fi
 
