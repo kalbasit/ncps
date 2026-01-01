@@ -198,9 +198,22 @@ wait_for_pods "app=redis-ncps" "data"
 
 # --- EXTRACT CREDENTIALS ---
 MINIO_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
+
+# Postgres (CNPG creates a secret ending in -app for the app user)
 PG_PASS=$(kubectl get secret -n data pg17-ncps-app -o jsonpath="{.data.password}" | base64 -d)
+
+# MariaDB (We defined this secret name in the YAML)
 MARIA_PASS=$(kubectl get secret -n data mariadb-ncps-password -o jsonpath="{.data.password}" | base64 -d)
-REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" | base64 -d)
+
+# Redis
+# Check if secret exists; if not, assume No Auth (default for this operator)
+if kubectl get secret -n data redis-ncps >/dev/null 2>&1; then
+    REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" | base64 -d)
+    REDIS_AUTH_MSG="Password: $REDIS_PASS"
+else
+    REDIS_PASS=""
+    REDIS_AUTH_MSG="Password: <none> (Default: No Auth)"
+fi
 
 echo ""
 echo "========================================================"
@@ -226,5 +239,5 @@ echo "  Pass: $MARIA_PASS"
 echo ""
 echo "--- 🔺 Redis ---"
 echo "  Host: redis-ncps-master.data.svc.cluster.local"
-echo "  Pass: $REDIS_PASS"
+echo "  $REDIS_AUTH_MSG"
 echo "========================================================"
