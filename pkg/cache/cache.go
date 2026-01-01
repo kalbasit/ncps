@@ -978,6 +978,13 @@ func (c *Cache) pullNarInfo(
 		delete(c.upstreamJobs, hash)
 		c.upstreamJobsMu.Unlock()
 
+		// Ensure ds.start is closed to unblock waiters
+		select {
+		case <-ds.start:
+		default:
+			close(ds.start)
+		}
+
 		close(ds.done)
 	}
 
@@ -1026,6 +1033,10 @@ func (c *Cache) pullNarInfo(
 
 		return
 	}
+
+	// Signal that we've successfully fetched the narinfo and are about to process it
+	// This allows prePullNarInfo to release the distributed lock
+	close(ds.start)
 
 	var enableZSTD bool
 
@@ -1230,18 +1241,17 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		return ds
 	}
 
-	defer func() {
+	// Check if NarInfo is already in storage (critical for distributed deduplication)
+	// Another instance may have downloaded it while we were waiting for the lock
+	if c.narInfoStore.HasNarInfo(ctx, hash) {
+		// Release the lock before returning
 		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("hash", hash).
 				Msg("failed to release download lock for narinfo")
 		}
-	}()
 
-	// Check if NarInfo is already in storage (critical for distributed deduplication)
-	// Another instance may have downloaded it while we were waiting for the lock
-	if c.narInfoStore.HasNarInfo(ctx, hash) {
 		zerolog.Ctx(ctx).Debug().
 			Str("hash", hash).
 			Msg("NarInfo already in storage, skipping download")
@@ -1262,12 +1272,26 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		ds = newDownloadState()
 		c.upstreamJobs[hash] = ds
 
-		// Start download in background (must be done while holding the lock to ensure
-		// the job is registered before we release the distributed lock)
+		// Start download in background
+		// IMPORTANT: We must wait for the download to signal it has started (ds.start)
+		// before releasing the distributed lock. This ensures that when the lock is
+		// released, the narinfo file creation has begun and other instances will see it.
 		go c.pullNarInfo(ctx, hash, ds)
 	}
 
 	c.upstreamJobsMu.Unlock()
+
+	// Wait for the download to start before releasing the distributed lock
+	// This ensures other instances will find the file in storage when they acquire the lock
+	<-ds.start
+
+	// Now release the distributed lock
+	if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("hash", hash).
+			Msg("failed to release download lock for narinfo")
+	}
 
 	return ds
 }
@@ -1306,18 +1330,17 @@ func (c *Cache) prePullNar(
 		return ds
 	}
 
-	defer func() {
+	// Check if NAR is already in storage (critical for distributed deduplication)
+	// Another instance may have downloaded it while we were waiting for the lock
+	if c.narStore.HasNar(ctx, *narURL) {
+		// Release the lock before returning
 		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("hash", narURL.Hash).
 				Msg("failed to release download lock for nar")
 		}
-	}()
 
-	// Check if NAR is already in storage (critical for distributed deduplication)
-	// Another instance may have downloaded it while we were waiting for the lock
-	if c.narStore.HasNar(ctx, *narURL) {
 		zerolog.Ctx(ctx).Debug().
 			Str("hash", narURL.Hash).
 			Msg("NAR already in storage, skipping download")
@@ -1338,12 +1361,26 @@ func (c *Cache) prePullNar(
 		ds = newDownloadState()
 		c.upstreamJobs[narURL.Hash] = ds
 
-		// Start download in background (must be done while holding the lock to ensure
-		// the job is registered before we release the distributed lock)
+		// Start download in background
+		// IMPORTANT: We must wait for the download to signal it has started (ds.start)
+		// before releasing the distributed lock. This ensures that when the lock is
+		// released, the NAR file creation has begun and other instances will see it.
 		go c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
 	}
 
 	c.upstreamJobsMu.Unlock()
+
+	// Wait for the download to start before releasing the distributed lock
+	// This ensures other instances will find the file in storage when they acquire the lock
+	<-ds.start
+
+	// Now release the distributed lock
+	if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("hash", narURL.Hash).
+			Msg("failed to release download lock for nar")
+	}
 
 	return ds
 }
