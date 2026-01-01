@@ -36,6 +36,9 @@ var (
 	// ErrBucketNotFound is returned if the specified bucket does not exist.
 	ErrBucketNotFound = errors.New("bucket not found")
 
+	// ErrS3EndpointMissingScheme is returned if the S3 endpoint does not include a scheme.
+	ErrS3EndpointMissingScheme = errors.New("S3 endpoint must include scheme (http:// or https://)")
+
 	//nolint:gochecknoglobals
 	tracer trace.Tracer
 )
@@ -519,6 +522,11 @@ func ValidateConfig(cfg Config) error {
 
 	if cfg.Endpoint == "" {
 		return fmt.Errorf("%w: endpoint is required", ErrInvalidConfig)
+	}
+
+	// Ensure endpoint has a scheme
+	if !strings.HasPrefix(cfg.Endpoint, "http://") && !strings.HasPrefix(cfg.Endpoint, "https://") {
+		return fmt.Errorf("%w: %s", ErrS3EndpointMissingScheme, cfg.Endpoint)
 	}
 
 	if cfg.AccessKeyID == "" {

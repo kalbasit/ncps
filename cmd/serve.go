@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -44,9 +43,6 @@ var (
 	ErrS3ConfigIncomplete = errors.New(
 		"S3 requires --cache-storage-s3-endpoint, --cache-storage-s3-access-key-id, and --cache-storage-s3-secret-access-key",
 	)
-
-	// ErrS3EndpointMissingScheme is returned if the S3 endpoint does not include a scheme.
-	ErrS3EndpointMissingScheme = errors.New("S3 endpoint must include scheme (http:// or https://)")
 
 	// ErrStorageConflict is returned if both local and S3 storage are configured.
 	ErrStorageConflict = errors.New("cannot use both --cache-storage-local and --cache-storage-s3-bucket")
@@ -636,11 +632,6 @@ func createS3Storage(
 
 	if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
 		return nil, nil, nil, ErrS3ConfigIncomplete
-	}
-
-	// Ensure endpoint has a scheme
-	if !strings.HasPrefix(s3Endpoint, "http://") && !strings.HasPrefix(s3Endpoint, "https://") {
-		return nil, nil, nil, fmt.Errorf("%w: %s", ErrS3EndpointMissingScheme, s3Endpoint)
 	}
 
 	ctx = zerolog.Ctx(ctx).
