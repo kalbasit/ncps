@@ -282,7 +282,7 @@ config:
       port: $PG_PORT
       database: $PG_DB
       username: $PG_USER
-      password: $PG_PASS
+      password: "$PG_PASS"
       sslMode: disable
 
   redis:
@@ -442,7 +442,7 @@ config:
       port: $PG_PORT
       database: $PG_DB
       username: $PG_USER
-      password: $PG_PASS
+      password: "$PG_PASS"
       sslMode: disable
 
   redis:
