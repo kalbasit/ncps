@@ -2,8 +2,8 @@ apiVersion: v2
 name: ncps
 description: A Helm chart for ncps (Nix Cache Proxy Server)
 type: application
-version: 1.0.0
-appVersion: "0.5.1"
+version: "0.0.0-dev"
+appVersion: "latest"
 keywords:
   - nix
   - cache

@@ -8,7 +8,7 @@ permissions:
   packages: write
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,34 +22,49 @@ jobs:
         uses: azure/setup-helm@v4
         with:
           version: v3.14.0
-      - name: Extract version from tag
+      - name: Extract version info
         id: extract_version
         run: |
-          # Tag format: helm-v1.2.3
-          VERSION=${GITHUB_REF#refs/tags/helm-v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-      - name: Update Chart version
-        run: |
-          VERSION="${{ steps.extract_version.outputs.version }}"
-          # Update Chart.yaml version
-          sed -i "s/^version:.*/version: $VERSION/" charts/ncps/Chart.yaml
-          echo "Updated Chart.yaml to version $VERSION"
+          TAG_REF=${GITHUB_REF#refs/tags/}
+
+          # Regex to match helm-v{CHART}-app-v{APP}
+          # This captures everything between 'helm-v' and '-app-v' as group 1
+          # and everything after '-app-v' as group 2.
+          REGEX="^helm-v(.*)-app-v(.*)$"
+
+          CHART_VERSION="${BASH_REMATCH[1]}"
+          APP_VERSION="${BASH_REMATCH[2]}"
+
+          echo "Detected Strategy: Decoupled"
+          echo "Chart Version: $CHART_VERSION"
+          echo "App Version:   $APP_VERSION"
+
+          echo "chart_version=$CHART_VERSION" >> $GITHUB_OUTPUT
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
       - name: Package Helm chart
         run: |
-          helm package charts/ncps --destination .helm-releases
+          CHART_VER="${{ steps.extract_version.outputs.chart_version }}"
+          APP_VER="${{ steps.extract_version.outputs.app_version }}"
+
+          # Package using the specific flags to override Chart.yaml content in the artifact
+          helm package charts/ncps \
+            --destination .helm-releases \
+            --version "$CHART_VER" \
+            --app-version "$APP_VER"
+
+          echo "📦 Packaged Chart v$CHART_VER with App Version $APP_VER"
       - name: Login to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: Push chart to GHCR
         run: |
-          VERSION="${{ steps.extract_version.outputs.version }}"
-          CHART_PACKAGE="ncps-${VERSION}.tgz"
+          CHART_VER="${{ steps.extract_version.outputs.chart_version }}"
+          CHART_PACKAGE="ncps-${CHART_VER}.tgz"
 
           # Push to OCI registry
           helm push .helm-releases/${CHART_PACKAGE} oci://ghcr.io/${{ github.repository_owner }}/helm
 
-          echo "✅ Chart published to: oci://ghcr.io/${{ github.repository_owner }}/helm/ncps:${VERSION}"
+          echo "✅ Chart published to: oci://ghcr.io/${{ github.repository_owner }}/helm/ncps:${CHART_VER}"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
