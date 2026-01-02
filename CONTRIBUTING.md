@@ -345,6 +345,101 @@ The Nix build automatically:
 1. Runs all tests (including integration tests)
 1. Stops services in `postCheck` phase
 
+### Helm Chart Testing
+
+The project includes comprehensive Helm chart testing using a local Kind cluster with MinIO, PostgreSQL, MariaDB, and Redis.
+
+**Prerequisites:**
+
+- Docker
+- kubectl
+- helm
+- kind
+
+**Setup (one-time):**
+
+```bash
+# Create Kind cluster with all dependencies
+./dev-scripts/k8s-cluster.sh create
+```
+
+The cluster can be reused across test runs. Use `./dev-scripts/k8s-cluster.sh destroy` to clean up when done.
+
+**Testing Workflow:**
+
+```bash
+# 1. Build and push Docker image to Kind cluster
+DOCKER_IMAGE_TAGS="kalbasit/ncps:sha$(git rev-parse --short HEAD)" nix run .#push-docker-image
+
+# 2. Generate test values files (use the image tag from step 1)
+# The tag format is: sha<commit>-<platform> (e.g., sha4954654-x86_64-linux)
+./dev-scripts/generate-test-values.sh sha$(git rev-parse --short HEAD)-x86_64-linux
+
+# 3. Navigate to chart directory
+cd charts/ncps
+
+# 4. Quick install all test deployments
+./test-values/QUICK-INSTALL.sh
+
+# 5. Run tests
+./test-values/TEST.sh
+
+# 6. Cleanup when done
+./test-values/CLEANUP.sh
+```
+
+**Test Deployments:**
+
+The generate-test-values.sh script creates 10 different test configurations:
+
+- **Single Instance with Local Storage:**
+  - SQLite, PostgreSQL, or MariaDB database
+
+- **Single Instance with S3 Storage:**
+  - SQLite, PostgreSQL, or MariaDB database
+  - Tests S3 configuration and MinIO compatibility
+
+- **High Availability:**
+  - 2 replicas with S3 storage
+  - PostgreSQL or MariaDB database
+  - Redis for distributed locking
+
+**Testing Individual Deployments:**
+
+```bash
+# Test with verbose output
+./test-values/TEST.sh -v
+
+# Test specific deployment
+./test-values/TEST.sh -d ncps-single-local-sqlite
+
+# Test specific deployment with verbose output
+./test-values/TEST.sh -d ncps-single-s3-postgres -v
+```
+
+**Manual Installation:**
+
+```bash
+# Install individual deployment manually
+helm upgrade --install ncps-single-local-postgres . \
+  -f test-values/single-local-postgres.yaml \
+  --create-namespace \
+  --namespace ncps-single-local-postgres
+```
+
+**Cluster Management:**
+
+```bash
+# Show cluster connection information
+./dev-scripts/k8s-cluster.sh info
+
+# Destroy cluster
+./dev-scripts/k8s-cluster.sh destroy
+
+# Help
+./dev-scripts/k8s-cluster.sh help
+```
+
 ## Pull Request Process
 
 ### Before Submitting
