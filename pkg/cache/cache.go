@@ -730,6 +730,8 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
+	defer f.Close()
+
 	ds.assetPath = f.Name()
 
 	// Track download completion for cleanup synchronization
@@ -759,8 +761,6 @@ func (c *Cache) pullNarIntoStore(
 
 		return
 	}
-
-	f.Close()
 
 	written, err := c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
 	if err != nil {
