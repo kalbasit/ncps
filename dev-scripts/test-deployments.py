@@ -434,11 +434,12 @@ class NCPSTester:
                     "--target=ncps",
                     "--image=nouchka/sqlite3:latest",
                     "-it=false",
+                    "--quiet",
                     "--profile=restricted",
                     "--",
                     "sh",
                     "-c",
-                    f"cp {target_db_path} /tmp/test.db 2>&1 && sqlite3 /tmp/test.db '.tables' 2>&1",
+                    f"cp {target_db_path} /tmp/test.db && sqlite3 /tmp/test.db '.tables'",
                 ],
                 capture_output=True,
                 text=True,
@@ -453,11 +454,7 @@ class NCPSTester:
                     details=f"Return code: {result.returncode}\nstderr: {result.stderr}\nstdout: {result.stdout}",
                 )
 
-            # Filter out the profile warning from output
-            tables_output = "\n".join(
-                line for line in result.stdout.split("\n")
-                if "--profile=" not in line and "Targeting container" not in line and "Defaulting debug" not in line
-            ).strip()
+            tables_output = result.stdout.strip()
 
             if "nars" not in tables_output:
                 return TestResult(
@@ -478,11 +475,12 @@ class NCPSTester:
                     "--target=ncps",
                     "--image=nouchka/sqlite3:latest",
                     "-it=false",
+                    "--quiet",
                     "--profile=restricted",
                     "--",
                     "sh",
                     "-c",
-                    f"cp {target_db_path} /tmp/test.db 2>&1 && sqlite3 /tmp/test.db 'SELECT COUNT(*) FROM nars;' 2>&1",
+                    f"cp {target_db_path} /tmp/test.db && sqlite3 /tmp/test.db 'SELECT COUNT(*) FROM nars;'",
                 ],
                 capture_output=True,
                 text=True,
@@ -497,11 +495,7 @@ class NCPSTester:
                     details=f"stderr: {result.stderr}\nstdout: {result.stdout}",
                 )
 
-            # Filter warnings and get row count
-            row_count = "\n".join(
-                line for line in result.stdout.split("\n")
-                if "--profile=" not in line and "Targeting container" not in line and "Defaulting debug" not in line
-            ).strip()
+            row_count = result.stdout.strip()
 
             return TestResult(
                 "Database",
@@ -523,15 +517,20 @@ class NCPSTester:
         try:
             local_port = self._find_free_port()
 
+            # Extract service name and namespace from FQDN
+            # e.g., "pg17-ncps-rw.data.svc.cluster.local" -> service="pg17-ncps-rw", namespace="data"
+            service_name = pg_config['host'].split('.')[0]
+            namespace = pg_config['host'].split('.')[1] if '.' in pg_config['host'] else 'data'
+
             # Port-forward to the PostgreSQL service
             port_forward = subprocess.Popen(
                 [
                     "kubectl",
                     "port-forward",
-                    f"svc/{pg_config['host'].split('.')[0]}",  # Extract service name from FQDN
+                    f"svc/{service_name}",
                     f"{local_port}:{pg_config['port']}",
                     "-n",
-                    "data",  # PostgreSQL is in 'data' namespace based on hostname
+                    namespace,
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -591,15 +590,20 @@ class NCPSTester:
         try:
             local_port = self._find_free_port()
 
+            # Extract service name and namespace from FQDN
+            # e.g., "mariadb-ncps.data.svc.cluster.local" -> service="mariadb-ncps", namespace="data"
+            service_name = mysql_config['host'].split('.')[0]
+            namespace = mysql_config['host'].split('.')[1] if '.' in mysql_config['host'] else 'data'
+
             # Port-forward to the MariaDB service
             port_forward = subprocess.Popen(
                 [
                     "kubectl",
                     "port-forward",
-                    f"svc/{mysql_config['host'].split('.')[0]}",  # Extract service name from FQDN
+                    f"svc/{service_name}",
                     f"{local_port}:{mysql_config['port']}",
                     "-n",
-                    "data",  # MariaDB is in 'data' namespace based on hostname
+                    namespace,
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
