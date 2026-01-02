@@ -742,7 +742,7 @@ func (c *Cache) getNarFromStore(
 		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
 	}
 
-	err = c.withTransaction(ctx, func(qtx database.Querier) error {
+err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
 		nr, err := qtx.GetNarByHash(ctx, narURL.Hash)
 		if err != nil {
 			// TODO: If record not found, record it instead!
@@ -1411,7 +1411,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return nil, errNarInfoPurged
 	}
 
-	err = c.withTransaction(ctx, func(qtx database.Querier) error {
+err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
 		nir, err := qtx.GetNarInfoByHash(ctx, hash)
 		if err != nil {
 			// TODO: If record not found, record it instead!
@@ -1497,7 +1497,7 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
-	err := c.withTransaction(ctx, func(qtx database.Querier) error {
+err := c.withTransaction(ctx, "purgeNarInfo", func(qtx database.Querier) error {
 		if _, err := qtx.DeleteNarInfoByHash(ctx, hash); err != nil {
 			return fmt.Errorf("error deleting the narinfo record: %w", err)
 		}
@@ -1550,7 +1550,7 @@ func (c *Cache) storeInDatabase(
 		Info().
 		Msg("storing narinfo and nar record in the database")
 
-	return c.withTransaction(ctx, func(qtx database.Querier) error {
+return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
 		nir, err := qtx.CreateNarInfo(ctx, hash)
 		if err != nil {
 			if database.IsDuplicateKeyError(err) {
@@ -1684,10 +1684,14 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 
 // withTransaction executes fn within a database transaction.
 // It automatically handles transaction lifecycle: BeginTx, Rollback (on error or panic), and Commit.
-func (c *Cache) withTransaction(ctx context.Context, fn func(qtx database.Querier) error) error {
+func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
 	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("error beginning a transaction: %w", err)
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Msg("error beginning a transaction")
+		return fmt.Errorf("error beginning a transaction for %s: %w", operation, err)
 	}
 
 	defer func() {
@@ -1696,6 +1700,7 @@ func (c *Cache) withTransaction(ctx context.Context, fn func(qtx database.Querie
 				zerolog.Ctx(ctx).
 					Error().
 					Err(err).
+					Str("operation", operation).
 					Msg("error rolling back the transaction")
 			}
 		}
@@ -1706,7 +1711,11 @@ func (c *Cache) withTransaction(ctx context.Context, fn func(qtx database.Querie
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing the transaction: %w", err)
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Msg("error committing the transaction")
+		return fmt.Errorf("error committing the transaction for %s: %w", operation, err)
 	}
 
 	return nil
