@@ -1,0 +1,114 @@
+{{- include "ncps.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ncps.fullname" . }}
+  labels:
+    {{- include "ncps.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    # ncps configuration
+    cache:
+      hostname: {{ .Values.config.hostname | quote }}
+      {{- if .Values.config.cache.maxSize }}
+      max-size: {{ .Values.config.cache.maxSize | quote }}
+      {{- end }}
+      {{- if .Values.config.cache.lruSchedule }}
+      lru:
+        schedule: {{ .Values.config.cache.lruSchedule | quote }}
+        timezone: {{ .Values.config.cache.lruTimezone | quote }}
+      {{- end }}
+      temp-path: {{ .Values.config.cache.tempPath | quote }}
+
+      {{- if and (or (eq .Values.config.database.type "postgresql") (eq .Values.config.database.type "mysql")) (or .Values.config.database.pool.maxOpenConns .Values.config.database.pool.maxIdleConns) }}
+      database:
+        pool:
+          {{- if .Values.config.database.pool.maxOpenConns }}
+          max-open-conns: {{ .Values.config.database.pool.maxOpenConns }}
+          {{- end }}
+          {{- if .Values.config.database.pool.maxIdleConns }}
+          max-idle-conns: {{ .Values.config.database.pool.maxIdleConns }}
+          {{- end }}
+      {{- end }}
+
+      {{- if .Values.config.permissions.allowPut }}
+      allow-put-verb: true
+      {{- end }}
+      {{- if .Values.config.permissions.allowDelete }}
+      allow-delete-verb: true
+      {{- end }}
+
+      upstream:
+        urls:
+        {{- range .Values.config.upstream.caches }}
+          - {{ .url | quote }}
+        {{- end }}
+        public-keys:
+        {{- range .Values.config.upstream.caches }}
+          - {{ .publicKey | quote }}
+        {{- end }}
+        {{- if .Values.config.upstream.dialerTimeout }}
+        dialer-timeout: {{ .Values.config.upstream.dialerTimeout | quote }}
+        {{- end }}
+        {{- if .Values.config.upstream.responseHeaderTimeout }}
+        response-header-timeout: {{ .Values.config.upstream.responseHeaderTimeout | quote }}
+        {{- end }}
+
+      {{- if .Values.config.upstream.netrcFile }}
+      netrc-file: {{ .Values.config.upstream.netrcFile | quote }}
+      {{- else if .Values.config.upstream.existingNetrcSecret }}
+      netrc-file: "/etc/ncps/netrc"
+      {{- end }}
+
+      storage:
+        {{- if eq .Values.config.storage.type "local" }}
+        local: {{ .Values.config.storage.local.path | quote }}
+        {{- else if eq .Values.config.storage.type "s3" }}
+        s3:
+          bucket: {{ .Values.config.storage.s3.bucket | quote }}
+          endpoint: {{ .Values.config.storage.s3.endpoint | quote }}
+          region: {{ .Values.config.storage.s3.region | quote }}
+          use-ssl: {{ .Values.config.storage.s3.useSSL }}
+        {{- end }}
+
+      {{- if .Values.config.redis.enabled }}
+      redis:
+        addrs:
+        {{- range .Values.config.redis.addresses }}
+          - {{ . | quote }}
+        {{- end }}
+        {{- if .Values.config.redis.username }}
+        username: {{ .Values.config.redis.username | quote }}
+        {{- end }}
+        db: {{ .Values.config.redis.db }}
+        use-tls: {{ .Values.config.redis.useTLS }}
+        pool-size: {{ .Values.config.redis.poolSize }}
+        key-prefix: {{ .Values.config.redis.keyPrefix | quote }}
+      lock:
+        download-lock-ttl: {{ .Values.config.redis.lock.downloadTTL | quote }}
+        lru-lock-ttl: {{ .Values.config.redis.lock.lruTTL | quote }}
+        retry:
+          max-attempts: {{ .Values.config.redis.lock.retry.maxAttempts }}
+          initial-delay: {{ .Values.config.redis.lock.retry.initialDelay | quote }}
+          max-delay: {{ .Values.config.redis.lock.retry.maxDelay | quote }}
+          jitter: {{ .Values.config.redis.lock.retry.jitter }}
+        {{- if .Values.config.redis.lock.allowDegradedMode }}
+        allow-degraded-mode: true
+        {{- end }}
+      {{- end }}
+
+    server:
+      addr: {{ .Values.config.server.addr | quote }}
+
+    log:
+      level: {{ .Values.config.logLevel | quote }}
+
+    {{- if .Values.config.observability.opentelemetry.enabled }}
+    opentelemetry:
+      grpc-url: {{ .Values.config.observability.opentelemetry.grpcURL | quote }}
+    {{- end }}
+
+    {{- if .Values.config.observability.prometheus.enabled }}
+    prometheus:
+      enabled: true
+    {{- end }}

@@ -1,0 +1,80 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To access ncps:
+
+{{- if .Values.ingress.enabled }}
+
+1. The application is available at:
+{{- range .Values.ingress.hosts }}
+   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+
+{{- else if contains "NodePort" .Values.service.type }}
+
+1. Get the application URL:
+   export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "ncps.fullname" . }})
+   export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+   echo http://$NODE_IP:$NODE_PORT
+
+{{- else if contains "LoadBalancer" .Values.service.type }}
+
+1. Get the application URL:
+   export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "ncps.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+   echo http://$SERVICE_IP:{{ .Values.service.port }}
+
+{{- else if contains "ClusterIP" .Values.service.type }}
+
+1. Forward the port to your local machine:
+   kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "ncps.fullname" . }} 8501:{{ .Values.service.port }}
+
+   Then access: http://localhost:8501
+
+{{- end }}
+
+Configuration:
+  Mode: {{ if gt (int .Values.replicaCount) 1 }}High Availability ({{ .Values.replicaCount }} replicas){{ else }}Single Instance{{ end }}
+  Deployment Type: {{ .Values.mode | upper }}
+  Storage: {{ .Values.config.storage.type | upper }}
+  Database: {{ .Values.config.database.type | upper }}
+  {{- if .Values.config.redis.enabled }}
+  Redis: Enabled (distributed locking active)
+  {{- end }}
+
+Useful endpoints:
+  /               - Cache information
+  /pubkey         - Public signing key
+  /nix-cache-info - Nix cache metadata
+  /healthz        - Health check
+  {{- if .Values.config.observability.prometheus.enabled }}
+  /metrics        - Prometheus metrics
+  {{- end }}
+
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.config.redis.enabled) }}
+
+WARNING: Multiple replicas configured but Redis is not enabled!
+This will cause issues with distributed locking. Enable Redis with:
+  config.redis.enabled=true
+
+{{- end }}
+
+{{- if and (gt (int .Values.replicaCount) 1) (eq .Values.config.database.type "sqlite") }}
+
+WARNING: Multiple replicas with SQLite database detected!
+SQLite does not support concurrent writes. Use PostgreSQL or MySQL:
+  config.database.type=postgresql
+
+{{- end }}
+
+{{- if and (gt (int .Values.replicaCount) 1) (eq .Values.config.storage.type "local") (eq .Values.mode "deployment") }}
+
+WARNING: Multiple replicas with local storage in Deployment mode!
+Use S3 storage or switch to StatefulSet mode with shared filesystem:
+  config.storage.type=s3
+  OR
+  mode=statefulset (with NFS/GlusterFS)
+
+{{- end }}
+
+For more information, visit: https://github.com/kalbasit/ncps

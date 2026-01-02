@@ -1,0 +1,27 @@
+{{- if and (eq .Values.mode "deployment") (or (and (eq .Values.config.storage.type "local") .Values.config.storage.local.persistence.enabled) (eq .Values.config.database.type "sqlite")) -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ncps.fullname" . }}
+  labels:
+    {{- include "ncps.labels" . | nindent 4 }}
+  {{- with .Values.config.storage.local.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- range .Values.config.storage.local.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.config.storage.local.persistence.size | quote }}
+  {{- if .Values.config.storage.local.persistence.storageClassName }}
+  storageClassName: {{ .Values.config.storage.local.persistence.storageClassName | quote }}
+  {{- end }}
+  {{- with .Values.config.storage.local.persistence.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

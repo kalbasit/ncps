@@ -1,0 +1,452 @@
+# Default values for ncps.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  # Image registry override (if needed)
+  imageRegistry: ""
+
+# Number of replicas
+# For HA mode, set to 2 or more
+# For single instance, set to 1
+replicaCount: 1
+
+# Deployment mode: "deployment" or "statefulset"
+# - deployment: For HA mode with S3 storage
+# - statefulset: For single instance with local storage or HA with persistent state
+mode: statefulset
+
+image:
+  registry: docker.io
+  repository: kalbasit/ncps
+  pullPolicy: IfNotPresent
+  # Overrides the image tag (default is chart appVersion)
+  tag: ""
+
+# Init image for directory creation (used for SQLite)
+initImage:
+  registry: docker.io
+  repository: busybox
+  tag: "1.37.0"
+  pullPolicy: IfNotPresent
+  # Resources for directory creation init container
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 32Mi
+    # requests:
+    #   cpu: 10m
+    #   memory: 16Mi
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+  # Automatically mount service account token
+  automountServiceAccountToken: false
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: "OnRootMismatch"
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+
+config:
+  # Cache hostname (REQUIRED)
+  # Used for key generation and signing
+  hostname: "ncps.example.com"
+
+  # Logging level
+  logLevel: "info"  # trace, debug, info, warn, error, fatal, panic
+
+  # Server configuration
+  server:
+    # Listen address (format: :port or ip:port)
+    addr: ":8501"
+
+  # Cache permissions
+  permissions:
+    # Allow PUT verb to push narInfo and nar files directly
+    allowPut: false
+    # Allow DELETE verb to delete narInfo and nar files
+    allowDelete: false
+
+  # NAR info signing
+  signing:
+    # Whether to sign narInfo files
+    enabled: true
+    # Signing key (provided via secret if not auto-generated)
+    # Leave empty to auto-generate
+    secretKey: ""
+    # Existing secret containing signing key
+    # Key name must be "signing-key"
+    existingSecret: ""
+
+  # Cache size management
+  cache:
+    # Maximum cache size (with units: B, K, M, G, T)
+    # Example: "100G", "5T"
+    # Leave empty for unlimited
+    maxSize: ""
+
+    # LRU cleanup schedule (cron expression)
+    # Example: "0 0 * * *" (daily at midnight)
+    # Leave empty to disable
+    lruSchedule: ""
+
+    # Timezone for cron schedule
+    # Example: "America/Los_Angeles", "UTC"
+    lruTimezone: "Local"
+
+    # Temporary directory for downloads
+    # Mounted as emptyDir volume
+    tempPath: "/tmp/ncps"
+
+  # Storage backend (choose ONE)
+  storage:
+    # Storage type: "local" or "s3"
+    type: "local"
+
+    # Local filesystem storage
+    local:
+      # Path for local storage
+      path: "/storage"
+      # Persistent volume configuration (only for local storage)
+      persistence:
+        enabled: true
+        # Storage class (leave empty for default)
+        storageClassName: ""
+        accessModes:
+          - ReadWriteOnce
+        size: 20Gi
+        # Annotations for PVC
+        annotations: {}
+        # Selector for specific PV
+        selector: {}
+
+    # S3-compatible storage
+    s3:
+      # S3 bucket name
+      bucket: ""
+      # S3 endpoint (e.g., s3.amazonaws.com or http://minio:9000)
+      endpoint: ""
+      # S3 region
+      region: "us-east-1"
+      # Use SSL/TLS
+      useSSL: true
+      # S3 credentials (provided via secret)
+      accessKeyId: ""
+      secretAccessKey: ""
+      # Existing secret containing S3 credentials
+      # Keys: "access-key-id" and "secret-access-key"
+      existingSecret: ""
+
+  # Database configuration
+  database:
+    # Database type: "sqlite", "postgresql", or "mysql"
+    type: "sqlite"
+
+    # SQLite configuration
+    sqlite:
+      # Path for SQLite database file
+      path: "/storage/db/ncps.db"
+
+    # PostgreSQL configuration
+    postgresql:
+      # PostgreSQL connection details
+      host: ""
+      port: 5432
+      database: "ncps"
+      username: "ncps"
+      password: ""
+      # SSL mode: disable, require, verify-ca, verify-full
+      sslMode: "disable"
+      # Existing secret containing PostgreSQL password
+      # Key name must be "password"
+      existingSecret: ""
+      # Additional connection parameters (e.g., "connect_timeout=10")
+      extraParams: ""
+
+    # MySQL configuration
+    mysql:
+      # MySQL connection details
+      host: ""
+      port: 3306
+      database: "ncps"
+      username: "ncps"
+      password: ""
+      # Existing secret containing MySQL password
+      # Key name must be "password"
+      existingSecret: ""
+      # Additional connection parameters (e.g., "timeout=10s")
+      extraParams: ""
+
+    # Connection pool settings
+    pool:
+      # Maximum open connections (0 = unlimited)
+      # SQLite: always 1 (cannot be changed)
+      # PostgreSQL/MySQL: default 25
+      maxOpenConns: 0
+      # Maximum idle connections
+      # Default: 5 for PostgreSQL/MySQL
+      maxIdleConns: 0
+
+  # Upstream cache configuration
+  upstream:
+    # List of upstream caches
+    caches:
+      - url: "https://cache.nixos.org"
+        publicKey: "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+
+    # Connection timeouts
+    dialerTimeout: "3s"
+    responseHeaderTimeout: "3s"
+
+    # Netrc file for authentication (optional)
+    # Provided via secret if needed
+    netrcFile: ""
+    # Existing secret containing netrc file
+    # Key name must be "netrc"
+    existingNetrcSecret: ""
+
+  # Redis configuration (for HA mode)
+  redis:
+    # Enable Redis distributed locking
+    # Required for HA deployments with multiple replicas
+    enabled: false
+
+    # Redis connection
+    addresses:
+      - "redis:6379"
+
+    # Authentication
+    username: ""
+    password: ""
+    # Existing secret containing Redis credentials
+    # Keys: "username" (optional) and "password"
+    existingSecret: ""
+
+    # Database number (0-15)
+    db: 0
+
+    # Use TLS
+    useTLS: false
+
+    # Connection pool size
+    poolSize: 10
+
+    # Key prefix for locks
+    keyPrefix: "ncps:lock:"
+
+    # Lock configuration
+    lock:
+      # Download lock TTL
+      downloadTTL: "5m"
+      # LRU lock TTL
+      lruTTL: "30m"
+
+      # Retry configuration
+      retry:
+        maxAttempts: 3
+        initialDelay: "100ms"
+        maxDelay: "2s"
+        jitter: true
+
+      # Degraded mode (emergency fallback)
+      # WARNING: Breaks HA guarantees
+      allowDegradedMode: false
+
+  # Observability
+  observability:
+    # OpenTelemetry
+    opentelemetry:
+      enabled: false
+      # gRPC collector URL
+      # Examples:
+      #   - http://otel-collector:4317 (insecure)
+      #   - https://otel-collector:4317 (secure)
+      #   - "" (stdout)
+      grpcURL: ""
+
+    # Prometheus metrics
+    prometheus:
+      enabled: false
+
+service:
+  type: ClusterIP
+  port: 8501
+  # Port name for service discovery
+  portName: http
+  annotations: {}
+  # Session affinity for HA deployments
+  # Options: None, ClientIP
+  sessionAffinity: None
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "0"
+  hosts:
+    - host: ncps.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: ncps-tls
+    #   hosts:
+    #     - ncps.example.com
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Prometheus ServiceMonitor
+serviceMonitor:
+  enabled: false
+  # Namespace for ServiceMonitor (defaults to release namespace)
+  namespace: ""
+  # Additional labels for ServiceMonitor
+  labels: {}
+  # Scrape interval
+  interval: 30s
+  # Scrape timeout
+  scrapeTimeout: 10s
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+  # Example for HA anti-affinity:
+  # podAntiAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       podAffinityTerm:
+  #         labelSelector:
+  #           matchExpressions:
+  #             - key: app.kubernetes.io/name
+  #               operator: In
+  #               values:
+  #                 - ncps
+  #         topologyKey: kubernetes.io/hostname
+
+# Extra environment variables
+extraEnvVars: []
+  # - name: CUSTOM_VAR
+  #   value: "custom-value"
+
+# Extra volumes
+extraVolumes: []
+
+# Extra volume mounts
+extraVolumeMounts: []
+
+# Init containers
+initContainers: []
+
+# Sidecar containers
+sidecars: []
+
+# Database migration
+migration:
+  # Enable database migration
+  enabled: false
+
+  # Migration mode:
+  # - "initContainer": Run as init container in each pod (default, safest)
+  # - "job": Run as a Job with Helm hook (pre-install, pre-upgrade)
+  # - "argocd": Run as a Job with ArgoCD pre-sync hook
+  mode: "initContainer"
+
+  # Resources for migration container/job
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  # Security context for migration container/job
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+
+  # Job configuration (only applies when mode is "job" or "argocd")
+  job:
+    # Backoff limit for job retries
+    backoffLimit: 3
+
+    # TTL after job finishes (in seconds)
+    # Set to 0 to keep jobs indefinitely
+    ttlSecondsAfterFinished: 300
+
+    # Annotations for the job
+    annotations: {}
+
+    # Node selector for migration job
+    nodeSelector: {}
+
+    # Tolerations for migration job
+    tolerations: []
+
+    # Affinity for migration job
+    affinity: {}
+
+# Helm tests
+# NOTE: Only enable when using `helm install`/`helm upgrade` with `helm test`
+# When using `helm template` (manually or via tools like nixidy), keep disabled
+# to prevent the test pod from being rendered as a regular resource
+tests:
+  enabled: false

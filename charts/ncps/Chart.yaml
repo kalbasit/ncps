@@ -1,0 +1,18 @@
+apiVersion: v2
+name: ncps
+description: A Helm chart for ncps (Nix Cache Proxy Server)
+type: application
+version: 1.0.0
+appVersion: "0.5.1"
+keywords:
+  - nix
+  - cache
+  - proxy
+  - binary-cache
+home: https://github.com/kalbasit/ncps
+sources:
+  - https://github.com/kalbasit/ncps
+maintainers:
+  - name: Wael Nasreddine
+    email: wael.nasreddine@gmail.com
+icon: https://nixos.org/logo/nixos-logo-only-hires.png
