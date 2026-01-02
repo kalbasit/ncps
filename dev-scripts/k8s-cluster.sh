@@ -189,6 +189,8 @@ create_cluster() {
         cat <<EOF | kind create cluster --name "$CLUSTER_NAME" --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+# Disable DNS search path inheritance from the host to prevent resolution
+# issues, particularly on systems like NixOS.
 networking:
   dnsSearch: []
 nodes:
