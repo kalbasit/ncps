@@ -240,6 +240,32 @@ func (c *Cache) ParsePriority(ctx context.Context) (uint64, error) {
 // GetHostname returns the hostname.
 func (c *Cache) GetHostname() string { return c.url.Hostname() }
 
+// doRequest creates and executes an HTTP request with authentication.
+// The caller is responsible for closing the response body.
+func (c *Cache) doRequest(
+	ctx context.Context,
+	method, url string,
+	mutators ...func(*http.Request),
+) (*http.Response, error) {
+	r, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating %s request to %s: %w", method, url, err)
+	}
+
+	c.addAuthToRequest(r)
+
+	for _, mutator := range mutators {
+		mutator(r)
+	}
+
+	resp, err := c.httpClient.Do(r)
+	if err != nil {
+		return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
+	}
+
+	return resp, nil
+}
+
 // GetNarInfo returns a parsed NarInfo from the cache server.
 func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
@@ -264,20 +290,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		Logger().
 		WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating a new request: %w", err)
-	}
-
-	c.addAuthToRequest(r)
-
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("download the narinfo from upstream")
 
-	resp, err := c.httpClient.Do(r)
+	resp, err := c.doRequest(ctx, http.MethodGet, u)
 	if err != nil {
-		return nil, fmt.Errorf("error performing the request: %w", err)
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -341,20 +360,13 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 		Logger().
 		WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
-	if err != nil {
-		return false, fmt.Errorf("error creating a new request: %w", err)
-	}
-
-	c.addAuthToRequest(r)
-
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("heading the narinfo from upstream")
 
-	resp, err := c.httpClient.Do(r)
+	resp, err := c.doRequest(ctx, http.MethodHead, u)
 	if err != nil {
-		return false, fmt.Errorf("error performing the request: %w", err)
+		return false, err
 	}
 
 	defer func() {
@@ -390,24 +402,13 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 			Logger(),
 	).WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating a new request: %w", err)
-	}
-
-	c.addAuthToRequest(r)
-
-	for _, mutator := range mutators {
-		mutator(r)
-	}
-
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("download the nar from upstream")
 
-	resp, err := c.httpClient.Do(r)
+	resp, err := c.doRequest(ctx, http.MethodGet, u, mutators...)
 	if err != nil {
-		return nil, fmt.Errorf("error performing the request: %w", err)
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -453,24 +454,13 @@ func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 			Logger(),
 	).WithContext(ctx)
 
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return false, fmt.Errorf("error creating a new request: %w", err)
-	}
-
-	c.addAuthToRequest(r)
-
-	for _, mutator := range mutators {
-		mutator(r)
-	}
-
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("heading the nar from upstream")
 
-	resp, err := c.httpClient.Do(r)
+	resp, err := c.doRequest(ctx, http.MethodGet, u, mutators...)
 	if err != nil {
-		return false, fmt.Errorf("error performing the request: %w", err)
+		return false, err
 	}
 
 	defer func() {
