@@ -742,7 +742,7 @@ func (c *Cache) getNarFromStore(
 		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
 	}
 
-err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
+	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
 		nr, err := qtx.GetNarByHash(ctx, narURL.Hash)
 		if err != nil {
 			// TODO: If record not found, record it instead!
@@ -1411,7 +1411,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return nil, errNarInfoPurged
 	}
 
-err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
+	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
 		nir, err := qtx.GetNarInfoByHash(ctx, hash)
 		if err != nil {
 			// TODO: If record not found, record it instead!
@@ -1497,7 +1497,7 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
-err := c.withTransaction(ctx, "purgeNarInfo", func(qtx database.Querier) error {
+	err := c.withTransaction(ctx, "purgeNarInfo", func(qtx database.Querier) error {
 		if _, err := qtx.DeleteNarInfoByHash(ctx, hash); err != nil {
 			return fmt.Errorf("error deleting the narinfo record: %w", err)
 		}
@@ -1550,7 +1550,7 @@ func (c *Cache) storeInDatabase(
 		Info().
 		Msg("storing narinfo and nar record in the database")
 
-return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
+	return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
 		nir, err := qtx.CreateNarInfo(ctx, hash)
 		if err != nil {
 			if database.IsDuplicateKeyError(err) {
@@ -1691,6 +1691,7 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 			Err(err).
 			Str("operation", operation).
 			Msg("error beginning a transaction")
+
 		return fmt.Errorf("error beginning a transaction for %s: %w", operation, err)
 	}
 
@@ -1715,6 +1716,7 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 			Err(err).
 			Str("operation", operation).
 			Msg("error committing the transaction")
+
 		return fmt.Errorf("error committing the transaction for %s: %w", operation, err)
 	}
 
