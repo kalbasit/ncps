@@ -1,58 +1,64 @@
 // Package local provides local (single-instance) lock implementations.
 //
 // These locks use standard Go sync primitives (sync.Mutex and sync.RWMutex)
-// and are suitable for single-instance deployments. They ignore key and TTL
-// parameters since local locks don't need them.
+// and are suitable for single-instance deployments. They ignore TTL
+// parameters since local locks don't expire.
 package local
 
 import (
 	"context"
+	"hash/fnv"
 	"sync"
 	"time"
 
 	"github.com/kalbasit/ncps/pkg/lock"
 )
 
-// Locker implements lock.Locker using per-key mutexes.
-type Locker struct {
-	mapMu sync.Mutex // Protects the locks map
-	locks map[string]*sync.Mutex
+const (
+	// numShards is the number of mutex shards for lock striping.
+	// This provides bounded memory usage while allowing concurrent locks for different keys.
+	numShards = 1024
+)
 
-	// Track lock acquisition times for metrics (key -> acquisition time)
+// Locker implements lock.Locker using lock striping (sharded mutexes).
+// Uses a fixed pool of mutexes to avoid unbounded memory growth while
+// still providing per-key locking semantics with good concurrency.
+type Locker struct {
+	shards [numShards]sync.Mutex
+
+	// Protect acquisition times map with a separate mutex
+	timesMu          sync.Mutex
 	acquisitionTimes map[string]time.Time
 }
 
 // NewLocker creates a new local locker.
 func NewLocker() lock.Locker {
 	return &Locker{
-		locks:            make(map[string]*sync.Mutex),
 		acquisitionTimes: make(map[string]time.Time),
 	}
 }
 
-// Lock acquires an exclusive lock. The ttl parameter is ignored, but the key is used for metrics.
+// getShard returns the shard index for a given key.
+func (l *Locker) getShard(key string) int {
+	h := fnv.New32a()
+	h.Write([]byte(key))
+
+	return int(h.Sum32() % numShards)
+}
+
+// Lock acquires an exclusive lock. The ttl parameter is ignored, but the key is used for sharding.
 func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
-	// Get or create mutex for this key
-	l.mapMu.Lock()
+	// Acquire the shard lock for this key
+	shard := l.getShard(key)
+	l.shards[shard].Lock()
 
-	mu, ok := l.locks[key]
-	if !ok {
-		mu = &sync.Mutex{}
-		l.locks[key] = mu
-	}
-
-	l.mapMu.Unlock()
-
-	// Acquire the per-key lock
-	mu.Lock()
-
-	// Record acquisition attempt (after acquiring to avoid holding mapMu)
+	// Record acquisition attempt
 	lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultSuccess)
 
 	// Track acquisition time for duration metrics
-	l.mapMu.Lock()
+	l.timesMu.Lock()
 	l.acquisitionTimes[key] = time.Now()
-	l.mapMu.Unlock()
+	l.timesMu.Unlock()
 
 	return nil
 }
@@ -60,7 +66,7 @@ func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
 // Unlock releases an exclusive lock for the given key.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
 	// Calculate and record lock hold duration
-	l.mapMu.Lock()
+	l.timesMu.Lock()
 
 	if startTime, ok := l.acquisitionTimes[key]; ok {
 		duration := time.Since(startTime).Seconds()
@@ -68,39 +74,27 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 		delete(l.acquisitionTimes, key)
 	}
 
-	// Get the mutex for this key
-	mu, ok := l.locks[key]
-	l.mapMu.Unlock()
+	l.timesMu.Unlock()
 
-	if ok {
-		mu.Unlock()
-	}
+	// Unlock the shard for this key
+	shard := l.getShard(key)
+	l.shards[shard].Unlock()
 
 	return nil
 }
 
 // TryLock attempts to acquire an exclusive lock without blocking.
 func (l *Locker) TryLock(ctx context.Context, key string, _ time.Duration) (bool, error) {
-	// Get or create mutex for this key
-	l.mapMu.Lock()
-
-	mu, ok := l.locks[key]
-	if !ok {
-		mu = &sync.Mutex{}
-		l.locks[key] = mu
-	}
-
-	l.mapMu.Unlock()
-
-	// Try to acquire the per-key lock
-	acquired := mu.TryLock()
+	// Try to acquire the shard lock for this key
+	shard := l.getShard(key)
+	acquired := l.shards[shard].TryLock()
 
 	if acquired {
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultSuccess)
 
-		l.mapMu.Lock()
+		l.timesMu.Lock()
 		l.acquisitionTimes[key] = time.Now()
-		l.mapMu.Unlock()
+		l.timesMu.Unlock()
 	} else {
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultContention)
 	}
