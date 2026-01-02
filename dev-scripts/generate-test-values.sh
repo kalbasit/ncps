@@ -30,7 +30,7 @@ echo ""
 
 # Get cluster info
 echo "📋 Retrieving cluster information..."
-CLUSTER_INFO=$("$SCRIPT_DIR/k8s-cluster.sh" info 2>/dev/null)
+CLUSTER_INFO=$("$SCRIPT_DIR/k8s-cluster.sh" info)
 
 if [ -z "$CLUSTER_INFO" ]; then
   echo "❌ Error: Could not retrieve cluster information"
@@ -162,7 +162,7 @@ config:
       port: $PG_PORT
       database: $PG_DB
       username: $PG_USER
-      password: $PG_PASS
+      password: "$PG_PASS"
       sslMode: disable
 
   redis:
