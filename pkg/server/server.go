@@ -412,7 +412,12 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) getNar(withBody bool) http.HandlerFunc {
+// withNarURL extracts NAR URL parameters, sets up context with logging and tracing,
+// and calls the handler function with the prepared context and NAR URL.
+func (s *Server) withNarURL(
+	operationName string,
+	handler func(http.ResponseWriter, *http.Request, nar.URL),
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
 
@@ -433,7 +438,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 		ctx, span := tracer.Start(
 			r.Context(),
-			"server.getNar",
+			operationName,
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
 				attribute.String("nar_hash", hash),
@@ -446,6 +451,12 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			nu.NewLogger(*zerolog.Ctx(ctx)).
 				WithContext(ctx))
 
+		handler(w, r, nu)
+	}
+}
+
+func (s *Server) getNar(withBody bool) http.HandlerFunc {
+	return s.withNarURL("server.getNar", func(w http.ResponseWriter, r *http.Request, nu nar.URL) {
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, upstream.ErrNotFound) {
@@ -513,117 +524,57 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 				Int64("written", written).
 				Msg("Bytes copied does not match object size")
 		}
-	}
+	})
 }
 
 func (s *Server) putNar(w http.ResponseWriter, r *http.Request) {
-	hash := chi.URLParam(r, "hash")
-
-	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
-
-	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
-
-	var err error
-
-	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	ctx, span := tracer.Start(
-		r.Context(),
-		"server.putNar",
-		trace.WithSpanKind(trace.SpanKindServer),
-		trace.WithAttributes(
-			attribute.String("nar_hash", hash),
-			attribute.String("nar_url", nu.String()),
-		),
-	)
-	defer span.End()
-
-	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(ctx)).
-			WithContext(ctx))
-
-	if !s.putPermitted {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-
-		return
-	}
-
-	if err := s.cache.PutNar(r.Context(), nu, r.Body); err != nil {
-		zerolog.Ctx(r.Context()).
-			Error().
-			Err(err).
-			Msg("error putting the NAR in cache")
-
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
-	hash := chi.URLParam(r, "hash")
-
-	nu := nar.URL{Hash: hash, Query: r.URL.Query()}
-
-	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(r.Context())).
-			WithContext(r.Context()))
-
-	var err error
-
-	nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	ctx, span := tracer.Start(
-		r.Context(),
-		"server.deleteNar",
-		trace.WithSpanKind(trace.SpanKindServer),
-		trace.WithAttributes(
-			attribute.String("nar_hash", hash),
-			attribute.String("nar_url", nu.String()),
-		),
-	)
-	defer span.End()
-
-	r = r.WithContext(
-		nu.NewLogger(*zerolog.Ctx(ctx)).
-			WithContext(ctx))
-
-	if !s.deletePermitted {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-
-		return
-	}
-
-	if err := s.cache.DeleteNar(r.Context(), nu); err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+	s.withNarURL("server.putNar", func(w http.ResponseWriter, r *http.Request, nu nar.URL) {
+		if !s.putPermitted {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 
 			return
 		}
 
-		zerolog.Ctx(r.Context()).
-			Error().
-			Err(err).
-			Msg("error deleting the nar")
+		if err := s.cache.PutNar(r.Context(), nu, r.Body); err != nil {
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error putting the NAR in cache")
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 
-		return
-	}
+			return
+		}
 
-	w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusNoContent)
+	}).ServeHTTP(w, r)
+}
+
+func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
+	s.withNarURL("server.deleteNar", func(w http.ResponseWriter, r *http.Request, nu nar.URL) {
+		if !s.deletePermitted {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+
+			return
+		}
+
+		if err := s.cache.DeleteNar(r.Context(), nu); err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+
+				return
+			}
+
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error deleting the nar")
+
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}).ServeHTTP(w, r)
 }
