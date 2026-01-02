@@ -568,7 +568,9 @@ func (c *Cache) createTempNarFile(ctx context.Context, narURL *nar.URL, ds *down
 
 	go func() {
 		ds.wg.Wait()
-		os.Remove(ds.assetPath)
+if err := os.Remove(ds.assetPath); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Str("file", ds.assetPath).Msg("failed to remove temporary NAR file")
+		}
 	}()
 
 	return f, nil
@@ -584,8 +586,6 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 		if n > 0 {
 			chunk := buf[:n]
 
-			// Write the chunk read to the file
-			n, writeErr := f.Write(chunk)
 			if writeErr != nil {
 				zerolog.Ctx(ctx).
 					Error().
@@ -597,6 +597,7 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 
 			// Update the state and signal waiting clients
 			ds.mu.Lock()
+			ds.bytesWritten += int64(written)
 			ds.bytesWritten += int64(n)
 			ds.mu.Unlock()
 			ds.cond.Broadcast()
