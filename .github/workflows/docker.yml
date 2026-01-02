@@ -92,7 +92,7 @@ jobs:
           DOCKER_IMAGE_TAGS: ${{ needs.docker-meta.outputs.tags }}
         shell: bash
         run: |
-          ./result
+          ./result/bin/push-docker-image
   docker-manifest:
     if: inputs.push_images
     runs-on: ubuntu-24.04
