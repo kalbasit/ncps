@@ -1,0 +1,234 @@
+{{- if eq .Values.mode "deployment" -}}
+{{- include "ncps.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ncps.fullname" . }}
+  labels:
+    {{- include "ncps.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ncps.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        {{- include "ncps.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ncps.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if or (eq .Values.config.database.type "sqlite") (and .Values.migration.enabled (eq .Values.migration.mode "initContainer")) .Values.initContainers }}
+      initContainers:
+        {{- if eq .Values.config.database.type "sqlite" }}
+        - name: create-db-dir
+          image: {{ include "ncps.initImage" . }}
+          imagePullPolicy: {{ .Values.initImage.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p $(dirname {{ .Values.config.database.sqlite.path }})
+          volumeMounts:
+            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+            - name: storage
+              mountPath: /storage
+            {{- end }}
+            - name: tmp
+              mountPath: {{ .Values.config.cache.tempPath }}
+          resources:
+            {{- toYaml .Values.initImage.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+        {{- end }}
+        {{- if and .Values.migration.enabled (eq .Values.migration.mode "initContainer") }}
+        - name: migration
+          securityContext:
+            {{- toYaml .Values.migration.securityContext | nindent 12 }}
+          image: {{ include "ncps.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/dbmate
+          args:
+            - up
+          env:
+            {{- include "ncps.migrationDatabaseURLEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          volumeMounts:
+            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+            - name: storage
+              mountPath: /storage
+            {{- end }}
+            - name: tmp
+              mountPath: {{ .Values.config.cache.tempPath }}
+        {{- end }}
+        {{- with .Values.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: ncps
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "ncps.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/ncps
+          args:
+            - serve
+            - --config
+            - /etc/ncps/config.yaml
+            {{- if or .Values.config.signing.secretKey .Values.config.signing.existingSecret }}
+            - --cache-secret-key-file
+            - /etc/ncps/secrets/signing-key
+            {{- end }}
+          env:
+            {{- if eq .Values.config.database.type "sqlite" }}
+            - name: CACHE_DATABASE_URL
+              value: {{ include "ncps.databaseURL" . | quote }}
+            {{- else if or (and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.password) (and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.password) }}
+            - name: CACHE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ncps.fullname" . }}
+                  key: database-url
+            {{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
+            - name: CACHE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.database.postgresql.existingSecret }}
+                  key: database-url
+            {{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
+            - name: CACHE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.database.mysql.existingSecret }}
+                  key: database-url
+            {{- end }}
+            {{- include "ncps.databaseEnv" . | nindent 12 }}
+            {{- if and (eq .Values.config.storage.type "s3") (or .Values.config.storage.s3.existingSecret (and .Values.config.storage.s3.accessKeyId .Values.config.storage.s3.secretAccessKey)) }}
+            - name: CACHE_STORAGE_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.storage.s3.existingSecret | default (include "ncps.fullname" .) }}
+                  key: {{ if .Values.config.storage.s3.existingSecret }}"access-key-id"{{ else }}"s3-access-key-id"{{ end }}
+            - name: CACHE_STORAGE_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.storage.s3.existingSecret | default (include "ncps.fullname" .) }}
+                  key: {{ if .Values.config.storage.s3.existingSecret }}"secret-access-key"{{ else }}"s3-secret-access-key"{{ end }}
+            {{- end }}
+            {{- if .Values.config.redis.enabled }}
+            {{- if and .Values.config.redis.existingSecret (not .Values.config.redis.username) }}
+            - name: NCPS_CACHE_REDIS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.redis.existingSecret }}
+                  key: username
+                  optional: true
+            {{- end }}
+            {{- if or .Values.config.redis.existingSecret .Values.config.redis.password }}
+            - name: NCPS_CACHE_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.redis.existingSecret | default (include "ncps.fullname" .) }}
+                  key: {{ if .Values.config.redis.existingSecret }}"password"{{ else }}"redis-password"{{ end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.server.addr | trimPrefix ":" | regexFind "[0-9]+$" | atoi }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ncps
+              readOnly: true
+            - name: tmp
+              mountPath: {{ .Values.config.cache.tempPath }}
+            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+            - name: storage
+              mountPath: /storage
+            {{- end }}
+            {{- if or .Values.config.signing.secretKey .Values.config.signing.existingSecret }}
+            - name: signing-key
+              mountPath: /etc/ncps/secrets
+              readOnly: true
+            {{- end }}
+            {{- if or .Values.config.upstream.netrcFile .Values.config.upstream.existingNetrcSecret }}
+            - name: netrc
+              mountPath: /etc/ncps/netrc
+              subPath: netrc
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "ncps.fullname" . }}
+        - name: tmp
+          emptyDir: {}
+        {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+        - name: storage
+          {{- if or .Values.config.storage.local.persistence.enabled (eq .Values.config.database.type "sqlite") }}
+          persistentVolumeClaim:
+            claimName: {{ include "ncps.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if or .Values.config.signing.secretKey .Values.config.signing.existingSecret }}
+        - name: signing-key
+          secret:
+            secretName: {{ .Values.config.signing.existingSecret | default (printf "%s-signing-key" (include "ncps.fullname" .)) }}
+        {{- end }}
+        {{- if or .Values.config.upstream.netrcFile .Values.config.upstream.existingNetrcSecret }}
+        - name: netrc
+          secret:
+            secretName: {{ .Values.config.upstream.existingNetrcSecret | default (include "ncps.fullname" .) }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

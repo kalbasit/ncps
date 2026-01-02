@@ -1,0 +1,114 @@
+{{- if and .Values.migration.enabled (or (eq .Values.migration.mode "job") (eq .Values.migration.mode "argocd")) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ncps.fullname" . }}-migration
+  labels:
+    {{- include "ncps.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    {{- if eq .Values.migration.mode "job" }}
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+    {{- else if eq .Values.migration.mode "argocd" }}
+    "argocd.argoproj.io/hook": PreSync
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation
+    {{- end }}
+    {{- with .Values.migration.job.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.migration.job.backoffLimit }}
+  {{- if .Values.migration.job.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.migration.job.ttlSecondsAfterFinished }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ncps.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ncps.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.migration.job.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migration.job.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migration.job.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if eq .Values.config.database.type "sqlite" }}
+      initContainers:
+        - name: create-db-dir
+          image: {{ include "ncps.initImage" . }}
+          imagePullPolicy: {{ .Values.initImage.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p $(dirname {{ .Values.config.database.sqlite.path }})
+          volumeMounts:
+            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+            - name: storage
+              mountPath: /storage
+            {{- end }}
+            - name: tmp
+              mountPath: {{ .Values.config.cache.tempPath }}
+          resources:
+            {{- toYaml .Values.initImage.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+      {{- end }}
+      containers:
+        - name: migration
+          securityContext:
+            {{- toYaml .Values.migration.securityContext | nindent 12 }}
+          image: {{ include "ncps.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/dbmate
+          args:
+            - up
+          env:
+            {{- include "ncps.migrationDatabaseURLEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          volumeMounts:
+            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+            - name: storage
+              mountPath: /storage
+            {{- end }}
+            - name: tmp
+              mountPath: {{ .Values.config.cache.tempPath }}
+      volumes:
+        {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+        - name: storage
+          {{- if or .Values.config.storage.local.persistence.enabled (eq .Values.config.database.type "sqlite") }}
+          persistentVolumeClaim:
+            claimName: {{ include "ncps.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}
