@@ -254,23 +254,30 @@ func TestLocker_IgnoresKeyAndTTL(t *testing.T) {
 	ctx := context.Background()
 	locker := local.NewLocker()
 
-	// Lock with different keys should still conflict (local lock ignores keys)
+	// Lock with one key
 	err := locker.Lock(ctx, "key1", 1*time.Second)
 	require.NoError(t, err)
 
-	// TryLock with different key should fail (same mutex)
+	// TryLock with different key should succeed (different per-key mutex)
 	acquired, err := locker.TryLock(ctx, "key2", 1*time.Second)
 	require.NoError(t, err)
-	assert.False(t, acquired, "local lock should ignore keys")
+	assert.True(t, acquired, "local lock should use per-key mutexes")
+
+	// TryLock with same key should fail (same mutex)
+	acquired2, err := locker.TryLock(ctx, "key1", 1*time.Second)
+	require.NoError(t, err)
+	assert.False(t, acquired2, "same key should be locked")
 
 	err = locker.Unlock(ctx, "key1")
 	require.NoError(t, err)
 
-	// Now TryLock should succeed
-	acquired2, err := locker.TryLock(ctx, "key2", 1*time.Second)
-	require.NoError(t, err)
-	assert.True(t, acquired2)
-
 	err = locker.Unlock(ctx, "key2")
+	require.NoError(t, err)
+
+	// TTL parameter should still be ignored
+	err = locker.Lock(ctx, "key3", 999*time.Hour)
+	require.NoError(t, err)
+
+	err = locker.Unlock(ctx, "key3")
 	require.NoError(t, err)
 }

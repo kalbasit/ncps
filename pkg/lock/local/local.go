@@ -13,58 +13,94 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock"
 )
 
-// Locker implements lock.Locker using sync.Mutex.
+// Locker implements lock.Locker using per-key mutexes.
 type Locker struct {
-	mu sync.Mutex
+	mapMu sync.Mutex // Protects the locks map
+	locks map[string]*sync.Mutex
 
 	// Track lock acquisition times for metrics (key -> acquisition time)
-	// Protected by mu, so no need for sync.Map
 	acquisitionTimes map[string]time.Time
 }
 
 // NewLocker creates a new local locker.
 func NewLocker() lock.Locker {
 	return &Locker{
+		locks:            make(map[string]*sync.Mutex),
 		acquisitionTimes: make(map[string]time.Time),
 	}
 }
 
 // Lock acquires an exclusive lock. The ttl parameter is ignored, but the key is used for metrics.
 func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
-	l.mu.Lock()
+	// Get or create mutex for this key
+	l.mapMu.Lock()
 
-	// Record acquisition attempt
+	mu, ok := l.locks[key]
+	if !ok {
+		mu = &sync.Mutex{}
+		l.locks[key] = mu
+	}
+
+	l.mapMu.Unlock()
+
+	// Acquire the per-key lock
+	mu.Lock()
+
+	// Record acquisition attempt (after acquiring to avoid holding mapMu)
 	lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultSuccess)
 
 	// Track acquisition time for duration metrics
+	l.mapMu.Lock()
 	l.acquisitionTimes[key] = time.Now()
+	l.mapMu.Unlock()
 
 	return nil
 }
 
-// Unlock releases an exclusive lock. The key parameter is ignored.
+// Unlock releases an exclusive lock for the given key.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
 	// Calculate and record lock hold duration
+	l.mapMu.Lock()
+
 	if startTime, ok := l.acquisitionTimes[key]; ok {
 		duration := time.Since(startTime).Seconds()
 		lock.RecordLockDuration(ctx, lock.LockTypeExclusive, lock.LockModeLocal, duration)
 		delete(l.acquisitionTimes, key)
 	}
 
-	l.mu.Unlock()
+	// Get the mutex for this key
+	mu, ok := l.locks[key]
+	l.mapMu.Unlock()
+
+	if ok {
+		mu.Unlock()
+	}
 
 	return nil
 }
 
 // TryLock attempts to acquire an exclusive lock without blocking.
-// The key and ttl parameters are ignored.
 func (l *Locker) TryLock(ctx context.Context, key string, _ time.Duration) (bool, error) {
-	acquired := l.mu.TryLock()
+	// Get or create mutex for this key
+	l.mapMu.Lock()
+
+	mu, ok := l.locks[key]
+	if !ok {
+		mu = &sync.Mutex{}
+		l.locks[key] = mu
+	}
+
+	l.mapMu.Unlock()
+
+	// Try to acquire the per-key lock
+	acquired := mu.TryLock()
 
 	if acquired {
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultSuccess)
 
+		l.mapMu.Lock()
 		l.acquisitionTimes[key] = time.Now()
+		l.mapMu.Unlock()
 	} else {
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeLocal, lock.LockResultContention)
 	}
