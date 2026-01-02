@@ -172,6 +172,7 @@ func newDownloadState() *downloadState {
 func (ds *downloadState) setError(err error) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
+
 	ds.downloadError = err
 }
 
