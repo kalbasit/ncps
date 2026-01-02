@@ -29,7 +29,7 @@ docker volume create ncps-storage
 
 # Create required directories
 docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
-  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps/db"
+  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
 ```
 
 ### Step 3: Initialize Database

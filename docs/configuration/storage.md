@@ -274,7 +274,7 @@ s3://ncps-cache/
       "Action": [
         "s3:GetObject",
         "s3:PutObject",
-        "s3:DeleteObject",
+- Use TLS for data in transit (by using an `https://` endpoint)
         "s3:ListBucket"
       ],
       "Resource": [

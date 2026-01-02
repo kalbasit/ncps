@@ -66,7 +66,7 @@ Welcome to the comprehensive documentation for ncps (Nix Cache Proxy Server). Th
 - [Understand storage backends](architecture/storage-backends.md)
 - [Follow request flow](architecture/request-flow.md)
 
-**Contribute**
+- **[Helm Chart Documentation](../charts/ncps/README.md)** - Comprehensive Helm chart reference
 
 - [Set up development environment](development/)
 - [Run tests](development/testing.md)

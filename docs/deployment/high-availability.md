@@ -83,7 +83,7 @@ helm install ncps ./charts/ncps -n ncps -f values-ha.yaml
 ```yaml
 replicaCount: 3
 
-cache:
+  hostname: cache.example.com
   hostName: cache.example.com
 
   storage:

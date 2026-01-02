@@ -6,7 +6,7 @@ This guide explains what ncps is, the problems it solves, and how it works under
 
 ## What is ncps?
 
-ncps (Nix Cache Proxy Server) is a high-performance proxy server that acts as a local binary cache for Nix. It fetches store paths from upstream caches (like cache.nixos.org) and stores them locally,reducing download times and bandwidth usage.
+ncps (Nix Cache Proxy Server) is a high-performance proxy server that acts as a local binary cache for Nix. It fetches store paths from upstream caches (like cache.nixos.org) and stores them locally, reducing download times and bandwidth usage.
 
 ## The Problem
 

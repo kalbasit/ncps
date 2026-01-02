@@ -83,7 +83,7 @@ s3://bucket/
 
 - Scalable
 - Redundant
-- Required for HA
+See [pkg/storage/s3/README.md](../../pkg/storage/s3/README.md) for detailed implementation.
 
 **Cons:**
 
