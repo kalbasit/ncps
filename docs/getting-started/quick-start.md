@@ -36,7 +36,7 @@ docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
 
 ```bash
 docker run --rm -v ncps-storage:/storage kalbasit/ncps \
-  /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+  /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite up
 ```
 
 ### Step 4: Start ncps
@@ -94,7 +94,7 @@ docker run --rm -v ncps-db:/db alpine mkdir -m 0700 -p /db
 
 ```bash
 docker run --rm -v ncps-db:/db kalbasit/ncps \
-  /bin/dbmate --url=sqlite:/db/db.sqlite migrate up
+  /bin/dbmate --url=sqlite:/db/db.sqlite up
 ```
 
 ### Step 4: Start ncps with S3
