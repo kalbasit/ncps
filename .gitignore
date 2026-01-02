@@ -34,3 +34,6 @@ go.work.sum
 
 # Pre-commit configuration (auto-generated)
 /.pre-commit-config.yaml
+
+# Developer files
+charts/ncps/test-values/

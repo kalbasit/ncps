@@ -4,6 +4,18 @@
     {
       devShells.default = pkgs.mkShell {
         buildInputs = [
+          # python environment for dev-scripts/test-deployments.py
+          (pkgs.python3.withPackages (
+            ps: with ps; [
+              boto3
+              kubernetes
+              psycopg2-binary
+              pymysql
+              pyyaml
+              requests
+            ]
+          ))
+
           # Use real dbmate for the wrapper to call
           (pkgs.writeShellScriptBin "dbmate.real" ''
             exec ${pkgs.dbmate}/bin/dbmate "$@"
@@ -86,6 +98,7 @@
               echo "✅ No integration test variables to disable." >&2
             fi
           '')
+
           pkgs.delve
           pkgs.go
           pkgs.golangci-lint
