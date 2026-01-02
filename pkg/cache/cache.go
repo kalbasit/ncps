@@ -140,7 +140,8 @@ type downloadState struct {
 	cond *sync.Cond
 
 	// Information about the asset being downloaded
-	wg           sync.WaitGroup
+	wg           sync.WaitGroup // Tracks active readers streaming from the temp file
+	cleanupWg    sync.WaitGroup // Tracks download completion to trigger cleanup
 	assetPath    string
 	bytesWritten int64
 	finalSize    int64
@@ -622,12 +623,14 @@ func (c *Cache) pullNarIntoStore(
 
 	ds.assetPath = f.Name()
 
-	// Wait until nothing is using the asset and remove it
-	ds.wg.Add(1)
-	defer ds.wg.Done()
+	// Track download completion for cleanup synchronization
+	ds.cleanupWg.Add(1)
+	defer ds.cleanupWg.Done()
 
+	// Cleanup: wait for download to complete, then wait for all readers to finish
 	go func() {
-		ds.wg.Wait()
+		ds.cleanupWg.Wait() // Wait for download to complete
+		ds.wg.Wait()        // Then wait for all readers to finish
 		os.Remove(ds.assetPath)
 	}()
 
