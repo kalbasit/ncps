@@ -83,7 +83,7 @@ s3://bucket/
 
 - Scalable
 - Redundant
-See [pkg/storage/s3/README.md](../../pkg/storage/s3/README.md) for detailed implementation.
+  See [pkg/storage/s3/README.md](../../pkg/storage/s3/README.md) for detailed implementation.
 
 **Cons:**
 
