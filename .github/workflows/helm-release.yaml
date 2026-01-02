@@ -1,0 +1,84 @@
+name: Release Helm Chart
+on:
+  push:
+    tags:
+      - "helm-v*"
+permissions:
+  contents: write
+  packages: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+      - name: Extract version from tag
+        id: extract_version
+        run: |
+          # Tag format: helm-v1.2.3
+          VERSION=${GITHUB_REF#refs/tags/helm-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+      - name: Update Chart version
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          # Update Chart.yaml version
+          sed -i "s/^version:.*/version: $VERSION/" charts/ncps/Chart.yaml
+          echo "Updated Chart.yaml to version $VERSION"
+      - name: Package Helm chart
+        run: |
+          helm package charts/ncps --destination .helm-releases
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Push chart to GHCR
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          CHART_PACKAGE="ncps-${VERSION}.tgz"
+
+          # Push to OCI registry
+          helm push .helm-releases/${CHART_PACKAGE} oci://ghcr.io/${{ github.repository_owner }}/helm
+
+          echo "✅ Chart published to: oci://ghcr.io/${{ github.repository_owner }}/helm/ncps:${VERSION}"
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: .helm-releases/*.tgz
+          body: |
+            ## Helm Chart Release ${{ steps.extract_version.outputs.version }}
+
+            ### Installation
+
+            ```bash
+            helm install ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ steps.extract_version.outputs.version }}
+            ```
+
+            ### Upgrade
+
+            ```bash
+            helm upgrade ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ steps.extract_version.outputs.version }}
+            ```
+
+            ### Values
+
+            See [values.yaml](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/charts/ncps/values.yaml) for all configuration options.
+
+            ### Documentation
+
+            See [Helm Chart README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/charts/ncps/README.md) for detailed documentation and examples.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Logout from GHCR
+        if: always()
+        run: |
+          helm registry logout ghcr.io
