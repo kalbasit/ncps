@@ -389,11 +389,18 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 	<-ds.start
 
+	ds.mu.Lock()
+
 	if ds.downloadError != nil {
+		err := ds.downloadError
+		ds.mu.Unlock()
+
 		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
-		return 0, nil, ds.downloadError
+		return 0, nil, err
 	}
+
+	ds.mu.Unlock()
 
 	// create a pipe to stream file down to the http client
 	reader, writer := io.Pipe()
@@ -416,6 +423,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 				// in case an error happened and the downloader bailed after its last
 				// broadcast in the defered function.
 				if ds.downloadError != nil {
+					ds.mu.Unlock()
+
 					return
 				}
 			}
@@ -431,6 +440,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 						Error().
 						Err(err).
 						Msg("error opening the asset path")
+
+					ds.mu.Unlock()
 
 					return
 				}
@@ -611,7 +622,9 @@ func (c *Cache) pullNarIntoStore(
 				Msg("error getting the nar from upstream caches")
 		}
 
+		ds.mu.Lock()
 		ds.downloadError = err
+		ds.mu.Unlock()
 
 		return
 	}
@@ -636,7 +649,9 @@ func (c *Cache) pullNarIntoStore(
 			Err(err).
 			Msg("error creating the nar file in the temporary directory")
 
+		ds.mu.Lock()
 		ds.downloadError = err
+		ds.mu.Unlock()
 
 		return
 	}
@@ -670,7 +685,9 @@ func (c *Cache) pullNarIntoStore(
 					Err(err).
 					Msg("error storing the chunk in the temporary file")
 
+				ds.mu.Lock()
 				ds.downloadError = writeErr
+				ds.mu.Unlock()
 
 				return
 			}
@@ -687,7 +704,9 @@ func (c *Cache) pullNarIntoStore(
 		}
 
 		if err != nil {
+			ds.mu.Lock()
 			ds.downloadError = err
+			ds.mu.Unlock()
 
 			return
 		}
@@ -708,7 +727,9 @@ func (c *Cache) pullNarIntoStore(
 			Err(err).
 			Msg("error opening the nar from the temporary file")
 
+		ds.mu.Lock()
 		ds.downloadError = err
+		ds.mu.Unlock()
 
 		return
 	}
@@ -722,7 +743,9 @@ func (c *Cache) pullNarIntoStore(
 			Err(err).
 			Msg("error storing the nar in the store")
 
+		ds.mu.Lock()
 		ds.downloadError = err
+		ds.mu.Unlock()
 
 		return
 	}
@@ -958,11 +981,18 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		Msg("pulling nar in a go-routing and will wait for it")
 	<-ds.done
 
+	ds.mu.Lock()
+
 	if ds.downloadError != nil {
+		err := ds.downloadError
+		ds.mu.Unlock()
+
 		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
-		return nil, ds.downloadError
+		return nil, err
 	}
+
+	ds.mu.Unlock()
 
 	return c.narInfoStore.GetNarInfo(ctx, hash)
 }
@@ -1016,7 +1046,9 @@ func (c *Cache) pullNarInfo(
 				Msg("error getting the narInfo from upstream caches")
 		}
 
+		ds.mu.Lock()
 		ds.downloadError = err
+		ds.mu.Unlock()
 
 		return
 	}
@@ -1029,7 +1061,9 @@ func (c *Cache) pullNarInfo(
 			Str("nar_url", narInfo.URL).
 			Msg("error parsing the nar URL")
 
+		ds.mu.Lock()
 		ds.downloadError = err
+		ds.mu.Unlock()
 
 		return
 	}
@@ -1060,7 +1094,11 @@ func (c *Cache) pullNarInfo(
 		ds := c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
 		<-ds.done
 
-		if ds.downloadError != nil {
+		ds.mu.Lock()
+		err := ds.downloadError
+		ds.mu.Unlock()
+
+		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
