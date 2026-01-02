@@ -151,14 +151,16 @@ type downloadState struct {
 	downloadError error
 
 	// Channel to signal starting the pull and its completion
-	done  chan struct{}
-	start chan struct{}
+	done   chan struct{} // Signals download fully complete (including database updates)
+	start  chan struct{} // Signals streaming can begin (temp file ready)
+	stored chan struct{} // Signals asset is in final storage (for distributed lock release)
 }
 
 func newDownloadState() *downloadState {
 	ds := &downloadState{
-		done:  make(chan struct{}),
-		start: make(chan struct{}),
+		done:   make(chan struct{}),
+		start:  make(chan struct{}),
+		stored: make(chan struct{}),
 	}
 
 	ds.cond = sync.NewCond(&ds.mu)
@@ -670,6 +672,12 @@ func (c *Cache) pullNarIntoStore(
 			close(ds.start)
 		}
 
+		select {
+		case <-ds.stored:
+		default:
+			close(ds.stored)
+		}
+
 		// Inform watchers that we are fully done and the asset is now in the store.
 		close(ds.done)
 
@@ -751,7 +759,8 @@ func (c *Cache) pullNarIntoStore(
 		os.Remove(ds.assetPath)
 	}()
 
-	close(ds.start) // inform caller that we started to stream
+	// Signal that temp file is ready for streaming
+	close(ds.start)
 
 	err = c.streamResponseToFile(ctx, resp, f, ds)
 	if err != nil {
@@ -770,6 +779,10 @@ func (c *Cache) pullNarIntoStore(
 
 		return
 	}
+
+	// Signal that the asset is now in final storage and the distributed lock can be released
+	// This prevents the race condition where other instances check hasAsset() before storage completes
+	close(ds.stored)
 
 	if enableZSTD && written > 0 {
 		narInfo.FileSize = uint64(written)
@@ -1009,6 +1022,12 @@ func (c *Cache) pullNarInfo(
 			close(ds.start)
 		}
 
+		select {
+		case <-ds.stored:
+		default:
+			close(ds.stored)
+		}
+
 		close(ds.done)
 	}
 
@@ -1062,8 +1081,7 @@ func (c *Cache) pullNarInfo(
 		return
 	}
 
-	// Signal that we've successfully fetched the narinfo and are about to process it
-	// This allows prePullNarInfo to release the distributed lock
+	// Signal that we've successfully fetched the narinfo (no streaming for narinfo)
 	close(ds.start)
 
 	var enableZSTD bool
@@ -1085,7 +1103,12 @@ func (c *Cache) pullNarInfo(
 	// if that's the case we should get the compressed version and store that
 	// instead.
 	if enableZSTD {
-		ds := c.prePullNar(ctx, &narURL, uc, narInfo, enableZSTD)
+		// Use detached context to ensure NAR download completes even if narinfo context is canceled
+		detachedCtx := trace.ContextWithSpan(
+			zerolog.Ctx(ctx).WithContext(c.baseContext),
+			trace.SpanFromContext(ctx),
+		)
+		ds := c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
 		<-ds.done
 
 		ds.mu.Lock()
@@ -1129,6 +1152,10 @@ func (c *Cache) pullNarInfo(
 
 		return
 	}
+
+	// Signal that the asset is now in final storage and the distributed lock can be released
+	// This prevents the race condition where other instances check hasAsset() before storage completes
+	close(ds.stored)
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
 		zerolog.Ctx(ctx).
@@ -1222,76 +1249,17 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 	)
 	defer span.End()
 
-	lockKey := "download:narinfo:" + hash
-
-	// Acquire lock with retry (handled internally by Redis locker)
-	// If using local locks, this returns immediately
-	// If using Redis and lock fails, this returns immediately (lock will auto-expire)
-	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("hash", hash).
-			Msg("failed to acquire download lock for narinfo")
-
-		ds := newDownloadState()
-		ds.downloadError = fmt.Errorf("failed to acquire download lock for narinfo: %w", err)
-
-		return ds
-	}
-
-	// Check if NarInfo is already in storage (critical for distributed deduplication)
-	// Another instance may have downloaded it while we were waiting for the lock
-	if c.narInfoStore.HasNarInfo(ctx, hash) {
-		// Release the lock before returning
-		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Str("hash", hash).
-				Msg("failed to release download lock for narinfo")
-		}
-
-		zerolog.Ctx(ctx).Debug().
-			Str("hash", hash).
-			Msg("NarInfo already in storage, skipping download")
-
-		// Return a completed downloadState
-		ds := newDownloadState()
-		close(ds.start)
-		close(ds.done)
-
-		return ds
-	}
-
-	// Check upstreamJobs map (protected by local mutex) and create downloadState if needed
-	c.upstreamJobsMu.Lock()
-
-	ds, ok := c.upstreamJobs[hash]
-	if !ok {
-		ds = newDownloadState()
-		c.upstreamJobs[hash] = ds
-
-		// Start download in background
-		// IMPORTANT: We must wait for the download to signal it has started (ds.start)
-		// before releasing the distributed lock. This ensures that when the lock is
-		// released, the narinfo file creation has begun and other instances will see it.
-		go c.pullNarInfo(ctx, hash, ds)
-	}
-
-	c.upstreamJobsMu.Unlock()
-
-	// Wait for the download to start before releasing the distributed lock
-	// This ensures other instances will find the file in storage when they acquire the lock
-	<-ds.start
-
-	// Now release the distributed lock
-	if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("hash", hash).
-			Msg("failed to release download lock for narinfo")
-	}
-
-	return ds
+	return c.coordinateDownload(
+		ctx,
+		"download:narinfo:",
+		hash,
+		func(ctx context.Context) bool {
+			return c.narInfoStore.HasNarInfo(ctx, hash)
+		},
+		func(ds *downloadState) {
+			c.pullNarInfo(ctx, hash, ds)
+		},
+	)
 }
 
 func (c *Cache) prePullNar(
@@ -1311,76 +1279,17 @@ func (c *Cache) prePullNar(
 	)
 	defer span.End()
 
-	lockKey := "download:nar:" + narURL.Hash
-
-	// Acquire lock with retry (handled internally by Redis locker)
-	// If using local locks, this returns immediately
-	// If using Redis and lock fails, this returns immediately (lock will auto-expire)
-	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("hash", narURL.Hash).
-			Msg("failed to acquire download lock for nar")
-
-		ds := newDownloadState()
-		ds.downloadError = fmt.Errorf("failed to acquire download lock for nar: %w", err)
-
-		return ds
-	}
-
-	// Check if NAR is already in storage (critical for distributed deduplication)
-	// Another instance may have downloaded it while we were waiting for the lock
-	if c.narStore.HasNar(ctx, *narURL) {
-		// Release the lock before returning
-		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Str("hash", narURL.Hash).
-				Msg("failed to release download lock for nar")
-		}
-
-		zerolog.Ctx(ctx).Debug().
-			Str("hash", narURL.Hash).
-			Msg("NAR already in storage, skipping download")
-
-		// Return a completed downloadState
-		ds := newDownloadState()
-		close(ds.start)
-		close(ds.done)
-
-		return ds
-	}
-
-	// Check upstreamJobs map (protected by local mutex) and create downloadState if needed
-	c.upstreamJobsMu.Lock()
-
-	ds, ok := c.upstreamJobs[narURL.Hash]
-	if !ok {
-		ds = newDownloadState()
-		c.upstreamJobs[narURL.Hash] = ds
-
-		// Start download in background
-		// IMPORTANT: We must wait for the download to signal it has started (ds.start)
-		// before releasing the distributed lock. This ensures that when the lock is
-		// released, the NAR file creation has begun and other instances will see it.
-		go c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
-	}
-
-	c.upstreamJobsMu.Unlock()
-
-	// Wait for the download to start before releasing the distributed lock
-	// This ensures other instances will find the file in storage when they acquire the lock
-	<-ds.start
-
-	// Now release the distributed lock
-	if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("hash", narURL.Hash).
-			Msg("failed to release download lock for nar")
-	}
-
-	return ds
+	return c.coordinateDownload(
+		ctx,
+		"download:nar:",
+		narURL.Hash,
+		func(ctx context.Context) bool {
+			return c.narStore.HasNar(ctx, *narURL)
+		},
+		func(ds *downloadState) {
+			c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
+		},
+	)
 }
 
 func (c *Cache) signNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
@@ -1738,6 +1647,109 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	_, ok := c.upstreamJobs[hash]
 
 	return ok
+}
+
+// coordinateDownload manages distributed download coordination with lock acquisition,
+// storage checking, and job tracking. Returns a downloadState that can be monitored
+// for download progress and errors.
+func (c *Cache) coordinateDownload(
+	ctx context.Context,
+	lockPrefix string,
+	hash string,
+	hasAsset func(context.Context) bool,
+	startJob func(*downloadState),
+) *downloadState {
+	lockKey := lockPrefix + hash
+
+	// Acquire lock with retry (handled internally by Redis locker)
+	// If using local locks, this returns immediately
+	// If using Redis and lock fails, this returns immediately (lock will auto-expire)
+	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("hash", hash).
+			Str("lock_key", lockKey).
+			Msg("failed to acquire download lock")
+
+		ds := newDownloadState()
+		ds.downloadError = fmt.Errorf("failed to acquire download lock: %w", err)
+
+		return ds
+	}
+
+	// Check if asset is already in storage (critical for distributed deduplication)
+	// Another instance may have downloaded it while we were waiting for the lock
+	if hasAsset(ctx) {
+		// Release the lock before returning
+		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", hash).
+				Str("lock_key", lockKey).
+				Msg("failed to release download lock")
+		}
+
+		zerolog.Ctx(ctx).Debug().
+			Str("hash", hash).
+			Msg("asset already in storage, skipping download")
+
+		// Return a completed downloadState
+		ds := newDownloadState()
+		close(ds.start)
+		close(ds.stored)
+		close(ds.done)
+
+		return ds
+	}
+
+	// Check upstreamJobs map (protected by local mutex) and create downloadState if needed
+	c.upstreamJobsMu.Lock()
+
+	ds, ok := c.upstreamJobs[hash]
+	if !ok {
+		ds = newDownloadState()
+		c.upstreamJobs[hash] = ds
+
+		// Start download in background
+		// IMPORTANT: We must wait for the asset to be stored (ds.stored) before releasing
+		// the distributed lock. The download job will close ds.stored only AFTER the asset
+		// is successfully stored in final storage. This ensures that when the lock is released,
+		// hasAsset() will return true for other instances, preventing duplicate downloads.
+		go startJob(ds)
+	}
+
+	c.upstreamJobsMu.Unlock()
+
+	// Wait for the asset to be in final storage before releasing the distributed lock
+	// This ensures other instances will find the asset when they call hasAsset() after acquiring the lock
+	select {
+	case <-ds.stored:
+		// Asset is now in storage
+	case <-ctx.Done():
+		// Context canceled, return error state
+		zerolog.Ctx(ctx).Warn().
+			Str("hash", hash).
+			Str("lock_key", lockKey).
+			Msg("context canceled while waiting for asset storage")
+		ds.mu.Lock()
+
+		if ds.downloadError == nil {
+			ds.downloadError = ctx.Err()
+		}
+
+		ds.mu.Unlock()
+	}
+
+	// Now release the distributed lock
+	if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("hash", hash).
+			Str("lock_key", lockKey).
+			Msg("failed to release download lock")
+	}
+
+	return ds
 }
 
 // withTransaction executes fn within a database transaction.
