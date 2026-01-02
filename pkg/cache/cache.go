@@ -313,168 +313,169 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		narServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
 
-	lockKey := cacheLockKey
+	var (
+		size   int64
+		reader io.ReadCloser
+	)
 
-	// Acquire read lock to prevent LRU from deleting files during access
-	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Msg("failed to acquire read lock for GetNar")
+	err := c.withReadLock(ctx, "GetNar", func() error {
+		ctx = narURL.
+			NewLogger(*zerolog.Ctx(ctx)).
+			WithContext(ctx)
 
-		return 0, nil, fmt.Errorf("failed to acquire read lock for GetNar: %w", err)
-	}
+		if c.narStore.HasNar(ctx, narURL) {
+			metricAttrs = append(metricAttrs,
+				attribute.String("result", "hit"),
+			)
 
-	defer func() {
-		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Msg("failed to release read lock for GetNar")
+			var err error
+
+			size, reader, err = c.getNarFromStore(ctx, &narURL)
+			if err != nil {
+				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+			} else {
+				metricAttrs = append(metricAttrs, attribute.String("status", "success"))
+			}
+
+			return err
 		}
-	}()
 
-	ctx = narURL.
-		NewLogger(*zerolog.Ctx(ctx)).
-		WithContext(ctx)
+		zerolog.Ctx(ctx).
+			Debug().
+			Msg("pulling nar in a go-routine and will stream the file back to the client")
 
-	if c.narStore.HasNar(ctx, narURL) {
+		// create a detachedCtx that has the same span and logger as the main
+		// context but with the baseContext as parent; This context will not cancel
+		// when ctx is canceled allowing us to continue pulling the nar in the
+		// background.
+		detachedCtx := trace.ContextWithSpan(
+			zerolog.Ctx(ctx).WithContext(c.baseContext),
+			trace.SpanFromContext(ctx),
+		)
+		ds := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
+		ds.wg.Add(1)
+
+		// double check it still does not exist in the store before we continue
+		if c.narStore.HasNar(ctx, narURL) {
+			ds.wg.Done()
+
+			metricAttrs = append(metricAttrs,
+				attribute.String("result", "hit"),
+				attribute.String("status", "success"),
+			)
+
+			var err error
+
+			size, reader, err = c.getNarFromStore(ctx, &narURL)
+			if err != nil {
+				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+			}
+
+			return err
+		}
+
 		metricAttrs = append(metricAttrs,
-			attribute.String("result", "hit"),
+			attribute.String("result", "miss"),
 			attribute.String("status", "success"),
 		)
 
-		size, reader, err := c.getNarFromStore(ctx, &narURL)
+		<-ds.start
+
+		ds.mu.Lock()
+		err := ds.downloadError
+		ds.mu.Unlock()
+
 		if err != nil {
 			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
+			return err
 		}
 
-		return size, reader, err
-	}
+		// create a pipe to stream file down to the http client
+		r, writer := io.Pipe()
 
-	zerolog.Ctx(ctx).
-		Debug().
-		Msg("pulling nar in a go-routine and will stream the file back to the client")
+		go func() {
+			defer ds.wg.Done()
+			defer writer.Close()
 
-	// create a detachedCtx that has the same span and logger as the main
-	// context but with the baseContext as parent; This context will not cancel
-	// when ctx is canceled allowing us to continue pulling the nar in the
-	// background.
-	detachedCtx := trace.ContextWithSpan(
-		zerolog.Ctx(ctx).WithContext(c.baseContext),
-		trace.SpanFromContext(ctx),
-	)
-	ds := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
-	ds.wg.Add(1)
+			var f *os.File
 
-	// double check it still does not exist in the store before we continue
-	if c.narStore.HasNar(ctx, narURL) {
-		ds.wg.Done()
+			var bytesSent int64
 
-		metricAttrs = append(metricAttrs,
-			attribute.String("result", "hit"),
-			attribute.String("status", "success"),
-		)
+			for {
+				ds.mu.Lock()
 
-		size, reader, err := c.getNarFromStore(ctx, &narURL)
-		if err != nil {
-			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
-		}
+				for bytesSent >= ds.bytesWritten && ds.finalSize == 0 {
+					ds.cond.Wait() // Put this goroutine to sleep until a broadcast is received from the downloader
 
-		return size, reader, err
-	}
+					// check for error just in case otherwise we'd end up sleeping forever
+					// in case an error happened and the downloader bailed after its last
+					// broadcast in the defered function.
+					if ds.downloadError != nil {
+						ds.mu.Unlock()
 
-	metricAttrs = append(metricAttrs,
-		attribute.String("result", "miss"),
-		attribute.String("status", "success"),
-	)
+						return
+					}
+				}
 
-	<-ds.start
+				// On first read, open the file. It's not guaranteed the file is even
+				// available prior to this point.
+				if f == nil {
+					var err error
 
-	ds.mu.Lock()
-	err := ds.downloadError
-	ds.mu.Unlock()
+					f, err = os.Open(ds.assetPath)
+					if err != nil {
+						zerolog.Ctx(ctx).
+							Error().
+							Err(err).
+							Msg("error opening the asset path")
 
+						ds.mu.Unlock()
+
+						return
+					}
+				}
+
+				// Determine how much data is now available to read
+				bytesToRead := ds.bytesWritten - bytesSent
+				isDownloadComplete := ds.finalSize != 0
+
+				ds.mu.Unlock() // Unlock while doing I/O
+
+				// If there's data to read, read it from the file
+				if bytesToRead > 0 {
+					// Use io.LimitReader to only read the new chunk
+					lr := io.LimitReader(f, bytesToRead)
+
+					n, err := io.Copy(writer, lr)
+					if err != nil {
+						zerolog.Ctx(ctx).
+							Error().
+							Err(err).
+							Msg("error writing the response to the client")
+
+						return
+					}
+
+					bytesSent += n
+				}
+
+				if isDownloadComplete && bytesSent >= ds.finalSize {
+					return
+				}
+			}
+		}()
+
+		size = -1
+		reader = r
+
+		return nil
+	})
 	if err != nil {
-		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
-
 		return 0, nil, err
 	}
 
-	// create a pipe to stream file down to the http client
-	reader, writer := io.Pipe()
-
-	go func() {
-		defer ds.wg.Done()
-		defer writer.Close()
-
-		var f *os.File
-
-		var bytesSent int64
-
-		for {
-			ds.mu.Lock()
-
-			for bytesSent >= ds.bytesWritten && ds.finalSize == 0 {
-				ds.cond.Wait() // Put this goroutine to sleep until a broadcast is received from the downloader
-
-				// check for error just in case otherwise we'd end up sleeping forever
-				// in case an error happened and the downloader bailed after its last
-				// broadcast in the defered function.
-				if ds.downloadError != nil {
-					ds.mu.Unlock()
-
-					return
-				}
-			}
-
-			// On first read, open the file. It's not guaranteed the file is even
-			// available prior to this point.
-			if f == nil {
-				var err error
-
-				f, err = os.Open(ds.assetPath)
-				if err != nil {
-					zerolog.Ctx(ctx).
-						Error().
-						Err(err).
-						Msg("error opening the asset path")
-
-					ds.mu.Unlock()
-
-					return
-				}
-			}
-
-			// Determine how much data is now available to read
-			bytesToRead := ds.bytesWritten - bytesSent
-			isDownloadComplete := ds.finalSize != 0
-
-			ds.mu.Unlock() // Unlock while doing I/O
-
-			// If there's data to read, read it from the file
-			if bytesToRead > 0 {
-				// Use io.LimitReader to only read the new chunk
-				lr := io.LimitReader(f, bytesToRead)
-
-				n, err := io.Copy(writer, lr)
-				if err != nil {
-					zerolog.Ctx(ctx).
-						Error().
-						Err(err).
-						Msg("error writing the response to the client")
-
-					return
-				}
-
-				bytesSent += n
-			}
-
-			if isDownloadComplete && bytesSent >= ds.finalSize {
-				return
-			}
-		}
-	}()
-
-	return -1, reader, nil
+	return size, reader, nil
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
@@ -489,39 +490,22 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 	)
 	defer span.End()
 
-	lockKey := cacheLockKey
+	return c.withReadLock(ctx, "PutNar", func() error {
+		ctx = narURL.
+			NewLogger(*zerolog.Ctx(ctx)).
+			WithContext(ctx)
 
-	// Acquire read lock to prevent LRU from deleting files during access
-	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Msg("failed to acquire read lock for PutNar")
+		defer func() {
+			//nolint:errcheck
+			io.Copy(io.Discard, r)
 
-		return fmt.Errorf("failed to acquire read lock for PutNar: %w", err)
-	}
+			r.Close()
+		}()
 
-	defer func() {
-		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Msg("failed to release read lock for PutNar")
-		}
-	}()
+		_, err := c.narStore.PutNar(ctx, narURL, r)
 
-	ctx = narURL.
-		NewLogger(*zerolog.Ctx(ctx)).
-		WithContext(ctx)
-
-	defer func() {
-		//nolint:errcheck
-		io.Copy(io.Discard, r)
-
-		r.Close()
-	}()
-
-	_, err := c.narStore.PutNar(ctx, narURL, r)
-
-	return err
+		return err
+	})
 }
 
 // DeleteNar deletes the nar from the store.
@@ -536,30 +520,13 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	)
 	defer span.End()
 
-	lockKey := cacheLockKey
+	return c.withReadLock(ctx, "DeleteNar", func() error {
+		ctx = narURL.
+			NewLogger(*zerolog.Ctx(ctx)).
+			WithContext(ctx)
 
-	// Acquire read lock to prevent LRU from deleting files during access
-	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Msg("failed to acquire read lock for DeleteNar")
-
-		return fmt.Errorf("failed to acquire read lock for DeleteNar: %w", err)
-	}
-
-	defer func() {
-		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Msg("failed to release read lock for DeleteNar")
-		}
-	}()
-
-	ctx = narURL.
-		NewLogger(*zerolog.Ctx(ctx)).
-		WithContext(ctx)
-
-	return c.narStore.DeleteNar(ctx, narURL)
+		return c.narStore.DeleteNar(ctx, narURL)
+	})
 }
 
 func (c *Cache) pullNarIntoStore(
@@ -776,40 +743,27 @@ func (c *Cache) getNarFromStore(
 		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
 	}
 
-	tx, err := c.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return 0, nil, fmt.Errorf("error beginning a transaction: %w", err)
-	}
+	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
+		nr, err := qtx.GetNarByHash(ctx, narURL.Hash)
+		if err != nil {
+			// TODO: If record not found, record it instead!
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
 
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error rolling back the transaction")
+			return fmt.Errorf("error fetching the nar record: %w", err)
+		}
+
+		if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
+			if _, err := qtx.TouchNar(ctx, narURL.Hash); err != nil {
+				return fmt.Errorf("error touching the nar record: %w", err)
 			}
 		}
-	}()
 
-	nr, err := c.db.WithTx(tx).GetNarByHash(ctx, narURL.Hash)
+		return nil
+	})
 	if err != nil {
-		// TODO: If record not found, record it instead!
-		if errors.Is(err, sql.ErrNoRows) {
-			return size, r, nil
-		}
-
-		return 0, nil, fmt.Errorf("error fetching the nar record: %w", err)
-	}
-
-	if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-		if _, err := c.db.WithTx(tx).TouchNar(ctx, narURL.Hash); err != nil {
-			return 0, nil, fmt.Errorf("error touching the nar record: %w", err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, nil, fmt.Errorf("error committing the transaction: %w", err)
+		return 0, nil, err
 	}
 
 	return size, r, nil
@@ -920,75 +874,64 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		narInfoServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
 
-	lockKey := cacheLockKey
+	var narInfo *narinfo.NarInfo
 
-	// Acquire read lock to prevent LRU from deleting files during access
-	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Msg("failed to acquire read lock for GetNarInfo")
+	err := c.withReadLock(ctx, "GetNarInfo", func() error {
+		ctx = zerolog.Ctx(ctx).
+			With().
+			Str("narinfo_hash", hash).
+			Logger().
+			WithContext(ctx)
 
-		return nil, fmt.Errorf("failed to acquire read lock for GetNarInfo: %w", err)
-	}
+		var err error
 
-	defer func() {
-		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Msg("failed to release read lock for GetNarInfo")
+		if c.narInfoStore.HasNarInfo(ctx, hash) {
+			metricAttrs = append(metricAttrs,
+				attribute.String("result", "hit"),
+				attribute.String("status", "success"),
+			)
+
+			narInfo, err = c.getNarInfoFromStore(ctx, hash)
+			if err == nil {
+				return nil
+			} else if !errors.Is(err, errNarInfoPurged) {
+				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
+				return fmt.Errorf("error fetching the narinfo from the store: %w", err)
+			}
 		}
-	}()
 
-	ctx = zerolog.Ctx(ctx).
-		With().
-		Str("narinfo_hash", hash).
-		Logger().
-		WithContext(ctx)
-
-	var (
-		narInfo *narinfo.NarInfo
-		err     error
-	)
-
-	if c.narInfoStore.HasNarInfo(ctx, hash) {
 		metricAttrs = append(metricAttrs,
-			attribute.String("result", "hit"),
+			attribute.String("result", "miss"),
 			attribute.String("status", "success"),
 		)
 
-		narInfo, err = c.getNarInfoFromStore(ctx, hash)
-		if err == nil {
-			return narInfo, nil
-		} else if !errors.Is(err, errNarInfoPurged) {
+		ds := c.prePullNarInfo(ctx, hash)
+
+		zerolog.Ctx(ctx).
+			Debug().
+			Msg("pulling nar in a go-routing and will wait for it")
+		<-ds.done
+
+		ds.mu.Lock()
+		err = ds.downloadError
+		ds.mu.Unlock()
+
+		if err != nil {
 			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
-			return nil, fmt.Errorf("error fetching the narinfo from the store: %w", err)
+			return err
 		}
-	}
 
-	metricAttrs = append(metricAttrs,
-		attribute.String("result", "miss"),
-		attribute.String("status", "success"),
-	)
+		narInfo, err = c.narInfoStore.GetNarInfo(ctx, hash)
 
-	ds := c.prePullNarInfo(ctx, hash)
-
-	zerolog.Ctx(ctx).
-		Debug().
-		Msg("pulling nar in a go-routing and will wait for it")
-	<-ds.done
-
-	ds.mu.Lock()
-	err = ds.downloadError
-	ds.mu.Unlock()
-
+		return err
+	})
 	if err != nil {
-		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
-
 		return nil, err
 	}
 
-	return c.narInfoStore.GetNarInfo(ctx, hash)
+	return narInfo, nil
 }
 
 func (c *Cache) pullNarInfo(
@@ -1157,52 +1100,35 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	)
 	defer span.End()
 
-	lockKey := cacheLockKey
+	return c.withReadLock(ctx, "PutNarInfo", func() error {
+		ctx = zerolog.Ctx(ctx).
+			With().
+			Str("narinfo_hash", hash).
+			Logger().
+			WithContext(ctx)
 
-	// Acquire read lock to prevent LRU from deleting files during access
-	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Msg("failed to acquire read lock for PutNarInfo")
+		defer func() {
+			//nolint:errcheck
+			io.Copy(io.Discard, r)
 
-		return fmt.Errorf("failed to acquire read lock for PutNarInfo: %w", err)
-	}
+			r.Close()
+		}()
 
-	defer func() {
-		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Msg("failed to release read lock for PutNarInfo")
+		narInfo, err := narinfo.Parse(r)
+		if err != nil {
+			return fmt.Errorf("error parsing narinfo: %w", err)
 		}
-	}()
 
-	ctx = zerolog.Ctx(ctx).
-		With().
-		Str("narinfo_hash", hash).
-		Logger().
-		WithContext(ctx)
+		if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
+			return fmt.Errorf("error signing the narinfo: %w", err)
+		}
 
-	defer func() {
-		//nolint:errcheck
-		io.Copy(io.Discard, r)
+		if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
+			return fmt.Errorf("error storing the narInfo in the store: %w", err)
+		}
 
-		r.Close()
-	}()
-
-	narInfo, err := narinfo.Parse(r)
-	if err != nil {
-		return fmt.Errorf("error parsing narinfo: %w", err)
-	}
-
-	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
-		return fmt.Errorf("error signing the narinfo: %w", err)
-	}
-
-	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		return fmt.Errorf("error storing the narInfo in the store: %w", err)
-	}
-
-	return c.storeInDatabase(ctx, hash, narInfo)
+		return c.storeInDatabase(ctx, hash, narInfo)
+	})
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
@@ -1217,32 +1143,15 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	)
 	defer span.End()
 
-	lockKey := cacheLockKey
+	return c.withReadLock(ctx, "DeleteNarInfo", func() error {
+		ctx = zerolog.Ctx(ctx).
+			With().
+			Str("narinfo_hash", hash).
+			Logger().
+			WithContext(ctx)
 
-	// Acquire read lock to prevent LRU from deleting files during access
-	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Msg("failed to acquire read lock for DeleteNarInfo")
-
-		return fmt.Errorf("failed to acquire read lock for DeleteNarInfo: %w", err)
-	}
-
-	defer func() {
-		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Msg("failed to release read lock for DeleteNarInfo")
-		}
-	}()
-
-	ctx = zerolog.Ctx(ctx).
-		With().
-		Str("narinfo_hash", hash).
-		Logger().
-		WithContext(ctx)
-
-	return c.deleteNarInfoFromStore(ctx, hash)
+		return c.deleteNarInfoFromStore(ctx, hash)
+	})
 }
 
 func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState {
@@ -1503,40 +1412,27 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return nil, errNarInfoPurged
 	}
 
-	tx, err := c.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error beginning a transaction: %w", err)
-	}
+	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
+		nir, err := qtx.GetNarInfoByHash(ctx, hash)
+		if err != nil {
+			// TODO: If record not found, record it instead!
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
 
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error rolling back the transaction")
+			return fmt.Errorf("error fetching the narinfo record: %w", err)
+		}
+
+		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
+			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
+				return fmt.Errorf("error touching the narinfo record: %w", err)
 			}
 		}
-	}()
 
-	nir, err := c.db.WithTx(tx).GetNarInfoByHash(ctx, hash)
+		return nil
+	})
 	if err != nil {
-		// TODO: If record not found, record it instead!
-		if errors.Is(err, sql.ErrNoRows) {
-			return ni, nil
-		}
-
-		return nil, fmt.Errorf("error fetching the narinfo record: %w", err)
-	}
-
-	if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-		if _, err := c.db.WithTx(tx).TouchNarInfo(ctx, hash); err != nil {
-			return nil, fmt.Errorf("error touching the narinfo record: %w", err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("error committing the transaction: %w", err)
+		return nil, err
 	}
 
 	return ni, nil
@@ -1602,34 +1498,21 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
-	tx, err := c.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("error beginning a transaction: %w", err)
-	}
+	err := c.withTransaction(ctx, "purgeNarInfo", func(qtx database.Querier) error {
+		if _, err := qtx.DeleteNarInfoByHash(ctx, hash); err != nil {
+			return fmt.Errorf("error deleting the narinfo record: %w", err)
+		}
 
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error rolling back the transaction")
+		if narURL.Hash != "" {
+			if _, err := qtx.DeleteNarByHash(ctx, narURL.Hash); err != nil {
+				return fmt.Errorf("error deleting the nar record: %w", err)
 			}
 		}
-	}()
 
-	if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, hash); err != nil {
-		return fmt.Errorf("error deleting the narinfo record: %w", err)
-	}
-
-	if narURL.Hash != "" {
-		if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narURL.Hash); err != nil {
-			return fmt.Errorf("error deleting the nar record: %w", err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing the transaction: %w", err)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	if c.narInfoStore.HasNarInfo(ctx, hash) {
@@ -1668,64 +1551,46 @@ func (c *Cache) storeInDatabase(
 		Info().
 		Msg("storing narinfo and nar record in the database")
 
-	tx, err := c.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("error beginning a transaction: %w", err)
-	}
-
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
+	return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
+		nir, err := qtx.CreateNarInfo(ctx, hash)
+		if err != nil {
+			if database.IsDuplicateKeyError(err) {
 				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error rolling back the transaction")
+					Warn().
+					Msg("narinfo record was not added to database because it already exists")
+
+				return nil
 			}
-		}
-	}()
 
-	nir, err := c.db.WithTx(tx).CreateNarInfo(ctx, hash)
-	if err != nil {
-		if database.IsDuplicateKeyError(err) {
-			zerolog.Ctx(ctx).
-				Warn().
-				Msg("narinfo record was not added to database because it already exists")
-
-			return nil
+			return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
 		}
 
-		return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
-	}
+		narURL, err := nar.ParseURL(narInfo.URL)
+		if err != nil {
+			return fmt.Errorf("error parsing the nar URL: %w", err)
+		}
 
-	narURL, err := nar.ParseURL(narInfo.URL)
-	if err != nil {
-		return fmt.Errorf("error parsing the nar URL: %w", err)
-	}
+		_, err = qtx.CreateNar(ctx, database.CreateNarParams{
+			NarInfoID:   nir.ID,
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+			FileSize:    narInfo.FileSize,
+		})
+		if err != nil {
+			if database.IsDuplicateKeyError(err) {
+				zerolog.Ctx(ctx).
+					Warn().
+					Msg("nar record was not added to database because it already exists")
 
-	_, err = c.db.WithTx(tx).CreateNar(ctx, database.CreateNarParams{
-		NarInfoID:   nir.ID,
-		Hash:        narURL.Hash,
-		Compression: narURL.Compression.String(),
-		Query:       narURL.Query.Encode(),
-		FileSize:    narInfo.FileSize,
+				return nil
+			}
+
+			return fmt.Errorf("error inserting the nar record in the database: %w", err)
+		}
+
+		return nil
 	})
-	if err != nil {
-		if database.IsDuplicateKeyError(err) {
-			zerolog.Ctx(ctx).
-				Warn().
-				Msg("nar record was not added to database because it already exists")
-
-			return nil
-		}
-
-		return fmt.Errorf("error inserting the nar record in the database: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing the transaction: %w", err)
-	}
-
-	return nil
 }
 
 func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
@@ -1816,6 +1681,73 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	_, ok := c.upstreamJobs[hash]
 
 	return ok
+}
+
+// withTransaction executes fn within a database transaction.
+// It automatically handles transaction lifecycle: BeginTx, Rollback (on error or panic), and Commit.
+func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
+	tx, err := c.db.DB().BeginTx(ctx, nil)
+	if err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Msg("error beginning a transaction")
+
+		return fmt.Errorf("error beginning a transaction for %s: %w", operation, err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Str("operation", operation).
+					Msg("error rolling back the transaction")
+			}
+		}
+	}()
+
+	if err := fn(c.db.WithTx(tx)); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Msg("error committing the transaction")
+
+		return fmt.Errorf("error committing the transaction for %s: %w", operation, err)
+	}
+
+	return nil
+}
+
+// withReadLock executes fn while holding a read lock on the cache.
+// It automatically handles lock acquisition, release, and error logging.
+func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() error) error {
+	lockKey := cacheLockKey
+
+	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Msg("failed to acquire read lock")
+
+		return fmt.Errorf("failed to acquire read lock for %s: %w", operation, err)
+	}
+
+	defer func() {
+		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("operation", operation).
+				Msg("failed to release read lock")
+		}
+	}()
+
+	return fn()
 }
 
 func (c *Cache) runLRU(ctx context.Context) func() {
