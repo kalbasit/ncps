@@ -43,6 +43,9 @@ jobs:
             exit 1
           fi
 
+          echo "Chart Version: $CHART_VERSION"
+          echo "App Version:   $APP_VERSION"
+
           echo "chart_version=$CHART_VERSION" >> $GITHUB_OUTPUT
           echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
       - name: Package Helm chart
@@ -50,7 +53,7 @@ jobs:
           CHART_VER="${{ steps.extract_version.outputs.chart_version }}"
           APP_VER="${{ steps.extract_version.outputs.app_version }}"
 
-          # Package using the specific flags to override Chart.yaml content in the artifact
+          # Use flags to inject versions, ignoring Chart.yaml content
           helm package charts/ncps \
             --destination .helm-releases \
             --version "$CHART_VER" \
@@ -73,19 +76,21 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: .helm-releases/*.tgz
+          # Mark as pre-release if tag contains alpha, beta, or rc
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           body: |
-            ## Helm Chart Release ${{ steps.extract_version.outputs.version }}
+            ## Helm Chart Release ${{ steps.extract_version.outputs.chart_version }}
 
             ### Installation
 
             ```bash
-            helm install ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ steps.extract_version.outputs.version }}
+            helm install ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ steps.extract_version.outputs.chart_version }}
             ```
 
             ### Upgrade
 
             ```bash
-            helm upgrade ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ steps.extract_version.outputs.version }}
+            helm upgrade ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ steps.extract_version.outputs.chart_version }}
             ```
 
             ### Values
