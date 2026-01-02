@@ -543,6 +543,110 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	})
 }
 
+// createTempNarFile creates a temporary file for storing the NAR during download.
+// It sets up cleanup to remove the file once all readers are done.
+func (c *Cache) createTempNarFile(ctx context.Context, narURL *nar.URL, ds *downloadState) (*os.File, error) {
+	pattern := narURL.Hash + "-*.nar"
+	if cext := narURL.Compression.String(); cext != "" {
+		pattern += "." + cext
+	}
+
+	f, err := os.CreateTemp(c.tempDir, pattern)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating the nar file in the temporary directory")
+
+		return nil, err
+	}
+
+	ds.assetPath = f.Name()
+
+	// Wait until nothing is using the asset and remove it
+	ds.wg.Add(1)
+
+	go func() {
+		ds.wg.Wait()
+		os.Remove(ds.assetPath)
+	}()
+
+	return f, nil
+}
+
+// streamResponseToFile streams the HTTP response body to a file in chunks,
+// updating download state and broadcasting progress to waiting clients.
+func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f *os.File, ds *downloadState) error {
+	buf := make([]byte, 32*1024)
+
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+
+			// Write the chunk read to the file
+			n, writeErr := f.Write(chunk)
+			if writeErr != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(writeErr).
+					Msg("error storing the chunk in the temporary file")
+
+				return writeErr
+			}
+
+			// Update the state and signal waiting clients
+			ds.mu.Lock()
+			ds.bytesWritten += int64(n)
+			ds.mu.Unlock()
+			ds.cond.Broadcast()
+		}
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	// Writing the NAR to a temporary file is now done, final notification to watchers
+	ds.mu.Lock()
+	ds.finalSize = ds.bytesWritten
+	ds.mu.Unlock()
+	ds.cond.Broadcast()
+
+	return nil
+}
+
+// storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
+func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
+	f, err := os.Open(tempPath)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error opening the nar from the temporary file")
+
+		return 0, err
+	}
+
+	defer f.Close()
+
+	written, err := c.narStore.PutNar(ctx, *narURL, f)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the nar in the store")
+
+		return 0, err
+	}
+
+	return written, nil
+}
+
 func (c *Cache) pullNarIntoStore(
 	ctx context.Context,
 	narURL *nar.URL,
@@ -614,19 +718,8 @@ func (c *Cache) pullNarIntoStore(
 		resp.Body.Close()
 	}()
 
-	// create a temporary file to store the nar
-	pattern := narURL.Hash + "-*.nar"
-	if cext := narURL.Compression.String(); cext != "" {
-		pattern += "." + cext
-	}
-
-	f, err := os.CreateTemp(c.tempDir, pattern)
+	f, err := c.createTempNarFile(ctx, narURL, ds)
 	if err != nil {
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error creating the nar file in the temporary directory")
-
 		ds.mu.Lock()
 		ds.downloadError = err
 		ds.mu.Unlock()
@@ -655,64 +748,8 @@ func (c *Cache) pullNarIntoStore(
 
 	close(ds.start) // inform caller that we started to stream
 
-	// Write the response to the temporary file in chunks so clients can pull early and often
-	buf := make([]byte, 32*1024)
-
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-
-			// Write the chunk read to the file
-			n, writeErr := f.Write(chunk)
-			if writeErr != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error storing the chunk in the temporary file")
-
-				ds.mu.Lock()
-				ds.downloadError = writeErr
-				ds.mu.Unlock()
-
-				return
-			}
-
-			// Update the state and signal waiting clients
-			ds.mu.Lock()
-			ds.bytesWritten += int64(n)
-			ds.mu.Unlock()
-			ds.cond.Broadcast()
-		}
-
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			ds.mu.Lock()
-			ds.downloadError = err
-			ds.mu.Unlock()
-
-			return
-		}
-	}
-
-	// Writing the NAR to a temporary file is now done, final notification to watchers
-	ds.mu.Lock()
-	ds.finalSize = ds.bytesWritten
-	ds.mu.Unlock()
-	ds.cond.Broadcast()
-
-	f.Close()
-
-	f, err = os.Open(f.Name())
+	err = c.streamResponseToFile(ctx, resp, f, ds)
 	if err != nil {
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error opening the nar from the temporary file")
-
 		ds.mu.Lock()
 		ds.downloadError = err
 		ds.mu.Unlock()
@@ -720,15 +757,10 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
-	defer f.Close()
+	f.Close()
 
-	written, err := c.narStore.PutNar(ctx, *narURL, f)
+	written, err := c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
 	if err != nil {
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error storing the nar in the store")
-
 		ds.mu.Lock()
 		ds.downloadError = err
 		ds.mu.Unlock()
