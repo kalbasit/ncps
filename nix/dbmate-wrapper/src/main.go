@@ -13,10 +13,11 @@ func main() {
 }
 
 func run() int {
-	// Parse args to find --url value and check if --migrations-dir is provided
-	var dbURL string
+	// Parse the database URL from the environment.
+	dbURL := os.Getenv("DATABASE_URL")
 
-	hasMigrationsDir := false
+	// Parse args to find --url value and check if --migrations-dir is provided
+	var hasMigrationsDir bool
 
 	for i, arg := range os.Args[1:] {
 		if arg == "--url" && i+1 < len(os.Args)-1 {
