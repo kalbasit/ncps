@@ -1807,6 +1807,170 @@ func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() er
 	return fn()
 }
 
+// calculateCleanupSize validates the total NAR size and calculates how much needs to be cleaned up.
+// Returns 0 if no cleanup is needed.
+func (c *Cache) calculateCleanupSize(ctx context.Context, qtx database.Querier, log zerolog.Logger) (uint64, error) {
+	narTotalSize, err := qtx.GetNarTotalSize(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("error fetching the total nar size")
+
+		return 0, err
+	}
+
+	if narTotalSize == 0 {
+		log.Info().Msg("SUM(file_size) is zero, nothing to clean up")
+
+		return 0, nil
+	}
+
+	log = log.With().Int64("nar_total_size", narTotalSize).Logger()
+
+	//nolint:gosec
+	if uint64(narTotalSize) <= c.maxSize {
+		log.Info().Msg("store size is less than max-size, not removing any nars")
+
+		return 0, nil
+	}
+
+	//nolint:gosec
+	cleanupSize := uint64(narTotalSize) - c.maxSize
+
+	log = log.With().Uint64("cleanup_size", cleanupSize).Logger()
+	log.Info().Msg("going to remove nars")
+
+	return cleanupSize, nil
+}
+
+// deleteLRURecordsFromDB gets the least used NARs and deletes them from the database.
+// Returns the narinfo hashes and NAR URLs that need to be deleted from stores.
+func (c *Cache) deleteLRURecordsFromDB(
+	ctx context.Context,
+	qtx database.Querier,
+	log zerolog.Logger,
+	cleanupSize uint64,
+) ([]string, []nar.URL, error) {
+	nars, err := qtx.GetLeastUsedNars(ctx, cleanupSize)
+	if err != nil {
+		log.Error().Err(err).Msg("error getting the least used nars up to cleanup-size")
+
+		return nil, nil, err
+	}
+
+	if len(nars) == 0 {
+		log.Warn().Msg("nars needed to be removed but none were returned in the query")
+
+		return nil, nil, nil
+	}
+
+	log.Info().Int("count_nars", len(nars)).Msg("found this many nars to remove")
+
+	narInfoHashesToRemove := make([]string, 0, len(nars))
+	narURLsToRemove := make([]nar.URL, 0, len(nars))
+
+	for _, narRecord := range nars {
+		narInfo, err := qtx.GetNarInfoByID(ctx, narRecord.NarInfoID)
+		if err != nil {
+			// If we can't find the narinfo, it might have been deleted already.
+			// We should still proceed to delete the NAR record.
+			// However, if it's a different error, we should abort.
+			if !errors.Is(err, sql.ErrNoRows) {
+				log.Error().
+					Err(err).
+					Int64("ID", narRecord.NarInfoID).
+					Msg("error fetching narinfo from the database")
+
+				return nil, nil, err
+			}
+
+			log.Warn().
+				Err(err).
+				Int64("ID", narRecord.NarInfoID).
+				Msg("could not find narinfo for nar, will still delete nar record")
+		} else {
+			log.Info().Str("narinfo_hash", narInfo.Hash).Msg("deleting narinfo record")
+
+			if _, err := qtx.DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
+				log.Error().
+					Err(err).
+					Str("narinfo_hash", narInfo.Hash).
+					Msg("error removing narinfo from database")
+
+				return nil, nil, err
+			}
+
+			narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
+		}
+
+		log.Info().Str("nar_hash", narRecord.Hash).Msg("deleting nar record")
+
+		if _, err := qtx.DeleteNarByHash(ctx, narRecord.Hash); err != nil {
+			log.Error().
+				Err(err).
+				Str("nar_hash", narRecord.Hash).
+				Msg("error removing nar from database")
+
+			return nil, nil, err
+		}
+
+		// NOTE: we don't need the query when working with store so it's
+		// explicitly omitted.
+		narURLsToRemove = append(narURLsToRemove, nar.URL{
+			Hash:        narRecord.Hash,
+			Compression: nar.CompressionTypeFromString(narRecord.Compression),
+		})
+	}
+
+	return narInfoHashesToRemove, narURLsToRemove, nil
+}
+
+// parallelDeleteFromStores deletes narinfos and nars from stores in parallel.
+func (c *Cache) parallelDeleteFromStores(
+	ctx context.Context,
+	log zerolog.Logger,
+	narInfoHashesToRemove []string,
+	narURLsToRemove []nar.URL,
+) {
+	var wg sync.WaitGroup
+
+	for _, hash := range narInfoHashesToRemove {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			log := log.With().Str("narinfo_hash", hash).Logger()
+
+			log.Info().Msg("deleting narinfo from store")
+
+			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+				log.Error().
+					Err(err).
+					Msg("error removing the narinfo from the store")
+			}
+		}()
+	}
+
+	for _, narURL := range narURLsToRemove {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			log := log.With().Str("nar_url", narURL.String()).Logger()
+
+			log.Info().Msg("deleting nar from store")
+
+			if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+				log.Error().
+					Err(err).
+					Msg("error removing the nar from the store")
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
 func (c *Cache) runLRU(ctx context.Context) func() {
 	return func() {
 		lockKey := "lru"
@@ -1859,137 +2023,27 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			}
 		}()
 
-		narTotalSize, err := c.db.WithTx(tx).GetNarTotalSize(ctx)
-		if err != nil {
-			log.Error().Err(err).Msg("error fetching the total nar size")
+		qtx := c.db.WithTx(tx)
 
+		cleanupSize, err := c.calculateCleanupSize(ctx, qtx, log)
+		if err != nil || cleanupSize == 0 {
 			return
 		}
 
-		if narTotalSize == 0 {
-			log.Info().Msg("SUM(file_size) is zero, nothing to clean up")
-
+		narInfoHashesToRemove, narURLsToRemove, err := c.deleteLRURecordsFromDB(ctx, qtx, log, cleanupSize)
+		if err != nil || len(narInfoHashesToRemove) == 0 {
 			return
 		}
 
-		log = log.With().Int64("nar_total_size", narTotalSize).Logger()
-
-		//nolint:gosec
-		if uint64(narTotalSize) <= c.maxSize {
-			log.Info().Msg("store size is less than max-size, not removing any nars")
-
-			return
-		}
-
-		//nolint:gosec
-		cleanupSize := uint64(narTotalSize) - c.maxSize
-
-		log = log.With().Uint64("cleanup_size", cleanupSize).Logger()
-
-		log.Info().Msg("going to remove nars")
-
-		nars, err := c.db.WithTx(tx).GetLeastUsedNars(ctx, cleanupSize)
-		if err != nil {
-			log.Error().Err(err).Msg("error getting the least used nars up to cleanup-size")
-
-			return
-		}
-
-		if len(nars) == 0 {
-			log.Warn().Msg("nars needed to be removed but none were returned in the query")
-
-			return
-		}
-
-		log.Info().Int("count_nars", len(nars)).Msg("found this many nars to remove")
-
-		narInfoHashesToRemove := make([]string, 0, len(nars))
-		narURLsToRemove := make([]nar.URL, 0, len(nars))
-
-		for _, narRecord := range nars {
-			narInfo, err := c.db.WithTx(tx).GetNarInfoByID(ctx, narRecord.NarInfoID)
-			if err == nil {
-				log.Info().Str("narinfo_hash", narInfo.Hash).Msg("deleting narinfo record")
-
-				if _, err := c.db.WithTx(tx).DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
-					log.Error().
-						Err(err).
-						Str("narinfo_hash", narInfo.Hash).
-						Msg("error removing narinfo from database")
-				}
-
-				narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
-			} else {
-				log.Error().
-					Err(err).
-					Int64("ID", narRecord.NarInfoID).
-					Msg("error fetching narinfo from the database")
-			}
-
-			log.Info().Str("nar_hash", narRecord.Hash).Msg("deleting nar record")
-
-			if _, err := c.db.WithTx(tx).DeleteNarByHash(ctx, narRecord.Hash); err != nil {
-				log.Error().
-					Err(err).
-					Str("nar_hash", narRecord.Hash).
-					Msg("error removing nar from database")
-			}
-
-			// NOTE: we don't need the query when working with store so it's
-			// explicitly omitted.
-			narURLsToRemove = append(narURLsToRemove, nar.URL{
-				Hash:        narRecord.Hash,
-				Compression: nar.CompressionTypeFromString(narRecord.Compression),
-			})
-		}
-
-		// remove all the files from the store as fast as possible.
-
-		var wg sync.WaitGroup
-
-		for _, hash := range narInfoHashesToRemove {
-			wg.Add(1)
-
-			go func() {
-				defer wg.Done()
-
-				log := log.With().Str("narinfo_hash", hash).Logger()
-
-				log.Info().Msg("deleting narinfo from store")
-
-				if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
-					log.Error().
-						Err(err).
-						Msg("error removing the narinfo from the store")
-				}
-			}()
-		}
-
-		for _, narURL := range narURLsToRemove {
-			wg.Add(1)
-
-			go func() {
-				defer wg.Done()
-
-				log := log.With().Str("nar_url", narURL.String()).Logger()
-
-				log.Info().Msg("deleting nar from store")
-
-				if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
-					log.Error().
-						Err(err).
-						Msg("error removing the nar from the store")
-				}
-			}()
-		}
-
-		wg.Wait()
-
-		// finally commit the database transaction
-
+		// Commit the database transaction before deleting from stores
 		if err := tx.Commit(); err != nil {
 			log.Error().Err(err).Msg("error committing the transaction")
+
+			return
 		}
+
+		// Remove all the files from the store as fast as possible
+		c.parallelDeleteFromStores(ctx, log, narInfoHashesToRemove, narURLsToRemove)
 	}
 }
 
