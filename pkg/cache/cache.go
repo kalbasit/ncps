@@ -324,18 +324,18 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			WithContext(ctx)
 
 		if c.narStore.HasNar(ctx, narURL) {
-            metricAttrs = append(metricAttrs,
-                attribute.String("result", "hit"),
-            )
+			metricAttrs = append(metricAttrs,
+				attribute.String("result", "hit"),
+			)
 
-            var err error
+			var err error
 
-            size, reader, err = c.getNarFromStore(ctx, &narURL)
-            if err != nil {
-                metricAttrs = append(metricAttrs, attribute.String("status", "error"))
-            } else {
-                metricAttrs = append(metricAttrs, attribute.String("status", "success"))
-            }
+			size, reader, err = c.getNarFromStore(ctx, &narURL)
+			if err != nil {
+				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+			} else {
+				metricAttrs = append(metricAttrs, attribute.String("status", "success"))
+			}
 
 			return err
 		}
