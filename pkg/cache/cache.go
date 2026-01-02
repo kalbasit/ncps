@@ -142,6 +142,7 @@ type downloadState struct {
 	// Information about the asset being downloaded
 	wg           sync.WaitGroup // Tracks active readers streaming from the temp file
 	cleanupWg    sync.WaitGroup // Tracks download completion to trigger cleanup
+	closed       bool           // Indicates whether new readers are allowed (protected by mu)
 	assetPath    string
 	bytesWritten int64
 	finalSize    int64
@@ -354,11 +355,23 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			trace.SpanFromContext(ctx),
 		)
 		ds := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
-		ds.wg.Add(1)
 
-		// double check it still does not exist in the store before we continue
-		if c.narStore.HasNar(ctx, narURL) {
-			ds.wg.Done()
+		// Check if download is complete (closed=true) before adding to WaitGroup
+		// This prevents race with cleanup goroutine calling ds.wg.Wait()
+		ds.mu.Lock()
+
+		canStream := !ds.closed
+		if canStream {
+			ds.wg.Add(1)
+		}
+
+		ds.mu.Unlock()
+
+		// If download is complete or NAR is in store, get from storage
+		if !canStream || c.narStore.HasNar(ctx, narURL) {
+			if canStream {
+				ds.wg.Done()
+			}
 
 			metricAttrs = append(metricAttrs,
 				attribute.String("result", "hit"),
@@ -630,7 +643,13 @@ func (c *Cache) pullNarIntoStore(
 	// Cleanup: wait for download to complete, then wait for all readers to finish
 	go func() {
 		ds.cleanupWg.Wait() // Wait for download to complete
-		ds.wg.Wait()        // Then wait for all readers to finish
+
+		// Mark as closed to prevent new readers from adding to WaitGroup
+		ds.mu.Lock()
+		ds.closed = true
+		ds.mu.Unlock()
+
+		ds.wg.Wait() // Then wait for all readers to finish
 		os.Remove(ds.assetPath)
 	}()
 
