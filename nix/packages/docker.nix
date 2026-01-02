@@ -105,7 +105,7 @@
         '';
       };
 
-      packages.push-docker-image = pkgs.writeShellScript "push-docker-image" ''
+      packages.push-docker-image = pkgs.writeShellScriptBin "push-docker-image" ''
         set -euo pipefail
 
         if [[ ! -v DOCKER_IMAGE_TAGS ]]; then
