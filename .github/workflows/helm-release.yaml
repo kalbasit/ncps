@@ -25,19 +25,23 @@ jobs:
       - name: Extract version info
         id: extract_version
         run: |
+          set -euo pipefail
           TAG_REF=${GITHUB_REF#refs/tags/}
 
           # Regex to match helm-v{CHART}-app-v{APP}
-          # This captures everything between 'helm-v' and '-app-v' as group 1
-          # and everything after '-app-v' as group 2.
           REGEX="^helm-v(.*)-app-v(.*)$"
 
-          CHART_VERSION="${BASH_REMATCH[1]}"
-          APP_VERSION="${BASH_REMATCH[2]}"
+          if [[ "$TAG_REF" =~ $REGEX ]]; then
+            CHART_VERSION="${BASH_REMATCH[1]}"
+            APP_VERSION="${BASH_REMATCH[2]}"
 
-          echo "Detected Strategy: Decoupled"
-          echo "Chart Version: $CHART_VERSION"
-          echo "App Version:   $APP_VERSION"
+            echo "Detected Strategy: Decoupled"
+            echo "Chart Version: $CHART_VERSION"
+            echo "App Version:   $APP_VERSION"
+          else
+            echo "::error::Tag '$TAG_REF' does not match expected format 'helm-v*-app-v*'"
+            exit 1
+          fi
 
           echo "chart_version=$CHART_VERSION" >> $GITHUB_OUTPUT
           echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
