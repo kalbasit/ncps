@@ -37,17 +37,20 @@ ncps supports three database backends for storing metadata (NarInfo, cache stati
 ### Configuration
 
 **Default (auto-configured):**
+
 ```bash
 ncps serve --cache-hostname=cache.example.com
 # Uses embedded SQLite automatically
 ```
 
 **Explicit path:**
+
 ```bash
 ncps serve --cache-database-url=sqlite:/var/lib/ncps/db/db.sqlite
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   database-url: sqlite:/var/lib/ncps/db/db.sqlite
@@ -56,6 +59,7 @@ cache:
 ### Database File Location
 
 The SQLite database is stored as a single file:
+
 ```
 /var/lib/ncps/db/db.sqlite
 ```
@@ -81,12 +85,14 @@ SQLite enforces a maximum of 1 open connection:
 ### Performance Characteristics
 
 **Pros:**
+
 - Zero configuration
 - Fast for single-instance
 - No network overhead
 - Automatic backups (file copy)
 
 **Cons:**
+
 - Single writer at a time
 - Not suitable for HA
 - Limited scalability
@@ -94,6 +100,7 @@ SQLite enforces a maximum of 1 open connection:
 ### Backup and Restore
 
 **Backup:**
+
 ```bash
 # Stop ncps (optional but recommended)
 systemctl stop ncps
@@ -106,6 +113,7 @@ systemctl start ncps
 ```
 
 **Restore:**
+
 ```bash
 systemctl stop ncps
 cp /backup/db.sqlite.20240101 /var/lib/ncps/db/db.sqlite
@@ -144,18 +152,21 @@ GRANT ALL PRIVILEGES ON DATABASE ncps TO ncps;
 ### Configuration
 
 **Command-line:**
+
 ```bash
 ncps serve \
   --cache-database-url="postgresql://ncps:password@localhost:5432/ncps?sslmode=require"
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   database-url: postgresql://ncps:password@postgres:5432/ncps?sslmode=require
 ```
 
 **Environment variable:**
+
 ```bash
 export CACHE_DATABASE_URL="postgresql://ncps:password@localhost:5432/ncps?sslmode=require"
 ```
@@ -167,11 +178,13 @@ postgresql://[username]:[password]@[host]:[port]/[database]?[options]
 ```
 
 **Common options:**
+
 - `sslmode=require` - Require TLS encryption
 - `sslmode=disable` - Disable TLS (not recommended for production)
 - `connect_timeout=10` - Connection timeout in seconds
 
 **Examples:**
+
 ```
 # Local without TLS
 postgresql://ncps:password@localhost:5432/ncps?sslmode=disable
@@ -186,10 +199,12 @@ postgresql://ncps:password@localhost:5432/ncps?sslmode=require&connect_timeout=1
 ### Connection Pool Settings
 
 **Defaults for PostgreSQL:**
+
 - Max open connections: 25
 - Max idle connections: 5
 
 **Custom settings:**
+
 ```bash
 ncps serve \
   --cache-database-url="postgresql://..." \
@@ -198,6 +213,7 @@ ncps serve \
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   database-url: postgresql://ncps:password@postgres:5432/ncps
@@ -217,6 +233,7 @@ dbmate --url="postgresql://ncps:password@localhost:5432/ncps?sslmode=disable" mi
 ### Performance Tuning
 
 **PostgreSQL server configuration** (`postgresql.conf`):
+
 ```
 max_connections = 100
 shared_buffers = 256MB
@@ -228,11 +245,13 @@ maintenance_work_mem = 64MB
 ### Backup and Restore
 
 **Backup:**
+
 ```bash
 pg_dump -h localhost -U ncps ncps > /backup/ncps.sql
 ```
 
 **Restore:**
+
 ```bash
 psql -h localhost -U ncps ncps < /backup/ncps.sql
 ```
@@ -267,12 +286,14 @@ FLUSH PRIVILEGES;
 ### Configuration
 
 **Command-line:**
+
 ```bash
 ncps serve \
   --cache-database-url="mysql://ncps:password@localhost:3306/ncps"
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   database-url: mysql://ncps:password@mysql:3306/ncps
@@ -285,10 +306,12 @@ mysql://[username]:[password]@[host]:[port]/[database]?[options]
 ```
 
 **Common options:**
+
 - `tls=true` - Enable TLS
 - `charset=utf8mb4` - Set character encoding
 
 **Examples:**
+
 ```
 # Local connection
 mysql://ncps:password@localhost:3306/ncps
@@ -321,11 +344,13 @@ dbmate --url="mysql://ncps:password@localhost:3306/ncps" migrate up
 ### Backup and Restore
 
 **Backup:**
+
 ```bash
 mysqldump -u ncps -p ncps > /backup/ncps.sql
 ```
 
 **Restore:**
+
 ```bash
 mysql -u ncps -p ncps < /backup/ncps.sql
 ```
@@ -349,6 +374,7 @@ psql -U ncps -d ncps -f converted.sql
 ```
 
 **Using pgloader (recommended):**
+
 ```bash
 pgloader sqlite:///var/lib/ncps/db/db.sqlite \
   postgresql://ncps:password@localhost:5432/ncps
@@ -357,6 +383,7 @@ pgloader sqlite:///var/lib/ncps/db/db.sqlite \
 ### From SQLite to MySQL
 
 Similar process using tools like:
+
 - `sqlite3mysql` utility
 - Manual export and conversion
 - Custom migration scripts
@@ -366,11 +393,13 @@ Similar process using tools like:
 ### SQLite Issues
 
 **Database Locked:**
+
 - Only one writer at a time
 - Ensure no other processes are accessing the database
 - Check for stale lock files
 
 **Corruption:**
+
 ```bash
 # Check integrity
 sqlite3 /var/lib/ncps/db/db.sqlite "PRAGMA integrity_check;"
@@ -382,16 +411,19 @@ sqlite3 /var/lib/ncps/db/db.sqlite ".recover" | sqlite3 recovered.db
 ### PostgreSQL Issues
 
 **Connection Refused:**
+
 - Check PostgreSQL is running: `systemctl status postgresql`
 - Verify `pg_hba.conf` allows connections from ncps host
 - Check firewall rules
 
 **Authentication Failed:**
+
 - Verify username and password
 - Check `pg_hba.conf` authentication method
 - Ensure user has correct privileges
 
 **Too Many Connections:**
+
 - Reduce pool size in ncps
 - Increase `max_connections` in PostgreSQL
 - Check for connection leaks
@@ -399,11 +431,13 @@ sqlite3 /var/lib/ncps/db/db.sqlite ".recover" | sqlite3 recovered.db
 ### MySQL Issues
 
 **Connection Refused:**
+
 - Check MySQL is running: `systemctl status mysql`
 - Verify `bind-address` in my.cnf
 - Check firewall rules
 
 **Access Denied:**
+
 - Verify username, password, and host in GRANT
 - Check user privileges: `SHOW GRANTS FOR 'ncps'@'%';`
 - Flush privileges after changes
@@ -413,9 +447,9 @@ See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
 ## Next Steps
 
 1. **[Storage Configuration](storage.md)** - Configure storage backend
-2. **[Configuration Reference](reference.md)** - All database options
-3. **[High Availability](../deployment/high-availability.md)** - PostgreSQL/MySQL for HA
-4. **[Operations Guide](../operations/backup-restore.md)** - Backup strategies
+1. **[Configuration Reference](reference.md)** - All database options
+1. **[High Availability](../deployment/high-availability.md)** - PostgreSQL/MySQL for HA
+1. **[Operations Guide](../operations/backup-restore.md)** - Backup strategies
 
 ## Related Documentation
 

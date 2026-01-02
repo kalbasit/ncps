@@ -45,6 +45,7 @@ spec:
 ```
 
 Apply:
+
 ```bash
 kubectl apply -f pvc.yaml
 ```
@@ -139,6 +140,7 @@ spec:
 ```
 
 Apply:
+
 ```bash
 kubectl apply -f statefulset.yaml
 ```
@@ -168,6 +170,7 @@ spec:
 ```
 
 Apply:
+
 ```bash
 kubectl apply -f service.yaml
 ```
@@ -204,6 +207,7 @@ spec:
 ```
 
 Apply:
+
 ```bash
 kubectl apply -f ingress.yaml
 ```
@@ -386,6 +390,7 @@ See [Monitoring Guide](../operations/monitoring.md) for more details.
 For HA with multiple replicas:
 
 ### Prerequisites
+
 - Redis deployed in cluster
 - S3 storage configured
 - PostgreSQL or MySQL database
@@ -481,9 +486,9 @@ See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
 ## Next Steps
 
 1. **[Configure Clients](../usage/client-setup.md)** - Set up Nix clients
-2. **[Configure Monitoring](../operations/monitoring.md)** - Set up observability
-3. **[Review Configuration](../configuration/reference.md)** - Explore more options
-4. **Consider [Helm Chart](helm.md)** - For simplified management
+1. **[Configure Monitoring](../operations/monitoring.md)** - Set up observability
+1. **[Review Configuration](../configuration/reference.md)** - Explore more options
+1. **Consider [Helm Chart](helm.md)** - For simplified management
 
 ## Related Documentation
 

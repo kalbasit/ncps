@@ -30,6 +30,7 @@ Options that apply to the entire ncps process.
 | `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics | `PROMETHEUS_ENABLED` | `false` |
 
 **Example:**
+
 ```bash
 ncps serve \
   --config=/etc/ncps/config.yaml \
@@ -46,6 +47,7 @@ Network and server behavior options.
 | `--server-addr` | Listen address and port | `SERVER_ADDR` | `:8501` |
 
 **Example:**
+
 ```bash
 ncps serve --server-addr=0.0.0.0:8501
 ```
@@ -64,6 +66,7 @@ Required configuration for ncps to function.
 **Note:** Either `--cache-storage-local` OR all S3 storage flags must be provided, but not both.
 
 **Example:**
+
 ```bash
 ncps serve \
   --cache-hostname=cache.example.com \
@@ -83,6 +86,7 @@ ncps serve \
 | `--cache-storage-local` | Local storage directory path | `CACHE_STORAGE_LOCAL` | ✅ (if not using S3) |
 
 **Example:**
+
 ```bash
 ncps serve --cache-storage-local=/var/lib/ncps
 ```
@@ -104,6 +108,7 @@ Use these options for S3-compatible storage (AWS S3, MinIO, etc.).
 **Note:** The endpoint must include the scheme (`https://` or `http://`). The `--cache-storage-s3-use-ssl` flag is deprecated in favor of specifying the scheme directly in the endpoint URL.
 
 **AWS S3 Example:**
+
 ```bash
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
@@ -114,6 +119,7 @@ ncps serve \
 ```
 
 **MinIO Example:**
+
 ```bash
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
@@ -139,11 +145,13 @@ See [Storage Configuration](storage.md) for details.
 | `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
 **Database URL Formats:**
+
 - SQLite: `sqlite:/var/lib/ncps/db/db.sqlite`
 - PostgreSQL: `postgresql://user:pass@host:5432/database?sslmode=require`
 - MySQL: `mysql://user:pass@host:3306/database`
 
 **Example:**
+
 ```bash
 ncps serve \
   --cache-database-url=postgresql://ncps:password@localhost:5432/ncps?sslmode=require \
@@ -164,6 +172,7 @@ See [Database Configuration](database.md) for details.
 | `--netrc-file` | Path to netrc file for upstream auth | `NETRC_FILE` | `~/.netrc` |
 
 **Example:**
+
 ```bash
 ncps serve \
   --cache-secret-key-path=/etc/ncps/secret-key \
@@ -181,11 +190,13 @@ Configure timeout values for upstream cache connections. Increase these if exper
 | `--cache-upstream-response-header-timeout` | Response header waiting timeout | `CACHE_UPSTREAM_RESPONSE_HEADER_TIMEOUT` | `3s` |
 
 **Common timeout values:**
+
 - `3s` - Default, works for most local/fast upstreams
 - `10s` - Recommended for slow networks or distant upstreams
 - `30s` - For very slow connections (satellite, slow VPN)
 
 **Example:**
+
 ```bash
 ncps serve \
   --cache-upstream-dialer-timeout=10s \
@@ -211,11 +222,13 @@ Redis configuration for distributed locking in high-availability deployments.
 **Note:** If `--cache-redis-addrs` is not provided, ncps runs in single-instance mode using local locks.
 
 **Single Redis Instance Example:**
+
 ```bash
 ncps serve --cache-redis-addrs=redis:6379
 ```
 
 **Redis Cluster Example:**
+
 ```bash
 ncps serve \
   --cache-redis-addrs=node1:6379,node2:6379,node3:6379 \
@@ -223,6 +236,7 @@ ncps serve \
 ```
 
 **TLS with Authentication:**
+
 ```bash
 ncps serve \
   --cache-redis-use-tls=true \
@@ -255,6 +269,7 @@ Lock timing and retry configuration for distributed locking.
 | `--cache-lock-allow-degraded-mode` | Fallback to local locks if Redis unavailable | `CACHE_LOCK_ALLOW_DEGRADED_MODE` | `false` |
 
 **Example:**
+
 ```bash
 ncps serve \
   --cache-lock-download-ttl=10m \
@@ -274,6 +289,7 @@ See [Distributed Locking Guide](../deployment/distributed-locking.md) for tuning
 | `--prometheus-enabled` | Enable Prometheus /metrics endpoint | `PROMETHEUS_ENABLED` | `false` |
 
 **Example:**
+
 ```bash
 ncps serve --prometheus-enabled=true
 ```
@@ -288,6 +304,7 @@ Metrics available at `http://your-ncps:8501/metrics`.
 | `--otel-grpc-url` | gRPC collector endpoint (omit for stdout) | `OTEL_GRPC_URL` | - |
 
 **Example:**
+
 ```bash
 ncps serve \
   --otel-enabled=true \
@@ -365,6 +382,7 @@ otel:
 ```
 
 **Environment variable expansion:**
+
 - Use `${VAR_NAME}` syntax in configuration files
 - Variables are expanded when the config is loaded
 

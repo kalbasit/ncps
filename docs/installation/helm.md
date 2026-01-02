@@ -33,6 +33,7 @@ helm install ncps ncps/ncps \
 ```
 
 This installs ncps with:
+
 - Single replica (StatefulSet mode)
 - Local storage (PersistentVolumeClaim, 20Gi)
 - SQLite database
@@ -59,6 +60,7 @@ The chart supports two deployment modes:
 ### StatefulSet Mode (Default)
 
 Best for:
+
 - Single instance deployments
 - Local persistent storage
 - SQLite database
@@ -80,6 +82,7 @@ config:
 ### Deployment Mode
 
 Best for:
+
 - High availability (multiple replicas)
 - S3 storage
 - PostgreSQL/MySQL database
@@ -590,9 +593,9 @@ ingress:
 ### From Single Instance to HA
 
 1. Migrate from SQLite to PostgreSQL/MySQL
-2. Switch from local storage to S3
-3. Enable Redis
-4. Increase replica count
+1. Switch from local storage to S3
+1. Enable Redis
+1. Increase replica count
 
 ```bash
 # Step 1: Backup SQLite database
@@ -636,15 +639,18 @@ kubectl -n ncps logs job/ncps-migration
 ### Common Issues
 
 **Pod fails to start with "database file not found":**
+
 - For SQLite + S3 deployments, ensure `storage.local.persistence.enabled: true` is set
 - SQLite requires persistent storage even when using S3 for NAR files
 
 **Migration job fails:**
+
 - Check migration job logs: `kubectl -n ncps logs job/ncps-migration`
 - Verify database credentials are correct
 - Ensure database is accessible from the cluster
 
 **S3 connection errors:**
+
 - Verify S3 credentials and endpoint
 - For MinIO, ensure `forcePathStyle: true` is set
 - Check endpoint includes proper scheme (http:// or https://)

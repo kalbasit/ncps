@@ -22,11 +22,13 @@ Welcome to the comprehensive documentation for ncps (Nix Cache Proxy Server). Th
 ### I want to...
 
 **Get Started**
+
 - [Run ncps for the first time](getting-started/quick-start.md)
 - [Understand how ncps works](getting-started/concepts.md)
 - [Choose the right deployment method](installation/)
 
 **Install ncps**
+
 - [Install with Docker](installation/docker.md)
 - [Install with Docker Compose](installation/docker-compose.md)
 - [Deploy on Kubernetes](installation/kubernetes.md)
@@ -34,32 +36,38 @@ Welcome to the comprehensive documentation for ncps (Nix Cache Proxy Server). Th
 - [Configure on NixOS](installation/nixos.md)
 
 **Configure ncps**
+
 - [See all configuration options](configuration/reference.md)
 - [Configure storage backends](configuration/storage.md)
 - [Choose and configure a database](configuration/database.md)
 - [Set up observability](configuration/observability.md)
 
 **Deploy for Production**
+
 - [Deploy a single instance](deployment/single-instance.md)
 - [Set up high availability](deployment/high-availability.md)
 - [Configure distributed locking](deployment/distributed-locking.md)
 
 **Use ncps**
+
 - [Configure Nix clients](usage/client-setup.md)
 - [Manage the cache](usage/cache-management.md)
 
 **Operate and Maintain**
+
 - [Monitor ncps](operations/monitoring.md)
 - [Troubleshoot issues](operations/troubleshooting.md)
 - [Backup and restore](operations/backup-restore.md)
 - [Upgrade ncps](operations/upgrading.md)
 
 **Understand Internals**
+
 - [Learn about system components](architecture/components.md)
 - [Understand storage backends](architecture/storage-backends.md)
 - [Follow request flow](architecture/request-flow.md)
 
 **Contribute**
+
 - [Set up development environment](development/)
 - [Run tests](development/testing.md)
 - [See contribution guidelines](../CONTRIBUTING.md)
@@ -81,10 +89,10 @@ This documentation is for the latest version of ncps. For version-specific docum
 Found an error or want to improve the documentation? Contributions are welcome!
 
 1. Documentation source files are in the `/docs` directory
-2. Submit pull requests with improvements
-3. Follow the existing structure and style
-4. See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines
+1. Submit pull requests with improvements
+1. Follow the existing structure and style
+1. See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines
 
----
+______________________________________________________________________
 
 **Need Help?** Check the [Troubleshooting Guide](operations/troubleshooting.md) or ask in [Discussions](https://github.com/kalbasit/ncps/discussions).

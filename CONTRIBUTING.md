@@ -393,13 +393,16 @@ cd charts/ncps
 The generate-test-values.sh script creates 10 different test configurations:
 
 - **Single Instance with Local Storage:**
+
   - SQLite, PostgreSQL, or MariaDB database
 
 - **Single Instance with S3 Storage:**
+
   - SQLite, PostgreSQL, or MariaDB database
   - Tests S3 configuration and MinIO compatibility
 
 - **High Availability:**
+
   - 2 replicas with S3 storage
   - PostgreSQL or MariaDB database
   - Redis for distributed locking

@@ -47,15 +47,15 @@ Running multiple ncps instances provides:
 ### Required Components
 
 1. **Multiple ncps instances** (2+, recommended 3+)
-2. **Redis server** for distributed locking
+1. **Redis server** for distributed locking
    - Single instance or cluster
    - Version 5.0+ required
-3. **S3-compatible storage** (shared across all instances)
+1. **S3-compatible storage** (shared across all instances)
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
-4. **PostgreSQL or MySQL database** (shared across all instances)
+1. **PostgreSQL or MySQL database** (shared across all instances)
    - PostgreSQL 12+ or MySQL 8.0+
    - **SQLite is NOT supported for HA**
-5. **Load balancer** to distribute requests
+1. **Load balancer** to distribute requests
    - nginx, HAProxy, cloud load balancer, etc.
 
 ### Network Requirements
@@ -79,6 +79,7 @@ helm install ncps ./charts/ncps -n ncps -f values-ha.yaml
 ```
 
 `values-ha.yaml`:
+
 ```yaml
 replicaCount: 3
 
@@ -113,6 +114,7 @@ See [Helm Installation Guide](../installation/helm.md) for details.
 ### Step 1: Set Up Redis
 
 **Single Redis Instance:**
+
 ```bash
 docker run -d \
   --name redis \
@@ -121,6 +123,7 @@ docker run -d \
 ```
 
 **Redis Cluster** (for production):
+
 ```yaml
 # Use Redis cluster or sentinel for Redis HA
 # See Redis documentation for cluster setup
@@ -129,6 +132,7 @@ docker run -d \
 ### Step 2: Set Up S3 Storage
 
 **AWS S3:**
+
 ```bash
 # Create bucket
 aws s3 mb s3://ncps-cache --region us-east-1
@@ -140,6 +144,7 @@ aws s3api put-bucket-versioning \
 ```
 
 **MinIO:**
+
 ```bash
 # Start MinIO
 docker run -d \
@@ -157,6 +162,7 @@ mc mb myminio/ncps-cache
 ### Step 3: Set Up Database
 
 **PostgreSQL:**
+
 ```bash
 # Create database and user
 sudo -u postgres psql
@@ -169,6 +175,7 @@ GRANT ALL PRIVILEGES ON DATABASE ncps TO ncps;
 ```
 
 **MySQL:**
+
 ```sql
 CREATE DATABASE ncps;
 CREATE USER 'ncps'@'%' IDENTIFIED BY 'secure-password';
@@ -222,6 +229,7 @@ prometheus:
 ### Step 5: Deploy Instances
 
 **Docker:**
+
 ```bash
 # Start instance 1
 docker run -d --name ncps-1 -p 8501:8501 \
@@ -240,6 +248,7 @@ docker run -d --name ncps-3 -p 8503:8501 \
 ```
 
 **Kubernetes:**
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -264,6 +273,7 @@ spec:
 ### Step 6: Set Up Load Balancer
 
 **nginx:**
+
 ```nginx
 upstream ncps_backend {
     server ncps-1:8501;
@@ -284,6 +294,7 @@ server {
 ```
 
 **HAProxy:**
+
 ```
 frontend ncps_frontend
     bind *:80
@@ -306,24 +317,25 @@ ncps uses Redis to coordinate multiple instances:
 When multiple instances request the same package:
 
 1. Instance A acquires download lock for hash `abc123`
-2. Instance B tries to download same package
-3. Instance B cannot acquire lock (Instance A holds it)
-4. Instance B retries with exponential backoff
-5. Instance A completes download and releases lock
-6. Instance B acquires lock, finds package in S3, serves it
-7. Result: Only one download from upstream
+1. Instance B tries to download same package
+1. Instance B cannot acquire lock (Instance A holds it)
+1. Instance B retries with exponential backoff
+1. Instance A completes download and releases lock
+1. Instance B acquires lock, finds package in S3, serves it
+1. Result: Only one download from upstream
 
 ### LRU Coordination
 
 Only one instance runs cache cleanup at a time:
 
 1. Instances try to acquire global LRU lock
-2. First instance to acquire lock runs LRU
-3. Other instances skip LRU (lock held)
-4. After cleanup, lock is released
-5. Next scheduled LRU cycle, another instance may acquire lock
+1. First instance to acquire lock runs LRU
+1. Other instances skip LRU (lock held)
+1. After cleanup, lock is released
+1. Next scheduled LRU cycle, another instance may acquire lock
 
 **Benefits:**
+
 - Prevents concurrent deletions
 - Avoids cache corruption
 - Distributes LRU load
@@ -337,6 +349,7 @@ Configure load balancer health checks:
 **Endpoint:** `GET /nix-cache-info`
 
 **nginx example:**
+
 ```nginx
 upstream ncps_backend {
     server ncps-1:8501 max_fails=3 fail_timeout=30s;
@@ -346,6 +359,7 @@ upstream ncps_backend {
 ```
 
 **Kubernetes:**
+
 ```yaml
 livenessProbe:
   httpGet:
@@ -384,6 +398,7 @@ docker stop ncps-2
 ```
 
 **Kubernetes:**
+
 ```yaml
 spec:
   strategy:
@@ -426,6 +441,7 @@ See [Monitoring Guide](../operations/monitoring.md) for dashboards.
 **Symptom:** Multiple instances download the same package
 
 **Check:**
+
 ```bash
 # Verify Redis configuration
 grep "redis-addrs" config.yaml
@@ -442,9 +458,10 @@ grep "acquired download lock" /var/log/ncps.log
 **Symptom:** Many retry attempts, slow downloads
 
 **Solutions:**
+
 1. Increase retry settings
-2. Increase lock TTLs for long operations
-3. Scale down instances if too many
+1. Increase lock TTLs for long operations
+1. Scale down instances if too many
 
 See [Distributed Locking Guide](distributed-locking.md#troubleshooting) for detailed troubleshooting.
 
@@ -453,19 +470,21 @@ See [Distributed Locking Guide](distributed-locking.md#troubleshooting) for deta
 ### Prerequisites
 
 1. ✅ Set up PostgreSQL or MySQL database
-2. ✅ Migrate from SQLite (if applicable)
-3. ✅ Set up S3-compatible storage
-4. ✅ Deploy Redis server
+1. ✅ Migrate from SQLite (if applicable)
+1. ✅ Set up S3-compatible storage
+1. ✅ Deploy Redis server
 
 ### Migration Steps
 
 **1. Migrate to S3 Storage:**
+
 ```bash
 # Sync local storage to S3
 aws s3 sync /var/lib/ncps s3://ncps-cache/
 ```
 
 **2. Migrate Database:**
+
 ```bash
 # Export SQLite data
 sqlite3 ncps.db .dump > backup.sql
@@ -476,17 +495,20 @@ pgloader sqlite:///var/lib/ncps/db/db.sqlite \
 ```
 
 **3. Configure First Instance:**
+
 ```yaml
 # Update config.yaml to use S3 and PostgreSQL
 # Add Redis configuration
 ```
 
 **4. Verify Functionality:**
+
 - Test package downloads
 - Check Redis for lock keys
 - Verify cache hits
 
 **5. Add Additional Instances:**
+
 - Use identical configuration
 - Point to same Redis, S3, and database
 - Add to load balancer
@@ -494,19 +516,19 @@ pgloader sqlite:///var/lib/ncps/db/db.sqlite \
 ## Best Practices
 
 1. **Start Redis First** - Ensure Redis is healthy before starting ncps instances
-2. **Use Health Checks** - Configure load balancer health checks
-3. **Monitor Lock Metrics** - Watch for contention and failures
-4. **Plan Capacity** - 3+ instances recommended for true HA
-5. **Test Failover** - Regularly test instance failures
-6. **Centralize Logs** - Use log aggregation for troubleshooting
-7. **Set Up Alerts** - Alert on high lock failures, Redis unavailability
+1. **Use Health Checks** - Configure load balancer health checks
+1. **Monitor Lock Metrics** - Watch for contention and failures
+1. **Plan Capacity** - 3+ instances recommended for true HA
+1. **Test Failover** - Regularly test instance failures
+1. **Centralize Logs** - Use log aggregation for troubleshooting
+1. **Set Up Alerts** - Alert on high lock failures, Redis unavailability
 
 ## Next Steps
 
 1. **[Configure Clients](../usage/client-setup.md)** - Set up Nix clients
-2. **[Review Distributed Locking](distributed-locking.md)** - Understand locking in depth
-3. **[Set Up Monitoring](../operations/monitoring.md)** - Configure observability
-4. **[Review Operations](../operations/)** - Learn about backups, upgrades
+1. **[Review Distributed Locking](distributed-locking.md)** - Understand locking in depth
+1. **[Set Up Monitoring](../operations/monitoring.md)** - Configure observability
+1. **[Review Operations](../operations/)** - Learn about backups, upgrades
 
 ## Related Documentation
 

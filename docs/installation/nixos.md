@@ -36,11 +36,13 @@ Add to your `configuration.nix`:
 ```
 
 Rebuild your system:
+
 ```bash
 sudo nixos-rebuild switch
 ```
 
 The service will:
+
 - Create the ncps user and group automatically
 - Set up directories with correct permissions
 - Initialize the database
@@ -172,6 +174,7 @@ curl http://localhost:8501/pubkey
 **Note:** S3 storage configuration in the NixOS module will be available in a future release. For now, use the Docker or Helm installation methods for S3 storage.
 
 To use S3 storage with NixOS today:
+
 - Install ncps via Docker/Podman on NixOS
 - Use the [Docker installation guide](docker.md)
 
@@ -232,6 +235,7 @@ For a complete list of all available options, search the NixOS options:
 **Online:** [NixOS Options Search](https://search.nixos.org/options?query=services.ncps)
 
 **From command line:**
+
 ```bash
 nixos-option services.ncps
 ```
@@ -377,9 +381,9 @@ sudo nixos-rebuild switch
 ## Next Steps
 
 1. **[Configure Clients](../usage/client-setup.md)** - Set up your Nix clients to use the cache
-2. **[Review Configuration](../configuration/reference.md)** - Explore more configuration options
-3. **[Set up Monitoring](../operations/monitoring.md)** - Configure observability
-4. **[Plan for HA](../deployment/high-availability.md)** - Consider high availability (use Docker/K8s)
+1. **[Review Configuration](../configuration/reference.md)** - Explore more configuration options
+1. **[Set up Monitoring](../operations/monitoring.md)** - Configure observability
+1. **[Plan for HA](../deployment/high-availability.md)** - Consider high availability (use Docker/K8s)
 
 ## Related Documentation
 

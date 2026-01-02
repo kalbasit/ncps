@@ -74,9 +74,10 @@ docker compose up -d
 ```
 
 This will:
+
 1. Create directories with correct permissions
-2. Run database migrations
-3. Start ncps server
+1. Run database migrations
+1. Start ncps server
 
 ### Step 3: Verify Installation
 
@@ -225,12 +226,14 @@ volumes:
 ```
 
 **This setup includes:**
+
 - PostgreSQL for shared database
 - Redis for distributed locking
 - MinIO for S3-compatible storage
 - Two ncps instances for high availability
 
 **Access points:**
+
 - ncps instance 1: http://localhost:8501
 - ncps instance 2: http://localhost:8502
 - MinIO console: http://localhost:9001
@@ -267,16 +270,19 @@ services:
 ## Management Commands
 
 ### Start Services
+
 ```bash
 docker compose up -d
 ```
 
 ### Stop Services
+
 ```bash
 docker compose down
 ```
 
 ### View Logs
+
 ```bash
 docker compose logs ncps
 docker compose logs -f ncps  # Follow logs
@@ -284,17 +290,20 @@ docker compose logs --tail 100  # Last 100 lines
 ```
 
 ### Restart ncps
+
 ```bash
 docker compose restart ncps
 ```
 
 ### Update to Latest Version
+
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
 ### Remove Everything
+
 ```bash
 docker compose down -v  # WARNING: Deletes all data!
 ```
@@ -394,9 +403,9 @@ See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
 ## Next Steps
 
 1. **[Configure Clients](../usage/client-setup.md)** - Set up Nix clients to use your cache
-2. **[Configure Monitoring](../operations/monitoring.md)** - Set up Prometheus and Grafana
-3. **[Review Configuration](../configuration/reference.md)** - Explore more options
-4. **[Plan for Production](../deployment/)** - Consider deployment strategies
+1. **[Configure Monitoring](../operations/monitoring.md)** - Set up Prometheus and Grafana
+1. **[Review Configuration](../configuration/reference.md)** - Explore more options
+1. **[Plan for Production](../deployment/)** - Consider deployment strategies
 
 ## Related Documentation
 

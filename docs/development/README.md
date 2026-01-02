@@ -25,6 +25,7 @@ nix develop
 ```
 
 **Available tools in dev shell:**
+
 - go, golangci-lint, sqlc, sqlfluff
 - dbmate, delve, watchexec
 - Integration test helpers
@@ -51,6 +52,7 @@ nix run .#deps
 ```
 
 This starts:
+
 - **MinIO** (port 9000) - S3-compatible storage
 - **PostgreSQL** (port 5432) - Database
 - **MySQL/MariaDB** (port 3306) - Database

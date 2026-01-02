@@ -38,6 +38,7 @@ eval "$(disable-integration-tests)"
 ```
 
 **Available helpers:**
+
 - `enable-s3-tests` - S3/MinIO tests
 - `enable-postgres-tests` - PostgreSQL tests
 - `enable-mysql-tests` - MySQL tests
@@ -54,9 +55,10 @@ nix flake check
 ```
 
 This automatically:
+
 1. Starts all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
-2. Runs all tests including integration tests
-3. Stops all services
+1. Runs all tests including integration tests
+1. Stops all services
 
 ## Test Structure
 
@@ -113,6 +115,7 @@ golangci-lint run path/to/file.go
 ```
 
 **Key linters:**
+
 - err113 - Error handling
 - exhaustive - Switch exhaustiveness
 - gosec - Security

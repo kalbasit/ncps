@@ -9,17 +9,20 @@ Manage cache size, cleanup, and optimization.
 ### Configure Maximum Size
 
 **Command-line:**
+
 ```bash
 ncps serve --cache-max-size=100G
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   max-size: 100G
 ```
 
 **Size formats:**
+
 - `10K` - 10 kilobytes
 - `100M` - 100 megabytes
 - `50G` - 50 gigabytes
@@ -28,11 +31,13 @@ cache:
 ### Check Current Size
 
 **Local storage:**
+
 ```bash
 du -sh /var/lib/ncps
 ```
 
 **S3 storage:**
+
 ```bash
 aws s3 ls --summarize --recursive s3://ncps-cache/
 ```
@@ -44,6 +49,7 @@ aws s3 ls --summarize --recursive s3://ncps-cache/
 Configure automatic LRU (Least Recently Used) cleanup:
 
 **Configuration:**
+
 ```yaml
 cache:
   max-size: 100G
@@ -52,6 +58,7 @@ cache:
 ```
 
 **Cron schedule examples:**
+
 - `0 2 * * *` - Daily at 2 AM
 - `0 */6 * * *` - Every 6 hours
 - `0 3 * * 0` - Weekly on Sunday at 3 AM
@@ -65,6 +72,7 @@ Trigger cleanup manually (not implemented via API, use systemctl/docker restart 
 ### Cache Statistics
 
 **Check logs** for cache operations:
+
 ```bash
 # Docker
 docker logs ncps | grep "cache"
@@ -78,13 +86,16 @@ journalctl -u ncps | grep "cache"
 If Prometheus is enabled:
 
 **Cache size:**
+
 - Custom script to export size metrics
 
 **Cache hits/misses:**
+
 - `ncps_nar_served_total` - Total NARs served
 - `ncps_narinfo_served_total` - Total NarInfo served
 
 **Query cache hit rate:**
+
 ```promql
 rate(ncps_nar_served_total[5m])
 ```
@@ -96,11 +107,13 @@ See [Monitoring Guide](../operations/monitoring.md) for dashboards.
 ### Identify Large Packages
 
 **Local storage:**
+
 ```bash
 find /var/lib/ncps/nar -type f -size +100M | sort -h
 ```
 
 **S3 storage:**
+
 ```bash
 aws s3 ls --recursive s3://ncps-cache/nar/ | sort -k3 -n | tail -20
 ```
@@ -110,6 +123,7 @@ aws s3 ls --recursive s3://ncps-cache/nar/ | sort -k3 -n | tail -20
 **Warning:** Manual deletion not recommended. Use LRU cleanup instead.
 
 If absolutely necessary:
+
 ```bash
 # For local storage
 rm /var/lib/ncps/nar/<hash>.nar
@@ -121,10 +135,10 @@ rm /var/lib/ncps/nar/<hash>.nar
 ## Best Practices
 
 1. **Set reasonable max-size** - Based on available disk space
-2. **Enable LRU cleanup** - Automatic management
-3. **Monitor cache usage** - Watch for growth trends
-4. **Plan for growth** - Cache size increases over time
-5. **Use S3 for large caches** - Better for 1TB+ caches
+1. **Enable LRU cleanup** - Automatic management
+1. **Monitor cache usage** - Watch for growth trends
+1. **Plan for growth** - Cache size increases over time
+1. **Use S3 for large caches** - Better for 1TB+ caches
 
 ## Next Steps
 

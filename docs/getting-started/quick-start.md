@@ -118,6 +118,7 @@ docker run -d \
 ```
 
 **Replace:**
+
 - `my-ncps-cache` with your S3 bucket name
 - `YOUR_ACCESS_KEY` and `YOUR_SECRET_KEY` with your S3 credentials
 - Adjust `endpoint` and `region` for your S3 provider
@@ -136,6 +137,7 @@ curl http://localhost:8501/pubkey
 ## What's Running?
 
 Your ncps instance is now:
+
 - Listening on port 8501
 - Caching packages from cache.nixos.org
 - Storing data in Docker volume (local) or S3 bucket
@@ -145,22 +147,25 @@ Your ncps instance is now:
 ## Next Steps
 
 1. **[Configure Clients](../usage/client-setup.md)** - Set up your Nix clients to use ncps
-2. **[Understand Concepts](concepts.md)** - Learn how ncps works under the hood
-3. **[Choose Installation Method](../installation/)** - Pick the best installation method for your needs
-4. **[Configure Further](../configuration/reference.md)** - Explore more configuration options
+1. **[Understand Concepts](concepts.md)** - Learn how ncps works under the hood
+1. **[Choose Installation Method](../installation/)** - Pick the best installation method for your needs
+1. **[Configure Further](../configuration/reference.md)** - Explore more configuration options
 
 ## Quick Troubleshooting
 
 **Container exits immediately:**
+
 - Check you provided all required flags: `--cache-hostname`, storage, database, upstream
 - Check logs: `docker logs ncps`
 
 **Can't access http://localhost:8501:**
+
 - Verify container is running: `docker ps | grep ncps`
 - Check port mapping: `-p 8501:8501`
 - Try from inside container: `docker exec ncps wget -O- http://localhost:8501/nix-cache-info`
 
 **Database errors:**
+
 - Ensure you ran the database migration step
 - Verify database path matches between migration and serve commands
 

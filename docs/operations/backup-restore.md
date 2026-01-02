@@ -9,6 +9,7 @@ Backup strategies and recovery procedures.
 ### SQLite
 
 **Backup:**
+
 ```bash
 # Stop ncps (recommended)
 systemctl stop ncps
@@ -21,6 +22,7 @@ systemctl start ncps
 ```
 
 **Restore:**
+
 ```bash
 systemctl stop ncps
 cp /backup/db.sqlite.20240101 /var/lib/ncps/db/db.sqlite
@@ -30,11 +32,13 @@ systemctl start ncps
 ### PostgreSQL
 
 **Backup:**
+
 ```bash
 pg_dump -h localhost -U ncps ncps > /backup/ncps.sql
 ```
 
 **Restore:**
+
 ```bash
 psql -h localhost -U ncps ncps < /backup/ncps.sql
 ```
@@ -42,11 +46,13 @@ psql -h localhost -U ncps ncps < /backup/ncps.sql
 ### MySQL
 
 **Backup:**
+
 ```bash
 mysqldump -u ncps -p ncps > /backup/ncps.sql
 ```
 
 **Restore:**
+
 ```bash
 mysql -u ncps -p ncps < /backup/ncps.sql
 ```
@@ -56,11 +62,13 @@ mysql -u ncps -p ncps < /backup/ncps.sql
 ### Local Storage
 
 **Backup:**
+
 ```bash
 tar -czf /backup/ncps-storage.tar.gz /var/lib/ncps/
 ```
 
 **Restore:**
+
 ```bash
 tar -xzf /backup/ncps-storage.tar.gz -C /
 ```
@@ -96,10 +104,10 @@ aws s3api put-bucket-versioning \
 ## Disaster Recovery
 
 1. Stop ncps instances
-2. Restore database from backup
-3. Restore storage from backup (if local)
-4. Start ncps instances
-5. Verify functionality
+1. Restore database from backup
+1. Restore storage from backup (if local)
+1. Start ncps instances
+1. Verify functionality
 
 ## Related Documentation
 

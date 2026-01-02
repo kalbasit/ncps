@@ -14,21 +14,25 @@ Operational guides for running ncps in production.
 ## Quick Links
 
 ### Monitoring
+
 - [Enable Prometheus metrics](monitoring.md#enable-prometheus)
 - [Set up Grafana dashboards](monitoring.md#grafana-dashboards)
 - [Configure alerts](monitoring.md#alerting)
 
 ### Troubleshooting
+
 - [Common issues](troubleshooting.md#common-issues)
 - [Debug mode](troubleshooting.md#debug-logging)
 - [Check logs](troubleshooting.md#viewing-logs)
 
 ### Backups
+
 - [Database backups](backup-restore.md#database-backups)
 - [Storage backups](backup-restore.md#storage-backups)
 - [Restore procedures](backup-restore.md#restore)
 
 ### Upgrades
+
 - [Upgrade single-instance](upgrading.md#single-instance)
 - [Rolling upgrade for HA](upgrading.md#high-availability)
 - [Database migrations](upgrading.md#database-migrations)

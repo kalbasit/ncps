@@ -13,12 +13,14 @@ ncps supports two primary deployment modes:
 One ncps server handling all cache requests.
 
 **Best for:**
+
 - Development and testing
 - Small to medium teams (1-100+ users)
 - Single-location deployments
 - Simpler operations
 
 **Characteristics:**
+
 - One server
 - Local locks (no Redis)
 - Local or S3 storage
@@ -32,6 +34,7 @@ One ncps server handling all cache requests.
 Multiple ncps instances for redundancy and scalability.
 
 **Best for:**
+
 - Production environments
 - Large teams (100+ users)
 - Business-critical infrastructure
@@ -39,6 +42,7 @@ Multiple ncps instances for redundancy and scalability.
 - Zero-downtime requirements
 
 **Characteristics:**
+
 - 2+ servers
 - Redis distributed locking
 - S3 storage (required)
@@ -87,17 +91,20 @@ Start
 ### Single-Instance Prerequisites
 
 **Minimum:**
+
 - Server or VM (2+ CPU cores, 4GB+ RAM recommended)
 - Storage (50GB-1TB depending on usage)
 - Network connectivity to upstream caches
 
 **Optional:**
+
 - S3-compatible storage (for cloud-native or future HA)
 - PostgreSQL/MySQL (for better performance than SQLite)
 
 ### High Availability Prerequisites
 
 **Required:**
+
 - 2+ servers (3+ recommended for better availability)
 - Redis server (single instance or cluster)
 - S3-compatible storage (AWS S3, MinIO, etc.)
@@ -105,24 +112,25 @@ Start
 - Load balancer (nginx, HAProxy, cloud LB)
 
 **Optional:**
+
 - Monitoring and alerting (Prometheus, Grafana)
 - Centralized logging (ELK, Loki)
 
 ## Getting Started
 
 1. **Choose deployment mode** based on your requirements
-2. **Review prerequisites** for your chosen mode
-3. **Follow installation guide**:
+1. **Review prerequisites** for your chosen mode
+1. **Follow installation guide**:
    - [Docker](../installation/docker.md)
    - [Docker Compose](../installation/docker-compose.md)
    - [Kubernetes](../installation/kubernetes.md)
    - [Helm Chart](../installation/helm.md)
    - [NixOS](../installation/nixos.md)
-4. **Configure** according to your mode:
+1. **Configure** according to your mode:
    - [Single-Instance Configuration](single-instance.md#configuration)
    - [HA Configuration](high-availability.md#configuration)
-5. **Verify deployment** and test
-6. **Set up monitoring** (recommended)
+1. **Verify deployment** and test
+1. **Set up monitoring** (recommended)
 
 ## Migration Path
 
@@ -131,9 +139,9 @@ Start
 Common migration path as your needs grow:
 
 1. **Start**: Single instance with local storage and SQLite
-2. **Scale up**: Move to PostgreSQL for better performance
-3. **Cloud-ready**: Migrate to S3 storage
-4. **High Availability**: Add Redis and additional instances
+1. **Scale up**: Move to PostgreSQL for better performance
+1. **Cloud-ready**: Migrate to S3 storage
+1. **High Availability**: Add Redis and additional instances
 
 Each step is incremental and can be done independently.
 
@@ -183,9 +191,9 @@ Load Balancer
 ## Next Steps
 
 1. **[Choose and follow deployment guide](single-instance.md)**
-2. **[Configure clients](../usage/client-setup.md)** to use your cache
-3. **[Set up monitoring](../operations/monitoring.md)** for production
-4. **[Review operations guides](../operations/)** for maintenance
+1. **[Configure clients](../usage/client-setup.md)** to use your cache
+1. **[Set up monitoring](../operations/monitoring.md)** for production
+1. **[Review operations guides](../operations/)** for maintenance
 
 ## Related Documentation
 

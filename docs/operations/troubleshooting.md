@@ -9,6 +9,7 @@ Common issues and solutions.
 ### Service Won't Start
 
 **Check logs:**
+
 ```bash
 # Docker
 docker logs ncps
@@ -18,6 +19,7 @@ journalctl -u ncps -f
 ```
 
 **Common causes:**
+
 - Missing required flags
 - Database not initialized
 - Permission errors
@@ -26,11 +28,13 @@ journalctl -u ncps -f
 ### Can't Access Cache
 
 **Test connectivity:**
+
 ```bash
 curl http://your-ncps:8501/nix-cache-info
 ```
 
 **Check:**
+
 - Service is running
 - Port 8501 is open
 - Firewall rules
@@ -41,6 +45,7 @@ curl http://your-ncps:8501/nix-cache-info
 ### Database Locked (SQLite)
 
 SQLite only allows one writer:
+
 - Check no other processes are accessing the database
 - Restart ncps
 - Use PostgreSQL/MySQL for concurrent access
@@ -77,6 +82,7 @@ sudo chown -R ncps:ncps /var/lib/ncps
 ### Download Locks Not Working
 
 **Check:**
+
 - Redis is configured and reachable
 - All instances use same Redis
 - Check logs for lock messages
@@ -84,6 +90,7 @@ sudo chown -R ncps:ncps /var/lib/ncps
 ### High Lock Contention
 
 **Solutions:**
+
 - Increase retry settings
 - Increase lock TTLs
 - Scale down instances if too many
@@ -93,6 +100,7 @@ See [Distributed Locking Guide](../deployment/distributed-locking.md#troubleshoo
 ## Debug Logging
 
 Enable debug mode:
+
 ```bash
 ncps serve --log-level=debug
 ```

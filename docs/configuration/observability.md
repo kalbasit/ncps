@@ -17,17 +17,20 @@ ncps provides comprehensive observability through:
 ### Enable Prometheus
 
 **Command-line:**
+
 ```bash
 ncps serve --prometheus-enabled=true
 ```
 
 **Configuration file:**
+
 ```yaml
 prometheus:
   enabled: true
 ```
 
 **Environment variable:**
+
 ```bash
 export PROMETHEUS_ENABLED=true
 ```
@@ -35,6 +38,7 @@ export PROMETHEUS_ENABLED=true
 ### Metrics Endpoint
 
 Once enabled, metrics are available at:
+
 ```
 http://your-ncps:8501/metrics
 ```
@@ -42,15 +46,18 @@ http://your-ncps:8501/metrics
 ### Available Metrics
 
 **HTTP Metrics** (via otelchi middleware):
+
 - `http_server_requests_total` - Total HTTP requests
 - `http_server_request_duration_seconds` - Request duration histogram
 - `http_server_active_requests` - Currently active requests
 
 **Cache Metrics:**
+
 - `ncps_nar_served_total` - Total NAR files served
 - `ncps_narinfo_served_total` - Total NarInfo files served
 
 **Lock Metrics** (when using Redis for HA):
+
 - `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisition attempts
   - `type`: "download" or "lru"
   - `result`: "success" or "failure"
@@ -73,6 +80,7 @@ scrape_configs:
 ```
 
 **For Kubernetes with ServiceMonitor:**
+
 ```yaml
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -94,11 +102,13 @@ spec:
 Create dashboards to visualize:
 
 **Cache Performance:**
+
 - Cache hit rate
 - NAR files served (rate)
 - Request duration percentiles (p50, p95, p99)
 
 **HA Lock Performance:**
+
 - Lock acquisition success/failure rate
 - Lock hold duration
 - Retry attempt rate
@@ -111,6 +121,7 @@ See the [Monitoring Guide](../operations/monitoring.md) for dashboard examples.
 ### Enable OpenTelemetry
 
 **Command-line:**
+
 ```bash
 ncps serve \
   --otel-enabled=true \
@@ -118,6 +129,7 @@ ncps serve \
 ```
 
 **Configuration file:**
+
 ```yaml
 otel:
   enabled: true
@@ -125,6 +137,7 @@ otel:
 ```
 
 **Environment variables:**
+
 ```bash
 export OTEL_ENABLED=true
 export OTEL_GRPC_URL=http://otel-collector:4317
@@ -203,17 +216,20 @@ Useful for development or when using log aggregation systems.
 Configure logging verbosity:
 
 **Command-line:**
+
 ```bash
 ncps serve --log-level=debug
 ```
 
 **Levels:**
+
 - `debug` - Verbose logging, including debug information
 - `info` - Standard informational messages (default)
 - `warn` - Warning messages only
 - `error` - Error messages only
 
 **Configuration file:**
+
 ```yaml
 log-level: info
 ```
@@ -237,29 +253,34 @@ Logs are output in JSON format with structured fields:
 ### Important Log Messages
 
 **Cache Operations:**
+
 - `serving nar from cache` - NAR file served from cache
 - `downloading nar from upstream` - Fetching from upstream
 - `nar cached successfully` - Download and cache complete
 
 **Lock Operations (HA):**
+
 - `acquired download lock` - Download lock obtained
 - `failed to acquire lock` - Lock acquisition failed after retries
 - `another instance is running LRU` - LRU skipped (another instance running)
 - `circuit breaker open: Redis is unavailable` - Redis connectivity issues
 
 **Server:**
+
 - `server started` - ncps HTTP server started
 - `server shutdown` - Graceful shutdown initiated
 
 ### Log Aggregation
 
 **ELK Stack (Elasticsearch, Logstash, Kibana):**
+
 ```bash
 # Send logs to Logstash
 ncps serve --log-level=info 2>&1 | logstash -f logstash.conf
 ```
 
 **Loki + Grafana:**
+
 ```yaml
 # Docker Compose with Promtail
 services:
@@ -272,6 +293,7 @@ services:
 ```
 
 **CloudWatch (AWS):**
+
 ```bash
 # Use CloudWatch agent to collect logs
 # Configure log groups and streams
@@ -314,6 +336,7 @@ Access Jaeger UI at `http://localhost:16686` to view traces.
 ### Trace Context
 
 Traces include:
+
 - Request ID
 - Upstream cache calls
 - Lock acquisitions (HA mode)
@@ -326,6 +349,7 @@ Traces include:
 ### Endpoints
 
 **Cache Info:**
+
 ```bash
 curl http://localhost:8501/nix-cache-info
 ```
@@ -333,6 +357,7 @@ curl http://localhost:8501/nix-cache-info
 Returns cache metadata in Nix binary cache format.
 
 **Metrics (if Prometheus enabled):**
+
 ```bash
 curl http://localhost:8501/metrics
 ```
@@ -342,12 +367,14 @@ Returns Prometheus-formatted metrics.
 ### Health Check Scripts
 
 **Simple health check:**
+
 ```bash
 #!/bin/bash
 curl -f http://localhost:8501/nix-cache-info || exit 1
 ```
 
 **Kubernetes liveness probe:**
+
 ```yaml
 livenessProbe:
   httpGet:
@@ -358,6 +385,7 @@ livenessProbe:
 ```
 
 **Kubernetes readiness probe:**
+
 ```yaml
 readinessProbe:
   httpGet:
@@ -419,6 +447,7 @@ services:
 ```
 
 **Access:**
+
 - ncps: `http://localhost:8501`
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000` (admin/admin)
@@ -427,8 +456,8 @@ services:
 ## Next Steps
 
 1. **[Monitoring Guide](../operations/monitoring.md)** - Set up dashboards and alerts
-2. **[Troubleshooting Guide](../operations/troubleshooting.md)** - Use logs and metrics to debug
-3. **[Configuration Reference](reference.md)** - All observability options
+1. **[Troubleshooting Guide](../operations/troubleshooting.md)** - Use logs and metrics to debug
+1. **[Configuration Reference](reference.md)** - All observability options
 
 ## Related Documentation
 

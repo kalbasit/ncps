@@ -60,6 +60,7 @@ docker run -d --name ncps-1 ...
 ```
 
 **Kubernetes automatic rolling update:**
+
 ```yaml
 spec:
   strategy:
@@ -73,8 +74,8 @@ spec:
 Database migrations run automatically on startup. Ensure:
 
 1. Backup database before upgrading
-2. migrations complete successfully (check logs)
-3. All instances use same database schema version
+1. migrations complete successfully (check logs)
+1. All instances use same database schema version
 
 ## Breaking Changes
 
@@ -85,6 +86,7 @@ Check release notes for breaking changes before upgrading.
 If upgrade fails:
 
 **Docker:**
+
 ```bash
 docker stop ncps
 docker rm ncps
@@ -92,6 +94,7 @@ docker run -d --name ncps kalbasit/ncps:v0.4.0 ...  # Previous version
 ```
 
 **Helm:**
+
 ```bash
 helm rollback ncps -n ncps
 ```

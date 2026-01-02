@@ -41,16 +41,19 @@ Single-instance deployment is ideal for:
 ### Option 1: Local Filesystem Storage
 
 **Pros:**
+
 - Simple setup
 - Fast (local I/O)
 - No external dependencies
 
 **Cons:**
+
 - Limited to server disk size
 - No redundancy
 - Cannot scale to HA
 
 **Configuration:**
+
 ```yaml
 cache:
   hostname: cache.example.com
@@ -62,16 +65,19 @@ cache:
 ### Option 2: S3 Storage
 
 **Pros:**
+
 - Scalable storage
 - Easy migration to HA later
 - Built-in redundancy
 
 **Cons:**
+
 - Requires S3 service
 - Slight latency overhead
 - Additional cost (if using cloud S3)
 
 **Configuration:**
+
 ```yaml
 cache:
   hostname: cache.example.com
@@ -91,15 +97,18 @@ cache:
 ### SQLite (Default - Recommended for Single-Instance)
 
 **Pros:**
+
 - No external service required
 - Zero configuration
 - Perfect for single instance
 
 **Cons:**
+
 - Cannot be used for HA
 - Single connection limit
 
 **Configuration:**
+
 ```yaml
 cache:
   database-url: sqlite:/var/lib/ncps/db/db.sqlite
@@ -108,15 +117,18 @@ cache:
 ### PostgreSQL
 
 **Pros:**
+
 - Better performance under load
 - Easier migration to HA later
 - Better concurrent access
 
 **Cons:**
+
 - Requires PostgreSQL service
 - More complex setup
 
 **Configuration:**
+
 ```yaml
 cache:
   database-url: postgresql://ncps:password@localhost:5432/ncps?sslmode=require
@@ -127,6 +139,7 @@ cache:
 Similar to PostgreSQL in terms of pros/cons.
 
 **Configuration:**
+
 ```yaml
 cache:
   database-url: mysql://ncps:password@localhost:3306/ncps
@@ -307,9 +320,9 @@ See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
 ## Next Steps
 
 1. **[Configure Clients](../usage/client-setup.md)** - Set up Nix clients
-2. **[Configure Monitoring](../operations/monitoring.md)** - Set up observability
-3. **[Review Operations](../operations/)** - Learn about backups, upgrades, etc.
-4. **Consider [HA Deployment](high-availability.md)** - When you need to scale
+1. **[Configure Monitoring](../operations/monitoring.md)** - Set up observability
+1. **[Review Operations](../operations/)** - Learn about backups, upgrades, etc.
+1. **Consider [HA Deployment](high-availability.md)** - When you need to scale
 
 ## Related Documentation
 

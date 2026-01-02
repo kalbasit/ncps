@@ -20,6 +20,7 @@ docker pull kalbasit/ncps
 ```
 
 **Available tags:**
+
 - `latest` - Latest stable release
 - `vX.Y.Z` - Specific version (recommended for production)
 - See [Docker Hub](https://hub.docker.com/r/kalbasit/ncps) for all tags
@@ -44,6 +45,7 @@ docker run --rm -v ncps-storage:/storage kalbasit/ncps \
 ```
 
 **What this does:**
+
 - Creates a Docker volume for persistent storage
 - Sets up the directory structure
 - **Sets ownership to UID 1000** (ncps user in the container)
@@ -73,6 +75,7 @@ docker run -d \
 **Important:** Replace `your-ncps-hostname` with the actual hostname or IP address where ncps will be accessible to clients.
 
 **Flags explained:**
+
 - `-d` - Run in detached mode (background)
 - `--name ncps` - Container name for easy reference
 - `-p 8501:8501` - Expose port 8501
@@ -96,6 +99,7 @@ curl http://localhost:8501/pubkey
 ```
 
 **Expected output:**
+
 - Container status: "Up"
 - Cache info: JSON with StoreDir, Priority, etc.
 - Public key: `your-ncps-hostname:base64encodedkey`
@@ -133,6 +137,7 @@ docker run -d \
 ```
 
 **For MinIO:**
+
 ```bash
 --cache-storage-s3-endpoint=http://minio.example.com:9000 \
 --cache-storage-s3-use-ssl=false \
@@ -191,6 +196,7 @@ docker run -d \
 ## Management Commands
 
 ### View Logs
+
 ```bash
 docker logs ncps
 docker logs -f ncps  # Follow logs
@@ -198,6 +204,7 @@ docker logs --tail 100 ncps  # Last 100 lines
 ```
 
 ### Stop/Start/Restart
+
 ```bash
 docker stop ncps
 docker start ncps
@@ -205,6 +212,7 @@ docker restart ncps
 ```
 
 ### Update to Latest Version
+
 ```bash
 docker pull kalbasit/ncps:latest
 docker stop ncps
@@ -213,6 +221,7 @@ docker rm ncps
 ```
 
 ### Remove Everything
+
 ```bash
 docker stop ncps
 docker rm ncps
@@ -224,11 +233,13 @@ docker volume rm ncps-storage  # WARNING: Deletes all cached data!
 ### Container Exits Immediately
 
 **Check logs:**
+
 ```bash
 docker logs ncps
 ```
 
 **Common causes:**
+
 - Missing required flags (--cache-hostname, storage, database, upstream)
 - Database not initialized (missing migration step)
 - Invalid configuration
@@ -236,16 +247,19 @@ docker logs ncps
 ### Can't Access http://localhost:8501
 
 **Check container is running:**
+
 ```bash
 docker ps | grep ncps
 ```
 
 **Check from inside container:**
+
 ```bash
 docker exec ncps wget -O- http://localhost:8501/nix-cache-info
 ```
 
 **Check port binding:**
+
 ```bash
 docker port ncps
 ```
@@ -255,6 +269,7 @@ docker port ncps
 **Symptom:** "no such table: nars"
 
 **Solution:** Run the database migration step:
+
 ```bash
 docker run --rm -v ncps-storage:/storage kalbasit/ncps \
   /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
@@ -263,6 +278,7 @@ docker run --rm -v ncps-storage:/storage kalbasit/ncps \
 ### Permission Errors
 
 **Ensure correct permissions:**
+
 ```bash
 docker run --rm -v ncps-storage:/storage alpine ls -la /storage/var/ncps
 ```
@@ -274,9 +290,9 @@ See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
 ## Next Steps
 
 1. **[Configure Clients](../usage/client-setup.md)** - Set up Nix clients to use your cache
-2. **[Configure Monitoring](../operations/monitoring.md)** - Enable Prometheus metrics
-3. **[Review Configuration](../configuration/reference.md)** - Explore more options
-4. **Consider [Docker Compose](docker-compose.md)** - For easier management
+1. **[Configure Monitoring](../operations/monitoring.md)** - Enable Prometheus metrics
+1. **[Review Configuration](../configuration/reference.md)** - Explore more options
+1. **Consider [Docker Compose](docker-compose.md)** - For easier management
 
 ## Related Documentation
 

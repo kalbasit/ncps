@@ -32,11 +32,13 @@ type NarStore interface {
 **Location:** `pkg/storage/local/`
 
 **Implementation:**
+
 - Files stored directly on filesystem
 - Simple directory structure
 - Atomic writes using temp files
 
 **Directory Structure:**
+
 ```
 /var/lib/ncps/
 ├── config/
@@ -48,11 +50,13 @@ type NarStore interface {
 ```
 
 **Pros:**
+
 - Fast (local I/O)
 - Simple implementation
 - No external dependencies
 
 **Cons:**
+
 - Not suitable for HA
 - Limited to single server
 
@@ -61,11 +65,13 @@ type NarStore interface {
 **Location:** `pkg/storage/s3/`
 
 **Implementation:**
+
 - Uses MinIO Go SDK
 - Supports all S3-compatible services
 - Concurrent-safe
 
 **Object Structure:**
+
 ```
 s3://bucket/
 ├── config/secret-key
@@ -74,11 +80,13 @@ s3://bucket/
 ```
 
 **Pros:**
+
 - Scalable
 - Redundant
 - Required for HA
 
 **Cons:**
+
 - Network latency
 - Requires S3 service
 

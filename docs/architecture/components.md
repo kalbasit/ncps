@@ -9,12 +9,14 @@ Detailed breakdown of ncps system components.
 **Technology:** Chi router
 
 **Responsibilities:**
+
 - Handle HTTP requests
 - Route requests to handlers
 - Serve static files (pubkey, nix-cache-info)
 - Middleware (logging, metrics, tracing)
 
 **Key Endpoints:**
+
 - `GET /pubkey` - Public key
 - `GET /nix-cache-info` - Cache metadata
 - `GET /<hash>.narinfo` - Package metadata
@@ -24,12 +26,14 @@ Detailed breakdown of ncps system components.
 ## Cache Layer (pkg/cache/)
 
 **Responsibilities:**
+
 - Check if package exists in cache
 - Fetch from upstream if not cached
 - Sign NarInfo files
 - Coordinate downloads (HA mode)
 
 **Key Functions:**
+
 - `GetNarInfo()` - Get package metadata
 - `GetNar()` - Get package archive
 - `DownloadAndCache()` - Fetch from upstream
@@ -39,10 +43,12 @@ Detailed breakdown of ncps system components.
 **Interface:** `ConfigStore`, `NarInfoStore`, `NarStore`
 
 **Implementations:**
+
 - **Local** (`storage/local/`) - Filesystem storage
 - **S3** (`storage/s3/`) - S3-compatible storage
 
 **Responsibilities:**
+
 - Store and retrieve NAR files
 - Store and retrieve NarInfo files
 - Store secret keys
@@ -52,6 +58,7 @@ Detailed breakdown of ncps system components.
 **Technology:** sqlc for type-safe SQL
 
 **Implementations:**
+
 - **SQLite** (`database/sqlitedb/`)
 - **PostgreSQL** (`database/postgresdb/`)
 - **MySQL** (`database/mysqldb/`)
@@ -60,6 +67,7 @@ Detailed breakdown of ncps system components.
 **Queries:** `db/query.*.sql`
 
 **Responsibilities:**
+
 - Store NarInfo metadata
 - Track cache size
 - Store download state
@@ -67,10 +75,12 @@ Detailed breakdown of ncps system components.
 ## Lock Manager (pkg/lock/)
 
 **Implementations:**
+
 - **Local** (`lock/local/`) - In-process locks (sync.Mutex)
 - **Redis** (`lock/redis/`) - Distributed locks (Redlock)
 
 **Responsibilities:**
+
 - Coordinate downloads (prevent duplicates)
 - Coordinate LRU cleanup
 - Handle lock retries
@@ -78,6 +88,7 @@ Detailed breakdown of ncps system components.
 ## NAR Handler (pkg/nar/)
 
 **Responsibilities:**
+
 - Parse NAR format
 - Handle compression (xz, zstd)
 - Extract metadata

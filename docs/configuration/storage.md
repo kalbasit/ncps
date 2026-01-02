@@ -25,11 +25,13 @@ ncps supports two storage backends for storing NAR files and other cache data:
 ### Configuration
 
 **Command-line:**
+
 ```bash
 ncps serve --cache-storage-local=/var/lib/ncps
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   storage:
@@ -37,6 +39,7 @@ cache:
 ```
 
 **Environment variable:**
+
 ```bash
 export CACHE_STORAGE_LOCAL=/var/lib/ncps
 ```
@@ -70,11 +73,13 @@ sudo chmod 0755 /var/lib/ncps
 ### Performance Considerations
 
 **Pros:**
+
 - Fast (local disk I/O)
 - No network latency
 - Simple to manage
 
 **Cons:**
+
 - Limited to single server's disk
 - No built-in redundancy
 - Not suitable for HA deployments
@@ -101,6 +106,7 @@ sudo chmod 0755 /var/lib/ncps
 #### AWS S3
 
 **Command-line:**
+
 ```bash
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
@@ -111,6 +117,7 @@ ncps serve \
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   storage:
@@ -129,6 +136,7 @@ cache:
 #### MinIO
 
 **Command-line:**
+
 ```bash
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
@@ -139,6 +147,7 @@ ncps serve \
 ```
 
 **Configuration file:**
+
 ```yaml
 cache:
   storage:
@@ -165,6 +174,7 @@ cache:
 | `force-path-style` | No | Use path-style URLs (required for MinIO) | `false` |
 
 **Endpoint Scheme Requirement:**
+
 - The endpoint **must** include a scheme (`https://` or `http://`)
 - Examples: `https://s3.amazonaws.com`, `http://minio:9000`
 - The scheme determines whether SSL/TLS is used
@@ -189,6 +199,7 @@ aws s3api put-bucket-versioning \
 ```
 
 Example `bucket-policy.json`:
+
 ```json
 {
   "Version": "2012-10-17",
@@ -237,12 +248,14 @@ s3://ncps-cache/
 ### Performance Considerations
 
 **Pros:**
+
 - Scalable (independent of server resources)
 - Durable (built-in redundancy)
 - Multi-instance support (required for HA)
 - Geographic replication options
 
 **Cons:**
+
 - Network latency overhead
 - Potential costs (AWS S3)
 - Requires S3 service setup
@@ -251,6 +264,7 @@ s3://ncps-cache/
 ### Security Best Practices
 
 **IAM Roles (AWS):**
+
 ```json
 {
   "Version": "2012-10-17",
@@ -273,10 +287,12 @@ s3://ncps-cache/
 ```
 
 **Encryption:**
+
 - Enable server-side encryption (SSE-S3 or SSE-KMS)
 - Use TLS for data in transit (`--cache-storage-s3-use-ssl=true`)
 
 **Access Control:**
+
 - Use least-privilege IAM policies
 - Enable bucket versioning for recovery
 - Consider bucket lifecycle policies for cost optimization
@@ -328,6 +344,7 @@ aws s3 sync s3://ncps-cache/config/ /var/lib/ncps/config/
 ### Local Storage Issues
 
 **Permission Denied:**
+
 ```bash
 # Check ownership
 ls -la /var/lib/ncps
@@ -337,6 +354,7 @@ sudo chown -R ncps:ncps /var/lib/ncps
 ```
 
 **Disk Full:**
+
 ```bash
 # Check disk usage
 df -h /var/lib/ncps
@@ -348,16 +366,19 @@ ncps serve --cache-max-size=50G --cache-lru-schedule="0 2 * * *"
 ### S3 Storage Issues
 
 **Access Denied:**
+
 - Verify credentials are correct
 - Check IAM policy permissions
 - Ensure bucket exists and is in correct region
 
 **Connection Timeout:**
+
 - Check network connectivity to S3 endpoint
 - Verify endpoint URL is correct
 - Check firewall rules
 
 **Slow Performance:**
+
 - Check network bandwidth
 - Consider using S3 Transfer Acceleration (AWS)
 - Verify region is geographically close
@@ -367,9 +388,9 @@ See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
 ## Next Steps
 
 1. **[Database Configuration](database.md)** - Configure database backend
-2. **[Configuration Reference](reference.md)** - All storage options
-3. **[High Availability](../deployment/high-availability.md)** - S3 for HA deployments
-4. **[Operations Guide](../operations/)** - Monitoring and maintenance
+1. **[Configuration Reference](reference.md)** - All storage options
+1. **[High Availability](../deployment/high-availability.md)** - S3 for HA deployments
+1. **[Operations Guide](../operations/)** - Monitoring and maintenance
 
 ## Related Documentation
 

@@ -13,6 +13,7 @@ curl http://your-ncps-hostname:8501/pubkey
 ```
 
 **Example output:**
+
 ```
 your-ncps-hostname:abc123def456...=
 ```
@@ -40,6 +41,7 @@ Add ncps to your `/etc/nixos/configuration.nix`:
 ```
 
 **Then rebuild:**
+
 ```bash
 sudo nixos-rebuild switch
 ```
@@ -74,6 +76,7 @@ trusted-public-keys = your-ncps-hostname:abc123def456...= cache.nixos.org-1:6NCH
 ```
 
 **Then restart Nix daemon:**
+
 ```bash
 # On systemd systems
 sudo systemctl restart nix-daemon
@@ -114,6 +117,7 @@ nix-build '<nixpkgs>' -A hello
 ```
 
 Look for log messages like:
+
 - `serving nar from cache` - Cache hit!
 - `downloading nar from upstream` - Cache miss, fetching from upstream
 
@@ -163,6 +167,7 @@ For multi-user Nix installations, you may need to configure trusted users:
 ```
 
 Or in `/etc/nix/nix.conf`:
+
 ```ini
 trusted-users = root youruser
 ```
@@ -183,16 +188,19 @@ nix-build \
 ### Cache Not Being Used
 
 **Check configuration:**
+
 ```bash
 nix show-config | grep substituters
 ```
 
 **Check ncps is reachable:**
+
 ```bash
 curl http://your-ncps:8501/nix-cache-info
 ```
 
 **Check public key is trusted:**
+
 ```bash
 nix show-config | grep trusted-public-keys
 ```
@@ -200,6 +208,7 @@ nix show-config | grep trusted-public-keys
 ### Permission Denied
 
 Add your user to trusted users:
+
 ```nix
 nix.settings.trusted-users = [ "root" "youruser" ];
 ```
@@ -207,9 +216,10 @@ nix.settings.trusted-users = [ "root" "youruser" ];
 ### Still Downloading from Official Cache
 
 **Possible causes:**
+
 1. ncps doesn't have the package cached yet (first download)
-2. ncps cache listed after official cache (order matters)
-3. Public key not trusted
+1. ncps cache listed after official cache (order matters)
+1. Public key not trusted
 
 **Check ncps logs** to see if requests are reaching it.
 
@@ -218,8 +228,8 @@ See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
 ## Next Steps
 
 1. **[Monitor Cache Performance](../operations/monitoring.md)** - Set up monitoring
-2. **[Manage Cache Size](cache-management.md)** - Configure LRU cleanup
-3. **[Review Configuration](../configuration/reference.md)** - Explore more options
+1. **[Manage Cache Size](cache-management.md)** - Configure LRU cleanup
+1. **[Review Configuration](../configuration/reference.md)** - Explore more options
 
 ## Related Documentation
 

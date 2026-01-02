@@ -17,9 +17,9 @@ ncps is designed as a modular caching proxy with pluggable storage and database 
 ## Key Design Principles
 
 1. **Modularity** - Separate concerns (storage, database, locks, server)
-2. **Flexibility** - Support multiple backends for storage and database
-3. **Scalability** - Scale from single instance to high availability
-4. **Simplicity** - Easy to deploy and operate
+1. **Flexibility** - Support multiple backends for storage and database
+1. **Scalability** - Scale from single instance to high availability
+1. **Simplicity** - Easy to deploy and operate
 
 ## System Architecture
 

@@ -16,21 +16,25 @@ Learn how to configure ncps for your specific needs.
 ### By Topic
 
 **Getting Started**
+
 - [All configuration options](reference.md)
 - [Example configuration file](../../config.example.yaml)
 
 **Storage**
+
 - [Local filesystem storage](storage.md#local-storage)
 - [S3-compatible storage](storage.md#s3-storage)
 - [Storage comparison](storage.md#comparison)
 
 **Database**
+
 - [SQLite configuration](database.md#sqlite)
 - [PostgreSQL configuration](database.md#postgresql)
 - [MySQL/MariaDB configuration](database.md#mysql)
 - [Database comparison](database.md#comparison)
 
 **Observability**
+
 - [Prometheus metrics](observability.md#prometheus)
 - [OpenTelemetry setup](observability.md#opentelemetry)
 - [Logging configuration](observability.md#logging)
@@ -80,11 +84,13 @@ cache:
 ```
 
 Then:
+
 ```bash
 ncps serve --config=config.yaml
 ```
 
 **Supported formats:**
+
 - YAML (`.yaml`, `.yml`)
 - TOML (`.toml`)
 - JSON (`.json`)
@@ -94,10 +100,11 @@ See [config.example.yaml](../../config.example.yaml) for a complete example.
 ### 4. Combination
 
 Configuration methods can be combined. Priority (highest to lowest):
+
 1. Command-line flags
-2. Environment variables
-3. Configuration file
-4. Defaults
+1. Environment variables
+1. Configuration file
+1. Defaults
 
 ## Common Configuration Scenarios
 
@@ -206,9 +213,9 @@ ncps serve --config=config.yaml --log-level=debug
 ## Next Steps
 
 1. **[Configuration Reference](reference.md)** - See all available options
-2. **[Storage Configuration](storage.md)** - Choose and configure storage backend
-3. **[Database Configuration](database.md)** - Choose and configure database
-4. **[Observability Configuration](observability.md)** - Set up monitoring
+1. **[Storage Configuration](storage.md)** - Choose and configure storage backend
+1. **[Database Configuration](database.md)** - Choose and configure database
+1. **[Observability Configuration](observability.md)** - Set up monitoring
 
 ## Related Documentation
 

@@ -20,6 +20,7 @@ When multiple machines running NixOS or Nix pull packages, they often download t
 ### Real-World Example
 
 Imagine a team of 10 developers all working on the same Nix-based project:
+
 - A large dependency (500MB) gets updated
 - Without ncps: 10 machines × 500MB = 5GB of internet bandwidth used
 - With ncps: 500MB downloaded once from internet, then served locally 9 times
@@ -29,10 +30,10 @@ Imagine a team of 10 developers all working on the same Nix-based project:
 ncps solves these issues by acting as a **centralized cache** on your local network:
 
 1. **Single Download**: Package downloaded once from upstream
-2. **Local Distribution**: Served to all local machines from cache
-3. **Bandwidth Savings**: Dramatic reduction in internet usage
-4. **Faster Builds**: Local network speeds vs internet speeds
-5. **Offline Capability**: Cached packages available without internet
+1. **Local Distribution**: Served to all local machines from cache
+1. **Bandwidth Savings**: Dramatic reduction in internet usage
+1. **Faster Builds**: Local network speeds vs internet speeds
+1. **Offline Capability**: Cached packages available without internet
 
 ## How It Works
 
@@ -66,14 +67,14 @@ ncps solves these issues by acting as a **centralized cache** on your local netw
 **Step-by-step:**
 
 1. **Request** - Nix client requests a store path (e.g., `/nix/store/abc123-package`)
-2. **Cache Check** - ncps checks if NarInfo metadata exists in database
-3. **Cache Hit** - If cached, serve directly from storage
-4. **Cache Miss** - If not cached:
+1. **Cache Check** - ncps checks if NarInfo metadata exists in database
+1. **Cache Hit** - If cached, serve directly from storage
+1. **Cache Miss** - If not cached:
    - Fetch NarInfo and NAR from upstream cache
    - Store NAR file in storage backend
    - Store NarInfo metadata in database
    - Sign NarInfo with ncps private key
-5. **Serve** - Deliver the path to the requesting client
+1. **Serve** - Deliver the path to the requesting client
 
 ### Storage Architecture
 
@@ -97,6 +98,7 @@ ncps uses a flexible storage architecture with separate components for different
 #### Database Backend (Metadata)
 
 Stores metadata about cached packages:
+
 - **SQLite** (default): Embedded, no external dependencies, single-instance only
 - **PostgreSQL**: Production-ready, supports concurrent access, required for HA
 - **MySQL/MariaDB**: Production-ready, supports concurrent access, works for HA
@@ -104,6 +106,7 @@ Stores metadata about cached packages:
 #### Storage Backend (Binary Data)
 
 Stores actual package files:
+
 - **Local Filesystem**: Traditional file storage, simple setup, single-instance
 - **S3-Compatible**: AWS S3, MinIO, etc., required for HA, scalable
 
@@ -121,6 +124,7 @@ A NAR is an archive format containing the actual package files. When you install
 #### NarInfo
 
 NarInfo is metadata about a NAR file:
+
 - Hash and size of the NAR
 - Compression type
 - References to other store paths
@@ -130,6 +134,7 @@ NarInfo is metadata about a NAR file:
 #### Signing
 
 ncps signs all cached NarInfo files with its own private key:
+
 - Clients trust ncps by adding its public key to their configuration
 - Ensures integrity and authenticity of cached packages
 - Private key generated automatically on first run
@@ -138,6 +143,7 @@ ncps signs all cached NarInfo files with its own private key:
 #### Upstream Caches
 
 ncps fetches packages from configured upstream caches:
+
 - Primary: `cache.nixos.org` (official Nix cache)
 - Secondary: Custom caches, Cachix, etc.
 - Failover support: tries next upstream if one fails
@@ -171,6 +177,7 @@ ncps fetches packages from configured upstream caches:
 ```
 
 **Characteristics:**
+
 - Single ncps server
 - Local locks (no Redis needed)
 - Simple to set up and manage
@@ -178,6 +185,7 @@ ncps fetches packages from configured upstream caches:
 - Can use any storage and database option
 
 **When to Use:**
+
 - Development teams
 - Single location deployments
 - Simpler operations preferred
@@ -210,6 +218,7 @@ ncps fetches packages from configured upstream caches:
 ```
 
 **Characteristics:**
+
 - Multiple ncps instances (2+)
 - Redis for distributed locking
 - Shared S3 storage (required)
@@ -217,6 +226,7 @@ ncps fetches packages from configured upstream caches:
 - Load balancer distributes requests
 
 **When to Use:**
+
 - Production deployments
 - Need zero-downtime updates
 - Geographic distribution
@@ -224,6 +234,7 @@ ncps fetches packages from configured upstream caches:
 - SLA requirements
 
 **Key Features:**
+
 - **Download Deduplication**: Only one instance downloads each package
 - **LRU Coordination**: Only one instance runs cache cleanup at a time
 - **Automatic Failover**: Instance failures don't interrupt service
@@ -236,6 +247,7 @@ See the [High Availability Guide](../deployment/high-availability.md) for detail
 ### Cache Hit Rates
 
 Typical cache hit rates depend on usage patterns:
+
 - Stable environments: 80-95% hit rate
 - Active development: 50-80% hit rate
 - Fresh installations: 0-20% hit rate (builds up over time)
@@ -243,6 +255,7 @@ Typical cache hit rates depend on usage patterns:
 ### Speed Improvements
 
 Typical speed improvements with ncps:
+
 - **Local network**: 10-100× faster than internet download
 - **Example**: 1Gbps LAN vs 100Mbps internet = 10× faster
 - **Latency**: Sub-millisecond vs 10-100ms to upstream
@@ -250,6 +263,7 @@ Typical speed improvements with ncps:
 ### Storage Requirements
 
 Plan storage based on usage:
+
 - **Small team (5-10 users)**: 20-50GB
 - **Medium team (10-50 users)**: 50-200GB
 - **Large team (50+ users)**: 200GB-1TB+
@@ -260,10 +274,10 @@ Plan storage based on usage:
 Now that you understand how ncps works:
 
 1. **[Choose Installation Method](../installation/)** - Docker, Kubernetes, NixOS, etc.
-2. **[Configure Storage](../configuration/storage.md)** - Local vs S3
-3. **[Configure Database](../configuration/database.md)** - SQLite vs PostgreSQL/MySQL
-4. **[Plan Deployment](../deployment/)** - Single-instance vs High Availability
-5. **[Set Up Clients](../usage/client-setup.md)** - Configure Nix to use your cache
+1. **[Configure Storage](../configuration/storage.md)** - Local vs S3
+1. **[Configure Database](../configuration/database.md)** - SQLite vs PostgreSQL/MySQL
+1. **[Plan Deployment](../deployment/)** - Single-instance vs High Availability
+1. **[Set Up Clients](../usage/client-setup.md)** - Configure Nix to use your cache
 
 ## Related Documentation
 
