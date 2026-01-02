@@ -78,10 +78,11 @@ cache:
   storage:
     s3:
       bucket: ncps-cache
-      endpoint: s3.amazonaws.com
+      endpoint: https://s3.amazonaws.com
       region: us-east-1
       access-key-id: ${S3_ACCESS_KEY}
       secret-access-key: ${S3_SECRET_KEY}
+      force-path-style: false  # Set to true for MinIO
   database-url: sqlite:/var/lib/ncps/db/db.sqlite
 ```
 
@@ -160,10 +161,11 @@ cache:
   storage:
     s3:
       bucket: ncps-cache
-      endpoint: s3.amazonaws.com
+      endpoint: https://s3.amazonaws.com
       region: us-east-1
       access-key-id: ${S3_ACCESS_KEY}
       secret-access-key: ${S3_SECRET_KEY}
+      force-path-style: false  # Set to true for MinIO
 
   database-url: postgresql://ncps:${DB_PASSWORD}@postgres:5432/ncps?sslmode=require
 

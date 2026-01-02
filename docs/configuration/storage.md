@@ -104,7 +104,7 @@ sudo chmod 0755 /var/lib/ncps
 ```bash
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
-  --cache-storage-s3-endpoint=s3.amazonaws.com \
+  --cache-storage-s3-endpoint=https://s3.amazonaws.com \
   --cache-storage-s3-region=us-east-1 \
   --cache-storage-s3-access-key-id=AKIAIOSFODNN7EXAMPLE \
   --cache-storage-s3-secret-access-key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
@@ -116,12 +116,15 @@ cache:
   storage:
     s3:
       bucket: ncps-cache
-      endpoint: s3.amazonaws.com
+      endpoint: https://s3.amazonaws.com  # Scheme (https://) is required
       region: us-east-1
       access-key-id: ${S3_ACCESS_KEY}
       secret-access-key: ${S3_SECRET_KEY}
-      use-ssl: true
+      # use-ssl is deprecated - specify scheme in endpoint instead
+      force-path-style: false  # Use virtual-hosted-style (default for AWS S3)
 ```
+
+**Note:** The endpoint must include the scheme (`https://` or `http://`). The `use-ssl` option is deprecated in favor of specifying the scheme directly in the endpoint URL.
 
 #### MinIO
 
@@ -132,7 +135,7 @@ ncps serve \
   --cache-storage-s3-endpoint=http://minio.example.com:9000 \
   --cache-storage-s3-access-key-id=minioadmin \
   --cache-storage-s3-secret-access-key=minioadmin \
-  --cache-storage-s3-use-ssl=false
+  --cache-storage-s3-force-path-style=true
 ```
 
 **Configuration file:**
@@ -141,11 +144,30 @@ cache:
   storage:
     s3:
       bucket: ncps-cache
-      endpoint: http://minio.example.com:9000
+      endpoint: http://minio.example.com:9000  # Scheme (http://) is required
+      region: us-east-1  # Can be any value for MinIO
       access-key-id: minioadmin
       secret-access-key: minioadmin
-      use-ssl: false
+      force-path-style: true  # REQUIRED for MinIO
 ```
+
+**Important:** MinIO requires `force-path-style: true` for proper S3 compatibility. This uses path-style URLs (`http://endpoint/bucket/key`) instead of virtual-hosted-style (`http://bucket.endpoint/key`).
+
+### S3 Configuration Options
+
+| Option | Required | Description | Default |
+|--------|----------|-------------|---------|
+| `bucket` | Yes | S3 bucket name | - |
+| `endpoint` | Yes | S3 endpoint URL with scheme (e.g., `https://s3.amazonaws.com`) | - |
+| `region` | Yes | AWS region or any value for MinIO | `us-east-1` |
+| `access-key-id` | Yes | S3 access key ID | - |
+| `secret-access-key` | Yes | S3 secret access key | - |
+| `force-path-style` | No | Use path-style URLs (required for MinIO) | `false` |
+
+**Endpoint Scheme Requirement:**
+- The endpoint **must** include a scheme (`https://` or `http://`)
+- Examples: `https://s3.amazonaws.com`, `http://minio:9000`
+- The scheme determines whether SSL/TLS is used
 
 ### S3 Bucket Setup
 

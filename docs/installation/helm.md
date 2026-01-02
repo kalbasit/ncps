@@ -15,13 +15,9 @@ Install ncps on Kubernetes using Helm for simplified configuration and managemen
 ### Step 1: Add Helm Repository
 
 ```bash
-# Add the ncps Helm repository (when published)
-# helm repo add ncps https://kalbasit.github.io/ncps/
-# helm repo update
-
-# For now, use the chart from the repository
-git clone https://github.com/kalbasit/ncps.git
-cd ncps
+# Add the ncps Helm repository
+helm repo add ncps https://kalbasit.github.io/ncps/
+helm repo update
 ```
 
 ### Step 2: Install with Default Values
@@ -31,16 +27,16 @@ cd ncps
 kubectl create namespace ncps
 
 # Install the chart
-helm install ncps ./charts/ncps \
+helm install ncps ncps/ncps \
   --namespace ncps \
-  --set cache.hostName=cache.example.com
+  --set config.hostname=cache.example.com
 ```
 
 This installs ncps with:
-- Single replica
-- Local storage (PersistentVolumeClaim)
+- Single replica (StatefulSet mode)
+- Local storage (PersistentVolumeClaim, 20Gi)
 - SQLite database
-- Default upstream caches
+- Default upstream: cache.nixos.org
 
 ### Step 3: Verify Installation
 
@@ -56,312 +52,609 @@ kubectl -n ncps run test --rm -it --image=curlimages/curl -- \
   curl http://ncps:8501/pubkey
 ```
 
-## Configuration Options
+## Deployment Modes
 
-### Basic Configuration
+The chart supports two deployment modes:
 
-Create a `values.yaml` file:
+### StatefulSet Mode (Default)
 
-```yaml
-cache:
-  hostName: cache.example.com
-
-  upstream:
-    urls:
-      - https://cache.nixos.org
-      - https://nix-community.cachix.org
-    publicKeys:
-      - cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-      - nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
-
-persistence:
-  enabled: true
-  size: 50Gi
-```
-
-Install with custom values:
-```bash
-helm install ncps ./charts/ncps -n ncps -f values.yaml
-```
-
-### S3 Storage Configuration
-
-For production deployments with S3:
+Best for:
+- Single instance deployments
+- Local persistent storage
+- SQLite database
 
 ```yaml
-cache:
-  hostName: cache.example.com
+mode: statefulset
+replicaCount: 1
+config:
+  storage:
+    type: local
+    local:
+      persistence:
+        enabled: true
+        size: 50Gi
+  database:
+    type: sqlite
+```
+
+### Deployment Mode
+
+Best for:
+- High availability (multiple replicas)
+- S3 storage
+- PostgreSQL/MySQL database
+
+```yaml
+mode: deployment
+replicaCount: 2
+config:
+  storage:
+    type: s3
+  database:
+    type: postgresql
+  redis:
+    enabled: true
+```
+
+## Configuration Examples
+
+### Minimal Configuration
+
+```yaml
+config:
+  hostname: cache.example.com
+```
+
+### Single Instance with Local Storage
+
+```yaml
+mode: statefulset
+replicaCount: 1
+
+config:
+  hostname: cache.example.com
 
   storage:
-    s3:
-      enabled: true
-      bucket: my-ncps-cache
-      endpoint: s3.amazonaws.com
-      region: us-east-1
-      credentials:
-        accessKeyId: YOUR_ACCESS_KEY
-        secretAccessKey: YOUR_SECRET_KEY
+    type: local
+    local:
+      persistence:
+        enabled: true
+        size: 100Gi
+        storageClassName: fast-ssd
 
   database:
-    url: postgresql://user:pass@postgres:5432/ncps?sslmode=require
-
-persistence:
-  enabled: false  # Not needed with S3
+    type: sqlite
 ```
 
-### High Availability Configuration
-
-Deploy with 3 replicas, Redis, and S3:
+### Single Instance with S3 Storage
 
 ```yaml
+mode: deployment
+replicaCount: 1
+
+config:
+  hostname: cache.example.com
+
+  storage:
+    type: s3
+    s3:
+      bucket: my-ncps-cache
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      useSSL: true
+      forcePathStyle: false  # Set to true for MinIO
+      accessKeyId: YOUR_ACCESS_KEY
+      secretAccessKey: YOUR_SECRET_KEY
+
+  database:
+    type: sqlite
+    sqlite:
+      path: /storage/db/ncps.db
+
+  # Even with S3 storage, SQLite needs persistent storage for the database file
+  storage:
+    local:
+      persistence:
+        enabled: true
+        size: 1Gi  # Small volume just for SQLite database
+```
+
+### High Availability with PostgreSQL
+
+```yaml
+mode: deployment
 replicaCount: 3
 
-cache:
-  hostName: cache.example.com
+config:
+  hostname: cache.example.com
 
   storage:
+    type: s3
     s3:
-      enabled: true
-      bucket: ncps-cache
-      endpoint: s3.amazonaws.com
+      bucket: my-ncps-cache
+      endpoint: https://s3.amazonaws.com
       region: us-east-1
+      useSSL: true
+      accessKeyId: YOUR_ACCESS_KEY
+      secretAccessKey: YOUR_SECRET_KEY
 
   database:
-    url: postgresql://ncps:password@postgres:5432/ncps
+    type: postgresql
+    postgresql:
+      host: postgres.database.svc.cluster.local
+      port: 5432
+      database: ncps
+      username: ncps
+      password: YOUR_DB_PASSWORD
+      sslMode: require
 
   redis:
     enabled: true
-    addrs:
-      - redis:6379
-
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 2
-
-ingress:
-  enabled: true
-  className: nginx
-  hosts:
-    - host: cache.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: cache-tls
-      hosts:
-        - cache.example.com
+    addresses:
+      - redis-master.redis.svc.cluster.local:6379
+    password: YOUR_REDIS_PASSWORD
+    db: 0
+    useTLS: false
 ```
 
-Install:
-```bash
-helm install ncps ./charts/ncps -n ncps -f values-ha.yaml
-```
+### Using Existing Secrets
 
-### With Monitoring
-
-Enable Prometheus metrics and ServiceMonitor:
+For better security, use Kubernetes secrets instead of values in plain text:
 
 ```yaml
-prometheus:
-  enabled: true
-  serviceMonitor:
+config:
+  storage:
+    type: s3
+    s3:
+      bucket: my-ncps-cache
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      existingSecret: ncps-s3-credentials  # Secret with access-key-id and secret-access-key
+
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.database.svc.cluster.local
+      port: 5432
+      database: ncps
+      username: ncps
+      existingSecret: ncps-db-credentials  # Secret with "password" key
+
+  redis:
     enabled: true
-    interval: 30s
+    addresses:
+      - redis.redis.svc.cluster.local:6379
+    existingSecret: ncps-redis-credentials  # Secret with "password" and optionally "username" keys
+
+  signing:
+    existingSecret: ncps-signing-key  # Secret with "signing-key" key
 ```
 
-## Helm Commands
-
-### Install/Upgrade
+Create the secrets:
 
 ```bash
-# Install
-helm install ncps ./charts/ncps -n ncps -f values.yaml
-
-# Upgrade
-helm upgrade ncps ./charts/ncps -n ncps -f values.yaml
-
-# Install or upgrade
-helm upgrade --install ncps ./charts/ncps -n ncps -f values.yaml
-```
-
-### View Status
-
-```bash
-# Check release status
-helm status ncps -n ncps
-
-# List all releases
-helm list -n ncps
-
-# Get values
-helm get values ncps -n ncps
-```
-
-### Uninstall
-
-```bash
-# Uninstall release
-helm uninstall ncps -n ncps
-
-# Uninstall and delete PVCs
-helm uninstall ncps -n ncps
-kubectl -n ncps delete pvc --all
-```
-
-## Common Configurations
-
-### Using Existing Secret for S3 Credentials
-
-Create a secret:
-```bash
-kubectl -n ncps create secret generic ncps-s3-credentials \
+# S3 credentials
+kubectl create secret generic ncps-s3-credentials -n ncps \
   --from-literal=access-key-id=YOUR_ACCESS_KEY \
   --from-literal=secret-access-key=YOUR_SECRET_KEY
+
+# Database password
+kubectl create secret generic ncps-db-credentials -n ncps \
+  --from-literal=password=YOUR_DB_PASSWORD
+
+# Redis password
+kubectl create secret generic ncps-redis-credentials -n ncps \
+  --from-literal=password=YOUR_REDIS_PASSWORD
+
+# Signing key (optional, auto-generated if not provided)
+kubectl create secret generic ncps-signing-key -n ncps \
+  --from-literal=signing-key=YOUR_SIGNING_KEY
 ```
 
-Reference in values:
-```yaml
-cache:
-  storage:
-    s3:
-      enabled: true
-      bucket: ncps-cache
-      credentials:
-        existingSecret: ncps-s3-credentials
-```
+## Database Configuration
 
-### Using External PostgreSQL
+### SQLite (Default)
 
 ```yaml
-cache:
+config:
   database:
-    url: postgresql://ncps:password@external-postgres.example.com:5432/ncps?sslmode=require
-
-postgresql:
-  enabled: false  # Don't deploy PostgreSQL subchart
+    type: sqlite
+    sqlite:
+      path: /storage/db/ncps.db
 ```
 
-### Custom Resource Limits
+**Note:** SQLite always requires persistent storage, even when using S3 for NAR files.
+
+### PostgreSQL
+
+```yaml
+config:
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.database.svc.cluster.local
+      port: 5432
+      database: ncps
+      username: ncps
+      password: ""  # Use existingSecret instead
+      sslMode: disable
+      existingSecret: ncps-db-credentials
+      extraParams: ""  # Additional connection parameters
+
+    # Connection pool settings
+    pool:
+      maxOpenConns: 25
+      maxIdleConns: 5
+```
+
+### MySQL/MariaDB
+
+```yaml
+config:
+  database:
+    type: mysql
+    mysql:
+      host: mysql.database.svc.cluster.local
+      port: 3306
+      database: ncps
+      username: ncps
+      password: ""  # Use existingSecret instead
+      existingSecret: ncps-db-credentials
+      extraParams: ""  # Additional connection parameters
+
+    # Connection pool settings
+    pool:
+      maxOpenConns: 25
+      maxIdleConns: 5
+```
+
+## Database Migrations
+
+The chart supports automatic database migrations using dbmate:
+
+### Init Container Mode (Default)
+
+Migrations run in an init container before the main application starts:
+
+```yaml
+migration:
+  enabled: true
+  mode: initContainer  # Runs before pod starts
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+```
+
+### Job Mode (For HA Deployments)
+
+For high availability deployments, run migrations as a pre-install/pre-upgrade Helm hook:
+
+```yaml
+migration:
+  enabled: true
+  mode: job  # Runs as Helm hook before deployment
+  job:
+    backoffLimit: 3
+    ttlSecondsAfterFinished: 300
+    resources:
+      limits:
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+```
+
+### ArgoCD Mode
+
+For ArgoCD deployments:
+
+```yaml
+migration:
+  enabled: true
+  mode: argocd  # Uses ArgoCD PreSync hook
+```
+
+## S3 Configuration
+
+### AWS S3
+
+```yaml
+config:
+  storage:
+    type: s3
+    s3:
+      bucket: my-ncps-cache
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      useSSL: true
+      forcePathStyle: false
+      accessKeyId: YOUR_ACCESS_KEY
+      secretAccessKey: YOUR_SECRET_KEY
+```
+
+### MinIO
+
+```yaml
+config:
+  storage:
+    type: s3
+    s3:
+      bucket: ncps
+      endpoint: http://minio.minio.svc.cluster.local:9000
+      region: us-east-1
+      useSSL: false  # MinIO often uses http internally
+      forcePathStyle: true  # Required for MinIO
+      accessKeyId: minioadmin
+      secretAccessKey: minioadmin
+```
+
+**Important:** Set `forcePathStyle: true` for MinIO and other S3-compatible services that require path-style addressing.
+
+## Redis Configuration (High Availability)
+
+For HA deployments with multiple replicas:
+
+```yaml
+config:
+  redis:
+    enabled: true
+    addresses:
+      - redis-master:6379
+      # For Redis Sentinel/Cluster, add multiple addresses
+    username: ""  # Optional
+    password: ""  # Use existingSecret instead
+    existingSecret: ncps-redis-credentials
+    db: 0
+    useTLS: false
+    poolSize: 10
+    keyPrefix: "ncps:lock:"
+
+    # Distributed lock configuration
+    lock:
+      downloadTTL: "5m"
+      lruTTL: "30m"
+      retry:
+        maxAttempts: 3
+        initialDelay: "100ms"
+        maxDelay: "2s"
+        jitter: true
+      allowDegradedMode: false  # Continue without Redis if connection fails
+```
+
+## Upstream Cache Configuration
+
+```yaml
+config:
+  upstream:
+    caches:
+      - url: https://cache.nixos.org
+        publicKey: cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+      - url: https://nix-community.cachix.org
+        publicKey: nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+
+    dialerTimeout: "3s"
+    responseHeaderTimeout: "3s"
+
+    # Optional: .netrc for authenticated upstreams
+    netrcFile: |
+      machine cachix.org
+      login YOUR_USERNAME
+      password YOUR_TOKEN
+```
+
+## Observability
+
+### OpenTelemetry
+
+```yaml
+config:
+  observability:
+    opentelemetry:
+      enabled: true
+      grpcURL: http://otel-collector:4317
+```
+
+### Prometheus
+
+```yaml
+config:
+  observability:
+    prometheus:
+      enabled: true
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+```
+
+## Resource Management
 
 ```yaml
 resources:
-  requests:
-    memory: "512Mi"
-    cpu: "250m"
   limits:
-    memory: "2Gi"
-    cpu: "2000m"
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# Init container resources (for SQLite directory creation)
+initImage:
+  resources:
+    limits:
+      cpu: 100m
+      memory: 32Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
+
+# Migration resources
+migration:
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
 ```
 
-### Affinity and Node Selection
+## High Availability Configuration
+
+Complete HA setup with 3 replicas, PostgreSQL, S3, and Redis:
 
 ```yaml
+mode: deployment
+replicaCount: 3
+
+config:
+  hostname: cache.example.com
+
+  storage:
+    type: s3
+    s3:
+      existingSecret: ncps-s3-credentials
+      bucket: ncps-production
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      useSSL: true
+
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres-cluster.database.svc.cluster.local
+      port: 5432
+      database: ncps
+      username: ncps
+      existingSecret: ncps-db-credentials
+      sslMode: require
+    pool:
+      maxOpenConns: 50
+      maxIdleConns: 10
+
+  redis:
+    enabled: true
+    addresses:
+      - redis-master.redis.svc.cluster.local:6379
+    existingSecret: ncps-redis-credentials
+    poolSize: 10
+    lock:
+      allowDegradedMode: false
+
+migration:
+  enabled: true
+  mode: job
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
 affinity:
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
       - weight: 100
         podAffinityTerm:
           labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: ncps
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - ncps
           topologyKey: kubernetes.io/hostname
-
-nodeSelector:
-  disktype: ssd
 ```
 
-## Complete Values Reference
+## Ingress Configuration
 
-For all available configuration options, see:
-- **[Helm Chart Documentation](/charts/ncps/README.md)** - Comprehensive guide
-- **[values.yaml](/charts/ncps/values.yaml)** - Default values with comments
-- **[values.schema.json](/charts/ncps/values.schema.json)** - JSON schema for validation
+```yaml
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: cache.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ncps-tls
+      hosts:
+        - cache.example.com
+```
+
+## Upgrading
+
+### From Single Instance to HA
+
+1. Migrate from SQLite to PostgreSQL/MySQL
+2. Switch from local storage to S3
+3. Enable Redis
+4. Increase replica count
+
+```bash
+# Step 1: Backup SQLite database
+kubectl exec -n ncps ncps-0 -- /bin/sh -c \
+  "sqlite3 /storage/db/ncps.db .dump" > backup.sql
+
+# Step 2: Restore to PostgreSQL
+kubectl run psql-import --rm -it --image=postgres:16 -- \
+  psql -h postgres -U ncps -d ncps < backup.sql
+
+# Step 3: Upgrade to HA configuration
+helm upgrade ncps ncps/ncps -n ncps -f ha-values.yaml
+```
+
+### Rolling Updates
+
+```yaml
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+```
 
 ## Troubleshooting
 
-### Chart Installation Fails
-
-```bash
-# Lint the chart
-helm lint ./charts/ncps -f values.yaml
-
-# Dry-run to see generated manifests
-helm install ncps ./charts/ncps -n ncps -f values.yaml --dry-run --debug
-
-# Check for validation errors
-helm install ncps ./charts/ncps -n ncps -f values.yaml --debug
-```
-
-### Pods Not Starting
+### Check Deployment Status
 
 ```bash
 # Check pod status
 kubectl -n ncps get pods
 
-# Check events
-kubectl -n ncps get events --sort-by='.lastTimestamp'
-
-# View pod logs
+# Check pod logs
 kubectl -n ncps logs -l app.kubernetes.io/name=ncps
 
-# Describe pod
-kubectl -n ncps describe pod <pod-name>
+# Check migration job (if using job mode)
+kubectl -n ncps get jobs
+kubectl -n ncps logs job/ncps-migration
 ```
 
-### Values Not Applied
+### Common Issues
 
-```bash
-# Check current values
-helm get values ncps -n ncps
+**Pod fails to start with "database file not found":**
+- For SQLite + S3 deployments, ensure `storage.local.persistence.enabled: true` is set
+- SQLite requires persistent storage even when using S3 for NAR files
 
-# Check all values (including defaults)
-helm get values ncps -n ncps --all
+**Migration job fails:**
+- Check migration job logs: `kubectl -n ncps logs job/ncps-migration`
+- Verify database credentials are correct
+- Ensure database is accessible from the cluster
 
-# Verify manifest
-helm get manifest ncps -n ncps
-```
+**S3 connection errors:**
+- Verify S3 credentials and endpoint
+- For MinIO, ensure `forcePathStyle: true` is set
+- Check endpoint includes proper scheme (http:// or https://)
 
-See the [Troubleshooting Guide](../operations/troubleshooting.md) for more help.
+## Complete Values Reference
 
-## Upgrading ncps
-
-### Upgrade to New Version
-
-```bash
-# Update repository
-git pull origin main  # Or helm repo update when published
-
-# Upgrade release
-helm upgrade ncps ./charts/ncps -n ncps -f values.yaml
-
-# Check rollout status
-kubectl -n ncps rollout status deployment/ncps
-```
-
-### Rolling Back
-
-```bash
-# View revision history
-helm history ncps -n ncps
-
-# Rollback to previous version
-helm rollback ncps -n ncps
-
-# Rollback to specific revision
-helm rollback ncps 2 -n ncps
-```
+See the [Chart README](../../charts/ncps/README.md) for a complete list of all configuration options.
 
 ## Next Steps
 
-1. **[Configure Clients](../usage/client-setup.md)** - Set up Nix clients to use your cache
-2. **[Configure Monitoring](../operations/monitoring.md)** - Set up Prometheus and Grafana
-3. **[Review Helm Chart Docs](/charts/ncps/README.md)** - Comprehensive chart reference
-4. **[Plan for HA](../deployment/high-availability.md)** - High availability setup
-
-## Related Documentation
-
-- **[Helm Chart README](/charts/ncps/README.md)** - Complete chart documentation
-- [Kubernetes Installation](kubernetes.md) - Manual Kubernetes deployment
-- [High Availability Guide](../deployment/high-availability.md) - HA deployment
-- [Configuration Reference](../configuration/reference.md) - All configuration options
-- [Monitoring Guide](../operations/monitoring.md) - Observability setup
+- [Configure Client Setup](../usage/client-setup.md)
+- [Set up Monitoring](../operations/monitoring.md)
+- [High Availability Guide](../deployment/high-availability.md)

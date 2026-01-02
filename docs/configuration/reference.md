@@ -94,17 +94,20 @@ Use these options for S3-compatible storage (AWS S3, MinIO, etc.).
 | Option | Description | Environment Variable | Required for S3 | Default |
 |--------|-------------|---------------------|-----------------|---------|
 | `--cache-storage-s3-bucket` | S3 bucket name | `CACHE_STORAGE_S3_BUCKET` | ✅ | - |
-| `--cache-storage-s3-endpoint` | S3 endpoint URL (e.g., s3.amazonaws.com) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ | - |
+| `--cache-storage-s3-endpoint` | S3 endpoint URL with scheme (e.g., https://s3.amazonaws.com or http://minio:9000) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ | - |
 | `--cache-storage-s3-access-key-id` | S3 access key ID | `CACHE_STORAGE_S3_ACCESS_KEY_ID` | ✅ | - |
 | `--cache-storage-s3-secret-access-key` | S3 secret access key | `CACHE_STORAGE_S3_SECRET_ACCESS_KEY` | ✅ | - |
 | `--cache-storage-s3-region` | S3 region (optional for some providers) | `CACHE_STORAGE_S3_REGION` | - | - |
-| `--cache-storage-s3-use-ssl` | Use SSL/TLS for S3 connection | `CACHE_STORAGE_S3_USE_SSL` | - | `true` |
+| `--cache-storage-s3-force-path-style` | Use path-style URLs (required for MinIO) | `CACHE_STORAGE_S3_FORCE_PATH_STYLE` | - | `false` |
+| `--cache-storage-s3-use-ssl` | **DEPRECATED:** Specify scheme in endpoint instead | `CACHE_STORAGE_S3_USE_SSL` | - | - |
+
+**Note:** The endpoint must include the scheme (`https://` or `http://`). The `--cache-storage-s3-use-ssl` flag is deprecated in favor of specifying the scheme directly in the endpoint URL.
 
 **AWS S3 Example:**
 ```bash
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
-  --cache-storage-s3-endpoint=s3.amazonaws.com \
+  --cache-storage-s3-endpoint=https://s3.amazonaws.com \
   --cache-storage-s3-region=us-east-1 \
   --cache-storage-s3-access-key-id=AKIAIOSFODNN7EXAMPLE \
   --cache-storage-s3-secret-access-key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
@@ -117,8 +120,10 @@ ncps serve \
   --cache-storage-s3-endpoint=http://minio.example.com:9000 \
   --cache-storage-s3-access-key-id=minioadmin \
   --cache-storage-s3-secret-access-key=minioadmin \
-  --cache-storage-s3-use-ssl=false
+  --cache-storage-s3-force-path-style=true
 ```
+
+**Important:** MinIO requires `--cache-storage-s3-force-path-style=true` for proper S3 compatibility.
 
 See [Storage Configuration](storage.md) for details.
 
@@ -315,10 +320,11 @@ cache:
     # OR for S3:
     # s3:
     #   bucket: ncps-cache
-    #   endpoint: s3.amazonaws.com
+    #   endpoint: https://s3.amazonaws.com  # Scheme (https://) is required
     #   region: us-east-1
     #   access-key-id: ${S3_ACCESS_KEY}
     #   secret-access-key: ${S3_SECRET_KEY}
+    #   force-path-style: false  # Set to true for MinIO
 
   database-url: sqlite:/var/lib/ncps/db/db.sqlite
   max-size: 50G

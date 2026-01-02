@@ -246,9 +246,9 @@ data:
       storage:
         s3:
           bucket: ncps-cache
-          endpoint: s3.amazonaws.com
+          endpoint: https://s3.amazonaws.com  # Scheme (https://) is required
           region: us-east-1
-          use-ssl: true
+          force-path-style: false  # Set to true for MinIO
       database-url: postgresql://ncps:PASSWORD@postgres:5432/ncps?sslmode=require
       upstream:
         urls:

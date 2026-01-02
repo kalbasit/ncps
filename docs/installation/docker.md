@@ -31,8 +31,12 @@ docker pull kalbasit/ncps
 docker volume create ncps-storage
 
 # Create required directories with correct permissions
+# Note: ncps runs as UID 1000 (ncps user), so directories must be owned by this user
 docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
-  "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
+  "mkdir -m 0755 -p /storage/var && \
+   mkdir -m 0700 -p /storage/var/ncps && \
+   mkdir -m 0700 -p /storage/var/ncps/db && \
+   chown -R 1000:1000 /storage"
 
 # Initialize the database
 docker run --rm -v ncps-storage:/storage kalbasit/ncps \
@@ -42,7 +46,10 @@ docker run --rm -v ncps-storage:/storage kalbasit/ncps \
 **What this does:**
 - Creates a Docker volume for persistent storage
 - Sets up the directory structure
+- **Sets ownership to UID 1000** (ncps user in the container)
 - Runs database migrations to create required tables
+
+**Important:** The ncps Docker container runs as a non-root user (`ncps`, UID 1000, GID 1000) for security. All storage directories must be owned by UID 1000 for the container to access them.
 
 ### Step 3: Start the Server
 
