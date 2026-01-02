@@ -20,7 +20,6 @@
       "Bash(gt ls:*)",
       "Bash(helm lint:*)",
       "Bash(helm template:*)",
-      "Bash(helm test:*)",
       "Bash(helm version:*)",
       "Bash(ln:*)",
       "Bash(ls:*)",
