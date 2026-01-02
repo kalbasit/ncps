@@ -171,8 +171,8 @@ func newDownloadState() *downloadState {
 // setError safely sets the download error with mutex protection.
 func (ds *downloadState) setError(err error) {
 	ds.mu.Lock()
+	defer ds.mu.Unlock()
 	ds.downloadError = err
-	ds.mu.Unlock()
 }
 
 // getError safely retrieves the download error with mutex protection.
