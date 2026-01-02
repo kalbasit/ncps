@@ -80,6 +80,7 @@ See the [Deployment Guide](docs/deployment/) for detailed setup instructions.
 Contributions are welcome! We appreciate bug reports, feature requests, documentation improvements, and code contributions.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+
 - Development setup and workflow
 - Code quality standards and testing procedures
 - How to submit pull requests
@@ -88,6 +89,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
----
+______________________________________________________________________
 
 [Report Bug](https://github.com/kalbasit/ncps/issues) • [Request Feature](https://github.com/kalbasit/ncps/issues) • [Discussions](https://github.com/kalbasit/ncps/discussions)
