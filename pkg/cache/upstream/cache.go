@@ -249,7 +249,7 @@ func (c *Cache) doRequest(
 ) (*http.Response, error) {
 	r, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
-return nil, fmt.Errorf("error creating %s request to %s: %w", method, url, err)
+		return nil, fmt.Errorf("error creating %s request to %s: %w", method, url, err)
 	}
 
 	c.addAuthToRequest(r)
@@ -260,7 +260,7 @@ return nil, fmt.Errorf("error creating %s request to %s: %w", method, url, err)
 
 	resp, err := c.httpClient.Do(r)
 	if err != nil {
-return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
+		return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
 	}
 
 	return resp, nil
