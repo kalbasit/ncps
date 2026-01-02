@@ -390,17 +390,14 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	<-ds.start
 
 	ds.mu.Lock()
+	err := ds.downloadError
+	ds.mu.Unlock()
 
-	if ds.downloadError != nil {
-		err := ds.downloadError
-		ds.mu.Unlock()
-
+	if err != nil {
 		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
 		return 0, nil, err
 	}
-
-	ds.mu.Unlock()
 
 	// create a pipe to stream file down to the http client
 	reader, writer := io.Pipe()
@@ -982,17 +979,14 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	<-ds.done
 
 	ds.mu.Lock()
+	err = ds.downloadError
+	ds.mu.Unlock()
 
-	if ds.downloadError != nil {
-		err := ds.downloadError
-		ds.mu.Unlock()
-
+	if err != nil {
 		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
 		return nil, err
 	}
-
-	ds.mu.Unlock()
 
 	return c.narInfoStore.GetNarInfo(ctx, hash)
 }
