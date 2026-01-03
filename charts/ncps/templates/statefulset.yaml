@@ -95,7 +95,7 @@ spec:
             - serve
             - --config
             - /etc/ncps/config.yaml
-            {{- if and .Values.config.signing.enabled (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
+            {{- if and (ne .Values.config.signing.enabled false) (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
             - --cache-secret-key-file
             - /etc/ncps/secrets/signing-key
             {{- end }}
@@ -171,7 +171,7 @@ spec:
             - name: storage
               mountPath: /storage
             {{- end }}
-            {{- if and .Values.config.signing.enabled (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
+            {{- if and (ne .Values.config.signing.enabled false) (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
             - name: signing-key
               mountPath: /etc/ncps/secrets
               readOnly: true
@@ -204,7 +204,7 @@ spec:
           emptyDir: {}
         {{- end }}
         {{- end }}
-        {{- if and .Values.config.signing.enabled (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
+        {{- if and (ne .Values.config.signing.enabled false) (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
         - name: signing-key
           secret:
             secretName: {{ .Values.config.signing.existingSecret | default (printf "%s-signing-key" (include "ncps.fullname" .)) }}
