@@ -55,6 +55,8 @@ serviceAccount:
   automountServiceAccountToken: false
 
 podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
   runAsNonRoot: true
   runAsUser: 1000
   runAsGroup: 1000
@@ -131,6 +133,9 @@ config:
       # Persistent volume configuration (only for local storage)
       persistence:
         enabled: true
+        # Use existing PVC instead of creating a new one
+        # When set, the chart will not create a PVC
+        existingClaim: ""
         # Storage class (leave empty for default)
         storageClassName: ""
         accessModes:
@@ -145,12 +150,14 @@ config:
     s3:
       # S3 bucket name
       bucket: ""
-      # S3 endpoint (e.g., s3.amazonaws.com or http://minio:9000)
+      # S3 endpoint with scheme (e.g., https://s3.amazonaws.com or http://minio:9000)
+      # The scheme (https:// or http://) determines SSL usage
       endpoint: ""
       # S3 region
       region: "us-east-1"
-      # Use SSL/TLS
-      useSSL: true
+      # Force path-style S3 addressing (bucket/key vs key.bucket)
+      # Required for MinIO, optional for AWS S3
+      forcePathStyle: false
       # S3 credentials (provided via secret)
       accessKeyId: ""
       secretAccessKey: ""
@@ -170,32 +177,44 @@ config:
 
     # PostgreSQL configuration
     postgresql:
+      # Existing secret containing full PostgreSQL connection string
+      # Secret must have a "database-url" key with the full connection string
+      # Example: postgresql://user:password@host:port/database?sslmode=disable
+      # Cannot be used together with any of the fields below
+      existingSecret: ""
+
       # PostgreSQL connection details
       host: ""
       port: 5432
       database: "ncps"
       username: "ncps"
+      # Password for PostgreSQL (chart builds connection string and stores in chart-managed secret)
+      # Cannot be used together with existingSecret
       password: ""
       # SSL mode: disable, require, verify-ca, verify-full
       sslMode: "disable"
-      # Existing secret containing PostgreSQL password
-      # Key name must be "password"
-      existingSecret: ""
       # Additional connection parameters (e.g., "connect_timeout=10")
+      # Only used when password is set (ignored when using existingSecret)
       extraParams: ""
 
     # MySQL configuration
     mysql:
+      # Existing secret containing full MySQL connection string
+      # Secret must have a "database-url" key with the full connection string
+      # Example: mysql://user:password@host:port/database
+      # Cannot be used together with any of the fields below
+      existingSecret: ""
+
       # MySQL connection details
       host: ""
       port: 3306
       database: "ncps"
       username: "ncps"
+      # Password for MySQL (chart builds connection string and stores in chart-managed secret)
+      # Cannot be used together with existingSecret
       password: ""
-      # Existing secret containing MySQL password
-      # Key name must be "password"
-      existingSecret: ""
       # Additional connection parameters (e.g., "timeout=10s")
+      # Only used when password is set (ignored when using existingSecret)
       extraParams: ""
 
     # Connection pool settings
@@ -333,13 +352,13 @@ readinessProbe:
   timeoutSeconds: 3
   failureThreshold: 3
 
-resources:
-  limits:
-    cpu: 2000m
-    memory: 2Gi
-  requests:
-    cpu: 100m
-    memory: 256Mi
+resources: {}
+  # limits:
+  #   cpu: 2000m
+  #   memory: 2Gi
+  # requests:
+  #   cpu: 100m
+  #   memory: 256Mi
 
 podDisruptionBudget:
   enabled: false
@@ -405,12 +424,12 @@ migration:
   mode: "initContainer"
 
   # Resources for migration container/job
-  resources:
-    limits:
-      memory: 128Mi
-    requests:
-      cpu: 50m
-      memory: 64Mi
+  resources: {}
+    # limits:
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 50m
+    #   memory: 64Mi
 
   # Security context for migration container/job
   securityContext:

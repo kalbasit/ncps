@@ -38,6 +38,8 @@ data:
       allow-delete-verb: true
       {{- end }}
 
+      sign-narinfo: {{ ne .Values.config.signing.enabled false }}
+
       upstream:
         urls:
         {{- range .Values.config.upstream.caches }}
@@ -68,7 +70,9 @@ data:
           bucket: {{ .Values.config.storage.s3.bucket | quote }}
           endpoint: {{ .Values.config.storage.s3.endpoint | quote }}
           region: {{ .Values.config.storage.s3.region | quote }}
-          use-ssl: {{ .Values.config.storage.s3.useSSL }}
+          {{- if .Values.config.storage.s3.forcePathStyle }}
+          force-path-style: true
+          {{- end }}
         {{- end }}
 
       {{- if .Values.config.redis.enabled }}
@@ -105,6 +109,7 @@ data:
 
     {{- if .Values.config.observability.opentelemetry.enabled }}
     opentelemetry:
+      enabled: true
       grpc-url: {{ .Values.config.observability.opentelemetry.grpcURL | quote }}
     {{- end }}
 

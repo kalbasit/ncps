@@ -1,0 +1,27 @@
+# Negative test: HA + Deployment + ReadWriteOnce (no existingClaim)
+# This should FAIL validation
+mode: deployment
+replicaCount: 3
+
+config:
+  hostname: "test.example.com"
+
+  storage:
+    type: local
+    local:
+      persistence:
+        enabled: true
+        accessModes:
+          - ReadWriteOnce  # Not allowed for HA Deployment
+        size: 10Gi
+
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.default.svc
+      password: test123
+
+  redis:
+    enabled: true
+    addresses:
+      - redis:6379

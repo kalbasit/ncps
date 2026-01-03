@@ -7,6 +7,7 @@ package local
 
 import (
 	"context"
+	"hash"
 	"hash/fnv"
 	"sync"
 	"time"
@@ -24,6 +25,8 @@ const (
 // Uses a fixed pool of mutexes to avoid unbounded memory growth while
 // still providing per-key locking semantics with good concurrency.
 type Locker struct {
+	hasherPool sync.Pool
+
 	shards [numShards]sync.Mutex
 
 	// Protect acquisition times map with a separate mutex
@@ -35,12 +38,20 @@ type Locker struct {
 func NewLocker() lock.Locker {
 	return &Locker{
 		acquisitionTimes: make(map[string]time.Time),
+		hasherPool:       sync.Pool{New: func() interface{} { return fnv.New32a() }},
 	}
 }
 
 // getShard returns the shard index for a given key.
 func (l *Locker) getShard(key string) int {
-	h := fnv.New32a()
+	h, ok := l.hasherPool.Get().(hash.Hash32)
+	if !ok {
+		panic("local.Locker: unexpected type in hasher pool; expected hash.Hash32")
+	}
+
+	defer l.hasherPool.Put(h)
+
+	h.Reset()
 	h.Write([]byte(key))
 
 	return int(h.Sum32() % numShards)
