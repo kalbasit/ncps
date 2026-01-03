@@ -158,12 +158,6 @@ MARIA_USER=$(echo "$CLUSTER_INFO" | grep -A 5 "MariaDB" | grep "User:" | awk '{p
 MARIA_PASS=$(echo "$CLUSTER_INFO" | grep -A 5 "MariaDB" | grep "Pass:" | awk '{print $2}')
 MARIA_DB=$(echo "$CLUSTER_INFO" | grep -A 5 "MariaDB" | grep "DB:" | awk '{print $2}')
 
-# URL-encode credentials for database URLs (handles special characters like >, |, @, etc.)
-PG_USER_ENCODED=$(printf '%s' "$PG_USER" | jq -sRr '@uri')
-PG_PASS_ENCODED=$(printf '%s' "$PG_PASS" | jq -sRr '@uri')
-MARIA_USER_ENCODED=$(printf '%s' "$MARIA_USER" | jq -sRr '@uri')
-MARIA_PASS_ENCODED=$(printf '%s' "$MARIA_PASS" | jq -sRr '@uri')
-
 # Redis
 REDIS_HOST=$(echo "$CLUSTER_INFO" | grep -A 3 "Redis" | grep "Host:" | awk '{print $2}')
 REDIS_PORT=$(echo "$CLUSTER_INFO" | grep -A 3 "Redis" | grep "Port:" | awk '{print $2}')
@@ -915,10 +909,7 @@ stringData:
   access-key-id: "$S3_ACCESS_KEY"
   secret-access-key: "$S3_SECRET_KEY"
 
-  # Database URL (with URL-encoded credentials)
-  database-url: "postgresql://$PG_USER_ENCODED:$PG_PASS_ENCODED@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable"
-
-  # Database password (for variable substitution)
+  # Database password (chart will build connection string from host/user/etc + this password)
   password: "$PG_PASS"
 SECRET_EOF
 
@@ -989,10 +980,7 @@ stringData:
   access-key-id: "$S3_ACCESS_KEY"
   secret-access-key: "$S3_SECRET_KEY"
 
-  # Database URL (with URL-encoded credentials)
-  database-url: "mysql://$MARIA_USER_ENCODED:$MARIA_PASS_ENCODED@$MARIA_HOST:$MARIA_PORT/$MARIA_DB"
-
-  # Database password (for variable substitution)
+  # Database password (chart will build connection string from host/user/etc + this password)
   password: "$MARIA_PASS"
 SECRET_EOF
 

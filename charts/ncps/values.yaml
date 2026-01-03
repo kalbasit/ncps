@@ -178,11 +178,14 @@ config:
       port: 5432
       database: "ncps"
       username: "ncps"
+      # Password for PostgreSQL (stored in chart-managed secret)
+      # Cannot be used together with existingSecret
       password: ""
       # SSL mode: disable, require, verify-ca, verify-full
       sslMode: "disable"
       # Existing secret containing PostgreSQL password
-      # Key name must be "password"
+      # Secret must have a "password" key
+      # Cannot be used together with password field
       existingSecret: ""
       # Additional connection parameters (e.g., "connect_timeout=10")
       extraParams: ""
@@ -194,9 +197,12 @@ config:
       port: 3306
       database: "ncps"
       username: "ncps"
+      # Password for MySQL (stored in chart-managed secret)
+      # Cannot be used together with existingSecret
       password: ""
       # Existing secret containing MySQL password
-      # Key name must be "password"
+      # Secret must have a "password" key
+      # Cannot be used together with password field
       existingSecret: ""
       # Additional connection parameters (e.g., "timeout=10s")
       extraParams: ""
