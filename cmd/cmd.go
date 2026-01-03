@@ -82,6 +82,11 @@ func New() (*cli.Command, error) {
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
 
+			ctx, err = getEarlyZerolog(ctx, cmd)
+			if err != nil {
+				return ctx, err
+			}
+
 			otelShutdown, err = setupOTelSDK(ctx, cmd)
 			if err != nil {
 				return ctx, err
@@ -190,6 +195,28 @@ func getUserDirs() (userDirectories, error) {
 	}, nil
 }
 
+func getEarlyZerolog(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+	logLvl := cmd.String("log-level")
+
+	lvl, err := zerolog.ParseLevel(logLvl)
+	if err != nil {
+		return ctx, fmt.Errorf("error parsing the log-level %q: %w", logLvl, err)
+	}
+
+	var output io.Writer = os.Stdout
+
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	}
+
+	return zerolog.New(output).
+		Level(lvl).
+		With().
+		Timestamp().
+		Logger().
+		WithContext(ctx), nil
+}
+
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
 func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) error, error) {
@@ -223,17 +250,34 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	prop := newPropagator()
 	otel.SetTextMapPropagator(prop)
 
-	res, err := telemetry.NewResource(ctx, cmd.Root().Name, Version)
-	if err != nil {
-		return shutdown, handleErr(err)
-	}
-
 	colURL := cmd.String("otel-grpc-url")
 	enabled := cmd.Bool("otel-enabled")
+
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Bool("otel-enabled", enabled).
+		Str("otel-grpc-url", colURL).
+		Logger().
+		WithContext(ctx)
+
+	res, err := telemetry.NewResource(ctx, cmd.Root().Name, Version)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new telemetry resource")
+
+		return shutdown, handleErr(err)
+	}
 
 	// Set up trace provider.
 	tracerProvider, err := newTraceProvider(ctx, enabled, colURL, res)
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new tracer provider")
+
 		return shutdown, handleErr(err)
 	}
 
@@ -243,6 +287,11 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	// Set up meter provider.
 	meterProvider, err := newMeterProvider(ctx, enabled, colURL, res)
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new meter provider")
+
 		return shutdown, handleErr(err)
 	}
 
@@ -252,6 +301,11 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	// Set up logger provider.
 	loggerProvider, err := newLoggerProvider(ctx, enabled, colURL, res)
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new logger provider")
+
 		return shutdown, handleErr(err)
 	}
 
@@ -280,14 +334,31 @@ func newTraceProvider(
 	)
 
 	if enabled && colURL != "" {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer provider with gRPC endpoint")
+
 		traceExporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(colURL))
 	} else if enabled {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer provider with pretty printing")
+
 		traceExporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
 	} else {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer provider to discard traces")
+
 		traceExporter, err = stdouttrace.New(stdouttrace.WithWriter(io.Discard))
 	}
 
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error setting up the tracer provider")
+
 		return nil, err
 	}
 
@@ -312,13 +383,29 @@ func newMeterProvider(
 
 	if enabled && colURL != "" {
 		metricExporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up meter provider with gRPC endpoint")
 	} else if enabled {
 		metricExporter, err = stdoutmetric.New()
+
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up meter provider with pretty printing")
 	} else {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up meter provider to discard traces")
+
 		metricExporter, err = stdoutmetric.New(stdoutmetric.WithWriter(io.Discard))
 	}
 
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error setting up the meter provider")
+
 		return nil, err
 	}
 
@@ -343,13 +430,29 @@ func newLoggerProvider(
 
 	if enabled && colURL != "" {
 		logExporter, err = otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer logger with gRPC endpoint")
 	} else if enabled {
 		logExporter, err = stdoutlog.New()
+
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up logger provider with pretty printing")
 	} else {
 		logExporter, err = stdoutlog.New(stdoutlog.WithWriter(io.Discard))
+
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up logger provider to discard traces")
 	}
 
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error setting up the logger provider")
+
 		return nil, err
 	}
 
