@@ -20,6 +20,7 @@ The tests use `helm template` to verify that the chart's validation logic works 
   - HA + Deployment + ReadWriteMany
   - HA + Deployment + existingClaim
   - HA + Deployment + S3
+  - HA + Deployment + multiple access modes with ReadWriteMany
   - Single replica + ReadWriteOnce
 
 - **Negative tests** (should fail):
