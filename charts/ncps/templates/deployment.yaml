@@ -132,7 +132,7 @@ spec:
             {{- end }}
             {{- if .Values.config.redis.enabled }}
             {{- if and .Values.config.redis.existingSecret (not .Values.config.redis.username) }}
-            - name: NCPS_CACHE_REDIS_USERNAME
+            - name: CACHE_REDIS_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.config.redis.existingSecret }}

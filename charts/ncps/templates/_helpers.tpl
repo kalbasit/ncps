@@ -190,7 +190,7 @@ This function will fail the template rendering if invalid configurations are det
   {{- end -}}
   {{- /* Prevent setting both password and existingSecret */ -}}
   {{- if and .Values.config.database.postgresql.password .Values.config.database.postgresql.existingSecret -}}
-    {{- fail "PostgreSQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'password' key)" -}}
+    {{- fail "PostgreSQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'database-url' key)" -}}
   {{- end -}}
 {{- else if eq .Values.config.database.type "mysql" -}}
   {{- if not .Values.config.database.mysql.host -}}
@@ -198,7 +198,7 @@ This function will fail the template rendering if invalid configurations are det
   {{- end -}}
   {{- /* Prevent setting both password and existingSecret */ -}}
   {{- if and .Values.config.database.mysql.password .Values.config.database.mysql.existingSecret -}}
-    {{- fail "MySQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'password' key)" -}}
+    {{- fail "MySQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'database-url' key)" -}}
   {{- end -}}
 {{- end -}}
 
