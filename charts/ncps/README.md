@@ -75,6 +75,16 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `nameOverride` | Override chart name | `""` |
 | `fullnameOverride` | Override full name | `""` |
 
+### Init Image
+
+| Parameter | Description | Default |
+| ----------------------------- | --------------------------------------------- | --------------- |
+| `initImage.registry` | Init image registry | `docker.io` |
+| `initImage.repository` | Init image repository | `busybox` |
+| `initImage.tag` | Init image tag | `1.37.0` |
+| `initImage.pullPolicy` | Init image pull policy | `IfNotPresent` |
+| `initImage.resources` | Resources for init container | `{}` |
+
 ### Service Account
 
 | Parameter | Description | Default |
@@ -87,12 +97,15 @@ The following table lists the configurable parameters of the ncps chart and thei
 ### Security Context
 
 | Parameter | Description | Default |
-| ------------------------------------------ | -------------------------- | ------- |
+| ------------------------------------------ | -------------------------- | -------------------- |
+| `podSecurityContext.seccompProfile.type` | Seccomp profile type | `RuntimeDefault` |
 | `podSecurityContext.runAsNonRoot` | Run as non-root | `true` |
 | `podSecurityContext.runAsUser` | User ID | `1000` |
 | `podSecurityContext.runAsGroup` | Group ID | `1000` |
 | `podSecurityContext.fsGroup` | FS group | `1000` |
+| `podSecurityContext.fsGroupChangePolicy` | FS group change policy | `OnRootMismatch` |
 | `securityContext.allowPrivilegeEscalation` | Allow privilege escalation | `false` |
+| `securityContext.capabilities.drop` | Dropped capabilities | `[ALL]` |
 | `securityContext.readOnlyRootFilesystem` | Read-only root filesystem | `true` |
 
 ### ncps Configuration
@@ -120,17 +133,20 @@ The following table lists the configurable parameters of the ncps chart and thei
 ### Storage Configuration
 
 | Parameter | Description | Default |
-| --------------------------------------------------- | ----------------------------------- | ----------------- |
+| --------------------------------------------------- | ------------------------------------------- | ----------------- |
 | `config.storage.type` | Storage type: `local` or `s3` | `local` |
 | `config.storage.local.path` | Local storage path | `/storage` |
 | `config.storage.local.persistence.enabled` | Enable persistent storage | `true` |
+| `config.storage.local.persistence.existingClaim` | Use existing PVC | `""` |
 | `config.storage.local.persistence.storageClassName` | Storage class | `""` |
 | `config.storage.local.persistence.accessModes` | Access modes | `[ReadWriteOnce]` |
 | `config.storage.local.persistence.size` | PVC size | `20Gi` |
+| `config.storage.local.persistence.annotations` | PVC annotations | `{}` |
+| `config.storage.local.persistence.selector` | PV selector | `{}` |
 | `config.storage.s3.bucket` | S3 bucket name | `""` |
-| `config.storage.s3.endpoint` | S3 endpoint | `""` |
+| `config.storage.s3.endpoint` | S3 endpoint with scheme (https:// or http://) | `""` |
 | `config.storage.s3.region` | S3 region | `us-east-1` |
-| `config.storage.s3.useSSL` | Use SSL/TLS | `true` |
+| `config.storage.s3.forcePathStyle` | Force path-style addressing (required for MinIO) | `false` |
 | `config.storage.s3.accessKeyId` | S3 access key ID | `""` |
 | `config.storage.s3.secretAccessKey` | S3 secret access key | `""` |
 | `config.storage.s3.existingSecret` | Existing secret with S3 credentials | `""` |
@@ -138,23 +154,25 @@ The following table lists the configurable parameters of the ncps chart and thei
 ### Database Configuration
 
 | Parameter | Description | Default |
-| ------------------------------------------- | ------------------------------------------------- | --------------------- |
+| ------------------------------------------- | ------------------------------------------------------------ | --------------------- |
 | `config.database.type` | Database type: `sqlite`, `postgresql`, or `mysql` | `sqlite` |
 | `config.database.sqlite.path` | SQLite database file path | `/storage/db/ncps.db` |
+| `config.database.postgresql.existingSecret` | Existing secret with full connection string (key: `database-url`) | `""` |
 | `config.database.postgresql.host` | PostgreSQL host | `""` |
 | `config.database.postgresql.port` | PostgreSQL port | `5432` |
 | `config.database.postgresql.database` | PostgreSQL database name | `ncps` |
 | `config.database.postgresql.username` | PostgreSQL username | `ncps` |
-| `config.database.postgresql.password` | PostgreSQL password | `""` |
+| `config.database.postgresql.password` | PostgreSQL password (chart builds connection string) | `""` |
 | `config.database.postgresql.sslMode` | PostgreSQL SSL mode | `disable` |
-| `config.database.postgresql.existingSecret` | Existing secret with PostgreSQL password | `""` |
+| `config.database.postgresql.extraParams` | Additional connection parameters | `""` |
+| `config.database.mysql.existingSecret` | Existing secret with full connection string (key: `database-url`) | `""` |
 | `config.database.mysql.host` | MySQL host | `""` |
 | `config.database.mysql.port` | MySQL port | `3306` |
 | `config.database.mysql.database` | MySQL database name | `ncps` |
 | `config.database.mysql.username` | MySQL username | `ncps` |
-| `config.database.mysql.password` | MySQL password | `""` |
-| `config.database.mysql.existingSecret` | Existing secret with MySQL password | `""` |
-| `config.database.pool.maxOpenConns` | Maximum open connections | `0` |
+| `config.database.mysql.password` | MySQL password (chart builds connection string) | `""` |
+| `config.database.mysql.extraParams` | Additional connection parameters | `""` |
+| `config.database.pool.maxOpenConns` | Maximum open connections (0 = unlimited) | `0` |
 | `config.database.pool.maxIdleConns` | Maximum idle connections | `0` |
 
 ### Upstream Cache Configuration
@@ -258,6 +276,21 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `sidecars` | Sidecar containers | `[]` |
 | `tests.enabled` | Enable Helm tests | `false` |
 
+### Database Migration
+
+| Parameter | Description | Default |
+| ---------------------------------------------- | ------------------------------------------------- | --------------- |
+| `migration.enabled` | Enable database migration | `false` |
+| `migration.mode` | Migration mode: `initContainer`, `job`, `argocd` | `initContainer` |
+| `migration.resources` | Resources for migration container/job | `{}` |
+| `migration.securityContext` | Security context for migration container/job | See values.yaml |
+| `migration.job.backoffLimit` | Job backoff limit | `3` |
+| `migration.job.ttlSecondsAfterFinished` | Job TTL after finish (seconds) | `300` |
+| `migration.job.annotations` | Job annotations | `{}` |
+| `migration.job.nodeSelector` | Node selector for migration job | `{}` |
+| `migration.job.tolerations` | Tolerations for migration job | `[]` |
+| `migration.job.affinity` | Affinity for migration job | `{}` |
+
 ## Examples
 
 ### Single Instance with Local Storage
@@ -292,9 +325,8 @@ config:
     type: s3
     s3:
       bucket: my-nix-cache
-      endpoint: s3.amazonaws.com
+      endpoint: https://s3.amazonaws.com
       region: us-west-2
-      useSSL: true
       accessKeyId: AKIA...
       secretAccessKey: secret...
   database:
@@ -320,9 +352,8 @@ config:
     type: s3
     s3:
       bucket: my-nix-cache-ha
-      endpoint: s3.amazonaws.com
+      endpoint: https://s3.amazonaws.com
       region: us-west-2
-      useSSL: true
       accessKeyId: AKIA...
       secretAccessKey: secret...
   database:
@@ -406,9 +437,6 @@ config:
   database:
     type: postgresql
     postgresql:
-      host: postgres.example.com
-      database: ncps
-      username: ncps
       existingSecret: ncps-postgres-credentials
   redis:
     enabled: true
@@ -427,9 +455,9 @@ kubectl create secret generic ncps-s3-credentials \
   --from-literal=access-key-id=AKIA... \
   --from-literal=secret-access-key=secret...
 
-# PostgreSQL password
+# PostgreSQL connection string
 kubectl create secret generic ncps-postgres-credentials \
-  --from-literal=password=secretpassword
+  --from-literal=database-url="postgresql://ncps:secretpassword@postgres.example.com:5432/ncps?sslmode=disable"
 
 # Redis credentials
 kubectl create secret generic ncps-redis-credentials \
@@ -438,6 +466,22 @@ kubectl create secret generic ncps-redis-credentials \
 # Signing key
 kubectl create secret generic ncps-signing-key \
   --from-literal=signing-key="ncps-1:base64encodedkey..."
+```
+
+Alternatively, for PostgreSQL and MySQL you can use individual connection parameters and let the chart build the connection string:
+
+```yaml
+config:
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.example.com
+      port: 5432
+      database: ncps
+      username: ncps
+      password: secretpassword
+      sslMode: disable
+      extraParams: "connect_timeout=10"
 ```
 
 ### With Ingress and TLS

@@ -70,7 +70,9 @@ data:
           bucket: {{ .Values.config.storage.s3.bucket | quote }}
           endpoint: {{ .Values.config.storage.s3.endpoint | quote }}
           region: {{ .Values.config.storage.s3.region | quote }}
-          use-ssl: {{ .Values.config.storage.s3.useSSL }}
+          {{- if .Values.config.storage.s3.forcePathStyle }}
+          force-path-style: true
+          {{- end }}
         {{- end }}
 
       {{- if .Values.config.redis.enabled }}
