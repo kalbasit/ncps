@@ -73,7 +73,7 @@ jobs:
 
           echo "✅ Chart published to: oci://ghcr.io/${{ github.repository_owner }}/helm/ncps:${CHART_VER}"
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: .helm-releases/*.tgz
           # Mark as pre-release if tag contains alpha, beta, or rc
