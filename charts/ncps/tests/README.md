@@ -2,15 +2,19 @@
 
 This directory contains tests for the ncps Helm chart.
 
-## Test Types
+## Validation Tests
 
-### 1. Validation Tests (Shell Script)
+The tests use `helm template` to verify that the chart's validation logic works correctly. All tests are located in the `validation/` directory.
 
-Located in `validation/`, these tests use `helm template` to verify that the chart's validation logic works correctly.
-
-**Run validation tests:**
+**Run all tests:**
 ```bash
-./validation/test-validation.sh
+# From anywhere in the repository
+./charts/ncps/tests/run-tests.sh
+```
+
+**Run individual validation script:**
+```bash
+./charts/ncps/tests/validation/test-validation.sh
 ```
 
 **Test cases:**
@@ -25,43 +29,35 @@ Located in `validation/`, these tests use `helm template` to verify that the cha
   - HA + SQLite database
   - HA without Redis
 
-### 2. Helm Unittest Tests
-
-Located in `validation_test.yaml`, these are proper unit tests using the [helm-unittest](https://github.com/helm-unittest/helm-unittest) plugin.
-
-**Install helm-unittest:**
-```bash
-helm plugin install https://github.com/helm-unittest/helm-unittest
-```
-
-**Run unit tests:**
-```bash
-# From the repository root
-helm unittest charts/ncps
-
-# With verbose output
-helm unittest -v charts/ncps
-
-# Run specific test file
-helm unittest -f 'tests/validation_test.yaml' charts/ncps
-```
-
-**Test coverage:**
-The unit tests cover the same scenarios as the shell script tests but use the proper helm-unittest framework for better integration with CI/CD pipelines.
-
 ## Adding New Tests
 
-### For validation tests (shell script):
-1. Create a new YAML file in `validation/` directory:
-   - `*-positive.yaml` for tests that should pass
-   - `*-negative.yaml` for tests that should fail
-2. Add the test case to `test-validation.sh`
+To add a new validation test:
 
-### For helm-unittest:
-1. Edit `validation_test.yaml`
-2. Add a new test case following the existing pattern
-3. Use `failedTemplate` assertion for negative tests
-4. Use standard assertions (`isKind`, `equal`, etc.) for positive tests
+1. Create a new YAML values file in `validation/` directory:
+   - `*-positive.yaml` for tests that should pass validation
+   - `*-negative.yaml` for tests that should fail validation
+
+2. Add the test case to `run-tests.sh`:
+   - Add to the `tests` array in the appropriate section (positive or negative)
+   - Format: `"filename:Description of test"`
+
+3. Test your new test case:
+   ```bash
+   # Test positive case
+   helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-positive.yaml
+
+   # Test negative case (should fail)
+   helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-negative.yaml
+   ```
+
+Example:
+```bash
+# Add to run-tests.sh in the positive tests array:
+tests=(
+    "ha-deployment-rwx-positive:HA + Deployment + ReadWriteMany"
+    "your-new-test-positive:Your new test description"  # Add here
+)
+```
 
 ## CI/CD Integration
 
@@ -81,18 +77,16 @@ helm-tests:
 ```
 
 The `run-tests.sh` script:
-- Automatically detects and runs helm-unittest tests if the plugin is installed (optional)
 - Runs all validation tests (positive and negative cases) using `helm template`
 - Exits with code 0 on success and 1 on failure
 - Can be run from anywhere in the repository
+- Provides comprehensive coverage of chart validation logic
 
-**Note on helm-unittest:**
-The helm-unittest plugin is optional and not installed in CI to avoid compatibility issues. The shell-based validation tests using `helm template` provide comprehensive coverage. If you want to run the helm-unittest tests locally:
-
+**Running tests locally:**
 ```bash
-# Install helm-unittest plugin (optional, only if you want to run validation_test.yaml)
-helm plugin install https://github.com/helm-unittest/helm-unittest
-
-# Run all tests (includes helm-unittest if installed)
+# Run all tests (same as CI)
 ./charts/ncps/tests/run-tests.sh
+
+# Or run the validation script directly
+./charts/ncps/tests/validation/test-validation.sh
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Convenience script to run all Helm chart tests
+# Convenience script to run all Helm chart validation tests
 # Run from anywhere in the repository
 
 set -euo pipefail
@@ -10,18 +10,10 @@ REPO_ROOT="$(cd "${CHART_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
-echo "Running Helm chart tests..."
+echo "Running Helm chart validation tests..."
 echo ""
 
-# Check if helm-unittest is installed
-if helm plugin list 2>/dev/null | grep -q unittest; then
-    echo "=== Running helm-unittest tests ==="
-    helm unittest charts/ncps
-    echo ""
-fi
-
-# Run validation tests
-echo "=== Running validation tests ==="
+echo "=== Validation Tests ==="
 echo ""
 
 PASSED=0
