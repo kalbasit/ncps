@@ -38,6 +38,8 @@ data:
       allow-delete-verb: true
       {{- end }}
 
+      sign-narinfo: {{ .Values.config.signing.enabled | default true }}
+
       upstream:
         urls:
         {{- range .Values.config.upstream.caches }}
