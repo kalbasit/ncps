@@ -105,6 +105,7 @@ data:
 
     {{- if .Values.config.observability.opentelemetry.enabled }}
     opentelemetry:
+      enabled: true
       grpc-url: {{ .Values.config.observability.opentelemetry.grpcURL | quote }}
     {{- end }}
 
