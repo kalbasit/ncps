@@ -15,6 +15,18 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v13
       - uses: DeterminateSystems/flake-checker-action@main
       - run: nix flake check -L --all-systems
+  helm-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.3'
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest
+      - name: Run Helm validation tests
+        run: ./charts/ncps/tests/run-tests.sh
   docker:
     uses: ./.github/workflows/docker.yml
     with:

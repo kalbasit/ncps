@@ -1,0 +1,194 @@
+suite: test validation logic
+templates:
+  - deployment.yaml
+  - statefulset.yaml
+tests:
+  # Positive tests - should render successfully
+  - it: should allow HA Deployment with ReadWriteMany
+    set:
+      mode: deployment
+      replicaCount: 3
+      config:
+        hostname: test.example.com
+        storage:
+          type: local
+          local:
+            persistence:
+              enabled: true
+              accessModes:
+                - ReadWriteMany
+              size: 10Gi
+        database:
+          type: postgresql
+          postgresql:
+            host: postgres.default.svc
+            password: test123
+        redis:
+          enabled: true
+          addresses:
+            - redis:6379
+    template: deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: should allow HA Deployment with existingClaim
+    set:
+      mode: deployment
+      replicaCount: 3
+      config:
+        hostname: test.example.com
+        storage:
+          type: local
+          local:
+            persistence:
+              enabled: true
+              existingClaim: my-existing-pvc
+              accessModes:
+                - ReadWriteOnce
+              size: 10Gi
+        database:
+          type: postgresql
+          postgresql:
+            host: postgres.default.svc
+            password: test123
+        redis:
+          enabled: true
+          addresses:
+            - redis:6379
+    template: deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.volumes[?(@.name == "storage")].persistentVolumeClaim.claimName
+          value: my-existing-pvc
+
+  - it: should allow HA Deployment with S3
+    set:
+      mode: deployment
+      replicaCount: 3
+      config:
+        hostname: test.example.com
+        storage:
+          type: s3
+          s3:
+            bucket: my-bucket
+            endpoint: https://s3.amazonaws.com
+            region: us-east-1
+            accessKeyId: test-key
+            secretAccessKey: test-secret
+        database:
+          type: postgresql
+          postgresql:
+            host: postgres.default.svc
+            password: test123
+        redis:
+          enabled: true
+          addresses:
+            - redis:6379
+    template: deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: should allow single replica Deployment with ReadWriteOnce
+    set:
+      mode: deployment
+      replicaCount: 1
+      config:
+        hostname: test.example.com
+        storage:
+          type: local
+          local:
+            persistence:
+              enabled: true
+              accessModes:
+                - ReadWriteOnce
+              size: 10Gi
+        database:
+          type: sqlite
+    template: deployment.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+
+  # Negative tests - should fail validation
+  - it: should reject HA Deployment with ReadWriteOnce (no existingClaim)
+    set:
+      mode: deployment
+      replicaCount: 3
+      config:
+        hostname: test.example.com
+        storage:
+          type: local
+          local:
+            persistence:
+              enabled: true
+              accessModes:
+                - ReadWriteOnce
+              size: 10Gi
+        database:
+          type: postgresql
+          postgresql:
+            host: postgres.default.svc
+            password: test123
+        redis:
+          enabled: true
+          addresses:
+            - redis:6379
+    template: deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: High availability mode with Deployment requires S3 storage (config.storage.type='s3'), existing shared PVC (config.storage.local.persistence.existingClaim), or ReadWriteMany access mode, or use StatefulSet mode
+
+  - it: should reject HA with SQLite database
+    set:
+      mode: deployment
+      replicaCount: 3
+      config:
+        hostname: test.example.com
+        storage:
+          type: s3
+          s3:
+            bucket: my-bucket
+            endpoint: https://s3.amazonaws.com
+            region: us-east-1
+            accessKeyId: test-key
+            secretAccessKey: test-secret
+        database:
+          type: sqlite
+        redis:
+          enabled: true
+          addresses:
+            - redis:6379
+    template: deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: High availability mode (replicaCount > 1) is not compatible with SQLite. Use PostgreSQL or MySQL instead (config.database.type)
+
+  - it: should reject HA without Redis
+    set:
+      mode: deployment
+      replicaCount: 3
+      config:
+        hostname: test.example.com
+        storage:
+          type: s3
+          s3:
+            bucket: my-bucket
+            endpoint: https://s3.amazonaws.com
+            region: us-east-1
+            accessKeyId: test-key
+            secretAccessKey: test-secret
+        database:
+          type: postgresql
+          postgresql:
+            host: postgres.default.svc
+            password: test123
+        redis:
+          enabled: false
+    template: deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: High availability mode (replicaCount > 1) requires Redis to be enabled (config.redis.enabled=true)
