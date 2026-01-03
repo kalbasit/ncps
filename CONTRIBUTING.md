@@ -58,7 +58,7 @@ The project uses **Nix flakes** with **direnv** for reproducible development env
 Once in the development shell, you have access to:
 
 | Tool | Purpose |
-| --------------- | ------------------------------ |
+| --------------- | ---------------------------------- |
 | `go` | Go compiler and toolchain |
 | `golangci-lint` | Code linting with 30+ linters |
 | `sqlc` | Type-safe SQL code generation |
@@ -395,7 +395,7 @@ DOCKER_IMAGE_TAGS="yourregistry.com/ncps:sha$(git rev-parse --short HEAD)" nix r
 # The tag format is: sha<commit>-<platform> (e.g., sha4954654-x86_64-linux)
 ./dev-scripts/generate-test-values.sh sha$(git rev-parse --short HEAD)-x86_64-linux yourregistry.com ncps
 
-# 3. Continue with steps 2-5 from the main workflow above
+# 3. Continue with steps 2-4 from the main workflow above
 ```
 
 **Test Deployments:**
