@@ -53,19 +53,10 @@ jobs:
     strategy:
       matrix:
         system: ${{ fromJson(inputs.systems) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     needs: docker-meta
     steps:
-      - name: Install required cross-system tool
-        if: "${{ matrix.system != 'x86_64-linux' }}"
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static
-        shell: bash
       - uses: DeterminateSystems/nix-installer-action@v21
-        with:
-          extra-conf: |
-            extra-platforms = ${{ matrix.system }}
       - uses: DeterminateSystems/magic-nix-cache-action@v13
       - uses: actions/checkout@v6
       - name: Build the docker image
@@ -73,12 +64,14 @@ jobs:
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           nix build -L --impure .#packages.${{ matrix.system }}.docker
       - name: Build the docker image pusher
         shell: bash
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           nix build -L --impure .#packages.${{ matrix.system }}.push-docker-image
       - name: Login to Docker Hub
         if: inputs.push_images
@@ -92,6 +85,7 @@ jobs:
           DOCKER_IMAGE_TAGS: ${{ needs.docker-meta.outputs.tags }}
         shell: bash
         run: |
+          set -euo pipefail
           ./result/bin/push-docker-image
   docker-manifest:
     if: inputs.push_images
