@@ -368,24 +368,34 @@ The cluster can be reused across test runs. Use `./dev-scripts/k8s-cluster.sh de
 **Testing Workflow:**
 
 ```bash
-# 1. Build and push Docker image to Kind cluster
-DOCKER_IMAGE_TAGS="kalbasit/ncps:sha$(git rev-parse --short HEAD)" nix run .#push-docker-image
+# 1. Build, push Docker image to local Kind registry, and generate test values
+./dev-scripts/generate-test-values.sh --push
+
+# 2. Quick install all test deployments (can be run from anywhere)
+./charts/ncps/test-values/QUICK-INSTALL.sh
+
+# 3. Run tests (can be run from anywhere)
+./charts/ncps/test-values/TEST.sh
+
+# 4. Cleanup when done (can be run from anywhere)
+./charts/ncps/test-values/CLEANUP.sh
+```
+
+**Note:** All test scripts (QUICK-INSTALL.sh, TEST.sh, CLEANUP.sh) are location-aware and can be run from anywhere in the repository.
+
+**Alternative: Use External Registry**
+
+If you prefer to push to an external registry (e.g., Docker Hub, your own Zot instance):
+
+```bash
+# 1. Build and push Docker image to external registry
+DOCKER_IMAGE_TAGS="yourregistry.com/ncps:sha$(git rev-parse --short HEAD)" nix run .#push-docker-image
 
 # 2. Generate test values files (use the image tag from step 1)
 # The tag format is: sha<commit>-<platform> (e.g., sha4954654-x86_64-linux)
-./dev-scripts/generate-test-values.sh sha$(git rev-parse --short HEAD)-x86_64-linux
+./dev-scripts/generate-test-values.sh sha$(git rev-parse --short HEAD)-x86_64-linux yourregistry.com ncps
 
-# 3. Navigate to chart directory
-cd charts/ncps
-
-# 4. Quick install all test deployments
-./test-values/QUICK-INSTALL.sh
-
-# 5. Run tests
-./test-values/TEST.sh
-
-# 6. Cleanup when done
-./test-values/CLEANUP.sh
+# 3. Continue with steps 2-5 from the main workflow above
 ```
 
 **Test Deployments:**

@@ -95,6 +95,12 @@ show_info() {
     echo "Cluster: $CLUSTER_NAME"
     echo "Context: kind-$CLUSTER_NAME"
     echo ""
+    echo "--- 📦 Container Registry ---"
+    echo "  Location: 127.0.0.1:30000"
+    echo "  Recommended Push: ./dev-scripts/generate-test-values.sh --push"
+    echo "  Manual Push: skopeo copy docker-archive:image.tar docker://127.00.1:30000/ncps:tag"
+    echo "  Pull: docker pull 127.0.1:30000/ncps:tag"
+    echo ""
     echo "--- 🪣 S3 (MinIO) ---"
     echo "  Endpoint: $MINIO_ENDPOINT"
     echo "  Bucket:   ncps-bucket"
@@ -270,6 +276,77 @@ EOF
                 internal admin
         "
 
+    # Container Registry
+    echo "   - Installing Container Registry..."
+    kubectl create namespace registry --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    cat <<EOF | kubectl apply -f - >/dev/null
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-pvc
+  namespace: registry
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry
+  template:
+    metadata:
+      labels:
+        app: registry
+    spec:
+      containers:
+      - name: registry
+        image: registry:2
+        ports:
+        - containerPort: 5000
+        env:
+        - name: REGISTRY_STORAGE_DELETE_ENABLED
+          value: "true"
+        volumeMounts:
+        - name: registry-storage
+          mountPath: /var/lib/registry
+      volumes:
+      - name: registry-storage
+        persistentVolumeClaim:
+          claimName: registry-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  type: NodePort
+  selector:
+    app: registry
+  ports:
+  - port: 5000
+    targetPort: 5000
+    nodePort: 30000
+    protocol: TCP
+EOF
+
+    echo "   - Waiting for registry to be ready..."
+    kubectl wait --for=condition=Ready pod -l app=registry -n registry --timeout=180s >/dev/null 2>&1 || {
+        echo ""
+        echo " ⚠️  Timed out waiting for registry to become Ready. Please check its status:" >&2
+        kubectl get pods -n registry >&2
+        return 1
+    }
+
     # Operators
     echo "   - Installing CNPG (PostgreSQL Operator)..."
     helm upgrade --install cnpg cnpg/cloudnative-pg \
@@ -380,9 +457,18 @@ EOF
     echo ""
     echo "📋 NEXT STEPS:"
     echo ""
-    echo "1. Test NCPS with different storage backends and databases"
-    echo "2. Deploy NCPS Helm chart: helm install ncps ./helm/ncps"
-    echo "3. View cluster info: $0 info"
+    echo "1. Push test images to local registry:"
+    echo "   ./dev-scripts/generate-test-values.sh --push"
+    echo ""
+    echo "2. Deploy NCPS Helm chart:"
+    echo "   cd charts/ncps"
+    echo "   ./test-values/QUICK-INSTALL.sh"
+    echo ""
+    echo "3. Test deployments:"
+    echo "   cd charts/ncps"
+    echo "   ./test-values/TEST.sh"
+    echo ""
+    echo "4. View cluster info: $0 info"
     echo ""
     echo "🧹 CLEANUP:"
     echo "When you're done testing, destroy the cluster to free resources:"

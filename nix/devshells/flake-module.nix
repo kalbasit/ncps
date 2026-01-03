@@ -108,6 +108,7 @@
           pkgs.postgresql
           pkgs.pre-commit
           pkgs.redis
+          pkgs.skopeo
           pkgs.sqlc
           pkgs.sqlfluff
           pkgs.watchexec
