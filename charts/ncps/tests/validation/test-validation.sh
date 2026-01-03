@@ -93,8 +93,8 @@ echo "=== Negative Tests (should fail validation) ==="
 echo ""
 
 test_negative "${SCRIPT_DIR}/ha-deployment-rwo-negative.yaml" "ReadWriteMany"
-test_negative "${SCRIPT_DIR}/ha-sqlite-negative.yaml" "SQLite"
 test_negative "${SCRIPT_DIR}/ha-no-redis-negative.yaml" "Redis"
+test_negative "${SCRIPT_DIR}/ha-sqlite-negative.yaml" "SQLite"
 
 echo ""
 echo "=== Test Summary ==="
