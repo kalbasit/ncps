@@ -379,7 +379,7 @@ func newMeterProvider(
 	} else {
 		zerolog.Ctx(ctx).
 			Info().
-			Msg("setting up meter provider to discard traces")
+			Msg("setting up meter provider to discard metrics")
 
 		metricExporter, err = stdoutmetric.New(stdoutmetric.WithWriter(io.Discard))
 	}
@@ -427,7 +427,7 @@ func newLoggerProvider(
 	} else {
 		zerolog.Ctx(ctx).
 			Info().
-			Msg("setting up logger provider to discard traces")
+			Msg("setting up logger provider to discard logs")
 
 		logExporter, err = stdoutlog.New(stdoutlog.WithWriter(io.Discard))
 	}
