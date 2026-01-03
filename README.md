@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://github.com/kalbasit/ncps/raw/main/docs/images/logo.svg" alt="ncps logo" width="200"/>
+</p>
+
 # ncps: Nix Cache Proxy Server
 
 > A high-performance proxy server that accelerates Nix dependency retrieval across your local network
