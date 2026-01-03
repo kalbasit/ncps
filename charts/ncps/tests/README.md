@@ -35,10 +35,12 @@ Adding a new validation test is simple - just create a new YAML file! The test r
 **Steps:**
 
 1. Create a new YAML values file in the `validation/` directory:
+
    - `*-positive.yaml` for tests that should **pass** validation
    - `*-negative.yaml` for tests that should **fail** validation
 
-2. Add a descriptive comment as the **first line** of the file:
+1. Add a descriptive comment as the **first line** of the file:
+
    ```yaml
    # Your test description here
    mode: deployment
@@ -46,7 +48,8 @@ Adding a new validation test is simple - just create a new YAML file! The test r
    # ... rest of your values
    ```
 
-3. Run the tests to verify:
+1. Run the tests to verify:
+
    ```bash
    # Test your specific case
    helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-positive.yaml
@@ -60,6 +63,7 @@ That's it! The test runner will automatically discover and run your new test.
 **Example:**
 
 Create `validation/ha-deployment-custom-positive.yaml`:
+
 ```yaml
 # Positive test: HA + Deployment + custom configuration
 mode: deployment
