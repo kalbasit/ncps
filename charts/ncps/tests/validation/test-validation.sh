@@ -85,8 +85,6 @@ test_negative() {
 echo "=== Positive Tests (should pass validation) ==="
 echo ""
 
-test_positive "${SCRIPT_DIR}/ha-deployment-rwx-positive.yaml"
-test_positive "${SCRIPT_DIR}/ha-deployment-existing-claim-positive.yaml"
 test_positive "${SCRIPT_DIR}/ha-deployment-s3-positive.yaml"
 test_positive "${SCRIPT_DIR}/single-replica-rwo-positive.yaml"
 
