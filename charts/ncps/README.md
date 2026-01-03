@@ -144,9 +144,9 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `config.storage.local.persistence.annotations` | PVC annotations | `{}` |
 | `config.storage.local.persistence.selector` | PV selector | `{}` |
 | `config.storage.s3.bucket` | S3 bucket name | `""` |
-| `config.storage.s3.endpoint` | S3 endpoint | `""` |
+| `config.storage.s3.endpoint` | S3 endpoint with scheme (https:// or http://) | `""` |
 | `config.storage.s3.region` | S3 region | `us-east-1` |
-| `config.storage.s3.useSSL` | Use SSL/TLS | `true` |
+| `config.storage.s3.forcePathStyle` | Force path-style addressing (required for MinIO) | `false` |
 | `config.storage.s3.accessKeyId` | S3 access key ID | `""` |
 | `config.storage.s3.secretAccessKey` | S3 secret access key | `""` |
 | `config.storage.s3.existingSecret` | Existing secret with S3 credentials | `""` |
@@ -325,9 +325,8 @@ config:
     type: s3
     s3:
       bucket: my-nix-cache
-      endpoint: s3.amazonaws.com
+      endpoint: https://s3.amazonaws.com
       region: us-west-2
-      useSSL: true
       accessKeyId: AKIA...
       secretAccessKey: secret...
   database:
@@ -353,9 +352,8 @@ config:
     type: s3
     s3:
       bucket: my-nix-cache-ha
-      endpoint: s3.amazonaws.com
+      endpoint: https://s3.amazonaws.com
       region: us-west-2
-      useSSL: true
       accessKeyId: AKIA...
       secretAccessKey: secret...
   database:

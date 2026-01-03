@@ -160,7 +160,7 @@
                 "region": {
                   "type": "string"
                 },
-                "useSSL": {
+                "forcePathStyle": {
                   "type": "boolean"
                 },
                 "accessKeyId": {

@@ -146,7 +146,6 @@ config:
       bucket: my-ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
       accessKeyId: YOUR_ACCESS_KEY
       secretAccessKey: YOUR_SECRET_KEY
 
@@ -175,7 +174,6 @@ config:
       bucket: my-ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
       accessKeyId: YOUR_ACCESS_KEY
       secretAccessKey: YOUR_SECRET_KEY
 
@@ -388,7 +386,6 @@ config:
       bucket: my-ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
       accessKeyId: YOUR_ACCESS_KEY
       secretAccessKey: YOUR_SECRET_KEY
 ```
@@ -403,7 +400,7 @@ config:
       bucket: ncps
       endpoint: http://minio.minio.svc.cluster.local:9000
       region: us-east-1
-      useSSL: false
+      forcePathStyle: true  # Required for MinIO
       accessKeyId: minioadmin
       secretAccessKey: minioadmin
 ```
@@ -535,7 +532,6 @@ config:
       bucket: ncps-production
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
 
   database:
     type: postgresql
@@ -667,7 +663,7 @@ kubectl -n ncps logs job/ncps-migration
 **S3 connection errors:**
 
 - Verify S3 credentials and endpoint
-- For MinIO, ensure `forcePathStyle: true` is set
+- For MinIO, ensure `config.storage.s3.forcePathStyle: true` is set
 - Check endpoint includes proper scheme (http:// or https://)
 
 ## Complete Values Reference
