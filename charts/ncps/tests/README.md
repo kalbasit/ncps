@@ -36,37 +36,51 @@ The tests use `helm template` to verify that the chart's validation logic works 
 
 ## Adding New Tests
 
-To add a new validation test:
+Adding a new validation test is simple - just create a new YAML file! The test runner automatically discovers all tests based on file naming convention.
 
-1. Create a new YAML values file in `validation/` directory:
+**Steps:**
 
-   - `*-positive.yaml` for tests that should pass validation
-   - `*-negative.yaml` for tests that should fail validation
+1. Create a new YAML values file in the `validation/` directory:
+   - `*-positive.yaml` for tests that should **pass** validation
+   - `*-negative.yaml` for tests that should **fail** validation
 
-1. Add the test case to `run-tests.sh`:
-
-   - Add to the `tests` array in the appropriate section (positive or negative)
-   - Format: `"filename:Description of test"`
-
-1. Test your new test case:
-
-   ```bash
-   # Test positive case
-   helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-positive.yaml
-
-   # Test negative case (should fail)
-   helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-negative.yaml
+2. Add a descriptive comment as the **first line** of the file:
+   ```yaml
+   # Your test description here
+   mode: deployment
+   replicaCount: 3
+   # ... rest of your values
    ```
 
-Example:
+3. Run the tests to verify:
+   ```bash
+   # Test your specific case
+   helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-positive.yaml
 
-```bash
-# Add to run-tests.sh in the positive tests array:
-tests=(
-    "ha-deployment-rwx-positive:HA + Deployment + ReadWriteMany"
-    "your-new-test-positive:Your new test description"  # Add here
-)
+   # Run all tests
+   ./charts/ncps/tests/run-tests.sh
+   ```
+
+That's it! The test runner will automatically discover and run your new test.
+
+**Example:**
+
+Create `validation/ha-deployment-custom-positive.yaml`:
+```yaml
+# Positive test: HA + Deployment + custom configuration
+mode: deployment
+replicaCount: 3
+config:
+  hostname: "test.example.com"
+  storage:
+    type: s3
+    s3:
+      bucket: custom-bucket
+      endpoint: https://custom.s3.endpoint.com
+  # ... rest of config
 ```
+
+The test will automatically appear in the test output with the description "Positive test: HA + Deployment + custom configuration".
 
 ## CI/CD Integration
 
