@@ -365,16 +365,17 @@ func newMeterProvider(
 	)
 
 	if enabled && colURL != "" {
-		metricExporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
 		zerolog.Ctx(ctx).
 			Info().
 			Msg("setting up meter provider with gRPC endpoint")
-	} else if enabled {
-		metricExporter, err = stdoutmetric.New()
 
+		metricExporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
+	} else if enabled {
 		zerolog.Ctx(ctx).
 			Info().
 			Msg("setting up meter provider with pretty printing")
+
+		metricExporter, err = stdoutmetric.New()
 	} else {
 		zerolog.Ctx(ctx).
 			Info().
@@ -412,22 +413,23 @@ func newLoggerProvider(
 	)
 
 	if enabled && colURL != "" {
-		logExporter, err = otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
 		zerolog.Ctx(ctx).
 			Info().
 			Msg("setting up tracer logger with gRPC endpoint")
-	} else if enabled {
-		logExporter, err = stdoutlog.New()
 
+		logExporter, err = otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
+	} else if enabled {
 		zerolog.Ctx(ctx).
 			Info().
 			Msg("setting up logger provider with pretty printing")
-	} else {
-		logExporter, err = stdoutlog.New(stdoutlog.WithWriter(io.Discard))
 
+		logExporter, err = stdoutlog.New()
+	} else {
 		zerolog.Ctx(ctx).
 			Info().
 			Msg("setting up logger provider to discard traces")
+
+		logExporter, err = stdoutlog.New(stdoutlog.WithWriter(io.Discard))
 	}
 
 	if err != nil {
