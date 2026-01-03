@@ -82,7 +82,7 @@ func New() (*cli.Command, error) {
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
 
-			ctx, err = getEarlyZerolog(ctx, cmd)
+			ctx, err = getZeroLogger(ctx, cmd)
 			if err != nil {
 				return ctx, err
 			}
@@ -91,42 +91,6 @@ func New() (*cli.Command, error) {
 			if err != nil {
 				return ctx, err
 			}
-
-			logLvl := cmd.String("log-level")
-
-			lvl, err := zerolog.ParseLevel(logLvl)
-			if err != nil {
-				return ctx, fmt.Errorf("error parsing the log-level %q: %w", logLvl, err)
-			}
-
-			var output io.Writer = os.Stdout
-
-			colURL := cmd.String("otel-grpc-url")
-			if colURL != "" {
-				otelWriter, err := otelzerolog.NewOtelWriter(nil)
-				if err != nil {
-					return ctx, err
-				}
-
-				output = zerolog.MultiLevelWriter(os.Stdout, otelWriter)
-			}
-
-			if term.IsTerminal(int(os.Stdout.Fd())) {
-				output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-			}
-
-			ctx = zerolog.New(output).
-				Level(lvl).
-				With().
-				Timestamp().
-				Logger().
-				WithContext(ctx)
-
-			(zerolog.Ctx(ctx)).
-				Info().
-				Str("otel_grpc_url", colURL).
-				Str("log_level", lvl.String()).
-				Msg("logger created")
 
 			return ctx, nil
 		},
@@ -178,6 +142,47 @@ func New() (*cli.Command, error) {
 	return c, nil
 }
 
+func getZeroLogger(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+	logLvl := cmd.String("log-level")
+
+	lvl, err := zerolog.ParseLevel(logLvl)
+	if err != nil {
+		return ctx, fmt.Errorf("error parsing the log-level %q: %w", logLvl, err)
+	}
+
+	var output io.Writer = os.Stdout
+
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	}
+
+	// XXX: Internally this calls global.GetLoggerProvider() which returns the
+	// logger once and that logger is updated in place anytime it gets updated
+	// (with global.SetLoggerProvider) so no need to re-create this logger if
+	// the otel logger was ever updated. In our case, we create the logger
+	// early (see Before above) once and it will just work due to this
+	// behavior.
+	otelWriter, err := otelzerolog.NewOtelWriter(nil)
+	if err != nil {
+		return ctx, err
+	}
+
+	output = zerolog.MultiLevelWriter(output, otelWriter)
+
+	logger := zerolog.New(output).
+		Level(lvl).
+		With().
+		Timestamp().
+		Logger()
+
+	logger.
+		Info().
+		Str("log_level", lvl.String()).
+		Msg("logger created")
+
+	return logger.WithContext(ctx), nil
+}
+
 func getUserDirs() (userDirectories, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -193,28 +198,6 @@ func getUserDirs() (userDirectories, error) {
 		configDir: configDir,
 		homeDir:   homeDir,
 	}, nil
-}
-
-func getEarlyZerolog(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-	logLvl := cmd.String("log-level")
-
-	lvl, err := zerolog.ParseLevel(logLvl)
-	if err != nil {
-		return ctx, fmt.Errorf("error parsing the log-level %q: %w", logLvl, err)
-	}
-
-	var output io.Writer = os.Stdout
-
-	if term.IsTerminal(int(os.Stdout.Fd())) {
-		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-	}
-
-	return zerolog.New(output).
-		Level(lvl).
-		With().
-		Timestamp().
-		Logger().
-		WithContext(ctx), nil
 }
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
