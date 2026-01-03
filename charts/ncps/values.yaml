@@ -336,13 +336,13 @@ readinessProbe:
   timeoutSeconds: 3
   failureThreshold: 3
 
-resources:
-  limits:
-    cpu: 2000m
-    memory: 2Gi
-  requests:
-    cpu: 100m
-    memory: 256Mi
+resources: {}
+  # limits:
+  #   cpu: 2000m
+  #   memory: 2Gi
+  # requests:
+  #   cpu: 100m
+  #   memory: 256Mi
 
 podDisruptionBudget:
   enabled: false
@@ -408,12 +408,12 @@ migration:
   mode: "initContainer"
 
   # Resources for migration container/job
-  resources:
-    limits:
-      memory: 128Mi
-    requests:
-      cpu: 50m
-      memory: 64Mi
+  resources: {}
+    # limits:
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 50m
+    #   memory: 64Mi
 
   # Security context for migration container/job
   securityContext:
