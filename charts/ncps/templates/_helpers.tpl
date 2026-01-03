@@ -186,9 +186,14 @@ This function will fail the template rendering if invalid configurations are det
     {{- fail "High availability mode (replicaCount > 1) is not compatible with SQLite. Use PostgreSQL or MySQL instead (config.database.type)" -}}
   {{- end -}}
 
-  {{- /* HA with Deployment should use S3 */ -}}
+  {{- /* HA with Deployment should use S3 or shared storage */ -}}
   {{- if and (eq .Values.config.storage.type "local") (eq .Values.mode "deployment") -}}
-    {{- fail "High availability mode with Deployment requires S3 storage (config.storage.type='s3') or use StatefulSet with shared filesystem" -}}
+    {{- /* Allow if using existingClaim (user-managed) or ReadWriteMany access mode */ -}}
+    {{- if not .Values.config.storage.local.persistence.existingClaim -}}
+      {{- if not (has "ReadWriteMany" .Values.config.storage.local.persistence.accessModes) -}}
+        {{- fail "High availability mode with Deployment requires S3 storage (config.storage.type='s3'), existing shared PVC (config.storage.local.persistence.existingClaim), or ReadWriteMany access mode, or use StatefulSet mode" -}}
+      {{- end -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 

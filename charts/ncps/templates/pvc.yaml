@@ -1,4 +1,4 @@
-{{- if and (eq .Values.mode "deployment") (or (and (eq .Values.config.storage.type "local") .Values.config.storage.local.persistence.enabled) (eq .Values.config.database.type "sqlite")) -}}
+{{- if and (eq .Values.mode "deployment") (or (and (eq .Values.config.storage.type "local") .Values.config.storage.local.persistence.enabled (not .Values.config.storage.local.persistence.existingClaim)) (eq .Values.config.database.type "sqlite")) -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
