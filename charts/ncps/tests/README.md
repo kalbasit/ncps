@@ -7,24 +7,29 @@ This directory contains tests for the ncps Helm chart.
 The tests use `helm template` to verify that the chart's validation logic works correctly. All tests are located in the `validation/` directory.
 
 **Run all tests:**
+
 ```bash
 # From anywhere in the repository
 ./charts/ncps/tests/run-tests.sh
 ```
 
 **Run individual validation script:**
+
 ```bash
 ./charts/ncps/tests/validation/test-validation.sh
 ```
 
 **Test cases:**
+
 - **Positive tests** (should succeed):
+
   - HA + Deployment + ReadWriteMany
   - HA + Deployment + existingClaim
   - HA + Deployment + S3
   - Single replica + ReadWriteOnce
 
 - **Negative tests** (should fail):
+
   - HA + Deployment + ReadWriteOnce (without existingClaim)
   - HA + SQLite database
   - HA without Redis
@@ -34,14 +39,17 @@ The tests use `helm template` to verify that the chart's validation logic works 
 To add a new validation test:
 
 1. Create a new YAML values file in `validation/` directory:
+
    - `*-positive.yaml` for tests that should pass validation
    - `*-negative.yaml` for tests that should fail validation
 
-2. Add the test case to `run-tests.sh`:
+1. Add the test case to `run-tests.sh`:
+
    - Add to the `tests` array in the appropriate section (positive or negative)
    - Format: `"filename:Description of test"`
 
-3. Test your new test case:
+1. Test your new test case:
+
    ```bash
    # Test positive case
    helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-positive.yaml
@@ -51,6 +59,7 @@ To add a new validation test:
    ```
 
 Example:
+
 ```bash
 # Add to run-tests.sh in the positive tests array:
 tests=(
@@ -77,12 +86,14 @@ helm-tests:
 ```
 
 The `run-tests.sh` script:
+
 - Runs all validation tests (positive and negative cases) using `helm template`
 - Exits with code 0 on success and 1 on failure
 - Can be run from anywhere in the repository
 - Provides comprehensive coverage of chart validation logic
 
 **Running tests locally:**
+
 ```bash
 # Run all tests (same as CI)
 ./charts/ncps/tests/run-tests.sh
