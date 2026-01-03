@@ -170,7 +170,7 @@ spec:
             - name: storage
               mountPath: /storage
             {{- end }}
-            {{- if or .Values.config.signing.secretKey .Values.config.signing.existingSecret }}
+            {{- if and .Values.config.signing.enabled (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
             - name: signing-key
               mountPath: /etc/ncps/secrets
               readOnly: true
@@ -202,7 +202,7 @@ spec:
           emptyDir: {}
           {{- end }}
         {{- end }}
-        {{- if or .Values.config.signing.secretKey .Values.config.signing.existingSecret }}
+        {{- if and .Values.config.signing.enabled (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
         - name: signing-key
           secret:
             secretName: {{ .Values.config.signing.existingSecret | default (printf "%s-signing-key" (include "ncps.fullname" .)) }}
