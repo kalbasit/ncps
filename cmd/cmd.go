@@ -156,7 +156,7 @@ func getZeroLogger(ctx context.Context, cmd *cli.Command) (context.Context, erro
 		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
 	}
 
-	// XXX: Internally this calls global.GetLoggerProvider() which returns the
+	// Internally this calls global.GetLoggerProvider() which returns the
 	// logger once and that logger is updated in place anytime it gets updated
 	// (with global.SetLoggerProvider) so no need to re-create this logger if
 	// the otel logger was ever updated. In our case, we create the logger
