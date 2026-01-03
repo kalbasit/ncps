@@ -1,0 +1,27 @@
+# Positive test: HA + Deployment + S3
+# This should PASS validation
+mode: deployment
+replicaCount: 3
+
+config:
+  hostname: "test.example.com"
+
+  storage:
+    type: s3
+    s3:
+      bucket: my-bucket
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      accessKeyId: test-key
+      secretAccessKey: test-secret
+
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.default.svc
+      password: test123
+
+  redis:
+    enabled: true
+    addresses:
+      - redis:6379
