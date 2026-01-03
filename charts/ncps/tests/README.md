@@ -13,12 +13,6 @@ The tests use `helm template` to verify that the chart's validation logic works 
 ./charts/ncps/tests/run-tests.sh
 ```
 
-**Run individual validation script:**
-
-```bash
-./charts/ncps/tests/validation/test-validation.sh
-```
-
 **Test cases:**
 
 - **Positive tests** (should succeed):
@@ -111,7 +105,4 @@ The `run-tests.sh` script:
 ```bash
 # Run all tests (same as CI)
 ./charts/ncps/tests/run-tests.sh
-
-# Or run the validation script directly
-./charts/ncps/tests/validation/test-validation.sh
 ```
