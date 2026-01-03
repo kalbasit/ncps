@@ -140,7 +140,7 @@ spec:
                   optional: true
             {{- end }}
             {{- if or .Values.config.redis.existingSecret .Values.config.redis.password }}
-            - name: NCPS_CACHE_REDIS_PASSWORD
+            - name: CACHE_REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.config.redis.existingSecret | default (include "ncps.fullname" .) }}
