@@ -131,6 +131,9 @@ config:
       # Persistent volume configuration (only for local storage)
       persistence:
         enabled: true
+        # Use existing PVC instead of creating a new one
+        # When set, the chart will not create a PVC
+        existingClaim: ""
         # Storage class (leave empty for default)
         storageClassName: ""
         accessModes:

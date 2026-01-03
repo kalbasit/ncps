@@ -198,9 +198,15 @@ spec:
             name: {{ include "ncps.fullname" . }}
         - name: tmp
           emptyDir: {}
-        {{- if and (eq .Values.config.storage.type "local") (not .Values.config.storage.local.persistence.enabled) }}
+        {{- if eq .Values.config.storage.type "local" }}
+        {{- if .Values.config.storage.local.persistence.existingClaim }}
+        - name: storage
+          persistentVolumeClaim:
+            claimName: {{ .Values.config.storage.local.persistence.existingClaim }}
+        {{- else if not .Values.config.storage.local.persistence.enabled }}
         - name: storage
           emptyDir: {}
+        {{- end }}
         {{- end }}
         {{- if or .Values.config.signing.secretKey .Values.config.signing.existingSecret }}
         - name: signing-key
@@ -227,7 +233,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-  {{- if and (eq .Values.config.storage.type "local") .Values.config.storage.local.persistence.enabled }}
+  {{- if and (eq .Values.config.storage.type "local") .Values.config.storage.local.persistence.enabled (not .Values.config.storage.local.persistence.existingClaim) }}
   volumeClaimTemplates:
     - metadata:
         name: storage
