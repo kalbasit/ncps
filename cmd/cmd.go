@@ -82,46 +82,15 @@ func New() (*cli.Command, error) {
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
 
-			otelShutdown, err = setupOTelSDK(ctx, cmd)
+			ctx, err = getZeroLogger(ctx, cmd)
 			if err != nil {
 				return ctx, err
 			}
 
-			logLvl := cmd.String("log-level")
-
-			lvl, err := zerolog.ParseLevel(logLvl)
+			otelShutdown, err = setupOTelSDK(ctx, cmd)
 			if err != nil {
-				return ctx, fmt.Errorf("error parsing the log-level %q: %w", logLvl, err)
+				return ctx, err
 			}
-
-			var output io.Writer = os.Stdout
-
-			colURL := cmd.String("otel-grpc-url")
-			if colURL != "" {
-				otelWriter, err := otelzerolog.NewOtelWriter(nil)
-				if err != nil {
-					return ctx, err
-				}
-
-				output = zerolog.MultiLevelWriter(os.Stdout, otelWriter)
-			}
-
-			if term.IsTerminal(int(os.Stdout.Fd())) {
-				output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-			}
-
-			ctx = zerolog.New(output).
-				Level(lvl).
-				With().
-				Timestamp().
-				Logger().
-				WithContext(ctx)
-
-			(zerolog.Ctx(ctx)).
-				Info().
-				Str("otel_grpc_url", colURL).
-				Str("log_level", lvl.String()).
-				Msg("logger created")
 
 			return ctx, nil
 		},
@@ -171,6 +140,47 @@ func New() (*cli.Command, error) {
 	}
 
 	return c, nil
+}
+
+func getZeroLogger(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+	logLvl := cmd.String("log-level")
+
+	lvl, err := zerolog.ParseLevel(logLvl)
+	if err != nil {
+		return ctx, fmt.Errorf("error parsing the log-level %q: %w", logLvl, err)
+	}
+
+	var output io.Writer = os.Stdout
+
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	}
+
+	// Internally this calls global.GetLoggerProvider() which returns the
+	// logger once and that logger is updated in place anytime it gets updated
+	// (with global.SetLoggerProvider) so no need to re-create this logger if
+	// the otel logger was ever updated. In our case, we create the logger
+	// early (see Before above) once and it will just work due to this
+	// behavior.
+	otelWriter, err := otelzerolog.NewOtelWriter(nil)
+	if err != nil {
+		return ctx, err
+	}
+
+	output = zerolog.MultiLevelWriter(output, otelWriter)
+
+	logger := zerolog.New(output).
+		Level(lvl).
+		With().
+		Timestamp().
+		Logger()
+
+	logger.
+		Info().
+		Str("log_level", lvl.String()).
+		Msg("logger created")
+
+	return logger.WithContext(ctx), nil
 }
 
 func getUserDirs() (userDirectories, error) {
@@ -223,17 +233,34 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	prop := newPropagator()
 	otel.SetTextMapPropagator(prop)
 
-	res, err := telemetry.NewResource(ctx, cmd.Root().Name, Version)
-	if err != nil {
-		return shutdown, handleErr(err)
-	}
-
 	colURL := cmd.String("otel-grpc-url")
 	enabled := cmd.Bool("otel-enabled")
+
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Bool("otel-enabled", enabled).
+		Str("otel-grpc-url", colURL).
+		Logger().
+		WithContext(ctx)
+
+	res, err := telemetry.NewResource(ctx, cmd.Root().Name, Version)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new telemetry resource")
+
+		return shutdown, handleErr(err)
+	}
 
 	// Set up trace provider.
 	tracerProvider, err := newTraceProvider(ctx, enabled, colURL, res)
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new tracer provider")
+
 		return shutdown, handleErr(err)
 	}
 
@@ -243,6 +270,11 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	// Set up meter provider.
 	meterProvider, err := newMeterProvider(ctx, enabled, colURL, res)
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new meter provider")
+
 		return shutdown, handleErr(err)
 	}
 
@@ -252,6 +284,11 @@ func setupOTelSDK(ctx context.Context, cmd *cli.Command) (func(context.Context) 
 	// Set up logger provider.
 	loggerProvider, err := newLoggerProvider(ctx, enabled, colURL, res)
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error creating a new logger provider")
+
 		return shutdown, handleErr(err)
 	}
 
@@ -280,14 +317,31 @@ func newTraceProvider(
 	)
 
 	if enabled && colURL != "" {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer provider with gRPC endpoint")
+
 		traceExporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithEndpointURL(colURL))
 	} else if enabled {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer provider with pretty printing")
+
 		traceExporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
 	} else {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer provider to discard traces")
+
 		traceExporter, err = stdouttrace.New(stdouttrace.WithWriter(io.Discard))
 	}
 
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error setting up the tracer provider")
+
 		return nil, err
 	}
 
@@ -311,14 +365,31 @@ func newMeterProvider(
 	)
 
 	if enabled && colURL != "" {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up meter provider with gRPC endpoint")
+
 		metricExporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithEndpointURL(colURL))
 	} else if enabled {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up meter provider with pretty printing")
+
 		metricExporter, err = stdoutmetric.New()
 	} else {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up meter provider to discard metrics")
+
 		metricExporter, err = stdoutmetric.New(stdoutmetric.WithWriter(io.Discard))
 	}
 
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error setting up the meter provider")
+
 		return nil, err
 	}
 
@@ -342,14 +413,31 @@ func newLoggerProvider(
 	)
 
 	if enabled && colURL != "" {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up tracer logger with gRPC endpoint")
+
 		logExporter, err = otlploggrpc.New(ctx, otlploggrpc.WithEndpointURL(colURL))
 	} else if enabled {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up logger provider with pretty printing")
+
 		logExporter, err = stdoutlog.New()
 	} else {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up logger provider to discard logs")
+
 		logExporter, err = stdoutlog.New(stdoutlog.WithWriter(io.Discard))
 	}
 
 	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error setting up the logger provider")
+
 		return nil, err
 	}
 
