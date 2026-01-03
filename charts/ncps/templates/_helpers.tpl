@@ -190,13 +190,7 @@ This function will fail the template rendering if invalid configurations are det
   {{- if and (eq .Values.config.storage.type "local") (eq .Values.mode "deployment") -}}
     {{- /* Allow if using existingClaim (user-managed) or ReadWriteMany access mode */ -}}
     {{- if not .Values.config.storage.local.persistence.existingClaim -}}
-      {{- $hasReadWriteMany := false -}}
-      {{- range .Values.config.storage.local.persistence.accessModes -}}
-        {{- if eq . "ReadWriteMany" -}}
-          {{- $hasReadWriteMany = true -}}
-        {{- end -}}
-      {{- end -}}
-      {{- if not $hasReadWriteMany -}}
+      {{- if not (has "ReadWriteMany" .Values.config.storage.local.persistence.accessModes) -}}
         {{- fail "High availability mode with Deployment requires S3 storage (config.storage.type='s3'), existing shared PVC (config.storage.local.persistence.existingClaim), or ReadWriteMany access mode, or use StatefulSet mode" -}}
       {{- end -}}
     {{- end -}}
