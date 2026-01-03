@@ -26,7 +26,7 @@ go.work.sum
 
 # Go and Nix-related build result
 /ncps
-/result
+/result*
 /.direnv
 
 # SQLite database

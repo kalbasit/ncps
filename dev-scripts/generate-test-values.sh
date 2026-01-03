@@ -8,19 +8,116 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CHART_DIR="$REPO_ROOT/charts/ncps"
 TEST_VALUES_DIR="$CHART_DIR/test-values"
 
-# Check if image tag is provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 <image-tag> <image-registry> <image-repository>"
-  echo ""
-  echo "Example: $0 sha-cf09394"
-  echo "         $0 0.5.1"
-  echo "         $0 sha3eb1fe1-aarch64-darwin myrepo.example.com ncps"
-  exit 1
-fi
+# Parse arguments
+PUSH_IMAGE=false
+IMAGE_TAG=""
+IMAGE_REGISTRY=""
+IMAGE_REPOSITORY=""
 
-IMAGE_TAG="$1"
-IMAGE_REGISTRY="${2:-docker.io}"
-IMAGE_REPOSITORY="${3:-kalbasit/ncps}"
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --push)
+      PUSH_IMAGE=true
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--push] [<image-tag> [<image-registry> [<image-repository>]]]"
+      echo ""
+      echo "Options:"
+      echo "  --push                  Build and push image to local Kind registry"
+      echo "  <image-tag>             Image tag (required if --push not specified)"
+      echo "  <image-registry>        Image registry (default: docker.io or 127.0.0.1:30000 with --push)"
+      echo "  <image-repository>      Image repository (default: kalbasit/ncps or ncps with --push)"
+      echo ""
+      echo "Examples:"
+      echo "  # Push to local registry (automatic build & push)"
+      echo "  $0 --push"
+      echo ""
+      echo "  # Use external image"
+      echo "  $0 sha-cf09394"
+      echo "  $0 0.5.1 docker.io kalbasit/ncps"
+      echo "  $0 sha3eb1fe1-aarch64-darwin zot.nasreddine.com ncps"
+      exit 0
+      ;;
+    *)
+      if [ -z "$IMAGE_TAG" ]; then
+        IMAGE_TAG="$1"
+      elif [ -z "$IMAGE_REGISTRY" ]; then
+        IMAGE_REGISTRY="$1"
+      elif [ -z "$IMAGE_REPOSITORY" ]; then
+        IMAGE_REPOSITORY="$1"
+      else
+        echo "❌ Error: Too many arguments" >&2
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+# Handle --push flag
+if [ "$PUSH_IMAGE" = true ]; then
+  if [ -n "$IMAGE_TAG" ] || [ -n "$IMAGE_REGISTRY" ] || [ -n "$IMAGE_REPOSITORY" ]; then
+    echo "❌ Error: Positional arguments (<image-tag>, etc.) are not allowed with the --push flag." >&2
+    echo "   The --push flag automatically builds, tags, and pushes the image." >&2
+    exit 1
+  fi
+
+  echo "========================================="
+  echo "Building and Pushing NCPS Image"
+  echo "========================================="
+  echo ""
+
+  # Build the Docker image
+  echo "📦 Building Docker image with Nix..."
+  if ! nix build "$REPO_ROOT#docker" -o "$REPO_ROOT/result-docker"; then
+    echo "❌ Error: Failed to build Docker image" >&2
+    exit 1
+  fi
+
+  DOCKER_IMAGE_PATH="$REPO_ROOT/result-docker"
+
+  # Generate image tag based on git hash
+  IMAGE_TAG="sha-$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+  IMAGE_REGISTRY="127.0.0.1:30000"
+  IMAGE_REPOSITORY="ncps"
+
+  echo "✅ Docker image built: $DOCKER_IMAGE_PATH"
+  echo ""
+
+  # Push to local registry
+  echo "🚀 Pushing image to local registry..."
+  echo "   Tag: $IMAGE_REGISTRY/$IMAGE_REPOSITORY:$IMAGE_TAG"
+
+  if ! command -v skopeo &> /dev/null; then
+    echo "❌ Error: skopeo is not installed" >&2
+    echo "   Please install skopeo or run this in the dev shell (nix develop)" >&2
+    exit 1
+  fi
+
+  if ! skopeo --insecure-policy copy \
+    --dest-tls-verify=false \
+    "docker-archive:$DOCKER_IMAGE_PATH" \
+    "docker://$IMAGE_REGISTRY/$IMAGE_REPOSITORY:$IMAGE_TAG"; then
+    echo "❌ Error: Failed to push image to registry" >&2
+    echo "   Make sure the Kind cluster is running: ./dev-scripts/k8s-cluster.sh info" >&2
+    exit 1
+  fi
+
+  echo "✅ Image pushed successfully"
+  echo ""
+else
+  # Check if image tag is provided when not using --push
+  if [ -z "$IMAGE_TAG" ]; then
+    echo "❌ Error: Image tag is required when not using --push." >&2
+    echo "Run '$0 --help' for more information." >&2
+    exit 1
+  fi
+
+  # Set defaults
+  IMAGE_REGISTRY="${IMAGE_REGISTRY:-docker.io}"
+  IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-kalbasit/ncps}"
+fi
 
 echo "========================================="
 echo "Generating NCPS Test Values Files"
@@ -537,15 +634,24 @@ echo "✅ Generated 10 values files"
 cat > "$TEST_VALUES_DIR/QUICK-INSTALL.sh" <<'INSTALL_EOF'
 #!/usr/bin/env bash
 # Quick install script for all NCPS test scenarios
+# Can be run from anywhere in the repository
 
 set -e
+
+# Find the chart directory relative to this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHART_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "========================================="
 echo "Installing NCPS Test Deployments"
 echo "========================================="
+echo "Chart directory: $CHART_DIR"
+echo ""
+
+# Change to chart directory for helm commands
+cd "$CHART_DIR"
 
 # Single Instance Deployments
-echo ""
 echo "📦 Installing Single Instance Deployments..."
 echo ""
 
@@ -591,10 +697,10 @@ echo "🔐 Installing Single Instance Deployments with Existing Secrets..."
 echo ""
 
 echo "7️⃣  Installing ncps-single-s3-postgres-existing-secret..."
-./test-values/install-single-s3-postgres-existing-secret.sh
+"$SCRIPT_DIR/install-single-s3-postgres-existing-secret.sh"
 
 echo "8️⃣  Installing ncps-single-s3-mariadb-existing-secret..."
-./test-values/install-single-s3-mariadb-existing-secret.sh
+"$SCRIPT_DIR/install-single-s3-mariadb-existing-secret.sh"
 
 # HA Deployments
 echo ""
@@ -621,8 +727,11 @@ echo ""
 echo "Check status with:"
 echo "  kubectl get pods --all-namespaces | grep ncps"
 echo ""
+echo "Test with:"
+echo "  $SCRIPT_DIR/TEST.sh"
+echo ""
 echo "Cleanup with:"
-echo "  ./test-values/CLEANUP.sh"
+echo "  $SCRIPT_DIR/CLEANUP.sh"
 INSTALL_EOF
 
 chmod +x "$TEST_VALUES_DIR/QUICK-INSTALL.sh"
@@ -631,6 +740,7 @@ chmod +x "$TEST_VALUES_DIR/QUICK-INSTALL.sh"
 cat > "$TEST_VALUES_DIR/CLEANUP.sh" <<'CLEANUP_EOF'
 #!/usr/bin/env bash
 # Cleanup script for all NCPS test deployments
+# Can be run from anywhere in the repository
 
 set -e
 
@@ -671,9 +781,11 @@ cat > "$TEST_VALUES_DIR/TEST.sh" <<'TEST_EOF'
 #!/usr/bin/env bash
 # Test script for all NCPS deployments
 # Calls the Python test script with the generated test-config.yaml
+# Can be run from anywhere in the repository
 
 set -e
 
+# Find paths relative to this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 TEST_CONFIG="$SCRIPT_DIR/test-config.yaml"
@@ -686,7 +798,7 @@ echo ""
 
 # Check if test-config.yaml exists
 if [ ! -f "$TEST_CONFIG" ]; then
-  echo "❌ Error: test-config.yaml not found"
+  echo "❌ Error: test-config.yaml not found at $TEST_CONFIG"
   echo "   Run ./dev-scripts/generate-test-values.sh first"
   exit 1
 fi
@@ -767,8 +879,13 @@ cat > "$TEST_VALUES_DIR/install-single-s3-postgres-existing-secret.sh" <<INSTALL
 #!/usr/bin/env bash
 # Install script for ncps-single-s3-postgres-existing-secret
 # This demonstrates using an existing secret for S3 and database credentials
+# Can be run from anywhere in the repository
 
 set -e
+
+# Find the chart directory relative to this script
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+CHART_DIR="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 
 NAMESPACE="ncps-single-s3-postgres-existing-secret"
 SECRET_NAME="ncps-external-secrets"
@@ -777,6 +894,7 @@ RELEASE_NAME="ncps-single-s3-postgres-existing-secret"
 echo "========================================="
 echo "Installing \$RELEASE_NAME"
 echo "========================================="
+echo "Chart directory: \$CHART_DIR"
 echo ""
 
 # Create namespace
@@ -797,18 +915,16 @@ stringData:
   access-key-id: "$S3_ACCESS_KEY"
   secret-access-key: "$S3_SECRET_KEY"
 
-  # Database URL (with URL-encoded credentials)
+  # Database connection string (full URL with credentials)
   database-url: "postgresql://$PG_USER_ENCODED:$PG_PASS_ENCODED@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable"
-
-  # Database password (for variable substitution)
-  password: "$PG_PASS"
 SECRET_EOF
 
 echo "✅ Secret created"
 echo ""
 
-# Install helm release
+# Install helm release (from chart directory)
 echo "📊 Installing Helm release..."
+cd "\$CHART_DIR"
 helm upgrade --install "\$RELEASE_NAME" . \\
   -f test-values/single-s3-postgres-existing-secret.yaml \\
   --namespace "\$NAMESPACE"
@@ -834,8 +950,13 @@ cat > "$TEST_VALUES_DIR/install-single-s3-mariadb-existing-secret.sh" <<INSTALL_
 #!/usr/bin/env bash
 # Install script for ncps-single-s3-mariadb-existing-secret
 # This demonstrates using an existing secret for S3 and database credentials
+# Can be run from anywhere in the repository
 
 set -e
+
+# Find the chart directory relative to this script
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+CHART_DIR="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 
 NAMESPACE="ncps-single-s3-mariadb-existing-secret"
 SECRET_NAME="ncps-external-secrets"
@@ -844,6 +965,7 @@ RELEASE_NAME="ncps-single-s3-mariadb-existing-secret"
 echo "========================================="
 echo "Installing \$RELEASE_NAME"
 echo "========================================="
+echo "Chart directory: \$CHART_DIR"
 echo ""
 
 # Create namespace
@@ -864,18 +986,16 @@ stringData:
   access-key-id: "$S3_ACCESS_KEY"
   secret-access-key: "$S3_SECRET_KEY"
 
-  # Database URL (with URL-encoded credentials)
+  # Database connection string (full URL with credentials)
   database-url: "mysql://$MARIA_USER_ENCODED:$MARIA_PASS_ENCODED@$MARIA_HOST:$MARIA_PORT/$MARIA_DB"
-
-  # Database password (for variable substitution)
-  password: "$MARIA_PASS"
 SECRET_EOF
 
 echo "✅ Secret created"
 echo ""
 
-# Install helm release
+# Install helm release (from chart directory)
 echo "📊 Installing Helm release..."
+cd "\$CHART_DIR"
 helm upgrade --install "\$RELEASE_NAME" . \\
   -f test-values/single-s3-mariadb-existing-secret.yaml \\
   --namespace "\$NAMESPACE"
@@ -1103,10 +1223,15 @@ cd charts/ncps
 
 ## Regenerating Test Values
 
-These files are auto-generated. To regenerate with a new image tag:
+These files are auto-generated. To regenerate:
 
 ```bash
 # From repository root
+
+# Build, push to local Kind registry, and generate test values (recommended)
+./dev-scripts/generate-test-values.sh --push
+
+# Or use an external image
 ./dev-scripts/generate-test-values.sh <image-tag> [registry] [repository]
 
 # Examples:
@@ -1115,7 +1240,15 @@ These files are auto-generated. To regenerate with a new image tag:
 ./dev-scripts/generate-test-values.sh sha3eb1fe1-aarch64-darwin zot.nasreddine.com ncps
 ```
 
-This will:
+With `--push`, this will:
+1. Build the Docker image using Nix
+2. Push to the local Kind registry (127.0.0.1:30000)
+3. Query the Kind cluster for current credentials
+4. Generate all 10 values files with updated image and credentials
+5. Generate test-config.yaml with cluster credentials and test data
+6. Regenerate install/cleanup/test scripts
+
+Otherwise, it will:
 1. Query the Kind cluster for current credentials
 2. Generate all 10 values files with updated image and credentials
 3. Generate test-config.yaml with cluster credentials and test data
@@ -1343,18 +1476,28 @@ echo "========================================="
 echo ""
 echo "Generated files in: $TEST_VALUES_DIR"
 echo ""
-echo "Next steps:"
-echo "  cd charts/ncps"
-echo "  ./test-values/QUICK-INSTALL.sh        # Install all deployments"
-echo "  ./test-values/TEST.sh                 # Test all deployments"
-echo "  ./test-values/CLEANUP.sh              # Remove all deployments"
+if [ "$PUSH_IMAGE" = true ]; then
+  echo "📦 Built and pushed image:"
+  echo "   $IMAGE_REGISTRY/$IMAGE_REPOSITORY:$IMAGE_TAG"
+  echo ""
+fi
+echo "Next steps (scripts can be run from anywhere):"
+echo "  charts/ncps/test-values/QUICK-INSTALL.sh        # Install all deployments"
+echo "  charts/ncps/test-values/TEST.sh                 # Test all deployments"
+echo "  charts/ncps/test-values/CLEANUP.sh              # Remove all deployments"
 echo ""
 echo "Or install/test individually:"
+echo "  cd charts/ncps"
 echo "  helm upgrade --install ncps-single-local-sqlite . \\"
 echo "    -f test-values/single-local-sqlite.yaml \\"
 echo "    --create-namespace --namespace ncps-single-local-sqlite"
 echo ""
-echo "  ./test-values/TEST.sh -d ncps-single-local-sqlite -v"
+echo "  charts/ncps/test-values/TEST.sh -d ncps-single-local-sqlite -v"
 echo ""
+if [ "$PUSH_IMAGE" = false ]; then
+  echo "💡 Tip: Use --push to build and push to local registry:"
+  echo "  ./dev-scripts/generate-test-values.sh --push"
+  echo ""
+fi
 echo "Python dependencies (for testing):"
 echo "  pip3 install pyyaml requests psycopg2-binary pymysql kubernetes boto3"

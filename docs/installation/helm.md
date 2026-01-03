@@ -6,30 +6,32 @@ Install ncps on Kubernetes using Helm for simplified configuration and managemen
 
 ## Prerequisites
 
-- Kubernetes cluster (version 1.20+)
-- Helm 3.0 or later installed
+- Kubernetes 1.19+
+- Helm 3.8+
 - kubectl configured and connected to your cluster
+- PV provisioner support in the underlying infrastructure (for local storage with persistence)
 
 ## Quick Start
 
-### Step 1: Add Helm Repository
-
-```bash
-# Add the ncps Helm repository
-helm repo add ncps https://kalbasit.github.io/ncps/
-helm repo update
-```
-
-### Step 2: Install with Default Values
+### Install from OCI Registry
 
 ```bash
 # Create namespace
 kubectl create namespace ncps
 
-# Install the chart
-helm install ncps ncps/ncps \
+# Install the chart from OCI registry
+helm install ncps oci://ghcr.io/kalbasit/helm/ncps \
+  --version <chart-version> \
   --namespace ncps \
   --set config.hostname=cache.example.com
+```
+
+### Install from Source
+
+```bash
+git clone https://github.com/kalbasit/ncps.git
+cd ncps/charts/ncps
+helm install ncps . -f values.yaml --namespace ncps
 ```
 
 This installs ncps with:
@@ -39,7 +41,7 @@ This installs ncps with:
 - SQLite database
 - Default upstream: cache.nixos.org
 
-### Step 3: Verify Installation
+### Verify Installation
 
 ```bash
 # Check pod status
@@ -144,22 +146,17 @@ config:
       bucket: my-ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
-      forcePathStyle: false  # Set to true for MinIO
       accessKeyId: YOUR_ACCESS_KEY
       secretAccessKey: YOUR_SECRET_KEY
 
   database:
-    type: sqlite
-    sqlite:
-      path: /storage/db/ncps.db
-
-  # Even with S3 storage, SQLite needs persistent storage for the database file
-  storage:
-    local:
-      persistence:
-        enabled: true
-        size: 1Gi  # Small volume just for SQLite database
+    type: postgresql
+    postgresql:
+      host: postgres.database.svc.cluster.local
+      port: 5432
+      database: ncps
+      username: ncps
+      password: YOUR_DB_PASSWORD
 ```
 
 ### High Availability with PostgreSQL
@@ -177,7 +174,6 @@ config:
       bucket: my-ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
       accessKeyId: YOUR_ACCESS_KEY
       secretAccessKey: YOUR_SECRET_KEY
 
@@ -217,11 +213,7 @@ config:
   database:
     type: postgresql
     postgresql:
-      host: postgres.database.svc.cluster.local
-      port: 5432
-      database: ncps
-      username: ncps
-      existingSecret: ncps-db-credentials  # Secret with "password" key
+      existingSecret: ncps-db-credentials  # Secret with "database-url" key (full connection string)
 
   redis:
     enabled: true
@@ -241,9 +233,9 @@ kubectl create secret generic ncps-s3-credentials -n ncps \
   --from-literal=access-key-id=YOUR_ACCESS_KEY \
   --from-literal=secret-access-key=YOUR_SECRET_KEY
 
-# Database password
+# Database connection string
 kubectl create secret generic ncps-db-credentials -n ncps \
-  --from-literal=password=YOUR_DB_PASSWORD
+  --from-literal=database-url="postgresql://ncps:YOUR_DB_PASSWORD@postgres.database.svc.cluster.local:5432/ncps?sslmode=require"
 
 # Redis password
 kubectl create secret generic ncps-redis-credentials -n ncps \
@@ -252,6 +244,22 @@ kubectl create secret generic ncps-redis-credentials -n ncps \
 # Signing key (optional, auto-generated if not provided)
 kubectl create secret generic ncps-signing-key -n ncps \
   --from-literal=signing-key=YOUR_SIGNING_KEY
+```
+
+Alternatively, for PostgreSQL and MySQL you can use individual connection parameters and let the chart build the connection string:
+
+```yaml
+config:
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.database.svc.cluster.local
+      port: 5432
+      database: ncps
+      username: ncps
+      password: YOUR_DB_PASSWORD
+      sslMode: require
+      extraParams: "connect_timeout=10"
 ```
 
 ## Database Configuration
@@ -275,14 +283,17 @@ config:
   database:
     type: postgresql
     postgresql:
-      host: postgres.database.svc.cluster.local
-      port: 5432
-      database: ncps
-      username: ncps
-      password: ""  # Use existingSecret instead
-      sslMode: disable
-      existingSecret: ncps-db-credentials
-      extraParams: ""  # Additional connection parameters
+      # Option 1: Use existing secret with full connection string
+      existingSecret: ncps-db-credentials  # Secret with "database-url" key
+
+      # Option 2: Use individual connection parameters (chart builds connection string)
+      # host: postgres.database.svc.cluster.local
+      # port: 5432
+      # database: ncps
+      # username: ncps
+      # password: YOUR_DB_PASSWORD
+      # sslMode: disable
+      # extraParams: "connect_timeout=10"  # Additional connection parameters
 
     # Connection pool settings
     pool:
@@ -297,13 +308,16 @@ config:
   database:
     type: mysql
     mysql:
-      host: mysql.database.svc.cluster.local
-      port: 3306
-      database: ncps
-      username: ncps
-      password: ""  # Use existingSecret instead
-      existingSecret: ncps-db-credentials
-      extraParams: ""  # Additional connection parameters
+      # Option 1: Use existing secret with full connection string
+      existingSecret: ncps-db-credentials  # Secret with "database-url" key
+
+      # Option 2: Use individual connection parameters (chart builds connection string)
+      # host: mysql.database.svc.cluster.local
+      # port: 3306
+      # database: ncps
+      # username: ncps
+      # password: YOUR_DB_PASSWORD
+      # extraParams: "timeout=10s"  # Additional connection parameters
 
     # Connection pool settings
     pool:
@@ -372,8 +386,6 @@ config:
       bucket: my-ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
-      forcePathStyle: false
       accessKeyId: YOUR_ACCESS_KEY
       secretAccessKey: YOUR_SECRET_KEY
 ```
@@ -388,13 +400,10 @@ config:
       bucket: ncps
       endpoint: http://minio.minio.svc.cluster.local:9000
       region: us-east-1
-      useSSL: false  # MinIO often uses http internally
       forcePathStyle: true  # Required for MinIO
       accessKeyId: minioadmin
       secretAccessKey: minioadmin
 ```
-
-**Important:** Set `forcePathStyle: true` for MinIO and other S3-compatible services that require path-style addressing.
 
 ## Redis Configuration (High Availability)
 
@@ -523,7 +532,6 @@ config:
       bucket: ncps-production
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      useSSL: true
 
   database:
     type: postgresql
@@ -607,7 +615,10 @@ kubectl run psql-import --rm -it --image=postgres:16 -- \
   psql -h postgres -U ncps -d ncps < backup.sql
 
 # Step 3: Upgrade to HA configuration
-helm upgrade ncps ncps/ncps -n ncps -f ha-values.yaml
+helm upgrade ncps oci://ghcr.io/kalbasit/helm/ncps \
+  --version <chart-version> \
+  -n ncps \
+  -f ha-values.yaml
 ```
 
 ### Rolling Updates
@@ -652,7 +663,7 @@ kubectl -n ncps logs job/ncps-migration
 **S3 connection errors:**
 
 - Verify S3 credentials and endpoint
-- For MinIO, ensure `forcePathStyle: true` is set
+- For MinIO, ensure `config.storage.s3.forcePathStyle: true` is set
 - Check endpoint includes proper scheme (http:// or https://)
 
 ## Complete Values Reference

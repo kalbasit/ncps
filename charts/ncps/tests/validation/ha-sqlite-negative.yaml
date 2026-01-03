@@ -1,0 +1,24 @@
+# Negative test: HA + SQLite database
+# This should FAIL validation (SQLite not compatible with HA)
+mode: deployment
+replicaCount: 3
+
+config:
+  hostname: "test.example.com"
+
+  storage:
+    type: s3
+    s3:
+      bucket: my-bucket
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      accessKeyId: test-key
+      secretAccessKey: test-secret
+
+  database:
+    type: sqlite  # Not allowed for HA
+
+  redis:
+    enabled: true
+    addresses:
+      - redis:6379
