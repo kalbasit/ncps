@@ -109,34 +109,10 @@ mysql://{{ .Values.config.database.mysql.username | urlquery }}:{{ $pass | urlqu
 {{- end -}}
 
 {{/*
-Database environment variables for password injection
+Database environment variables for password injection (only needed for chart-managed secrets)
+Not needed when using existingSecret as the full database-url is provided by the user
 */}}
 {{- define "ncps.databaseEnv" -}}
-{{- if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
-- name: POSTGRES_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.postgresql.existingSecret }}
-      key: password
-{{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.password }}
-- name: POSTGRES_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "ncps.fullname" . }}
-      key: postgres-password
-{{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
-- name: MYSQL_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.mysql.existingSecret }}
-      key: password
-{{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.password }}
-- name: MYSQL_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "ncps.fullname" . }}
-      key: mysql-password
-{{- end }}
 {{- end -}}
 
 {{/*
@@ -152,10 +128,17 @@ Returns the DATABASE_URL env var config - either from value or secretKeyRef
     secretKeyRef:
       name: {{ include "ncps.fullname" . }}
       key: database-url
-{{- else }}
-  value: {{ include "ncps.databaseURL" . | quote }}
+{{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.config.database.postgresql.existingSecret }}
+      key: database-url
+{{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.config.database.mysql.existingSecret }}
+      key: database-url
 {{- end }}
-{{- include "ncps.databaseEnv" . }}
 {{- end -}}
 
 {{/*

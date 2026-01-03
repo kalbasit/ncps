@@ -107,10 +107,17 @@ spec:
                 secretKeyRef:
                   name: {{ include "ncps.fullname" . }}
                   key: database-url
-              {{- else }}
-              value: {{ include "ncps.databaseURL" . | quote }}
+              {{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.database.postgresql.existingSecret }}
+                  key: database-url
+              {{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.database.mysql.existingSecret }}
+                  key: database-url
               {{- end }}
-            {{- include "ncps.databaseEnv" . | nindent 12 }}
             {{- if and (eq .Values.config.storage.type "s3") (or .Values.config.storage.s3.existingSecret (and .Values.config.storage.s3.accessKeyId .Values.config.storage.s3.secretAccessKey)) }}
             - name: CACHE_STORAGE_S3_ACCESS_KEY_ID
               valueFrom:
