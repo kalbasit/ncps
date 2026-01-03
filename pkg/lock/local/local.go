@@ -46,7 +46,7 @@ func NewLocker() lock.Locker {
 func (l *Locker) getShard(key string) int {
 	h, ok := l.hasherPool.Get().(hash.Hash32)
 	if !ok {
-		panic("this should not happen!")
+		panic("local.Locker: unexpected type in hasher pool; expected hash.Hash32")
 	}
 
 	defer l.hasherPool.Put(h)
