@@ -116,20 +116,16 @@ Returns the CACHE_DATABASE_URL env var config - either from value or secretKeyRe
 - name: CACHE_DATABASE_URL
 {{- if eq .Values.config.database.type "sqlite" }}
   value: {{ include "ncps.databaseURL" . | quote }}
-{{- else if or (and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.password) (and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.password) }}
+{{- else }}
   valueFrom:
     secretKeyRef:
+      {{- $dbType := .Values.config.database.type -}}
+      {{- $dbConfig := index .Values.config.database $dbType -}}
+      {{- if $dbConfig.existingSecret }}
+      name: {{ $dbConfig.existingSecret }}
+      {{- else if $dbConfig.password }}
       name: {{ include "ncps.fullname" . }}
-      key: database-url
-{{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.postgresql.existingSecret }}
-      key: database-url
-{{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.mysql.existingSecret }}
+      {{- end }}
       key: database-url
 {{- end }}
 {{- end -}}
@@ -142,20 +138,16 @@ Returns the DATABASE_URL env var config - either from value or secretKeyRef
 - name: DATABASE_URL
 {{- if eq .Values.config.database.type "sqlite" }}
   value: {{ include "ncps.databaseURL" . | quote }}
-{{- else if or (and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.password) (and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.password) }}
+{{- else }}
   valueFrom:
     secretKeyRef:
+      {{- $dbType := .Values.config.database.type -}}
+      {{- $dbConfig := index .Values.config.database $dbType -}}
+      {{- if $dbConfig.existingSecret }}
+      name: {{ $dbConfig.existingSecret }}
+      {{- else if $dbConfig.password }}
       name: {{ include "ncps.fullname" . }}
-      key: database-url
-{{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.postgresql.existingSecret }}
-      key: database-url
-{{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.mysql.existingSecret }}
+      {{- end }}
       key: database-url
 {{- end }}
 {{- end -}}
