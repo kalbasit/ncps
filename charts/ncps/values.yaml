@@ -55,6 +55,8 @@ serviceAccount:
   automountServiceAccountToken: false
 
 podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
   runAsNonRoot: true
   runAsUser: 1000
   runAsGroup: 1000
@@ -173,32 +175,44 @@ config:
 
     # PostgreSQL configuration
     postgresql:
+      # Existing secret containing full PostgreSQL connection string
+      # Secret must have a "database-url" key with the full connection string
+      # Example: postgresql://user:password@host:port/database?sslmode=disable
+      # Cannot be used together with any of the fields below
+      existingSecret: ""
+
       # PostgreSQL connection details
       host: ""
       port: 5432
       database: "ncps"
       username: "ncps"
+      # Password for PostgreSQL (chart builds connection string and stores in chart-managed secret)
+      # Cannot be used together with existingSecret
       password: ""
       # SSL mode: disable, require, verify-ca, verify-full
       sslMode: "disable"
-      # Existing secret containing PostgreSQL password
-      # Key name must be "password"
-      existingSecret: ""
       # Additional connection parameters (e.g., "connect_timeout=10")
+      # Only used when password is set (ignored when using existingSecret)
       extraParams: ""
 
     # MySQL configuration
     mysql:
+      # Existing secret containing full MySQL connection string
+      # Secret must have a "database-url" key with the full connection string
+      # Example: mysql://user:password@host:port/database
+      # Cannot be used together with any of the fields below
+      existingSecret: ""
+
       # MySQL connection details
       host: ""
       port: 3306
       database: "ncps"
       username: "ncps"
+      # Password for MySQL (chart builds connection string and stores in chart-managed secret)
+      # Cannot be used together with existingSecret
       password: ""
-      # Existing secret containing MySQL password
-      # Key name must be "password"
-      existingSecret: ""
       # Additional connection parameters (e.g., "timeout=10s")
+      # Only used when password is set (ignored when using existingSecret)
       extraParams: ""
 
     # Connection pool settings

@@ -109,58 +109,24 @@ mysql://{{ .Values.config.database.mysql.username | urlquery }}:{{ $pass | urlqu
 {{- end -}}
 
 {{/*
-Database environment variables for password injection
-*/}}
-{{- define "ncps.databaseEnv" -}}
-{{- if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
-- name: POSTGRES_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.postgresql.existingSecret }}
-      key: password
-{{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.password }}
-- name: POSTGRES_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "ncps.fullname" . }}
-      key: postgres-password
-{{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
-- name: MYSQL_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.config.database.mysql.existingSecret }}
-      key: password
-{{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.password }}
-- name: MYSQL_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "ncps.fullname" . }}
-      key: mysql-password
-{{- end }}
-{{- end -}}
-
-{{/*
 Database URL environment variable for migration
 Returns the DATABASE_URL env var config - either from value or secretKeyRef
 */}}
 {{- define "ncps.migrationDatabaseURLEnv" -}}
-{{- if eq .Values.config.database.type "sqlite" }}
 - name: DATABASE_URL
+{{- if eq .Values.config.database.type "sqlite" }}
   value: {{ include "ncps.databaseURL" . | quote }}
 {{- else if or (and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.password) (and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.password) }}
-- name: DATABASE_URL
   valueFrom:
     secretKeyRef:
       name: {{ include "ncps.fullname" . }}
       key: database-url
 {{- else if and (eq .Values.config.database.type "postgresql") .Values.config.database.postgresql.existingSecret }}
-- name: DATABASE_URL
   valueFrom:
     secretKeyRef:
       name: {{ .Values.config.database.postgresql.existingSecret }}
       key: database-url
 {{- else if and (eq .Values.config.database.type "mysql") .Values.config.database.mysql.existingSecret }}
-- name: DATABASE_URL
   valueFrom:
     secretKeyRef:
       name: {{ .Values.config.database.mysql.existingSecret }}
@@ -215,9 +181,17 @@ This function will fail the template rendering if invalid configurations are det
   {{- if not .Values.config.database.postgresql.host -}}
     {{- fail "PostgreSQL requires host (config.database.postgresql.host)" -}}
   {{- end -}}
+  {{- /* Prevent setting both password and existingSecret */ -}}
+  {{- if and .Values.config.database.postgresql.password .Values.config.database.postgresql.existingSecret -}}
+    {{- fail "PostgreSQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'database-url' key)" -}}
+  {{- end -}}
 {{- else if eq .Values.config.database.type "mysql" -}}
   {{- if not .Values.config.database.mysql.host -}}
     {{- fail "MySQL requires host (config.database.mysql.host)" -}}
+  {{- end -}}
+  {{- /* Prevent setting both password and existingSecret */ -}}
+  {{- if and .Values.config.database.mysql.password .Values.config.database.mysql.existingSecret -}}
+    {{- fail "MySQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'database-url' key)" -}}
   {{- end -}}
 {{- end -}}
 

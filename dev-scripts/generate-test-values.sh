@@ -915,11 +915,8 @@ stringData:
   access-key-id: "$S3_ACCESS_KEY"
   secret-access-key: "$S3_SECRET_KEY"
 
-  # Database URL (with URL-encoded credentials)
+  # Database connection string (full URL with credentials)
   database-url: "postgresql://$PG_USER_ENCODED:$PG_PASS_ENCODED@$PG_HOST:$PG_PORT/$PG_DB?sslmode=disable"
-
-  # Database password (for variable substitution)
-  password: "$PG_PASS"
 SECRET_EOF
 
 echo "✅ Secret created"
@@ -989,11 +986,8 @@ stringData:
   access-key-id: "$S3_ACCESS_KEY"
   secret-access-key: "$S3_SECRET_KEY"
 
-  # Database URL (with URL-encoded credentials)
+  # Database connection string (full URL with credentials)
   database-url: "mysql://$MARIA_USER_ENCODED:$MARIA_PASS_ENCODED@$MARIA_HOST:$MARIA_PORT/$MARIA_DB"
-
-  # Database password (for variable substitution)
-  password: "$MARIA_PASS"
 SECRET_EOF
 
 echo "✅ Secret created"
