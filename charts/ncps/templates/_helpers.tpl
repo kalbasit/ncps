@@ -109,13 +109,6 @@ mysql://{{ .Values.config.database.mysql.username | urlquery }}:{{ $pass | urlqu
 {{- end -}}
 
 {{/*
-Database environment variables for password injection (only needed for chart-managed secrets)
-Not needed when using existingSecret as the full database-url is provided by the user
-*/}}
-{{- define "ncps.databaseEnv" -}}
-{{- end -}}
-
-{{/*
 Database URL environment variable for migration
 Returns the DATABASE_URL env var config - either from value or secretKeyRef
 */}}
