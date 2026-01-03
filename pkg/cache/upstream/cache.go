@@ -458,7 +458,7 @@ func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 		Info().
 		Msg("heading the nar from upstream")
 
-	resp, err := c.doRequest(ctx, http.MethodGet, u, mutators...)
+	resp, err := c.doRequest(ctx, http.MethodHead, u, mutators...)
 	if err != nil {
 		return false, err
 	}
