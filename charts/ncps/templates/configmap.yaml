@@ -38,7 +38,7 @@ data:
       allow-delete-verb: true
       {{- end }}
 
-      sign-narinfo: {{ if eq .Values.config.signing.enabled false }}false{{ else }}true{{ end }}
+      sign-narinfo: {{ ne .Values.config.signing.enabled false }}
 
       upstream:
         urls:
