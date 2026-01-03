@@ -76,24 +76,23 @@ helm-tests:
       uses: azure/setup-helm@v4
       with:
         version: 'v3.16.3'
-    - name: Install helm-unittest plugin
-      run: helm plugin install https://github.com/helm-unittest/helm-unittest
     - name: Run Helm validation tests
       run: ./charts/ncps/tests/run-tests.sh
 ```
 
 The `run-tests.sh` script:
-- Automatically detects and runs helm-unittest tests if the plugin is installed
-- Runs all validation tests (positive and negative cases)
+- Automatically detects and runs helm-unittest tests if the plugin is installed (optional)
+- Runs all validation tests (positive and negative cases) using `helm template`
 - Exits with code 0 on success and 1 on failure
 - Can be run from anywhere in the repository
 
-**Manual CI testing:**
-You can run the same tests locally that CI runs:
+**Note on helm-unittest:**
+The helm-unittest plugin is optional and not installed in CI to avoid compatibility issues. The shell-based validation tests using `helm template` provide comprehensive coverage. If you want to run the helm-unittest tests locally:
+
 ```bash
-# Install helm-unittest plugin (optional, tests run without it too)
+# Install helm-unittest plugin (optional, only if you want to run validation_test.yaml)
 helm plugin install https://github.com/helm-unittest/helm-unittest
 
-# Run all tests
+# Run all tests (includes helm-unittest if installed)
 ./charts/ncps/tests/run-tests.sh
 ```
