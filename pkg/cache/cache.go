@@ -535,6 +535,12 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 		}()
 
 		_, err := c.narStore.PutNar(ctx, narURL, r)
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			// Already exists is not an error for PUT - return success
+			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, skipping")
+
+			return nil
+		}
 
 		return err
 	})
@@ -657,6 +663,13 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 
 	written, err := c.narStore.PutNar(ctx, *narURL, f)
 	if err != nil {
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			// Already exists is not an error - another request stored it first
+			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, skipping")
+
+			return 0, storage.ErrAlreadyExists
+		}
+
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
@@ -782,7 +795,7 @@ func (c *Cache) pullNarIntoStore(
 	}
 
 	written, err := c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
-	if err != nil {
+	if err != nil && !errors.Is(err, storage.ErrAlreadyExists) {
 		ds.setError(err)
 
 		return
@@ -1145,12 +1158,17 @@ func (c *Cache) pullNarInfo(
 	}
 
 	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error storing the narInfo in the store")
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			// Already exists is not an error - another request stored it first
+			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
+		} else {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error storing the narInfo in the store")
 
-		return
+			return
+		}
 	}
 
 	// Signal that the asset is now in final storage and the distributed lock can be released
@@ -1235,7 +1253,11 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	}
 
 	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		return fmt.Errorf("error storing the narInfo in the store: %w", err)
+		if !errors.Is(err, storage.ErrAlreadyExists) {
+			return fmt.Errorf("error storing the narInfo in the store: %w", err)
+		}
+		// Already exists is not an error for PUT - continue to database storage
+		zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
 	}
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
