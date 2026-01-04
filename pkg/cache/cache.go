@@ -1182,7 +1182,10 @@ func (c *Cache) pullNarInfo(
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
 		if errors.Is(err, ErrAlreadyExists) {
-			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in database, skipping")
+			// Already exists is not an error - another request stored it first
+			zerolog.Ctx(ctx).
+				Debug().
+				Msg("narinfo already exists in database, skipping")
 		} else {
 			zerolog.Ctx(ctx).
 				Error().
