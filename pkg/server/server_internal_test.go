@@ -39,10 +39,10 @@ func TestSetDeletePermitted(t *testing.T) {
 
 	// Use local locks for tests
 	downloadLocker := locklocal.NewLocker()
-	lruLocker := locklocal.NewRWLocker()
+	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
 	require.NoError(t, err)
 
 	t.Run("false", func(t *testing.T) {

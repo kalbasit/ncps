@@ -696,7 +696,7 @@ func createCache(
 	// Initialize distributed or local locks based on Redis configuration
 	var (
 		downloadLocker lock.Locker
-		lruLocker      lock.RWLocker
+		cacheLocker    lock.RWLocker
 	)
 
 	redisAddrs := cmd.StringSlice("cache-redis-addrs")
@@ -735,9 +735,9 @@ func createCache(
 			return nil, fmt.Errorf("error creating Redis download locker: %w", err)
 		}
 
-		lruLocker, err = redis.NewRWLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
+		cacheLocker, err = redis.NewRWLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
 		if err != nil {
-			return nil, fmt.Errorf("error creating Redis LRU locker: %w", err)
+			return nil, fmt.Errorf("error creating Redis cache locker: %w", err)
 		}
 
 		zerolog.Ctx(ctx).Info().
@@ -746,7 +746,7 @@ func createCache(
 	} else {
 		// No Redis - use local locks (single-instance mode)
 		downloadLocker = local.NewLocker()
-		lruLocker = local.NewRWLocker()
+		cacheLocker = local.NewRWLocker()
 
 		zerolog.Ctx(ctx).Info().Msg("using local locks (single-instance mode)")
 	}
@@ -760,7 +760,7 @@ func createCache(
 		narStore,
 		cmd.String("cache-secret-key-path"),
 		downloadLocker,
-		lruLocker,
+		cacheLocker,
 		cmd.Duration("cache-lock-download-ttl"),
 		cmd.Duration("cache-lock-lru-ttl"),
 	)
