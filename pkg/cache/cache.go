@@ -1167,6 +1167,8 @@ func (c *Cache) pullNarInfo(
 				Err(err).
 				Msg("error storing the narInfo in the store")
 
+			ds.setError(err)
+
 			return
 		}
 	}
@@ -1253,11 +1255,12 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	}
 
 	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		if !errors.Is(err, storage.ErrAlreadyExists) {
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			// Already exists is not an error for PUT - continue to database storage
+			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
+		} else {
 			return fmt.Errorf("error storing the narInfo in the store: %w", err)
 		}
-		// Already exists is not an error for PUT - continue to database storage
-		zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
 	}
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
