@@ -1109,15 +1109,17 @@ func (c *Cache) pullNarInfo(
 			zerolog.Ctx(ctx).WithContext(c.baseContext),
 			trace.SpanFromContext(ctx),
 		)
-		ds := c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
-		<-ds.done
+		narDs := c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
+		<-narDs.done
 
-		err := ds.getError()
+		err := narDs.getError()
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
 				Msg("error pulling the nar")
+
+			ds.setError(err)
 
 			return
 		}
@@ -1156,12 +1158,19 @@ func (c *Cache) pullNarInfo(
 	close(ds.stored)
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error storing the narinfo in the database")
+		if errors.Is(err, ErrAlreadyExists) {
+			// Already exists is not an error - another request stored it first
+			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in database, skipping")
+		} else {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error storing the narinfo in the database")
 
-		return
+			ds.setError(err)
+
+			return
+		}
 	}
 
 	zerolog.Ctx(ctx).
