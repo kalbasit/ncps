@@ -258,14 +258,14 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 				Sources: flagSources("cache.redis.pool-size", "CACHE_REDIS_POOL_SIZE"),
 				Value:   10,
 			},
-			&cli.StringFlag{
-				Name:    "cache-redis-key-prefix",
-				Usage:   "Prefix for all Redis lock keys",
-				Sources: flagSources("cache.redis.key-prefix", "CACHE_REDIS_KEY_PREFIX"),
-				Value:   "ncps:lock:",
-			},
 
 			// Lock Configuration
+			&cli.StringFlag{
+				Name:    "cache-lock-redis-key-prefix",
+				Usage:   "Prefix for all Redis lock keys (only used when Redis is configured)",
+				Sources: flagSources("cache.lock.redis.key-prefix", "CACHE_LOCK_REDIS_KEY_PREFIX"),
+				Value:   "ncps:lock:",
+			},
 			&cli.DurationFlag{
 				Name:    "cache-lock-download-ttl",
 				Usage:   "TTL for download locks (per-hash locks)",
@@ -718,7 +718,7 @@ func createCache(
 			DB:        cmd.Int("cache-redis-db"),
 			UseTLS:    cmd.Bool("cache-redis-use-tls"),
 			PoolSize:  cmd.Int("cache-redis-pool-size"),
-			KeyPrefix: cmd.String("cache-redis-key-prefix"),
+			KeyPrefix: cmd.String("cache-lock-redis-key-prefix"),
 		}
 
 		retryCfg := redis.RetryConfig{

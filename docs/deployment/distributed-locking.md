@@ -195,12 +195,12 @@ cache:
 | `--cache-redis-db` | Database number (0-15) | 0 |
 | `--cache-redis-use-tls` | Enable TLS connections | false |
 | `--cache-redis-pool-size` | Connection pool size | 10 |
-| `--cache-redis-key-prefix` | Key prefix for all locks | "ncps:lock:" |
 
 #### Lock Timing Settings
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--cache-lock-redis-key-prefix` | Key prefix for all locks | "ncps:lock:" |
 | `--cache-lock-download-ttl` | Download lock timeout | 5m |
 | `--cache-lock-lru-ttl` | LRU lock timeout | 30m |
 
@@ -427,7 +427,7 @@ grep "acquired download lock" /var/log/ncps.log | wc -l
 1. **Redis not configured** - Verify `--cache-redis-addrs` is set
 1. **Network issues** - Check firewall rules, DNS resolution
 1. **Redis authentication** - Verify username/password if ACL is enabled
-1. **Different key prefixes** - Ensure all instances use the same `--cache-redis-key-prefix`
+1. **Different key prefixes** - Ensure all instances use the same `--cache-lock-redis-key-prefix`
 
 **Solution:**
 

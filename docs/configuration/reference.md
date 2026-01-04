@@ -217,7 +217,6 @@ Redis configuration for distributed locking in high-availability deployments.
 | `--cache-redis-db` | Redis database number (0-15) | `CACHE_REDIS_DB` | 0 |
 | `--cache-redis-use-tls` | Enable TLS for Redis connections | `CACHE_REDIS_USE_TLS` | false |
 | `--cache-redis-pool-size` | Connection pool size | `CACHE_REDIS_POOL_SIZE` | 10 |
-| `--cache-redis-key-prefix` | Key prefix for all locks | `CACHE_REDIS_KEY_PREFIX` | "ncps:lock:" |
 
 **Note:** If `--cache-redis-addrs` is not provided, ncps runs in single-instance mode using local locks.
 
@@ -250,6 +249,12 @@ See [High Availability Guide](../deployment/high-availability.md) and [Distribut
 ## Lock Configuration (HA)
 
 Lock timing and retry configuration for distributed locking.
+
+### Redis Lock Settings
+
+| Option | Description | Environment Variable | Default |
+|--------|-------------|---------------------|---------|
+| `--cache-lock-redis-key-prefix` | Key prefix for all locks (only used when Redis is configured) | `CACHE_LOCK_REDIS_KEY_PREFIX` | `"ncps:lock:"` |
 
 ### Lock Timeouts
 

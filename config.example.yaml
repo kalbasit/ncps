@@ -127,10 +127,12 @@ cache:
     use-tls: false
     # Connection pool size (default: 10)
     pool-size: 10
-    # Key prefix for all distributed locks (default: "ncps:lock:")
-    key-prefix: "ncps:lock:"
   # Lock configuration
   lock:
+    # Redis-specific lock settings (only used when Redis is configured above)
+    redis:
+      # Key prefix for all distributed locks (default: "ncps:lock:")
+      key-prefix: "ncps:lock:"
     # Timeout for download locks (per-hash locks)
     download-lock-ttl: 5m
     # Timeout for LRU lock (global exclusive lock)

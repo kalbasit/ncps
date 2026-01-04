@@ -332,41 +332,46 @@
             "poolSize": {
               "type": "integer",
               "minimum": 1
-            },
-            "keyPrefix": {
-              "type": "string"
-            },
-            "lock": {
+            }
+          }
+        },
+        "lock": {
+          "type": "object",
+          "properties": {
+            "redis": {
               "type": "object",
               "properties": {
-                "downloadTTL": {
+                "keyPrefix": {
+                  "type": "string"
+                }
+              }
+            },
+            "downloadTTL": {
+              "type": "string"
+            },
+            "lruTTL": {
+              "type": "string"
+            },
+            "retry": {
+              "type": "object",
+              "properties": {
+                "maxAttempts": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "initialDelay": {
                   "type": "string"
                 },
-                "lruTTL": {
+                "maxDelay": {
                   "type": "string"
                 },
-                "retry": {
-                  "type": "object",
-                  "properties": {
-                    "maxAttempts": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "initialDelay": {
-                      "type": "string"
-                    },
-                    "maxDelay": {
-                      "type": "string"
-                    },
-                    "jitter": {
-                      "type": "boolean"
-                    }
-                  }
-                },
-                "allowDegradedMode": {
+                "jitter": {
                   "type": "boolean"
                 }
               }
+            },
+            "allowDegradedMode": {
+              "type": "boolean"
             }
           }
         },
