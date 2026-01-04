@@ -1856,9 +1856,7 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 // withReadLock executes fn while holding a read lock on the cache.
 // It automatically handles lock acquisition, release, and error logging.
 func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() error) error {
-	lockKey := cacheLockKey
-
-	if err := c.cacheLocker.RLock(ctx, lockKey, c.cacheLockTTL); err != nil {
+	if err := c.cacheLocker.RLock(ctx, cacheLockKey, c.cacheLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Str("operation", operation).
@@ -1868,7 +1866,7 @@ func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() er
 	}
 
 	defer func() {
-		if err := c.cacheLocker.RUnlock(ctx, lockKey); err != nil {
+		if err := c.cacheLocker.RUnlock(ctx, cacheLockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("operation", operation).
