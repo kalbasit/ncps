@@ -53,6 +53,9 @@ var (
 	// errNarInfoPurged is returned if the narinfo was purged.
 	errNarInfoPurged = errors.New("the narinfo was purged")
 
+	// ErrAlreadyExists is returned when attempting to store a narinfo/nar that already exists in the database.
+	ErrAlreadyExists = errors.New("narinfo or nar already exists")
+
 	//nolint:gochecknoglobals
 	meter metric.Meter
 
@@ -1520,7 +1523,7 @@ func (c *Cache) storeInDatabase(
 					Warn().
 					Msg("narinfo record was not added to database because it already exists")
 
-				return nil
+				return ErrAlreadyExists
 			}
 
 			return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
@@ -1544,7 +1547,7 @@ func (c *Cache) storeInDatabase(
 					Warn().
 					Msg("nar record was not added to database because it already exists")
 
-				return nil
+				return ErrAlreadyExists
 			}
 
 			return fmt.Errorf("error inserting the nar record in the database: %w", err)
