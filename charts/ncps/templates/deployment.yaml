@@ -91,9 +91,9 @@ spec:
           command:
             - /bin/ncps
           args:
-            - serve
             - --config
             - /etc/ncps/config.yaml
+            - serve
             {{- if and (ne .Values.config.signing.enabled false) (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
             - --cache-secret-key-file
             - /etc/ncps/secrets/signing-key
