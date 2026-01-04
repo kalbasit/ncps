@@ -26,7 +26,11 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-const cacheName = "cache.example.com"
+const (
+	cacheName       = "cache.example.com"
+	downloadLockTTL = 5 * time.Minute
+	lruLockTTL      = 30 * time.Minute
+)
 
 func setupTestCache(t *testing.T) (*Cache, func()) {
 	t.Helper()
@@ -61,7 +65,7 @@ func setupTestCache(t *testing.T) (*Cache, func()) {
 	lruLocker := locklocal.NewRWLocker()
 
 	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+		downloadLocker, lruLocker, downloadLockTTL, lruLockTTL)
 	if err != nil {
 		cleanup()
 	}
