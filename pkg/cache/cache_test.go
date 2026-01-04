@@ -47,10 +47,10 @@ func newTestCache(
 	secretKeyPath string,
 ) (*cache.Cache, error) {
 	downloadLocker := locklocal.NewLocker()
-	lruLocker := locklocal.NewRWLocker()
+	cacheLocker := locklocal.NewRWLocker()
 
 	return cache.New(ctx, hostName, db, configStore, narInfoStore, narStore, secretKeyPath,
-		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
 }
 
 func TestNew(t *testing.T) {

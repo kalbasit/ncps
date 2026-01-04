@@ -113,7 +113,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 		downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
 		require.NoError(t, err)
 
-		lruLocker, err := redis.NewRWLocker(ctx, redisCfg, retryCfg, false)
+		cacheLocker, err := redis.NewRWLocker(ctx, redisCfg, retryCfg, false)
 		require.NoError(t, err)
 
 		// Create separate upstream cache for each instance to avoid data races
@@ -131,7 +131,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 			sharedStore,
 			"",
 			downloadLocker,
-			lruLocker,
+			cacheLocker,
 			5*time.Minute,
 			30*time.Minute,
 		)
@@ -236,7 +236,7 @@ func TestDistributedConcurrentReads(t *testing.T) {
 	// For this test, use local locks since we're testing read concurrency,
 	// not distributed locking coordination
 	downloadLocker := locklocal.NewLocker()
-	lruLocker := locklocal.NewRWLocker()
+	cacheLocker := locklocal.NewRWLocker()
 
 	// Create first instance to populate the cache
 	c1, err := cache.New(
@@ -248,7 +248,7 @@ func TestDistributedConcurrentReads(t *testing.T) {
 		sharedStore,
 		"",
 		downloadLocker,
-		lruLocker,
+		cacheLocker,
 		5*time.Minute,
 		30*time.Minute,
 	)
@@ -277,7 +277,7 @@ func TestDistributedConcurrentReads(t *testing.T) {
 
 	for i := 0; i < numInstances; i++ {
 		downloadLocker := locklocal.NewLocker()
-		lruLocker := locklocal.NewRWLocker()
+		cacheLocker := locklocal.NewRWLocker()
 
 		// Don't create upstream cache for read-only instances
 		c, err := cache.New(
@@ -289,7 +289,7 @@ func TestDistributedConcurrentReads(t *testing.T) {
 			sharedStore,
 			"",
 			downloadLocker,
-			lruLocker,
+			cacheLocker,
 			5*time.Minute,
 			30*time.Minute,
 		)

@@ -127,9 +127,9 @@ type Cache struct {
 
 	// Lock abstraction (can be local or distributed)
 	downloadLocker  lock.Locker
-	lruLocker       lock.RWLocker
+	cacheLocker     lock.RWLocker
 	downloadLockTTL time.Duration
-	lruLockTTL      time.Duration
+	cacheLockTTL    time.Duration
 
 	// upstreamJobs is used to store in-progress jobs for pulling nars from
 	// upstream cache so incoming requests for the same nar can find and wait
@@ -200,9 +200,9 @@ func New(
 	narStore storage.NarStore,
 	secretKeyPath string,
 	downloadLocker lock.Locker,
-	lruLocker lock.RWLocker,
+	cacheLocker lock.RWLocker,
 	downloadLockTTL time.Duration,
-	lruLockTTL time.Duration,
+	cacheLockTTL time.Duration,
 ) (*Cache, error) {
 	c := &Cache{
 		baseContext:          ctx,
@@ -212,9 +212,9 @@ func New(
 		narStore:             narStore,
 		shouldSignNarinfo:    true,
 		downloadLocker:       downloadLocker,
-		lruLocker:            lruLocker,
+		cacheLocker:          cacheLocker,
 		downloadLockTTL:      downloadLockTTL,
-		lruLockTTL:           lruLockTTL,
+		cacheLockTTL:         cacheLockTTL,
 		upstreamJobs:         make(map[string]*downloadState),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
@@ -1232,54 +1232,38 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	// Use hash-specific lock to prevent concurrent writes of the same narinfo
 	lockKey := fmt.Sprintf("narinfo:%s", hash)
 
-	if err := c.lruLocker.Lock(ctx, lockKey, c.lruLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("lock_key", lockKey).
-			Msg("failed to acquire lock for narinfo")
-
-		return fmt.Errorf("failed to acquire lock for hash %s: %w", hash, err)
-	}
-
-	defer func() {
-		if err := c.lruLocker.Unlock(ctx, lockKey); err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Str("lock_key", lockKey).
-				Msg("failed to release lock for narinfo")
-		}
-	}()
-
-	narInfo, err := narinfo.Parse(r)
-	if err != nil {
-		return fmt.Errorf("error parsing narinfo: %w", err)
-	}
-
-	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
-		return fmt.Errorf("error signing the narinfo: %w", err)
-	}
-
-	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		if errors.Is(err, storage.ErrAlreadyExists) {
-			// Already exists is not an error for PUT - continue to database storage
-			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
-		} else {
-			return fmt.Errorf("error storing the narInfo in the store: %w", err)
-		}
-	}
-
-	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
-		if errors.Is(err, ErrAlreadyExists) {
-			// Already exists is not an error for PUT - return success
-			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in database, skipping")
-
-			return nil
+	return c.withWriteLock(ctx, "PutNarInfo", lockKey, func() error {
+		narInfo, err := narinfo.Parse(r)
+		if err != nil {
+			return fmt.Errorf("error parsing narinfo: %w", err)
 		}
 
-		return fmt.Errorf("error storing in database: %w", err)
-	}
+		if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
+			return fmt.Errorf("error signing the narinfo: %w", err)
+		}
 
-	return nil
+		if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
+			if errors.Is(err, storage.ErrAlreadyExists) {
+				// Already exists is not an error for PUT - continue to database storage
+				zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
+			} else {
+				return fmt.Errorf("error storing the narInfo in the store: %w", err)
+			}
+		}
+
+		if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
+			if errors.Is(err, ErrAlreadyExists) {
+				// Already exists is not an error for PUT - return success
+				zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in database, skipping")
+
+				return nil
+			}
+
+			return fmt.Errorf("error storing in database: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
@@ -1874,7 +1858,7 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() error) error {
 	lockKey := cacheLockKey
 
-	if err := c.lruLocker.RLock(ctx, lockKey, c.lruLockTTL); err != nil {
+	if err := c.cacheLocker.RLock(ctx, lockKey, c.cacheLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Str("operation", operation).
@@ -1884,7 +1868,7 @@ func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() er
 	}
 
 	defer func() {
-		if err := c.lruLocker.RUnlock(ctx, lockKey); err != nil {
+		if err := c.cacheLocker.RUnlock(ctx, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("operation", operation).
@@ -1893,6 +1877,67 @@ func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() er
 	}()
 
 	return fn()
+}
+
+// withWriteLock executes fn while holding a write lock with the specified key.
+// It automatically handles lock acquisition, release, and error logging.
+func (c *Cache) withWriteLock(ctx context.Context, operation string, lockKey string, fn func() error) error {
+	if err := c.cacheLocker.Lock(ctx, lockKey, c.cacheLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Str("lock_key", lockKey).
+			Msg("failed to acquire write lock")
+
+		return fmt.Errorf("failed to acquire write lock for %s: %w", operation, err)
+	}
+
+	defer func() {
+		if err := c.cacheLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("operation", operation).
+				Str("lock_key", lockKey).
+				Msg("failed to release write lock")
+		}
+	}()
+
+	return fn()
+}
+
+// withTryLock attempts to execute fn while holding a write lock with the specified key.
+// If the lock cannot be acquired, it returns (false, nil) immediately without executing fn.
+// If the lock is acquired successfully, it executes fn and returns (true, error).
+// It automatically handles lock release and error logging.
+func (c *Cache) withTryLock(ctx context.Context, operation string, lockKey string, fn func() error) (bool, error) {
+	acquired, err := c.cacheLocker.TryLock(ctx, lockKey, c.cacheLockTTL)
+	if err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Str("lock_key", lockKey).
+			Msg("error trying to acquire write lock")
+
+		return false, fmt.Errorf("error trying to acquire write lock for %s: %w", operation, err)
+	}
+
+	if !acquired {
+		return false, nil
+	}
+
+	defer func() {
+		if err := c.cacheLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("operation", operation).
+				Str("lock_key", lockKey).
+				Msg("failed to release write lock")
+		}
+	}()
+
+	err = fn()
+
+	return true, err
 }
 
 // calculateCleanupSize validates the total NAR size and calculates how much needs to be cleaned up.
@@ -2064,12 +2109,54 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 		lockKey := "lru"
 
 		// Try to acquire LRU lock (non-blocking)
-		acquired, err := c.lruLocker.TryLock(ctx, lockKey, c.lruLockTTL)
-		if err != nil {
-			zerolog.Ctx(ctx).Error().
-				Err(err).
-				Msg("error trying to acquire LRU lock, skipping LRU run")
+		acquired, err := c.withTryLock(ctx, "runLRU", lockKey, func() error {
+			log := zerolog.Ctx(ctx).With().
+				Str("op", "lru").
+				Uint64("max_size", c.maxSize).
+				Logger()
 
+			log.Info().Msg("running LRU")
+
+			tx, err := c.db.DB().BeginTx(ctx, nil)
+			if err != nil {
+				log.Error().Err(err).Msg("error beginning a transaction")
+
+				return err
+			}
+
+			defer func() {
+				if err := tx.Rollback(); err != nil {
+					if !errors.Is(err, sql.ErrTxDone) {
+						log.Error().Err(err).Msg("error rolling back the transaction")
+					}
+				}
+			}()
+
+			qtx := c.db.WithTx(tx)
+
+			cleanupSize, err := c.calculateCleanupSize(ctx, qtx, log)
+			if err != nil || cleanupSize == 0 {
+				return err
+			}
+
+			narInfoHashesToRemove, narURLsToRemove, err := c.deleteLRURecordsFromDB(ctx, qtx, log, cleanupSize)
+			if err != nil || len(narInfoHashesToRemove) == 0 {
+				return err
+			}
+
+			// Commit the database transaction before deleting from stores
+			if err := tx.Commit(); err != nil {
+				log.Error().Err(err).Msg("error committing the transaction")
+
+				return err
+			}
+
+			// Remove all the files from the store as fast as possible
+			c.parallelDeleteFromStores(ctx, log, narInfoHashesToRemove, narURLsToRemove)
+
+			return nil
+		})
+		if err != nil {
 			return
 		}
 
@@ -2077,61 +2164,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			// Another instance is running LRU, skip this run
 			zerolog.Ctx(ctx).Info().
 				Msg("another instance is running LRU, skipping")
-
-			return
 		}
-
-		defer func() {
-			if err := c.lruLocker.Unlock(ctx, lockKey); err != nil {
-				zerolog.Ctx(ctx).Error().
-					Err(err).
-					Msg("failed to release LRU lock")
-			}
-		}()
-
-		log := zerolog.Ctx(ctx).With().
-			Str("op", "lru").
-			Uint64("max_size", c.maxSize).
-			Logger()
-
-		log.Info().Msg("running LRU")
-
-		tx, err := c.db.DB().BeginTx(ctx, nil)
-		if err != nil {
-			log.Error().Err(err).Msg("error beginning a transaction")
-
-			return
-		}
-
-		defer func() {
-			if err := tx.Rollback(); err != nil {
-				if !errors.Is(err, sql.ErrTxDone) {
-					log.Error().Err(err).Msg("error rolling back the transaction")
-				}
-			}
-		}()
-
-		qtx := c.db.WithTx(tx)
-
-		cleanupSize, err := c.calculateCleanupSize(ctx, qtx, log)
-		if err != nil || cleanupSize == 0 {
-			return
-		}
-
-		narInfoHashesToRemove, narURLsToRemove, err := c.deleteLRURecordsFromDB(ctx, qtx, log, cleanupSize)
-		if err != nil || len(narInfoHashesToRemove) == 0 {
-			return
-		}
-
-		// Commit the database transaction before deleting from stores
-		if err := tx.Commit(); err != nil {
-			log.Error().Err(err).Msg("error committing the transaction")
-
-			return
-		}
-
-		// Remove all the files from the store as fast as possible
-		c.parallelDeleteFromStores(ctx, log, narInfoHashesToRemove, narURLsToRemove)
 	}
 }
 

@@ -42,10 +42,10 @@ func newTestCache(
 	narStore storage.NarStore,
 ) (*cache.Cache, error) {
 	downloadLocker := locklocal.NewLocker()
-	lruLocker := locklocal.NewRWLocker()
+	cacheLocker := locklocal.NewRWLocker()
 
 	return cache.New(ctx, cacheName, db, configStore, narInfoStore, narStore, "",
-		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
 }
 
 //nolint:paralleltest

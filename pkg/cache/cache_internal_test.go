@@ -3,12 +3,14 @@ package cache
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,8 +32,10 @@ import (
 const (
 	cacheName       = "cache.example.com"
 	downloadLockTTL = 5 * time.Minute
-	lruLockTTL      = 30 * time.Minute
+	cacheLockTTL    = 30 * time.Minute
 )
+
+var errTest = errors.New("test error")
 
 func setupTestCache(t *testing.T) (*Cache, func()) {
 	t.Helper()
@@ -63,10 +67,10 @@ func setupTestCache(t *testing.T) (*Cache, func()) {
 
 	// Use local locks for tests
 	downloadLocker := locklocal.NewLocker()
-	lruLocker := locklocal.NewRWLocker()
+	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, lruLocker, downloadLockTTL, lruLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
 	if err != nil {
 		cleanup()
 	}
@@ -482,4 +486,205 @@ func newContext() context.Context {
 	return zerolog.
 		New(io.Discard).
 		WithContext(context.Background())
+}
+
+// TestWithReadLock tests the withReadLock helper function.
+func TestWithReadLock(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	t.Run("successful lock acquisition and release", func(t *testing.T) {
+		t.Parallel()
+
+		executed := false
+		err := c.withReadLock(ctx, "test", func() error {
+			executed = true
+
+			return nil
+		})
+
+		require.NoError(t, err)
+		assert.True(t, executed, "function should have been executed")
+	})
+
+	t.Run("function error is propagated", func(t *testing.T) {
+		t.Parallel()
+
+		err := c.withReadLock(ctx, "test", func() error {
+			return errTest
+		})
+
+		require.ErrorIs(t, err, errTest)
+	})
+}
+
+// TestWithWriteLock tests the withWriteLock helper function.
+func TestWithWriteLock(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	t.Run("successful lock acquisition and release", func(t *testing.T) {
+		t.Parallel()
+
+		executed := false
+		err := c.withWriteLock(ctx, "test", "test-key", func() error {
+			executed = true
+
+			return nil
+		})
+
+		require.NoError(t, err)
+		assert.True(t, executed, "function should have been executed")
+	})
+
+	t.Run("function error is propagated", func(t *testing.T) {
+		t.Parallel()
+
+		err := c.withWriteLock(ctx, "test", "test-key", func() error {
+			return errTest
+		})
+
+		require.ErrorIs(t, err, errTest)
+	})
+
+	t.Run("concurrent writes are serialized", func(t *testing.T) {
+		t.Parallel()
+
+		const numGoroutines = 10
+
+		var counter int
+
+		var mu sync.Mutex
+
+		var wg sync.WaitGroup
+
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				err := c.withWriteLock(ctx, "test", "shared-key", func() error {
+					// Read the counter
+					mu.Lock()
+
+					current := counter
+
+					mu.Unlock()
+
+					// Simulate some work
+					time.Sleep(time.Millisecond)
+
+					// Increment the counter
+					mu.Lock()
+
+					counter = current + 1
+
+					mu.Unlock()
+
+					return nil
+				})
+				assert.NoError(t, err)
+			}()
+		}
+
+		wg.Wait()
+
+		assert.Equal(t, numGoroutines, counter, "all increments should have been performed")
+	})
+}
+
+// TestWithTryLock tests the withTryLock helper function.
+func TestWithTryLock(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	//nolint:paralleltest
+	t.Run("successful lock acquisition and release", func(t *testing.T) {
+		executed := false
+		acquired, err := c.withTryLock(ctx, "test", "test-key", func() error {
+			executed = true
+
+			return nil
+		})
+
+		require.NoError(t, err)
+		assert.True(t, acquired, "lock should have been acquired")
+		assert.True(t, executed, "function should have been executed")
+	})
+
+	//nolint:paralleltest
+	t.Run("function error is propagated", func(t *testing.T) {
+		acquired, err := c.withTryLock(ctx, "test", "test-key", func() error {
+			return errTest
+		})
+
+		require.ErrorIs(t, err, errTest)
+		assert.True(t, acquired, "lock should have been acquired even though function failed")
+	})
+
+	//nolint:paralleltest
+	t.Run("lock not acquired if already held", func(t *testing.T) {
+		lockKey := "contended-key"
+
+		// First goroutine acquires the lock and holds it
+		firstAcquired := make(chan struct{})
+		firstDone := make(chan struct{})
+
+		go func() {
+			acquired, err := c.withTryLock(ctx, "test", lockKey, func() error {
+				close(firstAcquired)
+				<-firstDone
+
+				return nil
+			})
+			assert.NoError(t, err)
+			assert.True(t, acquired)
+		}()
+
+		// Wait for the first goroutine to acquire the lock
+		<-firstAcquired
+
+		// Second goroutine tries to acquire the lock (should fail)
+		secondExecuted := false
+		acquired, err := c.withTryLock(ctx, "test", lockKey, func() error {
+			secondExecuted = true
+
+			return nil
+		})
+
+		require.NoError(t, err)
+		assert.False(t, acquired, "lock should not have been acquired")
+		assert.False(t, secondExecuted, "function should not have been executed")
+
+		// Release the first lock
+		close(firstDone)
+
+		// Wait a bit to ensure the lock is released
+		time.Sleep(100 * time.Millisecond)
+
+		// Third goroutine should now be able to acquire the lock
+		thirdExecuted := false
+		acquired, err = c.withTryLock(ctx, "test", lockKey, func() error {
+			thirdExecuted = true
+
+			return nil
+		})
+
+		require.NoError(t, err)
+		assert.True(t, acquired, "lock should have been acquired after release")
+		assert.True(t, thirdExecuted, "function should have been executed")
+	})
 }
