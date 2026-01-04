@@ -28,6 +28,36 @@ import (
 
 const cacheName = "cache.example.com"
 
+func setupTestCache(t *testing.T) (*Cache, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	cleanup := func() {
+		os.RemoveAll(dir)
+	}
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	// Use local locks for tests
+	downloadLocker := locklocal.NewLocker()
+	lruLocker := locklocal.NewRWLocker()
+
+	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+	require.NoError(t, err)
+
+	return c, cleanup
+}
+
 func TestAddUpstreamCaches(t *testing.T) {
 	t.Run("upstream caches added at once", func(t *testing.T) {
 		t.Parallel()
@@ -63,27 +93,8 @@ func TestAddUpstreamCaches(t *testing.T) {
 			ucs = append(ucs, uc)
 		}
 
-		dir, err := os.MkdirTemp("", "cache-path-")
-		require.NoError(t, err)
-
-		defer os.RemoveAll(dir) // clean up
-
-		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-		testhelper.CreateMigrateDatabase(t, dbFile)
-
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-
-		localStore, err := local.New(newContext(), dir)
-		require.NoError(t, err)
-
-		// Use local locks for tests
-		downloadLocker := locklocal.NewLocker()
-		lruLocker := locklocal.NewRWLocker()
-
-		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-			downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
-		require.NoError(t, err)
+		c, cleanup := setupTestCache(t)
+		defer cleanup()
 
 		c.AddUpstreamCaches(newContext(), ucs...)
 
@@ -129,27 +140,8 @@ func TestAddUpstreamCaches(t *testing.T) {
 			ucs = append(ucs, uc)
 		}
 
-		dir, err := os.MkdirTemp("", "cache-path-")
-		require.NoError(t, err)
-
-		defer os.RemoveAll(dir) // clean up
-
-		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-		testhelper.CreateMigrateDatabase(t, dbFile)
-
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-
-		localStore, err := local.New(newContext(), dir)
-		require.NoError(t, err)
-
-		// Use local locks for tests
-		downloadLocker := locklocal.NewLocker()
-		lruLocker := locklocal.NewRWLocker()
-
-		c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-			downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
-		require.NoError(t, err)
+		c, cleanup := setupTestCache(t)
+		defer cleanup()
 
 		for _, uc := range ucs {
 			c.AddUpstreamCaches(newContext(), uc)
@@ -169,27 +161,8 @@ func TestAddUpstreamCaches(t *testing.T) {
 func TestRunLRU(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	// Use local locks for tests
-	downloadLocker := locklocal.NewLocker()
-	lruLocker := locklocal.NewRWLocker()
-
-	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
-	require.NoError(t, err)
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
