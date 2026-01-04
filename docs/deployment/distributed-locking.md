@@ -196,11 +196,16 @@ cache:
 | `--cache-redis-use-tls` | Enable TLS connections | false |
 | `--cache-redis-pool-size` | Connection pool size | 10 |
 
-#### Lock Timing Settings
+#### Redis Lock Settings
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--cache-lock-redis-key-prefix` | Key prefix for all locks | "ncps:lock:" |
+
+#### Lock Timing Settings
+
+| Option | Description | Default |
+|--------|-------------|---------|
 | `--cache-lock-download-ttl` | Download lock timeout | 5m |
 | `--cache-lock-lru-ttl` | LRU lock timeout | 30m |
 
