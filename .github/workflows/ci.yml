@@ -6,6 +6,9 @@ on:
 jobs:
   flake:
     uses: ./.github/workflows/flake.yml
+    permissions:
+      id-token: "write"
+      contents: "read"
     with:
       systems: "['x86_64-linux', 'aarch64-linux']"
   helm-tests:
