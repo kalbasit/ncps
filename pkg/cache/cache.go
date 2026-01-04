@@ -1109,15 +1109,17 @@ func (c *Cache) pullNarInfo(
 			zerolog.Ctx(ctx).WithContext(c.baseContext),
 			trace.SpanFromContext(ctx),
 		)
-		ds := c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
-		<-ds.done
+		narDs := c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
+		<-narDs.done
 
-		err := ds.getError()
+		err := narDs.getError()
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
 				Msg("error pulling the nar")
+
+			ds.setError(err)
 
 			return
 		}
@@ -1164,6 +1166,8 @@ func (c *Cache) pullNarInfo(
 				Error().
 				Err(err).
 				Msg("error storing the narinfo in the database")
+
+			ds.setError(err)
 
 			return
 		}
