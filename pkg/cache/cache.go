@@ -667,7 +667,7 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 			// Already exists is not an error - another request stored it first
 			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, skipping")
 
-			return 0, storage.ErrAlreadyExists
+			return 0, nil
 		}
 
 		zerolog.Ctx(ctx).
@@ -795,7 +795,7 @@ func (c *Cache) pullNarIntoStore(
 	}
 
 	written, err := c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
-	if err != nil && !errors.Is(err, storage.ErrAlreadyExists) {
+	if err != nil {
 		ds.setError(err)
 
 		return
