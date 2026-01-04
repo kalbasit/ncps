@@ -1182,35 +1182,65 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	)
 	defer span.End()
 
-	return c.withReadLock(ctx, "PutNarInfo", func() error {
-		ctx = zerolog.Ctx(ctx).
-			With().
-			Str("narinfo_hash", hash).
-			Logger().
-			WithContext(ctx)
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo_hash", hash).
+		Logger().
+		WithContext(ctx)
 
-		defer func() {
-			//nolint:errcheck
-			io.Copy(io.Discard, r)
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, r)
 
-			r.Close()
-		}()
+		r.Close()
+	}()
 
-		narInfo, err := narinfo.Parse(r)
-		if err != nil {
-			return fmt.Errorf("error parsing narinfo: %w", err)
+	// Use hash-specific lock to prevent concurrent writes of the same narinfo
+	lockKey := fmt.Sprintf("narinfo:%s", hash)
+
+	if err := c.lruLocker.Lock(ctx, lockKey, c.lruLockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("lock_key", lockKey).
+			Msg("failed to acquire lock for narinfo")
+
+		return fmt.Errorf("failed to acquire lock for hash %s: %w", hash, err)
+	}
+
+	defer func() {
+		if err := c.lruLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("lock_key", lockKey).
+				Msg("failed to release lock for narinfo")
+		}
+	}()
+
+	narInfo, err := narinfo.Parse(r)
+	if err != nil {
+		return fmt.Errorf("error parsing narinfo: %w", err)
+	}
+
+	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
+		return fmt.Errorf("error signing the narinfo: %w", err)
+	}
+
+	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
+		return fmt.Errorf("error storing the narInfo in the store: %w", err)
+	}
+
+	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
+		if errors.Is(err, ErrAlreadyExists) {
+			// Already exists is not an error for PUT - return success
+			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in database, skipping")
+
+			return nil
 		}
 
-		if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
-			return fmt.Errorf("error signing the narinfo: %w", err)
-		}
+		return fmt.Errorf("error storing in database: %w", err)
+	}
 
-		if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-			return fmt.Errorf("error storing the narInfo in the store: %w", err)
-		}
-
-		return c.storeInDatabase(ctx, hash, narInfo)
-	})
+	return nil
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
