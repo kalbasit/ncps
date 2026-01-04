@@ -353,12 +353,21 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.cache.PutNarInfo(r.Context(), hash, r.Body); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if errors.Is(err, cache.ErrInconsistentState) {
+			http.Error(w, err.Error(), http.StatusConflict)
 
-		zerolog.Ctx(r.Context()).
-			Error().
-			Err(err).
-			Msg("error putting the NAR in cache")
+			zerolog.Ctx(r.Context()).
+				Warn().
+				Err(err).
+				Msg("conflict storing narinfo in cache")
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error putting the NAR in cache")
+		}
 
 		return
 	}

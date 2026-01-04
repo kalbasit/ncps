@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -335,6 +336,146 @@ func TestRunLRU(t *testing.T) {
 
 	_, err = c.db.GetNarByHash(context.Background(), lastEntry.NarHash)
 	require.ErrorIs(t, sql.ErrNoRows, err)
+}
+
+func TestStoreInDatabaseDuplicateDetection(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	// Parse narinfo from testdata
+	narInfoReader := strings.NewReader(testdata.Nar1.NarInfoText)
+	narInfo, err := narinfo.Parse(narInfoReader)
+	require.NoError(t, err)
+
+	// First insert should succeed
+	err = c.storeInDatabase(newContext(), testdata.Nar1.NarInfoHash, narInfo)
+	require.NoError(t, err, "first insert should succeed")
+
+	// Verify the record was created
+	_, err = c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "record should exist in database")
+
+	// Second insert of the same narinfo should return ErrAlreadyExists
+	err = c.storeInDatabase(newContext(), testdata.Nar1.NarInfoHash, narInfo)
+	require.ErrorIs(
+		t,
+		err,
+		ErrAlreadyExists,
+		"duplicate insert should return ErrAlreadyExists to allow caller to distinguish from successful insert",
+	)
+}
+
+func TestPutNarInfoConcurrentSameHash(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	// Test concurrent PutNarInfo calls for the same hash
+	// This tests hash-specific locking - multiple goroutines trying to write the same narinfo
+	// should be properly synchronized with only one succeeding
+	const numGoroutines = 10
+
+	type result struct {
+		err error
+	}
+
+	results := make(chan result, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			// Each goroutine gets its own reader
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+
+			err := c.PutNarInfo(newContext(), testdata.Nar1.NarInfoHash, r)
+			results <- result{err: err}
+		}()
+	}
+
+	// Collect results
+	var successCount int
+
+	for i := 0; i < numGoroutines; i++ {
+		res := <-results
+		if res.err == nil {
+			successCount++
+		} else {
+			t.Logf("goroutine error: %v", res.err)
+		}
+	}
+
+	// All PutNarInfo calls should succeed (PUT should be idempotent)
+	// Bug: without proper ErrAlreadyExists handling in PutNarInfo, some may return errors
+	require.Equal(t, numGoroutines, successCount, "all PutNarInfo calls should succeed (PUT should be idempotent)")
+
+	// Verify the narinfo exists in storage and database
+	ni, err := c.narInfoStore.GetNarInfo(newContext(), testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "narinfo should exist in storage")
+	require.NotNil(t, ni)
+
+	_, err = c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "narinfo should exist in database")
+}
+
+// TestPutNarInfoWithOrphanedNar tests the scenario where a Nar record exists in the database
+// but a new NarInfo is being added that references the same nar hash.
+// This can happen if:
+// 1. A previous NarInfo was stored with its Nar
+// 2. Now we're storing a different NarInfo (different store path) that happens to have the same Nar
+//
+// Expected behavior: The transaction should fail and roll back cleanly, returning an
+// ErrInconsistentState to the caller, preventing a silent failure.
+// A more advanced implementation might allow reusing the existing NAR, but that would
+// likely require schema changes and is out of scope for the current fix.
+//
+// Bug: Previously, this scenario caused a silent failure where:
+// - CreateNarInfo succeeded (new narinfo hash)
+// - CreateNar failed with a duplicate key error (same nar hash)
+// - The transaction rolled back (removing the narinfo we just created)
+// - But the function returned success (ErrAlreadyExists was treated as success by the caller).
+func TestPutNarInfoWithOrphanedNar(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	// Step 1: Store the first NarInfo (Nar1) - this creates both narinfo and nar records
+	err := c.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)))
+	require.NoError(t, err, "first PutNarInfo should succeed")
+
+	// Verify first narinfo exists in database
+	narInfo1, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "first narinfo should exist in database")
+	require.NotNil(t, narInfo1)
+
+	// Step 2: Create a second NarInfo with a different hash but same nar URL
+	// This simulates a different store path that produces the same nar
+	secondNarInfoHash := "different1234567890abcdefghijklmno" // Different from Nar1.NarInfoHash
+	secondNarInfoText := `StorePath: /nix/store/different1234567890abcdefghijklmno-hello-2.12.1
+URL: nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz
+Compression: xz
+FileHash: sha256:1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri
+FileSize: 50160
+NarHash: sha256:07kc6swib31psygpmwi8952lvywlpqn474059yxl7grwsvr6k0fj
+NarSize: 226552
+References: different1234567890abcdefghijklmno-hello-2.12.1 qdcbgcj27x2kpxj2sf9yfvva7qsgg64g-glibc-2.38-77
+Deriver: 9zpqmcicrg8smi9jlqv6dmd7v20d2fsn-hello-2.12.1.drv
+Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==`
+
+	// Step 3: Try to store the second NarInfo
+	// This should return ErrInconsistentState because the nar already exists with a different narinfo
+	err = c.PutNarInfo(ctx, secondNarInfoHash, io.NopCloser(strings.NewReader(secondNarInfoText)))
+	require.Error(t, err, "second PutNarInfo should return an error due to nar conflict")
+	require.ErrorIs(t, err, ErrInconsistentState, "error should be ErrInconsistentState")
+
+	// Step 4: Verify the second narinfo does NOT exist in database (since the operation failed)
+	_, err = c.db.GetNarInfoByHash(ctx, secondNarInfoHash)
+	require.Error(t, err, "second narinfo should not exist in database since PutNarInfo failed")
+	require.ErrorIs(t, err, sql.ErrNoRows, "should get sql.ErrNoRows for non-existent narinfo")
 }
 
 func newContext() context.Context {

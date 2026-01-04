@@ -56,6 +56,9 @@ var (
 	// ErrAlreadyExists is returned when attempting to store a narinfo/nar that already exists in the database.
 	ErrAlreadyExists = errors.New("narinfo or nar already exists")
 
+	// ErrInconsistentState is returned when the database is in an inconsistent state (e.g., nar exists without narinfo).
+	ErrInconsistentState = errors.New("inconsistent database state")
+
 	//nolint:gochecknoglobals
 	meter metric.Meter
 
@@ -1179,7 +1182,6 @@ func (c *Cache) pullNarInfo(
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
 		if errors.Is(err, ErrAlreadyExists) {
-			// Already exists is not an error - another request stored it first
 			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in database, skipping")
 		} else {
 			zerolog.Ctx(ctx).
@@ -1607,11 +1609,20 @@ func (c *Cache) storeInDatabase(
 		})
 		if err != nil {
 			if database.IsDuplicateKeyError(err) {
+				// This represents an inconsistent state: nar exists but narinfo didn't.
+				// Returning ErrAlreadyExists here causes a silent failure because the transaction
+				// is rolled back (removing the narinfo we just created), but the caller interprets
+				// it as a successful idempotent PUT.
 				zerolog.Ctx(ctx).
-					Debug().
-					Msg("nar record was not added to database because it already exists")
+					Warn().
+					Str("nar_hash", narURL.Hash).
+					Msg("inconsistent state: nar record already exists but narinfo did not. rolling back transaction")
 
-				return ErrAlreadyExists
+				return fmt.Errorf(
+					"%w: nar record for hash %s already exists but narinfo did not",
+					ErrInconsistentState,
+					narURL.Hash,
+				)
 			}
 
 			return fmt.Errorf("error inserting the nar record in the database: %w", err)
