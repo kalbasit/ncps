@@ -562,8 +562,6 @@ func TestWithWriteLock(t *testing.T) {
 
 		var counter int
 
-		var mu sync.Mutex
-
 		var wg sync.WaitGroup
 
 		for i := 0; i < numGoroutines; i++ {
@@ -573,22 +571,13 @@ func TestWithWriteLock(t *testing.T) {
 				defer wg.Done()
 
 				err := c.withWriteLock(ctx, "test", "shared-key", func() error {
-					// Read the counter
-					mu.Lock()
-
+					// This critical section is now correctly protected only by withWriteLock.
+					// A temporary variable is used to simulate a read-modify-write data race.
 					current := counter
-
-					mu.Unlock()
-
-					// Simulate some work
+					// Simulate work to increase the chance of a race if the lock is not held.
 					time.Sleep(time.Millisecond)
 
-					// Increment the counter
-					mu.Lock()
-
 					counter = current + 1
-
-					mu.Unlock()
 
 					return nil
 				})

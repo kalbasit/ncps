@@ -2106,7 +2106,7 @@ func (c *Cache) parallelDeleteFromStores(
 
 func (c *Cache) runLRU(ctx context.Context) func() {
 	return func() {
-lockKey := cacheLockKey
+		lockKey := cacheLockKey
 
 		// Try to acquire LRU lock (non-blocking)
 		acquired, err := c.withTryLock(ctx, "runLRU", lockKey, func() error {
