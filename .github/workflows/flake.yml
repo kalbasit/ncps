@@ -1,0 +1,20 @@
+name: Flake jobs
+on:
+  workflow_call:
+    inputs:
+      systems:
+        description: "The systems for which to add support for. JSON-formatted string."
+        required: true
+        type: string
+jobs:
+  check:
+    strategy:
+      matrix:
+        system: ${{ fromJson(inputs.systems) }}
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@v21
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: DeterminateSystems/flake-checker-action@main
+      - run: nix flake check -L

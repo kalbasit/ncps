@@ -4,17 +4,13 @@ on:
     branches:
       - main
 jobs:
-  flake-check:
-    runs-on: ubuntu-24.04
+  flake:
+    uses: ./.github/workflows/flake.yml
     permissions:
       id-token: "write"
       contents: "read"
-    steps:
-      - uses: actions/checkout@v6
-      - uses: DeterminateSystems/nix-installer-action@v21
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-      - uses: DeterminateSystems/flake-checker-action@main
-      - run: nix flake check -L --all-systems
+    with:
+      systems: "['x86_64-linux', 'aarch64-linux']"
   helm-tests:
     runs-on: ubuntu-24.04
     steps:
