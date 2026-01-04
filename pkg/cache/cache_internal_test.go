@@ -34,17 +34,26 @@ func setupTestCache(t *testing.T) (*Cache, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	cleanup := func() {
-		os.RemoveAll(dir)
-	}
-
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
+	if err != nil {
+		os.RemoveAll(dir)
+	}
+
 	require.NoError(t, err)
 
+	cleanup := func() {
+		db.DB().Close()
+		os.RemoveAll(dir)
+	}
+
 	localStore, err := local.New(newContext(), dir)
+	if err != nil {
+		cleanup()
+	}
+
 	require.NoError(t, err)
 
 	// Use local locks for tests
@@ -53,6 +62,10 @@ func setupTestCache(t *testing.T) (*Cache, func()) {
 
 	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
 		downloadLocker, lruLocker, 5*time.Minute, 30*time.Minute)
+	if err != nil {
+		cleanup()
+	}
+
 	require.NoError(t, err)
 
 	return c, cleanup
