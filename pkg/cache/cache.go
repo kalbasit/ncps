@@ -1072,7 +1072,7 @@ func (c *Cache) pullNarInfo(
 				Msg("error getting the narInfo from upstream caches")
 		} else {
 			zerolog.Ctx(ctx).
-				Info().
+				Debug().
 				Err(err).
 				Msg("error getting the narInfo from upstream caches")
 		}
@@ -1584,7 +1584,7 @@ func (c *Cache) storeInDatabase(
 		if err != nil {
 			if database.IsDuplicateKeyError(err) {
 				zerolog.Ctx(ctx).
-					Warn().
+					Debug().
 					Msg("narinfo record was not added to database because it already exists")
 
 				return ErrAlreadyExists
