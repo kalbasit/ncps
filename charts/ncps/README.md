@@ -197,14 +197,19 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `config.redis.db` | Redis database number | `0` |
 | `config.redis.useTLS` | Use TLS | `false` |
 | `config.redis.poolSize` | Connection pool size | `10` |
-| `config.redis.keyPrefix` | Lock key prefix | `ncps:lock:` |
-| `config.redis.lock.downloadTTL` | Download lock TTL | `5m` |
-| `config.redis.lock.lruTTL` | LRU lock TTL | `30m` |
-| `config.redis.lock.retry.maxAttempts` | Maximum retry attempts | `3` |
-| `config.redis.lock.retry.initialDelay` | Initial retry delay | `100ms` |
-| `config.redis.lock.retry.maxDelay` | Maximum retry delay | `2s` |
-| `config.redis.lock.retry.jitter` | Enable retry jitter | `true` |
-| `config.redis.lock.allowDegradedMode` | Allow degraded mode | `false` |
+
+### Lock Configuration
+
+| Parameter | Description | Default |
+| -------------------------------------------- | ------------------------- | ------- |
+| `config.lock.redis.keyPrefix` | Lock key prefix | `ncps:lock:` |
+| `config.lock.downloadTTL` | Download lock TTL | `5m` |
+| `config.lock.lruTTL` | LRU lock TTL | `30m` |
+| `config.lock.retry.maxAttempts` | Maximum retry attempts | `3` |
+| `config.lock.retry.initialDelay` | Initial retry delay | `100ms` |
+| `config.lock.retry.maxDelay` | Maximum retry delay | `2s` |
+| `config.lock.retry.jitter` | Enable retry jitter | `true` |
+| `config.lock.allowDegradedMode` | Allow degraded mode | `false` |
 
 ### Observability
 

@@ -422,18 +422,19 @@ config:
     db: 0
     useTLS: false
     poolSize: 10
-    keyPrefix: "ncps:lock:"
 
-    # Distributed lock configuration
-    lock:
-      downloadTTL: "5m"
-      lruTTL: "30m"
-      retry:
-        maxAttempts: 3
-        initialDelay: "100ms"
-        maxDelay: "2s"
-        jitter: true
-      allowDegradedMode: false  # Continue without Redis if connection fails
+  # Distributed lock configuration
+  lock:
+    redis:
+      keyPrefix: "ncps:lock:"
+    downloadTTL: "5m"
+    lruTTL: "30m"
+    retry:
+      maxAttempts: 3
+      initialDelay: "100ms"
+      maxDelay: "2s"
+      jitter: true
+    allowDegradedMode: false  # Continue without Redis if connection fails
 ```
 
 ## Upstream Cache Configuration

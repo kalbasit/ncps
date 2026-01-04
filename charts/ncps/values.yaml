@@ -271,26 +271,28 @@ config:
     # Connection pool size
     poolSize: 10
 
-    # Key prefix for locks
-    keyPrefix: "ncps:lock:"
+  # Lock configuration
+  lock:
+    # Redis-specific lock settings (only used when Redis is enabled)
+    redis:
+      # Key prefix for locks
+      keyPrefix: "ncps:lock:"
 
-    # Lock configuration
-    lock:
-      # Download lock TTL
-      downloadTTL: "5m"
-      # LRU lock TTL
-      lruTTL: "30m"
+    # Download lock TTL
+    downloadTTL: "5m"
+    # LRU lock TTL
+    lruTTL: "30m"
 
-      # Retry configuration
-      retry:
-        maxAttempts: 3
-        initialDelay: "100ms"
-        maxDelay: "2s"
-        jitter: true
+    # Retry configuration
+    retry:
+      maxAttempts: 3
+      initialDelay: "100ms"
+      maxDelay: "2s"
+      jitter: true
 
-      # Degraded mode (emergency fallback)
-      # WARNING: Breaks HA guarantees
-      allowDegradedMode: false
+    # Degraded mode (emergency fallback)
+    # WARNING: Breaks HA guarantees
+    allowDegradedMode: false
 
   # Observability
   observability:

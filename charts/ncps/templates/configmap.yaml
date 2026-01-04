@@ -87,16 +87,17 @@ data:
         db: {{ .Values.config.redis.db }}
         use-tls: {{ .Values.config.redis.useTLS }}
         pool-size: {{ .Values.config.redis.poolSize }}
-        key-prefix: {{ .Values.config.redis.keyPrefix | quote }}
       lock:
-        download-lock-ttl: {{ .Values.config.redis.lock.downloadTTL | quote }}
-        lru-lock-ttl: {{ .Values.config.redis.lock.lruTTL | quote }}
+        redis:
+          key-prefix: {{ .Values.config.lock.redis.keyPrefix | quote }}
+        download-lock-ttl: {{ .Values.config.lock.downloadTTL | quote }}
+        lru-lock-ttl: {{ .Values.config.lock.lruTTL | quote }}
         retry:
-          max-attempts: {{ .Values.config.redis.lock.retry.maxAttempts }}
-          initial-delay: {{ .Values.config.redis.lock.retry.initialDelay | quote }}
-          max-delay: {{ .Values.config.redis.lock.retry.maxDelay | quote }}
-          jitter: {{ .Values.config.redis.lock.retry.jitter }}
-        {{- if .Values.config.redis.lock.allowDegradedMode }}
+          max-attempts: {{ .Values.config.lock.retry.maxAttempts }}
+          initial-delay: {{ .Values.config.lock.retry.initialDelay | quote }}
+          max-delay: {{ .Values.config.lock.retry.maxDelay | quote }}
+          jitter: {{ .Values.config.lock.retry.jitter }}
+        {{- if .Values.config.lock.allowDegradedMode }}
         allow-degraded-mode: true
         {{- end }}
       {{- end }}
