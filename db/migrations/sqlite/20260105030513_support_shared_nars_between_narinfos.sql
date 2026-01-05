@@ -107,7 +107,5 @@ DROP INDEX idx_narinfo_nar_files_narinfo_id;
 DROP INDEX idx_narinfo_nar_files_nar_file_id;
 DROP TABLE narinfo_nar_files;
 
-DROP INDEX idx_nar_files_id;
-DROP INDEX idx_nar_files_hash;
 DROP INDEX idx_nar_files_last_accessed_at;
 DROP TABLE nar_files;
