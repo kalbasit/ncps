@@ -211,29 +211,6 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return w.adapter.GetNarTotalSize(ctx)
 }
 
-func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
-	narFiles, err := w.adapter.GetOrphanedNarFiles(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]NarFile, len(narFiles))
-	for i, n := range narFiles {
-		result[i] = NarFile{
-			ID:             int64(n.ID),
-			Hash:           n.Hash,
-			Compression:    n.Compression,
-			FileSize:       uint64(n.FileSize), //nolint:gosec
-			CreatedAt:      n.CreatedAt,
-			UpdatedAt:      n.UpdatedAt,
-			LastAccessedAt: n.LastAccessedAt,
-			Query:          n.Query,
-		}
-	}
-
-	return result, nil
-}
-
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	p := postgresdb.LinkNarInfoToNarFileParams{
 		NarInfoID: int32(arg.NarInfoID), //nolint:gosec

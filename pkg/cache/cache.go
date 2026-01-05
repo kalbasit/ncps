@@ -2004,86 +2004,87 @@ func (c *Cache) calculateCleanupSize(ctx context.Context, qtx database.Querier, 
 	return cleanupSize, nil
 }
 
-// deleteLRURecordsFromDB identifies the least used NarInfos, deletes them,
-// and then cleans up any NarFiles that became orphaned as a result.
+// deleteLRURecordsFromDB gets the least used NARs and deletes them from the database.
+// Returns the narinfo hashes and NAR URLs that need to be deleted from stores.
 func (c *Cache) deleteLRURecordsFromDB(
 	ctx context.Context,
 	qtx database.Querier,
 	log zerolog.Logger,
 	cleanupSize uint64,
 ) ([]string, []nar.URL, error) {
-	// 1. METADATA PHASE
-	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
-	// We use the query you provided in the first prompt.
-	narInfosToDelete, err := qtx.GetLeastUsedNarInfos(ctx, cleanupSize)
+	// Get least-used nar_files up to cleanupSize
+	// This is based on the actual storage usage (nar_files), not cache entries (narinfos)
+	narFiles, err := qtx.GetLeastUsedNarFiles(ctx, cleanupSize)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting least used narinfos")
+		log.Error().Err(err).Msg("error getting the least used nar files up to cleanup-size")
 
 		return nil, nil, err
 	}
 
-	if len(narInfosToDelete) == 0 {
-		log.Warn().Msg("cleanup required but no reclaimable narinfos found")
+	if len(narFiles) == 0 {
+		log.Warn().Msg("nar files needed to be removed but none were returned in the query")
 
 		return nil, nil, nil
 	}
 
-	log.Info().Int("count", len(narInfosToDelete)).Msg("found narinfos to expire")
+	log.Info().Int("count_nar_files", len(narFiles)).Msg("found this many nar files to remove")
 
-	// Track hashes to remove from the in-memory/disk store later
-	narInfoHashesToRemove := make([]string, 0, len(narInfosToDelete))
+	// Collect nar URLs and find all narinfos that reference these nar_files
+	narInfoHashesSet := make(map[string]bool)
+	narURLsToRemove := make([]nar.URL, 0, len(narFiles))
 
-	// Delete the NarInfos from the database.
-	// This breaks the link between the Metadata and the Storage.
-	for _, info := range narInfosToDelete {
-		narInfoHashesToRemove = append(narInfoHashesToRemove, info.Hash)
+	for _, narFile := range narFiles {
+		// Collect the nar URL for storage deletion
+		narURLsToRemove = append(narURLsToRemove, nar.URL{
+			Hash:        narFile.Hash,
+			Compression: nar.CompressionTypeFromString(narFile.Compression),
+		})
 
-		// We delete by ID since we have the full object from the previous query
-		if _, err := qtx.DeleteNarInfoByID(ctx, info.ID); err != nil {
+		// Query all narinfos that reference this nar_file
+		// We need to delete these narinfos from the narinfo store
+		narInfoHashes, err := qtx.GetNarInfoHashesByNarFileID(ctx, narFile.ID)
+		if err != nil {
 			log.Error().
 				Err(err).
-				Str("hash", info.Hash).
-				Msg("error deleting narinfo record")
+				Int64("nar_file_id", narFile.ID).
+				Msg("error querying narinfos for nar_file")
+
+			return nil, nil, err
+		}
+
+		for _, narInfoHash := range narInfoHashes {
+			narInfoHashesSet[narInfoHash] = true
+		}
+	}
+
+	// Delete all nar_files (this cascade-deletes join table entries)
+	for _, narFile := range narFiles {
+		log.Info().Str("nar_hash", narFile.Hash).Msg("deleting nar file record")
+
+		if _, err := qtx.DeleteNarFileByHash(ctx, narFile.Hash); err != nil {
+			log.Error().
+				Err(err).
+				Str("nar_hash", narFile.Hash).
+				Msg("error removing nar file from database")
 
 			return nil, nil, err
 		}
 	}
 
-	// 2. STORAGE PHASE
-	// Now that metadata is gone, some files might have zero references.
-	// We find those truly orphaned files.
-	orphanedNarFiles, err := qtx.GetOrphanedNarFiles(ctx)
+	// Delete orphaned narinfos (ones no longer referenced by any nar_file)
+	orphanedCount, err := qtx.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("error identifying orphaned nar files")
+		log.Error().Err(err).Msg("error deleting orphaned narinfos")
 
 		return nil, nil, err
 	}
 
-	narURLsToRemove := make([]nar.URL, 0, len(orphanedNarFiles))
+	log.Info().Int64("count_orphaned_narinfos", orphanedCount).Msg("deleted orphaned narinfos")
 
-	if len(orphanedNarFiles) > 0 {
-		log.Info().Int("count", len(orphanedNarFiles)).Msg("found orphaned nar files to delete")
-
-		for _, nf := range orphanedNarFiles {
-			// Add to list for physical storage deletion
-			narURLsToRemove = append(narURLsToRemove, nar.URL{
-				Hash:        nf.Hash,
-				Compression: nar.CompressionTypeFromString(nf.Compression),
-			})
-
-			// Delete the file record from DB
-			// Note: We use ID here since we have it, it's slightly faster/safer than Hash
-			if _, err := qtx.DeleteNarFileByID(ctx, nf.ID); err != nil {
-				log.Error().
-					Err(err).
-					Str("nar_hash", nf.Hash).
-					Msg("error deleting orphaned nar file record")
-
-				return nil, nil, err
-			}
-		}
-	} else {
-		log.Info().Msg("no orphaned nar files found (files may be shared with active narinfos)")
+	// Convert set to slice
+	narInfoHashesToRemove := make([]string, 0, len(narInfoHashesSet))
+	for hash := range narInfoHashesSet {
+		narInfoHashesToRemove = append(narInfoHashesToRemove, hash)
 	}
 
 	return narInfoHashesToRemove, narURLsToRemove, nil

@@ -135,13 +135,6 @@ type Querier interface {
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size
 	//  FROM nar_files
 	GetNarTotalSize(ctx context.Context) (int64, error)
-	// Find files that have no relationship to any narinfo
-	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
-	//  FROM nar_files nf
-	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
-	//  WHERE ninf.narinfo_id IS NULL
-	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
 	//LinkNarInfoToNarFile
 	//
 	//  INSERT INTO narinfo_nar_files (
