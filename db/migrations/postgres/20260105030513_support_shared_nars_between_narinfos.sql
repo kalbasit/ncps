@@ -18,8 +18,8 @@ CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
 
 -- Step 2: Create join table to establish many-to-many relationship
 CREATE TABLE narinfo_nar_files (
-    narinfo_id INTEGER NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
-    nar_file_id INTEGER NOT NULL REFERENCES nar_files (id) ON DELETE CASCADE,
+    narinfo_id BIGINT NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
+    nar_file_id BIGINT NOT NULL REFERENCES nar_files (id) ON DELETE CASCADE,
     PRIMARY KEY (narinfo_id, nar_file_id)
 );
 
@@ -69,7 +69,7 @@ DROP TABLE nars;
 -- Recreate the old nars table structure
 CREATE TABLE nars (
     id SERIAL PRIMARY KEY,
-    narinfo_id INTEGER NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
+    narinfo_id BIGINT NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
     hash TEXT NOT NULL UNIQUE,
     compression TEXT NOT NULL DEFAULT '',
     file_size BIGINT NOT NULL,
