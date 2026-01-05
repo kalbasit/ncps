@@ -36,7 +36,7 @@ type Querier interface {
 	//
 	//  DELETE FROM nar_files
 	//  WHERE id = $1
-	DeleteNarFileByID(ctx context.Context, id int32) (int64, error)
+	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
 	//DeleteNarInfoByHash
 	//
 	//  DELETE FROM narinfos
@@ -103,14 +103,14 @@ type Querier interface {
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
 	//  FROM nar_files
 	//  WHERE id = $1
-	GetNarFileByID(ctx context.Context, id int32) (NarFile, error)
+	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 	//GetNarFileByNarInfoID
 	//
 	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
 	//  FROM nar_files nf
 	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 	//  WHERE nnf.narinfo_id = $1
-	GetNarFileByNarInfoID(ctx context.Context, narinfoID int32) (NarFile, error)
+	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error)
 	//GetNarInfoByHash
 	//
 	//  SELECT id, hash, created_at, updated_at, last_accessed_at
@@ -129,7 +129,7 @@ type Querier interface {
 	//  FROM narinfos ni
 	//  INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
 	//  WHERE nnf.nar_file_id = $1
-	GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int32) ([]string, error)
+	GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error)
 	//GetNarTotalSize
 	//
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size

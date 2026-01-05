@@ -26,7 +26,7 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 	}
 
 	return NarFile{
-		ID:             int64(narFile.ID),
+		ID:             narFile.ID,
 		Hash:           narFile.Hash,
 		Compression:    narFile.Compression,
 		FileSize:       uint64(narFile.FileSize), //nolint:gosec
@@ -57,7 +57,7 @@ func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) 
 }
 
 func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
-	return w.adapter.DeleteNarFileByID(ctx, int32(id)) //nolint:gosec
+	return w.adapter.DeleteNarFileByID(ctx, id)
 }
 
 func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
@@ -85,7 +85,7 @@ func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uin
 	result := make([]NarFile, len(narFiles))
 	for i, n := range narFiles {
 		result[i] = NarFile{
-			ID:             int64(n.ID),
+			ID:             n.ID,
 			Hash:           n.Hash,
 			Compression:    n.Compression,
 			FileSize:       uint64(n.FileSize), //nolint:gosec
@@ -126,7 +126,7 @@ func (w *postgresWrapper) GetNarFileByHash(ctx context.Context, hash string) (Na
 	}
 
 	return NarFile{
-		ID:             int64(narFile.ID),
+		ID:             narFile.ID,
 		Hash:           narFile.Hash,
 		Compression:    narFile.Compression,
 		FileSize:       uint64(narFile.FileSize), //nolint:gosec
@@ -138,13 +138,13 @@ func (w *postgresWrapper) GetNarFileByHash(ctx context.Context, hash string) (Na
 }
 
 func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
-	narFile, err := w.adapter.GetNarFileByID(ctx, int32(id)) //nolint:gosec
+	narFile, err := w.adapter.GetNarFileByID(ctx, id)
 	if err != nil {
 		return NarFile{}, err
 	}
 
 	return NarFile{
-		ID:             int64(narFile.ID),
+		ID:             narFile.ID,
 		Hash:           narFile.Hash,
 		Compression:    narFile.Compression,
 		FileSize:       uint64(narFile.FileSize), //nolint:gosec
@@ -156,17 +156,17 @@ func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile
 }
 
 func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
-	return w.adapter.GetNarInfoHashesByNarFileID(ctx, int32(narFileID)) //nolint:gosec
+	return w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
 }
 
 func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
-	narFile, err := w.adapter.GetNarFileByNarInfoID(ctx, int32(narinfoID)) //nolint:gosec
+	narFile, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
 	if err != nil {
 		return NarFile{}, err
 	}
 
 	return NarFile{
-		ID:             int64(narFile.ID),
+		ID:             narFile.ID,
 		Hash:           narFile.Hash,
 		Compression:    narFile.Compression,
 		FileSize:       uint64(narFile.FileSize), //nolint:gosec
@@ -220,7 +220,7 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 	result := make([]NarFile, len(narFiles))
 	for i, n := range narFiles {
 		result[i] = NarFile{
-			ID:             int64(n.ID),
+			ID:             n.ID,
 			Hash:           n.Hash,
 			Compression:    n.Compression,
 			FileSize:       uint64(n.FileSize), //nolint:gosec
@@ -236,8 +236,8 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	p := postgresdb.LinkNarInfoToNarFileParams{
-		NarInfoID: int32(arg.NarInfoID), //nolint:gosec
-		NarFileID: int32(arg.NarFileID), //nolint:gosec
+		NarInfoID: arg.NarInfoID,
+		NarFileID: arg.NarFileID,
 	}
 
 	return w.adapter.LinkNarInfoToNarFile(ctx, p)

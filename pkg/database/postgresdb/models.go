@@ -10,7 +10,7 @@ import (
 )
 
 type NarFile struct {
-	ID             int32
+	ID             int64
 	Hash           string
 	Compression    string
 	FileSize       int64
@@ -29,6 +29,6 @@ type NarInfo struct {
 }
 
 type NarinfoNarFile struct {
-	NarInfoID int32
-	NarFileID int32
+	NarInfoID int64
+	NarFileID int64
 }

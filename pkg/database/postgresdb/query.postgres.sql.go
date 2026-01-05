@@ -110,7 +110,7 @@ WHERE id = $1
 //
 //	DELETE FROM nar_files
 //	WHERE id = $1
-func (q *Queries) DeleteNarFileByID(ctx context.Context, id int32) (int64, error) {
+func (q *Queries) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteNarFileByID, id)
 	if err != nil {
 		return 0, err
@@ -348,7 +348,7 @@ WHERE id = $1
 //	SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
 //	FROM nar_files
 //	WHERE id = $1
-func (q *Queries) GetNarFileByID(ctx context.Context, id int32) (NarFile, error) {
+func (q *Queries) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	row := q.db.QueryRowContext(ctx, getNarFileByID, id)
 	var i NarFile
 	err := row.Scan(
@@ -377,7 +377,7 @@ WHERE nnf.narinfo_id = $1
 //	FROM nar_files nf
 //	INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 //	WHERE nnf.narinfo_id = $1
-func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int32) (NarFile, error) {
+func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
 	row := q.db.QueryRowContext(ctx, getNarFileByNarInfoID, narinfoID)
 	var i NarFile
 	err := row.Scan(
@@ -454,7 +454,7 @@ WHERE nnf.nar_file_id = $1
 //	FROM narinfos ni
 //	INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
 //	WHERE nnf.nar_file_id = $1
-func (q *Queries) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int32) ([]string, error) {
+func (q *Queries) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, getNarInfoHashesByNarFileID, narFileID)
 	if err != nil {
 		return nil, err
@@ -547,8 +547,8 @@ INSERT INTO narinfo_nar_files (
 `
 
 type LinkNarInfoToNarFileParams struct {
-	NarInfoID int32
-	NarFileID int32
+	NarInfoID int64
+	NarFileID int64
 }
 
 // LinkNarInfoToNarFile
