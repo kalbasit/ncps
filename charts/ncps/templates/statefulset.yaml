@@ -17,6 +17,7 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/signing-key-secret: {{ include (print $.Template.BasePath "/secret-signing-key.yaml") . | sha256sum }}
       labels:
         {{- include "ncps.selectorLabels" . | nindent 8 }}
     spec:
