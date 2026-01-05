@@ -16,6 +16,15 @@
             ]
           ))
 
+          # the postgres dump contains \restrict and \unrestrict commands that
+          # contain a randomly generated string that are noisy to git commands;
+          # Strip them.
+          (pkgs.writeShellScriptBin "pg_dump" ''
+            # Call the real pg_dump from the nix store, pipe through sed to strip restrict/unrestrict
+            ${pkgs.postgresql}/bin/pg_dump "$@" | \
+            ${pkgs.gnused}/bin/sed -e '/^\\restrict/d' -e '/^\\unrestrict/d'
+          '')
+
           # Use real dbmate for the wrapper to call
           (pkgs.writeShellScriptBin "dbmate.real" ''
             exec ${pkgs.dbmate}/bin/dbmate "$@"

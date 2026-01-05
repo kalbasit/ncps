@@ -1,8 +1,3 @@
-\restrict EZf7FjC0sCKpCiS5gRXnnlqynWnwLeE8Il4MfcXQwc1SqDW9goJyd1ZMg1wX7Af
-
--- Dumped from database version 17.7
--- Dumped by pg_dump version 17.7
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -260,7 +255,6 @@ ALTER TABLE ONLY public.narinfo_nar_files
 -- PostgreSQL database dump complete
 --
 
-\unrestrict EZf7FjC0sCKpCiS5gRXnnlqynWnwLeE8Il4MfcXQwc1SqDW9goJyd1ZMg1wX7Af
 
 
 --
