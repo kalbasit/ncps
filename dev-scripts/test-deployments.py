@@ -525,10 +525,9 @@ class NCPSTester:
 
             # Extract service name and namespace from FQDN
             # e.g., "pg17-ncps-rw.data.svc.cluster.local" -> service="pg17-ncps-rw", namespace="data"
-            service_name = pg_config["host"].split(".")[0]
-            namespace = (
-                pg_config["host"].split(".")[1] if "." in pg_config["host"] else "data"
-            )
+            host_parts = pg_config["host"].split(".")
+            service_name = host_parts[0]
+            namespace = host_parts[1] if len(host_parts) > 1 else "data"
 
             # Port-forward to the PostgreSQL service
             port_forward = subprocess.Popen(
@@ -602,12 +601,9 @@ class NCPSTester:
 
             # Extract service name and namespace from FQDN
             # e.g., "mariadb-ncps.data.svc.cluster.local" -> service="mariadb-ncps", namespace="data"
-            service_name = mysql_config["host"].split(".")[0]
-            namespace = (
-                mysql_config["host"].split(".")[1]
-                if "." in mysql_config["host"]
-                else "data"
-            )
+            host_parts = mysql_config["host"].split(".")
+            service_name = host_parts[0]
+            namespace = host_parts[1] if len(host_parts) > 1 else "data"
 
             # Port-forward to the MariaDB service
             port_forward = subprocess.Popen(
@@ -790,10 +786,8 @@ class NCPSTester:
             endpoint = s3_config["endpoint"]
             use_ssl = endpoint.startswith("https://")
             # Extract host:port from URL (e.g., "http://minio.minio.svc.cluster.local:9000" -> "minio.minio.svc.cluster.local:9000")
-            endpoint_without_scheme = endpoint.replace("https://", "").replace(
-                "http://", ""
-            )
-            host_port = endpoint_without_scheme.split("/")[0]  # Remove any path
+            endpoint_without_scheme = endpoint.split("://", 1)[-1]
+            host_port = endpoint_without_scheme.split("/", 1)[0]  # Remove any path
 
             if ":" in host_port:
                 host, port = host_port.rsplit(":", 1)
