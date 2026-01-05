@@ -327,6 +327,7 @@
             fileset = lib.fileset.unions [
               ../../cmd
               ../../db/migrations
+              ../../db/schema
               ../../go.mod
               ../../go.sum
               ../../main.go

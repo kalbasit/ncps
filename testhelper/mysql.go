@@ -28,7 +28,8 @@ func MigrateMySQLDatabase(t *testing.T, dbURL string) {
 	dbSchema := filepath.Join(
 		filepath.Dir(filepath.Dir(thisFile)),
 		"db",
-		"schema.sql",
+		"schema",
+		"mysql.sql",
 	)
 
 	//nolint:gosec

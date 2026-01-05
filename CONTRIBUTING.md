@@ -151,7 +151,7 @@ dbmate --url "postgresql://..." up
 dbmate --url "mysql://..." up
 ```
 
-**Note:** The wrapper uses the `NCPS_DB_MIGRATIONS_DIR` environment variable (automatically set in the dev shell) to locate migrations.
+**Note:** The wrapper uses the `NCPS_DB_MIGRATIONS_DIR` and the `NCPS_DB_SCHEMA_DIR` environment variables (automatically set in the dev shell) to locate migrations and schema.
 
 ### Generating SQL Code
 

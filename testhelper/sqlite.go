@@ -31,7 +31,8 @@ func CreateMigrateDatabase(t *testing.T, dbFile string) {
 	dbSchema := filepath.Join(
 		filepath.Dir(filepath.Dir(thisFile)),
 		"db",
-		"schema.sql",
+		"schema",
+		"sqlite.sql",
 	)
 
 	//nolint:gosec
