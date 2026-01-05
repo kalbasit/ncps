@@ -288,8 +288,16 @@ The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
   - This ensures migration changes are immediately visible without rebuilding
 - Automatically sets the `DBMATE_MIGRATIONS_DIR` environment variable to the appropriate database-specific path:
   - Example: `${NCPS_DB_MIGRATIONS_DIR}/sqlite` or `${NCPS_DB_MIGRATIONS_DIR}/postgres`
+- Uses the `NCPS_DB_SCHEMA_DIR` environment variable to locate the base schema directory
+  - In Docker: set to `/share/ncps/db/schema` (static path in container)
+  - In dev shell: set dynamically via `shellHook` to `$(git rev-parse --show-toplevel)/db/schema` (repo root)
+  - This ensures migration changes are immediately visible without rebuilding
+- Automatically sets the `DBMATE_SCHEMA_FILE` environment variable to the appropriate database-specific path:
+  - Example: `${NCPS_DB_SCHEMA_DIR}/sqlite` or `${NCPS_DB_SCHEMA_DIR}/postgres`
 - Calls the real `dbmate` binary (consistently renamed to `dbmate.real` in both dev and Docker)
-- Respects user overrides: if `DBMATE_MIGRATIONS_DIR` is already set or `--migrations-dir` is provided, the wrapper passes through without modification
+- Respects user overrides:
+  - if `DBMATE_MIGRATIONS_DIR` is already set or `--migrations-dir` is provided, the wrapper passes through without modification
+  - if `NCPS_DB_SCHEMA_DIR` is already set or `--schema-file` is provided, the wrapper passes through without modification
 - This keeps the wrapper simple and doesn't require rebuilding ncps to update it
 
 **IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `dbmate new` to ensure proper chronological ordering.

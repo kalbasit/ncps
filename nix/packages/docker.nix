@@ -78,9 +78,17 @@
           Env = [
             # NCPS_DB_MIGRATIONS_DIR tells dbmate-wrapper where to find migrations
             "NCPS_DB_MIGRATIONS_DIR=/share/ncps/db/migrations"
-            # DBMATE_MIGRATIONS_DIR is set dynamically by dbmate-wrapper based on --url
-            "DBMATE_SCHEMA_FILE=/share/ncps/db/schema.sql"
+
+            # NCPS_DB_SCHEMA_DIR tells dbmate-wrapper where to find schema files
+            "NCPS_DB_SCHEMA_DIR=/share/ncps/db/schema"
+
+            # Instruct dbmate not to migrate the database
             "DBMATE_NO_DUMP_SCHEMA=true"
+
+            # XXX: It's important not to set these variables in order to
+            # support multiple database engines.
+            # DBMATE_MIGRATIONS_DIR is set dynamically by dbmate-wrapper based on --url
+            # DBMATE_SCHEMA_FILE is set dynamically by dbmate-wrapper based on --url
           ];
           ExposedPorts = {
             "8501/tcp" = { };

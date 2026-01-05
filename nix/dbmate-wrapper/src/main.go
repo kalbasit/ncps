@@ -1,11 +1,17 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+)
+
+var (
+	errIncalculableMigrationDir = errors.New("error calculating the migration directory")
 )
 
 func main() {
@@ -15,41 +21,52 @@ func main() {
 func run() int {
 	// Parse the database URL from the environment.
 	dbURL := os.Getenv("DATABASE_URL")
-
-	// Parse args to find --url value and check if --migrations-dir is provided
-	var hasMigrationsDir bool
-
 	for i, arg := range os.Args[1:] {
 		if arg == "--url" && i+1 < len(os.Args)-1 {
 			dbURL = os.Args[i+2]
 		} else if strings.HasPrefix(arg, "--url=") {
 			dbURL = strings.TrimPrefix(arg, "--url=")
 		}
+	}
 
-		if arg == "--migrations-dir" || strings.HasPrefix(arg, "--migrations-dir=") {
-			hasMigrationsDir = true
+	// Set DBMATE_MIGRATIONS_DIR for dbmate to use, but only if not already set.
+	if os.Getenv("DBMATE_MIGRATIONS_DIR") == "" {
+		fullMigrationsPath, err := computeMigrationsDir(dbURL)
+		if err != nil {
+			log.Printf("%s", err)
+			return execDbmate(os.Args[1:])
+		}
+
+		if err := os.Setenv("DBMATE_MIGRATIONS_DIR", fullMigrationsPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error setting DBMATE_MIGRATIONS_DIR: %v\n", err)
+
+			return 1
 		}
 	}
 
-	// If --migrations-dir is already provided via flag, don't override it
-	// If DBMATE_MIGRATIONS_DIR is already set, respect it (user has explicitly configured it)
-	if hasMigrationsDir || os.Getenv("DBMATE_MIGRATIONS_DIR") != "" {
-		return execDbmate(os.Args[1:])
+	// Set DBMATE_SCHEMA_FILE for dbmate to use, but only if not already set.
+	if os.Getenv("DBMATE_SCHEMA_FILE") == "" {
+		fullSchemaPath, err := computeSchemaFile(dbURL)
+		if err != nil {
+			log.Printf("%s", err)
+			return execDbmate(os.Args[1:])
+		}
+
+		if err := os.Setenv("DBMATE_SCHEMA_FILE", fullSchemaPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error setting DBMATE_SCHEMA_FILE: %v\n", err)
+
+			return 1
+		}
 	}
 
-	// Determine database type from URL scheme
-	var migrationsSubdir string
+	return execDbmate(os.Args[1:])
+}
 
-	switch {
-	case strings.HasPrefix(dbURL, "sqlite:"):
-		migrationsSubdir = "sqlite"
-	case strings.HasPrefix(dbURL, "postgresql:"), strings.HasPrefix(dbURL, "postgres:"):
-		migrationsSubdir = "postgres"
-	case strings.HasPrefix(dbURL, "mysql:"):
-		migrationsSubdir = "mysql"
-	default:
-		// If we can't determine the database type, just pass through
-		return execDbmate(os.Args[1:])
+func computeMigrationsDir(dbURL string) (string, error) {
+	// Determine database type from URL scheme
+	dbType, err := getDatabaseType(dbURL)
+	if err != nil {
+		return "", err
 	}
 
 	// Determine the base migrations directory
@@ -66,16 +83,48 @@ func run() int {
 	}
 
 	// Build the full migrations path with database-specific subdirectory
-	fullMigrationsPath := filepath.Join(basePath, migrationsSubdir)
+	return filepath.Join(basePath, dbType), nil
+}
 
-	// Set DBMATE_MIGRATIONS_DIR for dbmate to use
-	if err := os.Setenv("DBMATE_MIGRATIONS_DIR", fullMigrationsPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Error setting DBMATE_MIGRATIONS_DIR: %v\n", err)
-
-		return 1
+func computeSchemaFile(dbURL string) (string, error) {
+	// Determine database type from URL scheme
+	dbType, err := getDatabaseType(dbURL)
+	if err != nil {
+		return "", err
 	}
 
-	return execDbmate(os.Args[1:])
+	// Determine the base migrations directory
+	// Priority order:
+	// 1. NCPS_DB_SCHEMA_DIR environment variable (set by devshell or Docker)
+	// 2. Fallback to /share/ncps/db/migrations (Docker default)
+	// 3. Fallback to db/migrations (relative path, only works from repo root)
+	basePath := os.Getenv("NCPS_DB_SCHEMA_DIR")
+	if basePath == "" {
+		basePath = "/share/ncps/db/schema"
+		if _, err := os.Stat(basePath); os.IsNotExist(err) {
+			basePath = "db/schema"
+		}
+	}
+
+	// Build the full migrations path with database-specific subdirectory
+	return filepath.Join(basePath, dbType+".sql"), nil
+}
+
+func getDatabaseType(dbURL string) (string, error) {
+	var dbType string
+
+	switch {
+	case strings.HasPrefix(dbURL, "sqlite:"):
+		dbType = "sqlite"
+	case strings.HasPrefix(dbURL, "postgresql:"), strings.HasPrefix(dbURL, "postgres:"):
+		dbType = "postgres"
+	case strings.HasPrefix(dbURL, "mysql:"):
+		dbType = "mysql"
+	default:
+		return dbType, errIncalculableMigrationDir
+	}
+
+	return dbType, nil
 }
 
 // execDbmate executes the real dbmate binary with the given arguments.
