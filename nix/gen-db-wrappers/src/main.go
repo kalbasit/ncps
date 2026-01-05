@@ -209,7 +209,7 @@ func exprToString(expr ast.Expr) string {
 	case *ast.ArrayType:
 		return "[]" + exprToString(t.Elt)
 	default:
-		return "unknown"
+		panic(fmt.Sprintf("unhandled expression type: %T", t))
 	}
 }
 
