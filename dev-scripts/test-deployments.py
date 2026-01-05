@@ -20,9 +20,10 @@ import requests
 import yaml
 
 try:
-    import pymysql
     import psycopg2
-    from kubernetes import client, config as k8s_config
+    import pymysql
+    from kubernetes import client
+    from kubernetes import config as k8s_config
 except ImportError as e:
     print(f"❌ Missing required dependency: {e}")
     print("\nPlease install required dependencies:")
@@ -200,7 +201,9 @@ class NCPSTester:
                     break
 
                 if self.verbose:
-                    print(f"      Waiting for pods... ({len(pods.items)}/{expected_replicas} created)")
+                    print(
+                        f"      Waiting for pods... ({len(pods.items)}/{expected_replicas} created)"
+                    )
                 time.sleep(wait_interval)
                 elapsed += wait_interval
             else:
@@ -219,17 +222,12 @@ class NCPSTester:
                     namespace=namespace, label_selector="app.kubernetes.io/name=ncps"
                 )
 
-                running_pods = [
-                    p for p in pods.items if p.status.phase == "Running"
-                ]
+                running_pods = [p for p in pods.items if p.status.phase == "Running"]
 
                 if len(running_pods) == expected_replicas:
                     # Verify containers are ready
                     all_ready = all(
-                        all(
-                            cs.ready
-                            for cs in pod.status.container_statuses or []
-                        )
+                        all(cs.ready for cs in pod.status.container_statuses or [])
                         for pod in running_pods
                     )
 
@@ -241,7 +239,9 @@ class NCPSTester:
                         )
 
                 if self.verbose:
-                    print(f"      Waiting for pods to be ready... ({len(running_pods)}/{expected_replicas} running)")
+                    print(
+                        f"      Waiting for pods to be ready... ({len(running_pods)}/{expected_replicas} running)"
+                    )
                 time.sleep(wait_interval)
                 elapsed += wait_interval
 
@@ -330,7 +330,9 @@ class NCPSTester:
             for narinfo_hash in test_hashes[:3]:
                 try:
                     # Fetch narinfo
-                    resp = requests.get(f"{base_url}/{narinfo_hash}.narinfo", timeout=30)
+                    resp = requests.get(
+                        f"{base_url}/{narinfo_hash}.narinfo", timeout=30
+                    )
                     if resp.status_code != 200:
                         return TestResult(
                             "HTTP Endpoints",
@@ -367,7 +369,9 @@ class NCPSTester:
                         )
 
                     if self.verbose:
-                        print(f"      ✓ Fetched {narinfo_hash}.narinfo and {nar_url} ({len(resp.content)} bytes)")
+                        print(
+                            f"      ✓ Fetched {narinfo_hash}.narinfo and {nar_url} ({len(resp.content)} bytes)"
+                        )
 
                 except Exception as e:
                     return TestResult(
@@ -456,11 +460,11 @@ class NCPSTester:
 
             tables_output = result.stdout.strip()
 
-            if "nars" not in tables_output:
+            if "nar_files" not in tables_output:
                 return TestResult(
                     "Database",
                     False,
-                    f"Expected 'nars' table not found in SQLite database",
+                    f"Expected 'nar_files' table not found in SQLite database",
                     details=f"Tables found: '{tables_output}'",
                 )
 
@@ -480,7 +484,7 @@ class NCPSTester:
                     "--",
                     "sh",
                     "-c",
-                    f"cp {target_db_path} /tmp/test.db && sqlite3 /tmp/test.db 'SELECT COUNT(*) FROM nars;'",
+                    f"cp {target_db_path} /tmp/test.db && sqlite3 /tmp/test.db 'SELECT COUNT(*) FROM nar_files;'",
                 ],
                 capture_output=True,
                 text=True,
@@ -504,7 +508,9 @@ class NCPSTester:
             )
 
         except subprocess.TimeoutExpired:
-            return TestResult("Database", False, "Timeout while testing SQLite database")
+            return TestResult(
+                "Database", False, "Timeout while testing SQLite database"
+            )
         except Exception as e:
             return TestResult("Database", False, f"Error testing SQLite: {e}")
 
@@ -519,8 +525,10 @@ class NCPSTester:
 
             # Extract service name and namespace from FQDN
             # e.g., "pg17-ncps-rw.data.svc.cluster.local" -> service="pg17-ncps-rw", namespace="data"
-            service_name = pg_config['host'].split('.')[0]
-            namespace = pg_config['host'].split('.')[1] if '.' in pg_config['host'] else 'data'
+            service_name = pg_config["host"].split(".")[0]
+            namespace = (
+                pg_config["host"].split(".")[1] if "." in pg_config["host"] else "data"
+            )
 
             # Port-forward to the PostgreSQL service
             port_forward = subprocess.Popen(
@@ -555,7 +563,7 @@ class NCPSTester:
             )
             tables = [row[0] for row in cursor.fetchall()]
 
-            if "nars" not in tables:
+            if "nar_files" not in tables:
                 conn.close()
                 return TestResult(
                     "Database",
@@ -565,13 +573,15 @@ class NCPSTester:
                 )
 
             # Count rows
-            cursor.execute("SELECT COUNT(*) FROM nars")
+            cursor.execute("SELECT COUNT(*) FROM nar_files")
             count = cursor.fetchone()[0]
 
             conn.close()
 
             return TestResult(
-                "Database", True, f"PostgreSQL database accessible ({count} NAR entries)"
+                "Database",
+                True,
+                f"PostgreSQL database accessible ({count} NAR entries)",
             )
 
         except Exception as e:
@@ -592,8 +602,12 @@ class NCPSTester:
 
             # Extract service name and namespace from FQDN
             # e.g., "mariadb-ncps.data.svc.cluster.local" -> service="mariadb-ncps", namespace="data"
-            service_name = mysql_config['host'].split('.')[0]
-            namespace = mysql_config['host'].split('.')[1] if '.' in mysql_config['host'] else 'data'
+            service_name = mysql_config["host"].split(".")[0]
+            namespace = (
+                mysql_config["host"].split(".")[1]
+                if "." in mysql_config["host"]
+                else "data"
+            )
 
             # Port-forward to the MariaDB service
             port_forward = subprocess.Popen(
@@ -626,7 +640,7 @@ class NCPSTester:
             cursor.execute("SHOW TABLES")
             tables = [row[0] for row in cursor.fetchall()]
 
-            if "nars" not in tables:
+            if "nar_files" not in tables:
                 conn.close()
                 return TestResult(
                     "Database",
@@ -636,7 +650,7 @@ class NCPSTester:
                 )
 
             # Count rows
-            cursor.execute("SELECT COUNT(*) FROM nars")
+            cursor.execute("SELECT COUNT(*) FROM nar_files")
             count = cursor.fetchone()[0]
 
             conn.close()
@@ -776,7 +790,9 @@ class NCPSTester:
             endpoint = s3_config["endpoint"]
             use_ssl = endpoint.startswith("https://")
             # Extract host:port from URL (e.g., "http://minio.minio.svc.cluster.local:9000" -> "minio.minio.svc.cluster.local:9000")
-            endpoint_without_scheme = endpoint.replace("https://", "").replace("http://", "")
+            endpoint_without_scheme = endpoint.replace("https://", "").replace(
+                "http://", ""
+            )
             host_port = endpoint_without_scheme.split("/")[0]  # Remove any path
 
             if ":" in host_port:
@@ -860,7 +876,9 @@ class NCPSTester:
 
         for name, result in all_results.items():
             status = "✅ PASS" if result.passed else "❌ FAIL"
-            print(f"{status} {name} ({result.passed_count}/{len(result.results)} checks)")
+            print(
+                f"{status} {name} ({result.passed_count}/{len(result.results)} checks)"
+            )
 
             # Always show all check results in summary
             for test_result in result.results:
@@ -871,9 +889,7 @@ class NCPSTester:
                         print(f"        {line}")
 
         print(f"\n{'=' * 80}")
-        print(
-            f"Total: {passed_deployments}/{total_deployments} deployments passed"
-        )
+        print(f"Total: {passed_deployments}/{total_deployments} deployments passed")
         print(f"{'=' * 80}\n")
 
         return failed_deployments == 0
