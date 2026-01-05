@@ -17,6 +17,7 @@
       "Bash(go mod tidy:*)",
       "Bash(go test:*)",
       "Bash(golangci-lint run:*)",
+      "Bash(grep:*)",
       "Bash(gt ls:*)",
       "Bash(helm lint:*)",
       "Bash(helm template:*)",
