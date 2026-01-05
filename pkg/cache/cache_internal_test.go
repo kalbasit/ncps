@@ -342,6 +342,175 @@ func TestRunLRU(t *testing.T) {
 	require.ErrorIs(t, err, sql.ErrNoRows)
 }
 
+func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ts := testdata.NewTestServer(t, 40)
+	defer ts.Close()
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	// Wait for upstream caches to become available
+	<-c.GetHealthChecker().Trigger()
+
+	// NOTE: For this test, any nar that's explicitly testing the zstd
+	// transparent compression support will not be included because its size will
+	// not be known and so the test will be more complex.
+	var allEntries []testdata.Entry
+
+	for _, narEntry := range testdata.Entries {
+		expectedCompression := fmt.Sprintf("Compression: %s", narEntry.NarCompression)
+		if strings.Contains(narEntry.NarInfoText, expectedCompression) {
+			allEntries = append(allEntries, narEntry)
+		}
+	}
+
+	// create a dup of the last entry and change its hash and swap it so the rest
+	// of my test work as before.
+	{
+		b := allEntries[len(allEntries)-1]
+		a := b
+		a.NarInfoHash = "7lwdzpsma6xz5678blcqr6f5q1caxjw2"
+		allEntries = append(allEntries[:len(allEntries)-1], a, b)
+
+		ts.AddEntry(a)
+	}
+
+	entries := allEntries[:len(allEntries)-1]
+	lastEntry := allEntries[len(allEntries)-1]
+
+	assert.Len(t, entries, len(allEntries)-1, "confirm entries length is correct")
+	assert.Equal(t, allEntries, append(entries, lastEntry), "confirm my vars are correct")
+
+	// define the maximum size of our store based on responses of our testdata
+	// minus the last one
+	var maxSize uint64
+	for _, nar := range entries {
+		maxSize += uint64(len(nar.NarText))
+	}
+
+	// allow LRU to remove the last entry so we can then assert that it was not
+	// actually removed.
+	c.SetMaxSize(maxSize - uint64(len(lastEntry.NarText)))
+
+	var sizePulled int64
+
+	for i, narEntry := range allEntries {
+		_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+		require.NoErrorf(t, err, "unable to get narinfo for idx %d", i)
+
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+		size, reader, err := c.GetNar(context.Background(), nu)
+		require.NoError(t, err, "unable to get nar for idx %d", i)
+
+		// If the size is zero (likely) then the download is in progress so
+		// compute the size by reading it fully first.
+		if size < 0 {
+			var err error
+
+			size, err = io.Copy(io.Discard, reader)
+			require.NoError(t, err)
+		}
+
+		sizePulled += size
+	}
+
+	//nolint:gosec
+	expectedSize := int64(maxSize) + int64(len(lastEntry.NarText))
+
+	assert.Equal(t, expectedSize, sizePulled, "size pulled is less than maxSize by exactly the last one")
+
+	for _, narEntry := range allEntries {
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+
+		var found bool
+
+		for i := 1; i < 100; i++ {
+			// NOTE: I tried runtime.Gosched() but it makes the test flaky
+			time.Sleep(time.Duration(i) * time.Millisecond)
+
+			found = c.narStore.HasNar(newContext(), nu)
+			if found {
+				break
+			}
+		}
+
+		assert.True(t, found, nu.String()+" should exist in the store")
+	}
+
+	// ensure time has moved by one sec for the last_accessed_at work
+	time.Sleep(time.Second)
+
+	// pull the nars except for the last entry to get their last_accessed_at updated
+	sizePulled = 0
+
+	for _, narEntry := range entries {
+		_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+		require.NoError(t, err)
+
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+		size, _, err := c.GetNar(context.Background(), nu)
+		require.NoError(t, err)
+
+		sizePulled += size
+	}
+
+	//nolint:gosec
+	assert.Equal(t, int64(maxSize), sizePulled, "confirm size pulled is exactly maxSize")
+
+	// all narinfo records are in the database
+	for _, narEntry := range allEntries {
+		_, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+		require.NoError(t, err)
+	}
+
+	// all nar_file records are in the database
+	for _, narEntry := range allEntries {
+		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
+		require.NoError(t, err)
+	}
+
+	c.runLRU(newContext())()
+
+	// confirm all narinfos except the last one are in the store
+	for _, nar := range entries {
+		assert.True(t, c.narInfoStore.HasNarInfo(newContext(), nar.NarInfoHash))
+	}
+
+	assert.False(t, c.narInfoStore.HasNarInfo(newContext(), lastEntry.NarInfoHash))
+
+	// confirm all nars are in the store, the last one should not be deleted
+	// because it has another narinfo referring to it that was indeed pulled.
+	for _, narEntry := range allEntries {
+		nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+		assert.True(t, c.narStore.HasNar(newContext(), nu))
+	}
+
+	// all narinfo records except the last one are in the database
+	for _, narEntry := range entries {
+		_, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+		require.NoError(t, err)
+	}
+
+	_, err = c.db.GetNarInfoByHash(context.Background(), lastEntry.NarInfoHash)
+	require.ErrorIs(t, err, sql.ErrNoRows)
+
+	// confirm all nar_file records are in the database, the last one should not
+	// be deleted because it has another narinfo referring to it that was indeed
+	// pulled.
+	for _, narEntry := range allEntries {
+		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
+		require.NoError(t, err)
+	}
+}
+
 func TestStoreInDatabaseDuplicateDetection(t *testing.T) {
 	t.Parallel()
 
