@@ -27,11 +27,14 @@ var engines = []Engine{
 
 // MethodInfo holds extracted data from the AST
 type MethodInfo struct {
-	Name       string
-	Params     []Param
-	Returns    []Return
-	IsCreate   bool
-	ReturnElem string // For slice returns or single struct returns
+	Name         string
+	Params       []Param
+	Returns      []Return
+	IsCreate     bool   // Special handling for MySQL Create
+	ReturnElem   string // The struct type being returned (e.g. "NarFile")
+	ReturnsError bool   // Does the method return an error?
+	ReturnsSelf  bool   // Does it return the wrapper type (like WithTx)?
+	HasValue     bool   // Does it return a value (non-error)?
 }
 
 type Param struct {
@@ -82,15 +85,23 @@ func main() {
 					typeStr := exprToString(res.Type)
 					m.Returns = append(m.Returns, Return{Type: typeStr})
 
-					// Detect return element type (for slices or structs)
+					if typeStr == "error" {
+						m.ReturnsError = true
+					} else if typeStr == "Querier" {
+						m.ReturnsSelf = true
+						m.HasValue = true
+					} else {
+						m.HasValue = true
+					}
+
 					cleanType := strings.TrimPrefix(typeStr, "[]")
-					if isStruct(cleanType) {
+					if isDomainStruct(cleanType) {
 						m.ReturnElem = cleanType
 					}
 				}
 			}
 
-			// Detect if it's a Create method (for MySQL handling)
+			// Detect if it's a Create method returning a struct (for MySQL)
 			if strings.HasPrefix(m.Name, "Create") && m.ReturnElem != "" {
 				m.IsCreate = true
 			}
@@ -109,21 +120,39 @@ func main() {
 // generateFile writes the wrapper_*.go file
 func generateFile(engine Engine, methods []MethodInfo) {
 	t := template.Must(template.New("wrapper").Funcs(template.FuncMap{
-		"joinParams": func(params []Param) string {
+		"joinParamsSignature": func(params []Param) string {
 			var p []string
 			for _, param := range params {
-				p = append(p, param.Name)
+				p = append(p, fmt.Sprintf("%s %s", param.Name, param.Type))
 			}
 			return strings.Join(p, ", ")
 		},
-		"castParam": func(p Param, engPkg string) string {
-			// If param is a struct (starts with capital), cast it.
-			// Otherwise pass as is.
-			if isStruct(p.Type) {
-				return fmt.Sprintf("%s.%s(%s)", engPkg, p.Type, p.Name)
+		"joinParamsCall": func(params []Param, engPkg string) string {
+			var p []string
+			for _, param := range params {
+				if isDomainStruct(param.Type) {
+					p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
+				} else {
+					p = append(p, param.Name)
+				}
 			}
-			// Special handling for int casts if needed, but assuming types match now
-			return p.Name
+			return strings.Join(p, ", ")
+		},
+		"joinReturns": func(returns []Return) string {
+			var r []string
+			for _, ret := range returns {
+				r = append(r, ret.Type)
+			}
+			return strings.Join(r, ", ")
+		},
+		"isSlice": func(retType string) bool {
+			return strings.HasPrefix(retType, "[]")
+		},
+		"firstReturnType": func(returns []Return) string {
+			if len(returns) > 0 {
+				return returns[0].Type
+			}
+			return ""
 		},
 	}).Parse(wrapperTemplate))
 
@@ -140,20 +169,21 @@ func generateFile(engine Engine, methods []MethodInfo) {
 	// Format code
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
-		log.Println(buf.String()) // print raw on error
+		log.Println(buf.String()) // print raw on error for debugging
 		log.Fatalf("formatting code: %v", err)
 	}
 
 	filename := fmt.Sprintf("pkg/database/wrapper_%s.go", engine.Name)
-	if err := os.WriteFile(filename, formatted, 0o644); err != nil {
+	if err := os.WriteFile(filename, formatted, 0644); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Generated %s\n", filename)
 }
 
-// Helper to determine if a type is likely a struct we defined (starts with Uppercase, not slice/map)
-func isStruct(t string) bool {
-	return len(t) > 0 && t[0] >= 'A' && t[0] <= 'Z' && !strings.Contains(t, ".")
+// Helper to determine if a type is a Domain Struct (defined in models.go)
+func isDomainStruct(t string) bool {
+	// Heuristic: Uppercase start, no dots, not standard interface/type
+	return len(t) > 0 && t[0] >= 'A' && t[0] <= 'Z' && !strings.Contains(t, ".") && t != "Querier"
 }
 
 // Simple AST expression to string converter
@@ -172,6 +202,9 @@ func exprToString(expr ast.Expr) string {
 	}
 }
 
+// Helper for template
+func (e Engine) IsMySQL() bool { return e.Name == "mysql" }
+
 const wrapperTemplate = `
 package database
 
@@ -184,16 +217,16 @@ import (
 
 // {{.Engine.Name}}Wrapper wraps the {{.Engine.Name}} adapter
 type {{.Engine.Name}}Wrapper struct {
-	adapter *{{.Engine.Package}}.Queries
+	adapter *{{.Engine.Package}}.Adapter
 }
 
 {{range .Methods}}
-func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{range .Params}}{{.Name}} {{.Type}}, {{end}}) ({{range .Returns}}{{.Type}}, {{end}}) {
+func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
 	{{- /* --- MySQL CREATE Special Handling --- */ -}}
 	{{if and $.Engine.IsMySQL .IsCreate}}
-		// MySQL does not support RETURNING for INSERTs. 
+		// MySQL does not support RETURNING for INSERTs.
 		// We insert, get LastInsertId, and then fetch the object.
-		res, err := w.adapter.{{.Name}}({{range .Params}}{{castParam . $.Engine.Package}}, {{end}})
+		res, err := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
 		if err != nil {
 			return {{.ReturnElem}}{}, err
 		}
@@ -208,36 +241,57 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{range .Params}}{{.Name}} {{.Type}
 	{{- else -}}
 
 	{{- /* --- Standard Handling --- */ -}}
-		{{if .ReturnElem}}res{{else}}_{{end}}, err := w.adapter.{{.Name}}({{range .Params}}{{castParam . $.Engine.Package}}, {{end}})
+		{{- $retType := firstReturnType .Returns -}}
+
+		{{/* 1. CALL ADAPTER */}}
+		{{if .HasValue}}res{{else}}_{{end}}
+		{{- if .ReturnsError}}, err{{end}} := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
+
+		{{/* 2. HANDLE ERROR */}}
+		{{- if .ReturnsError}}
 		if err != nil {
-			{{- if .ReturnElem}}
+			{{- if .ReturnsSelf}}
+				return nil // returns Querier
+			{{- else if not .HasValue}}
+				return err
+			{{- else if isSlice $retType}}
 				return nil, err
+			{{- else if .ReturnElem}}
+				return {{.ReturnElem}}{}, err
 			{{- else}}
+				// Primitive return (int64, etc)
 				return 0, err
 			{{- end}}
 		}
+		{{- end}}
 
-		{{- /* Case 1: Return is a Slice */}}
-		{{- if and (eq (index .Returns 0).Type "[]" .ReturnElem) }}
+		{{/* 3. RETURN RESULTS */}}
+		{{- if .ReturnsSelf}}
+			// Wrap the returned adapter (for WithTx)
+			return &{{$.Engine.Name}}Wrapper{adapter: res}
+
+		{{- else if isSlice $retType }}
+			// Convert Slice
 			items := make([]{{.ReturnElem}}, len(res))
 			for i, v := range res {
 				items[i] = {{.ReturnElem}}(v)
 			}
-			return items, nil
+			return items{{if .ReturnsError}}, nil{{end}}
 
-		{{- /* Case 2: Return is a Struct */}}
 		{{- else if .ReturnElem}}
-			return {{.ReturnElem}}(res), nil
+			// Convert Struct
+			return {{.ReturnElem}}(res){{if .ReturnsError}}, nil{{end}}
 
-		{{- /* Case 3: Return is Primitive (e.g. int64) */}}
+		{{- else if .HasValue}}
+			// Return Primitive / *sql.DB / etc
+			return res{{if .ReturnsError}}, nil{{end}}
+
 		{{- else}}
-			return res, nil
+			// No return value (void)
+			{{if .ReturnsError}}return nil{{end}}
 		{{- end}}
 
 	{{- end}}
 }
 {{end}}
 `
-
-// Note: IsMySQL is a helper I need to add to the template data or struct logic
-func (e Engine) IsMySQL() bool { return e.Name == "mysql" }
