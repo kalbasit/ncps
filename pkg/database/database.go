@@ -39,24 +39,25 @@ type PoolConfig struct {
 // The poolCfg parameter is optional. If nil, sensible defaults are used based on
 // the database type. SQLite uses MaxOpenConns=1, PostgreSQL and MySQL use higher values.
 func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
-	u, err := url.Parse(dbURL)
+	dbType, err := DetectFromDatabaseURL(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing the database URL %q: %w", dbURL, err)
+		return nil, err
 	}
 
 	var sdb *sql.DB
 
-	scheme := strings.ToLower(u.Scheme)
-
-	switch scheme {
-	case "sqlite", "sqlite3":
-		sdb, err = openSQLite(u, poolCfg)
-	case "postgres", "postgresql":
-		sdb, err = openPostgreSQL(dbURL, poolCfg)
-	case "mysql":
+	switch dbType {
+	case TypeMySQL:
 		sdb, err = openMySQL(dbURL, poolCfg)
+	case TypePostgreSQL:
+		sdb, err = openPostgreSQL(dbURL, poolCfg)
+	case TypeSQLite:
+		sdb, err = openSQLite(dbURL, poolCfg)
+	case TypeUnknown:
+		fallthrough
 	default:
-		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDriver, scheme)
+		// This should never happen due to detection above, but included for safety
+		return nil, ErrUnsupportedDriver
 	}
 
 	if err != nil {
@@ -64,16 +65,18 @@ func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
 	}
 
 	// Return the appropriate wrapper based on the scheme
-	switch scheme {
-	case "sqlite", "sqlite3":
-		return &sqliteWrapper{adapter: sqlitedb.NewAdapter(sdb)}, nil
-	case "postgres", "postgresql":
-		return &postgresWrapper{adapter: postgresdb.NewAdapter(sdb)}, nil
-	case "mysql":
+	switch dbType {
+	case TypeMySQL:
 		return &mysqlWrapper{adapter: mysqldb.NewAdapter(sdb)}, nil
+	case TypePostgreSQL:
+		return &postgresWrapper{adapter: postgresdb.NewAdapter(sdb)}, nil
+	case TypeSQLite:
+		return &sqliteWrapper{adapter: sqlitedb.NewAdapter(sdb)}, nil
+	case TypeUnknown:
+		fallthrough
 	default:
-		// This should never happen due to the switch above, but included for safety
-		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDriver, scheme)
+		// This should never happen due to detection above, but included for safety
+		return nil, ErrUnsupportedDriver
 	}
 }
 
@@ -102,7 +105,12 @@ func applyPoolSettings(sdb *sql.DB, poolCfg *PoolConfig, defaultMaxOpen, default
 	}
 }
 
-func openSQLite(u *url.URL, poolCfg *PoolConfig) (*sql.DB, error) {
+func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		return nil, err
+	}
+
 	sdb, err := otelsql.Open("sqlite3", u.Path, otelsql.WithAttributes(
 		semconv.DBSystemSqlite,
 	))
