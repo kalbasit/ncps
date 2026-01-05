@@ -9,15 +9,15 @@ import (
 )
 
 type Querier interface {
-	//CreateNar
+	//CreateNarFile
 	//
-	//  INSERT INTO nars (
-	//      narinfo_id, hash, compression, query, file_size
+	//  INSERT INTO nar_files (
+	//      hash, compression, query, file_size
 	//  ) VALUES (
-	//      $1, $2, $3, $4, $5
+	//      $1, $2, $3, $4
 	//  )
-	//  RETURNING id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, query
-	CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error)
+	//  RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error)
 	//CreateNarInfo
 	//
 	//  INSERT INTO narinfos (
@@ -27,16 +27,16 @@ type Querier interface {
 	//  )
 	//  RETURNING id, hash, created_at, updated_at, last_accessed_at
 	CreateNarInfo(ctx context.Context, hash string) (NarInfo, error)
-	//DeleteNarByHash
+	//DeleteNarFileByHash
 	//
-	//  DELETE FROM nars
+	//  DELETE FROM nar_files
 	//  WHERE hash = $1
-	DeleteNarByHash(ctx context.Context, hash string) (int64, error)
-	//DeleteNarByID
+	DeleteNarFileByHash(ctx context.Context, hash string) (int64, error)
+	//DeleteNarFileByID
 	//
-	//  DELETE FROM nars
+	//  DELETE FROM nar_files
 	//  WHERE id = $1
-	DeleteNarByID(ctx context.Context, id int64) (int64, error)
+	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
 	//DeleteNarInfoByHash
 	//
 	//  DELETE FROM narinfos
@@ -47,31 +47,70 @@ type Querier interface {
 	//  DELETE FROM narinfos
 	//  WHERE id = $1
 	DeleteNarInfoByID(ctx context.Context, id int64) (int64, error)
+	//DeleteOrphanedNarFiles
+	//
+	//  DELETE FROM nar_files
+	//  WHERE id NOT IN (
+	//      SELECT DISTINCT nar_file_id
+	//      FROM narinfo_nar_files
+	//  )
+	DeleteOrphanedNarFiles(ctx context.Context) (int64, error)
+	//DeleteOrphanedNarInfos
+	//
+	//  DELETE FROM narinfos
+	//  WHERE id NOT IN (
+	//      SELECT DISTINCT narinfo_id
+	//      FROM narinfo_nar_files
+	//  )
+	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
 	//
-	//  SELECT n1.id, n1.narinfo_id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.query
-	//  FROM nars n1
+	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+	//  FROM nar_files n1
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
-	//      FROM nars n2
+	//      FROM nar_files n2
 	//      WHERE n2.last_accessed_at < n1.last_accessed_at
 	//         OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 	//  ) <= $1
-	GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error)
-	//GetNarByHash
+	GetLeastUsedNarFiles(ctx context.Context, fileSize int64) ([]NarFile, error)
+	// NOTE: This query uses a correlated subquery which is not optimal for performance.
+	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
+	// does not properly support filtering on window function results in subqueries.
+	// Gets the least-used narinfos up to a certain total file size (accounting for their nar_files).
 	//
-	//  SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, query
-	//  FROM nars
+	//  SELECT ni1.id, ni1.hash, ni1.created_at, ni1.updated_at, ni1.last_accessed_at
+	//  FROM narinfos ni1
+	//  WHERE (
+	//      SELECT COALESCE(SUM(nf2.file_size), 0)
+	//      FROM narinfos ni2
+	//      LEFT JOIN narinfo_nar_files ninf2 ON ni2.id = ninf2.narinfo_id
+	//      LEFT JOIN nar_files nf2 ON ninf2.nar_file_id = nf2.id
+	//      WHERE ni2.last_accessed_at < ni1.last_accessed_at
+	//          OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
+	//  ) <= $1
+	GetLeastUsedNarInfos(ctx context.Context, fileSize int64) ([]NarInfo, error)
+	//GetNarFileByHash
+	//
+	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+	//  FROM nar_files
 	//  WHERE hash = $1
-	GetNarByHash(ctx context.Context, hash string) (Nar, error)
-	//GetNarByID
+	GetNarFileByHash(ctx context.Context, hash string) (NarFile, error)
+	//GetNarFileByID
 	//
-	//  SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at, query
-	//  FROM nars
+	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+	//  FROM nar_files
 	//  WHERE id = $1
-	GetNarByID(ctx context.Context, id int64) (Nar, error)
+	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
+	//GetNarFileByNarInfoID
+	//
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  FROM nar_files nf
+	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
+	//  WHERE nnf.narinfo_id = $1
+	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error)
 	//GetNarInfoByHash
 	//
 	//  SELECT id, hash, created_at, updated_at, last_accessed_at
@@ -84,19 +123,41 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE id = $1
 	GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
+	//GetNarInfoHashesByNarFileID
+	//
+	//  SELECT ni.hash
+	//  FROM narinfos ni
+	//  INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+	//  WHERE nnf.nar_file_id = $1
+	GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error)
 	//GetNarTotalSize
 	//
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size
-	//  FROM nars
+	//  FROM nar_files
 	GetNarTotalSize(ctx context.Context) (int64, error)
-	//TouchNar
+	// Find files that have no relationship to any narinfo
 	//
-	//  UPDATE nars
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  FROM nar_files nf
+	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
+	//  WHERE ninf.narinfo_id IS NULL
+	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
+	//LinkNarInfoToNarFile
+	//
+	//  INSERT INTO narinfo_nar_files (
+	//      narinfo_id, nar_file_id
+	//  ) VALUES (
+	//      $1, $2
+	//  )
+	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
+	//TouchNarFile
+	//
+	//  UPDATE nar_files
 	//  SET
 	//      last_accessed_at = CURRENT_TIMESTAMP,
 	//      updated_at = CURRENT_TIMESTAMP
 	//  WHERE hash = $1
-	TouchNar(ctx context.Context, hash string) (int64, error)
+	TouchNarFile(ctx context.Context, hash string) (int64, error)
 	//TouchNarInfo
 	//
 	//  UPDATE narinfos

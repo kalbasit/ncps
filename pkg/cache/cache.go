@@ -838,7 +838,7 @@ func (c *Cache) getNarFromStore(
 	}
 
 	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
-		nr, err := qtx.GetNarByHash(ctx, narURL.Hash)
+		nr, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
 		if err != nil {
 			// TODO: If record not found, record it instead!
 			if errors.Is(err, sql.ErrNoRows) {
@@ -849,7 +849,7 @@ func (c *Cache) getNarFromStore(
 		}
 
 		if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNar(ctx, narURL.Hash); err != nil {
+			if _, err := qtx.TouchNarFile(ctx, narURL.Hash); err != nil {
 				return fmt.Errorf("error touching the nar record: %w", err)
 			}
 		}
@@ -941,7 +941,7 @@ func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 		return storage.ErrNotFound
 	}
 
-	if _, err := c.db.DeleteNarByHash(ctx, narURL.Hash); err != nil {
+	if _, err := c.db.DeleteNarFileByHash(ctx, narURL.Hash); err != nil {
 		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
@@ -1521,7 +1521,7 @@ func (c *Cache) purgeNarInfo(
 		}
 
 		if narURL.Hash != "" {
-			if _, err := qtx.DeleteNarByHash(ctx, narURL.Hash); err != nil {
+			if _, err := qtx.DeleteNarFileByHash(ctx, narURL.Hash); err != nil {
 				return fmt.Errorf("error deleting the nar record: %w", err)
 			}
 		}
@@ -1566,7 +1566,7 @@ func (c *Cache) storeInDatabase(
 
 	zerolog.Ctx(ctx).
 		Info().
-		Msg("storing narinfo and nar record in the database")
+		Msg("storing narinfo and nar_file record in the database")
 
 	return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
 		nir, err := qtx.CreateNarInfo(ctx, hash)
@@ -1587,32 +1587,64 @@ func (c *Cache) storeInDatabase(
 			return fmt.Errorf("error parsing the nar URL: %w", err)
 		}
 
-		_, err = qtx.CreateNar(ctx, database.CreateNarParams{
-			NarInfoID:   nir.ID,
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-			FileSize:    narInfo.FileSize,
-		})
-		if err != nil {
-			if database.IsDuplicateKeyError(err) {
-				// This represents an inconsistent state: nar exists but narinfo didn't.
-				// Returning ErrAlreadyExists here causes a silent failure because the transaction
-				// is rolled back (removing the narinfo we just created), but the caller interprets
-				// it as a successful idempotent PUT.
+		// Check if nar_file already exists (multiple narinfos can share the same nar_file)
+		existingNarFile, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("error checking for existing nar_file: %w", err)
+		}
+
+		var narFileID int64
+
+		if err == nil {
+			// Nar file already exists - verify properties match
+			if existingNarFile.Compression != narURL.Compression.String() ||
+				existingNarFile.Query != narURL.Query.Encode() ||
+				existingNarFile.FileSize != narInfo.FileSize {
 				zerolog.Ctx(ctx).
 					Warn().
 					Str("nar_hash", narURL.Hash).
-					Msg("inconsistent state: nar record already exists but narinfo did not. rolling back transaction")
+					Str("existing_compression", existingNarFile.Compression).
+					Str("new_compression", narURL.Compression.String()).
+					Str("existing_query", existingNarFile.Query).
+					Str("new_query", narURL.Query.Encode()).
+					Uint64("existing_file_size", existingNarFile.FileSize).
+					Uint64("new_file_size", narInfo.FileSize).
+					Msg("nar_file already exists but properties don't match")
 
 				return fmt.Errorf(
-					"%w: nar record for hash %s already exists but narinfo did not",
+					"%w: nar_file for hash %s already exists with different properties",
 					ErrInconsistentState,
 					narURL.Hash,
 				)
 			}
 
-			return fmt.Errorf("error inserting the nar record in the database: %w", err)
+			zerolog.Ctx(ctx).
+				Debug().
+				Str("nar_hash", narURL.Hash).
+				Msg("reusing existing nar_file")
+
+			narFileID = existingNarFile.ID
+		} else {
+			// Create new nar_file
+			newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+				Hash:        narURL.Hash,
+				Compression: narURL.Compression.String(),
+				Query:       narURL.Query.Encode(),
+				FileSize:    narInfo.FileSize,
+			})
+			if err != nil {
+				return fmt.Errorf("error inserting the nar_file record in the database: %w", err)
+			}
+
+			narFileID = newNarFile.ID
+		}
+
+		// Link narinfo to nar_file
+		if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+			NarInfoID: nir.ID,
+			NarFileID: narFileID,
+		}); err != nil {
+			return fmt.Errorf("error linking narinfo to nar_file: %w", err)
 		}
 
 		return nil
@@ -1972,83 +2004,86 @@ func (c *Cache) calculateCleanupSize(ctx context.Context, qtx database.Querier, 
 	return cleanupSize, nil
 }
 
-// deleteLRURecordsFromDB gets the least used NARs and deletes them from the database.
-// Returns the narinfo hashes and NAR URLs that need to be deleted from stores.
+// deleteLRURecordsFromDB identifies the least used NarInfos, deletes them,
+// and then cleans up any NarFiles that became orphaned as a result.
 func (c *Cache) deleteLRURecordsFromDB(
 	ctx context.Context,
 	qtx database.Querier,
 	log zerolog.Logger,
 	cleanupSize uint64,
 ) ([]string, []nar.URL, error) {
-	nars, err := qtx.GetLeastUsedNars(ctx, cleanupSize)
+	// 1. METADATA PHASE
+	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
+	// We use the query you provided in the first prompt.
+	narInfosToDelete, err := qtx.GetLeastUsedNarInfos(ctx, cleanupSize)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting the least used nars up to cleanup-size")
+		log.Error().Err(err).Msg("error getting least used narinfos")
 
 		return nil, nil, err
 	}
 
-	if len(nars) == 0 {
-		log.Warn().Msg("nars needed to be removed but none were returned in the query")
+	if len(narInfosToDelete) == 0 {
+		log.Warn().Msg("cleanup required but no reclaimable narinfos found")
 
 		return nil, nil, nil
 	}
 
-	log.Info().Int("count_nars", len(nars)).Msg("found this many nars to remove")
+	log.Info().Int("count", len(narInfosToDelete)).Msg("found narinfos to expire")
 
-	narInfoHashesToRemove := make([]string, 0, len(nars))
-	narURLsToRemove := make([]nar.URL, 0, len(nars))
+	// Track hashes to remove from the in-memory/disk store later
+	narInfoHashesToRemove := make([]string, 0, len(narInfosToDelete))
 
-	for _, narRecord := range nars {
-		narInfo, err := qtx.GetNarInfoByID(ctx, narRecord.NarInfoID)
-		if err != nil {
-			// If we can't find the narinfo, it might have been deleted already.
-			// We should still proceed to delete the NAR record.
-			// However, if it's a different error, we should abort.
-			if !errors.Is(err, sql.ErrNoRows) {
-				log.Error().
-					Err(err).
-					Int64("ID", narRecord.NarInfoID).
-					Msg("error fetching narinfo from the database")
+	// Delete the NarInfos from the database.
+	// This breaks the link between the Metadata and the Storage.
+	for _, info := range narInfosToDelete {
+		narInfoHashesToRemove = append(narInfoHashesToRemove, info.Hash)
 
-				return nil, nil, err
-			}
-
-			log.Warn().
-				Err(err).
-				Int64("ID", narRecord.NarInfoID).
-				Msg("could not find narinfo for nar, will still delete nar record")
-		} else {
-			log.Info().Str("narinfo_hash", narInfo.Hash).Msg("deleting narinfo record")
-
-			if _, err := qtx.DeleteNarInfoByHash(ctx, narInfo.Hash); err != nil {
-				log.Error().
-					Err(err).
-					Str("narinfo_hash", narInfo.Hash).
-					Msg("error removing narinfo from database")
-
-				return nil, nil, err
-			}
-
-			narInfoHashesToRemove = append(narInfoHashesToRemove, narInfo.Hash)
-		}
-
-		log.Info().Str("nar_hash", narRecord.Hash).Msg("deleting nar record")
-
-		if _, err := qtx.DeleteNarByHash(ctx, narRecord.Hash); err != nil {
+		// We delete by ID since we have the full object from the previous query
+		if _, err := qtx.DeleteNarInfoByID(ctx, info.ID); err != nil {
 			log.Error().
 				Err(err).
-				Str("nar_hash", narRecord.Hash).
-				Msg("error removing nar from database")
+				Str("hash", info.Hash).
+				Msg("error deleting narinfo record")
 
 			return nil, nil, err
 		}
+	}
 
-		// NOTE: we don't need the query when working with store so it's
-		// explicitly omitted.
-		narURLsToRemove = append(narURLsToRemove, nar.URL{
-			Hash:        narRecord.Hash,
-			Compression: nar.CompressionTypeFromString(narRecord.Compression),
-		})
+	// 2. STORAGE PHASE
+	// Now that metadata is gone, some files might have zero references.
+	// We find those truly orphaned files.
+	orphanedNarFiles, err := qtx.GetOrphanedNarFiles(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("error identifying orphaned nar files")
+
+		return nil, nil, err
+	}
+
+	narURLsToRemove := make([]nar.URL, 0, len(orphanedNarFiles))
+
+	if len(orphanedNarFiles) > 0 {
+		log.Info().Int("count", len(orphanedNarFiles)).Msg("found orphaned nar files to delete")
+
+		for _, nf := range orphanedNarFiles {
+			// Add to list for physical storage deletion
+			narURLsToRemove = append(narURLsToRemove, nar.URL{
+				Hash:        nf.Hash,
+				Compression: nar.CompressionTypeFromString(nf.Compression),
+			})
+
+			// Delete the file record from DB
+			// Note: We use ID here since we have it, it's slightly faster/safer than Hash
+			if _, err := qtx.DeleteNarFileByID(ctx, nf.ID); err != nil {
+				log.Error().
+					Err(err).
+					Str("nar_hash", nf.Hash).
+					Msg("error deleting orphaned nar file record")
+
+				return nil, nil, err
+			}
+		}
+	} else {
+		log.Info().Msg("no orphaned nar files found (files may be shared with active narinfos)")
 	}
 
 	return narInfoHashesToRemove, narURLsToRemove, nil

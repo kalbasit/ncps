@@ -375,7 +375,7 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("nar does not exist in the database yet", func(t *testing.T) {
-			rows, err := db.DB().Query("SELECT hash FROM nars")
+			rows, err := db.DB().Query("SELECT hash FROM nar_files")
 			require.NoError(t, err)
 
 			var hashes []string
@@ -521,16 +521,16 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
 			const query = `
 				SELECT  hash,  created_at,  last_accessed_at
-				FROM nars
+				FROM nar_files
 				`
 
 			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.Nar, 0)
+			nims := make([]database.NarFile, 0)
 
 			for rows.Next() {
-				var nim database.Nar
+				var nim database.NarFile
 
 				err := rows.Scan(
 					&nim.Hash,
@@ -748,7 +748,7 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("nar does not exist in the database yet", func(t *testing.T) {
-		rows, err := db.DB().Query("SELECT hash FROM nars")
+		rows, err := db.DB().Query("SELECT hash FROM nar_files")
 		require.NoError(t, err)
 
 		var hashes []string
@@ -821,7 +821,7 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("nar does exist in the database", func(t *testing.T) {
-		rows, err := db.DB().Query("SELECT hash FROM nars")
+		rows, err := db.DB().Query("SELECT hash FROM nar_files")
 		require.NoError(t, err)
 
 		var hashes []string
@@ -952,7 +952,7 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("nar does not exist in database yet", func(t *testing.T) {
-			rows, err := db.DB().Query("SELECT hash FROM nars")
+			rows, err := db.DB().Query("SELECT hash FROM nar_files")
 			require.NoError(t, err)
 
 			var hashes []string
@@ -1010,16 +1010,16 @@ func TestGetNar(t *testing.T) {
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
 			const query = `
 				SELECT  hash,  created_at,  last_accessed_at
-				FROM nars
+				FROM nar_files
 				`
 
 			rows, err := db.DB().Query(query)
 			require.NoError(t, err)
 
-			nims := make([]database.Nar, 0)
+			nims := make([]database.NarFile, 0)
 
 			for rows.Next() {
-				var nim database.Nar
+				var nim database.NarFile
 
 				err := rows.Scan(
 					&nim.Hash,
@@ -1057,16 +1057,16 @@ func TestGetNar(t *testing.T) {
 			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
 				const query = `
 				SELECT  hash,  created_at,  last_accessed_at
-				FROM nars
+				FROM nar_files
 				`
 
 				rows, err := db.DB().Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.Nar, 0)
+				nims := make([]database.NarFile, 0)
 
 				for rows.Next() {
-					var nim database.Nar
+					var nim database.NarFile
 
 					err := rows.Scan(
 						&nim.Hash,
@@ -1103,16 +1103,16 @@ func TestGetNar(t *testing.T) {
 			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
 				const query = `
 				SELECT  hash,  created_at,  last_accessed_at
-				FROM nars
+				FROM nar_files
 				`
 
 				rows, err := db.DB().Query(query)
 				require.NoError(t, err)
 
-				nims := make([]database.Nar, 0)
+				nims := make([]database.NarFile, 0)
 
 				for rows.Next() {
-					var nim database.Nar
+					var nim database.NarFile
 
 					err := rows.Scan(
 						&nim.Hash,

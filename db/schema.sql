@@ -7,9 +7,8 @@ CREATE TABLE narinfos (
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_narinfos_last_accessed_at ON narinfos (last_accessed_at);
-CREATE TABLE IF NOT EXISTS "nars" (
+CREATE TABLE nar_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    narinfo_id INTEGER NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
     hash TEXT NOT NULL UNIQUE,
     compression TEXT NOT NULL DEFAULT '',
     file_size INTEGER NOT NULL,
@@ -18,12 +17,19 @@ CREATE TABLE IF NOT EXISTS "nars" (
     updated_at TIMESTAMP,
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_nars_narinfo_id ON nars (narinfo_id);
-CREATE INDEX idx_nars_last_accessed_at ON nars (last_accessed_at);
+CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
+CREATE TABLE narinfo_nar_files (
+    narinfo_id INTEGER NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
+    nar_file_id INTEGER NOT NULL REFERENCES nar_files (id) ON DELETE CASCADE,
+    PRIMARY KEY (narinfo_id, nar_file_id)
+);
+CREATE INDEX idx_narinfo_nar_files_narinfo_id ON narinfo_nar_files (narinfo_id);
+CREATE INDEX idx_narinfo_nar_files_nar_file_id ON narinfo_nar_files (nar_file_id);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20241210054814'),
   ('20241210054829'),
   ('20241213014846'),
   ('20251230224159'),
-  ('20260105025735');
+  ('20260105025735'),
+  ('20260105030513');
