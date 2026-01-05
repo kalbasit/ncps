@@ -14,8 +14,6 @@ CREATE TABLE nar_files (
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX idx_nar_files_id ON nar_files (id);
-CREATE UNIQUE INDEX idx_nar_files_hash ON nar_files (hash);
 CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
 
 -- Step 2: Create join table to establish many-to-many relationship
@@ -77,8 +75,6 @@ CREATE TABLE nars (
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX idx_nars_id ON nars (id);
-CREATE UNIQUE INDEX idx_nars_hash ON nars (hash);
 CREATE INDEX idx_nars_narinfo_id ON nars (narinfo_id);
 CREATE INDEX idx_nars_last_accessed_at ON nars (last_accessed_at);
 
