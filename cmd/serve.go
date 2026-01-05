@@ -33,6 +33,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/s3"
+	"github.com/kalbasit/ncps/pkg/telemetry"
 )
 
 var (
@@ -121,7 +122,7 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
 
-			otelResource, err = newResource(ctx, cmd)
+			otelResource, err = telemetry.NewResource(ctx, cmd.Root().Name, Version)
 			if err != nil {
 				zerolog.Ctx(ctx).
 					Error().

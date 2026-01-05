@@ -22,13 +22,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-
-	"github.com/kalbasit/ncps/pkg/telemetry"
 )
-
-func newResource(ctx context.Context, cmd *cli.Command) (*resource.Resource, error) {
-	return telemetry.NewResource(ctx, cmd.Root().Name, Version)
-}
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
