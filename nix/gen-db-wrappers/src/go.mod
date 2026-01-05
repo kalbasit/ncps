@@ -1,3 +1,3 @@
-module go-db-wrappers
+module gen-db-wrappers
 
 go 1.25.5

@@ -17,6 +17,7 @@ formatters:
     generated: lax
     paths:
       - nix/dbmate-wrapper/src/
+      - nix/gen-db-wrappers/src/
 linters:
   enable:
     - err113
@@ -63,6 +64,7 @@ linters:
       - std-error-handling
     paths:
       - nix/dbmate-wrapper/src/
+      - nix/gen-db-wrappers/src/
   settings:
     wsl_v5:
       allow-first-in-block: true

@@ -224,13 +224,13 @@ type {{.Engine.Name}}Wrapper struct {
 func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
 	{{- /* --- MySQL CREATE Special Handling --- */ -}}
 	{{if and $.Engine.IsMySQL .IsCreate}}
-		// MySQL does not support RETURNING for INSERTs. 
+		// MySQL does not support RETURNING for INSERTs.
 		// We insert, get LastInsertId, and then fetch the object.
 		res, err := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
 		if err != nil {
 			return {{.ReturnElem}}{}, err
 		}
-		
+
 		id, err := res.LastInsertId()
 		if err != nil {
 			return {{.ReturnElem}}{}, err
@@ -239,14 +239,14 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		return w.Get{{.ReturnElem}}ByID(ctx, id)
 
 	{{- else -}}
-	
+
 	{{- /* --- Standard Handling --- */ -}}
 		{{- $retType := firstReturnType .Returns -}}
-		
+
 		{{/* 1. CALL ADAPTER */}}
 		{{if .HasValue}}res{{else}}_{{end}}
 		{{- if .ReturnsError}}, err{{end}} := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
-		
+
 		{{/* 2. HANDLE ERROR */}}
 		{{- if .ReturnsError}}
 		if err != nil {
@@ -264,12 +264,12 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 			{{- end}}
 		}
 		{{- end}}
-		
+
 		{{/* 3. RETURN RESULTS */}}
 		{{- if .ReturnsSelf}}
 			// Wrap the returned adapter (for WithTx)
 			return &{{$.Engine.Name}}Wrapper{adapter: res}
-		
+
 		{{- else if isSlice $retType }}
 			{{- if isDomainStruct .ReturnElem}}
 				// Convert Slice of Domain Structs
@@ -286,7 +286,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- else if isDomainStruct .ReturnElem}}
 			// Convert Single Domain Struct
 			return {{.ReturnElem}}(res){{if .ReturnsError}}, nil{{end}}
-		
+
 		{{- else if .HasValue}}
 			// Return Primitive / *sql.DB / etc
 			return res{{if .ReturnsError}}, nil{{end}}

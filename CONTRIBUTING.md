@@ -546,7 +546,7 @@ ncps/
 │   │   ├── postgres/           # PostgreSQL migrations
 │   │   └── mysql/              # MySQL migrations
 │   ├── query.sqlite.sql        # SQLite queries (sqlc)
-│   ├── query.postgres.sql        # PostgreSQL queries (sqlc)
+│   ├── query.postgres.sql      # PostgreSQL queries (sqlc)
 │   └── query.mysql.sql         # MySQL queries (sqlc)
 ├── nix/                        # Nix configuration
 │   ├── packages/               # Package definitions
@@ -554,6 +554,7 @@ ncps/
 │   ├── formatter/              # Formatter configuration
 │   ├── process-compose/        # Development services
 │   └── dbmate-wrapper/         # Database migration wrapper
+│   └── gen-db-wrappers/         # Database wrapper generator
 └── dev-scripts/                # Development helper scripts
     └── run.sh                  # Development server script
 ```
