@@ -13,7 +13,7 @@ type NarFile struct {
 	ID             int64
 	Hash           string
 	Compression    string
-	FileSize       int64
+	FileSize       uint64
 	Query          string
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime

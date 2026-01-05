@@ -75,7 +75,7 @@ type Querier interface {
 	//      WHERE n2.last_accessed_at < n1.last_accessed_at
 	//          OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 	//  ) <= ?
-	GetLeastUsedNarFiles(ctx context.Context, fileSize int64) ([]NarFile, error)
+	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
@@ -91,7 +91,7 @@ type Querier interface {
 	//      WHERE ni2.last_accessed_at < ni1.last_accessed_at
 	//          OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
 	//  ) <= ?
-	GetLeastUsedNarInfos(ctx context.Context, fileSize int64) ([]NarInfo, error)
+	GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error)
 	//GetNarFileByHash
 	//
 	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at

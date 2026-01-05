@@ -1,3 +1,4 @@
+//go:generate gen-db-wrappers querier.go
 package database
 
 import (

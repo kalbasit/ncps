@@ -23,9 +23,12 @@
         golangci-lint = {
           enable = true;
 
-          # XXX: Exclude dbmate-wrapper because it fails with this error message:
+          # XXX: Exclude sub-modules because it fails with this error message:
           # ERRO [linters_context] typechecking error: main module (github.com/kalbasit/ncps) does not contain package github.com/kalbasit/ncps/nix/dbmate-wrapper/src
-          excludes = [ "nix/dbmate-wrapper/src" ];
+          excludes = [
+            "nix/dbmate-wrapper/src"
+            "nix/gen-db-wrappers/src"
+          ];
         };
         no-commit-to-branch.enable = true;
         no-commit-to-branch.settings.branch = [ "main" ];

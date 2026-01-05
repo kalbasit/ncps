@@ -7,252 +7,267 @@ import (
 	"github.com/kalbasit/ncps/pkg/database/mysqldb"
 )
 
-// mysqlWrapper wraps MySQL adapter to implement Querier interface.
+// mysqlWrapper wraps the mysql adapter.
 type mysqlWrapper struct {
 	adapter *mysqldb.Adapter
 }
 
-func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
-	result, err := w.adapter.CreateNarInfo(ctx, hash)
-	if err != nil {
-		return NarInfo{}, err
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return NarInfo{}, err
-	}
-
-	// Fetch the created record
-	return w.GetNarInfoByID(ctx, id)
-}
-
 func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
-	// Convert to MySQL-specific params
-	p := mysqldb.CreateNarFileParams{
-		Hash:        arg.Hash,
-		Compression: arg.Compression,
-		Query:       arg.Query,
-		FileSize:    arg.FileSize,
-	}
-
-	result, err := w.adapter.CreateNarFile(ctx, p)
+	// MySQL does not support RETURNING for INSERTs.
+	// We insert, get LastInsertId, and then fetch the object.
+	res, err := w.adapter.CreateNarFile(ctx, mysqldb.CreateNarFileParams(arg))
 	if err != nil {
 		return NarFile{}, err
 	}
 
-	id, err := result.LastInsertId()
+	id, err := res.LastInsertId()
 	if err != nil {
 		return NarFile{}, err
 	}
 
-	// Fetch the created record
 	return w.GetNarFileByID(ctx, id)
 }
 
-func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	n, err := w.adapter.GetNarFileByHash(ctx, hash)
+func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
+	// MySQL does not support RETURNING for INSERTs.
+	// We insert, get LastInsertId, and then fetch the object.
+	res, err := w.adapter.CreateNarInfo(ctx, hash)
 	if err != nil {
-		return NarFile{}, err
+		return NarInfo{}, err
 	}
 
-	return NarFile{
-		ID:             n.ID,
-		Hash:           n.Hash,
-		Compression:    n.Compression,
-		FileSize:       n.FileSize,
-		CreatedAt:      n.CreatedAt,
-		UpdatedAt:      n.UpdatedAt,
-		LastAccessedAt: n.LastAccessedAt,
-		Query:          n.Query,
-	}, nil
-}
-
-func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
-	n, err := w.adapter.GetNarFileByID(ctx, id)
+	id, err := res.LastInsertId()
 	if err != nil {
-		return NarFile{}, err
+		return NarInfo{}, err
 	}
 
-	return NarFile{
-		ID:             n.ID,
-		Hash:           n.Hash,
-		Compression:    n.Compression,
-		FileSize:       n.FileSize,
-		CreatedAt:      n.CreatedAt,
-		UpdatedAt:      n.UpdatedAt,
-		LastAccessedAt: n.LastAccessedAt,
-		Query:          n.Query,
-	}, nil
-}
-
-func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
-	return w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
-}
-
-func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
-	n, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
-	if err != nil {
-		return NarFile{}, err
-	}
-
-	return NarFile{
-		ID:             n.ID,
-		Hash:           n.Hash,
-		Compression:    n.Compression,
-		FileSize:       n.FileSize,
-		CreatedAt:      n.CreatedAt,
-		UpdatedAt:      n.UpdatedAt,
-		LastAccessedAt: n.LastAccessedAt,
-		Query:          n.Query,
-	}, nil
+	return w.GetNarInfoByID(ctx, id)
 }
 
 func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
-	return w.adapter.DeleteNarFileByHash(ctx, hash)
+	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
 func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
-	return w.adapter.DeleteNarFileByID(ctx, id)
-}
-
-func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
-	return w.adapter.DeleteOrphanedNarFiles(ctx)
-}
-
-func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
-	return w.adapter.DeleteOrphanedNarInfos(ctx)
-}
-
-func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
-	narFiles, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
+	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
-		return nil, err
+		// Primitive return (int64, string, etc)
+		return 0, err
 	}
 
-	result := make([]NarFile, len(narFiles))
-	for i, n := range narFiles {
-		result[i] = NarFile{
-			ID:             n.ID,
-			Hash:           n.Hash,
-			Compression:    n.Compression,
-			FileSize:       n.FileSize,
-			CreatedAt:      n.CreatedAt,
-			UpdatedAt:      n.UpdatedAt,
-			LastAccessedAt: n.LastAccessedAt,
-			Query:          n.Query,
-		}
-	}
-
-	return result, nil
-}
-
-func (w *mysqlWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
-	narInfos, err := w.adapter.GetLeastUsedNarInfos(ctx, fileSize)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]NarInfo, len(narInfos))
-	for i, n := range narInfos {
-		result[i] = NarInfo{
-			ID:             n.ID,
-			Hash:           n.Hash,
-			CreatedAt:      n.CreatedAt,
-			UpdatedAt:      n.UpdatedAt,
-			LastAccessedAt: n.LastAccessedAt,
-		}
-	}
-
-	return result, nil
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
 func (w *mysqlWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
-	return w.adapter.DeleteNarInfoByHash(ctx, hash)
+	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
 func (w *mysqlWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
-	return w.adapter.DeleteNarInfoByID(ctx, id)
-}
-
-func (w *mysqlWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
-	ni, err := w.adapter.GetNarInfoByHash(ctx, hash)
+	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
-		return NarInfo{}, err
+		// Primitive return (int64, string, etc)
+		return 0, err
 	}
 
-	return NarInfo{
-		ID:             ni.ID,
-		Hash:           ni.Hash,
-		CreatedAt:      ni.CreatedAt,
-		UpdatedAt:      ni.UpdatedAt,
-		LastAccessedAt: ni.LastAccessedAt,
-	}, nil
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
-func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
-	ni, err := w.adapter.GetNarInfoByID(ctx, id)
+func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
+	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
-		return NarInfo{}, err
+		// Primitive return (int64, string, etc)
+		return 0, err
 	}
 
-	return NarInfo{
-		ID:             ni.ID,
-		Hash:           ni.Hash,
-		CreatedAt:      ni.CreatedAt,
-		UpdatedAt:      ni.UpdatedAt,
-		LastAccessedAt: ni.LastAccessedAt,
-	}, nil
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
-func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
-	return w.adapter.GetNarTotalSize(ctx)
+func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
+	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
-func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
-	narFiles, err := w.adapter.GetOrphanedNarFiles(ctx)
+func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
+	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]NarFile, len(narFiles))
-	for i, n := range narFiles {
-		result[i] = NarFile{
-			ID:             n.ID,
-			Hash:           n.Hash,
-			Compression:    n.Compression,
-			FileSize:       n.FileSize,
-			CreatedAt:      n.CreatedAt,
-			UpdatedAt:      n.UpdatedAt,
-			LastAccessedAt: n.LastAccessedAt,
-			Query:          n.Query,
-		}
+	// Convert Slice of Domain Structs
+	items := make([]NarFile, len(res))
+	for i, v := range res {
+		items[i] = NarFile(v)
 	}
 
-	return result, nil
+	return items, nil
+}
+
+func (w *mysqlWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
+	res, err := w.adapter.GetLeastUsedNarInfos(ctx, fileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]NarInfo, len(res))
+	for i, v := range res {
+		items[i] = NarInfo(v)
+	}
+
+	return items, nil
+}
+
+func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
+	res, err := w.adapter.GetNarFileByHash(ctx, hash)
+	if err != nil {
+		return NarFile{}, err
+	}
+
+	// Convert Single Domain Struct
+	return NarFile(res), nil
+}
+
+func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
+	res, err := w.adapter.GetNarFileByID(ctx, id)
+	if err != nil {
+		return NarFile{}, err
+	}
+
+	// Convert Single Domain Struct
+	return NarFile(res), nil
+}
+
+func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
+	res, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
+	if err != nil {
+		return NarFile{}, err
+	}
+
+	// Convert Single Domain Struct
+	return NarFile(res), nil
+}
+
+func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
+	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *mysqlWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
+	res, err := w.adapter.GetNarInfoByHash(ctx, hash)
+	if err != nil {
+		return NarInfo{}, err
+	}
+
+	// Convert Single Domain Struct
+	return NarInfo(res), nil
+}
+
+func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
+	res, err := w.adapter.GetNarInfoByID(ctx, id)
+	if err != nil {
+		return NarInfo{}, err
+	}
+
+	// Convert Single Domain Struct
+	return NarInfo(res), nil
+}
+
+func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetNarTotalSize(ctx)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
+func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
+	res, err := w.adapter.GetOrphanedNarFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]NarFile, len(res))
+	for i, v := range res {
+		items[i] = NarFile(v)
+	}
+
+	return items, nil
 }
 
 func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
-	p := mysqldb.LinkNarInfoToNarFileParams{
-		NarInfoID: arg.NarInfoID,
-		NarFileID: arg.NarFileID,
+	err := w.adapter.LinkNarInfoToNarFile(ctx, mysqldb.LinkNarInfoToNarFileParams(arg))
+	if err != nil {
+		return err
 	}
 
-	return w.adapter.LinkNarInfoToNarFile(ctx, p)
+	// No return value (void)
+	return nil
 }
 
 func (w *mysqlWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
-	return w.adapter.TouchNarFile(ctx, hash)
+	res, err := w.adapter.TouchNarFile(ctx, hash)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
 func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
-	return w.adapter.TouchNarInfo(ctx, hash)
+	res, err := w.adapter.TouchNarInfo(ctx, hash)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
 func (w *mysqlWrapper) WithTx(tx *sql.Tx) Querier {
-	return &mysqlWrapper{adapter: w.adapter.WithTx(tx)}
+	res := w.adapter.WithTx(tx)
+
+	// Wrap the returned adapter (for WithTx)
+	return &mysqlWrapper{adapter: res}
 }
 
 func (w *mysqlWrapper) DB() *sql.DB {
-	return w.adapter.DB()
+	res := w.adapter.DB()
+
+	// Return Primitive / *sql.DB / etc
+	return res
 }
