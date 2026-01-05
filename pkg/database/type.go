@@ -15,8 +15,8 @@ const (
 	TypeSQLite
 )
 
-// DetectFromDataseURL detects the database type given a database url.
-func DetectFromDataseURL(dbURL string) (Type, error) {
+// DetectFromDatabaseURL detects the database type given a database url.
+func DetectFromDatabaseURL(dbURL string) (Type, error) {
 	u, err := url.Parse(dbURL)
 	if err != nil {
 		return TypeUnknown, fmt.Errorf("error parsing the database URL %q: %w", dbURL, err)
