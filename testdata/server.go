@@ -18,6 +18,7 @@ type Server struct {
 	*httptest.Server
 
 	mu            sync.RWMutex
+	entries       []Entry
 	maybeHandlers map[string]MaybeHandlerFunc
 	priority      int
 }
@@ -28,13 +29,23 @@ func NewTestServer(t *testing.T, priority int) *Server {
 	t.Helper()
 
 	s := &Server{
+		entries:       make([]Entry, 0, len(Entries)),
 		maybeHandlers: make(map[string]MaybeHandlerFunc),
 		priority:      priority,
 	}
 
+	s.entries = append(s.entries, Entries...)
+
 	s.Server = httptest.NewServer(compressMiddleware(s.handler()))
 
 	return s
+}
+
+func (s *Server) AddEntry(entry Entry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.entries = append(s.entries, entry)
 }
 
 func (s *Server) AddMaybeHandler(maybeHandler MaybeHandlerFunc) string {
@@ -104,7 +115,7 @@ func (s *Server) handler() http.Handler {
 			return
 		}
 
-		for _, entry := range Entries {
+		for _, entry := range s.entries {
 			var bs []byte
 
 			if r.URL.Path == "/"+entry.NarInfoHash+".narinfo" {
