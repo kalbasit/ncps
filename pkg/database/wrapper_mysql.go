@@ -27,39 +27,37 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo,
 	return w.GetNarInfoByID(ctx, id)
 }
 
-func (w *mysqlWrapper) CreateNar(ctx context.Context, arg CreateNarParams) (Nar, error) {
+func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
 	// Convert to MySQL-specific params
-	p := mysqldb.CreateNarParams{
-		NarInfoID:   arg.NarInfoID,
+	p := mysqldb.CreateNarFileParams{
 		Hash:        arg.Hash,
 		Compression: arg.Compression,
 		Query:       arg.Query,
 		FileSize:    arg.FileSize,
 	}
 
-	result, err := w.adapter.CreateNar(ctx, p)
+	result, err := w.adapter.CreateNarFile(ctx, p)
 	if err != nil {
-		return Nar{}, err
+		return NarFile{}, err
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		return Nar{}, err
+		return NarFile{}, err
 	}
 
 	// Fetch the created record
-	return w.GetNarByID(ctx, id)
+	return w.GetNarFileByID(ctx, id)
 }
 
-func (w *mysqlWrapper) GetNarByHash(ctx context.Context, hash string) (Nar, error) {
-	n, err := w.adapter.GetNarByHash(ctx, hash)
+func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
+	n, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
-		return Nar{}, err
+		return NarFile{}, err
 	}
 
-	return Nar{
+	return NarFile{
 		ID:             n.ID,
-		NarInfoID:      n.NarInfoID,
 		Hash:           n.Hash,
 		Compression:    n.Compression,
 		FileSize:       n.FileSize,
@@ -70,15 +68,14 @@ func (w *mysqlWrapper) GetNarByHash(ctx context.Context, hash string) (Nar, erro
 	}, nil
 }
 
-func (w *mysqlWrapper) GetNarByID(ctx context.Context, id int64) (Nar, error) {
-	n, err := w.adapter.GetNarByID(ctx, id)
+func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
+	n, err := w.adapter.GetNarFileByID(ctx, id)
 	if err != nil {
-		return Nar{}, err
+		return NarFile{}, err
 	}
 
-	return Nar{
+	return NarFile{
 		ID:             n.ID,
-		NarInfoID:      n.NarInfoID,
 		Hash:           n.Hash,
 		Compression:    n.Compression,
 		FileSize:       n.FileSize,
@@ -89,25 +86,54 @@ func (w *mysqlWrapper) GetNarByID(ctx context.Context, id int64) (Nar, error) {
 	}, nil
 }
 
-func (w *mysqlWrapper) DeleteNarByHash(ctx context.Context, hash string) (int64, error) {
-	return w.adapter.DeleteNarByHash(ctx, hash)
+func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
+	return w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
 }
 
-func (w *mysqlWrapper) DeleteNarByID(ctx context.Context, id int64) (int64, error) {
-	return w.adapter.DeleteNarByID(ctx, id)
+func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
+	n, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
+	if err != nil {
+		return NarFile{}, err
+	}
+
+	return NarFile{
+		ID:             n.ID,
+		Hash:           n.Hash,
+		Compression:    n.Compression,
+		FileSize:       n.FileSize,
+		CreatedAt:      n.CreatedAt,
+		UpdatedAt:      n.UpdatedAt,
+		LastAccessedAt: n.LastAccessedAt,
+		Query:          n.Query,
+	}, nil
 }
 
-func (w *mysqlWrapper) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([]Nar, error) {
-	nars, err := w.adapter.GetLeastUsedNars(ctx, fileSize)
+func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
+	return w.adapter.DeleteNarFileByHash(ctx, hash)
+}
+
+func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
+	return w.adapter.DeleteNarFileByID(ctx, id)
+}
+
+func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
+	return w.adapter.DeleteOrphanedNarFiles(ctx)
+}
+
+func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
+	return w.adapter.DeleteOrphanedNarInfos(ctx)
+}
+
+func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
+	narFiles, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]Nar, len(nars))
-	for i, n := range nars {
-		result[i] = Nar{
+	result := make([]NarFile, len(narFiles))
+	for i, n := range narFiles {
+		result[i] = NarFile{
 			ID:             n.ID,
-			NarInfoID:      n.NarInfoID,
 			Hash:           n.Hash,
 			Compression:    n.Compression,
 			FileSize:       n.FileSize,
@@ -115,6 +141,26 @@ func (w *mysqlWrapper) GetLeastUsedNars(ctx context.Context, fileSize uint64) ([
 			UpdatedAt:      n.UpdatedAt,
 			LastAccessedAt: n.LastAccessedAt,
 			Query:          n.Query,
+		}
+	}
+
+	return result, nil
+}
+
+func (w *mysqlWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
+	narInfos, err := w.adapter.GetLeastUsedNarInfos(ctx, fileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]NarInfo, len(narInfos))
+	for i, n := range narInfos {
+		result[i] = NarInfo{
+			ID:             n.ID,
+			Hash:           n.Hash,
+			CreatedAt:      n.CreatedAt,
+			UpdatedAt:      n.UpdatedAt,
+			LastAccessedAt: n.LastAccessedAt,
 		}
 	}
 
@@ -163,8 +209,17 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return w.adapter.GetNarTotalSize(ctx)
 }
 
-func (w *mysqlWrapper) TouchNar(ctx context.Context, hash string) (int64, error) {
-	return w.adapter.TouchNar(ctx, hash)
+func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
+	p := mysqldb.LinkNarInfoToNarFileParams{
+		NarInfoID: arg.NarInfoID,
+		NarFileID: arg.NarFileID,
+	}
+
+	return w.adapter.LinkNarInfoToNarFile(ctx, p)
+}
+
+func (w *mysqlWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
+	return w.adapter.TouchNarFile(ctx, hash)
 }
 
 func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {

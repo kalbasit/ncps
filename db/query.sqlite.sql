@@ -8,15 +8,27 @@ SELECT *
 FROM narinfos
 WHERE id = ?;
 
--- name: GetNarByHash :one
+-- name: GetNarFileByHash :one
 SELECT *
-FROM nars
+FROM nar_files
 WHERE hash = ?;
 
--- name: GetNarByID :one
+-- name: GetNarFileByID :one
 SELECT *
-FROM nars
+FROM nar_files
 WHERE id = ?;
+
+-- name: GetNarFileByNarInfoID :one
+SELECT nf.*
+FROM nar_files nf
+INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
+WHERE nnf.narinfo_id = ?;
+
+-- name: GetNarInfoHashesByNarFileID :many
+SELECT ni.hash
+FROM narinfos ni
+INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+WHERE nnf.nar_file_id = ?;
 
 -- name: CreateNarInfo :one
 INSERT INTO narinfos (
@@ -26,13 +38,20 @@ INSERT INTO narinfos (
 )
 RETURNING *;
 
--- name: CreateNar :one
-INSERT INTO nars (
-    narinfo_id, hash, compression, "query", file_size
+-- name: CreateNarFile :one
+INSERT INTO nar_files (
+    hash, compression, "query", file_size
 ) VALUES (
-    ?, ?, ?, ?, ?
+    ?, ?, ?, ?
 )
 RETURNING *;
+
+-- name: LinkNarInfoToNarFile :exec
+INSERT INTO narinfo_nar_files (
+    narinfo_id, nar_file_id
+) VALUES (
+    ?, ?
+);
 
 -- name: TouchNarInfo :execrows
 UPDATE narinfos
@@ -41,8 +60,8 @@ SET
     updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
--- name: TouchNar :execrows
-UPDATE nars
+-- name: TouchNarFile :execrows
+UPDATE nar_files
 SET
     last_accessed_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
@@ -52,31 +71,61 @@ WHERE hash = ?;
 DELETE FROM narinfos
 WHERE hash = ?;
 
--- name: DeleteNarByHash :execrows
-DELETE FROM nars
+-- name: DeleteNarFileByHash :execrows
+DELETE FROM nar_files
 WHERE hash = ?;
 
 -- name: DeleteNarInfoByID :execrows
 DELETE FROM narinfos
 WHERE id = ?;
 
--- name: DeleteNarByID :execrows
-DELETE FROM nars
+-- name: DeleteNarFileByID :execrows
+DELETE FROM nar_files
 WHERE id = ?;
+
+-- name: DeleteOrphanedNarFiles :execrows
+DELETE FROM nar_files
+WHERE id NOT IN (
+    SELECT DISTINCT nar_file_id
+    FROM narinfo_nar_files
+);
+
+-- name: DeleteOrphanedNarInfos :execrows
+DELETE FROM narinfos
+WHERE id NOT IN (
+    SELECT DISTINCT narinfo_id
+    FROM narinfo_nar_files
+);
 
 -- name: GetNarTotalSize :one
 SELECT CAST(COALESCE(SUM(file_size), 0) AS INTEGER) AS total_size
-FROM nars;
+FROM nar_files;
 
--- name: GetLeastUsedNars :many
+-- name: GetLeastUsedNarInfos :many
+-- NOTE: This query uses a correlated subquery which is not optimal for performance.
+-- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
+-- does not properly support filtering on window function results in subqueries.
+-- Gets the least-used narinfos up to a certain total file size (accounting for their nar_files).
+SELECT ni1.*
+FROM narinfos ni1
+WHERE (
+    SELECT COALESCE(SUM(nf2.file_size), 0)
+    FROM narinfos ni2
+    LEFT JOIN narinfo_nar_files ninf2 ON ni2.id = ninf2.narinfo_id
+    LEFT JOIN nar_files nf2 ON ninf2.nar_file_id = nf2.id
+    WHERE ni2.last_accessed_at < ni1.last_accessed_at
+        OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
+) <= ?;
+
+-- name: GetLeastUsedNarFiles :many
 -- NOTE: This query uses a correlated subquery which is not optimal for performance.
 -- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 -- does not properly support filtering on window function results in subqueries.
 SELECT n1.*
-FROM nars n1
+FROM nar_files n1
 WHERE (
     SELECT SUM(n2.file_size)
-    FROM nars n2
+    FROM nar_files n2
     WHERE n2.last_accessed_at < n1.last_accessed_at
         OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 ) <= ?;

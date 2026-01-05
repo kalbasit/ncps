@@ -179,39 +179,44 @@ func TestPostgreSQL_CreateNar(t *testing.T) {
 		ni, err := db.CreateNarInfo(context.Background(), hash)
 		require.NoError(t, err)
 
-		// Create nar
+		// Create nar_file
 		narHash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		params := database.CreateNarParams{
-			NarInfoID:   ni.ID,
+		params := database.CreateNarFileParams{
 			Hash:        narHash,
 			Compression: "xz",
 			FileSize:    1024,
 			Query:       "/nix/store/test",
 		}
 
-		nar, err := db.CreateNar(context.Background(), params)
+		narFile, err := db.CreateNarFile(context.Background(), params)
+		require.NoError(t, err)
+
+		// Link narinfo to nar_file
+		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			NarInfoID: ni.ID,
+			NarFileID: narFile.ID,
+		})
 		require.NoError(t, err)
 
 		// Clean up
 		t.Cleanup(func() {
 			//nolint:errcheck
-			db.DeleteNarByID(context.Background(), nar.ID)
+			db.DeleteNarFileByID(context.Background(), narFile.ID)
 			//nolint:errcheck
 			db.DeleteNarInfoByID(context.Background(), ni.ID)
 		})
 
-		assert.NotZero(t, nar.ID)
-		assert.Equal(t, ni.ID, nar.NarInfoID)
-		assert.Equal(t, narHash, nar.Hash)
-		assert.Equal(t, "xz", nar.Compression)
-		assert.EqualValues(t, 1024, nar.FileSize)
-		assert.False(t, nar.CreatedAt.IsZero())
+		assert.NotZero(t, narFile.ID)
+		assert.Equal(t, narHash, narFile.Hash)
+		assert.Equal(t, "xz", narFile.Compression)
+		assert.EqualValues(t, 1024, narFile.FileSize)
+		assert.False(t, narFile.CreatedAt.IsZero())
 	})
 }
 
-func TestPostgreSQL_GetNarByHash(t *testing.T) {
+func TestPostgreSQL_GetNarFileByHash(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -225,7 +230,7 @@ func TestPostgreSQL_GetNarByHash(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		_, err = db.GetNarByHash(context.Background(), hash)
+		_, err = db.GetNarFileByHash(context.Background(), hash)
 		assert.ErrorIs(t, err, sql.ErrNoRows)
 	})
 
@@ -237,43 +242,33 @@ func TestPostgreSQL_GetNarByHash(t *testing.T) {
 			return
 		}
 
-		// Create narinfo first
-		niHash, err := helper.RandString(32, nil)
-		require.NoError(t, err)
-
-		ni, err := db.CreateNarInfo(context.Background(), niHash)
-		require.NoError(t, err)
-
-		// Create nar
+		// Create nar_file
 		narHash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		params := database.CreateNarParams{
-			NarInfoID:   ni.ID,
+		params := database.CreateNarFileParams{
 			Hash:        narHash,
 			Compression: "xz",
 			FileSize:    2048,
 			Query:       "/nix/store/test",
 		}
 
-		nar1, err := db.CreateNar(context.Background(), params)
+		narFile1, err := db.CreateNarFile(context.Background(), params)
 		require.NoError(t, err)
 
 		// Clean up
 		t.Cleanup(func() {
 			//nolint:errcheck
-			db.DeleteNarByID(context.Background(), nar1.ID)
-			//nolint:errcheck
-			db.DeleteNarInfoByID(context.Background(), ni.ID)
+			db.DeleteNarFileByID(context.Background(), narFile1.ID)
 		})
 
-		// Get nar
-		nar2, err := db.GetNarByHash(context.Background(), narHash)
+		// Get nar_file
+		narFile2, err := db.GetNarFileByHash(context.Background(), narHash)
 		require.NoError(t, err)
 
-		assert.Equal(t, nar1.ID, nar2.ID)
-		assert.Equal(t, nar1.Hash, nar2.Hash)
-		assert.Equal(t, nar1.Compression, nar2.Compression)
+		assert.Equal(t, narFile1.ID, narFile2.ID)
+		assert.Equal(t, narFile1.Hash, narFile2.Hash)
+		assert.Equal(t, narFile1.Compression, narFile2.Compression)
 	})
 }
 
@@ -303,24 +298,13 @@ func TestPostgreSQL_GetNarTotalSize(t *testing.T) {
 			return
 		}
 
-		// Create multiple nars
-		var narIDs []int64
-
-		var niIDs []int64
+		// Create multiple nar_files
+		var narFileIDs []int64
 
 		totalSize := uint64(0)
 
 		for i := 0; i < 3; i++ {
-			// Create narinfo
-			niHash, err := helper.RandString(32, nil)
-			require.NoError(t, err)
-
-			ni, err := db.CreateNarInfo(context.Background(), niHash)
-			require.NoError(t, err)
-
-			niIDs = append(niIDs, ni.ID)
-
-			// Create nar
+			// Create nar_file
 			narHash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
@@ -328,37 +312,31 @@ func TestPostgreSQL_GetNarTotalSize(t *testing.T) {
 			fileSize := uint64((i + 1) * 1024)
 			totalSize += fileSize
 
-			params := database.CreateNarParams{
-				NarInfoID:   ni.ID,
+			params := database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    fileSize,
 				Query:       "/nix/store/test",
 			}
 
-			nar, err := db.CreateNar(context.Background(), params)
+			narFile, err := db.CreateNarFile(context.Background(), params)
 			require.NoError(t, err)
 
-			narIDs = append(narIDs, nar.ID)
+			narFileIDs = append(narFileIDs, narFile.ID)
 		}
 
 		// Clean up
 		t.Cleanup(func() {
-			for _, id := range narIDs {
+			for _, id := range narFileIDs {
 				//nolint:errcheck
-				db.DeleteNarByID(context.Background(), id)
-			}
-
-			for _, id := range niIDs {
-				//nolint:errcheck
-				db.DeleteNarInfoByID(context.Background(), id)
+				db.DeleteNarFileByID(context.Background(), id)
 			}
 		})
 
 		size, err := db.GetNarTotalSize(context.Background())
 		require.NoError(t, err)
 		//nolint:gosec
-		assert.LessOrEqual(t, totalSize, uint64(size)) // Should be at least our nars
+		assert.LessOrEqual(t, totalSize, uint64(size)) // Should be at least our nar_files
 	})
 }
 

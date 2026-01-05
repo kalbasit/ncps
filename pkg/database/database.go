@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
@@ -107,6 +108,12 @@ func openSQLite(u *url.URL, poolCfg *PoolConfig) (*sql.DB, error) {
 	))
 	if err != nil {
 		return nil, err
+	}
+
+	// Enable foreign key constraints (disabled by default in SQLite)
+	// This is required for CASCADE DELETE to work
+	if _, err := sdb.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
+		return nil, fmt.Errorf("error enabling foreign keys: %w", err)
 	}
 
 	// Getting an error `database is locked` when data is being inserted in the

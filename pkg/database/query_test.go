@@ -342,7 +342,7 @@ func TestDeleteNarInfo(t *testing.T) {
 	})
 }
 
-func TestGetNarByHash(t *testing.T) {
+func TestGetNarFileByHash(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nar not existing", func(t *testing.T) {
@@ -368,7 +368,7 @@ func TestGetNarByHash(t *testing.T) {
 		narHash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		_, err = db.GetNarByHash(context.Background(), narHash)
+		_, err = db.GetNarFileByHash(context.Background(), narHash)
 		assert.ErrorIs(t, err, sql.ErrNoRows)
 	})
 
@@ -386,17 +386,10 @@ func TestGetNarByHash(t *testing.T) {
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
-		narInfoHash, err := helper.RandString(32, nil)
-		require.NoError(t, err)
-
-		narInfo, err := db.CreateNarInfo(context.Background(), narInfoHash)
-		require.NoError(t, err)
-
 		narHash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		ni1, err := db.CreateNar(context.Background(), database.CreateNarParams{
-			NarInfoID:   narInfo.ID,
+		nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 			Hash:        narHash,
 			Compression: nar.CompressionTypeXz.String(),
 			Query:       "hash=123&key=value",
@@ -404,13 +397,12 @@ func TestGetNarByHash(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		ni2, err := db.GetNarByHash(context.Background(), narHash)
+		nf2, err := db.GetNarFileByHash(context.Background(), narHash)
 		require.NoError(t, err)
 
-		assert.Equal(t, ni1.Hash, ni2.Hash)
-		assert.Equal(t, ni1.NarInfoID, ni2.NarInfoID)
-		assert.Equal(t, ni1.Compression, ni2.Compression)
-		assert.Equal(t, ni1.FileSize, ni2.FileSize)
+		assert.Equal(t, nf1.Hash, nf2.Hash)
+		assert.Equal(t, nf1.Compression, nf2.Compression)
+		assert.Equal(t, nf1.FileSize, nf2.FileSize)
 	})
 }
 
@@ -427,13 +419,6 @@ func TestInsertNar(t *testing.T) {
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
-	// create a narinfo
-	hash, err := helper.RandString(32, nil)
-	require.NoError(t, err)
-
-	narInfo, err := db.CreateNarInfo(context.Background(), hash)
-	require.NoError(t, err)
-
 	allCompressions := []nar.CompressionType{
 		nar.CompressionTypeNone,
 		nar.CompressionTypeBzip2,
@@ -446,15 +431,14 @@ func TestInsertNar(t *testing.T) {
 
 	for _, compression := range allCompressions {
 		t.Run(fmt.Sprintf("compression=%q", compression), func(t *testing.T) {
-			_, err := db.DB().ExecContext(context.Background(), "DELETE FROM nars")
+			_, err := db.DB().ExecContext(context.Background(), "DELETE FROM nar_files")
 			require.NoError(t, err)
 
 			t.Run("inserting one record", func(t *testing.T) {
 				hash, err := helper.RandString(32, nil)
 				require.NoError(t, err)
 
-				nar, err := db.CreateNar(context.Background(), database.CreateNarParams{
-					NarInfoID:   narInfo.ID,
+				narFile, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 					Hash:        hash,
 					Compression: compression.String(),
 					FileSize:    123,
@@ -462,8 +446,8 @@ func TestInsertNar(t *testing.T) {
 				require.NoError(t, err)
 
 				const query = `
- 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
- 				FROM nars
+ 				SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, query
+ 				FROM nar_files
  				`
 
 				rows, err := db.DB().QueryContext(context.Background(), query)
@@ -471,37 +455,36 @@ func TestInsertNar(t *testing.T) {
 
 				defer rows.Close()
 
-				nims := make([]database.Nar, 0)
+				narFiles := make([]database.NarFile, 0)
 
 				for rows.Next() {
-					var nim database.Nar
+					var nf database.NarFile
 
 					err := rows.Scan(
-						&nim.ID,
-						&nim.NarInfoID,
-						&nim.Hash,
-						&nim.Compression,
-						&nim.FileSize,
-						&nim.CreatedAt,
-						&nim.UpdatedAt,
-						&nim.LastAccessedAt,
+						&nf.ID,
+						&nf.Hash,
+						&nf.Compression,
+						&nf.FileSize,
+						&nf.CreatedAt,
+						&nf.UpdatedAt,
+						&nf.LastAccessedAt,
+						&nf.Query,
 					)
 					require.NoError(t, err)
 
-					nims = append(nims, nim)
+					narFiles = append(narFiles, nf)
 				}
 
 				require.NoError(t, rows.Err())
 
-				if assert.Len(t, nims, 1) {
-					assert.Equal(t, nar.ID, nims[0].ID)
-					assert.Equal(t, narInfo.ID, nims[0].NarInfoID)
-					assert.Equal(t, hash, nims[0].Hash)
-					assert.Equal(t, compression.String(), nims[0].Compression)
-					assert.EqualValues(t, 123, nims[0].FileSize)
-					assert.Less(t, time.Since(nims[0].CreatedAt), 3*time.Second)
-					assert.False(t, nims[0].UpdatedAt.Valid)
-					assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
+				if assert.Len(t, narFiles, 1) {
+					assert.Equal(t, narFile.ID, narFiles[0].ID)
+					assert.Equal(t, hash, narFiles[0].Hash)
+					assert.Equal(t, compression.String(), narFiles[0].Compression)
+					assert.EqualValues(t, 123, narFiles[0].FileSize)
+					assert.Less(t, time.Since(narFiles[0].CreatedAt), 3*time.Second)
+					assert.False(t, narFiles[0].UpdatedAt.Valid)
+					assert.Equal(t, narFiles[0].CreatedAt, narFiles[0].LastAccessedAt.Time)
 				}
 			})
 
@@ -509,16 +492,14 @@ func TestInsertNar(t *testing.T) {
 				hash, err := helper.RandString(32, nil)
 				require.NoError(t, err)
 
-				_, err = db.CreateNar(context.Background(), database.CreateNarParams{
-					NarInfoID:   narInfo.ID,
+				_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 					Hash:        hash,
 					Compression: "",
 					FileSize:    123,
 				})
 				require.NoError(t, err)
 
-				_, err = db.CreateNar(context.Background(), database.CreateNarParams{
-					NarInfoID:   narInfo.ID,
+				_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 					Hash:        hash,
 					Compression: "",
 					FileSize:    123,
@@ -531,7 +512,7 @@ func TestInsertNar(t *testing.T) {
 }
 
 //nolint:paralleltest
-func TestTouchNar(t *testing.T) {
+func TestTouchNarFile(t *testing.T) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 
@@ -547,30 +528,18 @@ func TestTouchNar(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		ra, err := db.TouchNar(context.Background(), hash)
+		ra, err := db.TouchNarFile(context.Background(), hash)
 		require.NoError(t, err)
 
 		assert.Zero(t, ra)
 	})
 
 	t.Run("nar existing", func(t *testing.T) {
-		var narInfo database.NarInfo
-
-		t.Run("create the narinfo", func(t *testing.T) {
-			// create a narinfo
-			hash, err := helper.RandString(32, nil)
-			require.NoError(t, err)
-
-			narInfo, err = db.CreateNarInfo(context.Background(), hash)
-			require.NoError(t, err)
-		})
-
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
 		t.Run("create the nar", func(t *testing.T) {
-			_, err = db.CreateNar(context.Background(), database.CreateNarParams{
-				NarInfoID:   narInfo.ID,
+			_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash,
 				Compression: "",
 				FileSize:    123,
@@ -580,8 +549,8 @@ func TestTouchNar(t *testing.T) {
 
 		t.Run("confirm created_at == last_accessed_at, and no updated_at", func(t *testing.T) {
 			const query = `
- 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
- 				FROM nars
+ 				SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, query
+ 				FROM nar_files
  				`
 
 			rows, err := db.DB().QueryContext(context.Background(), query)
@@ -589,38 +558,38 @@ func TestTouchNar(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.Nar, 0)
+			narFiles := make([]database.NarFile, 0)
 
 			for rows.Next() {
-				var nim database.Nar
+				var nf database.NarFile
 
 				err := rows.Scan(
-					&nim.ID,
-					&nim.NarInfoID,
-					&nim.Hash,
-					&nim.Compression,
-					&nim.FileSize,
-					&nim.CreatedAt,
-					&nim.UpdatedAt,
-					&nim.LastAccessedAt,
+					&nf.ID,
+					&nf.Hash,
+					&nf.Compression,
+					&nf.FileSize,
+					&nf.CreatedAt,
+					&nf.UpdatedAt,
+					&nf.LastAccessedAt,
+					&nf.Query,
 				)
 				require.NoError(t, err)
 
-				nims = append(nims, nim)
+				narFiles = append(narFiles, nf)
 			}
 
 			require.NoError(t, rows.Err())
 
-			if assert.Len(t, nims, 1) {
-				assert.False(t, nims[0].UpdatedAt.Valid)
-				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
+			if assert.Len(t, narFiles, 1) {
+				assert.False(t, narFiles[0].UpdatedAt.Valid)
+				assert.Equal(t, narFiles[0].CreatedAt, narFiles[0].LastAccessedAt.Time)
 			}
 		})
 
 		t.Run("touch the nar", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			ra, err := db.TouchNar(context.Background(), hash)
+			ra, err := db.TouchNarFile(context.Background(), hash)
 			require.NoError(t, err)
 
 			assert.EqualValues(t, 1, ra)
@@ -628,8 +597,8 @@ func TestTouchNar(t *testing.T) {
 
 		t.Run("confirm created_at != last_accessed_at and updated_at == last_accessed_at", func(t *testing.T) {
 			const query = `
- 				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
- 				FROM nars
+ 				SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, query
+ 				FROM nar_files
  				`
 
 			rows, err := db.DB().QueryContext(context.Background(), query)
@@ -637,33 +606,33 @@ func TestTouchNar(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.Nar, 0)
+			narFiles := make([]database.NarFile, 0)
 
 			for rows.Next() {
-				var nim database.Nar
+				var nf database.NarFile
 
 				err := rows.Scan(
-					&nim.ID,
-					&nim.NarInfoID,
-					&nim.Hash,
-					&nim.Compression,
-					&nim.FileSize,
-					&nim.CreatedAt,
-					&nim.UpdatedAt,
-					&nim.LastAccessedAt,
+					&nf.ID,
+					&nf.Hash,
+					&nf.Compression,
+					&nf.FileSize,
+					&nf.CreatedAt,
+					&nf.UpdatedAt,
+					&nf.LastAccessedAt,
+					&nf.Query,
 				)
 				require.NoError(t, err)
 
-				nims = append(nims, nim)
+				narFiles = append(narFiles, nf)
 			}
 
 			require.NoError(t, rows.Err())
 
-			if assert.Len(t, nims, 1) {
-				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
+			if assert.Len(t, narFiles, 1) {
+				assert.NotEqual(t, narFiles[0].CreatedAt, narFiles[0].LastAccessedAt)
 
-				if assert.True(t, nims[0].UpdatedAt.Valid) {
-					assert.Equal(t, nims[0].UpdatedAt.Time, nims[0].LastAccessedAt.Time)
+				if assert.True(t, narFiles[0].UpdatedAt.Valid) {
+					assert.Equal(t, narFiles[0].UpdatedAt.Time, narFiles[0].LastAccessedAt.Time)
 				}
 			}
 		})
@@ -687,30 +656,18 @@ func TestDeleteNar(t *testing.T) {
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		ra, err := db.DeleteNarByHash(context.Background(), hash)
+		ra, err := db.DeleteNarFileByHash(context.Background(), hash)
 		require.NoError(t, err)
 
 		assert.Zero(t, ra)
 	})
 
 	t.Run("nar existing", func(t *testing.T) {
-		var narInfo database.NarInfo
-
-		t.Run("create the narinfo", func(t *testing.T) {
-			// create a narinfo
-			hash, err := helper.RandString(32, nil)
-			require.NoError(t, err)
-
-			narInfo, err = db.CreateNarInfo(context.Background(), hash)
-			require.NoError(t, err)
-		})
-
 		hash, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
 		t.Run("create the nar", func(t *testing.T) {
-			_, err = db.CreateNar(context.Background(), database.CreateNarParams{
-				NarInfoID:   narInfo.ID,
+			_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash,
 				Compression: "",
 				FileSize:    123,
@@ -721,7 +678,7 @@ func TestDeleteNar(t *testing.T) {
 		t.Run("delete the narinfo", func(t *testing.T) {
 			time.Sleep(time.Second)
 
-			ra, err := db.DeleteNarByHash(context.Background(), hash)
+			ra, err := db.DeleteNarFileByHash(context.Background(), hash)
 			require.NoError(t, err)
 
 			assert.EqualValues(t, 1, ra)
@@ -729,8 +686,8 @@ func TestDeleteNar(t *testing.T) {
 
 		t.Run("confirm it has been removed", func(t *testing.T) {
 			const query = `
-				SELECT id, narinfo_id, hash, compression, file_size, created_at, updated_at, last_accessed_at
-				FROM nars
+				SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, query
+				FROM nar_files
 				`
 
 			rows, err := db.DB().QueryContext(context.Background(), query)
@@ -738,28 +695,28 @@ func TestDeleteNar(t *testing.T) {
 
 			defer rows.Close()
 
-			nims := make([]database.Nar, 0)
+			narFiles := make([]database.NarFile, 0)
 
 			for rows.Next() {
-				var nim database.Nar
+				var nf database.NarFile
 
 				err := rows.Scan(
-					&nim.ID,
-					&nim.NarInfoID,
-					&nim.Hash,
-					&nim.Compression,
-					&nim.FileSize,
-					&nim.CreatedAt,
-					&nim.UpdatedAt,
-					&nim.LastAccessedAt,
+					&nf.ID,
+					&nf.Hash,
+					&nf.Compression,
+					&nf.FileSize,
+					&nf.CreatedAt,
+					&nf.UpdatedAt,
+					&nf.LastAccessedAt,
+					&nf.Query,
 				)
 				require.NoError(t, err)
 
-				nims = append(nims, nim)
+				narFiles = append(narFiles, nf)
 			}
 
 			require.NoError(t, rows.Err())
-			assert.Empty(t, nims)
+			assert.Empty(t, narFiles)
 		})
 	})
 }
@@ -782,14 +739,11 @@ func TestNarTotalSize(t *testing.T) {
 	for _, narEntry := range testdata.Entries {
 		expectedSize += uint64(len(narEntry.NarText))
 
-		narInfo, err := db.CreateNarInfo(context.Background(), narEntry.NarInfoHash)
-		require.NoError(t, err)
-
-		_, err = db.CreateNar(context.Background(), database.CreateNarParams{
-			NarInfoID:   narInfo.ID,
+		_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 			Hash:        narEntry.NarHash,
 			Compression: nar.CompressionTypeXz.String(),
 			FileSize:    uint64(len(narEntry.NarText)),
+			Query:       "",
 		})
 		require.NoError(t, err)
 	}
@@ -827,14 +781,11 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	}
 
 	for _, narEntry := range allEntries {
-		narInfo, err := db.CreateNarInfo(context.Background(), narEntry.NarInfoHash)
-		require.NoError(t, err)
-
-		_, err = db.CreateNar(context.Background(), database.CreateNarParams{
-			NarInfoID:   narInfo.ID,
+		_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 			Hash:        narEntry.NarHash,
 			Compression: nar.CompressionTypeXz.String(),
 			FileSize:    uint64(len(narEntry.NarText)),
+			Query:       "",
 		})
 		require.NoError(t, err)
 	}
@@ -842,7 +793,7 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	time.Sleep(time.Second)
 
 	for _, narEntry := range allEntries[:len(allEntries)-1] {
-		_, err := db.TouchNar(context.Background(), narEntry.NarHash)
+		_, err := db.TouchNarFile(context.Background(), narEntry.NarHash)
 		require.NoError(t, err)
 	}
 
@@ -852,7 +803,7 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	// This should return only the last entry since it's the least accessed
 	sizeParam := uint64(len(lastEntry.NarText))
 
-	nms, err := db.GetLeastUsedNars(context.Background(), sizeParam)
+	nms, err := db.GetLeastUsedNarFiles(context.Background(), sizeParam)
 	require.NoError(t, err)
 
 	if assert.Len(t, nms, 1) {

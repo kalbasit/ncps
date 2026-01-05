@@ -5,10 +5,9 @@ import (
 	"time"
 )
 
-// Nar represents a cached NAR file.
-type Nar struct {
+// NarFile represents a cached NAR file.
+type NarFile struct {
 	ID             int64
-	NarInfoID      int64
 	Hash           string
 	Compression    string
 	FileSize       uint64
@@ -27,11 +26,16 @@ type NarInfo struct {
 	LastAccessedAt sql.NullTime
 }
 
-// CreateNarParams holds parameters for creating a NAR entry.
-type CreateNarParams struct {
-	NarInfoID   int64
+// CreateNarFileParams holds parameters for creating a NAR file entry.
+type CreateNarFileParams struct {
 	Hash        string
 	Compression string
 	Query       string
 	FileSize    uint64
+}
+
+// LinkNarInfoToNarFileParams holds parameters for linking a NarInfo to a NarFile.
+type LinkNarInfoToNarFileParams struct {
+	NarInfoID int64
+	NarFileID int64
 }

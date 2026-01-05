@@ -298,9 +298,9 @@ func TestRunLRU(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// all nar records are in the database
+	// all nar_file records are in the database
 	for _, narEntry := range allEntries {
-		_, err := c.db.GetNarByHash(context.Background(), narEntry.NarHash)
+		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
 		require.NoError(t, err)
 	}
 
@@ -329,17 +329,17 @@ func TestRunLRU(t *testing.T) {
 	}
 
 	_, err = c.db.GetNarInfoByHash(context.Background(), lastEntry.NarInfoHash)
-	require.ErrorIs(t, sql.ErrNoRows, err)
+	require.ErrorIs(t, err, sql.ErrNoRows)
 
-	// all nar records except the last one are in the database
+	// all nar_file records except the last one are in the database
 
 	for _, narEntry := range entries {
-		_, err := c.db.GetNarByHash(context.Background(), narEntry.NarHash)
+		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
 		require.NoError(t, err)
 	}
 
-	_, err = c.db.GetNarByHash(context.Background(), lastEntry.NarHash)
-	require.ErrorIs(t, sql.ErrNoRows, err)
+	_, err = c.db.GetNarFileByHash(context.Background(), lastEntry.NarHash)
+	require.ErrorIs(t, err, sql.ErrNoRows)
 }
 
 func TestStoreInDatabaseDuplicateDetection(t *testing.T) {
@@ -423,23 +423,15 @@ func TestPutNarInfoConcurrentSameHash(t *testing.T) {
 	require.NoError(t, err, "narinfo should exist in database")
 }
 
-// TestPutNarInfoWithOrphanedNar tests the scenario where a Nar record exists in the database
-// but a new NarInfo is being added that references the same nar hash.
-// This can happen if:
-// 1. A previous NarInfo was stored with its Nar
-// 2. Now we're storing a different NarInfo (different store path) that happens to have the same Nar
+// TestPutNarInfoWithSharedNar verifies that multiple narinfos can share the same nar_file.
 //
-// Expected behavior: The transaction should fail and roll back cleanly, returning an
-// ErrInconsistentState to the caller, preventing a silent failure.
-// A more advanced implementation might allow reusing the existing NAR, but that would
-// likely require schema changes and is out of scope for the current fix.
+// Scenario:
+// 1. Store a NarInfo (Nar1) - this creates both narinfo and nar_file records
+// 2. Store a different NarInfo (different store path) that happens to have the same nar URL
 //
-// Bug: Previously, this scenario caused a silent failure where:
-// - CreateNarInfo succeeded (new narinfo hash)
-// - CreateNar failed with a duplicate key error (same nar hash)
-// - The transaction rolled back (removing the narinfo we just created)
-// - But the function returned success (ErrAlreadyExists was treated as success by the caller).
-func TestPutNarInfoWithOrphanedNar(t *testing.T) {
+// Expected behavior: Both narinfos should be stored successfully and share the same nar_file.
+// This is the correct behavior with the many-to-many relationship between narinfos and nar_files.
+func TestPutNarInfoWithSharedNar(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
@@ -447,7 +439,7 @@ func TestPutNarInfoWithOrphanedNar(t *testing.T) {
 
 	ctx := newContext()
 
-	// Step 1: Store the first NarInfo (Nar1) - this creates both narinfo and nar records
+	// Step 1: Store the first NarInfo (Nar1) - this creates both narinfo and nar_file records
 	err := c.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)))
 	require.NoError(t, err, "first PutNarInfo should succeed")
 
@@ -470,16 +462,26 @@ References: different1234567890abcdefghijklmno-hello-2.12.1 qdcbgcj27x2kpxj2sf9y
 Deriver: 9zpqmcicrg8smi9jlqv6dmd7v20d2fsn-hello-2.12.1.drv
 Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==`
 
-	// Step 3: Try to store the second NarInfo
-	// This should return ErrInconsistentState because the nar already exists with a different narinfo
+	// Step 3: Store the second NarInfo
+	// This should succeed and reuse the existing nar_file
 	err = c.PutNarInfo(ctx, secondNarInfoHash, io.NopCloser(strings.NewReader(secondNarInfoText)))
-	require.Error(t, err, "second PutNarInfo should return an error due to nar conflict")
-	require.ErrorIs(t, err, ErrInconsistentState, "error should be ErrInconsistentState")
+	require.NoError(t, err, "second PutNarInfo should succeed and reuse existing nar_file")
 
-	// Step 4: Verify the second narinfo does NOT exist in database (since the operation failed)
-	_, err = c.db.GetNarInfoByHash(ctx, secondNarInfoHash)
-	require.Error(t, err, "second narinfo should not exist in database since PutNarInfo failed")
-	require.ErrorIs(t, err, sql.ErrNoRows, "should get sql.ErrNoRows for non-existent narinfo")
+	// Step 4: Verify both narinfos exist in database
+	narInfo2, err := c.db.GetNarInfoByHash(ctx, secondNarInfoHash)
+	require.NoError(t, err, "second narinfo should exist in database")
+	require.NotNil(t, narInfo2)
+
+	// Step 5: Verify both narinfos share the same nar_file
+	narFile1, err := c.db.GetNarFileByNarInfoID(ctx, narInfo1.ID)
+	require.NoError(t, err, "should be able to get nar_file for first narinfo")
+
+	narFile2, err := c.db.GetNarFileByNarInfoID(ctx, narInfo2.ID)
+	require.NoError(t, err, "should be able to get nar_file for second narinfo")
+
+	// Both should reference the same nar_file
+	require.Equal(t, narFile1.ID, narFile2.ID, "both narinfos should share the same nar_file")
+	require.Equal(t, narFile1.Hash, narFile2.Hash, "nar_file hashes should match")
 }
 
 func newContext() context.Context {
