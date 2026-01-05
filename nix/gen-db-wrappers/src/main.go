@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 )
@@ -47,9 +48,19 @@ type Return struct {
 }
 
 func main() {
+	if len(os.Args) != 2 {
+		log.Fatalf("USAGE: %s /path/to/querier.go", os.Args[0])
+	}
+
+	querierPath := os.Args[1]
+
+	if _, err := os.Stat(querierPath); err != nil {
+		log.Fatalf("stat(%q): %s", querierPath, err)
+	}
+
 	// 1. Parse the interface definition
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, "pkg/database/querier.go", nil, parser.ParseComments)
+	node, err := parser.ParseFile(fset, querierPath, nil, parser.ParseComments)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,14 +119,16 @@ func main() {
 		return false
 	})
 
+	baseDir := filepath.Dir(querierPath)
+
 	// 3. Generate files for each engine
 	for _, engine := range engines {
-		generateFile(engine, methods)
+		generateFile(baseDir, engine, methods)
 	}
 }
 
 // generateFile writes the wrapper_*.go file
-func generateFile(engine Engine, methods []MethodInfo) {
+func generateFile(dir string, engine Engine, methods []MethodInfo) {
 	t := template.Must(template.New("wrapper").Funcs(template.FuncMap{
 		"joinParamsSignature": func(params []Param) string {
 			var p []string
@@ -171,8 +184,8 @@ func generateFile(engine Engine, methods []MethodInfo) {
 		log.Fatalf("formatting code: %v", err)
 	}
 
-	filename := fmt.Sprintf("pkg/database/wrapper_%s.go", engine.Name)
-	if err := os.WriteFile(filename, formatted, 0644); err != nil {
+	filename := fmt.Sprintf("wrapper_%s.go", engine.Name)
+	if err := os.WriteFile(filepath.Join(dir, filename), formatted, 0644); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Generated %s\n", filename)
