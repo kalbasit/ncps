@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
 	"time"
 
@@ -897,9 +898,9 @@ func serveDetectExtraResourceAttrs(cmd *cli.Command) ([]attribute.KeyValue, erro
 	// 1. Identify Database Type
 	dbURL := cmd.String("cache-database-url")
 
-	dbType, err := database.DetectFromDataseURL(dbURL)
+	dbType, err := database.DetectFromDatabaseURL(dbURL)
 	if err != nil {
-return nil, fmt.Errorf("error detecting the database type: %w", err)
+		return nil, fmt.Errorf("error detecting the database type: %w", err)
 	}
 
 	attrs = append(attrs, attribute.String("ncps.db_type", dbType.String()))
