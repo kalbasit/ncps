@@ -7,4 +7,4 @@ db/migrations/sqlite/20260105030513_support_shared_nars_between_narinfos.sql
 db/query.*.sql
 
 # exclude schema file
-db/schema/*.sql
+db/schema.sql
