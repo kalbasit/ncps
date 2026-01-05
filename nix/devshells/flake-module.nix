@@ -99,6 +99,8 @@
             fi
           '')
 
+          config.packages.gen-db-wrappers
+
           pkgs.delve
           pkgs.go
           pkgs.golangci-lint
