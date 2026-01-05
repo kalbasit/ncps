@@ -899,7 +899,7 @@ func serveDetectExtraResourceAttrs(cmd *cli.Command) ([]attribute.KeyValue, erro
 
 	dbType, err := database.DetectFromDataseURL(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("error detecting the dataabase type: %w", err)
+return nil, fmt.Errorf("error detecting the database type: %w", err)
 	}
 
 	attrs = append(attrs, attribute.String("ncps.db_type", dbType.String()))
@@ -908,15 +908,7 @@ func serveDetectExtraResourceAttrs(cmd *cli.Command) ([]attribute.KeyValue, erro
 	lockType := "local"
 	redisAddrs := cmd.StringSlice("cache-redis-addrs")
 	// Filter out empty addresses
-	hasRedis := false
-
-	for _, addr := range redisAddrs {
-		if addr != "" {
-			hasRedis = true
-
-			break
-		}
-	}
+	hasRedis := slices.ContainsFunc(redisAddrs, func(addr string) bool { return addr != "" })
 
 	if hasRedis {
 		lockType = "redis"
