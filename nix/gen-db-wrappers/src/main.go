@@ -31,7 +31,7 @@ type MethodInfo struct {
 	Params       []Param
 	Returns      []Return
 	IsCreate     bool   // Special handling for MySQL Create
-	ReturnElem   string // The struct type being returned (e.g. "NarFile")
+	ReturnElem   string // The underlying type (e.g. "NarFile" or "string")
 	ReturnsError bool   // Does the method return an error?
 	ReturnsSelf  bool   // Does it return the wrapper type (like WithTx)?
 	HasValue     bool   // Does it return a value (non-error)?
@@ -92,17 +92,16 @@ func main() {
 						m.HasValue = true
 					} else {
 						m.HasValue = true
-					}
-
-					cleanType := strings.TrimPrefix(typeStr, "[]")
-					if isDomainStruct(cleanType) {
-						m.ReturnElem = cleanType
+						// Capture element type for both Slices and Singles
+						// e.g. "[]NarFile" -> "NarFile", "int64" -> "int64"
+						m.ReturnElem = strings.TrimPrefix(typeStr, "[]")
 					}
 				}
 			}
 
 			// Detect if it's a Create method returning a struct (for MySQL)
-			if strings.HasPrefix(m.Name, "Create") && m.ReturnElem != "" {
+			// Only trigger if returning a Domain Struct (not int64/ExecResult)
+			if strings.HasPrefix(m.Name, "Create") && isDomainStruct(m.ReturnElem) {
 				m.IsCreate = true
 			}
 
@@ -154,6 +153,7 @@ func generateFile(engine Engine, methods []MethodInfo) {
 			}
 			return ""
 		},
+		"isDomainStruct": isDomainStruct,
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
@@ -224,13 +224,13 @@ type {{.Engine.Name}}Wrapper struct {
 func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
 	{{- /* --- MySQL CREATE Special Handling --- */ -}}
 	{{if and $.Engine.IsMySQL .IsCreate}}
-		// MySQL does not support RETURNING for INSERTs.
+		// MySQL does not support RETURNING for INSERTs. 
 		// We insert, get LastInsertId, and then fetch the object.
 		res, err := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
 		if err != nil {
 			return {{.ReturnElem}}{}, err
 		}
-
+		
 		id, err := res.LastInsertId()
 		if err != nil {
 			return {{.ReturnElem}}{}, err
@@ -239,14 +239,14 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		return w.Get{{.ReturnElem}}ByID(ctx, id)
 
 	{{- else -}}
-
+	
 	{{- /* --- Standard Handling --- */ -}}
 		{{- $retType := firstReturnType .Returns -}}
-
+		
 		{{/* 1. CALL ADAPTER */}}
 		{{if .HasValue}}res{{else}}_{{end}}
 		{{- if .ReturnsError}}, err{{end}} := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
-
+		
 		{{/* 2. HANDLE ERROR */}}
 		{{- if .ReturnsError}}
 		if err != nil {
@@ -256,7 +256,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 				return err
 			{{- else if isSlice $retType}}
 				return nil, err
-			{{- else if .ReturnElem}}
+			{{- else if isDomainStruct .ReturnElem}}
 				return {{.ReturnElem}}{}, err
 			{{- else}}
 				// Primitive return (int64, etc)
@@ -264,24 +264,29 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 			{{- end}}
 		}
 		{{- end}}
-
+		
 		{{/* 3. RETURN RESULTS */}}
 		{{- if .ReturnsSelf}}
 			// Wrap the returned adapter (for WithTx)
 			return &{{$.Engine.Name}}Wrapper{adapter: res}
-
+		
 		{{- else if isSlice $retType }}
-			// Convert Slice
-			items := make([]{{.ReturnElem}}, len(res))
-			for i, v := range res {
-				items[i] = {{.ReturnElem}}(v)
-			}
-			return items{{if .ReturnsError}}, nil{{end}}
+			{{- if isDomainStruct .ReturnElem}}
+				// Convert Slice of Domain Structs
+				items := make([]{{.ReturnElem}}, len(res))
+				for i, v := range res {
+					items[i] = {{.ReturnElem}}(v)
+				}
+				return items{{if .ReturnsError}}, nil{{end}}
+			{{- else}}
+				// Return Slice of Primitives (direct match)
+				return res{{if .ReturnsError}}, nil{{end}}
+			{{- end}}
 
-		{{- else if .ReturnElem}}
-			// Convert Struct
+		{{- else if isDomainStruct .ReturnElem}}
+			// Convert Single Domain Struct
 			return {{.ReturnElem}}(res){{if .ReturnsError}}, nil{{end}}
-
+		
 		{{- else if .HasValue}}
 			// Return Primitive / *sql.DB / etc
 			return res{{if .ReturnsError}}, nil{{end}}
