@@ -4,9 +4,6 @@
 
   perSystem = {
     treefmt = {
-      # Used to find the project root
-      projectRootFile = ".git/config";
-
       settings.global.excludes = [
         ".env"
         ".envrc"
