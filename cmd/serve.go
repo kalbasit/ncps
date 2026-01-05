@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/sysbot/go-netrc"
 	"github.com/urfave/cli/v3"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 
@@ -122,7 +124,17 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
 
-			otelResource, err = telemetry.NewResource(ctx, cmd.Root().Name, Version)
+			extraResourceAttrs, err := serveDetectExtraResourceAttrs(cmd)
+			if err != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error detecting extra resource attributes")
+
+				return ctx, err
+			}
+
+			otelResource, err = telemetry.NewResource(ctx, cmd.Root().Name, Version, extraResourceAttrs...)
 			if err != nil {
 				zerolog.Ctx(ctx).
 					Error().
@@ -878,4 +890,32 @@ func createCache(
 	c.StartCron(ctx)
 
 	return c, nil
+}
+
+func serveDetectExtraResourceAttrs(cmd *cli.Command) ([]attribute.KeyValue, error) {
+	var attrs []attribute.KeyValue
+
+	// 1. Identify Database Type
+	dbURL := cmd.String("cache-database-url")
+
+	dbType, err := database.DetectFromDatabaseURL(dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("error detecting the database type: %w", err)
+	}
+
+	attrs = append(attrs, attribute.String("ncps.db_type", dbType.String()))
+
+	// 2. Identify Lock Type
+	lockType := "local"
+	redisAddrs := cmd.StringSlice("cache-redis-addrs")
+	// Filter out empty addresses
+	hasRedis := slices.ContainsFunc(redisAddrs, func(addr string) bool { return addr != "" })
+
+	if hasRedis {
+		lockType = "redis"
+	}
+
+	attrs = append(attrs, attribute.String("ncps.lock_type", lockType))
+
+	return attrs, nil
 }

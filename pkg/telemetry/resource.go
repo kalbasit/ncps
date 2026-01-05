@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
@@ -11,7 +12,18 @@ import (
 // NewResource creates a new OpenTelemetry resource with standard attributes.
 // This function consolidates the common resource creation logic used by both
 // OpenTelemetry and Prometheus telemetry setups.
-func NewResource(ctx context.Context, serviceName, serviceVersion string) (*resource.Resource, error) {
+func NewResource(
+	ctx context.Context,
+	serviceName,
+	serviceVersion string,
+	extraAttrs ...attribute.KeyValue,
+) (*resource.Resource, error) {
+	attrs := []attribute.KeyValue{
+		semconv.ServiceName(serviceName),
+		semconv.ServiceVersionKey.String(serviceVersion),
+	}
+	attrs = append(attrs, extraAttrs...)
+
 	return resource.New(
 		ctx,
 
@@ -22,10 +34,7 @@ func NewResource(ctx context.Context, serviceName, serviceVersion string) (*reso
 		resource.WithSchemaURL(semconv.SchemaURL),
 
 		// Add Custom attributes.
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersionKey.String(serviceVersion),
-		),
+		resource.WithAttributes(attrs...),
 
 		// Discover and provide command-line information.
 		resource.WithProcessCommandArgs(),
