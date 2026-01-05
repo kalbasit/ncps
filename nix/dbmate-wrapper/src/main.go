@@ -10,9 +10,7 @@ import (
 	"strings"
 )
 
-var (
-	errIncalculableMigrationDir = errors.New("error calculating the migration directory")
-)
+var errIncalculableMigrationDir = errors.New("error calculating the migration directory")
 
 func main() {
 	os.Exit(run())
@@ -21,6 +19,7 @@ func main() {
 func run() int {
 	// Parse the database URL from the environment.
 	dbURL := os.Getenv("DATABASE_URL")
+
 	for i, arg := range os.Args[1:] {
 		if arg == "--url" && i+1 < len(os.Args)-1 {
 			dbURL = os.Args[i+2]
@@ -34,6 +33,7 @@ func run() int {
 		fullMigrationsPath, err := computeMigrationsDir(dbURL)
 		if err != nil {
 			log.Printf("%s", err)
+
 			return execDbmate(os.Args[1:])
 		}
 
@@ -49,6 +49,7 @@ func run() int {
 		fullSchemaPath, err := computeSchemaFile(dbURL)
 		if err != nil {
 			log.Printf("%s", err)
+
 			return execDbmate(os.Args[1:])
 		}
 
