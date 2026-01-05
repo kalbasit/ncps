@@ -94,11 +94,11 @@ func computeSchemaFile(dbURL string) (string, error) {
 		return "", err
 	}
 
-	// Determine the base migrations directory
+	// Determine the base schema directory
 	// Priority order:
 	// 1. NCPS_DB_SCHEMA_DIR environment variable (set by devshell or Docker)
-	// 2. Fallback to /share/ncps/db/migrations (Docker default)
-	// 3. Fallback to db/migrations (relative path, only works from repo root)
+	// 2. Fallback to /share/ncps/db/schema (Docker default)
+	// 3. Fallback to db/schema (relative path, only works from repo root)
 	basePath := os.Getenv("NCPS_DB_SCHEMA_DIR")
 	if basePath == "" {
 		basePath = "/share/ncps/db/schema"
