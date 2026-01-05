@@ -22,7 +22,7 @@ type CreateNarFileParams struct {
 	Hash        string
 	Compression string
 	Query       string
-	FileSize    int64
+	FileSize    uint64
 }
 
 // CreateNarFile
@@ -221,7 +221,7 @@ WHERE (
 //	    WHERE n2.last_accessed_at < n1.last_accessed_at
 //	       OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 //	) <= $1
-func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize int64) ([]NarFile, error) {
+func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNarFiles, fileSize)
 	if err != nil {
 		return nil, err
@@ -281,7 +281,7 @@ WHERE (
 //	    WHERE ni2.last_accessed_at < ni1.last_accessed_at
 //	        OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
 //	) <= $1
-func (q *Queries) GetLeastUsedNarInfos(ctx context.Context, fileSize int64) ([]NarInfo, error) {
+func (q *Queries) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNarInfos, fileSize)
 	if err != nil {
 		return nil, err
