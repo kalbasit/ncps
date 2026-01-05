@@ -6,8 +6,6 @@ CREATE TABLE narinfos (
     updated_at TIMESTAMP,
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX idx_narinfos_id ON narinfos (id);
-CREATE UNIQUE INDEX idx_narinfos_hash ON narinfos (hash);
 CREATE INDEX idx_narinfos_last_accessed_at ON narinfos (last_accessed_at);
 CREATE TABLE IF NOT EXISTS "nars" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,8 +18,6 @@ CREATE TABLE IF NOT EXISTS "nars" (
     updated_at TIMESTAMP,
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX idx_nars_id ON nars (id);
-CREATE UNIQUE INDEX idx_nars_hash ON nars (hash);
 CREATE INDEX idx_nars_narinfo_id ON nars (narinfo_id);
 CREATE INDEX idx_nars_last_accessed_at ON nars (last_accessed_at);
 -- Dbmate schema migrations
@@ -29,4 +25,5 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20241210054814'),
   ('20241210054829'),
   ('20241213014846'),
-  ('20251230224159');
+  ('20251230224159'),
+  ('20260105025735');
