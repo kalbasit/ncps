@@ -58,6 +58,8 @@ func main() {
 		log.Fatalf("stat(%q): %s", querierPath, err)
 	}
 
+	baseDir := filepath.Dir(querierPath)
+
 	// 1. Parse the interface definition
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, querierPath, nil, parser.ParseComments)
@@ -119,8 +121,6 @@ func main() {
 		return false
 	})
 
-	baseDir := filepath.Dir(querierPath)
-
 	// 3. Generate files for each engine
 	for _, engine := range engines {
 		generateFile(baseDir, engine, methods)
@@ -165,6 +165,7 @@ func generateFile(dir string, engine Engine, methods []MethodInfo) {
 			return ""
 		},
 		"isDomainStruct": isDomainStruct,
+		"zeroValue":      zeroValue, // Add the helper to the template
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
@@ -195,6 +196,45 @@ func generateFile(dir string, engine Engine, methods []MethodInfo) {
 func isDomainStruct(t string) bool {
 	// Heuristic: Uppercase start, no dots, not standard interface/type
 	return len(t) > 0 && t[0] >= 'A' && t[0] <= 'Z' && !strings.Contains(t, ".") && t != "Querier"
+}
+
+// Helper to determine the zero value string for a given type
+func zeroValue(t string) string {
+	if isNumeric(t) {
+		return "0"
+	}
+	switch t {
+	case "bool":
+		return "false"
+	case "string":
+		return `""`
+	case "error":
+		return "nil"
+	}
+	// Pointers, slices, maps, interfaces
+	if strings.HasPrefix(t, "*") || strings.HasPrefix(t, "[]") || strings.HasPrefix(t, "map[") || t == "interface{}" {
+		return "nil"
+	}
+	// Handle special interfaces if known, otherwise assume struct
+	if t == "sql.Result" || t == "Querier" {
+		return "nil"
+	}
+	// Default to struct initializer (e.g. time.Time{}, uuid.UUID{})
+	return fmt.Sprintf("%s{}", t)
+}
+
+func isNumeric(t string) bool {
+	switch t {
+	case "int", "int8", "int16", "int32", "int64":
+		return true
+	case "uint", "uint8", "uint16", "uint32", "uint64":
+		return true
+	case "float32", "float64", "complex64", "complex128":
+		return true
+	case "byte", "rune":
+		return true
+	}
+	return false
 }
 
 // Simple AST expression to string converter
@@ -255,7 +295,6 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- $retType := firstReturnType .Returns -}}
 
 		{{/* 1. CALL ADAPTER */}}
-		{{/* FIX: Only assign 'res' if there is actually a return value */}}
 		{{- if .HasValue -}}
 			res{{if .ReturnsError}}, err{{end}} := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
 		{{- else -}}
@@ -274,8 +313,8 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 			{{- else if isDomainStruct .ReturnElem}}
 				return {{.ReturnElem}}{}, err
 			{{- else}}
-				// Primitive return (int64, etc)
-				return 0, err
+				// Primitive return (int64, string, etc)
+				return {{zeroValue $retType}}, err
 			{{- end}}
 		}
 		{{- end}}

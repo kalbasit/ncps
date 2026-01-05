@@ -35,7 +35,7 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, hash string) (NarIn
 func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -46,7 +46,7 @@ func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) 
 func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -57,7 +57,7 @@ func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int6
 func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -68,7 +68,7 @@ func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) 
 func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -79,7 +79,7 @@ func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int6
 func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -90,7 +90,7 @@ func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, er
 func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -191,7 +191,7 @@ func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo
 func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -227,7 +227,7 @@ func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarI
 func (w *postgresWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -238,7 +238,7 @@ func (w *postgresWrapper) TouchNarFile(ctx context.Context, hash string) (int64,
 func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 

@@ -35,7 +35,7 @@ func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo
 func (w *sqliteWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -46,7 +46,7 @@ func (w *sqliteWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (i
 func (w *sqliteWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -57,7 +57,7 @@ func (w *sqliteWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64,
 func (w *sqliteWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -68,7 +68,7 @@ func (w *sqliteWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (i
 func (w *sqliteWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -79,7 +79,7 @@ func (w *sqliteWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64,
 func (w *sqliteWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -90,7 +90,7 @@ func (w *sqliteWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, erro
 func (w *sqliteWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -191,7 +191,7 @@ func (w *sqliteWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, 
 func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -227,7 +227,7 @@ func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInf
 func (w *sqliteWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -238,7 +238,7 @@ func (w *sqliteWrapper) TouchNarFile(ctx context.Context, hash string) (int64, e
 func (w *sqliteWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
-		// Primitive return (int64, etc)
+		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
