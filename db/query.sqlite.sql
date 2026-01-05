@@ -129,3 +129,10 @@ WHERE (
     WHERE n2.last_accessed_at < n1.last_accessed_at
         OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 ) <= ?;
+
+-- name: GetOrphanedNarFiles :many
+-- Find files that have no relationship to any narinfo
+SELECT nf.*
+FROM nar_files nf
+LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
+WHERE ninf.narinfo_id IS NULL;

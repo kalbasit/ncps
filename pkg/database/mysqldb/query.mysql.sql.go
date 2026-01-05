@@ -469,6 +469,51 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return total_size, err
 }
 
+const getOrphanedNarFiles = `-- name: GetOrphanedNarFiles :many
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+FROM nar_files nf
+LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
+WHERE ninf.narinfo_id IS NULL
+`
+
+// Find files that have no relationship to any narinfo
+//
+//	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+//	FROM nar_files nf
+//	LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
+//	WHERE ninf.narinfo_id IS NULL
+func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
+	rows, err := q.db.QueryContext(ctx, getOrphanedNarFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NarFile
+	for rows.Next() {
+		var i NarFile
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Compression,
+			&i.FileSize,
+			&i.Query,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastAccessedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const linkNarInfoToNarFile = `-- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
     narinfo_id, nar_file_id

@@ -209,6 +209,29 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return w.adapter.GetNarTotalSize(ctx)
 }
 
+func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
+	narFiles, err := w.adapter.GetOrphanedNarFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]NarFile, len(narFiles))
+	for i, n := range narFiles {
+		result[i] = NarFile{
+			ID:             n.ID,
+			Hash:           n.Hash,
+			Compression:    n.Compression,
+			FileSize:       n.FileSize,
+			CreatedAt:      n.CreatedAt,
+			UpdatedAt:      n.UpdatedAt,
+			LastAccessedAt: n.LastAccessedAt,
+			Query:          n.Query,
+		}
+	}
+
+	return result, nil
+}
+
 func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	p := mysqldb.LinkNarInfoToNarFileParams{
 		NarInfoID: arg.NarInfoID,
