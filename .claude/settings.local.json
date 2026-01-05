@@ -29,6 +29,7 @@
       "Bash(nix fmt:*)",
       "Bash(sqlc generate:*)",
       "Bash(sqlfluff:*)",
+      "Bash(sqlite3 :memory::*)",
       "WebFetch(domain:github.com)",
       "WebSearch"
     ]
