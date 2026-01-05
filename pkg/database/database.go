@@ -39,7 +39,7 @@ type PoolConfig struct {
 // The poolCfg parameter is optional. If nil, sensible defaults are used based on
 // the database type. SQLite uses MaxOpenConns=1, PostgreSQL and MySQL use higher values.
 func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
-	dbType, err := DetectFromDataseURL(dbURL)
+	dbType, err := DetectFromDatabaseURL(dbURL)
 	if err != nil {
 		return nil, err
 	}
