@@ -1,5 +1,7 @@
 # sqlfluff has parsing issues with transaction blocks
+db/migrations/mysql/20260105030513_support_shared_nars_between_narinfos.sql
 db/migrations/sqlite/20251230224159_add-cascade-to-nars-fk.sql
+db/migrations/sqlite/20260105030513_support_shared_nars_between_narinfos.sql
 
 # exclude sqlc query files
 db/query.*.sql
