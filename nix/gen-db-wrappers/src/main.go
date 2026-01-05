@@ -93,14 +93,12 @@ func main() {
 					} else {
 						m.HasValue = true
 						// Capture element type for both Slices and Singles
-						// e.g. "[]NarFile" -> "NarFile", "int64" -> "int64"
 						m.ReturnElem = strings.TrimPrefix(typeStr, "[]")
 					}
 				}
 			}
 
-			// Detect if it's a Create method returning a struct (for MySQL)
-			// Only trigger if returning a Domain Struct (not int64/ExecResult)
+			// Detect if it's a Create method returning a Domain struct (for MySQL)
 			if strings.HasPrefix(m.Name, "Create") && isDomainStruct(m.ReturnElem) {
 				m.IsCreate = true
 			}
@@ -169,7 +167,7 @@ func generateFile(engine Engine, methods []MethodInfo) {
 	// Format code
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
-		log.Println(buf.String()) // print raw on error for debugging
+		log.Println(buf.String())
 		log.Fatalf("formatting code: %v", err)
 	}
 
@@ -244,8 +242,12 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- $retType := firstReturnType .Returns -}}
 
 		{{/* 1. CALL ADAPTER */}}
-		{{if .HasValue}}res{{else}}_{{end}}
-		{{- if .ReturnsError}}, err{{end}} := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
+		{{/* FIX: Only assign 'res' if there is actually a return value */}}
+		{{- if .HasValue -}}
+			res{{if .ReturnsError}}, err{{end}} := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
+		{{- else -}}
+			err := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
+		{{- end -}}
 
 		{{/* 2. HANDLE ERROR */}}
 		{{- if .ReturnsError}}
