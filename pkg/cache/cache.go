@@ -70,6 +70,9 @@ var (
 
 	//nolint:gochecknoglobals
 	narInfoServedCount metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	totalSizeMetric metric.Int64ObservableGauge
 )
 
 //nolint:gochecknoinits
@@ -92,6 +95,15 @@ func init() {
 		"ncps_narinfo_served_total",
 		metric.WithDescription("Counts the number of NAR info files served."),
 		metric.WithUnit("{file}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	totalSizeMetric, err = meter.Int64ObservableGauge(
+		"ncps_store_total_size_bytes",
+		metric.WithDescription("The total size of all NAR files in the store."),
+		metric.WithUnit("By"),
 	)
 	if err != nil {
 		panic(err)
@@ -229,6 +241,11 @@ func New(
 		return c, fmt.Errorf("error setting up the secret key: %w", err)
 	}
 
+	// Configure metric callbacks
+	if err := c.setupMetricCallbacks(); err != nil {
+		return c, fmt.Errorf("error registering metric callback: %w", err)
+	}
+
 	c.healthChecker = healthcheck.New()
 
 	// Set up health change notifications for dynamic management
@@ -242,6 +259,24 @@ func New(
 	go c.processHealthChanges(ctx, healthChangeCh)
 
 	return c, nil
+}
+
+func (c *Cache) setupMetricCallbacks() error {
+	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		size, err := c.db.GetNarTotalSize(ctx)
+		if err != nil {
+			// Log error but don't fail the scrape entirely
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to get total nar size for metrics")
+
+			return nil
+		}
+
+		o.ObserveInt64(totalSizeMetric, size)
+
+		return nil
+	}, totalSizeMetric)
+
+	return err
 }
 
 // SetTempDir sets the temporary directory.
