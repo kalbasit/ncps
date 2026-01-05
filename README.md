@@ -8,6 +8,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/kalbasit/ncps)](https://goreportcard.com/report/github.com/kalbasit/ncps)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/kalbasit)
 
 ## What is ncps?
 
@@ -65,7 +66,7 @@ Your cache will be available at `http://localhost:8501`. See the [Quick Start Gu
 ## Installation Methods
 
 | Method | Best For | Documentation |
-|--------|----------|---------------|
+| ------------------ | ------------------------------------- | ----------------------------------------------------------- |
 | **Docker** | Quick setup, single-instance | [Docker Guide](docs/installation/docker.md) |
 | **Docker Compose** | Automated setup with dependencies | [Docker Compose Guide](docs/installation/docker-compose.md) |
 | **Kubernetes** | Production, manual K8s deployment | [Kubernetes Guide](docs/installation/kubernetes.md) |
@@ -78,6 +79,12 @@ Your cache will be available at `http://localhost:8501`. See the [Quick Start Gu
 - **High Availability**: Multiple instances with S3 storage, PostgreSQL/MySQL, and Redis for zero-downtime operation
 
 See the [Deployment Guide](docs/deployment/) for detailed setup instructions.
+
+## Support the Project
+
+If you find `ncps` useful, please consider supporting its development! Sponsoring helps maintain the project, fund new features, and ensure long-term sustainability.
+
+[![Sponsor this project](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/kalbasit)
 
 ## Contributing
 
@@ -95,4 +102,4 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ______________________________________________________________________
 
-[Report Bug](https://github.com/kalbasit/ncps/issues) • [Request Feature](https://github.com/kalbasit/ncps/issues) • [Discussions](https://github.com/kalbasit/ncps/discussions)
+[Report Bug](https://github.com/kalbasit/ncps/issues) • [Request Feature](https://github.com/kalbasit/ncps/issues) • [Discussions](https://github.com/kalbasit/ncps/discussions) • [Sponsor](https://github.com/sponsors/kalbasit)
