@@ -49,7 +49,7 @@ SELECT
 FROM nars;
 
 -- Update the sequence to match the max id
-SELECT SETVAL('nar_files_id_seq', (SELECT MAX(id) FROM nar_files));
+SELECT SETVAL('nar_files_id_seq', COALESCE((SELECT MAX(id) FROM nar_files), 0) + 1, false);
 
 -- Step 4: Populate join table with existing relationships
 INSERT INTO narinfo_nar_files (narinfo_id, nar_file_id)
@@ -109,7 +109,7 @@ FROM nar_files nf
 INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id;
 
 -- Update the sequence to match the max id
-SELECT SETVAL('nars_id_seq', (SELECT MAX(id) FROM nars));
+SELECT SETVAL('nars_id_seq', COALESCE((SELECT MAX(id) FROM nars), 0) + 1, false);
 
 -- Drop new tables
 DROP INDEX IF EXISTS idx_narinfo_nar_files_narinfo_id;
