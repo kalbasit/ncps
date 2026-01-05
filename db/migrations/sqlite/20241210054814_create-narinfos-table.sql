@@ -9,7 +9,5 @@ CREATE TABLE narinfos (
 CREATE INDEX idx_narinfos_last_accessed_at ON narinfos (last_accessed_at);
 
 -- migrate:down
-DROP INDEX idx_narinfos_id;
-DROP INDEX idx_narinfos_hash;
 DROP INDEX idx_narinfos_last_accessed_at;
 DROP TABLE narinfos;
