@@ -1,3 +1,4 @@
+//go:generate gen-db-wrappers
 package database
 
 import (
