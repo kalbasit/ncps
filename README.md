@@ -84,9 +84,7 @@ See the [Deployment Guide](docs/deployment/) for detailed setup instructions.
 
 If you find `ncps` useful, please consider supporting its development! Sponsoring helps maintain the project, fund new features, and ensure long-term sustainability.
 
-<a href="https://github.com/sponsors/kalbasit">
-  <img src="https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86" alt="Sponsor this project" />
-</a>
+[![Sponsor this project](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/kalbasit)
 
 ## Contributing
 
