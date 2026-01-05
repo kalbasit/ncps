@@ -185,7 +185,7 @@ func generateFile(dir string, engine Engine, methods []MethodInfo) {
 	}
 
 	filename := fmt.Sprintf("wrapper_%s.go", engine.Name)
-	if err := os.WriteFile(filepath.Join(dir, filename), formatted, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, filename), formatted, 0o644); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Generated %s\n", filename)
