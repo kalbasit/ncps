@@ -4,7 +4,7 @@
 
 -- Step 1: Create new nar_files table without the narinfo_id foreign key
 CREATE TABLE nar_files (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     hash TEXT NOT NULL UNIQUE,
     compression TEXT NOT NULL DEFAULT '',
     file_size BIGINT NOT NULL,
@@ -68,7 +68,7 @@ DROP TABLE nars;
 -- migrate:down
 -- Recreate the old nars table structure
 CREATE TABLE nars (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     narinfo_id BIGINT NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
     hash TEXT NOT NULL UNIQUE,
     compression TEXT NOT NULL DEFAULT '',
