@@ -196,7 +196,7 @@ func isDomainStruct(t string) bool {
 	// Heuristic: Uppercase start, no dots, not standard interface/type
 	return len(t) > 0 && t[0] >= 'A' && t[0] <= 'Z' && !strings.Contains(t, ".") && t != "Querier"
 }
-		panic(fmt.Sprintf("unhandled expression type: %T", t))
+
 // Simple AST expression to string converter
 func exprToString(expr ast.Expr) string {
 	switch t := expr.(type) {
