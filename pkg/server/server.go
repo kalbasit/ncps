@@ -50,6 +50,9 @@ Priority: 10`
 //nolint:gochecknoglobals
 var tracer trace.Tracer
 
+//nolint:gochecknoglobals
+var prometheusGatherer promclient.Gatherer
+
 //nolint:gochecknoinits
 func init() {
 	tracer = otel.Tracer(otelPackageName)
@@ -62,10 +65,10 @@ type Server struct {
 
 	deletePermitted bool
 	putPermitted    bool
-
-	// prometheus metrics config
-	prometheusGatherer promclient.Gatherer
 }
+
+// SetPrometheusGatherer configures the server with a Prometheus gatherer for /metrics endpoint.
+func SetPrometheusGatherer(gatherer promclient.Gatherer) { prometheusGatherer = gatherer }
 
 // New returns a new server.
 func New(cache *cache.Cache) *Server {
@@ -81,13 +84,6 @@ func (s *Server) SetDeletePermitted(dp bool) { s.deletePermitted = dp }
 
 // SetPutPermitted configures the server to either allow or deny access to PUT.
 func (s *Server) SetPutPermitted(pp bool) { s.putPermitted = pp }
-
-// SetPrometheusGatherer configures the server with a Prometheus gatherer for /metrics endpoint.
-func (s *Server) SetPrometheusGatherer(gatherer promclient.Gatherer) {
-	s.prometheusGatherer = gatherer
-	// Recreate router to add metrics endpoint
-	s.createRouter()
-}
 
 // ServeHTTP implements http.Handler and turns the Server type into a handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
@@ -149,8 +145,8 @@ func (s *Server) createRouter() {
 	s.router.Delete(routeNar, s.deleteNar)
 
 	// Add Prometheus metrics endpoint if gatherer is configured
-	if s.prometheusGatherer != nil {
-		s.router.Get("/metrics", promhttp.HandlerFor(s.prometheusGatherer, promhttp.HandlerOpts{}).ServeHTTP)
+	if prometheusGatherer != nil {
+		s.router.Get("/metrics", promhttp.HandlerFor(prometheusGatherer, promhttp.HandlerOpts{}).ServeHTTP)
 	}
 }
 

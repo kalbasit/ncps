@@ -10,12 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"github.com/sysbot/go-netrc"
 	"github.com/urfave/cli/v3"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
@@ -68,11 +70,89 @@ func parseNetrcFile(netrcPath string) (*netrc.Netrc, error) {
 }
 
 func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Command {
+	var (
+		otelResource       *resource.Resource
+		otelShutdown       func(context.Context) error
+		prometheusShutdown func(context.Context) error
+	)
+
 	return &cli.Command{
 		Name:    "serve",
 		Aliases: []string{"s"},
 		Usage:   "serve the nix binary cache over http",
 		Action:  serveAction(),
+		After: func(ctx context.Context, _ *cli.Command) error {
+			var wg sync.WaitGroup
+
+			if prometheusShutdown != nil {
+				wg.Add(1)
+
+				go func() {
+					defer wg.Done()
+
+					if err := prometheusShutdown(ctx); err != nil {
+						zerolog.Ctx(ctx).
+							Error().
+							Err(err).
+							Msg("error shutting down Prometheus metrics")
+					}
+				}()
+			}
+
+			if otelShutdown != nil {
+				wg.Add(1)
+
+				go func() {
+					defer wg.Done()
+
+					if err := otelShutdown(ctx); err != nil {
+						zerolog.Ctx(ctx).
+							Error().
+							Err(err).
+							Msg("error shutting down OpenTelemetry")
+					}
+				}()
+			}
+
+			wg.Wait()
+
+			return nil
+		},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			var err error
+
+			otelResource, err = newResource(ctx, cmd)
+			if err != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error creating a new telemetry resource")
+
+				return ctx, err
+			}
+
+			otelShutdown, err = setupOTelSDK(ctx, cmd, otelResource)
+			if err != nil {
+				return ctx, err
+			}
+
+			if cmd.Root().Bool("prometheus-enabled") {
+				gatherer, shutdown, err := prometheus.SetupPrometheusMetrics(otelResource)
+				if err != nil {
+					return ctx, fmt.Errorf("error setting up Prometheus metrics: %w", err)
+				}
+
+				prometheusShutdown = shutdown
+
+				server.SetPrometheusGatherer(gatherer)
+
+				zerolog.Ctx(ctx).
+					Info().
+					Msg("Prometheus metrics enabled at /metrics")
+			}
+
+			return ctx, nil
+		},
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "cache-allow-delete-verb",
@@ -384,31 +464,6 @@ func serveAction() cli.ActionFunc {
 		srv := server.New(cache)
 		srv.SetDeletePermitted(cmd.Bool("cache-allow-delete-verb"))
 		srv.SetPutPermitted(cmd.Bool("cache-allow-put-verb"))
-
-		// Setup Prometheus metrics if enabled
-		var prometheusShutdown func(context.Context) error
-
-		if cmd.Root().Bool("prometheus-enabled") {
-			gatherer, shutdown, err := prometheus.SetupPrometheusMetrics(ctx, cmd.Root().Name, Version)
-			if err != nil {
-				return fmt.Errorf("error setting up Prometheus metrics: %w", err)
-			}
-
-			prometheusShutdown = shutdown
-
-			srv.SetPrometheusGatherer(gatherer)
-
-			logger.Info().Msg("Prometheus metrics enabled at /metrics")
-		}
-
-		// Cleanup prometheus if needed
-		defer func() {
-			if prometheusShutdown != nil {
-				if err := prometheusShutdown(ctx); err != nil {
-					logger.Error().Err(err).Msg("error shutting down Prometheus metrics")
-				}
-			}
-		}()
 
 		server := &http.Server{
 			BaseContext:       func(net.Listener) context.Context { return ctx },

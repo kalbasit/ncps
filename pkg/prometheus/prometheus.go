@@ -4,26 +4,16 @@ import (
 	"context"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/resource"
 
 	promclient "github.com/prometheus/client_golang/prometheus"
 	prometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-
-	"github.com/kalbasit/ncps/pkg/telemetry"
 )
 
 // SetupPrometheusMetrics configures OpenTelemetry to export metrics in Prometheus format only
 // without any console output or other telemetry.
-func SetupPrometheusMetrics(
-	ctx context.Context,
-	serviceName, serviceVersion string,
-) (promclient.Gatherer, func(context.Context) error, error) {
-	// Create resource with service information using shared telemetry function
-	res, err := telemetry.NewResource(ctx, serviceName, serviceVersion)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func SetupPrometheusMetrics(res *resource.Resource) (promclient.Gatherer, func(context.Context) error, error) {
 	// Create a custom Prometheus registry
 	registry := promclient.NewRegistry()
 
