@@ -11,7 +11,7 @@ sql:
         package: "sqlitedb"
         out: "pkg/database/sqlitedb"
         overrides:
-          - column: nars.file_size
+          - column: nar_files.file_size
             go_type: uint64
         rename:
           narinfo_id: NarInfoID
@@ -26,7 +26,7 @@ sql:
         package: "postgresdb"
         out: "pkg/database/postgresdb"
         overrides:
-          - column: nars.file_size
+          - column: nar_files.file_size
             go_type: uint64
         rename:
           narinfo_id: NarInfoID
@@ -41,7 +41,7 @@ sql:
         package: "mysqldb"
         out: "pkg/database/mysqldb"
         overrides:
-          - column: nars.file_size
+          - column: nar_files.file_size
             go_type: uint64
         rename:
           narinfo_id: NarInfoID
