@@ -493,6 +493,44 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return total_size, err
 }
 
+const getOrphanedNarInfoHashes = `-- name: GetOrphanedNarInfoHashes :many
+SELECT hash FROM narinfos
+WHERE id NOT IN (
+  SELECT DISTINCT narinfo_id
+  FROM narinfo_nar_files
+)
+`
+
+// GetOrphanedNarInfoHashes
+//
+//	SELECT hash FROM narinfos
+//	WHERE id NOT IN (
+//	  SELECT DISTINCT narinfo_id
+//	  FROM narinfo_nar_files
+//	)
+func (q *Queries) GetOrphanedNarInfoHashes(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getOrphanedNarInfoHashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		items = append(items, hash)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const linkNarInfoToNarFile = `-- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
     narinfo_id, nar_file_id

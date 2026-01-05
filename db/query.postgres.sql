@@ -129,3 +129,10 @@ WHERE (
     WHERE n2.last_accessed_at < n1.last_accessed_at
        OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 ) <= $1;
+
+-- name: GetOrphanedNarInfoHashes :many
+SELECT hash FROM narinfos
+WHERE id NOT IN (
+  SELECT DISTINCT narinfo_id
+  FROM narinfo_nar_files
+);
