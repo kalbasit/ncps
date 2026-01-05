@@ -1,0 +1,8 @@
+# sqlfluff has parsing issues with transaction blocks
+db/migrations/sqlite/20251230224159_add-cascade-to-nars-fk.sql
+
+# exclude sqlc query files
+db/query.*.sql
+
+# exclude schema file
+db/schema.sql
