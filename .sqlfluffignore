@@ -2,6 +2,5 @@
 db/migrations/sqlite/20251230224159_add-cascade-to-nars-fk.sql
 
 # exclude sqlc query files
-db/query.sql
 db/query.*.sql
 db/schema.sql
