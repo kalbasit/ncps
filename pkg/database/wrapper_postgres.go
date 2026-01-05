@@ -211,10 +211,6 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return w.adapter.GetNarTotalSize(ctx)
 }
 
-func (w *postgresWrapper) GetOrphanedNarInfoHashes(ctx context.Context) ([]string, error) {
-	return w.adapter.GetOrphanedNarInfoHashes(ctx)
-}
-
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	p := postgresdb.LinkNarInfoToNarFileParams{
 		NarInfoID: int32(arg.NarInfoID), //nolint:gosec

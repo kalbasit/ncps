@@ -2029,13 +2029,32 @@ func (c *Cache) deleteLRURecordsFromDB(
 
 	log.Info().Int("count_nar_files", len(narFiles)).Msg("found this many nar files to remove")
 
-	// Collect nar URLs for storage deletion
+	// Collect nar URLs and find all narinfos that reference these nar_files
+	narInfoHashesSet := make(map[string]bool)
 	narURLsToRemove := make([]nar.URL, 0, len(narFiles))
+
 	for _, narFile := range narFiles {
+		// Collect the nar URL for storage deletion
 		narURLsToRemove = append(narURLsToRemove, nar.URL{
 			Hash:        narFile.Hash,
 			Compression: nar.CompressionTypeFromString(narFile.Compression),
 		})
+
+		// Query all narinfos that reference this nar_file
+		// We need to delete these narinfos from the narinfo store
+		narInfoHashes, err := qtx.GetNarInfoHashesByNarFileID(ctx, narFile.ID)
+		if err != nil {
+			log.Error().
+				Err(err).
+				Int64("nar_file_id", narFile.ID).
+				Msg("error querying narinfos for nar_file")
+
+			return nil, nil, err
+		}
+
+		for _, narInfoHash := range narInfoHashes {
+			narInfoHashesSet[narInfoHash] = true
+		}
 	}
 
 	// Delete all nar_files (this cascade-deletes join table entries)
@@ -2052,25 +2071,20 @@ func (c *Cache) deleteLRURecordsFromDB(
 		}
 	}
 
-	// Now that nar_files are deleted, find which narinfos are orphaned.
-	// This requires a new `GetOrphanedNarInfoHashes` query.
-	narInfoHashesToRemove, err := qtx.GetOrphanedNarInfoHashes(ctx)
+	// Delete orphaned narinfos (ones no longer referenced by any nar_file)
+	orphanedCount, err := qtx.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting orphaned narinfo hashes")
+		log.Error().Err(err).Msg("error deleting orphaned narinfos")
 
 		return nil, nil, err
 	}
 
-	if len(narInfoHashesToRemove) > 0 {
-		// Delete the orphaned narinfos from the database.
-		orphanedCount, err := qtx.DeleteOrphanedNarInfos(ctx)
-		if err != nil {
-			log.Error().Err(err).Msg("error deleting orphaned narinfos")
+	log.Info().Int64("count_orphaned_narinfos", orphanedCount).Msg("deleted orphaned narinfos")
 
-			return nil, nil, err
-		}
-
-		log.Info().Int64("count_orphaned_narinfos", orphanedCount).Msg("deleted orphaned narinfos")
+	// Convert set to slice
+	narInfoHashesToRemove := make([]string, 0, len(narInfoHashesSet))
+	for hash := range narInfoHashesSet {
+		narInfoHashesToRemove = append(narInfoHashesToRemove, hash)
 	}
 
 	return narInfoHashesToRemove, narURLsToRemove, nil

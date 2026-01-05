@@ -211,10 +211,6 @@ func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return w.adapter.GetNarTotalSize(ctx)
 }
 
-func (w *sqliteWrapper) GetOrphanedNarInfoHashes(ctx context.Context) ([]string, error) {
-	return w.adapter.GetOrphanedNarInfoHashes(ctx)
-}
-
 func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	p := sqlitedb.LinkNarInfoToNarFileParams{
 		NarInfoID: arg.NarInfoID,

@@ -135,14 +135,6 @@ type Querier interface {
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size
 	//  FROM nar_files
 	GetNarTotalSize(ctx context.Context) (int64, error)
-	//GetOrphanedNarInfoHashes
-	//
-	//  SELECT hash FROM narinfos
-	//  WHERE id NOT IN (
-	//    SELECT DISTINCT narinfo_id
-	//    FROM narinfo_nar_files
-	//  )
-	GetOrphanedNarInfoHashes(ctx context.Context) ([]string, error)
 	//LinkNarInfoToNarFile
 	//
 	//  INSERT INTO narinfo_nar_files (

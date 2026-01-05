@@ -209,10 +209,6 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return w.adapter.GetNarTotalSize(ctx)
 }
 
-func (w *mysqlWrapper) GetOrphanedNarInfoHashes(ctx context.Context) ([]string, error) {
-	return w.adapter.GetOrphanedNarInfoHashes(ctx)
-}
-
 func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	p := mysqldb.LinkNarInfoToNarFileParams{
 		NarInfoID: arg.NarInfoID,

@@ -17,6 +17,7 @@ type Querier interface {
 	DeleteOrphanedNarFiles(ctx context.Context) (int64, error)
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error)
+	GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error)
 	GetNarFileByHash(ctx context.Context, hash string) (NarFile, error)
 	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error)
@@ -24,13 +25,9 @@ type Querier interface {
 	GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error)
 	GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
 	GetNarTotalSize(ctx context.Context) (int64, error)
-	GetOrphanedNarInfoHashes(ctx context.Context) ([]string, error)
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
 	TouchNarFile(ctx context.Context, hash string) (int64, error)
 	TouchNarInfo(ctx context.Context, hash string) (int64, error)
 	WithTx(tx *sql.Tx) Querier
 	DB() *sql.DB
-
-	// TODO: Remove this one
-	GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error)
 }
