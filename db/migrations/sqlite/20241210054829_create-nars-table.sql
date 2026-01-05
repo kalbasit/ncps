@@ -10,8 +10,6 @@ CREATE TABLE nars (
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX idx_nars_id ON nars (id);
-CREATE UNIQUE INDEX idx_nars_hash ON nars (hash);
 CREATE INDEX idx_nars_narinfo_id ON nars (narinfo_id);
 CREATE INDEX idx_nars_last_accessed_at ON nars (last_accessed_at);
 
