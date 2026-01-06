@@ -78,8 +78,7 @@ func TestGetConfigByKey(t *testing.T) {
 		conf2, err := db.GetConfigByKey(context.Background(), key)
 		require.NoError(t, err)
 
-		assert.Equal(t, conf1.Key, conf2.Key)
-		assert.Equal(t, conf1.Value, conf2.Value)
+		assert.Equal(t, conf1, conf2)
 	})
 }
 
