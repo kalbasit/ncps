@@ -1,3 +1,8 @@
+-- name: GetConfigByID :one
+SELECT *
+FROM config
+WHERE id = ?;
+
 -- name: GetConfigByKey :one
 SELECT *
 FROM config

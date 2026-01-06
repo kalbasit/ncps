@@ -12,6 +12,16 @@ type postgresWrapper struct {
 	adapter *postgresdb.Adapter
 }
 
+func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
+	res, err := w.adapter.CreateConfig(ctx, postgresdb.CreateConfigParams(arg))
+	if err != nil {
+		return Config{}, err
+	}
+
+	// Convert Single Domain Struct
+	return Config(res), nil
+}
+
 func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
 	res, err := w.adapter.CreateNarFile(ctx, postgresdb.CreateNarFileParams(arg))
 	if err != nil {
@@ -98,6 +108,26 @@ func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, er
 	return res, nil
 }
 
+func (w *postgresWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
+	res, err := w.adapter.GetConfigByID(ctx, id)
+	if err != nil {
+		return Config{}, err
+	}
+
+	// Convert Single Domain Struct
+	return Config(res), nil
+}
+
+func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Config, error) {
+	res, err := w.adapter.GetConfigByKey(ctx, key)
+	if err != nil {
+		return Config{}, err
+	}
+
+	// Convert Single Domain Struct
+	return Config(res), nil
+}
+
 func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {
@@ -158,16 +188,6 @@ func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID i
 	return NarFile(res), nil
 }
 
-func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
-	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
 func (w *postgresWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	res, err := w.adapter.GetNarInfoByHash(ctx, hash)
 	if err != nil {
@@ -186,6 +206,16 @@ func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo
 
 	// Convert Single Domain Struct
 	return NarInfo(res), nil
+}
+
+func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
+	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
 }
 
 func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {

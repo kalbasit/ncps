@@ -233,6 +233,30 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 	return result.RowsAffected()
 }
 
+const getConfigByID = `-- name: GetConfigByID :one
+SELECT id, "key", value, created_at, updated_at
+FROM config
+WHERE id = ?
+`
+
+// GetConfigByID
+//
+//	SELECT id, "key", value, created_at, updated_at
+//	FROM config
+//	WHERE id = ?
+func (q *Queries) GetConfigByID(ctx context.Context, id int64) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getConfigByID, id)
+	var i Config
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getConfigByKey = `-- name: GetConfigByKey :one
 SELECT id, "key", value, created_at, updated_at
 FROM config

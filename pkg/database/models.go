@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+type CreateConfigParams struct {
+	Key   string
+	Value string
+}
+
+type Config struct {
+	ID        int64
+	Key       string
+	Value     string
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
 // NarFile represents a cached NAR file.
 type NarFile struct {
 	ID             int64

@@ -72,6 +72,12 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
+	//GetConfigByID
+	//
+	//  SELECT id, "key", value, created_at, updated_at
+	//  FROM config
+	//  WHERE id = ?
+	GetConfigByID(ctx context.Context, id int64) (Config, error)
 	//GetConfigByKey
 	//
 	//  SELECT id, "key", value, created_at, updated_at

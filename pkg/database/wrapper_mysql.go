@@ -12,6 +12,22 @@ type mysqlWrapper struct {
 	adapter *mysqldb.Adapter
 }
 
+func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
+	// MySQL does not support RETURNING for INSERTs.
+	// We insert, get LastInsertId, and then fetch the object.
+	res, err := w.adapter.CreateConfig(ctx, mysqldb.CreateConfigParams(arg))
+	if err != nil {
+		return Config{}, err
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Config{}, err
+	}
+
+	return w.GetConfigByID(ctx, id)
+}
+
 func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
 	// MySQL does not support RETURNING for INSERTs.
 	// We insert, get LastInsertId, and then fetch the object.
@@ -110,6 +126,26 @@ func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error
 	return res, nil
 }
 
+func (w *mysqlWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
+	res, err := w.adapter.GetConfigByID(ctx, id)
+	if err != nil {
+		return Config{}, err
+	}
+
+	// Convert Single Domain Struct
+	return Config(res), nil
+}
+
+func (w *mysqlWrapper) GetConfigByKey(ctx context.Context, key string) (Config, error) {
+	res, err := w.adapter.GetConfigByKey(ctx, key)
+	if err != nil {
+		return Config{}, err
+	}
+
+	// Convert Single Domain Struct
+	return Config(res), nil
+}
+
 func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {
@@ -170,16 +206,6 @@ func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int6
 	return NarFile(res), nil
 }
 
-func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
-	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
 func (w *mysqlWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	res, err := w.adapter.GetNarInfoByHash(ctx, hash)
 	if err != nil {
@@ -198,6 +224,16 @@ func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, e
 
 	// Convert Single Domain Struct
 	return NarInfo(res), nil
+}
+
+func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
+	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
 }
 
 func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {

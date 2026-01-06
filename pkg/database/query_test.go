@@ -41,6 +41,23 @@ func setupDatabase(t *testing.T) (database.Querier, func()) {
 	return db, cleanup
 }
 
+func TestGetConfigByKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("key not existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.GetConfigByKey(context.Background(), key)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
+	})
+}
+
 func TestGetNarInfoByHash(t *testing.T) {
 	t.Parallel()
 
