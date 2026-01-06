@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -19,7 +18,6 @@ import (
 	"github.com/sysbot/go-netrc"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
@@ -72,100 +70,16 @@ func parseNetrcFile(netrcPath string) (*netrc.Netrc, error) {
 	return n, nil
 }
 
-func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Command {
-	var (
-		otelResource       *resource.Resource
-		otelShutdown       func(context.Context) error
-		prometheusShutdown func(context.Context) error
-	)
-
+func serveCommand(
+	userDirs userDirectories,
+	flagSources flagSourcesFn,
+	registerShutdown registerShutdownFn,
+) *cli.Command {
 	return &cli.Command{
 		Name:    "serve",
 		Aliases: []string{"s"},
 		Usage:   "serve the nix binary cache over http",
-		Action:  serveAction(),
-		After: func(ctx context.Context, _ *cli.Command) error {
-			var wg sync.WaitGroup
-
-			if prometheusShutdown != nil {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
-
-					if err := prometheusShutdown(ctx); err != nil {
-						zerolog.Ctx(ctx).
-							Error().
-							Err(err).
-							Msg("error shutting down Prometheus metrics")
-					}
-				}()
-			}
-
-			if otelShutdown != nil {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
-
-					if err := otelShutdown(ctx); err != nil {
-						zerolog.Ctx(ctx).
-							Error().
-							Err(err).
-							Msg("error shutting down OpenTelemetry")
-					}
-				}()
-			}
-
-			wg.Wait()
-
-			return nil
-		},
-		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			var err error
-
-			extraResourceAttrs, err := serveDetectExtraResourceAttrs(cmd)
-			if err != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error detecting extra resource attributes")
-
-				return ctx, err
-			}
-
-			otelResource, err = telemetry.NewResource(ctx, cmd.Root().Name, Version, extraResourceAttrs...)
-			if err != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error creating a new telemetry resource")
-
-				return ctx, err
-			}
-
-			otelShutdown, err = setupOTelSDK(ctx, cmd, otelResource)
-			if err != nil {
-				return ctx, err
-			}
-
-			if cmd.Root().Bool("prometheus-enabled") {
-				gatherer, shutdown, err := prometheus.SetupPrometheusMetrics(otelResource)
-				if err != nil {
-					return ctx, fmt.Errorf("error setting up Prometheus metrics: %w", err)
-				}
-
-				prometheusShutdown = shutdown
-
-				server.SetPrometheusGatherer(gatherer)
-
-				zerolog.Ctx(ctx).
-					Info().
-					Msg("Prometheus metrics enabled at /metrics")
-			}
-
-			return ctx, nil
-		},
+		Action:  serveAction(registerShutdown),
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:    "cache-allow-delete-verb",
@@ -434,7 +348,7 @@ func serveCommand(userDirs userDirectories, flagSources flagSourcesFn) *cli.Comm
 	}
 }
 
-func serveAction() cli.ActionFunc {
+func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
 		logger := zerolog.Ctx(ctx).With().Str("cmd", "serve").Logger()
 
@@ -458,6 +372,48 @@ func serveAction() cli.ActionFunc {
 		g.Go(func() error {
 			return autoMaxProcs(ctx, 30*time.Second, logger)
 		})
+
+		extraResourceAttrs, err := serveDetectExtraResourceAttrs(cmd)
+		if err != nil {
+			logger.
+				Error().
+				Err(err).
+				Msg("error detecting extra resource attributes")
+
+			return err
+		}
+
+		otelResource, err := telemetry.NewResource(ctx, cmd.Root().Name, Version, extraResourceAttrs...)
+		if err != nil {
+			logger.
+				Error().
+				Err(err).
+				Msg("error creating a new telemetry resource")
+
+			return err
+		}
+
+		otelShutdown, err := setupOTelSDK(ctx, cmd, otelResource)
+		if err != nil {
+			return err
+		}
+
+		registerShutdown("open telemetry", otelShutdown)
+
+		if cmd.Root().Bool("prometheus-enabled") {
+			gatherer, shutdown, err := prometheus.SetupPrometheusMetrics(otelResource)
+			if err != nil {
+				return fmt.Errorf("error setting up Prometheus metrics: %w", err)
+			}
+
+			registerShutdown("prometheus", shutdown)
+
+			server.SetPrometheusGatherer(gatherer)
+
+			logger.
+				Info().
+				Msg("Prometheus metrics enabled at /metrics")
+		}
 
 		netrcData, err := parseNetrcFile(cmd.String("netrc-file"))
 		if err != nil {

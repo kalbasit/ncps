@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -28,13 +29,20 @@ var Version = "dev"
 
 type flagSourcesFn func(configFileKey, envVar string) cli.ValueSourceChain
 
+type registerShutdownFn func(name string, sfn shutdownFn)
+
 type userDirectories struct {
 	configDir string
 	homeDir   string
 }
 
+type shutdownFn func(context.Context) error
+
 func New() (*cli.Command, error) {
-	var configPath string
+	var (
+		configPath  string
+		shutdownFns = make(map[string]shutdownFn)
+	)
 
 	flagSources := func(configFileKey, envVar string) cli.ValueSourceChain {
 		return cli.NewValueSourceChain(
@@ -45,6 +53,8 @@ func New() (*cli.Command, error) {
 		)
 	}
 
+	registerShutdown := func(name string, sfn shutdownFn) { shutdownFns[name] = sfn }
+
 	userDirs, err := getUserDirs()
 	if err != nil {
 		return nil, err
@@ -54,6 +64,31 @@ func New() (*cli.Command, error) {
 		Name:    "ncps",
 		Usage:   "Nix Binary Cache Proxy Service",
 		Version: Version,
+		After: func(ctx context.Context, _ *cli.Command) error {
+			var wg sync.WaitGroup
+
+			for name, sfn := range shutdownFns {
+				if sfn != nil {
+					wg.Add(1)
+
+					go func() {
+						defer wg.Done()
+
+						if err := sfn(ctx); err != nil {
+							zerolog.Ctx(ctx).
+								Error().
+								Err(err).
+								Str("shutdown name", name).
+								Msg("error calling the shutting down function")
+						}
+					}()
+				}
+			}
+
+			wg.Wait()
+
+			return nil
+		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			var err error
 
@@ -65,11 +100,6 @@ func New() (*cli.Command, error) {
 			return ctx, nil
 		},
 		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:    "otel-enabled",
-				Usage:   "Enable Open-Telemetry logs, metrics and tracing.",
-				Sources: flagSources("opentelemetry.enabled", "OTEL_ENABLED"),
-			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set the log level",
@@ -80,6 +110,11 @@ func New() (*cli.Command, error) {
 
 					return err
 				},
+			},
+			&cli.BoolFlag{
+				Name:    "otel-enabled",
+				Usage:   "Enable Open-Telemetry logs, metrics and tracing.",
+				Sources: flagSources("opentelemetry.enabled", "OTEL_ENABLED"),
 			},
 			&cli.StringFlag{
 				Name: "otel-grpc-url",
@@ -106,7 +141,7 @@ func New() (*cli.Command, error) {
 				Sources: flagSources("prometheus.enabled", "PROMETHEUS_ENABLED"),
 			},
 		},
-		Commands: []*cli.Command{serveCommand(userDirs, flagSources)},
+		Commands: []*cli.Command{serveCommand(userDirs, flagSources, registerShutdown)},
 	}
 
 	return c, nil
