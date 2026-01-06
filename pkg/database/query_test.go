@@ -827,3 +827,66 @@ func TestGetLeastAccessedNars(t *testing.T) {
 		assert.Equal(t, lastEntry.NarHash, nms[0].Hash)
 	}
 }
+
+func TestSetConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("key not existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		err = db.SetConfig(context.Background(), database.SetConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		conf, err := db.GetConfigByKey(context.Background(), key)
+		require.NoError(t, err)
+
+		assert.Equal(t, key, conf.Key)
+		assert.Equal(t, value, conf.Value)
+	})
+
+	t.Run("key existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		err = db.SetConfig(context.Background(), database.SetConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		value2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		err = db.SetConfig(context.Background(), database.SetConfigParams{
+			Key:   key,
+			Value: value2,
+		})
+		require.NoError(t, err)
+
+		conf, err := db.GetConfigByKey(context.Background(), key)
+		require.NoError(t, err)
+
+		assert.Equal(t, key, conf.Key)
+		assert.Equal(t, value2, conf.Value)
+	})
+}
