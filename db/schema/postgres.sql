@@ -278,13 +278,6 @@ CREATE INDEX idx_narinfo_nar_files_nar_file_id ON public.narinfo_nar_files USING
 
 
 --
--- Name: idx_narinfo_nar_files_narinfo_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_narinfo_nar_files_narinfo_id ON public.narinfo_nar_files USING btree (narinfo_id);
-
-
---
 -- Name: idx_narinfos_last_accessed_at; Type: INDEX; Schema: public; Owner: -
 --
 

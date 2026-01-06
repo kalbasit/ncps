@@ -64,7 +64,6 @@ CREATE TABLE `narinfo_nar_files` (
   `narinfo_id` bigint(20) NOT NULL,
   `nar_file_id` bigint(20) NOT NULL,
   PRIMARY KEY (`narinfo_id`,`nar_file_id`),
-  KEY `idx_narinfo_nar_files_narinfo_id` (`narinfo_id`),
   KEY `idx_narinfo_nar_files_nar_file_id` (`nar_file_id`),
   CONSTRAINT `fk_narinfo_nar_files_nar_file` FOREIGN KEY (`nar_file_id`) REFERENCES `nar_files` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_narinfo_nar_files_narinfo` FOREIGN KEY (`narinfo_id`) REFERENCES `narinfos` (`id`) ON DELETE CASCADE
