@@ -36,12 +36,6 @@ func NewResource(
 		// Add Custom attributes.
 		resource.WithAttributes(attrs...),
 
-		// Discover and provide command-line information.
-		resource.WithProcessCommandArgs(),
-
-		// Discover and provide runtime information.
-		resource.WithProcessRuntimeVersion(),
-
 		// Discover and provide attributes from OTEL_RESOURCE_ATTRIBUTES and
 		// OTEL_SERVICE_NAME environment variables.
 		resource.WithFromEnv(),
