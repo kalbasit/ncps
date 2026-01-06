@@ -22,6 +22,7 @@ import (
 
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 
+	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -425,9 +426,33 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := createCache(ctx, cmd, ucs)
+		db, err := createDatabaseQuerier(cmd)
+		if err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error creating database querier")
+
+			return err
+		}
+
+		cache, err := createCache(ctx, cmd, db, ucs)
 		if err != nil {
 			return err
+		}
+
+		if cmd.Bool("analytics-reporting-enabled") {
+			analyticsShutdown, err := analytics.Start(ctx, db, otelResource)
+			if err != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error creating a new analytics reporter")
+
+				return err
+			}
+
+			registerShutdown("analytics", analyticsShutdown)
 		}
 
 		srv := server.New(cache)
@@ -687,11 +712,7 @@ func createS3Storage(
 	return s3Store, s3Store, s3Store, nil
 }
 
-func createCache(
-	ctx context.Context,
-	cmd *cli.Command,
-	ucs []*upstream.Cache,
-) (*cache.Cache, error) {
+func createDatabaseQuerier(cmd *cli.Command) (database.Querier, error) {
 	dbURL := cmd.String("cache-database-url")
 
 	// Build pool configuration from flags
@@ -712,6 +733,15 @@ func createCache(
 		return nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
 	}
 
+	return db, nil
+}
+
+func createCache(
+	ctx context.Context,
+	cmd *cli.Command,
+	db database.Querier,
+	ucs []*upstream.Cache,
+) (*cache.Cache, error) {
 	configStore, narInfoStore, narStore, err := getStorageBackend(ctx, cmd)
 	if err != nil {
 		return nil, err
