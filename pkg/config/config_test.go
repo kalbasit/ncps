@@ -69,3 +69,46 @@ func TestGetClusterUUID(t *testing.T) {
 		assert.Equal(t, conf1.Value, conf2)
 	})
 }
+
+func TestSetClusterUUID(t *testing.T) {
+	t.Parallel()
+
+	t.Run("config not existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		c := config.New(db)
+
+		err := c.SetClusterUUID(context.Background(), "abc-123")
+		require.NoError(t, err)
+
+		conf, err := db.GetConfigByKey(context.Background(), config.KeyClusterUUID)
+		require.NoError(t, err)
+
+		assert.Equal(t, config.KeyClusterUUID, conf.Key)
+		assert.Equal(t, "abc-123", conf.Value)
+	})
+
+	t.Run("key existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		c := config.New(db)
+
+		err := c.SetClusterUUID(context.Background(), "abc-123")
+		require.NoError(t, err)
+
+		err = c.SetClusterUUID(context.Background(), "def-456")
+		require.NoError(t, err)
+
+		conf, err := db.GetConfigByKey(context.Background(), config.KeyClusterUUID)
+		require.NoError(t, err)
+
+		assert.Equal(t, config.KeyClusterUUID, conf.Key)
+		assert.Equal(t, "def-456", conf.Value)
+	})
+}

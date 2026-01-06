@@ -36,14 +36,9 @@ func (c *Config) GetClusterUUID(ctx context.Context) (string, error) {
 	return cu.Value, nil
 }
 
-// func (c *Config) SetClusterUUID(ctx context.Context, cu string) (error) {
-// 	cu, err := c.db.GetConfigByKey(ctx, KeyClusterUUID)
-// 	if err != nil {
-// 		if errors.Is(err, sql.ErrNoRows) {
-// 			return "", ErrNoClusterUUID
-// 		}
-// 		return "", errors.Join(err, ErrNoClusterUUID)
-// 	}
-//
-// 	return cu.Value, nil
-// }
+func (c *Config) SetClusterUUID(ctx context.Context, cu string) error {
+	return c.db.SetConfig(ctx, database.SetConfigParams{
+		Key:   KeyClusterUUID,
+		Value: cu,
+	})
+}
