@@ -27,7 +27,7 @@ CREATE TABLE `config` (
   `key` varchar(255) NOT NULL,
   `value` text NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_config_key` (`key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -46,7 +46,7 @@ CREATE TABLE `nar_files` (
   `file_size` bigint(20) unsigned NOT NULL,
   `query` text NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL,
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_nar_files_hash` (`hash`),
@@ -80,7 +80,7 @@ CREATE TABLE `narinfos` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `hash` varchar(255) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL,
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_narinfos_hash` (`hash`),

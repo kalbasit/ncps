@@ -5,7 +5,7 @@ CREATE TABLE config (
     `key` VARCHAR(255) NOT NULL,
     `value` TEXT NOT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
     UNIQUE KEY `idx_config_key` (`key`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
@@ -14,7 +14,7 @@ CREATE TABLE narinfos (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     hash VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY idx_narinfos_hash (hash),
     KEY idx_narinfos_last_accessed_at (last_accessed_at)
@@ -28,7 +28,7 @@ CREATE TABLE nar_files (
     file_size BIGINT UNSIGNED NOT NULL,
     query TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT NULL,
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY idx_nar_files_hash (hash),
     KEY idx_nar_files_last_accessed_at (last_accessed_at)
