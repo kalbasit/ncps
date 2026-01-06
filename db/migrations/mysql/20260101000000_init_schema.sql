@@ -29,7 +29,6 @@ CREATE TABLE narinfo_nar_files (
     narinfo_id BIGINT NOT NULL,
     nar_file_id BIGINT NOT NULL,
     PRIMARY KEY (narinfo_id, nar_file_id),
-    KEY idx_narinfo_nar_files_narinfo_id (narinfo_id),
     KEY idx_narinfo_nar_files_nar_file_id (nar_file_id),
     CONSTRAINT fk_narinfo_nar_files_narinfo FOREIGN KEY (narinfo_id) REFERENCES narinfos (id) ON DELETE CASCADE,
     CONSTRAINT fk_narinfo_nar_files_nar_file FOREIGN KEY (nar_file_id) REFERENCES nar_files (id) ON DELETE CASCADE

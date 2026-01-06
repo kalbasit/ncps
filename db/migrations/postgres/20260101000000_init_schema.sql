@@ -28,7 +28,6 @@ CREATE TABLE narinfo_nar_files (
     nar_file_id BIGINT NOT NULL REFERENCES nar_files (id) ON DELETE CASCADE,
     PRIMARY KEY (narinfo_id, nar_file_id)
 );
-CREATE INDEX idx_narinfo_nar_files_narinfo_id ON narinfo_nar_files (narinfo_id);
 CREATE INDEX idx_narinfo_nar_files_nar_file_id ON narinfo_nar_files (nar_file_id);
 
 -- migrate:down
