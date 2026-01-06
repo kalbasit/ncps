@@ -83,7 +83,7 @@ fi
 # Check $PG_TEST_USER connectivity, database create/drop and table operations
 # ---------------------------------------------------
 
-echo -n "Test Connection Test... "
+echo -n "Test USER Connection Test... "
 if psql -U "$PG_TEST_USER" -d "$PG_TEST_DB" -c "SELECT 1" > /dev/null 2>&1; then
   echo "✅ Success"
 else
@@ -91,7 +91,7 @@ else
   exit 1
 fi
 
-echo -n "Test User Create Logic... "
+echo -n "Test Database Create Logic... "
 if psql -U "$PG_TEST_USER" -d "$PG_TEST_DB" -c "SELECT create_test_db('test-123');" > /dev/null 2>&1; then
     echo "✅ Success"
 else
@@ -99,7 +99,15 @@ else
     exit 1
 fi
 
-echo -n "Test USER Table Operations... "
+echo -n "Test Database Connection Test... "
+if psql -U "$PG_TEST_USER" -d test-123 -c "SELECT 1" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Test User Table Operations... "
 if psql -U "$PG_TEST_USER" -d test-123 -c "
   CREATE TABLE IF NOT EXISTS test_table (
     id SERIAL PRIMARY KEY,
@@ -113,7 +121,7 @@ else
   exit 1
 fi
 
-echo -n "Test USER Query Test... "
+echo -n "Test User Query Test... "
 if [ "$(psql -U "$PG_TEST_USER" -d test-123 -t -c "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null | xargs)" = "Test data" ]; then
   echo "✅ Success"
   echo "   Content verified: ✅"
@@ -132,7 +140,7 @@ else
   exit 1
 fi
 
-echo -n "Test User Drop Logic... "
+echo -n "Test Database Drop Logic... "
 if psql -U "$PG_TEST_USER" -d "$PG_TEST_DB" -c "SELECT drop_test_db('test-123');" > /dev/null 2>&1; then
     echo "✅ Success"
 else

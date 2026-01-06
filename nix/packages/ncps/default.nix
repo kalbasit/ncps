@@ -14,327 +14,39 @@
           tag = builtins.getEnv "RELEASE_VERSION";
 
           version = if tag != "" then tag else rev;
-
-          # Start MinIO before running tests to enable S3 integration tests
-          minioPreCheck = ''
-            echo "🚀 Starting MinIO for S3 integration tests..."
-
-            # Create temporary directories for MinIO data and config
-            export MINIO_DATA_DIR=$(mktemp -d)
-            export HOME=$(mktemp -d)
-
-            # Generate random free ports using python
-            # We bind to port 0, get the assigned port, and close the socket immediately.
-            # In a Nix sandbox, the race condition risk (port being stolen between check and use) is negligible.
-            export MINIO_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-            export CONSOLE_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-
-            # Export the environment variables required by the init script and the tests
-            export MINIO_ENDPOINT="http://127.0.0.1:$MINIO_PORT";
-            export MINIO_CONSOLE="http://127.0.0.1:$CONSOLE_PORT";
-            export MINIO_REGION="us-east-1";
-            export MINIO_ROOT_PASSWORD="password";
-            export MINIO_ROOT_USER="admin";
-            export MINIO_TEST_S3_ACCESS_KEY_ID="test-access-key";
-            export MINIO_TEST_S3_BUCKET="test-bucket";
-            export MINIO_TEST_S3_SECRET_ACCESS_KEY="test-secret-key";
-
-            # Start MinIO server in background
-            minio server "$MINIO_DATA_DIR" \
-              --address "127.0.0.1:$MINIO_PORT" \
-              --console-address "127.0.0.1:$CONSOLE_PORT" &
-            export MINIO_PID=$!
-
-            # Wait for MinIO to be ready
-            echo "⏳ Waiting for MinIO to be ready..."
-            for i in {1..30}; do
-              if curl -sf "$MINIO_ENDPOINT/minio/health/live"; then
-                echo "✅ MinIO is ready"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "❌ MinIO failed to start"
-                kill $MINIO_PID 2>/dev/null || true
-                exit 1
-              fi
-              sleep 1
-            done
-
-            # Call the init script
-            bash $src/nix/process-compose/init-minio.sh
-
-            # Export S3 test environment variables
-            export NCPS_TEST_S3_BUCKET="$MINIO_TEST_S3_BUCKET"
-            export NCPS_TEST_S3_ENDPOINT="$MINIO_ENDPOINT"
-            export NCPS_TEST_S3_REGION="$MINIO_REGION"
-            export NCPS_TEST_S3_ACCESS_KEY_ID="$MINIO_TEST_S3_ACCESS_KEY_ID"
-            export NCPS_TEST_S3_SECRET_ACCESS_KEY="$MINIO_TEST_S3_SECRET_ACCESS_KEY"
-
-            echo "✅ MinIO configured for S3 integration tests"
-          '';
-
-          # Stop MinIO after tests complete
-          minioPostCheck = ''
-            echo "🛑 Stopping MinIO..."
-            if [ -n "$MINIO_PID" ]; then
-              kill $MINIO_PID 2>/dev/null || true
-              # Wait for MinIO to fully shut down
-              for i in {1..30}; do
-                if ! kill -0 $MINIO_PID 2>/dev/null; then
-                  break
-                fi
-                sleep 0.5
-              done
-
-              # If it's still alive, force kill it
-              if kill -0 $MINIO_PID 2>/dev/null; then
-                echo "MinIO did not shut down gracefully, force killing..."
-                kill -9 $MINIO_PID 2>/dev/null || true
-                sleep 1 # Give a moment for the OS to clean up after SIGKILL
-              fi
-            fi
-            sleep 1
-            rm -rf "$MINIO_DATA_DIR" 2>/dev/null || true
-            echo "✅ MinIO stopped and cleaned up"
-          '';
-
-          # Start PostgreSQL before running tests to enable PostgreSQL integration tests
-          postgresPreCheck = ''
-            echo "🚀 Starting PostgreSQL for integration tests..."
-
-            # Create temporary directory for PostgreSQL data
-            export POSTGRES_DATA_DIR=$(mktemp -d)
-
-            # Generate random free port using python
-            export POSTGRES_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-
-            # Export PostgreSQL test environment variable
-            export NCPS_DEV_POSTGRES_URL="postgresql://dev-user:dev-password@127.0.0.1:$POSTGRES_PORT/dev-db?sslmode=disable"
-
-            # Initialize PostgreSQL database
-            initdb -D "$POSTGRES_DATA_DIR" -U postgres --no-locale --encoding=UTF8
-
-            # Configure PostgreSQL
-            echo "host all all 127.0.0.1/32 trust" >> "$POSTGRES_DATA_DIR/pg_hba.conf"
-            echo "listen_addresses = '127.0.0.1'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
-            echo "port = $POSTGRES_PORT" >> "$POSTGRES_DATA_DIR/postgresql.conf"
-            echo "unix_socket_directories = '$POSTGRES_DATA_DIR'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
-
-            # Start PostgreSQL server in background
-            postgres -D "$POSTGRES_DATA_DIR" -k "$POSTGRES_DATA_DIR" &
-            export POSTGRES_PID=$!
-
-            # Wait for PostgreSQL to be ready
-            echo "⏳ Waiting for PostgreSQL to be ready..."
-            for i in {1..30}; do
-              if pg_isready -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres >/dev/null 2>&1; then
-                echo "✅ PostgreSQL is ready"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "❌ PostgreSQL failed to start"
-                kill $POSTGRES_PID 2>/dev/null || true
-                exit 1
-              fi
-              sleep 1
-            done
-
-            # Create test user and database
-            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE USER \"dev-user\" WITH PASSWORD 'dev-password';"
-            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE DATABASE \"dev-db\" OWNER \"dev-user\";"
-
-            echo "✅ PostgreSQL configured for integration tests"
-          '';
-
-          # Stop PostgreSQL after tests complete
-          postgresPostCheck = ''
-            echo "🛑 Stopping PostgreSQL..."
-            if [ -n "$POSTGRES_PID" ]; then
-              kill $POSTGRES_PID 2>/dev/null || true
-              # Wait for PostgreSQL to fully shut down
-              for i in {1..30}; do
-                if ! kill -0 $POSTGRES_PID 2>/dev/null; then
-                  break
-                fi
-                sleep 0.5
-              done
-
-              # If it's still alive, force kill it
-              if kill -0 $POSTGRES_PID 2>/dev/null; then
-                echo "PostgreSQL did not shut down gracefully, force killing..."
-                kill -9 $POSTGRES_PID 2>/dev/null || true
-                sleep 1 # Give a moment for the OS to clean up after SIGKILL
-              fi
-            fi
-            sleep 1
-            rm -rf "$POSTGRES_DATA_DIR" 2>/dev/null || true
-            echo "✅ PostgreSQL stopped and cleaned up"
-          '';
-
-          # Start MySQL/MariaDB before running tests to enable MySQL integration tests
-          mysqlPreCheck = ''
-            echo "🚀 Starting MariaDB for integration tests..."
-
-            # Create temporary directory for MariaDB data
-            export MYSQL_DATA_DIR=$(mktemp -d)
-
-            # Generate random free port using python
-            export MYSQL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-
-            # Export MySQL test environment variable
-            export NCPS_DEV_MYSQL_URL="mysql://dev-user:dev-password@127.0.0.1:$MYSQL_PORT/dev-db"
-
-            # Initialize MariaDB database
-            mariadb-install-db --datadir="$MYSQL_DATA_DIR" --auth-root-authentication-method=normal
-
-            # Start MariaDB server in background
-            mariadbd \
-              --datadir="$MYSQL_DATA_DIR" \
-              --bind-address=127.0.0.1 \
-              --port="$MYSQL_PORT" \
-              --socket="$MYSQL_DATA_DIR/mysql.sock" \
-              --skip-networking=0 &
-            export MYSQL_PID=$!
-
-            # Wait for MariaDB to be ready
-            echo "⏳ Waiting for MariaDB to be ready..."
-            for i in {1..30}; do
-              if mariadb-admin -h 127.0.0.1 -P "$MYSQL_PORT" --protocol=TCP ping >/dev/null 2>&1; then
-                echo "✅ MariaDB is ready"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "❌ MariaDB failed to start"
-                kill $MYSQL_PID 2>/dev/null || true
-                exit 1
-              fi
-              sleep 1
-            done
-
-            # Create test user and database
-            mariadb -h 127.0.0.1 -P "$MYSQL_PORT" --protocol=TCP -u root <<EOF
-            CREATE DATABASE IF NOT EXISTS \`dev-db\`;
-            CREATE USER IF NOT EXISTS 'dev-user'@'localhost' IDENTIFIED BY 'dev-password';
-            CREATE USER IF NOT EXISTS 'dev-user'@'127.0.0.1' IDENTIFIED BY 'dev-password';
-            GRANT ALL PRIVILEGES ON \`dev-db\`.* TO 'dev-user'@'localhost';
-            GRANT ALL PRIVILEGES ON \`dev-db\`.* TO 'dev-user'@'127.0.0.1';
-            FLUSH PRIVILEGES;
-            EOF
-
-            echo "✅ MariaDB configured for integration tests"
-          '';
-
-          # Stop MySQL/MariaDB after tests complete
-          mysqlPostCheck = ''
-            echo "🛑 Stopping MariaDB..."
-            if [ -n "$MYSQL_PID" ]; then
-              kill $MYSQL_PID 2>/dev/null || true
-              # Wait for MariaDB to fully shut down
-              for i in {1..30}; do
-                if ! kill -0 $MYSQL_PID 2>/dev/null; then
-                  break
-                fi
-                sleep 0.5
-              done
-
-              # If it's still alive, force kill it
-              if kill -0 $MYSQL_PID 2>/dev/null; then
-                echo "MariaDB did not shut down gracefully, force killing..."
-                kill -9 $MYSQL_PID 2>/dev/null || true
-                sleep 1 # Give a moment for the OS to clean up after SIGKILL
-              fi
-            fi
-            # Give it an extra moment to release file handles
-            sleep 1
-            rm -rf "$MYSQL_DATA_DIR" 2>/dev/null || true
-            echo "✅ MariaDB stopped and cleaned up"
-          '';
-
-          # Start Redis before running tests to enable Redis integration tests
-          redisPreCheck = ''
-            echo "🚀 Starting Redis for integration tests..."
-
-            # Create temporary directory for Redis data
-            export REDIS_DATA_DIR=$(mktemp -d)
-
-            # Generate random free port using python
-            export REDIS_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-
-            # Export Redis test environment variables
-            export NCPS_ENABLE_REDIS_TESTS=1
-            export NCPS_TEST_REDIS_ADDRS="127.0.0.1:$REDIS_PORT"
-
-            # Start Redis server in background
-            redis-server \
-              --dir "$REDIS_DATA_DIR" \
-              --bind 127.0.0.1 \
-              --port "$REDIS_PORT" \
-              --save "" \
-              --appendonly no &
-            export REDIS_PID=$!
-
-            # Wait for Redis to be ready
-            echo "⏳ Waiting for Redis to be ready..."
-            for i in {1..30}; do
-              if redis-cli -h 127.0.0.1 -p "$REDIS_PORT" ping >/dev/null 2>&1; then
-                echo "✅ Redis is ready on port $REDIS_PORT"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "❌ Redis failed to start"
-                kill $REDIS_PID 2>/dev/null || true
-                exit 1
-              fi
-              sleep 1
-            done
-
-            echo "✅ Redis configured for integration tests"
-          '';
-
-          # Stop Redis after tests complete
-          redisPostCheck = ''
-            echo "🛑 Stopping Redis..."
-            if [ -n "$REDIS_PID" ]; then
-              kill $REDIS_PID 2>/dev/null || true
-              # Wait for Redis to fully shut down
-              for i in {1..30}; do
-                if ! kill -0 $REDIS_PID 2>/dev/null; then
-                  break
-                fi
-                sleep 0.5
-              done
-
-              # If it's still alive, force kill it
-              if kill -0 $REDIS_PID 2>/dev/null; then
-                echo "Redis did not shut down gracefully, force killing..."
-                kill -9 $REDIS_PID 2>/dev/null || true
-                sleep 1 # Give a moment for the OS to clean up after SIGKILL
-              fi
-            fi
-            sleep 1
-            rm -rf "$REDIS_DATA_DIR" 2>/dev/null || true
-            echo "✅ Redis stopped and cleaned up"
-          '';
         in
         pkgs.buildGoModule {
           name = "ncps-${shortRev}";
 
           src = lib.fileset.toSource {
             fileset = lib.fileset.unions [
-              ../../cmd
-              ../../db/migrations
-              ../../db/schema
-              ../../go.mod
-              ../../go.sum
-              ../../main.go
-              ../../pkg
-              ../../testdata
-              ../../testhelper
-              ../../nix/process-compose/init-minio.sh
-              ../../nix/process-compose/init-mysql.sh
-              ../../nix/process-compose/init-postgres.sh
+              ./post-check-minio.sh
+              ./pre-check-minio.sh
+
+              ./post-check-mysql.sh
+              ./pre-check-mysql.sh
+
+              ./post-check-postgres.sh
+              ./pre-check-postgres.sh
+
+              ./post-check-redis.sh
+              ./pre-check-redis.sh
+
+              ../../../cmd
+              ../../../db/migrations
+              ../../../db/schema
+              ../../../go.mod
+              ../../../go.sum
+              ../../../main.go
+              ../../../nix/process-compose/init-minio.sh
+              ../../../nix/process-compose/init-mysql.sh
+              ../../../nix/process-compose/init-postgres.sh
+              ../../../nix/process-compose/postgres-dblink-create-drop-functions.sql
+              ../../../pkg
+              ../../../testdata
+              ../../../testhelper
             ];
-            root = ../..;
+            root = ../../..;
           };
 
           vendorHash = "sha256-lDit10q6fVjoeHPMNoDgU/HdngXCcvrUg0mDhPt6lcg=";
@@ -362,17 +74,17 @@
           preCheck = ''
             # Set up cleanup trap to ensure background processes are killed even if tests fail
             cleanup() {
-              # ''${redisPostCheck}
-              # ''${mysqlPostCheck}
-              # ''${postgresPostCheck}
-              ${minioPostCheck}
+              source $src/nix/packages/ncps/post-check-minio.sh
+              source $src/nix/packages/ncps/post-check-mysql.sh
+              source $src/nix/packages/ncps/post-check-postgres.sh
+              source $src/nix/packages/ncps/post-check-redis.sh
             }
             trap cleanup EXIT
 
-            ${minioPreCheck}
-            # ''${postgresPreCheck}
-            # ''${mysqlPreCheck}
-            # ''${redisPreCheck}
+            source $src/nix/packages/ncps/pre-check-minio.sh
+            source $src/nix/packages/ncps/pre-check-mysql.sh
+            source $src/nix/packages/ncps/pre-check-postgres.sh
+            source $src/nix/packages/ncps/pre-check-redis.sh
           '';
 
           postInstall = ''
