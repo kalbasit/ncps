@@ -48,7 +48,7 @@ func Start(
 	// PeriodicReader defaults to 60s, which is good for low-volume reporting.
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(1*time.Minute))),
+sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(1*time.Hour))),
 	)
 
 	// Register the Metrics
