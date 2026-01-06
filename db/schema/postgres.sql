@@ -24,9 +24,10 @@ CREATE TABLE public.nar_files (
     compression text DEFAULT ''::text NOT NULL,
     file_size bigint NOT NULL,
     query text DEFAULT ''::text NOT NULL,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp without time zone,
-    last_accessed_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone,
+    last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nar_files_file_size_check CHECK ((file_size >= 0))
 );
 
 
@@ -66,9 +67,9 @@ CREATE TABLE public.narinfo_nar_files (
 CREATE TABLE public.narinfos (
     id bigint NOT NULL,
     hash text NOT NULL,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp without time zone,
-    last_accessed_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone,
+    last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -222,13 +223,6 @@ CREATE INDEX idx_narinfo_nar_files_nar_file_id ON public.narinfo_nar_files USING
 
 
 --
--- Name: idx_narinfo_nar_files_narinfo_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_narinfo_nar_files_narinfo_id ON public.narinfo_nar_files USING btree (narinfo_id);
-
-
---
 -- Name: idx_narinfos_last_accessed_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -262,8 +256,4 @@ ALTER TABLE ONLY public.narinfo_nar_files
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20241210054814'),
-    ('20241210054829'),
-    ('20241213014846'),
-    ('20251230224159'),
-    ('20260105030513');
+    ('20260101000000');

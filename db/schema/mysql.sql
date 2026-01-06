@@ -24,15 +24,15 @@
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `nar_files` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `hash` text NOT NULL,
-  `compression` text NOT NULL,
+  `hash` varchar(255) NOT NULL,
+  `compression` varchar(50) NOT NULL,
   `file_size` bigint(20) unsigned NOT NULL,
   `query` text NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `idx_nar_files_hash` (`hash`(255)),
+  UNIQUE KEY `idx_nar_files_hash` (`hash`),
   KEY `idx_nar_files_last_accessed_at` (`last_accessed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -47,7 +47,6 @@ CREATE TABLE `narinfo_nar_files` (
   `narinfo_id` bigint(20) NOT NULL,
   `nar_file_id` bigint(20) NOT NULL,
   PRIMARY KEY (`narinfo_id`,`nar_file_id`),
-  KEY `idx_narinfo_nar_files_narinfo_id` (`narinfo_id`),
   KEY `idx_narinfo_nar_files_nar_file_id` (`nar_file_id`),
   CONSTRAINT `fk_narinfo_nar_files_nar_file` FOREIGN KEY (`nar_file_id`) REFERENCES `nar_files` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_narinfo_nar_files_narinfo` FOREIGN KEY (`narinfo_id`) REFERENCES `narinfos` (`id`) ON DELETE CASCADE
@@ -62,12 +61,12 @@ CREATE TABLE `narinfo_nar_files` (
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `narinfos` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `hash` text NOT NULL,
+  `hash` varchar(255) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `idx_narinfos_hash` (`hash`(255)),
+  UNIQUE KEY `idx_narinfos_hash` (`hash`),
   KEY `idx_narinfos_last_accessed_at` (`last_accessed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -118,9 +117,5 @@ CREATE TABLE `test_table` (
 
 LOCK TABLES `schema_migrations` WRITE;
 INSERT INTO `schema_migrations` (version) VALUES
-  ('20241210054814'),
-  ('20241210054829'),
-  ('20241213014846'),
-  ('20251230224200'),
-  ('20260105030513');
+  ('20260101000000');
 UNLOCK TABLES;
