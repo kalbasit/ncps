@@ -367,29 +367,7 @@ func TestDeleteNarInfo(t *testing.T) {
 func TestCreateConfig(t *testing.T) {
 	t.Parallel()
 
-	t.Run("key not existing", func(t *testing.T) {
-		t.Parallel()
-
-		db, cleanup := setupDatabase(t)
-		defer cleanup()
-
-		key1, err := helper.RandString(32, nil)
-		require.NoError(t, err)
-
-		_, err = db.CreateConfig(context.Background(), database.CreateConfigParams{
-			Key:   key1,
-			Value: key1,
-		})
-		require.NoError(t, err)
-
-		key2, err := helper.RandString(32, nil)
-		require.NoError(t, err)
-
-		_, err = db.GetConfigByKey(context.Background(), key2)
-		assert.ErrorIs(t, err, sql.ErrNoRows)
-	})
-
-	t.Run("key existing", func(t *testing.T) {
+	t.Run("successful creation", func(t *testing.T) {
 		t.Parallel()
 
 		db, cleanup := setupDatabase(t)
@@ -401,17 +379,42 @@ func TestCreateConfig(t *testing.T) {
 		value, err := helper.RandString(32, nil)
 		require.NoError(t, err)
 
-		conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
+		createdConf, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
 			Key:   key,
 			Value: value,
 		})
 		require.NoError(t, err)
 
-		conf2, err := db.GetConfigByKey(context.Background(), key)
+		fetchedConf, err := db.GetConfigByKey(context.Background(), key)
 		require.NoError(t, err)
 
-		assert.Equal(t, conf1.Key, conf2.Key)
-		assert.Equal(t, conf1.Value, conf2.Value)
+		assert.Equal(t, createdConf, fetchedConf)
+	})
+
+	t.Run("duplicate key", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateConfig(context.Background(), database.CreateConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		// Try to create again with the same key
+		_, err = db.CreateConfig(context.Background(), database.CreateConfigParams{
+			Key:   key,
+			Value: "another value",
+		})
+		assert.True(t, database.IsDuplicateKeyError(err))
 	})
 }
 
