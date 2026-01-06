@@ -100,6 +100,12 @@ func New() (*cli.Command, error) {
 			return ctx, nil
 		},
 		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:    "analytics-reporting-enabled",
+				Usage:   "Enable reporting anonymous usage statistics (DB type, Lock type, Total Size) to the project maintainers",
+				Sources: flagSources("analytics.reporting.enabled", "ANALYTICS_REPORTING_ENABLED"),
+				Value:   true,
+			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set the log level",
