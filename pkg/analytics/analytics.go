@@ -19,6 +19,9 @@ const (
 	// DefaultEndpointURL is the default address for the analytics collector.
 	DefaultEndpointURL = "https://otlp.ncps.dev"
 
+	// How often to report anonymous metricsz/.
+	interval = 1 * time.Hour
+
 	instrumentationName = "github.com/kalbasit/ncps/pkg/analytics"
 )
 
@@ -48,7 +51,7 @@ func Start(
 	// PeriodicReader defaults to 60s, which is good for low-volume reporting.
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
-sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(1*time.Hour))),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(interval))),
 	)
 
 	// Register the Metrics
