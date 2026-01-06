@@ -156,13 +156,11 @@ func openPostgreSQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 
 func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	// Convert mysql://user:pass@host:port/database to the format expected by go-sql-driver/mysql
-	// mysql://user:pass@tcp(host:port)/database?params
 	u, err := url.Parse(dbURL)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build DSN using mysql.Config for safer handling of special characters
 	cfg := mysql.NewConfig()
 
 	// 1. Set credentials and address
@@ -178,7 +176,6 @@ func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 		cfg.Addr = u.Host
 	}
 
-	// Remove leading slash from path to get database name
 	if u.Path != "" {
 		cfg.DBName = strings.TrimPrefix(u.Path, "/")
 	}
@@ -214,8 +211,6 @@ func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// MySQL can handle concurrent connections well
-	// Set reasonable defaults for connection pooling
 	applyPoolSettings(sdb, poolCfg, 25, 5)
 
 	return sdb, nil
