@@ -272,6 +272,16 @@ func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfo
 	return nil
 }
 
+func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
+	err := w.adapter.SetConfig(ctx, mysqldb.SetConfigParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
+}
+
 func (w *mysqlWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {

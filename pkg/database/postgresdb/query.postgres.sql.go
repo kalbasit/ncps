@@ -646,6 +646,41 @@ func (q *Queries) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNar
 	return err
 }
 
+const setConfig = `-- name: SetConfig :exec
+INSERT INTO config (
+    key, value
+) VALUES (
+    $1, $2
+)
+ON CONFLICT(key)
+DO UPDATE SET
+  value = EXCLUDED.value,
+  updated_at = CURRENT_TIMESTAMP
+RETURNING id, key, value, created_at, updated_at
+`
+
+type SetConfigParams struct {
+	Key   string
+	Value string
+}
+
+// SetConfig
+//
+//	INSERT INTO config (
+//	    key, value
+//	) VALUES (
+//	    $1, $2
+//	)
+//	ON CONFLICT(key)
+//	DO UPDATE SET
+//	  value = EXCLUDED.value,
+//	  updated_at = CURRENT_TIMESTAMP
+//	RETURNING id, key, value, created_at, updated_at
+func (q *Queries) SetConfig(ctx context.Context, arg SetConfigParams) error {
+	_, err := q.db.ExecContext(ctx, setConfig, arg.Key, arg.Value)
+	return err
+}
+
 const touchNarFile = `-- name: TouchNarFile :execrows
 UPDATE nar_files
 SET

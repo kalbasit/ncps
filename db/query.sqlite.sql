@@ -48,6 +48,18 @@ INSERT INTO config (
 )
 RETURNING *;
 
+-- name: SetConfig :exec
+INSERT INTO config (
+    key, value
+) VALUES (
+    ?, ?
+)
+ON CONFLICT(key)
+DO UPDATE SET
+  value = EXCLUDED.value,
+  updated_at = CURRENT_TIMESTAMP
+RETURNING *;
+
 -- name: CreateNarInfo :one
 INSERT INTO narinfos (
     hash

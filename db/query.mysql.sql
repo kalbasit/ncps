@@ -47,6 +47,16 @@ INSERT INTO config (
     ?, ?
 );
 
+-- name: SetConfig :exec
+INSERT INTO config (
+    `key`, value
+) VALUES (
+    ?, ?
+)
+ON DUPLICATE KEY UPDATE
+    value = VALUES(value),
+    updated_at = CURRENT_TIMESTAMP;
+
 -- name: CreateNarInfo :execresult
 INSERT INTO narinfos (
     hash

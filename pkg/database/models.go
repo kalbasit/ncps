@@ -52,3 +52,8 @@ type LinkNarInfoToNarFileParams struct {
 	NarInfoID int64
 	NarFileID int64
 }
+
+type SetConfigParams struct {
+	Key   string
+	Value string
+}

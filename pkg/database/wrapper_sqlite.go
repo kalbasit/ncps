@@ -254,6 +254,16 @@ func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInf
 	return nil
 }
 
+func (w *sqliteWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
+	err := w.adapter.SetConfig(ctx, sqlitedb.SetConfigParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
+}
+
 func (w *sqliteWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {

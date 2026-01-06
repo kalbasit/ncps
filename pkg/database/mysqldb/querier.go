@@ -169,6 +169,17 @@ type Querier interface {
 	//      ?, ?
 	//  )
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
+	//SetConfig
+	//
+	//  INSERT INTO config (
+	//      `key`, value
+	//  ) VALUES (
+	//      ?, ?
+	//  )
+	//  ON DUPLICATE KEY UPDATE
+	//      value = VALUES(value),
+	//      updated_at = CURRENT_TIMESTAMP
+	SetConfig(ctx context.Context, arg SetConfigParams) error
 	//TouchNarFile
 	//
 	//  UPDATE nar_files

@@ -31,6 +31,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
+	SetConfig(ctx context.Context, arg SetConfigParams) error
 	TouchNarFile(ctx context.Context, hash string) (int64, error)
 	TouchNarInfo(ctx context.Context, hash string) (int64, error)
 
