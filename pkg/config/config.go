@@ -86,7 +86,7 @@ func (c *Config) setConfig(ctx context.Context, key, value string) error {
 			Str("key", key).
 			Msg("failed to acquire write lock")
 
-		return fmt.Errorf("failed to acquire read lock: %w", err)
+		return fmt.Errorf("failed to acquire write lock: %w", err)
 	}
 
 	defer func() {
@@ -94,12 +94,12 @@ func (c *Config) setConfig(ctx context.Context, key, value string) error {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("key", key).
-				Msg("failed to release read lock")
+				Msg("failed to release write lock")
 		}
 	}()
 
 	return c.db.SetConfig(ctx, database.SetConfigParams{
-		Key:   KeyClusterUUID,
+		Key:   key,
 		Value: value,
 	})
 }
