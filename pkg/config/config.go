@@ -27,10 +27,10 @@ func (c *Config) GetClusterUUID(ctx context.Context) (string, error) {
 	cu, err := c.db.GetConfigByKey(ctx, KeyClusterUUID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", ErrNoClusterUUID
+			return "", errors.Join(err, ErrNoClusterUUID)
 		}
 
-		return "", errors.Join(err, ErrNoClusterUUID)
+		return "", err
 	}
 
 	return cu.Value, nil
