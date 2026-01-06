@@ -386,7 +386,17 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db)
+		locker, rwLocker, err := getLockers(ctx, cmd)
+		if err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error creating the lockers")
+
+			return err
+		}
+
+		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db, rwLocker)
 		if err != nil {
 			logger.
 				Error().
@@ -438,7 +448,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := createCache(ctx, cmd, db, ucs)
+		cache, err := createCache(ctx, cmd, db, locker, rwLocker, ucs)
 		if err != nil {
 			return err
 		}
@@ -742,69 +752,13 @@ func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
 	db database.Querier,
+	locker lock.Locker,
+	rwLocker lock.RWLocker,
 	ucs []*upstream.Cache,
 ) (*cache.Cache, error) {
 	configStore, narInfoStore, narStore, err := getStorageBackend(ctx, cmd)
 	if err != nil {
 		return nil, err
-	}
-
-	// Initialize distributed or local locks based on Redis configuration
-	var (
-		downloadLocker lock.Locker
-		cacheLocker    lock.RWLocker
-	)
-
-	redisAddrs := cmd.StringSlice("cache-redis-addrs")
-	// Filter out empty addresses
-	var validRedisAddrs []string
-
-	for _, addr := range redisAddrs {
-		if addr != "" {
-			validRedisAddrs = append(validRedisAddrs, addr)
-		}
-	}
-
-	if len(validRedisAddrs) > 0 {
-		// Redis configured - use distributed locks
-		redisCfg := redis.Config{
-			Addrs:     validRedisAddrs,
-			Username:  cmd.String("cache-redis-username"),
-			Password:  cmd.String("cache-redis-password"),
-			DB:        cmd.Int("cache-redis-db"),
-			UseTLS:    cmd.Bool("cache-redis-use-tls"),
-			PoolSize:  cmd.Int("cache-redis-pool-size"),
-			KeyPrefix: cmd.String("cache-lock-redis-key-prefix"),
-		}
-
-		retryCfg := redis.RetryConfig{
-			MaxAttempts:  cmd.Int("cache-lock-retry-max-attempts"),
-			InitialDelay: cmd.Duration("cache-lock-retry-initial-delay"),
-			MaxDelay:     cmd.Duration("cache-lock-retry-max-delay"),
-			Jitter:       cmd.Bool("cache-lock-retry-jitter"),
-		}
-
-		allowDegradedMode := cmd.Bool("cache-lock-allow-degraded-mode")
-
-		downloadLocker, err = redis.NewLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
-		if err != nil {
-			return nil, fmt.Errorf("error creating Redis download locker: %w", err)
-		}
-
-		cacheLocker, err = redis.NewRWLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
-		if err != nil {
-			return nil, fmt.Errorf("error creating Redis cache locker: %w", err)
-		}
-
-		zerolog.Ctx(ctx).Info().
-			Strs("addrs", redisCfg.Addrs).
-			Msg("distributed locking enabled with Redis")
-	} else {
-		// No Redis - use local locks (single-instance mode)
-		downloadLocker = local.NewLocker()
-		cacheLocker = local.NewRWLocker()
-
-		zerolog.Ctx(ctx).Info().Msg("using local locks (single-instance mode)")
 	}
 
 	c, err := cache.New(
@@ -815,8 +769,8 @@ func createCache(
 		narInfoStore,
 		narStore,
 		cmd.String("cache-secret-key-path"),
-		downloadLocker,
-		cacheLocker,
+		locker,
+		rwLocker,
 		cmd.Duration("cache-lock-download-ttl"),
 		cmd.Duration("cache-lock-lru-ttl"),
 	)
@@ -884,6 +838,7 @@ func serveDetectExtraResourceAttrs(
 	ctx context.Context,
 	cmd *cli.Command,
 	db database.Querier,
+	rwLocker lock.RWLocker,
 ) ([]attribute.KeyValue, error) {
 	var attrs []attribute.KeyValue
 
@@ -910,7 +865,7 @@ func serveDetectExtraResourceAttrs(
 	attrs = append(attrs, attribute.String("ncps.lock_type", lockType))
 
 	// 3. Set the cluster UUID
-	clusterUUID, err := getOrSetClusterUUID(ctx, db)
+	clusterUUID, err := getOrSetClusterUUID(ctx, db, rwLocker)
 	if err != nil {
 		return nil, err
 	}
@@ -920,12 +875,12 @@ func serveDetectExtraResourceAttrs(
 	return attrs, nil
 }
 
-func getOrSetClusterUUID(ctx context.Context, db database.Querier) (string, error) {
-	c := config.New(db)
+func getOrSetClusterUUID(ctx context.Context, db database.Querier, rwLocker lock.RWLocker) (string, error) {
+	c := config.New(db, rwLocker)
 
 	cu, err := c.GetClusterUUID(ctx)
 	if err != nil {
-		if errors.Is(err, config.ErrNoClusterUUID) {
+		if errors.Is(err, config.ErrConfigNotFound) {
 			return setClusterUUID(ctx, c)
 		}
 
@@ -943,4 +898,75 @@ func setClusterUUID(ctx context.Context, c *config.Config) (string, error) {
 	}
 
 	return cu, nil
+}
+
+func getLockers(
+	ctx context.Context,
+	cmd *cli.Command,
+) (
+	locker lock.Locker,
+	rwLocker lock.RWLocker,
+	err error,
+) {
+	redisAddrs := cmd.StringSlice("cache-redis-addrs")
+	// Filter out empty addresses
+	var validRedisAddrs []string
+
+	for _, addr := range redisAddrs {
+		if addr != "" {
+			validRedisAddrs = append(validRedisAddrs, addr)
+		}
+	}
+
+	if len(validRedisAddrs) == 0 {
+		// No Redis - use local locks (single-instance mode)
+		locker = local.NewLocker()
+		rwLocker = local.NewRWLocker()
+
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("using local locks (single-instance mode)")
+
+		return locker,
+			rwLocker,
+			err
+	}
+
+	// Redis configured - use distributed locks
+	redisCfg := redis.Config{
+		Addrs:     validRedisAddrs,
+		Username:  cmd.String("cache-redis-username"),
+		Password:  cmd.String("cache-redis-password"),
+		DB:        cmd.Int("cache-redis-db"),
+		UseTLS:    cmd.Bool("cache-redis-use-tls"),
+		PoolSize:  cmd.Int("cache-redis-pool-size"),
+		KeyPrefix: cmd.String("cache-lock-redis-key-prefix"),
+	}
+
+	retryCfg := redis.RetryConfig{
+		MaxAttempts:  cmd.Int("cache-lock-retry-max-attempts"),
+		InitialDelay: cmd.Duration("cache-lock-retry-initial-delay"),
+		MaxDelay:     cmd.Duration("cache-lock-retry-max-delay"),
+		Jitter:       cmd.Bool("cache-lock-retry-jitter"),
+	}
+
+	allowDegradedMode := cmd.Bool("cache-lock-allow-degraded-mode")
+
+	locker, err = redis.NewLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating Redis download locker: %w", err)
+	}
+
+	rwLocker, err = redis.NewRWLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating Redis cache locker: %w", err)
+	}
+
+	zerolog.Ctx(ctx).Info().
+		Strs("addrs", redisCfg.Addrs).
+		Msg("distributed locking enabled with Redis")
+
+	return locker,
+		rwLocker,
+		err
 }
