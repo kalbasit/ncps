@@ -44,9 +44,9 @@ func NewResource(
 		resource.WithTelemetrySDK(),
 
 		// Discover and provide process information.
-		// XXX: Do not include resource.WithProcess() because it includes
-		// resource.WithProcessCommandArgs() which includes all flags include those
-		// with sensitive information.
+		// Do not use resource.WithProcess(). It includes command-line arguments via
+		// resource.WithProcessCommandArgs(), which can leak sensitive information like
+		// credentials passed as flags. Instead, we explicitly include only safe attributes.
 		resource.WithProcessPID(),
 		resource.WithProcessExecutableName(),
 		resource.WithProcessExecutablePath(),
