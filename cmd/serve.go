@@ -13,6 +13,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"github.com/sysbot/go-netrc"
@@ -25,6 +26,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/lock"
@@ -374,7 +376,17 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return autoMaxProcs(ctx, 30*time.Second, logger)
 		})
 
-		extraResourceAttrs, err := serveDetectExtraResourceAttrs(cmd)
+		db, err := createDatabaseQuerier(cmd)
+		if err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error creating database querier")
+
+			return err
+		}
+
+		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db)
 		if err != nil {
 			logger.
 				Error().
@@ -424,16 +436,6 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		ucs, err := getUpstreamCaches(ctx, cmd, netrcData)
 		if err != nil {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
-		}
-
-		db, err := createDatabaseQuerier(cmd)
-		if err != nil {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("error creating database querier")
-
-			return err
 		}
 
 		cache, err := createCache(ctx, cmd, db, ucs)
@@ -878,7 +880,11 @@ func createCache(
 	return c, nil
 }
 
-func serveDetectExtraResourceAttrs(cmd *cli.Command) ([]attribute.KeyValue, error) {
+func serveDetectExtraResourceAttrs(
+	ctx context.Context,
+	cmd *cli.Command,
+	db database.Querier,
+) ([]attribute.KeyValue, error) {
 	var attrs []attribute.KeyValue
 
 	// 1. Identify Database Type
@@ -903,5 +909,38 @@ func serveDetectExtraResourceAttrs(cmd *cli.Command) ([]attribute.KeyValue, erro
 
 	attrs = append(attrs, attribute.String("ncps.lock_type", lockType))
 
+	// 3. Set the cluster UUID
+	clusterUUID, err := getOrSetClusterUUID(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	attrs = append(attrs, attribute.String("ncps.cluster_uuid", clusterUUID))
+
 	return attrs, nil
+}
+
+func getOrSetClusterUUID(ctx context.Context, db database.Querier) (string, error) {
+	c := config.New(db)
+
+	cu, err := c.GetClusterUUID(ctx)
+	if err != nil {
+		if errors.Is(err, config.ErrNoClusterUUID) {
+			return setClusterUUID(ctx, c)
+		}
+
+		return "", err
+	}
+
+	return cu, nil
+}
+
+func setClusterUUID(ctx context.Context, c *config.Config) (string, error) {
+	cu := uuid.New().String()
+	if err := c.SetClusterUUID(ctx, cu); err != nil {
+		return "",
+			fmt.Errorf("error setting the new cluster UUID: %w", err)
+	}
+
+	return cu, nil
 }
