@@ -57,16 +57,17 @@ func TestGetClusterUUID(t *testing.T) {
 
 		c := config.New(db)
 
-		conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
+		const expectedUUID = "abc-123"
+
+		_, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
 			Key:   config.KeyClusterUUID,
-			Value: "abc-123",
+			Value: expectedUUID,
 		})
 		require.NoError(t, err)
 
-		conf2, err := c.GetClusterUUID(context.Background())
+		actualUUID, err := c.GetClusterUUID(context.Background())
 		require.NoError(t, err)
-
-		assert.Equal(t, conf1.Value, conf2)
+		assert.Equal(t, expectedUUID, actualUUID)
 	})
 }
 
