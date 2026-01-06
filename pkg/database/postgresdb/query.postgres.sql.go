@@ -198,6 +198,30 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 	return result.RowsAffected()
 }
 
+const getConfigByKey = `-- name: GetConfigByKey :one
+SELECT id, key, value, created_at, updated_at
+FROM config
+WHERE key = $1
+`
+
+// GetConfigByKey
+//
+//	SELECT id, key, value, created_at, updated_at
+//	FROM config
+//	WHERE key = $1
+func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getConfigByKey, key)
+	var i Config
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLeastUsedNarFiles = `-- name: GetLeastUsedNarFiles :many
 SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
 FROM nar_files n1

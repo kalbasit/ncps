@@ -1,3 +1,8 @@
+-- name: GetConfigByKey :one
+SELECT *
+FROM config
+WHERE key = $1;
+
 -- name: GetNarInfoByHash :one
 SELECT *
 FROM narinfos

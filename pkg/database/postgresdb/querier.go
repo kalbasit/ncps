@@ -63,6 +63,12 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
+	//GetConfigByKey
+	//
+	//  SELECT id, key, value, created_at, updated_at
+	//  FROM config
+	//  WHERE key = $1
+	GetConfigByKey(ctx context.Context, key string) (Config, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
