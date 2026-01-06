@@ -10,6 +10,14 @@ import (
 )
 
 type Querier interface {
+	//CreateConfig
+	//
+	//  INSERT INTO config (
+	//      `key`, value
+	//  ) VALUES (
+	//      ?, ?
+	//  )
+	CreateConfig(ctx context.Context, arg CreateConfigParams) (sql.Result, error)
 	//CreateNarFile
 	//
 	//  INSERT INTO nar_files (
@@ -62,6 +70,18 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
+	//GetConfigByID
+	//
+	//  SELECT id, `key`, value, created_at, updated_at
+	//  FROM config
+	//  WHERE id = ?
+	GetConfigByID(ctx context.Context, id int64) (Config, error)
+	//GetConfigByKey
+	//
+	//  SELECT id, `key`, value, created_at, updated_at
+	//  FROM config
+	//  WHERE `key` = ?
+	GetConfigByKey(ctx context.Context, key string) (Config, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
@@ -149,6 +169,17 @@ type Querier interface {
 	//      ?, ?
 	//  )
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
+	//SetConfig
+	//
+	//  INSERT INTO config (
+	//      `key`, value
+	//  ) VALUES (
+	//      ?, ?
+	//  )
+	//  ON DUPLICATE KEY UPDATE
+	//      value = VALUES(value),
+	//      updated_at = CURRENT_TIMESTAMP
+	SetConfig(ctx context.Context, arg SetConfigParams) error
 	//TouchNarFile
 	//
 	//  UPDATE nar_files

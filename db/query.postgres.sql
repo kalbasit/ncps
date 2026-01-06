@@ -1,3 +1,13 @@
+-- name: GetConfigByID :one
+SELECT *
+FROM config
+WHERE id = $1;
+
+-- name: GetConfigByKey :one
+SELECT *
+FROM config
+WHERE key = $1;
+
 -- name: GetNarInfoByHash :one
 SELECT *
 FROM narinfos
@@ -29,6 +39,25 @@ SELECT ni.hash
 FROM narinfos ni
 INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
 WHERE nnf.nar_file_id = $1;
+
+-- name: CreateConfig :one
+INSERT INTO config (
+    key, value
+) VALUES (
+    $1, $2
+)
+RETURNING *;
+
+-- name: SetConfig :exec
+INSERT INTO config (
+    key, value
+) VALUES (
+    $1, $2
+)
+ON CONFLICT(key)
+DO UPDATE SET
+  value = EXCLUDED.value,
+  updated_at = CURRENT_TIMESTAMP;
 
 -- name: CreateNarInfo :one
 INSERT INTO narinfos (

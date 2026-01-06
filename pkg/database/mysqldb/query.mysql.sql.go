@@ -10,6 +10,30 @@ import (
 	"database/sql"
 )
 
+const createConfig = `-- name: CreateConfig :execresult
+INSERT INTO config (
+    ` + "`" + `key` + "`" + `, value
+) VALUES (
+    ?, ?
+)
+`
+
+type CreateConfigParams struct {
+	Key   string
+	Value string
+}
+
+// CreateConfig
+//
+//	INSERT INTO config (
+//	    `key`, value
+//	) VALUES (
+//	    ?, ?
+//	)
+func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createConfig, arg.Key, arg.Value)
+}
+
 const createNarFile = `-- name: CreateNarFile :execresult
 INSERT INTO nar_files (
     hash, compression, ` + "`" + `query` + "`" + `, file_size
@@ -172,6 +196,54 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const getConfigByID = `-- name: GetConfigByID :one
+SELECT id, ` + "`" + `key` + "`" + `, value, created_at, updated_at
+FROM config
+WHERE id = ?
+`
+
+// GetConfigByID
+//
+//	SELECT id, `key`, value, created_at, updated_at
+//	FROM config
+//	WHERE id = ?
+func (q *Queries) GetConfigByID(ctx context.Context, id int64) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getConfigByID, id)
+	var i Config
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getConfigByKey = `-- name: GetConfigByKey :one
+SELECT id, ` + "`" + `key` + "`" + `, value, created_at, updated_at
+FROM config
+WHERE ` + "`" + `key` + "`" + ` = ?
+`
+
+// GetConfigByKey
+//
+//	SELECT id, `key`, value, created_at, updated_at
+//	FROM config
+//	WHERE `key` = ?
+func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error) {
+	row := q.db.QueryRowContext(ctx, getConfigByKey, key)
+	var i Config
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getLeastUsedNarFiles = `-- name: GetLeastUsedNarFiles :many
@@ -536,6 +608,37 @@ type LinkNarInfoToNarFileParams struct {
 //	)
 func (q *Queries) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	_, err := q.db.ExecContext(ctx, linkNarInfoToNarFile, arg.NarInfoID, arg.NarFileID)
+	return err
+}
+
+const setConfig = `-- name: SetConfig :exec
+INSERT INTO config (
+    ` + "`" + `key` + "`" + `, value
+) VALUES (
+    ?, ?
+)
+ON DUPLICATE KEY UPDATE
+    value = VALUES(value),
+    updated_at = CURRENT_TIMESTAMP
+`
+
+type SetConfigParams struct {
+	Key   string
+	Value string
+}
+
+// SetConfig
+//
+//	INSERT INTO config (
+//	    `key`, value
+//	) VALUES (
+//	    ?, ?
+//	)
+//	ON DUPLICATE KEY UPDATE
+//	    value = VALUES(value),
+//	    updated_at = CURRENT_TIMESTAMP
+func (q *Queries) SetConfig(ctx context.Context, arg SetConfigParams) error {
+	_, err := q.db.ExecContext(ctx, setConfig, arg.Key, arg.Value)
 	return err
 }
 

@@ -15,6 +15,38 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.config (
+    id bigint NOT NULL,
+    key text NOT NULL,
+    value text NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone
+);
+
+
+--
+-- Name: config_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.config_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: config_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.config_id_seq OWNED BY public.config.id;
+
+
+--
 -- Name: nar_files; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -132,6 +164,13 @@ ALTER SEQUENCE public.test_table_id_seq OWNED BY public.test_table.id;
 
 
 --
+-- Name: config id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config ALTER COLUMN id SET DEFAULT nextval('public.config_id_seq'::regclass);
+
+
+--
 -- Name: nar_files id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -150,6 +189,22 @@ ALTER TABLE ONLY public.narinfos ALTER COLUMN id SET DEFAULT nextval('public.nar
 --
 
 ALTER TABLE ONLY public.test_table ALTER COLUMN id SET DEFAULT nextval('public.test_table_id_seq'::regclass);
+
+
+--
+-- Name: config config_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config
+    ADD CONSTRAINT config_key_key UNIQUE (key);
+
+
+--
+-- Name: config config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config
+    ADD CONSTRAINT config_pkey PRIMARY KEY (id);
 
 
 --

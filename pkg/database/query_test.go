@@ -41,6 +41,47 @@ func setupDatabase(t *testing.T) (database.Querier, func()) {
 	return db, cleanup
 }
 
+func TestGetConfigByKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("key not existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.GetConfigByKey(context.Background(), key)
+		assert.ErrorIs(t, err, sql.ErrNoRows)
+	})
+
+	t.Run("key existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		conf2, err := db.GetConfigByKey(context.Background(), key)
+		require.NoError(t, err)
+
+		assert.Equal(t, conf1, conf2)
+	})
+}
+
 func TestGetNarInfoByHash(t *testing.T) {
 	t.Parallel()
 
@@ -319,6 +360,60 @@ func TestDeleteNarInfo(t *testing.T) {
 			require.NoError(t, rows.Err())
 			assert.Empty(t, nims)
 		})
+	})
+}
+
+func TestCreateConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("successful creation", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		createdConf, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		fetchedConf, err := db.GetConfigByKey(context.Background(), key)
+		require.NoError(t, err)
+
+		assert.Equal(t, createdConf, fetchedConf)
+	})
+
+	t.Run("duplicate key", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateConfig(context.Background(), database.CreateConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		// Try to create again with the same key
+		_, err = db.CreateConfig(context.Background(), database.CreateConfigParams{
+			Key:   key,
+			Value: "another value",
+		})
+		assert.True(t, database.IsDuplicateKeyError(err))
 	})
 }
 
@@ -733,4 +828,67 @@ func TestGetLeastAccessedNars(t *testing.T) {
 	if assert.Len(t, nms, 1) {
 		assert.Equal(t, lastEntry.NarHash, nms[0].Hash)
 	}
+}
+
+func TestSetConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("key not existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		err = db.SetConfig(context.Background(), database.SetConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		conf, err := db.GetConfigByKey(context.Background(), key)
+		require.NoError(t, err)
+
+		assert.Equal(t, key, conf.Key)
+		assert.Equal(t, value, conf.Value)
+	})
+
+	t.Run("key existing", func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := setupDatabase(t)
+		defer cleanup()
+
+		key, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		value, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		err = db.SetConfig(context.Background(), database.SetConfigParams{
+			Key:   key,
+			Value: value,
+		})
+		require.NoError(t, err)
+
+		value2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		err = db.SetConfig(context.Background(), database.SetConfigParams{
+			Key:   key,
+			Value: value2,
+		})
+		require.NoError(t, err)
+
+		conf, err := db.GetConfigByKey(context.Background(), key)
+		require.NoError(t, err)
+
+		assert.Equal(t, key, conf.Key)
+		assert.Equal(t, value2, conf.Value)
+	})
 }
