@@ -44,7 +44,16 @@ func NewResource(
 		resource.WithTelemetrySDK(),
 
 		// Discover and provide process information.
-		resource.WithProcess(),
+		// XXX: Do not include resource.WithProcess() because it includes
+		// resource.WithProcessCommandArgs() which includes all flags include those
+		// with sensitive information.
+		resource.WithProcessPID(),
+		resource.WithProcessExecutableName(),
+		resource.WithProcessExecutablePath(),
+		resource.WithProcessOwner(),
+		resource.WithProcessRuntimeName(),
+		resource.WithProcessRuntimeVersion(),
+		resource.WithProcessRuntimeDescription(),
 
 		// Discover and provide OS information.
 		resource.WithOS(),
