@@ -1,7 +1,7 @@
 {
   imports = [
     ./docker.nix
-    ./ncps.nix
+    ./ncps
   ];
 
   perSystem =

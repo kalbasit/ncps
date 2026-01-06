@@ -1,40 +1,53 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-# Remove stale marker file from previous runs
-rm -f /tmp/ncps-mysql-ready
+# ---------------------------------------------------
+# SETUP: Dev User (Standard)
+# ---------------------------------------------------
+echo "Creating dev user and database..."
+mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" <<EOF
+CREATE DATABASE IF NOT EXISTS \`$MYSQL_DEV_DB\`;
+CREATE USER IF NOT EXISTS '$MYSQL_DEV_USER'@'localhost' IDENTIFIED BY '$MYSQL_DEV_PASSWORD';
+CREATE USER IF NOT EXISTS '$MYSQL_DEV_USER'@'$MYSQL_HOST' IDENTIFIED BY '$MYSQL_DEV_PASSWORD';
+GRANT ALL PRIVILEGES ON \`$MYSQL_DEV_DB\`.* TO '$MYSQL_DEV_USER'@'localhost';
+GRANT ALL PRIVILEGES ON \`$MYSQL_DEV_DB\`.* TO '$MYSQL_DEV_USER'@'$MYSQL_HOST';
+FLUSH PRIVILEGES;
+EOF
 
-echo "Creating test user and database..."
-mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u root <<EOF
-CREATE DATABASE IF NOT EXISTS \`test-db\`;
-CREATE USER IF NOT EXISTS 'test-user'@'localhost' IDENTIFIED BY 'test-password';
-CREATE USER IF NOT EXISTS 'test-user'@'127.0.0.1' IDENTIFIED BY 'test-password';
-GRANT ALL PRIVILEGES ON \`test-db\`.* TO 'test-user'@'localhost';
-GRANT ALL PRIVILEGES ON \`test-db\`.* TO 'test-user'@'127.0.0.1';
+# ---------------------------------------------------
+# SETUP: Test User (Restricted Pattern)
+# ---------------------------------------------------
+echo "Creating test user and default $MYSQL_TEST_DB..."
+mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" <<EOF
+CREATE USER IF NOT EXISTS '$MYSQL_TEST_USER'@'$MYSQL_HOST' IDENTIFIED BY '$MYSQL_TEST_PASSWORD';
+-- Pre-create the default test database for initial connection
+CREATE DATABASE IF NOT EXISTS \`$MYSQL_TEST_DB\`;
+-- Grant ALL privileges on '$MYSQL_TEST_DB' and any other 'test-*' databases
+GRANT ALL PRIVILEGES ON \`test-%\`.* TO '$MYSQL_TEST_USER'@'$MYSQL_HOST';
 FLUSH PRIVILEGES;
 EOF
 
 echo "Verifying user creation..."
-mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u root -e "SELECT user, host FROM mysql.user WHERE user='test-user';"
+mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -e "SELECT user, host FROM mysql.user WHERE user IN ('$MYSQL_DEV_USER', '$MYSQL_TEST_USER');"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"
 
-# Check A: Connection with test credentials
-echo -n "1. Connection Test... "
-if mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u test-user -ptest-password test-db -e "SELECT 1" > /dev/null 2>&1; then
+# ---------------------------------------------------
+# Check $MYSQL_DEV_USER connectivity and operations
+# ---------------------------------------------------
+
+echo -n "Dev Connection Test... "
+if mysql -h "$MYSQL_HOST" -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" "$MYSQL_DEV_DB" -e "SELECT 1" > /dev/null 2>&1; then
   echo "✅ Success"
 else
   echo "❌ Failed"
-  echo "   Attempting to connect with error output..."
-  mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u test-user -ptest-password test-db -e "SELECT 1" 2>&1 || true
   exit 1
 fi
 
-# Check B: Create test table and insert data
-echo -n "2. Table Operations... "
-if mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u test-user -ptest-password test-db <<EOF > /dev/null 2>&1
+echo -n "Dev Table Operations... "
+if mysql -h "$MYSQL_HOST" -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" "$MYSQL_DEV_DB" <<EOF > /dev/null 2>&1
 CREATE TABLE IF NOT EXISTS test_table (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   message TEXT NOT NULL
@@ -48,15 +61,66 @@ else
   exit 1
 fi
 
-# Check C: Query test data
-echo -n "3. Query Test... "
-RESULT=$(mysql -h 127.0.0.1 -P 3306 --protocol=TCP -u test-user -ptest-password test-db -N -e "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null)
-if [ "$RESULT" = "Test data" ]; then
+echo -n "Dev Query Test... "
+# Inlined execution to prevent set -e from killing the script on failure
+if [ "$(mysql -h "$MYSQL_HOST" -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" "$MYSQL_DEV_DB" -N -e "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null)" = "Test data" ]; then
   echo "✅ Success"
   echo "   Content verified: ✅"
 else
   echo "❌ Failed"
-  echo "   Expected: 'Test data', Got: '$RESULT'"
+  exit 1
+fi
+
+echo -n "   Clean up after Dev Table Operations... "
+if mysql -h "$MYSQL_HOST" -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" "$MYSQL_DEV_DB" -e "DROP TABLE IF EXISTS test_table;" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+# ---------------------------------------------------
+# Check $MYSQL_TEST_USER connectivity, database create/drop
+# ---------------------------------------------------
+
+echo -n "Test Connection Test (to $MYSQL_TEST_DB)... "
+# Now we verify we can connect directly to '$MYSQL_TEST_DB'
+if mysql -h "$MYSQL_HOST" -u "$MYSQL_TEST_USER" -p"$MYSQL_TEST_PASSWORD" "$MYSQL_TEST_DB" -e "SELECT 1" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Test User Create Logic (test-123)... "
+if mysql -h "$MYSQL_HOST" -u "$MYSQL_TEST_USER" -p"$MYSQL_TEST_PASSWORD" -e "CREATE DATABASE \`test-123\`;" > /dev/null 2>&1; then
+    echo "✅ Success"
+else
+    echo "❌ Failed (Could not create database 'test-123')"
+    exit 1
+fi
+
+echo -n "Test USER Table Operations... "
+if mysql -h "$MYSQL_HOST" -u "$MYSQL_TEST_USER" -p"$MYSQL_TEST_PASSWORD" test-123 <<EOF > /dev/null 2>&1
+CREATE TABLE IF NOT EXISTS test_table (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  message TEXT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO test_table (message) VALUES ('Test data');
+EOF
+then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Test User Drop Logic (test-123)... "
+if mysql -h "$MYSQL_HOST" -u "$MYSQL_TEST_USER" -p"$MYSQL_TEST_PASSWORD" -e "DROP DATABASE \`test-123\`;" > /dev/null 2>&1; then
+    echo "✅ Success"
+else
+    echo "❌ Failed (Could not drop database 'test-123')"
+    exit 1
 fi
 
 echo "---------------------------------------------------"
@@ -65,25 +129,12 @@ echo "╔═══════════════════════�
 echo "║           NCPS MYSQL/MARIADB CONFIGURATION                ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
-echo "🗄️  MySQL/MariaDB Database Configuration:"
+echo "🗄️  Dev User (Standard):"
+echo "  URL: mysql://$MYSQL_DEV_USER:$MYSQL_DEV_PASSWORD@$MYSQL_HOST:3306/$MYSQL_DEV_DB"
 echo ""
-echo "  Host:         127.0.0.1"
-echo "  Port:         3306"
-echo "  Database:     test-db"
-echo "  Username:     test-user"
-echo "  Password:     test-password"
-echo ""
-echo "  Root User:    root (no password - dev environment)"
-echo ""
-echo "🔗 Connection URL:"
-echo "  mysql://test-user:test-password@127.0.0.1:3306/test-db"
-echo ""
-echo "💡 Environment Variables (for testing):"
-echo "  export NCPS_TEST_MYSQL_URL=\"mysql://test-user:test-password@127.0.0.1:3306/test-db\""
+echo "🧪 Test User (Integration Tests):"
+echo "  URL: mysql://$MYSQL_TEST_USER:$MYSQL_TEST_PASSWORD@$MYSQL_HOST:3306/$MYSQL_TEST_DB"
+echo "  Capabilities: Can CREATE/DROP any database starting with 'test-'"
+echo "  Example: CREATE DATABASE \`test-foo\`;"
 echo ""
 echo "---------------------------------------------------"
-
-# Create ready marker file for process-compose health check
-touch /tmp/ncps-mysql-ready
-
-sleep infinity

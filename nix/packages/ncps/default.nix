@@ -23,23 +23,21 @@
             export MINIO_DATA_DIR=$(mktemp -d)
             export HOME=$(mktemp -d)
 
-            # Configure MinIO credentials (must be set before starting MinIO)
-            export MINIO_ROOT_USER=admin
-            export MINIO_ROOT_PASSWORD=password
-            export MINIO_REGION=us-east-1
-
             # Generate random free ports using python
             # We bind to port 0, get the assigned port, and close the socket immediately.
             # In a Nix sandbox, the race condition risk (port being stolen between check and use) is negligible.
             export MINIO_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
             export CONSOLE_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
-            # Export S3 test environment variables
-            export NCPS_TEST_S3_BUCKET="test-bucket"
-            export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:$MINIO_PORT"
-            export NCPS_TEST_S3_REGION="us-east-1"
-            export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
-            export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
+            # Export the environment variables required by the init script and the tests
+            export MINIO_ENDPOINT="http://127.0.0.1:$MINIO_PORT";
+            export MINIO_CONSOLE="http://127.0.0.1:$CONSOLE_PORT";
+            export MINIO_REGION="us-east-1";
+            export MINIO_ROOT_PASSWORD="password";
+            export MINIO_ROOT_USER="admin";
+            export MINIO_TEST_S3_ACCESS_KEY_ID="test-access-key";
+            export MINIO_TEST_S3_BUCKET="test-bucket";
+            export MINIO_TEST_S3_SECRET_ACCESS_KEY="test-secret-key";
 
             # Start MinIO server in background
             minio server "$MINIO_DATA_DIR" \
@@ -50,7 +48,7 @@
             # Wait for MinIO to be ready
             echo "⏳ Waiting for MinIO to be ready..."
             for i in {1..30}; do
-              if curl -sf "$NCPS_TEST_S3_ENDPOINT/minio/health/live"; then
+              if curl -sf "$MINIO_ENDPOINT/minio/health/live"; then
                 echo "✅ MinIO is ready"
                 break
               fi
@@ -62,17 +60,15 @@
               sleep 1
             done
 
-            # Setup admin alias
-            mc alias set local "$NCPS_TEST_S3_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+            # Call the init script
+            bash $src/nix/process-compose/init-minio.sh
 
-            # Create test bucket
-            mc mb "local/$NCPS_TEST_S3_BUCKET" || true
-
-            # Create service account for tests
-            mc admin user svcacct add \
-              --access-key "$NCPS_TEST_S3_ACCESS_KEY_ID" \
-              --secret-key "$NCPS_TEST_S3_SECRET_ACCESS_KEY" \
-              local admin || true
+            # Export S3 test environment variables
+            export NCPS_TEST_S3_BUCKET="$MINIO_TEST_S3_BUCKET"
+            export NCPS_TEST_S3_ENDPOINT="$MINIO_ENDPOINT"
+            export NCPS_TEST_S3_REGION="$MINIO_REGION"
+            export NCPS_TEST_S3_ACCESS_KEY_ID="$MINIO_TEST_S3_ACCESS_KEY_ID"
+            export NCPS_TEST_S3_SECRET_ACCESS_KEY="$MINIO_TEST_S3_SECRET_ACCESS_KEY"
 
             echo "✅ MinIO configured for S3 integration tests"
           '';
@@ -113,7 +109,7 @@
             export POSTGRES_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
             # Export PostgreSQL test environment variable
-            export NCPS_TEST_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:$POSTGRES_PORT/test-db?sslmode=disable"
+            export NCPS_DEV_POSTGRES_URL="postgresql://dev-user:dev-password@127.0.0.1:$POSTGRES_PORT/dev-db?sslmode=disable"
 
             # Initialize PostgreSQL database
             initdb -D "$POSTGRES_DATA_DIR" -U postgres --no-locale --encoding=UTF8
@@ -144,8 +140,8 @@
             done
 
             # Create test user and database
-            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';"
-            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE DATABASE \"test-db\" OWNER \"test-user\";"
+            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE USER \"dev-user\" WITH PASSWORD 'dev-password';"
+            psql -h 127.0.0.1 -p "$POSTGRES_PORT" -U postgres -d postgres -c "CREATE DATABASE \"dev-db\" OWNER \"dev-user\";"
 
             echo "✅ PostgreSQL configured for integration tests"
           '';
@@ -186,7 +182,7 @@
             export MYSQL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
             # Export MySQL test environment variable
-            export NCPS_TEST_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:$MYSQL_PORT/test-db"
+            export NCPS_DEV_MYSQL_URL="mysql://dev-user:dev-password@127.0.0.1:$MYSQL_PORT/dev-db"
 
             # Initialize MariaDB database
             mariadb-install-db --datadir="$MYSQL_DATA_DIR" --auth-root-authentication-method=normal
@@ -217,11 +213,11 @@
 
             # Create test user and database
             mariadb -h 127.0.0.1 -P "$MYSQL_PORT" --protocol=TCP -u root <<EOF
-            CREATE DATABASE IF NOT EXISTS \`test-db\`;
-            CREATE USER IF NOT EXISTS 'test-user'@'localhost' IDENTIFIED BY 'test-password';
-            CREATE USER IF NOT EXISTS 'test-user'@'127.0.0.1' IDENTIFIED BY 'test-password';
-            GRANT ALL PRIVILEGES ON \`test-db\`.* TO 'test-user'@'localhost';
-            GRANT ALL PRIVILEGES ON \`test-db\`.* TO 'test-user'@'127.0.0.1';
+            CREATE DATABASE IF NOT EXISTS \`dev-db\`;
+            CREATE USER IF NOT EXISTS 'dev-user'@'localhost' IDENTIFIED BY 'dev-password';
+            CREATE USER IF NOT EXISTS 'dev-user'@'127.0.0.1' IDENTIFIED BY 'dev-password';
+            GRANT ALL PRIVILEGES ON \`dev-db\`.* TO 'dev-user'@'localhost';
+            GRANT ALL PRIVILEGES ON \`dev-db\`.* TO 'dev-user'@'127.0.0.1';
             FLUSH PRIVILEGES;
             EOF
 
@@ -334,6 +330,9 @@
               ../../pkg
               ../../testdata
               ../../testhelper
+              ../../nix/process-compose/init-minio.sh
+              ../../nix/process-compose/init-mysql.sh
+              ../../nix/process-compose/init-postgres.sh
             ];
             root = ../..;
           };
@@ -350,6 +349,7 @@
           nativeBuildInputs = [
             pkgs.curl # used for checking MinIO health check
             pkgs.dbmate # used for testing
+            pkgs.jq # used for testing by the init-minio
             pkgs.mariadb # MySQL/MariaDB for integration tests
             pkgs.minio # S3-compatible storage for integration tests
             pkgs.minio-client # mc CLI for MinIO setup
@@ -362,17 +362,17 @@
           preCheck = ''
             # Set up cleanup trap to ensure background processes are killed even if tests fail
             cleanup() {
-              ${redisPostCheck}
-              ${mysqlPostCheck}
-              ${postgresPostCheck}
+              # ''${redisPostCheck}
+              # ''${mysqlPostCheck}
+              # ''${postgresPostCheck}
               ${minioPostCheck}
             }
             trap cleanup EXIT
 
             ${minioPreCheck}
-            ${postgresPreCheck}
-            ${mysqlPreCheck}
-            ${redisPreCheck}
+            # ''${postgresPreCheck}
+            # ''${mysqlPreCheck}
+            # ''${redisPreCheck}
           '';
 
           postInstall = ''

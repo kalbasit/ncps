@@ -31,7 +31,7 @@
                 period_seconds = 5;
               };
             };
-            create-buckets = {
+            minio-init = {
               command =
                 let
                   initMinio = pkgs.writeShellApplication {
@@ -44,12 +44,30 @@
                     text = builtins.readFile ./init-minio.sh;
                   };
                 in
-                "${initMinio}/bin/init-minio";
+                ''
+                  # Remove stale marker file from previous runs
+                  rm -f /tmp/ncps-minio-ready
+
+                  ${initMinio}/bin/init-minio
+
+                  # Create ready marker file for process-compose health check
+                  touch /tmp/ncps-minio-ready
+
+                  sleep infinity
+                '';
+              environment = {
+                MINIO_ENDPOINT = "http://127.0.0.1:9000";
+                MINIO_CONSOLE = "http://127.0.0.1:9001";
+                MINIO_REGION = "us-east-1";
+                MINIO_ROOT_PASSWORD = "password";
+                MINIO_ROOT_USER = "admin";
+                MINIO_TEST_S3_ACCESS_KEY_ID = "test-access-key";
+                MINIO_TEST_S3_BUCKET = "test-bucket";
+                MINIO_TEST_S3_SECRET_ACCESS_KEY = "test-secret-key";
+              };
               depends_on.minio-server.condition = "process_healthy";
               readiness_probe = {
-                exec = {
-                  command = "test -f /tmp/ncps-minio-ready";
-                };
+                exec.command = "test -f /tmp/ncps-minio-ready";
                 initial_delay_seconds = 3;
                 period_seconds = 1;
               };
@@ -73,7 +91,7 @@
                 period_seconds = 5;
               };
             };
-            init-postgres = {
+            postgres-init = {
               command =
                 let
                   initPostgres = pkgs.writeShellApplication {
@@ -82,12 +100,35 @@
                     text = builtins.readFile ./init-postgres.sh;
                   };
                 in
-                "${initPostgres}/bin/init-postgres";
+                ''
+                  # Remove stale marker file from previous runs
+                  rm -f /tmp/ncps-postgres-ready
+
+                  ${initPostgres}/bin/init-postgres ${./postgres-dblink-create-drop-functions.sql}
+
+                  # Create ready marker file for process-compose health check
+                  touch /tmp/ncps-postgres-ready
+
+                  sleep infinity
+                '';
+              environment = {
+                # Official PostgreSQL supported environment variables.
+                PGHOST = "127.0.0.1";
+                PGPORT = "5432";
+                PGUSER = "postgres";
+                PGDATABASE = "postgres";
+
+                # Custom PostgreSQL supported environment variables.
+                PG_DEV_DB = "dev-db";
+                PG_DEV_USER = "dev-user";
+                PG_DEV_PASSWORD = "dev-password";
+                PG_TEST_DB = "test-db";
+                PG_TEST_USER = "test-user";
+                PG_TEST_PASSWORD = "test-password";
+              };
               depends_on.postgres-server.condition = "process_healthy";
               readiness_probe = {
-                exec = {
-                  command = "test -f /tmp/ncps-postgres-ready";
-                };
+                exec.command = "test -f /tmp/ncps-postgres-ready";
                 initial_delay_seconds = 3;
                 period_seconds = 1;
               };
@@ -112,7 +153,7 @@
                 period_seconds = 5;
               };
             };
-            init-mariadb = {
+            mariadb-init = {
               command =
                 let
                   initMySQL = pkgs.writeShellApplication {
@@ -121,12 +162,34 @@
                     text = builtins.readFile ./init-mysql.sh;
                   };
                 in
-                "${initMySQL}/bin/init-mysql";
+                ''
+                  # Remove stale marker file from previous runs
+                  rm -f /tmp/ncps-mysql-ready
+
+                  ${initMySQL}/bin/init-mysql
+
+                  # Create ready marker file for process-compose health check
+                  touch /tmp/ncps-mysql-ready
+
+                  sleep infinity
+                '';
+              environment = {
+                # Official PostgreSQL supported environment variables.
+                MYSQL_TCP_PORT = "3306";
+
+                # Custom PostgreSQL supported environment variables.
+                MYSQL_HOST = "127.0.0.1";
+                MYSQL_USER = "root";
+                MYSQL_DEV_DB = "dev-db";
+                MYSQL_DEV_USER = "dev-user";
+                MYSQL_DEV_PASSWORD = "dev-password";
+                MYSQL_TEST_DB = "test-db";
+                MYSQL_TEST_USER = "test-user";
+                MYSQL_TEST_PASSWORD = "test-password";
+              };
               depends_on.mariadb-server.condition = "process_healthy";
               readiness_probe = {
-                exec = {
-                  command = "test -f /tmp/ncps-mysql-ready";
-                };
+                exec.command = "test -f /tmp/ncps-mysql-ready";
                 initial_delay_seconds = 3;
                 period_seconds = 1;
               };
@@ -143,9 +206,7 @@
                   --appendonly no
               '';
               readiness_probe = {
-                exec = {
-                  command = "${pkgs.redis}/bin/redis-cli -h 127.0.0.1 -p 6379 ping";
-                };
+                exec.command = "${pkgs.redis}/bin/redis-cli -h 127.0.0.1 -p 6379 ping";
                 initial_delay_seconds = 1;
                 period_seconds = 2;
               };
