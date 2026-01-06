@@ -7,6 +7,13 @@ CREATE TABLE narinfos (
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_narinfos_last_accessed_at ON narinfos (last_accessed_at);
+CREATE TABLE IF NOT EXISTS "config" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP
+);
 CREATE TABLE nar_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hash TEXT NOT NULL UNIQUE,
@@ -31,5 +38,6 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20241210054829'),
   ('20241213014846'),
   ('20251230224159'),
+  ('20260101000000'),
   ('20260105025735'),
   ('20260105030513');

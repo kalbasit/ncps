@@ -17,6 +17,23 @@
 /*M!100616 SET @OLD_NOTE_VERBOSITY=@@NOTE_VERBOSITY, NOTE_VERBOSITY=0 */;
 
 --
+-- Table structure for table `config`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `config` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `key` varchar(255) NOT NULL,
+  `value` text NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_config_key` (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `nar_files`
 --
 
@@ -47,6 +64,7 @@ CREATE TABLE `narinfo_nar_files` (
   `narinfo_id` bigint(20) NOT NULL,
   `nar_file_id` bigint(20) NOT NULL,
   PRIMARY KEY (`narinfo_id`,`nar_file_id`),
+  KEY `idx_narinfo_nar_files_narinfo_id` (`narinfo_id`),
   KEY `idx_narinfo_nar_files_nar_file_id` (`nar_file_id`),
   CONSTRAINT `fk_narinfo_nar_files_nar_file` FOREIGN KEY (`nar_file_id`) REFERENCES `nar_files` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_narinfo_nar_files_narinfo` FOREIGN KEY (`narinfo_id`) REFERENCES `narinfos` (`id`) ON DELETE CASCADE
