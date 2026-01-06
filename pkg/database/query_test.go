@@ -27,15 +27,16 @@ func setupDatabase(t *testing.T) (database.Querier, func()) {
 	dir, err := os.MkdirTemp("", "database-path-")
 	require.NoError(t, err)
 
-	cleanup := func() {
-		os.RemoveAll(dir)
-	}
-
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+
+	cleanup := func() {
+		db.DB().Close()
+		os.RemoveAll(dir)
+	}
 
 	return db, cleanup
 }
