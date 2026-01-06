@@ -134,36 +134,6 @@ CREATE TABLE public.schema_migrations (
 
 
 --
--- Name: test_table; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.test_table (
-    id integer NOT NULL,
-    message text NOT NULL
-);
-
-
---
--- Name: test_table_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.test_table_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: test_table_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.test_table_id_seq OWNED BY public.test_table.id;
-
-
---
 -- Name: config id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -182,13 +152,6 @@ ALTER TABLE ONLY public.nar_files ALTER COLUMN id SET DEFAULT nextval('public.na
 --
 
 ALTER TABLE ONLY public.narinfos ALTER COLUMN id SET DEFAULT nextval('public.narinfos_id_seq'::regclass);
-
-
---
--- Name: test_table id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.test_table ALTER COLUMN id SET DEFAULT nextval('public.test_table_id_seq'::regclass);
 
 
 --
@@ -253,14 +216,6 @@ ALTER TABLE ONLY public.narinfos
 
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
-
-
---
--- Name: test_table test_table_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.test_table
-    ADD CONSTRAINT test_table_pkey PRIMARY KEY (id);
 
 
 --

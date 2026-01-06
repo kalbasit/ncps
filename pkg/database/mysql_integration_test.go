@@ -23,9 +23,9 @@ var mysqlMigrationOnce sync.Once
 func getTestMySQLDB(t *testing.T) database.Querier {
 	t.Helper()
 
-	mysqlURL := os.Getenv("NCPS_TEST_MYSQL_URL")
+	mysqlURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
 	if mysqlURL == "" {
-		t.Skip("Skipping MySQL integration test: NCPS_TEST_MYSQL_URL environment variable not set")
+		t.Skip("Skipping MySQL integration test: NCPS_TEST_ADMIN_MYSQL_URL environment variable not set")
 
 		return nil
 	}
