@@ -57,8 +57,7 @@ INSERT INTO config (
 ON CONFLICT(key)
 DO UPDATE SET
   value = EXCLUDED.value,
-  updated_at = CURRENT_TIMESTAMP
-RETURNING *;
+  updated_at = CURRENT_TIMESTAMP;
 
 -- name: CreateNarInfo :one
 INSERT INTO narinfos (

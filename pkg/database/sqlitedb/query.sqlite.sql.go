@@ -656,7 +656,6 @@ ON CONFLICT(key)
 DO UPDATE SET
   value = EXCLUDED.value,
   updated_at = CURRENT_TIMESTAMP
-RETURNING id, "key", value, created_at, updated_at
 `
 
 type SetConfigParams struct {
@@ -675,7 +674,6 @@ type SetConfigParams struct {
 //	DO UPDATE SET
 //	  value = EXCLUDED.value,
 //	  updated_at = CURRENT_TIMESTAMP
-//	RETURNING id, "key", value, created_at, updated_at
 func (q *Queries) SetConfig(ctx context.Context, arg SetConfigParams) error {
 	_, err := q.db.ExecContext(ctx, setConfig, arg.Key, arg.Value)
 	return err
