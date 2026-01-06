@@ -11,6 +11,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/lock/local"
 	"github.com/kalbasit/ncps/testhelper"
 )
 
@@ -43,10 +44,10 @@ func TestGetClusterUUID(t *testing.T) {
 		db, cleanup := setupDatabase(t)
 		defer cleanup()
 
-		c := config.New(db)
+		c := config.New(db, local.NewRWLocker())
 
 		_, err := c.GetClusterUUID(context.Background())
-		assert.ErrorIs(t, err, config.ErrNoClusterUUID)
+		assert.ErrorIs(t, err, config.ErrConfigNotFound)
 	})
 
 	t.Run("key existing", func(t *testing.T) {
@@ -55,7 +56,7 @@ func TestGetClusterUUID(t *testing.T) {
 		db, cleanup := setupDatabase(t)
 		defer cleanup()
 
-		c := config.New(db)
+		c := config.New(db, local.NewRWLocker())
 
 		const expectedUUID = "abc-123"
 
@@ -80,7 +81,7 @@ func TestSetClusterUUID(t *testing.T) {
 		db, cleanup := setupDatabase(t)
 		defer cleanup()
 
-		c := config.New(db)
+		c := config.New(db, local.NewRWLocker())
 
 		err := c.SetClusterUUID(context.Background(), "abc-123")
 		require.NoError(t, err)
@@ -98,7 +99,7 @@ func TestSetClusterUUID(t *testing.T) {
 		db, cleanup := setupDatabase(t)
 		defer cleanup()
 
-		c := config.New(db)
+		c := config.New(db, local.NewRWLocker())
 
 		err := c.SetClusterUUID(context.Background(), "abc-123")
 		require.NoError(t, err)
