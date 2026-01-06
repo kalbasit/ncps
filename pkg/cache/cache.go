@@ -266,7 +266,10 @@ func (c *Cache) setupMetricCallbacks() error {
 		size, err := c.db.GetNarTotalSize(ctx)
 		if err != nil {
 			// Log error but don't fail the scrape entirely
-			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to get total nar size for metrics")
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to get total nar size for metrics")
 
 			return nil
 		}
