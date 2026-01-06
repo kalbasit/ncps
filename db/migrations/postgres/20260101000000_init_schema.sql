@@ -1,6 +1,6 @@
 -- migrate:up
 -- Config Table
-CREATE TABLE "config" (
+CREATE TABLE config (
     id BIGSERIAL PRIMARY KEY,
     key TEXT NOT NULL UNIQUE,
     value TEXT NOT NULL,
