@@ -35,6 +35,14 @@ FROM narinfos ni
 INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
 WHERE nnf.nar_file_id = $1;
 
+-- name: CreateConfig :one
+INSERT INTO config (
+    key, value
+) VALUES (
+    $1, $2
+)
+RETURNING *;
+
 -- name: CreateNarInfo :one
 INSERT INTO narinfos (
     hash

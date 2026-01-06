@@ -10,6 +10,14 @@ import (
 )
 
 type Querier interface {
+	//CreateConfig
+	//
+	//  INSERT INTO config (
+	//      `key`, value
+	//  ) VALUES (
+	//      ?, ?
+	//  )
+	CreateConfig(ctx context.Context, arg CreateConfigParams) (sql.Result, error)
 	//CreateNarFile
 	//
 	//  INSERT INTO nar_files (

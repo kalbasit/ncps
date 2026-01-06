@@ -9,6 +9,15 @@ import (
 )
 
 type Querier interface {
+	//CreateConfig
+	//
+	//  INSERT INTO config (
+	//      key, value
+	//  ) VALUES (
+	//      ?, ?
+	//  )
+	//  RETURNING id, "key", value, created_at, updated_at
+	CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error)
 	//CreateNarFile
 	//
 	//  INSERT INTO nar_files (

@@ -9,6 +9,41 @@ import (
 	"context"
 )
 
+const createConfig = `-- name: CreateConfig :one
+INSERT INTO config (
+    key, value
+) VALUES (
+    ?, ?
+)
+RETURNING id, "key", value, created_at, updated_at
+`
+
+type CreateConfigParams struct {
+	Key   string
+	Value string
+}
+
+// CreateConfig
+//
+//	INSERT INTO config (
+//	    key, value
+//	) VALUES (
+//	    ?, ?
+//	)
+//	RETURNING id, "key", value, created_at, updated_at
+func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
+	row := q.db.QueryRowContext(ctx, createConfig, arg.Key, arg.Value)
+	var i Config
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createNarFile = `-- name: CreateNarFile :one
 INSERT INTO nar_files (
     hash, compression, "query", file_size

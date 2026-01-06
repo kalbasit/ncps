@@ -10,6 +10,30 @@ import (
 	"database/sql"
 )
 
+const createConfig = `-- name: CreateConfig :execresult
+INSERT INTO config (
+    ` + "`" + `key` + "`" + `, value
+) VALUES (
+    ?, ?
+)
+`
+
+type CreateConfigParams struct {
+	Key   string
+	Value string
+}
+
+// CreateConfig
+//
+//	INSERT INTO config (
+//	    `key`, value
+//	) VALUES (
+//	    ?, ?
+//	)
+func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createConfig, arg.Key, arg.Value)
+}
+
 const createNarFile = `-- name: CreateNarFile :execresult
 INSERT INTO nar_files (
     hash, compression, ` + "`" + `query` + "`" + `, file_size
