@@ -44,7 +44,16 @@ func NewResource(
 		resource.WithTelemetrySDK(),
 
 		// Discover and provide process information.
-		resource.WithProcess(),
+		// Do not use resource.WithProcess(). It includes command-line arguments via
+		// resource.WithProcessCommandArgs(), which can leak sensitive information like
+		// credentials passed as flags. Instead, we explicitly include only safe attributes.
+		resource.WithProcessPID(),
+		resource.WithProcessExecutableName(),
+		resource.WithProcessExecutablePath(),
+		resource.WithProcessOwner(),
+		resource.WithProcessRuntimeName(),
+		resource.WithProcessRuntimeVersion(),
+		resource.WithProcessRuntimeDescription(),
 
 		// Discover and provide OS information.
 		resource.WithOS(),
