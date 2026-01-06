@@ -1,4 +1,13 @@
 -- migrate:up
+-- Config Table
+CREATE TABLE "config" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "key" TEXT NOT NULL UNIQUE,
+    "value" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "updated_at" TIMESTAMPTZ
+);
+
 -- Narinfos Table
 CREATE TABLE narinfos (
     id BIGSERIAL PRIMARY KEY,
@@ -31,6 +40,7 @@ CREATE TABLE narinfo_nar_files (
 CREATE INDEX idx_narinfo_nar_files_nar_file_id ON narinfo_nar_files (nar_file_id);
 
 -- migrate:down
+DROP TABLE IF EXISTS config;
 DROP TABLE IF EXISTS narinfo_nar_files;
 DROP TABLE IF EXISTS nar_files;
 DROP TABLE IF EXISTS narinfos;
