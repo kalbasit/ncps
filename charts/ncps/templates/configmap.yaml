@@ -8,6 +8,10 @@ metadata:
 data:
   config.yaml: |
     # ncps configuration
+    analytics:
+      reporting:
+        enabled: {{ ne .Values.config.analytics.reporting.enabled false }}
+
     cache:
       hostname: {{ .Values.config.hostname | quote }}
       {{- if .Values.config.cache.maxSize }}
@@ -117,10 +121,4 @@ data:
     {{- if .Values.config.observability.prometheus.enabled }}
     prometheus:
       enabled: true
-    {{- end }}
-
-    {{- if .Values.config.analytics.reporting.enabled }}
-    analytics:
-      reporting:
-        enabled: true
     {{- end }}
