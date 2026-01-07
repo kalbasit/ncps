@@ -201,7 +201,7 @@ def main():
     # Database URL
     db_url = DB_CONFIG[args.db]
 
-    # Force absolute path for sqlite
+    # Force absolute path for sqlite.
     if args.db == "sqlite":
         # Split 'sqlite:' from the path, resolve absolute path, and recombine
         # This ensures dbmate and the Go app see the exact same file regardless of CWD changes
