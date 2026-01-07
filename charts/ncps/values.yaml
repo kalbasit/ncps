@@ -310,6 +310,11 @@ config:
     prometheus:
       enabled: false
 
+  # Anonymous usage statistics sent to the project maintainers.
+  analytics:
+    reporting:
+      enabled: true
+
 service:
   type: ClusterIP
   port: 8501

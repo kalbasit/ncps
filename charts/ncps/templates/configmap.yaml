@@ -118,3 +118,9 @@ data:
     prometheus:
       enabled: true
     {{- end }}
+
+    {{- if .Values.config.analytics.reporting.enabled }}
+    analytics:
+      reporting:
+        enabled: true
+    {{- end }}
