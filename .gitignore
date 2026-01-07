@@ -37,3 +37,6 @@ go.work.sum
 
 # Developer files
 charts/ncps/test-values/
+
+# Local ncps instances
+/var/ncps/
