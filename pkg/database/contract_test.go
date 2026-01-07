@@ -153,9 +153,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("can write many narinfos", func(t *testing.T) {
 			var wg sync.WaitGroup
 
-			errC := make(chan error)
+			const numWrites = 10000
 
-			for i := 0; i < 10000; i++ {
+			errC := make(chan error, numWrites)
+
+			for i := 0; i < numWrites; i++ {
 				wg.Add(1)
 
 				go func() {
@@ -174,21 +176,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				}()
 			}
 
-			done := make(chan struct{})
+			wg.Wait()
+			close(errC)
 
-			go func() {
-				wg.Wait()
-
-				close(done)
-			}()
-
-			for {
-				select {
-				case err := <-errC:
-					assert.NoError(t, err)
-				case <-done:
-					return
-				}
+			for err := range errC {
+				assert.NoError(t, err)
 			}
 		})
 	})
