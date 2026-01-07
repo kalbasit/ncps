@@ -41,7 +41,7 @@ done
 bash $src/nix/process-compose/init-postgres.sh $src/nix/process-compose/postgres-dblink-create-drop-functions.sql
 
 # Export PostgreSQL test environment variable
-export NCPS_TEST_ADMIN_POSTGRES_URL="postgresql://$PG_TEST_DB:$PG_TEST_PASSWORD@$PGHOST:$PGPORT/$PG_TEST_DB?sslmode=disable"
+export NCPS_TEST_ADMIN_POSTGRES_URL="postgresql://$PG_TEST_USER:$PG_TEST_PASSWORD@$PGHOST:$PGPORT/$PG_TEST_DB?sslmode=disable"
 
 echo "✅ PostgreSQL configured for integration tests"
 
