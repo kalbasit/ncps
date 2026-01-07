@@ -493,6 +493,16 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 
 			registerShutdown("analytics", analyticsReporter.Shutdown)
 
+			// register the cache metrics
+			if err := cache.RegisterUpstreamMetrics(analyticsReporter.GetMeter()); err != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error registering the cache metrics in the analytics reporter")
+
+				return err
+			}
+
 			// report boot-up
 			logger := analyticsReporter.GetLogger()
 
