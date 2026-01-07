@@ -99,6 +99,8 @@ func (r *Reporter) Shutdown(ctx context.Context) error {
 }
 
 func (r *Reporter) newLogger(ctx context.Context) error {
+	// Uncomment the line below to see the logs on stdout.
+	// exporter, err := stdoutlog.New()
 	exporter, err := otlploghttp.New(ctx,
 		otlploghttp.WithEndpoint(DefaultEndpoint),
 		otlploghttp.WithCompression(otlploghttp.GzipCompression),
@@ -120,6 +122,8 @@ func (r *Reporter) newLogger(ctx context.Context) error {
 }
 
 func (r *Reporter) newMeter(ctx context.Context) error {
+	// Uncomment the line below to see the metrics on stdout.
+	// exporter, err := stdoutmetric.New()
 	exporter, err := otlpmetrichttp.New(ctx,
 		otlpmetrichttp.WithEndpoint(DefaultEndpoint),
 		otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
