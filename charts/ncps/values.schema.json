@@ -43,6 +43,19 @@
       "type": "object",
       "required": ["hostname"],
       "properties": {
+        "analytics": {
+          "type": "object",
+          "properties": {
+            "reporting": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
         "hostname": {
           "type": "string",
           "minLength": 1,

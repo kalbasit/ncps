@@ -71,6 +71,11 @@ securityContext:
   readOnlyRootFilesystem: true
 
 config:
+  # Anonymous usage statistics sent to the project maintainers.
+  analytics:
+    reporting:
+      enabled: true
+
   # Cache hostname (REQUIRED)
   # Used for key generation and signing
   hostname: "ncps.example.com"

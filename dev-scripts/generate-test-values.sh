@@ -208,6 +208,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-local-sqlite.local"
 
   storage:
@@ -242,6 +246,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-local-postgres.local"
 
   storage:
@@ -281,6 +289,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-local-mariadb.local"
 
   storage:
@@ -320,6 +332,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-s3-sqlite.local"
 
   storage:
@@ -361,6 +377,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-s3-postgres.local"
 
   storage:
@@ -402,6 +422,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-s3-mariadb.local"
 
   storage:
@@ -442,6 +466,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-s3-postgres-existing-secret.local"
 
   storage:
@@ -482,6 +510,10 @@ migration:
   mode: initContainer
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-single-s3-mariadb-existing-secret.local"
 
   storage:
@@ -521,6 +553,10 @@ migration:
   mode: job
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-ha-s3-postgres.local"
 
   storage:
@@ -583,6 +619,10 @@ migration:
   mode: job
 
 config:
+  analytics:
+    reporting:
+      enabled: false
+
   hostname: "ncps-ha-s3-mariadb.local"
 
   storage:
