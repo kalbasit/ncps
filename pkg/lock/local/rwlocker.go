@@ -35,7 +35,7 @@ func NewRWLocker() lock.RWLocker {
 func (rw *RWLocker) getShard(key string) int {
 	h, ok := rw.hasherPool.Get().(hash.Hash32)
 	if !ok {
-		panic("local.Locker: unexpected type in hasher pool; expected hash.Hash32")
+		panic("local.RWLocker: unexpected type in hasher pool; expected hash.Hash32")
 	}
 
 	defer rw.hasherPool.Put(h)
@@ -46,7 +46,7 @@ func (rw *RWLocker) getShard(key string) int {
 	return int(h.Sum32() % numShards)
 }
 
-// Lock acquires an exclusive lock. The key and ttl parameters are ignored.
+// Lock acquires an exclusive lock. The ttl parameter is ignored, but the key is used for sharding.
 func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error {
 	// Acquire the shard lock for this key
 	shard := rw.getShard(key)
@@ -62,7 +62,7 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error
 	return nil
 }
 
-// Unlock releases an exclusive lock. The key parameter is ignored.
+// Unlock releases an exclusive lock for the given key.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 	// Calculate and record lock hold duration
 	rw.timesMu.Lock()
@@ -83,7 +83,6 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 }
 
 // TryLock attempts to acquire an exclusive lock without blocking.
-// The key and ttl parameters are ignored.
 func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (bool, error) {
 	// Try to acquire the shard lock for this key
 	shard := rw.getShard(key)
@@ -102,7 +101,7 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 	return acquired, nil
 }
 
-// RLock acquires a shared read lock. The key and ttl parameters are ignored.
+// RLock acquires a shared read lock. The ttl parameter is ignored, but the key is used for sharding.
 func (rw *RWLocker) RLock(ctx context.Context, key string, _ time.Duration) error {
 	// Acquire the shard lock for this key
 	shard := rw.getShard(key)
@@ -113,7 +112,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, _ time.Duration) erro
 	return nil
 }
 
-// RUnlock releases a shared read lock. The ctx and key parameters are ignored.
+// Unlock releases a shared read lock for the given key.
 func (rw *RWLocker) RUnlock(_ context.Context, key string) error {
 	// Acquire the shard lock for this key
 	shard := rw.getShard(key)
