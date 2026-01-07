@@ -75,12 +75,14 @@ func (r *Reporter) GetLogger() log.Logger { return r.logger }
 func (r *Reporter) GetMeter() metric.Meter { return r.meter }
 
 func (r *Reporter) Shutdown(ctx context.Context) error {
-	g, gCtx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 
 	for name, sfn := range r.shutdownFns {
+		name, sfn := name, sfn
+
 		g.Go(func() error {
-			if err := sfn(gCtx); err != nil {
-				zerolog.Ctx(gCtx).
+			if err := sfn(ctx); err != nil {
+				zerolog.Ctx(ctx).
 					Error().
 					Err(err).
 					Str("shutdown name", name).
