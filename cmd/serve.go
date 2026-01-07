@@ -397,18 +397,29 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		netrcData, err := parseNetrcFile(cmd.String("netrc-file"))
-		if err != nil {
-			logger.Warn().Err(err).Msg("failed to parse netrc file, proceeding without netrc authentication")
-		}
-
-		ucs, err := getUpstreamCaches(ctx, cmd, netrcData)
-		if err != nil {
-			return fmt.Errorf("error computing the upstream caches: %w", err)
-		}
-
+		// ugh...
 		extraKVAttrs := map[string]string{
-			"ncps.upstream_count": strconv.Itoa(len(ucs)),
+			"ncps.upstream_count": func() string {
+				deprecatedUpstreamCache := cmd.StringSlice("upstream-cache")
+				upstreamURL := cmd.StringSlice("cache-upstream-url")
+
+				if len(upstreamURL) == 0 && len(deprecatedUpstreamCache) > 0 {
+					// Use deprecated value if new one is not set
+					upstreamURL = deprecatedUpstreamCache
+				}
+				// Filter out empty upstream URLs before validation.
+				var validUpstreamURLs []string
+
+				for _, u := range upstreamURL {
+					if u != "" {
+						validUpstreamURLs = append(validUpstreamURLs, u)
+					}
+				}
+
+				upstreamURL = validUpstreamURLs
+
+				return strconv.Itoa(len(upstreamURL))
+			}(),
 		}
 
 		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db, rwLocker, extraKVAttrs)
@@ -451,6 +462,16 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			logger.
 				Info().
 				Msg("Prometheus metrics enabled at /metrics")
+		}
+
+		netrcData, err := parseNetrcFile(cmd.String("netrc-file"))
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to parse netrc file, proceeding without netrc authentication")
+		}
+
+		ucs, err := getUpstreamCaches(ctx, cmd, netrcData)
+		if err != nil {
+			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
 		cache, err := createCache(ctx, cmd, db, locker, rwLocker, ucs)
@@ -846,7 +867,7 @@ func serveDetectExtraResourceAttrs(
 	rwLocker lock.RWLocker,
 	keyValue map[string]string,
 ) ([]attribute.KeyValue, error) {
-	var attrs []attribute.KeyValue
+	attrs := make([]attribute.KeyValue, 0, len(keyValue)+3)
 
 	// 1. Identify Database Type
 	dbURL := cmd.String("cache-database-url")
