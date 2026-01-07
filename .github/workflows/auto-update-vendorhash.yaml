@@ -31,7 +31,7 @@ jobs:
             exit 1
           fi
 
-          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps.nix
+          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps/default.nix
 
           git diff
       - uses: stefanzweifel/git-auto-commit-action@v7

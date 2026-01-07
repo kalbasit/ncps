@@ -372,7 +372,7 @@ nix flake check
 nix build
 ```
 
-The Nix build (`nix/packages/ncps.nix`) automatically:
+The Nix build (`nix/packages/ncps/default.nix`) automatically:
 
 1. Starts MinIO, PostgreSQL, MariaDB, and Redis servers in the `preCheck` phase
 1. Creates test databases, buckets, and credentials
