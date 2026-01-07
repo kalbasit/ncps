@@ -1,5 +1,3 @@
-Here is the changelog for the `ncps` project, generated in Markdown based on the provided sources.
-
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -8,10 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ##### Highlights
 
-- **Upstream Cache Metrics**: Added comprehensive telemetry for upstream caches, tracking total count and health status.
-- **Analytics Reporting**: Enhanced the analytics system with startup logging and anonymous reporting capabilities.
+- **High Availability & Distributed Locking**: By combining a shared SQL backend with Redis for distributed locking, you can now run multiple replicas of ncps behind a load balancer for redundancy and zero-downtime deployments.
+- **Expanded Database Support**: In addition to SQLite, ncps now supports PostgreSQL and MySQL/MariaDB as metadata storage backends.
+- **Analytics Reporting**: Added an analytics system with anonymous reporting capabilities.
 - **Performance Improvements**: Implemented sharded locks for local Read/Write operations to reduce contention in single-instance deployments.
-- **Database Schema Improvements**: Refactored schema to support many-to-many relationships between NarInfos and NAR files, reducing storage duplication.
+- **Database Schema Improvements**: Refactored schema to support many-to-many relationships between NarInfos and NAR files, allowing multiple narinfos to point to one nar.
 - **Developer Experience**: Added a unified `run.py` script for local development and a database wrapper generator.
 
 ##### Added Features
