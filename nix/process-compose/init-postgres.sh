@@ -10,6 +10,18 @@ fi
 readonly functions_file="$1"
 
 # ---------------------------------------------------
+# Check PGUSER connectivity
+# ---------------------------------------------------
+
+echo -n "Dev Connection Test... "
+if psql -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+# ---------------------------------------------------
 # SETUP: Dev User (Standard)
 # ---------------------------------------------------
 echo "Creating dev user and database..."
@@ -27,14 +39,11 @@ psql -c "CREATE DATABASE \"$PG_TEST_DB\" OWNER \"$PG_TEST_USER\";"
 
 # 2. Install dblink and create wrapper functions
 # Note: We use dblink to bypass the transaction block restriction of CREATE/DROP DATABASE
-# TODO: How to send the host/port from PGHOST and PGPORT to the dblink_exec
-# command inside the function file?
-sql_file="$(mktemp)"
-sed \
-  -e "s:{PGHOST}:$PGHOST:g" \
-  -e "s:{PGPORT}:$PGPORT:g" \
-  "$functions_file" > "$sql_file"
-psql -d "$PG_TEST_DB" -f "$sql_file"
+psql -d "$PG_TEST_DB" -f "$functions_file" \
+  -v dbname="$PGDATABASE" \
+  -v pghost="$PGHOST" \
+  -v pgport="$PGPORT" \
+  -v pguser="$PGUSER"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"
