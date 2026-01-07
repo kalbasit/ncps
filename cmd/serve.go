@@ -20,6 +20,7 @@ import (
 	"github.com/sysbot/go-netrc"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	"golang.org/x/sync/errgroup"
 
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
@@ -480,7 +481,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		}
 
 		if cmd.Bool("analytics-reporting-enabled") {
-			analyticsShutdown, err := analytics.Start(ctx, db, otelResource)
+			analyticsReporter, err := analytics.Start(ctx, db, otelResource)
 			if err != nil {
 				zerolog.Ctx(ctx).
 					Error().
@@ -490,7 +491,17 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 				return err
 			}
 
-			registerShutdown("analytics", analyticsShutdown)
+			registerShutdown("analytics", analyticsReporter.Shutdown)
+
+			// report boot-up
+			logger := analyticsReporter.GetLogger()
+
+			record := log.Record{}
+			record.SetTimestamp(time.Now())
+			record.SetSeverity(log.SeverityInfo)
+			record.SetBody(log.StringValue("NCPS Started"))
+
+			logger.Emit(ctx, record)
 		}
 
 		srv := server.New(cache)

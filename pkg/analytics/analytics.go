@@ -6,27 +6,39 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	"golang.org/x/sync/errgroup"
 
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/kalbasit/ncps/pkg/database"
 )
 
 const (
-	// DefaultEndpointURL is the default address for the analytics collector.
-	DefaultEndpointURL = "https://otlp.ncps.dev"
+	// DefaultEndpoint is the default address for the analytics collector.
+	DefaultEndpoint = "otlp.ncps.dev:443"
 
-	// How often to report anonymous metricsz/.
-	interval = 1 * time.Hour
+	// How often to report anonymous metrics.
+	metricInterval = 1 * time.Hour
 
 	instrumentationName = "github.com/kalbasit/ncps/pkg/analytics"
 )
 
-type reporter struct {
-	db database.Querier
+type shutdownFn func(context.Context) error
+
+type Reporter struct {
+	db  database.Querier
+	res *resource.Resource
+
+	logger log.Logger
+	meter  metric.Meter
+
+	shutdownFns map[string]shutdownFn
 }
 
 // Start initializes the analytics reporting pipeline.
@@ -35,46 +47,110 @@ func Start(
 	ctx context.Context,
 	db database.Querier,
 	res *resource.Resource,
-) (func(context.Context) error, error) {
-	r := &reporter{db}
-
-	// Create a dedicated OTLP Exporter
-	// Uncomment the line below to see the metrics on stdout.
-	// exporter, err := stdoutmetric.New()
-	exporter, err := otlpmetrichttp.New(ctx,
-		otlpmetrichttp.WithEndpointURL(DefaultEndpointURL),
-		otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create analytics exporter: %w", err)
+) (*Reporter, error) {
+	r := &Reporter{
+		db:          db,
+		res:         res,
+		shutdownFns: make(map[string]shutdownFn),
 	}
 
-	// Create a dedicated MeterProvider
-	// PeriodicReader defaults to 60s, which is good for low-volume reporting.
-	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(interval))),
-	)
+	if err := r.newLogger(ctx); err != nil {
+		return nil, err
+	}
 
-	// Register the Metrics
-	meter := meterProvider.Meter(instrumentationName)
-	if err := r.registerCallbacks(meter); err != nil {
+	if err := r.newMeter(ctx); err != nil {
 		return nil, err
 	}
 
 	zerolog.Ctx(ctx).
 		Info().
-		Str("endpoint-url", DefaultEndpointURL).
+		Str("endpoint", DefaultEndpoint).
 		Msg("Reporting anonymous metrics to the project maintainers")
 
-	return meterProvider.Shutdown, nil
+	return r, nil
 }
 
-func (r *reporter) registerCallbacks(meter metric.Meter) error {
-	return r.registerTotalSizeGaugeCallback(meter)
+func (r *Reporter) GetLogger() log.Logger { return r.logger }
+
+func (r *Reporter) GetMeter() metric.Meter { return r.meter }
+
+func (r *Reporter) Shutdown(ctx context.Context) error {
+	var g errgroup.Group
+
+	for name, sfn := range r.shutdownFns {
+		name, sfn := name, sfn
+
+		g.Go(func() error {
+			if err := sfn(ctx); err != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Str("shutdown name", name).
+					Msg("error calling the shutting down function")
+
+				return err
+			}
+
+			return nil
+		})
+	}
+
+	return g.Wait()
 }
 
-func (r *reporter) registerTotalSizeGaugeCallback(meter metric.Meter) error {
+func (r *Reporter) newLogger(ctx context.Context) error {
+	exporter, err := otlploghttp.New(ctx,
+		otlploghttp.WithEndpoint(DefaultEndpoint),
+		otlploghttp.WithCompression(otlploghttp.GzipCompression),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create analytics log exporter: %w", err)
+	}
+
+	logProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(r.res),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+	)
+
+	r.shutdownFns["logger"] = logProvider.Shutdown
+
+	r.logger = logProvider.Logger(instrumentationName)
+
+	return nil
+}
+
+func (r *Reporter) newMeter(ctx context.Context) error {
+	exporter, err := otlpmetrichttp.New(ctx,
+		otlpmetrichttp.WithEndpoint(DefaultEndpoint),
+		otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create analytics metric exporter: %w", err)
+	}
+
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(r.res),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(metricInterval))),
+	)
+
+	r.shutdownFns["meter"] = meterProvider.Shutdown
+
+	// Register the Metrics
+	meter := meterProvider.Meter(instrumentationName)
+	if err := r.registerMeterCallbacks(meter); err != nil {
+		return err
+	}
+
+	r.meter = meter
+
+	return nil
+}
+
+func (r *Reporter) registerMeterCallbacks(meter metric.Meter) error {
+	return r.registerMeterTotalSizeGaugeCallback(meter)
+}
+
+func (r *Reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error {
 	// Metric: Total NAR Size
 	// The resource attributes created above will automatically be attached to this metric.
 	totalSizeGauge, err := meter.Int64ObservableGauge(
@@ -93,7 +169,7 @@ func (r *reporter) registerTotalSizeGaugeCallback(meter metric.Meter) error {
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
-				Str("endpoint-url", DefaultEndpointURL).
+				Str("endpoint", DefaultEndpoint).
 				Msg("error gathering the total size of NAR files in the store")
 
 			// In case of error, we just skip observing this time rather than crashing
