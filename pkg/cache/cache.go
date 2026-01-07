@@ -278,8 +278,11 @@ func (c *Cache) setupMetricCallbacks() error {
 
 		return nil
 	}, totalSizeMetric)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return c.RegisterUpstreamMetrics(meter)
 }
 
 // SetTempDir sets the temporary directory.
