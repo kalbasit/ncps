@@ -39,6 +39,8 @@ func Start(
 	r := &reporter{db}
 
 	// Create a dedicated OTLP Exporter
+	// Uncomment the line below to see the metrics on stdout.
+	// exporter, err := stdoutmetric.New()
 	exporter, err := otlpmetrichttp.New(ctx,
 		otlpmetrichttp.WithEndpointURL(DefaultEndpointURL),
 		otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),

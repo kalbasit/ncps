@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -396,7 +397,32 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+		// ugh...
+		extraKVAttrs := map[string]string{
+			"ncps.upstream_count": func() string {
+				deprecatedUpstreamCache := cmd.StringSlice("upstream-cache")
+				upstreamURL := cmd.StringSlice("cache-upstream-url")
+
+				if len(upstreamURL) == 0 && len(deprecatedUpstreamCache) > 0 {
+					// Use deprecated value if new one is not set
+					upstreamURL = deprecatedUpstreamCache
+				}
+				// Filter out empty upstream URLs before validation.
+				var validUpstreamURLs []string
+
+				for _, u := range upstreamURL {
+					if u != "" {
+						validUpstreamURLs = append(validUpstreamURLs, u)
+					}
+				}
+
+				upstreamURL = validUpstreamURLs
+
+				return strconv.Itoa(len(upstreamURL))
+			}(),
+		}
+
+		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db, rwLocker, extraKVAttrs)
 		if err != nil {
 			logger.
 				Error().
@@ -839,8 +865,9 @@ func serveDetectExtraResourceAttrs(
 	cmd *cli.Command,
 	db database.Querier,
 	rwLocker lock.RWLocker,
+	keyValue map[string]string,
 ) ([]attribute.KeyValue, error) {
-	var attrs []attribute.KeyValue
+	attrs := make([]attribute.KeyValue, 0, len(keyValue)+3)
 
 	// 1. Identify Database Type
 	dbURL := cmd.String("cache-database-url")
@@ -871,6 +898,11 @@ func serveDetectExtraResourceAttrs(
 	}
 
 	attrs = append(attrs, attribute.String("ncps.cluster_uuid", clusterUUID))
+
+	// 4. The extra attributes
+	for k, v := range keyValue {
+		attrs = append(attrs, attribute.String(k, v))
+	}
 
 	return attrs, nil
 }
