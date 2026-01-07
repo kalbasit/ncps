@@ -52,23 +52,19 @@ func TestBackends(t *testing.T) {
 			setup: func(t *testing.T) database.Querier {
 				t.Helper()
 
-				// Connect to the test database and create the new ephemeral database.
-				dbURL := os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL")
+				// Connect to the admin database to create/drop the ephemeral database.
+				adminDbURL := os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL")
 
-				db, err := database.Open(dbURL, nil)
+				adminDb, err := database.Open(adminDbURL, nil)
 				require.NoError(t, err, "failed to connect to the postgres database")
 
 				dbName := "test-" + helper.MustRandString(58, nil)
 
-				_, err = db.DB().ExecContext(context.Background(), "SELECT create_test_db($1);", dbName)
+				_, err = adminDb.DB().ExecContext(context.Background(), "SELECT create_test_db($1);", dbName)
 				require.NoError(t, err, "failed to create database %s", dbName)
 
-				if err := db.DB().Close(); err != nil {
-					t.Logf("error closing the connection to the testing database: %s", err)
-				}
-
 				// Replace the test-db with the ephemeral database in the dbURL
-				dbURL = replaceDataseName(t, dbURL, dbName)
+				dbURL := replaceDataseName(t, adminDbURL, dbName)
 
 				// Migrate the ephemeral database.
 
@@ -90,17 +86,21 @@ func TestBackends(t *testing.T) {
 				}
 
 				// Connect to the ephemeral database.
-				db, err = database.Open(dbURL, nil)
+				db, err := database.Open(dbURL, nil)
 				require.NoError(t, err)
 
 				t.Cleanup(func() {
-					_, err := db.DB().ExecContext(context.Background(), "SELECT drop_test_db($1);", dbName)
+					if err := db.DB().Close(); err != nil {
+						t.Logf("error closing the connection to the testing database: %s", err)
+					}
+
+					_, err := adminDb.DB().ExecContext(context.Background(), "SELECT drop_test_db($1);", dbName)
 					if err != nil {
 						t.Logf("error deleting the testing database: %s", err)
 					}
 
-					if err := db.DB().Close(); err != nil {
-						t.Logf("error closing the connection to the testing database: %s", err)
+					if err := adminDb.DB().Close(); err != nil {
+						t.Logf("error closing the connection to the admin database: %s", err)
 					}
 				})
 
@@ -115,22 +115,18 @@ func TestBackends(t *testing.T) {
 				t.Helper()
 
 				// Connect to the test database and create the new ephemeral database.
-				dbURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
+				adminDbURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
 
-				db, err := database.Open(dbURL, nil)
+				adminDb, err := database.Open(adminDbURL, nil)
 				require.NoError(t, err, "failed to connect to the mysql database")
 
 				dbName := "test-" + helper.MustRandString(58, nil)
 
-				_, err = db.DB().ExecContext(context.Background(), fmt.Sprintf("CREATE DATABASE `%s`;", dbName))
+				_, err = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("CREATE DATABASE `%s`;", dbName))
 				require.NoError(t, err, "failed to create database %s", dbName)
 
-				if err := db.DB().Close(); err != nil {
-					t.Logf("error closing the connection to the testing database: %s", err)
-				}
-
 				// Replace the test-db with the ephemeral database in the dbURL
-				dbURL = replaceDataseName(t, dbURL, dbName)
+				dbURL := replaceDataseName(t, adminDbURL, dbName)
 
 				// Migrate the ephemeral database.
 
@@ -152,16 +148,20 @@ func TestBackends(t *testing.T) {
 				}
 
 				// Connect to the ephemeral database.
-				db, err = database.Open(dbURL, nil)
+				db, err := database.Open(dbURL, nil)
 				require.NoError(t, err)
 
 				t.Cleanup(func() {
-					_, err := db.DB().ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE `%s`;", dbName))
+					if err := db.DB().Close(); err != nil {
+						t.Logf("error closing the connection to the testing database: %s", err)
+					}
+
+					_, err := adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE `%s`;", dbName))
 					if err != nil {
 						t.Logf("error deleting the testing database: %s", err)
 					}
 
-					if err := db.DB().Close(); err != nil {
+					if err := adminDb.DB().Close(); err != nil {
 						t.Logf("error closing the connection to the testing database: %s", err)
 					}
 				})
