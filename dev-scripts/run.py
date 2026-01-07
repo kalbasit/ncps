@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+from urllib.parse import urlparse
 
 # --- Configuration Constants ---
 S3_CONFIG = {
@@ -64,9 +65,19 @@ def check_dependencies(args):
 
     # Check DB
     if args.db == "postgres":
+        db_url = DB_CONFIG["postgres"]
+        parsed = urlparse(db_url)
         if (
             subprocess.call(
-                ["pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "test-user"],
+                [
+                    "pg_isready",
+                    "-h",
+                    parsed.hostname,
+                    "-p",
+                    str(parsed.port),
+                    "-U",
+                    parsed.username,
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -75,17 +86,19 @@ def check_dependencies(args):
             log("❌ PostgreSQL is not running. Run 'nix run .#deps'", RED)
             deps_ok = False
     elif args.db == "mysql":
+        db_url = DB_CONFIG["mysql"]
+        parsed = urlparse(db_url)
         if (
             subprocess.call(
                 [
                     "mysqladmin",
                     "-h",
-                    "127.0.0.1",
+                    parsed.hostname,
                     "-P",
-                    "3306",
+                    str(parsed.port),
                     "-u",
-                    "dev-user",
-                    "--password=dev-password",
+                    parsed.username,
+                    f"--password={parsed.password}",
                     "ping",
                 ],
                 stdout=subprocess.DEVNULL,
@@ -99,9 +112,11 @@ def check_dependencies(args):
     # Check Storage/Locker
     if args.storage == "s3" or args.mode == "ha":
         # MinIO check
+        # Note: We could parse S3_CONFIG['endpoint'] here if we wanted to be strictly dynamic,
+        # but the health path (/minio/health/live) is specific to MinIO anyway.
         if (
             subprocess.call(
-                ["curl", "-s", "http://127.0.0.1:9000/minio/health/live"],
+                ["curl", "-s", f"{S3_CONFIG['endpoint']}/minio/health/live"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -114,9 +129,11 @@ def check_dependencies(args):
             deps_ok = False
 
     if args.locker == "redis":
+        # Parse REDIS_ADDR assuming format host:port
+        r_host, r_port = REDIS_ADDR.split(":")
         if (
             subprocess.call(
-                ["redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"],
+                ["redis-cli", "-h", r_host, "-p", r_port, "ping"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
