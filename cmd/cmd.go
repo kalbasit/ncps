@@ -69,11 +69,7 @@ func New() (*cli.Command, error) {
 
 			for name, sfn := range shutdownFns {
 				if sfn != nil {
-					wg.Add(1)
-
-					go func() {
-						defer wg.Done()
-
+					wg.Go(func() {
 						if err := sfn(ctx); err != nil {
 							zerolog.Ctx(ctx).
 								Error().
@@ -81,7 +77,7 @@ func New() (*cli.Command, error) {
 								Str("shutdown name", name).
 								Msg("error calling the shutting down function")
 						}
-					}()
+					})
 				}
 			}
 
