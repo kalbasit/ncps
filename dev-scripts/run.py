@@ -2,7 +2,6 @@
 
 import argparse
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -201,6 +200,15 @@ def main():
 
     # Database URL
     db_url = DB_CONFIG[args.db]
+
+    # Force absolute path for sqlite
+    if args.db == "sqlite":
+        # Split 'sqlite:' from the path, resolve absolute path, and recombine
+        # This ensures dbmate and the Go app see the exact same file regardless of CWD changes
+        prefix, relative_path = db_url.split(":", 1)
+        abs_path = os.path.abspath(relative_path)
+        db_url = f"{prefix}:{abs_path}"
+        log(f"Resolved absolute SQLite path: {abs_path}", BLUE)
 
     # Run Migration
     try:
