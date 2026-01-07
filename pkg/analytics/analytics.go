@@ -23,9 +23,8 @@ const (
 	// DefaultEndpoint is the default address for the analytics collector.
 	DefaultEndpoint = "otlp.ncps.dev:443"
 
-	// How often to report anonymous metricsz/.
-	// metricInterval = 1 * time.Hour.
-	metricInterval = 10 * time.Second
+	// How often to report anonymous metrics.
+	metricInterval = 1 * time.Hour
 
 	instrumentationName = "github.com/kalbasit/ncps/pkg/analytics"
 )
