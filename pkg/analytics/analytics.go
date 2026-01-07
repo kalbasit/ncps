@@ -111,16 +111,7 @@ func (r *Reporter) newLogger(ctx context.Context) error {
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
 	)
 
-	r.shutdownFns["logger"] = func(ctx context.Context) error {
-		if err := logProvider.ForceFlush(ctx); err != nil {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("error flushing the logger")
-		}
-
-		return logProvider.Shutdown(ctx)
-	}
+	r.shutdownFns["logger"] = logProvider.Shutdown
 
 	r.logger = logProvider.Logger(instrumentationName)
 
