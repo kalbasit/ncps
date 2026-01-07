@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -396,7 +397,21 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+		netrcData, err := parseNetrcFile(cmd.String("netrc-file"))
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to parse netrc file, proceeding without netrc authentication")
+		}
+
+		ucs, err := getUpstreamCaches(ctx, cmd, netrcData)
+		if err != nil {
+			return fmt.Errorf("error computing the upstream caches: %w", err)
+		}
+
+		extraKVAttrs := map[string]string{
+			"ncps.upstream_count": strconv.Itoa(len(ucs)),
+		}
+
+		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db, rwLocker, extraKVAttrs)
 		if err != nil {
 			logger.
 				Error().
@@ -436,16 +451,6 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			logger.
 				Info().
 				Msg("Prometheus metrics enabled at /metrics")
-		}
-
-		netrcData, err := parseNetrcFile(cmd.String("netrc-file"))
-		if err != nil {
-			logger.Warn().Err(err).Msg("failed to parse netrc file, proceeding without netrc authentication")
-		}
-
-		ucs, err := getUpstreamCaches(ctx, cmd, netrcData)
-		if err != nil {
-			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
 		cache, err := createCache(ctx, cmd, db, locker, rwLocker, ucs)
@@ -839,6 +844,7 @@ func serveDetectExtraResourceAttrs(
 	cmd *cli.Command,
 	db database.Querier,
 	rwLocker lock.RWLocker,
+	keyValue map[string]string,
 ) ([]attribute.KeyValue, error) {
 	var attrs []attribute.KeyValue
 
@@ -871,6 +877,11 @@ func serveDetectExtraResourceAttrs(
 	}
 
 	attrs = append(attrs, attribute.String("ncps.cluster_uuid", clusterUUID))
+
+	// 4. The extra attributes
+	for k, v := range keyValue {
+		attrs = append(attrs, attribute.String(k, v))
+	}
 
 	return attrs, nil
 }
