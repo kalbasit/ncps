@@ -19,7 +19,7 @@ readonly S3_ENDPOINT="http://127.0.0.1:9000"
 readonly S3_REGION="us-east-1"
 readonly S3_ACCESS_KEY="test-access-key"
 readonly S3_SECRET_KEY="test-secret-key"
-readonly POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
+readonly POSTGRES_URL="postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable"
 readonly REDIS_ADDR="127.0.0.1:6379"
 
 # Number of instances to run

@@ -30,9 +30,9 @@ var (
 func getTestPostgresDB(t *testing.T) database.Querier {
 	t.Helper()
 
-	postgresURL := os.Getenv("NCPS_TEST_POSTGRES_URL")
+	postgresURL := os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL")
 	if postgresURL == "" {
-		t.Skip("Skipping PostgreSQL integration test: NCPS_TEST_POSTGRES_URL environment variable not set")
+		t.Skip("Skipping PostgreSQL integration test: NCPS_TEST_ADMIN_POSTGRES_URL environment variable not set")
 
 		return nil
 	}

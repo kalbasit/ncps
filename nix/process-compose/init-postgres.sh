@@ -1,30 +1,67 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-# Remove stale marker file from previous runs
-rm -f /tmp/ncps-postgres-ready
+if [[ "$#" -ne 1 ]]; then
+  echo "USAGE: $0 <functions.sql>" >&2
+  exit 1
+fi
 
-# Create test user and database
-echo "Creating test user and database..."
-psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE USER \"test-user\" WITH PASSWORD 'test-password';"
-psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE DATABASE \"test-db\" OWNER \"test-user\";"
+readonly functions_file="$1"
 
-echo "---------------------------------------------------"
-echo "🔍 VERIFICATION CHECKS:"
+# ---------------------------------------------------
+# Check PGUSER connectivity
+# ---------------------------------------------------
 
-# Check A: Connection with test credentials
-echo -n "1. Connection Test... "
-if psql -h 127.0.0.1 -p 5432 -U test-user -d test-db -c "SELECT 1" > /dev/null 2>&1; then
+echo -n "Dev Connection Test... "
+if psql -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1" > /dev/null 2>&1; then
   echo "✅ Success"
 else
   echo "❌ Failed"
   exit 1
 fi
 
-# Check B: Create test table and insert data
-echo -n "2. Table Operations... "
-if psql -h 127.0.0.1 -p 5432 -U test-user -d test-db -c "
+# ---------------------------------------------------
+# SETUP: Dev User (Standard)
+# ---------------------------------------------------
+echo "Creating dev user and database..."
+psql -c "CREATE USER \"$PG_DEV_USER\" WITH PASSWORD '$PG_DEV_PASSWORD';"
+psql -c "CREATE DATABASE \"$PG_DEV_DB\" OWNER \"$PG_DEV_USER\";"
+
+# ---------------------------------------------------
+# SETUP: Test User (Restricted via dblink)
+# ---------------------------------------------------
+echo "Creating test user and constrained functions..."
+
+# 1. Create the user (No CREATEDB permission)
+psql -c "CREATE USER \"$PG_TEST_USER\" WITH PASSWORD '$PG_TEST_PASSWORD';"
+psql -c "CREATE DATABASE \"$PG_TEST_DB\" OWNER \"$PG_TEST_USER\";"
+
+# 2. Install dblink and create wrapper functions
+# Note: We use dblink to bypass the transaction block restriction of CREATE/DROP DATABASE
+psql -d "$PG_TEST_DB" -f "$functions_file" \
+  -v dbname="$PGDATABASE" \
+  -v pghost="$PGHOST" \
+  -v pgport="$PGPORT" \
+  -v pguser="$PGUSER"
+
+echo "---------------------------------------------------"
+echo "🔍 VERIFICATION CHECKS:"
+
+# ---------------------------------------------------
+# Check $PG_DEV_USER connectivity and operations
+# ---------------------------------------------------
+
+echo -n "Dev Connection Test... "
+if psql -U "$PG_DEV_USER" -d "$PG_DEV_DB" -c "SELECT 1" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Dev Table Operations... "
+if psql -U "$PG_DEV_USER" -d "$PG_DEV_DB" -c "
   CREATE TABLE IF NOT EXISTS test_table (
     id SERIAL PRIMARY KEY,
     message TEXT NOT NULL
@@ -37,10 +74,8 @@ else
   exit 1
 fi
 
-# Check C: Query test data
-echo -n "3. Query Test... "
-RESULT=$(psql -h 127.0.0.1 -p 5432 -U test-user -d test-db -t -c "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null | xargs)
-if [ "$RESULT" = "Test data" ]; then
+echo -n "Dev Query Test... "
+if [ "$(psql -U "$PG_DEV_USER" -d "$PG_DEV_DB" -t -c "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null | xargs)" = "Test data" ]; then
   echo "✅ Success"
   echo "   Content verified: ✅"
 else
@@ -48,29 +83,98 @@ else
   echo "   Expected: 'Test data', Got: '$RESULT'"
 fi
 
+echo -n "   Clean up after Dev Table Operations... "
+if psql -U "$PG_DEV_USER" -d "$PG_DEV_DB" -c "
+  DROP TABLE IF EXISTS test_table;
+" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+# ---------------------------------------------------
+# Check $PG_TEST_USER connectivity, database create/drop and table operations
+# ---------------------------------------------------
+
+echo -n "Test USER Connection Test... "
+if psql -U "$PG_TEST_USER" -d "$PG_TEST_DB" -c "SELECT 1" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Test Database Create Logic... "
+if psql -U "$PG_TEST_USER" -d "$PG_TEST_DB" -c "SELECT create_test_db('test-123');" > /dev/null 2>&1; then
+    echo "✅ Success"
+else
+    echo "❌ Failed (Could not run wrapper function)"
+    exit 1
+fi
+
+echo -n "Test Database Connection Test... "
+if psql -U "$PG_TEST_USER" -d test-123 -c "SELECT 1" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Test User Table Operations... "
+if psql -U "$PG_TEST_USER" -d test-123 -c "
+  CREATE TABLE IF NOT EXISTS test_table (
+    id SERIAL PRIMARY KEY,
+    message TEXT NOT NULL
+  );
+  INSERT INTO test_table (message) VALUES ('Test data');
+" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Test User Query Test... "
+if [ "$(psql -U "$PG_TEST_USER" -d test-123 -t -c "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null | xargs)" = "Test data" ]; then
+  echo "✅ Success"
+  echo "   Content verified: ✅"
+else
+  echo "❌ Failed"
+  echo "   Expected: 'Test data', Got: '$RESULT'"
+fi
+
+echo -n "   Clean up after Test Table Operations... "
+if psql -U "$PG_TEST_USER" -d test-123 -c "
+  DROP TABLE IF EXISTS test_table;
+" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
+
+echo -n "Test Database Drop Logic... "
+if psql -U "$PG_TEST_USER" -d "$PG_TEST_DB" -c "SELECT drop_test_db('test-123');" > /dev/null 2>&1; then
+    echo "✅ Success"
+else
+    echo "❌ Failed (Could not run wrapper function)"
+    exit 1
+fi
+
 echo "---------------------------------------------------"
 echo ""
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║           NCPS POSTGRESQL CONFIGURATION                   ║"
+echo "║             NCPS POSTGRESQL CONFIGURATION                 ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
-echo "🗄️  PostgreSQL Database Configuration:"
+echo "🗄️  Dev User:"
+echo "  URL: postgresql://$PG_DEV_USER:$PG_DEV_PASSWORD@$PGHOST:$PGPORT/$PG_DEV_DB?sslmode=disable"
 echo ""
-echo "  Host:         127.0.0.1"
-echo "  Port:         5432"
-echo "  Database:     test-db"
-echo "  Username:     test-user"
-echo "  Password:     test-password"
-echo ""
-echo "🔗 Connection URL:"
-echo "  postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
-echo ""
-echo "💡 Environment Variables (for testing):"
-echo "  export NCPS_TEST_POSTGRES_URL=\"postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable\""
+echo "🧪 Test User (For Integration Tests):"
+echo "  URL: postgresql://$PG_TEST_USER:$PG_TEST_PASSWORD@$PGHOST:$PGPORT/$PG_TEST_DB?sslmode=disable"
+echo "  Capabilities: Can create/drop databases starting with 'test-'"
+echo "  Create:   SELECT create_test_db('test-foo');"
+echo "  Drop:     SELECT drop_test_db('test-foo');"
 echo ""
 echo "---------------------------------------------------"
-
-# Create ready marker file for process-compose health check
-touch /tmp/ncps-postgres-ready
-
-sleep infinity

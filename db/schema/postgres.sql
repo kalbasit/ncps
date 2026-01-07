@@ -10,6 +10,54 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- Name: dblink; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION dblink; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION dblink IS 'connect to other PostgreSQL databases from within a database';
+
+
+--
+-- Name: create_test_db(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_test_db(dbname text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    IF left(dbname, 5) != 'test-' THEN
+        RAISE EXCEPTION 'Access Denied: Database name must start with "test-"';
+    END IF;
+    -- Execute as superuser via local connection
+    PERFORM dblink_exec('host=127.0.0.1 port=5432 dbname=postgres user=postgres', 'CREATE DATABASE ' || quote_ident(dbname) || ' OWNER "test-user"');
+END;
+$$;
+
+
+--
+-- Name: drop_test_db(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.drop_test_db(dbname text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    IF left(dbname, 5) != 'test-' THEN
+        RAISE EXCEPTION 'Access Denied: Database name must start with "test-"';
+    END IF;
+    -- Execute as superuser via local connection
+    PERFORM dblink_exec('host=127.0.0.1 port=5432 dbname=postgres user=postgres', 'DROP DATABASE ' || quote_ident(dbname));
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -134,36 +182,6 @@ CREATE TABLE public.schema_migrations (
 
 
 --
--- Name: test_table; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.test_table (
-    id integer NOT NULL,
-    message text NOT NULL
-);
-
-
---
--- Name: test_table_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.test_table_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: test_table_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.test_table_id_seq OWNED BY public.test_table.id;
-
-
---
 -- Name: config id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -182,13 +200,6 @@ ALTER TABLE ONLY public.nar_files ALTER COLUMN id SET DEFAULT nextval('public.na
 --
 
 ALTER TABLE ONLY public.narinfos ALTER COLUMN id SET DEFAULT nextval('public.narinfos_id_seq'::regclass);
-
-
---
--- Name: test_table id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.test_table ALTER COLUMN id SET DEFAULT nextval('public.test_table_id_seq'::regclass);
 
 
 --
@@ -253,14 +264,6 @@ ALTER TABLE ONLY public.narinfos
 
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
-
-
---
--- Name: test_table test_table_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.test_table
-    ADD CONSTRAINT test_table_pkey PRIMARY KEY (id);
 
 
 --

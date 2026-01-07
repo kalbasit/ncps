@@ -3,6 +3,9 @@ db/migrations/mysql/20260105030513_support_shared_nars_between_narinfos.sql
 db/migrations/sqlite/20251230224159_add-cascade-to-nars-fk.sql
 db/migrations/sqlite/20260105030513_support_shared_nars_between_narinfos.sql
 
+# test specific SQL file that is not a migration
+nix/process-compose/postgres-dblink-create-drop-functions.sql
+
 # exclude sqlc query files
 db/query.*.sql
 
