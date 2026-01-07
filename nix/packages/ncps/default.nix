@@ -14,6 +14,8 @@
           tag = builtins.getEnv "RELEASE_VERSION";
 
           version = if tag != "" then tag else rev;
+
+          vendorHash = "sha256-lDit10q6fVjoeHPMNoDgU/HdngXCcvrUg0mDhPt6lcg=";
         in
         pkgs.buildGoModule {
           name = "ncps-${shortRev}";
@@ -53,7 +55,7 @@
             root = ../../..;
           };
 
-          vendorHash = "sha256-lDit10q6fVjoeHPMNoDgU/HdngXCcvrUg0mDhPt6lcg=";
+          inherit vendorHash;
 
           ldflags = [
             "-X github.com/kalbasit/ncps/cmd.Version=${version}"

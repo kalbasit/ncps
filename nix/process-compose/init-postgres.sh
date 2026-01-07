@@ -29,7 +29,12 @@ psql -c "CREATE DATABASE \"$PG_TEST_DB\" OWNER \"$PG_TEST_USER\";"
 # Note: We use dblink to bypass the transaction block restriction of CREATE/DROP DATABASE
 # TODO: How to send the host/port from PGHOST and PGPORT to the dblink_exec
 # command inside the function file?
-psql -d "$PG_TEST_DB" -f "$functions_file"
+sql_file="$(mktemp)"
+sed \
+  -e "s:{PGHOST}:$PGHOST:g" \
+  -e "s:{PGPORT}:$PGPORT:g" \
+  "$functions_file" > "$sql_file"
+psql -d "$PG_TEST_DB" -f "$sql_file"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"

@@ -7,7 +7,7 @@ BEGIN
         RAISE EXCEPTION 'Access Denied: Database name must start with "test-"';
     END IF;
     -- Execute as superuser via local connection
-    PERFORM dblink_exec('host=127.0.0.1 port=5432 dbname=postgres user=postgres', 'CREATE DATABASE ' || quote_ident(dbname) || ' OWNER "test-user"');
+    PERFORM dblink_exec('host={PGHOST} port={PGPORT} dbname=postgres user=postgres', 'CREATE DATABASE ' || quote_ident(dbname) || ' OWNER "test-user"');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -18,7 +18,7 @@ BEGIN
         RAISE EXCEPTION 'Access Denied: Database name must start with "test-"';
     END IF;
     -- Execute as superuser via local connection
-    PERFORM dblink_exec('host=127.0.0.1 port=5432 dbname=postgres user=postgres', 'DROP DATABASE ' || quote_ident(dbname));
+    PERFORM dblink_exec('host={PGHOST} port={PGPORT} dbname=postgres user=postgres', 'DROP DATABASE ' || quote_ident(dbname));
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
