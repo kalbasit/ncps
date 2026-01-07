@@ -19,7 +19,7 @@ readonly S3_ENDPOINT="http://127.0.0.1:9000"
 readonly S3_REGION="us-east-1"
 readonly S3_ACCESS_KEY="test-access-key"
 readonly S3_SECRET_KEY="test-secret-key"
-readonly POSTGRES_URL="postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable"
+readonly CACHE_DATABASE_URL="postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable"
 readonly REDIS_ADDR="127.0.0.1:6379"
 
 # Number of instances to run
@@ -147,7 +147,7 @@ start_instance() {
     serve
     --cache-allow-put-verb
     --cache-hostname="cache-ha-${instance_num}.example.com"
-    --cache-database-url="'${POSTGRES_URL}'"
+    --cache-database-url="'${CACHE_DATABASE_URL}'"
     --cache-upstream-url="https://cache.nixos.org"
     --cache-upstream-public-key="cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
     --cache-storage-s3-bucket="$S3_BUCKET"
@@ -176,7 +176,7 @@ start_instance() {
 # Migrating the database
 echo -e "${YELLOW}Migrating the database...${NC}"
 echo ""
-DBMATE_NO_DUMP_SCHEMA=true dbmate --url "${POSTGRES_URL}" up
+dbmate --url "${CACHE_DATABASE_URL}" up
 
 # Start all instances
 echo -e "${YELLOW}Starting ${NUM_INSTANCES} ncps instances in HA mode...${NC}"
