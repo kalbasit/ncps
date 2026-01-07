@@ -208,10 +208,6 @@ def main():
             )
             # We will enforce a shared directory below instead of mktemp
 
-    if args.storage == "s3" and args.locker == "local" and args.mode == "ha":
-        # Redundant check caught by previous one, but explicit logic is good
-        pass
-
     # Validate deps
     check_dependencies(args)
 
