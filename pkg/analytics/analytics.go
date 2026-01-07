@@ -3,7 +3,6 @@ package analytics
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -12,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	"golang.org/x/sync/errgroup"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -76,28 +76,25 @@ func (r *Reporter) GetLogger() log.Logger { return r.logger }
 func (r *Reporter) GetMeter() metric.Meter { return r.meter }
 
 func (r *Reporter) Shutdown(ctx context.Context) error {
-	var (
-		wg        sync.WaitGroup
-		lastError error
-	)
+	g, gCtx := errgroup.WithContext(ctx)
 
 	for name, sfn := range r.shutdownFns {
-		wg.Go(func() {
-			if err := sfn(ctx); err != nil {
-				zerolog.Ctx(ctx).
+		g.Go(func() error {
+			if err := sfn(gCtx); err != nil {
+				zerolog.Ctx(gCtx).
 					Error().
 					Err(err).
 					Str("shutdown name", name).
 					Msg("error calling the shutting down function")
 
-				lastError = err
+				return err
 			}
+
+			return nil
 		})
 	}
 
-	wg.Wait()
-
-	return lastError
+	return g.Wait()
 }
 
 func (r *Reporter) newLogger(ctx context.Context) error {
