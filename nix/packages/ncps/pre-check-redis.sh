@@ -9,12 +9,7 @@ export REDIS_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)
 export REDIS_HOST="127.0.0.1"
 
 # Start Redis server in background
-redis-server \
-  --dir "$REDIS_DATA_DIR" \
-  --bind "$REDIS_HOST" \
-  --port "$REDIS_PORT" \
-  --save "" \
-  --appendonly no &
+bash $src/nix/process-compose/start-redis.sh &
 export REDIS_PID=$!
 
 # Wait for Redis to be ready

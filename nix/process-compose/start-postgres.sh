@@ -15,4 +15,4 @@ echo "host all all 127.0.0.1/32 trust" >> "$DATA_DIR/pg_hba.conf"
   echo "unix_socket_directories = '$DATA_DIR'"
 }  >> "$DATA_DIR/postgresql.conf"
 
-postgres -D "$DATA_DIR" -k "$DATA_DIR"
+exec postgres -D "$DATA_DIR" -k "$DATA_DIR"

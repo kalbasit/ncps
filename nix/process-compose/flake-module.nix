@@ -22,9 +22,10 @@
       };
 
       minioEnvironment = {
-        MINIO_ENDPOINT = "http://127.0.0.1:9000";
-        MINIO_CONSOLE_PORT = "9001";
         MINIO_CONSOLE = "http://127.0.0.1:9001";
+        MINIO_CONSOLE_PORT = "9001";
+        MINIO_ENDPOINT = "http://127.0.0.1:9000";
+        MINIO_PORT = "9000";
         MINIO_REGION = "us-east-1";
         MINIO_ROOT_PASSWORD = "password";
         MINIO_ROOT_USER = "admin";

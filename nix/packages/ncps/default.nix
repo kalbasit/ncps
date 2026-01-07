@@ -42,6 +42,10 @@
               ../../../nix/process-compose/init-mysql.sh
               ../../../nix/process-compose/init-postgres.sh
               ../../../nix/process-compose/postgres-dblink-create-drop-functions.sql
+              ../../../nix/process-compose/start-minio.sh
+              ../../../nix/process-compose/start-mysql.sh
+              ../../../nix/process-compose/start-postgres.sh
+              ../../../nix/process-compose/start-redis.sh
               ../../../pkg
               ../../../testdata
               ../../../testhelper

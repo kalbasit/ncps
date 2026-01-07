@@ -18,17 +18,8 @@ export PG_TEST_DB="test-db";
 export PG_TEST_USER="test-user";
 export PG_TEST_PASSWORD="test-password";
 
-# Initialize PostgreSQL database
-initdb -D "$POSTGRES_DATA_DIR" -U "$PGUSER" --no-locale --encoding=UTF8
-
-# Configure PostgreSQL
-echo "host all all $PGHOST/32 trust" >> "$POSTGRES_DATA_DIR/pg_hba.conf"
-echo "listen_addresses = '$PGHOST'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
-echo "port = $POSTGRES_PORT" >> "$POSTGRES_DATA_DIR/postgresql.conf"
-echo "unix_socket_directories = '$POSTGRES_DATA_DIR'" >> "$POSTGRES_DATA_DIR/postgresql.conf"
-
 # Start PostgreSQL server in background
-postgres -D "$POSTGRES_DATA_DIR" -k "$POSTGRES_DATA_DIR" &
+bash $src/nix/process-compose/start-postgres.sh &
 export POSTGRES_PID=$!
 
 # Wait for PostgreSQL to be ready

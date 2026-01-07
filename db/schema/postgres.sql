@@ -10,6 +10,54 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- Name: dblink; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION dblink; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION dblink IS 'connect to other PostgreSQL databases from within a database';
+
+
+--
+-- Name: create_test_db(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_test_db(dbname text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    IF left(dbname, 5) != 'test-' THEN
+        RAISE EXCEPTION 'Access Denied: Database name must start with "test-"';
+    END IF;
+    -- Execute as superuser via local connection
+    PERFORM dblink_exec('host=127.0.0.1 port=5432 dbname=postgres user=postgres', 'CREATE DATABASE ' || quote_ident(dbname) || ' OWNER "test-user"');
+END;
+$$;
+
+
+--
+-- Name: drop_test_db(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.drop_test_db(dbname text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+BEGIN
+    IF left(dbname, 5) != 'test-' THEN
+        RAISE EXCEPTION 'Access Denied: Database name must start with "test-"';
+    END IF;
+    -- Execute as superuser via local connection
+    PERFORM dblink_exec('host=127.0.0.1 port=5432 dbname=postgres user=postgres', 'DROP DATABASE ' || quote_ident(dbname));
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;

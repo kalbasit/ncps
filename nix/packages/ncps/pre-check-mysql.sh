@@ -17,16 +17,8 @@ export MYSQL_TEST_DB="test-db";
 export MYSQL_TEST_USER="test-user";
 export MYSQL_TEST_PASSWORD="test-password";
 
-# Initialize MariaDB database
-mariadb-install-db --datadir="$MYSQL_DATA_DIR" --auth-root-authentication-method=normal
-
 # Start MariaDB server in background
-mariadbd \
-  --datadir="$MYSQL_DATA_DIR" \
-  --bind-address="$MYSQL_HOST" \
-  --port="$MYSQL_PORT" \
-  --socket="$MYSQL_DATA_DIR/mysql.sock" \
-  --skip-networking=0 &
+bash $src/nix/process-compose/start-mysql.sh &
 export MYSQL_PID=$!
 
 # Wait for MariaDB to be ready

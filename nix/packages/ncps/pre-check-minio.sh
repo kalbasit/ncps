@@ -8,11 +8,11 @@ export HOME=$(mktemp -d)
 # We bind to port 0, get the assigned port, and close the socket immediately.
 # In a Nix sandbox, the race condition risk (port being stolen between check and use) is negligible.
 export MINIO_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-export CONSOLE_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+export MINIO_CONSOLE_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
 # Export the environment variables required by the init script and the tests
 export MINIO_ENDPOINT="http://127.0.0.1:$MINIO_PORT";
-export MINIO_CONSOLE="http://127.0.0.1:$CONSOLE_PORT";
+export MINIO_CONSOLE="http://127.0.0.1:$MINIO_CONSOLE_PORT";
 export MINIO_REGION="us-east-1";
 export MINIO_ROOT_PASSWORD="password";
 export MINIO_ROOT_USER="admin";
@@ -21,9 +21,7 @@ export MINIO_TEST_S3_BUCKET="test-bucket";
 export MINIO_TEST_S3_SECRET_ACCESS_KEY="test-secret-key";
 
 # Start MinIO server in background
-minio server "$MINIO_DATA_DIR" \
-  --address "127.0.0.1:$MINIO_PORT" \
-  --console-address "127.0.0.1:$CONSOLE_PORT" &
+bash $src/nix/process-compose/start-minio.sh &
 export MINIO_PID=$!
 
 # Wait for MinIO to be ready
