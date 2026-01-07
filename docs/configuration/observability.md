@@ -55,6 +55,8 @@ http://your-ncps:8501/metrics
 
 - `ncps_nar_served_total` - Total NAR files served
 - `ncps_narinfo_served_total` - Total NarInfo files served
+- `ncps_upstream_count_healthy` - Number of healthy upstream caches
+- `ncps_upstream_count_total` - Total number of configured upstream caches
 
 **Lock Metrics** (when using Redis for HA):
 
