@@ -38,6 +38,7 @@ func CreateMigrateDatabase(t *testing.T, dbFile string) {
 	//nolint:gosec
 	cmd := exec.CommandContext(context.Background(),
 		"dbmate",
+		"--no-dump-schema",
 		"--url=sqlite:"+dbFile,
 		"--migrations-dir="+dbMigrationsDir,
 		"--schema-file="+dbSchema,

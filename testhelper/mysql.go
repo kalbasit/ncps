@@ -35,6 +35,7 @@ func MigrateMySQLDatabase(t *testing.T, dbURL string) {
 	//nolint:gosec
 	cmd := exec.CommandContext(context.Background(),
 		"dbmate",
+		"--no-dump-schema",
 		"--url="+dbURL,
 		"--migrations-dir="+dbMigrationsDir,
 		"--schema-file="+dbSchema,

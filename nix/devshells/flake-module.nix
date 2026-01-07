@@ -25,16 +25,6 @@
             ${pkgs.gnused}/bin/sed -e '/^\\restrict/d' -e '/^\\unrestrict/d'
           '')
 
-          (pkgs.writeShellScriptBin "mysqldump" ''
-            # Call the real mysqldump from mariadb, pipe through sed to normalize the db name
-            # 1. Normalize the "Host ... Database: test-XYZ" header
-            # 2. Normalize the "Dumping routines for database 'test-XYZ'" comment
-            ${pkgs.mariadb}/bin/mysqldump "$@" | \
-            ${pkgs.gnused}/bin/sed \
-              -e 's/Database: test-[a-zA-Z0-9]*/Database: test-db/' \
-              -e "s/database 'test-[a-zA-Z0-9]*'/database 'test-db'/"
-          '')
-
           # Use real dbmate for the wrapper to call
           (pkgs.writeShellScriptBin "dbmate.real" ''
             exec ${pkgs.dbmate}/bin/dbmate "$@"
