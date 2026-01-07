@@ -165,6 +165,7 @@ func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	// Build DSN using mysql.Config for safer handling of special characters
 	cfg := mysql.NewConfig()
 
+	// 1. Set credentials and address
 	if u.User != nil {
 		cfg.User = u.User.Username()
 		if password, ok := u.User.Password(); ok {
@@ -182,25 +183,25 @@ func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 		cfg.DBName = strings.TrimPrefix(u.Path, "/")
 	}
 
-	// Parse query parameters into cfg.Params
+	// 2. Initialize params with your SAFE defaults
+	// These run regardless of whether the user provided other params.
+	cfg.Params = map[string]string{
+		"parseTime": "true",     // Required for scanning into time.Time
+		"loc":       "UTC",      // logical timezone for the driver
+		"time_zone": "'+00:00'", // Server-side session timezone (Critical for your test fix)
+	}
+
+	// 3. Overwrite defaults if the user explicitly specified them in the URL
 	if u.RawQuery != "" {
 		query, err := url.ParseQuery(u.RawQuery)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing MySQL query parameters: %w", err)
 		}
 
-		cfg.Params = make(map[string]string)
-
 		for k, v := range query {
 			if len(v) > 0 {
 				cfg.Params[k] = v[0]
 			}
-		}
-	} else {
-		// Set sensible defaults for MySQL
-		cfg.Params = map[string]string{
-			"parseTime": "true",
-			"loc":       "UTC",
 		}
 	}
 
