@@ -302,6 +302,52 @@ func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
 	c.healthChecker.AddUpstreams(ucs)
 }
 
+// RegisterUpstreamMetrics register metrics related to upstream caches.
+func (c *Cache) RegisterUpstreamMetrics(m metric.Meter) error {
+	totalGauge, err := m.Int64ObservableGauge(
+		"ncps_upstream_count_total",
+		metric.WithDescription("Total number of configured upstream caches"),
+		metric.WithUnit("{upstream}"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create total upstream gauge: %w", err)
+	}
+
+	healthyGauge, err := m.Int64ObservableGauge(
+		"ncps_upstream_count_healthy",
+		metric.WithDescription("Number of healthy upstream caches"),
+		metric.WithUnit("{upstream}"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create healthy upstream gauge: %w", err)
+	}
+
+	_, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		// Observe Total
+		o.ObserveInt64(totalGauge, int64(len(c.upstreamCaches)))
+
+		// Observe Healthy
+		o.ObserveInt64(healthyGauge, int64(c.GetHealthyUpstreamCount()))
+
+		return nil
+	}, totalGauge, healthyGauge)
+
+	return err
+}
+
+// GetHealthyUpstreamCount returns the number of healthy upstream caches.
+func (c *Cache) GetHealthyUpstreamCount() int {
+	var count int
+
+	for _, u := range c.upstreamCaches {
+		if u.IsHealthy() {
+			count++
+		}
+	}
+
+	return count
+}
+
 // GetHealthChecker returns the instance of haelth checker used by the cache.
 // It's useful for testing the behavior of ncps.
 func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker { return c.healthChecker }
