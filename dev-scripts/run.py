@@ -259,6 +259,7 @@ def main():
             "go",
             "run",
             ".",
+            "--analytics-reporting-enabled=false",
             "serve",
             "--cache-allow-put-verb",
             f"--cache-hostname=cache-{i}.example.com",
