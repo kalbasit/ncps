@@ -23,7 +23,7 @@ Options that apply to the entire ncps process.
 
 | Option | Description | Environment Variable | Default |
 | ------------------------------- | ---------------------------------------------------------------------- | ----------------------------- | ----------------------------------- |
-| `--analytics-reporting-enabled` | Enable reporting anonymous usage statistics to the project maintainers | `ANALYTICS_REPORTING_ENABLED` | `true` |
+| `--analytics-reporting-enabled` | Enable reporting anonymous usage statistics (e.g., DB type, lock type, total cache size) to the project maintainers | `ANALYTICS_REPORTING_ENABLED` | `true` |
 | `--config` | Path to configuration file (json, toml, yaml) | `NCPS_CONFIG_FILE` | `$XDG_CONFIG_HOME/ncps/config.yaml` |
 | `--log-level` | Log level: debug, info, warn, error | `LOG_LEVEL` | `info` |
 | `--otel-enabled` | Enable OpenTelemetry (logs, metrics, tracing) | `OTEL_ENABLED` | `false` |
