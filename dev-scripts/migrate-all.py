@@ -58,21 +58,19 @@ def check_command(cmd_list, name):
 
 
 def run_dbmate(url):
-    """Runs dbmate up for the given URL."""
+    """Runs dbmate up for the given URL. Returns True on success."""
     try:
         subprocess.run(["dbmate", "--url", url, "up"], check=True)
         return True
     except subprocess.CalledProcessError:
         log("Migration failed", RED)
-        sys.exit(1)
+        return False
 
 
 def migrate_postgres():
     log("1. Migrating PostgreSQL...", YELLOW)
 
-    # Parse URL for credentials
     parsed = urlparse(POSTGRES_URL)
-    # pg_isready -h host -p port -U user
     cmd = [
         "pg_isready",
         "-h",
@@ -84,19 +82,24 @@ def migrate_postgres():
     ]
 
     if check_command(cmd, "PostgreSQL"):
-        run_dbmate(POSTGRES_URL)
-        log("PostgreSQL migration complete.", GREEN)
+        if run_dbmate(POSTGRES_URL):
+            log("PostgreSQL migration complete.", GREEN)
+            print()
+            return True
+        else:
+            print()
+            return False
     else:
         log("Skipped PostgreSQL.", RED)
-    print()
+        print()
+        # If the service isn't running, we consider this "skipped" rather than "failed"
+        return True
 
 
 def migrate_mysql():
     log("2. Migrating MySQL...", YELLOW)
 
-    # Parse URL for credentials
     parsed = urlparse(MYSQL_URL)
-    # mysqladmin -h host -P port -u user --password=pass ping
     cmd = [
         "mysqladmin",
         "-h",
@@ -110,35 +113,58 @@ def migrate_mysql():
     ]
 
     if check_command(cmd, "MySQL"):
-        run_dbmate(MYSQL_URL)
-        log("MySQL migration complete.", GREEN)
+        if run_dbmate(MYSQL_URL):
+            log("MySQL migration complete.", GREEN)
+            print()
+            return True
+        else:
+            print()
+            return False
     else:
         log("Skipped MySQL.", RED)
-    print()
+        print()
+        return True
 
 
 def migrate_sqlite():
     log("3. Migrating SQLite...", YELLOW)
 
-    # Ensure directory exists (created by mkdtemp, but logic mirrors bash)
     if os.path.isdir(SQLITE_DIR):
         log("✓ SQLite directory ready", GREEN)
-        run_dbmate(SQLITE_URL)
-        log("SQLite migration complete.", GREEN)
+        if run_dbmate(SQLITE_URL):
+            log("SQLite migration complete.", GREEN)
+            print()
+            return True
+        else:
+            print()
+            return False
     else:
         log("SQLite directory error", RED)
-    print()
+        print()
+        return False
 
 
 def main():
     log("Starting migrations for all detected database configurations...", BLUE)
     print()
 
-    migrate_postgres()
-    migrate_mysql()
-    migrate_sqlite()
+    # Collect results
+    results = {
+        "PostgreSQL": migrate_postgres(),
+        "MySQL": migrate_mysql(),
+        "SQLite": migrate_sqlite(),
+    }
 
-    log("All requested migrations finished.", GREEN)
+    # Determine final exit status
+    if all(results.values()):
+        log("All requested migrations finished successfully.", GREEN)
+        sys.exit(0)
+    else:
+        log("Some migrations failed:", RED)
+        for name, success in results.items():
+            if not success:
+                log(f"  - {name} failed", RED)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
