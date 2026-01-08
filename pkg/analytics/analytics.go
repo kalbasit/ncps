@@ -99,7 +99,7 @@ func New(
 
 func Ctx(ctx context.Context) Reporter {
 	r, ok := ctx.Value(ctxKey).(*reporter)
-	if !ok {
+	if !ok || r == nil {
 		return nopReporter{}
 	}
 
