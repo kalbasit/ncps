@@ -167,7 +167,7 @@ func recoverer(next http.Handler) http.Handler {
 			}
 
 			analytics.Ctx(r.Context()).
-				Panic(r.Context(), rvr, debug.Stack())
+				LogPanic(r.Context(), rvr, debug.Stack())
 
 			if r.Header.Get("Connection") != "Upgrade" {
 				w.WriteHeader(http.StatusInternalServerError)

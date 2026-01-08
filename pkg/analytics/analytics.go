@@ -39,7 +39,7 @@ type shutdownFn func(context.Context) error
 type Reporter interface {
 	GetLogger() log.Logger
 	GetMeter() metric.Meter
-	Panic(context.Context, any, []byte)
+	LogPanic(context.Context, any, []byte)
 	Shutdown(context.Context) error
 	WithContext(context.Context) context.Context
 }
@@ -53,7 +53,7 @@ func (nr nopReporter) GetLogger() log.Logger {
 func (nr nopReporter) GetMeter() metric.Meter {
 	return noopmetric.NewMeterProvider().Meter("noop")
 }
-func (nr nopReporter) Panic(context.Context, any, []byte)              {}
+func (nr nopReporter) LogPanic(context.Context, any, []byte)           {}
 func (nr nopReporter) Shutdown(context.Context) error                  { return nil }
 func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
 
@@ -109,7 +109,7 @@ func (r *reporter) GetLogger() log.Logger { return r.logger }
 
 func (r *reporter) GetMeter() metric.Meter { return r.meter }
 
-func (r *reporter) Panic(ctx context.Context, rvr any, stack []byte) {
+func (r *reporter) LogPanic(ctx context.Context, rvr any, stack []byte) {
 	record := log.Record{}
 	record.SetTimestamp(time.Now())
 	record.SetSeverity(log.SeverityFatal)
