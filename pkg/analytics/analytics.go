@@ -30,6 +30,8 @@ const (
 	metricInterval = 1 * time.Hour
 
 	instrumentationName = "github.com/kalbasit/ncps/pkg/analytics"
+
+	panicLogMessage = "Application panic recovered"
 )
 
 //nolint:gochecknoglobals
@@ -54,7 +56,12 @@ func (nr nopReporter) GetLogger() log.Logger {
 func (nr nopReporter) GetMeter() metric.Meter {
 	return noopmetric.NewMeterProvider().Meter("noop")
 }
-func (nr nopReporter) LogPanic(context.Context, any, []byte)           {}
+
+func (nr nopReporter) LogPanic(ctx context.Context, rvr any, stack []byte) {
+	// The nop reporter is not supposed to send metrics or logs but it's still
+	// important to log panics.
+	logPanicToZerolog(ctx, rvr, stack)
+}
 func (nr nopReporter) Shutdown(context.Context) error                  { return nil }
 func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
 
@@ -123,17 +130,21 @@ func (r *reporter) GetLogger() log.Logger { return r.logger }
 func (r *reporter) GetMeter() metric.Meter { return r.meter }
 
 func (r *reporter) LogPanic(ctx context.Context, rvr any, stack []byte) {
+	// Report the panic logs.
 	record := log.Record{}
 	record.SetTimestamp(time.Now())
 	record.SetSeverity(log.SeverityFatal)
 	record.SetSeverityText("FATAL")
-	record.SetBody(log.StringValue("Application panic recovered"))
+	record.SetBody(log.StringValue(panicLogMessage))
 	record.AddAttributes(
 		log.String("panic.value", fmt.Sprintf("%v", rvr)),
 		log.String("panic.stack", string(stack)),
 	)
 
 	r.logger.Emit(ctx, record)
+
+	// Log the panic in the application logs.
+	logPanicToZerolog(ctx, rvr, stack)
 }
 
 func (r *reporter) Shutdown(ctx context.Context) error {
@@ -255,4 +266,12 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 	}
 
 	return nil
+}
+
+func logPanicToZerolog(ctx context.Context, rvr any, stack []byte) {
+	zerolog.Ctx(ctx).
+		Error().
+		Interface("panic-reason", rvr).
+		Bytes("stack-trace", stack).
+		Msg(panicLogMessage)
 }
