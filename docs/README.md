@@ -40,6 +40,7 @@ Welcome to the comprehensive documentation for ncps (Nix Cache Proxy Server). Th
 - [See all configuration options](configuration/reference.md)
 - [Configure storage backends](configuration/storage.md)
 - [Choose and configure a database](configuration/database.md)
+- [Configure analytics reporting](configuration/analytics.md)
 - [Set up observability](configuration/observability.md)
 
 **Deploy for Production**

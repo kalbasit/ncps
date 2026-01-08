@@ -15,6 +15,7 @@ Complete reference for all ncps configuration options.
 - [Upstream Connection Timeouts](#upstream-connection-timeouts)
 - [Redis Configuration (HA)](#redis-configuration-ha)
 - [Lock Configuration (HA)](#lock-configuration-ha)
+- [Analytics Reporting](#analytics-reporting)
 - [Observability](#observability)
 
 ## Global Options
@@ -23,7 +24,6 @@ Options that apply to the entire ncps process.
 
 | Option | Description | Environment Variable | Default |
 | ------------------------------- | ---------------------------------------------------------------------- | ----------------------------- | ----------------------------------- |
-| `--analytics-reporting-enabled` | Enable reporting anonymous usage statistics (e.g., DB type, lock type, total cache size) to the project maintainers | `ANALYTICS_REPORTING_ENABLED` | `true` |
 | `--config` | Path to configuration file (json, toml, yaml) | `NCPS_CONFIG_FILE` | `$XDG_CONFIG_HOME/ncps/config.yaml` |
 | `--log-level` | Log level: debug, info, warn, error | `LOG_LEVEL` | `info` |
 | `--otel-enabled` | Enable OpenTelemetry (logs, metrics, tracing) | `OTEL_ENABLED` | `false` |
@@ -285,6 +285,57 @@ ncps serve \
 ```
 
 See [Distributed Locking Guide](../deployment/distributed-locking.md) for tuning guidance.
+
+## Analytics Reporting
+
+Configure anonymous usage statistics reporting to help improve ncps.
+
+| Option | Description | Environment Variable | Default |
+|--------|-------------|---------------------|---------|
+| `--analytics-reporting-enabled` | Enable anonymous usage statistics reporting | `ANALYTICS_REPORTING_ENABLED` | `true` |
+
+**What is collected:**
+
+- **Resource attributes**: Database type (`sqlite`/`postgres`/`mysql`), lock type (`local`/`redis`), cluster UUID
+- **Metrics** (hourly): Total cache size, upstream count, upstream health
+- **Logs**: Startup events, panic/crash events with stack traces
+
+**What is NOT collected:**
+
+- No personal information (usernames, emails, PII)
+- No network information (IP addresses, hostnames)
+- No cache contents (store paths, packages)
+- No configuration secrets (passwords, keys)
+- No request logs (HTTP requests, clients)
+
+**Privacy:**
+
+- Fully anonymous and privacy-focused
+- Data sent to `otlp.ncps.dev:443` via HTTPS
+- Helps maintainers understand usage patterns and prioritize development
+- Easy opt-out with `--analytics-reporting-enabled=false`
+
+**Enable (default):**
+
+```bash
+ncps serve --analytics-reporting-enabled=true
+```
+
+**Disable (opt-out):**
+
+```bash
+ncps serve --analytics-reporting-enabled=false
+```
+
+**Configuration file:**
+
+```yaml
+analytics:
+  reporting:
+    enabled: false  # Disable analytics
+```
+
+See [Analytics Configuration](analytics.md) for comprehensive details on what data is collected, privacy guarantees, and how it works.
 
 ## Observability
 
