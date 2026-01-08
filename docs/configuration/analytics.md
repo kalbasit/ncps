@@ -347,16 +347,6 @@ This follows the model of other privacy-respecting open source projects like Hom
 
 ## Frequently Asked Questions
 
-### Can I see what data is being sent?
-
-Yes! Enable debug logging to see analytics payloads:
-
-```bash
-ncps serve --log-level=debug --analytics-reporting-enabled=true
-```
-
-Look for log entries containing "analytics" or "otlp".
-
 ### Does analytics impact performance?
 
 No. Analytics has negligible performance impact:
