@@ -8,9 +8,12 @@ Configure monitoring, metrics, logging, and tracing for ncps.
 
 ncps provides comprehensive observability through:
 
-- **Prometheus** - Metrics endpoint for monitoring
-- **OpenTelemetry** - Distributed tracing and telemetry
+- **Prometheus** - Metrics endpoint for monitoring your deployment
+- **OpenTelemetry** - Distributed tracing and telemetry for your infrastructure
 - **Structured Logging** - JSON-formatted logs with context
+- **Analytics Reporting** - Anonymous usage statistics sent to project maintainers (separate from your monitoring)
+
+**Important:** This page covers observability for **your own deployment** (Prometheus, OpenTelemetry, logs). For information about anonymous usage statistics sent to project maintainers, see [Analytics Configuration](analytics.md).
 
 ## Prometheus Metrics
 
@@ -55,8 +58,13 @@ http://your-ncps:8501/metrics
 
 - `ncps_nar_served_total` - Total NAR files served
 - `ncps_narinfo_served_total` - Total NarInfo files served
+
+**Upstream Health Metrics** (available when analytics reporting is enabled):
+
 - `ncps_upstream_count_healthy` - Number of healthy upstream caches
 - `ncps_upstream_count_total` - Total number of configured upstream caches
+
+Note: Upstream health metrics are collected as part of analytics reporting. See [Analytics Configuration](analytics.md) for details.
 
 **Lock Metrics** (when using Redis for HA):
 
@@ -463,6 +471,7 @@ services:
 
 ## Related Documentation
 
+- [Analytics Configuration](analytics.md) - Anonymous usage statistics reporting
 - [Operations: Monitoring](../operations/monitoring.md) - Detailed monitoring setup
 - [Deployment: High Availability](../deployment/high-availability.md) - HA observability
 - [Configuration Reference](reference.md) - All configuration options

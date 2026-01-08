@@ -9,6 +9,7 @@ Learn how to configure ncps for your specific needs.
 - **[Configuration Reference](reference.md)** - Complete reference of all configuration options
 - **[Storage Configuration](storage.md)** - Configure local or S3 storage backends
 - **[Database Configuration](database.md)** - Configure SQLite, PostgreSQL, or MySQL
+- **[Analytics Configuration](analytics.md)** - Configure anonymous usage statistics reporting
 - **[Observability Configuration](observability.md)** - Set up metrics, logging, and tracing
 
 ## Quick Links
@@ -38,6 +39,12 @@ Learn how to configure ncps for your specific needs.
 - [Prometheus metrics](observability.md#prometheus)
 - [OpenTelemetry setup](observability.md#opentelemetry)
 - [Logging configuration](observability.md#logging)
+
+**Privacy & Analytics**
+
+- [What data is collected](analytics.md#what-data-is-collected)
+- [How to disable analytics](analytics.md#disable-analytics-opt-out)
+- [Privacy guarantees](analytics.md#privacy-and-security)
 
 ## Configuration Methods
 
