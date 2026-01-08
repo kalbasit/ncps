@@ -29,9 +29,10 @@ const (
 	instrumentationName = "github.com/kalbasit/ncps/pkg/analytics"
 )
 
-type shutdownFn func(context.Context) error
+//nolint:gochecknoglobals
+var ctxKey = &struct{}{}
 
-type ctxKey struct{}
+type shutdownFn func(context.Context) error
 
 type Reporter interface {
 	GetLogger() log.Logger
@@ -94,7 +95,7 @@ func New(
 }
 
 func Ctx(ctx context.Context) Reporter {
-	r, ok := ctx.Value(ctxKey{}).(*reporter)
+	r, ok := ctx.Value(ctxKey).(*reporter)
 	if !ok {
 		return nopReporter{}
 	}
@@ -145,7 +146,7 @@ func (r *reporter) Shutdown(ctx context.Context) error {
 }
 
 func (r *reporter) WithContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, ctxKey{}, r)
+	return context.WithValue(ctx, ctxKey, r)
 }
 
 func (r *reporter) newLogger(ctx context.Context) error {
