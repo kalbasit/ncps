@@ -51,7 +51,7 @@ func (nr nopReporter) GetMeter() metric.Meter {
 	return sdkmetric.NewMeterProvider().Meter("noop")
 }
 func (nr nopReporter) Panic(context.Context, any, []byte)              {}
-func (nr nopReporter) Shutdown(ctx context.Context) error              { return nil }
+func (nr nopReporter) Shutdown(context.Context) error                  { return nil }
 func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
 
 type reporter struct {
@@ -70,7 +70,7 @@ func New(
 	ctx context.Context,
 	db database.Querier,
 	res *resource.Resource,
-) (*reporter, error) {
+) (Reporter, error) {
 	r := &reporter{
 		db:          db,
 		res:         res,
@@ -107,6 +107,17 @@ func (r *reporter) GetLogger() log.Logger { return r.logger }
 func (r *reporter) GetMeter() metric.Meter { return r.meter }
 
 func (r *reporter) Panic(ctx context.Context, rvr any, stack []byte) {
+	record := log.Record{}
+	record.SetTimestamp(time.Now())
+	record.SetSeverity(log.SeverityFatal)
+	record.SetSeverityText("FATAL")
+	record.SetBody(log.StringValue("Application panic recovered"))
+	record.AddAttributes(
+		log.String("panic.value", fmt.Sprintf("%v", rvr)),
+		log.String("panic.stack", string(stack)),
+	)
+
+	r.logger.Emit(ctx, record)
 }
 
 func (r *reporter) Shutdown(ctx context.Context) error {
