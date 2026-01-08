@@ -181,27 +181,20 @@ func recoverer(next http.Handler) http.Handler {
 func getZeroLogForRequest(r *http.Request) zerolog.Logger {
 	span := trace.SpanFromContext(r.Context())
 
-	log := zerolog.Ctx(r.Context()).With().
+	logContext := zerolog.Ctx(r.Context()).With().
 		Str("method", r.Method).
 		Str("request_uri", r.RequestURI).
-		Str("from", r.RemoteAddr).
-		Logger()
+		Str("from", r.RemoteAddr)
 
 	if span.SpanContext().HasTraceID() {
-		log = log.
-			With().
-			Str("trace_id", span.SpanContext().TraceID().String()).
-			Logger()
+		logContext = logContext.Str("trace_id", span.SpanContext().TraceID().String())
 	}
 
 	if span.SpanContext().HasSpanID() {
-		log = log.
-			With().
-			Str("span_id", span.SpanContext().SpanID().String()).
-			Logger()
+		logContext = logContext.Str("span_id", span.SpanContext().SpanID().String())
 	}
 
-	return log
+	return logContext.Logger()
 }
 
 func requestLogger(next http.Handler) http.Handler {
