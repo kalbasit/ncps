@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -103,6 +104,18 @@ func Ctx(ctx context.Context) Reporter {
 	}
 
 	return r
+}
+
+func SafeGo(ctx context.Context, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				Ctx(ctx).LogPanic(ctx, r, debug.Stack())
+			}
+		}()
+
+		fn()
+	}()
 }
 
 func (r *reporter) GetLogger() log.Logger { return r.logger }
