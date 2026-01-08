@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 
+	nooplog "go.opentelemetry.io/otel/log/noop"
+	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
@@ -45,11 +47,11 @@ type Reporter interface {
 type nopReporter struct{}
 
 func (nr nopReporter) GetLogger() log.Logger {
-	return sdklog.NewLoggerProvider().Logger("noop")
+	return nooplog.NewLoggerProvider().Logger("noop")
 }
 
 func (nr nopReporter) GetMeter() metric.Meter {
-	return sdkmetric.NewMeterProvider().Meter("noop")
+	return noopmetric.NewMeterProvider().Meter("noop")
 }
 func (nr nopReporter) Panic(context.Context, any, []byte)              {}
 func (nr nopReporter) Shutdown(context.Context) error                  { return nil }
