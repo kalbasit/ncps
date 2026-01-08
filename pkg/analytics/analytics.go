@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -13,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 
+	nooplog "go.opentelemetry.io/otel/log/noop"
+	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
@@ -29,9 +32,33 @@ const (
 	instrumentationName = "github.com/kalbasit/ncps/pkg/analytics"
 )
 
+//nolint:gochecknoglobals
+var ctxKey = &struct{}{}
+
 type shutdownFn func(context.Context) error
 
-type Reporter struct {
+type Reporter interface {
+	GetLogger() log.Logger
+	GetMeter() metric.Meter
+	LogPanic(context.Context, any, []byte)
+	Shutdown(context.Context) error
+	WithContext(context.Context) context.Context
+}
+
+type nopReporter struct{}
+
+func (nr nopReporter) GetLogger() log.Logger {
+	return nooplog.NewLoggerProvider().Logger("noop")
+}
+
+func (nr nopReporter) GetMeter() metric.Meter {
+	return noopmetric.NewMeterProvider().Meter("noop")
+}
+func (nr nopReporter) LogPanic(context.Context, any, []byte)           {}
+func (nr nopReporter) Shutdown(context.Context) error                  { return nil }
+func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
+
+type reporter struct {
 	db  database.Querier
 	res *resource.Resource
 
@@ -41,14 +68,14 @@ type Reporter struct {
 	shutdownFns map[string]shutdownFn
 }
 
-// Start initializes the analytics reporting pipeline.
+// New initializes the analytics reporting pipeline.
 // It returns a shutdown function that should be called when the application exits.
-func Start(
+func New(
 	ctx context.Context,
 	db database.Querier,
 	res *resource.Resource,
-) (*Reporter, error) {
-	r := &Reporter{
+) (Reporter, error) {
+	r := &reporter{
 		db:          db,
 		res:         res,
 		shutdownFns: make(map[string]shutdownFn),
@@ -70,11 +97,46 @@ func Start(
 	return r, nil
 }
 
-func (r *Reporter) GetLogger() log.Logger { return r.logger }
+func Ctx(ctx context.Context) Reporter {
+	r, ok := ctx.Value(ctxKey).(*reporter)
+	if !ok || r == nil {
+		return nopReporter{}
+	}
 
-func (r *Reporter) GetMeter() metric.Meter { return r.meter }
+	return r
+}
 
-func (r *Reporter) Shutdown(ctx context.Context) error {
+func SafeGo(ctx context.Context, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				Ctx(ctx).LogPanic(ctx, r, debug.Stack())
+			}
+		}()
+
+		fn()
+	}()
+}
+
+func (r *reporter) GetLogger() log.Logger { return r.logger }
+
+func (r *reporter) GetMeter() metric.Meter { return r.meter }
+
+func (r *reporter) LogPanic(ctx context.Context, rvr any, stack []byte) {
+	record := log.Record{}
+	record.SetTimestamp(time.Now())
+	record.SetSeverity(log.SeverityFatal)
+	record.SetSeverityText("FATAL")
+	record.SetBody(log.StringValue("Application panic recovered"))
+	record.AddAttributes(
+		log.String("panic.value", fmt.Sprintf("%v", rvr)),
+		log.String("panic.stack", string(stack)),
+	)
+
+	r.logger.Emit(ctx, record)
+}
+
+func (r *reporter) Shutdown(ctx context.Context) error {
 	var g errgroup.Group
 
 	for name, sfn := range r.shutdownFns {
@@ -98,7 +160,11 @@ func (r *Reporter) Shutdown(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (r *Reporter) newLogger(ctx context.Context) error {
+func (r *reporter) WithContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKey, r)
+}
+
+func (r *reporter) newLogger(ctx context.Context) error {
 	// Uncomment the line below to see the logs on stdout.
 	// exporter, err := stdoutlog.New()
 	exporter, err := otlploghttp.New(ctx,
@@ -121,7 +187,7 @@ func (r *Reporter) newLogger(ctx context.Context) error {
 	return nil
 }
 
-func (r *Reporter) newMeter(ctx context.Context) error {
+func (r *reporter) newMeter(ctx context.Context) error {
 	// Uncomment the line below to see the metrics on stdout.
 	// exporter, err := stdoutmetric.New()
 	exporter, err := otlpmetrichttp.New(ctx,
@@ -150,11 +216,11 @@ func (r *Reporter) newMeter(ctx context.Context) error {
 	return nil
 }
 
-func (r *Reporter) registerMeterCallbacks(meter metric.Meter) error {
+func (r *reporter) registerMeterCallbacks(meter metric.Meter) error {
 	return r.registerMeterTotalSizeGaugeCallback(meter)
 }
 
-func (r *Reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error {
+func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error {
 	// Metric: Total NAR Size
 	// The resource attributes created above will automatically be attached to this metric.
 	totalSizeGauge, err := meter.Int64ObservableGauge(
