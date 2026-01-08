@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 )
 
@@ -75,7 +76,7 @@ func (hc *HealthChecker) RemoveUpstream(upstream *upstream.Cache) {
 
 // Start starts the health checker.
 func (hc *HealthChecker) Start(ctx context.Context) {
-	go func() {
+	analytics.SafeGo(ctx, func() {
 		// Run a health check at the beginning
 		hc.check(ctx)
 
@@ -92,7 +93,7 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 				hc.check(ctx)
 			}
 		}
-	}()
+	})
 }
 
 func (hc *HealthChecker) check(ctx context.Context) {
