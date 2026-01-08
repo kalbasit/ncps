@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	promclient "github.com/prometheus/client_golang/prometheus"
 	otelchimetric "github.com/riandyrn/otelchi/metric"
 
+	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -96,7 +98,7 @@ func (s *Server) createRouter() {
 
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RealIP)
-	s.router.Use(middleware.Recoverer)
+	s.router.Use(recoverer)
 
 	// Create a middleware skipper that excludes /metrics and /healthz from telemetry
 	skipTelemetryForInfraRoutes := func(next http.Handler) http.Handler {
@@ -150,31 +152,63 @@ func (s *Server) createRouter() {
 	}
 }
 
+func recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rvr := recover()
+			if rvr == nil {
+				return
+			}
+
+			if rvr == http.ErrAbortHandler { //nolint:err113
+				// we don't recover http.ErrAbortHandler so the response
+				// to the client is aborted, this should not be logged
+				panic(rvr)
+			}
+
+			analytics.Ctx(r.Context()).
+				Panic(r.Context(), rvr, debug.Stack())
+
+			if r.Header.Get("Connection") != "Upgrade" {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func getZeroLogForRequest(r *http.Request) zerolog.Logger {
+	span := trace.SpanFromContext(r.Context())
+
+	log := zerolog.Ctx(r.Context()).With().
+		Str("method", r.Method).
+		Str("request_uri", r.RequestURI).
+		Str("from", r.RemoteAddr).
+		Logger()
+
+	if span.SpanContext().HasTraceID() {
+		log = log.
+			With().
+			Str("trace_id", span.SpanContext().TraceID().String()).
+			Logger()
+	}
+
+	if span.SpanContext().HasSpanID() {
+		log = log.
+			With().
+			Str("span_id", span.SpanContext().SpanID().String()).
+			Logger()
+	}
+
+	return log
+}
+
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
 
-		span := trace.SpanFromContext(r.Context())
-
-		log := zerolog.Ctx(r.Context()).With().
-			Str("method", r.Method).
-			Str("request_uri", r.RequestURI).
-			Str("from", r.RemoteAddr).
-			Logger()
-
-		if span.SpanContext().HasTraceID() {
-			log = log.
-				With().
-				Str("trace_id", span.SpanContext().TraceID().String()).
-				Logger()
-		}
-
-		if span.SpanContext().HasSpanID() {
-			log = log.
-				With().
-				Str("span_id", span.SpanContext().SpanID().String()).
-				Logger()
-		}
+		log := getZeroLogForRequest(r)
 
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 

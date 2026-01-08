@@ -31,7 +31,30 @@ const (
 
 type shutdownFn func(context.Context) error
 
-type Reporter struct {
+type ctxKey struct{}
+
+type Reporter interface {
+	GetLogger() log.Logger
+	GetMeter() metric.Meter
+	Panic(context.Context, any, []byte)
+	Shutdown(context.Context) error
+	WithContext(context.Context) context.Context
+}
+
+type nopReporter struct{}
+
+func (nr nopReporter) GetLogger() log.Logger {
+	return sdklog.NewLoggerProvider().Logger("noop")
+}
+
+func (nr nopReporter) GetMeter() metric.Meter {
+	return sdkmetric.NewMeterProvider().Meter("noop")
+}
+func (nr nopReporter) Panic(context.Context, any, []byte)              {}
+func (nr nopReporter) Shutdown(ctx context.Context) error              { return nil }
+func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
+
+type reporter struct {
 	db  database.Querier
 	res *resource.Resource
 
@@ -41,14 +64,14 @@ type Reporter struct {
 	shutdownFns map[string]shutdownFn
 }
 
-// Start initializes the analytics reporting pipeline.
+// New initializes the analytics reporting pipeline.
 // It returns a shutdown function that should be called when the application exits.
-func Start(
+func New(
 	ctx context.Context,
 	db database.Querier,
 	res *resource.Resource,
-) (*Reporter, error) {
-	r := &Reporter{
+) (*reporter, error) {
+	r := &reporter{
 		db:          db,
 		res:         res,
 		shutdownFns: make(map[string]shutdownFn),
@@ -70,11 +93,23 @@ func Start(
 	return r, nil
 }
 
-func (r *Reporter) GetLogger() log.Logger { return r.logger }
+func Ctx(ctx context.Context) Reporter {
+	r, ok := ctx.Value(ctxKey{}).(*reporter)
+	if !ok {
+		return nopReporter{}
+	}
 
-func (r *Reporter) GetMeter() metric.Meter { return r.meter }
+	return r
+}
 
-func (r *Reporter) Shutdown(ctx context.Context) error {
+func (r *reporter) GetLogger() log.Logger { return r.logger }
+
+func (r *reporter) GetMeter() metric.Meter { return r.meter }
+
+func (r *reporter) Panic(ctx context.Context, rvr any, stack []byte) {
+}
+
+func (r *reporter) Shutdown(ctx context.Context) error {
 	var g errgroup.Group
 
 	for name, sfn := range r.shutdownFns {
@@ -98,7 +133,11 @@ func (r *Reporter) Shutdown(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (r *Reporter) newLogger(ctx context.Context) error {
+func (r *reporter) WithContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKey{}, r)
+}
+
+func (r *reporter) newLogger(ctx context.Context) error {
 	// Uncomment the line below to see the logs on stdout.
 	// exporter, err := stdoutlog.New()
 	exporter, err := otlploghttp.New(ctx,
@@ -121,7 +160,7 @@ func (r *Reporter) newLogger(ctx context.Context) error {
 	return nil
 }
 
-func (r *Reporter) newMeter(ctx context.Context) error {
+func (r *reporter) newMeter(ctx context.Context) error {
 	// Uncomment the line below to see the metrics on stdout.
 	// exporter, err := stdoutmetric.New()
 	exporter, err := otlpmetrichttp.New(ctx,
@@ -150,11 +189,11 @@ func (r *Reporter) newMeter(ctx context.Context) error {
 	return nil
 }
 
-func (r *Reporter) registerMeterCallbacks(meter metric.Meter) error {
+func (r *reporter) registerMeterCallbacks(meter metric.Meter) error {
 	return r.registerMeterTotalSizeGaugeCallback(meter)
 }
 
-func (r *Reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error {
+func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error {
 	// Metric: Total NAR Size
 	// The resource attributes created above will automatically be attached to this metric.
 	totalSizeGauge, err := meter.Int64ObservableGauge(

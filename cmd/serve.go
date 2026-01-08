@@ -455,7 +455,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		}
 
 		if cmd.Bool("analytics-reporting-enabled") {
-			analyticsReporter, err := analytics.Start(ctx, db, otelResource)
+			analyticsReporter, err := analytics.New(ctx, db, otelResource)
 			if err != nil {
 				zerolog.Ctx(ctx).
 					Error().
@@ -476,6 +476,9 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 
 				return err
 			}
+
+			// add the reporter to the context
+			ctx = analyticsReporter.WithContext(ctx)
 
 			// report boot-up
 			logger := analyticsReporter.GetLogger()
