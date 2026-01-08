@@ -439,6 +439,24 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 				Msg("Prometheus metrics enabled at /metrics")
 		}
 
+		analyticsReporter := analytics.Ctx(ctx) // get the noop reporter
+		if cmd.Bool("analytics-reporting-enabled") {
+			analyticsReporter, err = analytics.New(ctx, db, otelResource)
+			if err != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(err).
+					Msg("error creating a new analytics reporter")
+
+				return err
+			}
+
+			registerShutdown("analytics", analyticsReporter.Shutdown)
+		}
+
+		// add the reporter to the context
+		ctx = analyticsReporter.WithContext(ctx)
+
 		netrcData, err := parseNetrcFile(cmd.String("netrc-file"))
 		if err != nil {
 			logger.Warn().Err(err).Msg("failed to parse netrc file, proceeding without netrc authentication")
@@ -454,42 +472,23 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		if cmd.Bool("analytics-reporting-enabled") {
-			analyticsReporter, err := analytics.New(ctx, db, otelResource)
-			if err != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error creating a new analytics reporter")
+		// register the cache metrics
+		if err := cache.RegisterUpstreamMetrics(analyticsReporter.GetMeter()); err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error registering the cache metrics in the analytics reporter")
 
-				return err
-			}
-
-			registerShutdown("analytics", analyticsReporter.Shutdown)
-
-			// register the cache metrics
-			if err := cache.RegisterUpstreamMetrics(analyticsReporter.GetMeter()); err != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("error registering the cache metrics in the analytics reporter")
-
-				return err
-			}
-
-			// add the reporter to the context
-			ctx = analyticsReporter.WithContext(ctx)
-
-			// report boot-up
-			logger := analyticsReporter.GetLogger()
-
-			record := log.Record{}
-			record.SetTimestamp(time.Now())
-			record.SetSeverity(log.SeverityInfo)
-			record.SetBody(log.StringValue("NCPS Started"))
-
-			logger.Emit(ctx, record)
+			return err
 		}
+
+		// report boot-up
+		record := log.Record{}
+		record.SetTimestamp(time.Now())
+		record.SetSeverity(log.SeverityInfo)
+		record.SetBody(log.StringValue("NCPS Started"))
+
+		analyticsReporter.GetLogger().Emit(ctx, record)
 
 		srv := server.New(cache)
 		srv.SetDeletePermitted(cmd.Bool("cache-allow-delete-verb"))
