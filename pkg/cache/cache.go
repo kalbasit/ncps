@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache/healthcheck"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -256,7 +257,9 @@ func New(
 	c.healthChecker.Start(c.baseContext)
 
 	// Start the health change processor
-	go c.processHealthChanges(ctx, healthChangeCh)
+	analytics.SafeGo(ctx, func() {
+		c.processHealthChanges(ctx, healthChangeCh)
+	})
 
 	return c, nil
 }
@@ -516,7 +519,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		// create a pipe to stream file down to the http client
 		r, writer := io.Pipe()
 
-		go func() {
+		analytics.SafeGo(ctx, func() {
 			defer ds.wg.Done()
 			defer writer.Close()
 
@@ -586,7 +589,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 					return
 				}
 			}
-		}()
+		})
 
 		size = -1
 		reader = r
@@ -680,13 +683,13 @@ func (c *Cache) createTempNarFile(ctx context.Context, narURL *nar.URL, ds *down
 	// Wait until nothing is using the asset and remove it
 	ds.wg.Add(1)
 
-	go func() {
+	analytics.SafeGo(ctx, func() {
 		ds.wg.Wait()
 
 		if err := os.Remove(ds.assetPath); err != nil {
 			zerolog.Ctx(ctx).Warn().Err(err).Str("file", ds.assetPath).Msg("failed to remove temporary NAR file")
 		}
-	}()
+	})
 
 	return f, nil
 }
@@ -862,7 +865,7 @@ func (c *Cache) pullNarIntoStore(
 	defer ds.cleanupWg.Done()
 
 	// Cleanup: wait for download to complete, then wait for all readers to finish
-	go func() {
+	analytics.SafeGo(ctx, func() {
 		ds.cleanupWg.Wait() // Wait for download to complete
 
 		// Mark as closed to prevent new readers from adding to WaitGroup
@@ -872,7 +875,7 @@ func (c *Cache) pullNarIntoStore(
 
 		ds.wg.Wait() // Then wait for all readers to finish
 		os.Remove(ds.assetPath)
-	}()
+	})
 
 	// Signal that temp file is ready for streaming
 	close(ds.start)
@@ -1894,7 +1897,9 @@ func (c *Cache) coordinateDownload(
 		// the distributed lock. The download job will close ds.stored only AFTER the asset
 		// is successfully stored in final storage. This ensures that when the lock is released,
 		// hasAsset() will return true for other instances, preventing duplicate downloads.
-		go startJob(ds)
+		analytics.SafeGo(ctx, func() {
+			startJob(ds)
+		})
 	}
 
 	c.upstreamJobsMu.Unlock()
@@ -2188,7 +2193,7 @@ func (c *Cache) parallelDeleteFromStores(
 	for _, hash := range narInfoHashesToRemove {
 		wg.Add(1)
 
-		go func() {
+		analytics.SafeGo(ctx, func() {
 			defer wg.Done()
 
 			log := log.With().Str("narinfo_hash", hash).Logger()
@@ -2200,13 +2205,13 @@ func (c *Cache) parallelDeleteFromStores(
 					Err(err).
 					Msg("error removing the narinfo from the store")
 			}
-		}()
+		})
 	}
 
 	for _, narURL := range narURLsToRemove {
 		wg.Add(1)
 
-		go func() {
+		analytics.SafeGo(ctx, func() {
 			defer wg.Done()
 
 			log := log.With().Str("nar_url", narURL.String()).Logger()
@@ -2218,7 +2223,7 @@ func (c *Cache) parallelDeleteFromStores(
 					Err(err).
 					Msg("error removing the nar from the store")
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -2418,14 +2423,16 @@ func (c *Cache) selectUpstream(
 	for _, uc := range ucs {
 		wg.Add(1)
 
-		go selectFn(ctx, uc, &wg, ch, errC)
+		analytics.SafeGo(ctx, func() {
+			selectFn(ctx, uc, &wg, ch, errC)
+		})
 	}
 
-	go func() {
+	analytics.SafeGo(ctx, func() {
 		wg.Wait()
 
 		close(ch)
-	}()
+	})
 
 	var errs error
 
