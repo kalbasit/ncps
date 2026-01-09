@@ -49,6 +49,11 @@ func NewRWLocker(
 
 	pgLocker := locker.(*Locker)
 
+	// The embedded Locker has a fallbackLocker of type *local.Locker.
+	// We must replace it with one that implements lock.RWLocker to prevent
+	// a panic when RLock/RUnlock fall back to degraded mode.
+	pgLocker.fallbackLocker = local.NewRWLocker()
+
 	return &RWLocker{
 		Locker:          pgLocker,
 		readConnections: make(map[string][]*sql.Conn),

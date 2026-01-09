@@ -67,7 +67,6 @@ func getTestDatabase(t *testing.T) (database.Querier, func()) {
 }
 
 // replaceDatabaseName replaces the database name in a PostgreSQL URL.
-// replaceDatabaseName replaces the database name in a PostgreSQL URL.
 func replaceDatabaseName(t *testing.T, dbURL, newName string) string {
 	t.Helper()
 

@@ -14,10 +14,6 @@ func TestCalculateBackoff(t *testing.T) {
 	// and we already verified it manually, we'll just keep this test for interface verification.
 }
 
-func TestNewRWLocker_FallbackSimple(t *testing.T) {
-	t.Parallel()
-}
-
 func TestRWLocker_Interface(t *testing.T) {
 	t.Parallel()
 
