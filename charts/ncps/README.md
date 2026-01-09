@@ -202,7 +202,8 @@ The following table lists the configurable parameters of the ncps chart and thei
 
 | Parameter | Description | Default |
 | -------------------------------------------- | ------------------------- | ------- |
-| `config.lock.redis.keyPrefix` | Lock key prefix | `ncps:lock:` |
+| `config.lock.redis.keyPrefix` | Redis lock key prefix | `ncps:lock:` |
+| `config.lock.postgres.keyPrefix` | PostgreSQL lock key prefix | `ncps:lock:` |
 | `config.lock.downloadTTL` | Download lock TTL | `5m` |
 | `config.lock.lruTTL` | LRU lock TTL | `30m` |
 | `config.lock.retry.maxAttempts` | Maximum retry attempts | `3` |
