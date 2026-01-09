@@ -17,6 +17,13 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Editor files
+/.vscode/**
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+!/.vscode/extensions.json
+
 # Go workspace file
 go.work
 go.work.sum
