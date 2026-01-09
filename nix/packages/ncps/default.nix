@@ -34,7 +34,6 @@
               ./post-check-redis.sh
               ./pre-check-redis.sh
 
-              ../../../cmd
               ../../../db/migrations
               ../../../db/schema
               ../../../go.mod
