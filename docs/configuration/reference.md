@@ -251,11 +251,12 @@ See [High Availability Guide](../deployment/high-availability.md) and [Distribut
 
 Lock timing and retry configuration for distributed locking.
 
-### Redis Lock Settings
+### Backend Lock Settings
 
 | Option | Description | Environment Variable | Default |
 |--------|-------------|---------------------|---------|
-| `--cache-lock-redis-key-prefix` | Key prefix for all locks (only used when Redis is configured) | `CACHE_LOCK_REDIS_KEY_PREFIX` | `"ncps:lock:"` |
+| `--cache-lock-redis-key-prefix` | Key prefix for all Redis locks | `CACHE_LOCK_REDIS_KEY_PREFIX` | `"ncps:lock:"` |
+| `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `CACHE_LOCK_POSTGRES_KEY_PREFIX` | `"ncps:lock:"` |
 
 ### Lock Timeouts
 
@@ -424,6 +425,10 @@ cache:
   lock:
     download-lock-ttl: 5m
     lru-lock-ttl: 30m
+    redis:
+      key-prefix: "ncps:lock:"
+    postgres:
+      key-prefix: "ncps:lock:"
     retry:
       max-attempts: 3
       initial-delay: 100ms
