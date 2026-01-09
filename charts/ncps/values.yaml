@@ -283,6 +283,11 @@ config:
       # Key prefix for locks
       keyPrefix: "ncps:lock:"
 
+    # PostgreSQL-specific lock settings (only used when lock backend is postgres)
+    postgres:
+      # Key prefix for locks
+      keyPrefix: "ncps:lock:"
+
     # Download lock TTL
     downloadTTL: "5m"
     # LRU lock TTL

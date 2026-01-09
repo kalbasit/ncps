@@ -91,9 +91,13 @@ data:
         db: {{ .Values.config.redis.db }}
         use-tls: {{ .Values.config.redis.useTLS }}
         pool-size: {{ .Values.config.redis.poolSize }}
+      {{- end }}
+
       lock:
         redis:
           key-prefix: {{ .Values.config.lock.redis.keyPrefix | quote }}
+        postgres:
+          key-prefix: {{ .Values.config.lock.postgres.keyPrefix | quote }}
         download-lock-ttl: {{ .Values.config.lock.downloadTTL | quote }}
         lru-lock-ttl: {{ .Values.config.lock.lruTTL | quote }}
         retry:
@@ -104,7 +108,6 @@ data:
         {{- if .Values.config.lock.allowDegradedMode }}
         allow-degraded-mode: true
         {{- end }}
-      {{- end }}
 
     server:
       addr: {{ .Values.config.server.addr | quote }}
