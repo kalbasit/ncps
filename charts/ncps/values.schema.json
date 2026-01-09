@@ -18,7 +18,10 @@
     },
     "mode": {
       "type": "string",
-      "enum": ["deployment", "statefulset"],
+      "enum": [
+        "deployment",
+        "statefulset"
+      ],
       "description": "Deployment mode"
     },
     "image": {
@@ -32,7 +35,11 @@
         },
         "pullPolicy": {
           "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never"]
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
         },
         "tag": {
           "type": "string"
@@ -41,7 +48,9 @@
     },
     "config": {
       "type": "object",
-      "required": ["hostname"],
+      "required": [
+        "hostname"
+      ],
       "properties": {
         "analytics": {
           "type": "object",
@@ -63,7 +72,15 @@
         },
         "logLevel": {
           "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error", "fatal", "panic"],
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error",
+            "fatal",
+            "panic"
+          ],
           "description": "Logging level"
         },
         "server": {
@@ -125,7 +142,10 @@
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["local", "s3"]
+              "enum": [
+                "local",
+                "s3"
+              ]
             },
             "local": {
               "type": "object",
@@ -194,7 +214,11 @@
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["sqlite", "postgresql", "mysql"]
+              "enum": [
+                "sqlite",
+                "postgresql",
+                "mysql"
+              ]
             },
             "sqlite": {
               "type": "object",
@@ -226,7 +250,12 @@
                 },
                 "sslMode": {
                   "type": "string",
-                  "enum": ["disable", "require", "verify-ca", "verify-full"]
+                  "enum": [
+                    "disable",
+                    "require",
+                    "verify-ca",
+                    "verify-full"
+                  ]
                 },
                 "existingSecret": {
                   "type": "string"
@@ -287,7 +316,10 @@
               "minItems": 1,
               "items": {
                 "type": "object",
-                "required": ["url", "publicKey"],
+                "required": [
+                  "url",
+                  "publicKey"
+                ],
                 "properties": {
                   "url": {
                     "type": "string",
@@ -351,7 +383,24 @@
         "lock": {
           "type": "object",
           "properties": {
+            "backend": {
+              "type": "string",
+              "enum": [
+                "local",
+                "redis",
+                "postgres"
+              ],
+              "description": "Lock backend to use (local, redis, or postgres)"
+            },
             "redis": {
+              "type": "object",
+              "properties": {
+                "keyPrefix": {
+                  "type": "string"
+                }
+              }
+            },
+            "postgres": {
               "type": "object",
               "properties": {
                 "keyPrefix": {
@@ -419,7 +468,11 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ]
         },
         "port": {
           "type": "integer",
@@ -434,7 +487,10 @@
         },
         "sessionAffinity": {
           "type": "string",
-          "enum": ["None", "ClientIP"]
+          "enum": [
+            "None",
+            "ClientIP"
+          ]
         }
       }
     },
@@ -468,7 +524,11 @@
                     },
                     "pathType": {
                       "type": "string",
-                      "enum": ["Prefix", "Exact", "ImplementationSpecific"]
+                      "enum": [
+                        "Prefix",
+                        "Exact",
+                        "ImplementationSpecific"
+                      ]
                     }
                   }
                 }
@@ -569,7 +629,11 @@
         },
         "mode": {
           "type": "string",
-          "enum": ["initContainer", "job", "argocd"],
+          "enum": [
+            "initContainer",
+            "job",
+            "argocd"
+          ],
           "description": "Migration mode: initContainer, job (Helm hook), or argocd (ArgoCD hook)"
         },
         "resources": {
