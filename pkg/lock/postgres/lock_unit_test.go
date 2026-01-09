@@ -13,7 +13,7 @@ import (
 func TestCalculateBackoff(t *testing.T) {
 	t.Parallel()
 
-	cfg := postgres.RetryConfig{
+	cfg := lock.RetryConfig{
 		InitialDelay: 100 * time.Millisecond,
 		MaxDelay:     1 * time.Second,
 		Jitter:       false,

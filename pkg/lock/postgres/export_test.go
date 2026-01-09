@@ -1,6 +1,10 @@
 package postgres
 
-import "time"
+import (
+	"time"
+
+	"github.com/kalbasit/ncps/pkg/lock"
+)
 
 // Export internal identifiers for testing.
 func NewCircuitBreaker(threshold int, timeout time.Duration) *circuitBreaker {
@@ -24,7 +28,7 @@ func MockTimeNow(t time.Time) func() {
 	return func() { timeNow = original }
 }
 
-func CalculateBackoff(cfg RetryConfig, attempt int) time.Duration {
+func CalculateBackoff(cfg lock.RetryConfig, attempt int) time.Duration {
 	return calculateBackoff(cfg, attempt)
 }
 

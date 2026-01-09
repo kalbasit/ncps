@@ -19,6 +19,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/local"
@@ -99,7 +100,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 		KeyPrefix: "ncps:test:dedup:",
 	}
 
-	retryCfg := redis.RetryConfig{
+	retryCfg := lock.RetryConfig{
 		MaxAttempts:  3,
 		InitialDelay: 100 * time.Millisecond,
 		MaxDelay:     2 * time.Second,
@@ -353,7 +354,7 @@ func TestDistributedLockFailover(t *testing.T) {
 		KeyPrefix: "ncps:test:failover:",
 	}
 
-	retryCfg := redis.RetryConfig{
+	retryCfg := lock.RetryConfig{
 		MaxAttempts:  5,
 		InitialDelay: 100 * time.Millisecond,
 		MaxDelay:     1 * time.Second,

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 )
 
@@ -45,8 +46,8 @@ func getTestConfig() redis.Config {
 }
 
 // getTestRetryConfig returns a retry configuration for testing.
-func getTestRetryConfig() redis.RetryConfig {
-	return redis.RetryConfig{
+func getTestRetryConfig() lock.RetryConfig {
+	return lock.RetryConfig{
 		MaxAttempts:  3,
 		InitialDelay: 50 * time.Millisecond,
 		MaxDelay:     500 * time.Millisecond,
@@ -200,7 +201,7 @@ func TestLocker_RetryWithBackoff(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := getTestConfig()
-	retryCfg := redis.RetryConfig{
+	retryCfg := lock.RetryConfig{
 		MaxAttempts:  5,
 		InitialDelay: 100 * time.Millisecond,
 		MaxDelay:     1 * time.Second,

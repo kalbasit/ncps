@@ -29,7 +29,7 @@ func NewRWLocker(
 	ctx context.Context,
 	querier database.Querier,
 	cfg Config,
-	retryCfg RetryConfig,
+	retryCfg lock.RetryConfig,
 	allowDegradedMode bool,
 ) (lock.RWLocker, error) {
 	locker, err := NewLocker(ctx, querier, cfg, retryCfg, allowDegradedMode)

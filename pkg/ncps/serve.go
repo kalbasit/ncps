@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +31,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
+	"github.com/kalbasit/ncps/pkg/lock/postgres"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 	"github.com/kalbasit/ncps/pkg/maxprocs"
 	"github.com/kalbasit/ncps/pkg/otel"
@@ -58,6 +58,18 @@ var (
 
 	// ErrUpstreamCacheRequired is returned if no upstream cache is configured.
 	ErrUpstreamCacheRequired = errors.New("at least one --cache-upstream-url is required")
+
+	// ErrRedisAddrsRequired is returned when Redis backend is selected but no addresses are provided.
+	ErrRedisAddrsRequired = errors.New("--cache-lock-backend=redis requires --cache-redis-addrs to be set")
+
+	// ErrUnknownLockBackend is returned when an unknown lock backend is specified.
+	ErrUnknownLockBackend = errors.New("unknown lock backend")
+)
+
+const (
+	lockBackendLocal    = "local"
+	lockBackendRedis    = "redis"
+	lockBackendPostgres = "postgres"
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -272,11 +284,24 @@ func serveCommand(
 				Value:   10,
 			},
 
+			&cli.StringFlag{
+				Name: "cache-lock-backend",
+				Usage: "Lock backend to use: 'local' (single instance), 'redis' (distributed), " +
+					"or 'postgres' (distributed, requires PostgreSQL)",
+				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
+				Value:   "local",
+			},
 			// Lock Configuration
 			&cli.StringFlag{
 				Name:    "cache-lock-redis-key-prefix",
 				Usage:   "Prefix for all Redis lock keys (only used when Redis is configured)",
 				Sources: flagSources("cache.lock.redis.key-prefix", "CACHE_LOCK_REDIS_KEY_PREFIX"),
+				Value:   "ncps:lock:",
+			},
+			&cli.StringFlag{
+				Name:    "cache-lock-postgres-key-prefix",
+				Usage:   "Prefix for all PostgreSQL advisory lock keys (only used when PostgreSQL is configured as lock backend)",
+				Sources: flagSources("cache.lock.postgres.key-prefix", "CACHE_LOCK_POSTGRES_KEY_PREFIX"),
 				Value:   "ncps:lock:",
 			},
 			&cli.DurationFlag{
@@ -389,7 +414,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		locker, rwLocker, err := getLockers(ctx, cmd)
+		locker, rwLocker, err := getLockers(ctx, cmd, db)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().
@@ -883,16 +908,10 @@ func serveDetectExtraResourceAttrs(
 	attrs = append(attrs, attribute.String("ncps.db_type", dbType.String()))
 
 	// 2. Identify Lock Type
-	lockType := "local"
-	redisAddrs := cmd.StringSlice("cache-redis-addrs")
-	// Filter out empty addresses
-	hasRedis := slices.ContainsFunc(redisAddrs, func(addr string) bool { return addr != "" })
+	// Use shared helper to determine effective backend (including backward compatibility)
+	backend, _ := determineEffectiveLockBackend(cmd)
 
-	if hasRedis {
-		lockType = "redis"
-	}
-
-	attrs = append(attrs, attribute.String("ncps.lock_type", lockType))
+	attrs = append(attrs, attribute.String("ncps.lock_type", backend))
 
 	// 3. Set the cluster UUID
 	clusterUUID, err := getOrSetClusterUUID(ctx, db, rwLocker)
@@ -930,26 +949,114 @@ func setClusterUUID(ctx context.Context, c *config.Config) (string, error) {
 	return cu, nil
 }
 
-func getLockers(
-	ctx context.Context,
-	cmd *cli.Command,
-) (
-	locker lock.Locker,
-	rwLocker lock.RWLocker,
-	err error,
-) {
-	redisAddrs := cmd.StringSlice("cache-redis-addrs")
-	// Filter out empty addresses
-	var validRedisAddrs []string
+// determineEffectiveLockBackend determines the effective lock backend to use
+// based on the configured flags and backward compatibility logic.
+// Returns the backend name and the list of valid Redis addresses.
+func determineEffectiveLockBackend(cmd *cli.Command) (backend string, validRedisAddrs []string) {
+	backend = cmd.String("cache-lock-backend")
 
+	// Check for legacy Redis configuration (backward compatibility)
+	redisAddrs := cmd.StringSlice("cache-redis-addrs")
+
+	// Filter out empty addresses
 	for _, addr := range redisAddrs {
 		if addr != "" {
 			validRedisAddrs = append(validRedisAddrs, addr)
 		}
 	}
 
-	if len(validRedisAddrs) == 0 {
-		// No Redis - use local locks (single-instance mode)
+	// If Redis addresses are set but backend is not explicitly specified, use Redis
+	// This maintains backward compatibility with existing deployments
+	if len(validRedisAddrs) > 0 && backend == lockBackendLocal {
+		backend = lockBackendRedis
+	}
+
+	return backend, validRedisAddrs
+}
+
+func getLockers(
+	ctx context.Context,
+	cmd *cli.Command,
+	db database.Querier,
+) (
+	locker lock.Locker,
+	rwLocker lock.RWLocker,
+	err error,
+) {
+	allowDegradedMode := cmd.Bool("cache-lock-allow-degraded-mode")
+
+	// Build retry configuration (common to all distributed backends)
+	retryCfg := lock.RetryConfig{
+		MaxAttempts:  cmd.Int("cache-lock-retry-max-attempts"),
+		InitialDelay: cmd.Duration("cache-lock-retry-initial-delay"),
+		MaxDelay:     cmd.Duration("cache-lock-retry-max-delay"),
+		Jitter:       cmd.Bool("cache-lock-retry-jitter"),
+	}
+
+	// Determine effective lock backend (including backward compatibility)
+	backend, validRedisAddrs := determineEffectiveLockBackend(cmd)
+
+	// Log deprecation warning if backward compatibility was triggered
+	if len(validRedisAddrs) > 0 && cmd.String("cache-lock-backend") == lockBackendLocal {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--cache-redis-addrs is set but --cache-lock-backend is 'local'. " +
+				"Please explicitly set --cache-lock-backend=redis. " +
+				"Defaulting to Redis for backward compatibility.")
+	}
+
+	switch backend {
+	case lockBackendRedis:
+		// Validate that Redis addresses are set
+		if len(validRedisAddrs) == 0 {
+			return nil, nil, ErrRedisAddrsRequired
+		}
+
+		// Redis configured - use distributed locks
+		redisCfg := redis.Config{
+			Addrs:     validRedisAddrs,
+			Username:  cmd.String("cache-redis-username"),
+			Password:  cmd.String("cache-redis-password"),
+			DB:        cmd.Int("cache-redis-db"),
+			UseTLS:    cmd.Bool("cache-redis-use-tls"),
+			PoolSize:  cmd.Int("cache-redis-pool-size"),
+			KeyPrefix: cmd.String("cache-lock-redis-key-prefix"),
+		}
+
+		locker, err = redis.NewLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating Redis locker: %w", err)
+		}
+
+		rwLocker, err = redis.NewRWLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating Redis RW locker: %w", err)
+		}
+
+		zerolog.Ctx(ctx).Info().
+			Strs("addrs", redisCfg.Addrs).
+			Msg("distributed locking enabled with Redis")
+
+	case lockBackendPostgres:
+		// PostgreSQL advisory locks - use database connection
+		pgCfg := postgres.Config{
+			KeyPrefix: cmd.String("cache-lock-postgres-key-prefix"),
+		}
+
+		locker, err = postgres.NewLocker(ctx, db, pgCfg, retryCfg, allowDegradedMode)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating PostgreSQL advisory lock locker: %w", err)
+		}
+
+		rwLocker, err = postgres.NewRWLocker(ctx, db, pgCfg, retryCfg, allowDegradedMode)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating PostgreSQL advisory lock RW locker: %w", err)
+		}
+
+		zerolog.Ctx(ctx).Info().
+			Msg("distributed locking enabled with PostgreSQL advisory locks")
+
+	case lockBackendLocal:
+		// No distributed backend - use local locks (single-instance mode)
 		locker = local.NewLocker()
 		rwLocker = local.NewRWLocker()
 
@@ -957,46 +1064,9 @@ func getLockers(
 			Info().
 			Msg("using local locks (single-instance mode)")
 
-		return locker,
-			rwLocker,
-			err
+	default:
+		return nil, nil, fmt.Errorf("%w: %s (must be 'local', 'redis', or 'postgres')", ErrUnknownLockBackend, backend)
 	}
 
-	// Redis configured - use distributed locks
-	redisCfg := redis.Config{
-		Addrs:     validRedisAddrs,
-		Username:  cmd.String("cache-redis-username"),
-		Password:  cmd.String("cache-redis-password"),
-		DB:        cmd.Int("cache-redis-db"),
-		UseTLS:    cmd.Bool("cache-redis-use-tls"),
-		PoolSize:  cmd.Int("cache-redis-pool-size"),
-		KeyPrefix: cmd.String("cache-lock-redis-key-prefix"),
-	}
-
-	retryCfg := redis.RetryConfig{
-		MaxAttempts:  cmd.Int("cache-lock-retry-max-attempts"),
-		InitialDelay: cmd.Duration("cache-lock-retry-initial-delay"),
-		MaxDelay:     cmd.Duration("cache-lock-retry-max-delay"),
-		Jitter:       cmd.Bool("cache-lock-retry-jitter"),
-	}
-
-	allowDegradedMode := cmd.Bool("cache-lock-allow-degraded-mode")
-
-	locker, err = redis.NewLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error creating Redis download locker: %w", err)
-	}
-
-	rwLocker, err = redis.NewRWLocker(ctx, redisCfg, retryCfg, allowDegradedMode)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error creating Redis cache locker: %w", err)
-	}
-
-	zerolog.Ctx(ctx).Info().
-		Strs("addrs", redisCfg.Addrs).
-		Msg("distributed locking enabled with Redis")
-
-	return locker,
-		rwLocker,
-		err
+	return locker, rwLocker, nil
 }

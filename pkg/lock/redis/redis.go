@@ -14,7 +14,6 @@ package redis
 
 import (
 	"errors"
-	"time"
 )
 
 // Errors returned by Redis lock operations.
@@ -59,19 +58,4 @@ type Config struct {
 
 	// KeyPrefix for all distributed lock keys.
 	KeyPrefix string
-}
-
-// RetryConfig configures retry behavior for lock acquisition.
-type RetryConfig struct {
-	// MaxAttempts is the maximum number of retry attempts.
-	MaxAttempts int
-
-	// InitialDelay is the initial retry delay.
-	InitialDelay time.Duration
-
-	// MaxDelay is the maximum retry delay (exponential backoff caps at this).
-	MaxDelay time.Duration
-
-	// Jitter enables adding random jitter to prevent thundering herd.
-	Jitter bool
 }

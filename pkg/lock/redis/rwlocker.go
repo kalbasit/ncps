@@ -23,7 +23,7 @@ import (
 type RWLocker struct {
 	client            redis.UniversalClient // Supports both single-node and cluster
 	keyPrefix         string
-	retryConfig       RetryConfig
+	retryConfig       lock.RetryConfig
 	allowDegradedMode bool
 
 	// readerID stores the unique reader ID for this locker instance
@@ -42,7 +42,12 @@ type RWLocker struct {
 }
 
 // NewRWLocker creates a new Redis-based read-write locker.
-func NewRWLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDegradedMode bool) (lock.RWLocker, error) {
+func NewRWLocker(
+	ctx context.Context,
+	cfg Config,
+	retryCfg lock.RetryConfig,
+	allowDegradedMode bool,
+) (lock.RWLocker, error) {
 	if len(cfg.Addrs) == 0 {
 		return nil, ErrNoRedisAddrs
 	}
