@@ -1,0 +1,30 @@
+# Positive test: Redis overrides configured lock backend
+# This should PASS validation - Redis enabled overrides postgres backend
+mode: deployment
+replicaCount: 3
+
+config:
+  hostname: "test.example.com"
+
+  storage:
+    type: s3
+    s3:
+      bucket: my-bucket
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      accessKeyId: test-key
+      secretAccessKey: test-secret
+
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.default.svc
+      password: test123
+
+  lock:
+    backend: postgres  # This will be overridden by Redis
+
+  redis:
+    enabled: true
+    addresses:
+      - redis:6379
