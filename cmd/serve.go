@@ -418,7 +418,12 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		otelShutdown, err := otel.SetupOTelSDK(ctx, cmd.Root().Bool("otel-enabled"), cmd.Root().String("otel-grpc-url"), otelResource)
+		otelShutdown, err := otel.SetupOTelSDK(
+			ctx,
+			cmd.Root().Bool("otel-enabled"),
+			cmd.Root().String("otel-grpc-url"),
+			otelResource,
+		)
 		if err != nil {
 			return err
 		}
