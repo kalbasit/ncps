@@ -278,7 +278,13 @@ config:
 
   # Lock configuration
   lock:
-    # Redis-specific lock settings (only used when Redis is enabled)
+    # Lock backend to use: "local", "redis", or "postgres"
+    # - local: Single-instance mode (default)
+    # - redis: Distributed mode using Redis (required if config.redis.enabled=true)
+    # - postgres: Distributed mode using PostgreSQL advisory locks (required if config.database.type="postgresql" and you want HA)
+    backend: "local"
+
+    # Redis-specific lock settings (only used when lock backend is redis)
     redis:
       # Key prefix for locks
       keyPrefix: "ncps:lock:"

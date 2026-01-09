@@ -157,12 +157,21 @@ Validate configuration for incompatible settings
 This function will fail the template rendering if invalid configurations are detected
 */}}
 {{- define "ncps.validate" -}}
+{{- $lockBackend := .Values.config.lock.backend -}}
+{{- if .Values.config.redis.enabled -}}
+  {{- $lockBackend = "redis" -}}
+{{- end -}}
 
 {{- /* HA mode validation */ -}}
 {{- if gt (int .Values.replicaCount) 1 -}}
-  {{- /* HA requires Redis */ -}}
-  {{- if not .Values.config.redis.enabled -}}
-    {{- fail "High availability mode (replicaCount > 1) requires Redis to be enabled (config.redis.enabled=true)" -}}
+  {{- /* HA requires distributed locking (Redis or PostgreSQL) */ -}}
+  {{- if and (ne $lockBackend "redis") (ne $lockBackend "postgres") -}}
+    {{- fail "High availability mode (replicaCount > 1) requires either Redis to be enabled (config.redis.enabled=true) or PostgreSQL advisory locks to be enabled (config.lock.backend='postgres')" -}}
+  {{- end -}}
+
+  {{- /* If using PostgreSQL lock, database type must be postgresql */ -}}
+  {{- if and (eq $lockBackend "postgres") (ne .Values.config.database.type "postgresql") -}}
+    {{- fail "PostgreSQL advisory locks (config.lock.backend='postgres') require the database type to be 'postgresql' (config.database.type)" -}}
   {{- end -}}
 
   {{- /* HA cannot use SQLite */ -}}
