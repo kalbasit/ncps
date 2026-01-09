@@ -232,9 +232,9 @@ Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db
 When creating new database migrations, always use `dbmate new` to generate properly timestamped migration files:
 
 ```bash
-dbmate --url sqlite:/path/to/db.sqlite new migration_name
-dbmate --url postgresql://user:pass@localhost:5432/ncps new migration_name
-dbmate --url mysql://user:pass@localhost:3306/ncps new migration_name
+dbmate --migrations-dir db/migrations/sqlite new migration_name
+dbmate --migrations-dir db/migrations/postgres new migration_name
+dbmate --migrations-dir db/migrations/mysql new migration_name
 ```
 
 This creates timestamped migration files (e.g., `20251230223951_migration_name.sql`) with the standard dbmate template:

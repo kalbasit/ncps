@@ -1,0 +1,11 @@
+# Project Rules
+
+This project uses `CLAUDE.md` as the single source of truth for all architectural decisions, coding standards, and development workflows.
+
+You must read `CLAUDE.md` at the beginning of your session to understand:
+- Project Overview & Architecture
+- Development Commands
+- Coding Style & Linting Rules
+- Database & Migration Guidelines (Critical!)
+
+All generated code and proposed changes MUST adhere to the guidelines set forth in `CLAUDE.md`.
