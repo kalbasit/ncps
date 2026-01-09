@@ -1,6 +1,7 @@
 ---
 description: Lint and format code
 ---
+// turbo-all
 1. Run standard linter (with fix enabled by default as preferred in CLAUDE.md):
 ```bash
 golangci-lint run --fix
