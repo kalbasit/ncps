@@ -39,8 +39,12 @@ func NewRWLocker(
 
 	// Check if we got a fallback local locker (degraded mode)
 	if _, ok := locker.(*Locker); !ok {
-		// It's a local locker fallback, wrap it appropriately
-		return local.NewRWLocker(), nil
+		// It's a local locker fallback, return a local RWLocker
+		if allowDegradedMode {
+			return local.NewRWLocker(), nil
+		}
+
+		return nil, ErrCircuitBreakerOpen
 	}
 
 	pgLocker := locker.(*Locker)
@@ -53,6 +57,8 @@ func NewRWLocker(
 
 // RLock acquires a shared read lock.
 // Multiple readers can hold the lock simultaneously, but they will block if a writer holds the lock.
+// NOTE: The `ttl` parameter is ignored. The lock is held until RUnlock()
+// is called or the underlying database connection is closed.
 func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if rw.circuitBreaker.isOpen() {

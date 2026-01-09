@@ -72,10 +72,9 @@ func (cb *circuitBreaker) isOpen() bool {
 		return false
 	}
 
-	// Check if timeout has passed - if so, allow one request through
+	// Check if timeout has passed - if so, allow one request through (half-open)
 	if time.Since(cb.openedAt) >= cb.timeout {
 		cb.openedAt = time.Time{} // Reset to allow retry
-		cb.failureCount = 0
 
 		return false
 	}

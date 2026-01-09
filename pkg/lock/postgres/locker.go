@@ -164,6 +164,8 @@ func (l *Locker) releaseConn(key string) {
 }
 
 // Lock acquires an exclusive lock with retry and exponential backoff.
+// NOTE: The `ttl` parameter is ignored. The lock is held until Unlock()
+// is called or the underlying database connection is closed.
 func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if l.circuitBreaker.isOpen() {
@@ -337,6 +339,8 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 }
 
 // TryLock attempts to acquire an exclusive lock without retries.
+// NOTE: The `ttl` parameter is ignored. The lock is held until Unlock()
+// is called or the underlying database connection is closed.
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
 	if l.circuitBreaker.isOpen() {
@@ -418,11 +422,10 @@ func (l *Locker) calculateBackoff(attempt int) time.Duration {
 
 	// Add jitter to prevent thundering herd
 	if l.retryConfig.Jitter {
-		// Create a local random generator with current nanosecond time as seed
-		// This provides randomness without using globals or init functions
+		// Use the global math/rand which is safe for concurrent use.
+		// This avoids creating a new source on every call.
 		//nolint:gosec // G404: math/rand is acceptable for jitter, doesn't need crypto-grade randomness
-		rng := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
-		jitter := rng.Float64() * delay * jitterFactor
+		jitter := mathrand.Float64() * delay * jitterFactor
 		delay += jitter
 	}
 
