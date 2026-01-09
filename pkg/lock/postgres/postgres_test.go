@@ -14,6 +14,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/postgres"
 )
 
@@ -347,10 +348,7 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 	retryCfg := getTestRetryConfig()
 
 	// Create multiple locker instances
-	var lockers []interface {
-		RLock(context.Context, string, time.Duration) error
-		RUnlock(context.Context, string) error
-	}
+	var lockers []lock.RWLocker
 
 	for i := 0; i < 5; i++ {
 		locker, err := postgres.NewRWLocker(ctx, db, cfg, retryCfg, false)
@@ -374,11 +372,7 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 	for i, locker := range lockers {
 		wg.Add(1)
 
-		go func(_ int, l interface {
-			RLock(context.Context, string, time.Duration) error
-			RUnlock(context.Context, string) error
-		},
-		) {
+		go func(_ int, l lock.RWLocker) {
 			defer wg.Done()
 
 			err := l.RLock(ctx, key, 10*time.Second)

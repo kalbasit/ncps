@@ -96,12 +96,14 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 				Dur("delay", delay).
 				Msg("retrying read lock acquisition after backoff")
 
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				lock.RecordLockFailure(ctx, lock.LockTypeRead, "distributed-postgres", lock.LockFailureContextCanceled)
 
 				return ctx.Err()
-			case <-time.After(delay):
+			case <-timer.C:
 			}
 		}
 

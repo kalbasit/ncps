@@ -200,12 +200,14 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 				Dur("delay", delay).
 				Msg("retrying lock acquisition after backoff")
 
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureContextCanceled)
 
 				return ctx.Err()
-			case <-time.After(delay):
+			case <-timer.C:
 			}
 		}
 
