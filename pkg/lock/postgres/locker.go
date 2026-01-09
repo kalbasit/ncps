@@ -234,6 +234,9 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		if err != nil {
 			lastErr = err
 
+			// Clean up the connection since lock acquisition failed
+			l.releaseConn(key)
+
 			// Check if this is a connection error
 			if isConnectionError(err) {
 				l.circuitBreaker.recordFailure()

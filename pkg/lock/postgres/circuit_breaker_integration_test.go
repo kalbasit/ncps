@@ -191,9 +191,9 @@ func TestRWLocker_DegradedMode(t *testing.T) {
 	assert.NoError(t, err, "Unlock should succeed in degraded mode")
 }
 
+//nolint:paralleltest
 func TestLocker_CircuitBreakerReopensOnFailure(t *testing.T) {
-	t.Parallel()
-
+	// Note: Cannot run in parallel as it modifies global timeNow variable
 	cbShort := postgres.NewCircuitBreaker(3, 100*time.Millisecond)
 
 	// Mock time for controlled testing
