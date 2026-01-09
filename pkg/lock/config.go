@@ -17,6 +17,10 @@ type RetryConfig struct {
 
 	// Jitter enables random jitter in retry delays to prevent thundering herd.
 	Jitter bool
+
+	// JitterFactor is the maximum proportion of delay to add as random jitter.
+	// Only used if Jitter is true. Defaults to 0.5 if not set.
+	JitterFactor float64
 }
 
 // DefaultRetryConfig returns sensible default retry configuration.
@@ -26,5 +30,6 @@ func DefaultRetryConfig() RetryConfig {
 		InitialDelay: 100 * time.Millisecond,
 		MaxDelay:     2 * time.Second,
 		Jitter:       true,
+		JitterFactor: 0.5,
 	}
 }
