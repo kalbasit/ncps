@@ -230,7 +230,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			_ = conn.Close()
 
 			// Treat as contention error for lastErr, but we will retry
-			lastErr = ErrLockAcquisitionFailed
+			lastErr = ErrLockContention
 
 			// We don't record failure here because we are retrying
 			continue
