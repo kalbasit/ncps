@@ -13,34 +13,57 @@ import (
 func TestCircuitBreaker(t *testing.T) {
 	threshold := 3
 	timeout := 100 * time.Millisecond
-	cb := postgres.NewCircuitBreaker(threshold, timeout)
-
-	// Initial state: closed
-	assert.False(t, cb.IsOpen())
-
-	// Record successes shouldn't change anything
-	cb.RecordSuccess()
-	assert.False(t, cb.IsOpen())
-
-	// Record failures below threshold
-	cb.RecordFailure()
-	cb.RecordFailure()
-	assert.False(t, cb.IsOpen())
-
 	initialTime := time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	t.Run("initial state is closed", func(t *testing.T) {
+		cb := postgres.NewCircuitBreaker(threshold, timeout)
+		assert.False(t, cb.IsOpen())
+	})
+
+	t.Run("success doesn't change state", func(t *testing.T) {
+		cb := postgres.NewCircuitBreaker(threshold, timeout)
+		cb.RecordSuccess()
+		assert.False(t, cb.IsOpen())
+	})
+
+	t.Run("failures below threshold keep circuit closed", func(t *testing.T) {
+		cb := postgres.NewCircuitBreaker(threshold, timeout)
+		cb.RecordFailure()
+		cb.RecordFailure()
+		assert.False(t, cb.IsOpen())
+	})
 
 	t.Run("circuit opens after threshold failures", func(t *testing.T) {
 		restore := postgres.MockTimeNow(initialTime)
 		defer restore()
 
-		// Need one more failure to open (threshold is 3)
-		// We already have 2 failures.
-		cb.RecordFailure()
+		cb := postgres.NewCircuitBreaker(threshold, timeout)
+
+		// Record threshold failures
+		for i := 0; i < threshold; i++ {
+			cb.RecordFailure()
+		}
+
 		assert.True(t, cb.IsOpen(), "Circuit breaker should be open after threshold failures")
 	})
 
 	t.Run("half-open state after timeout", func(t *testing.T) {
-		restore := postgres.MockTimeNow(initialTime.Add(timeout + 1*time.Millisecond))
+		restore := postgres.MockTimeNow(initialTime)
+		defer restore()
+
+		cb := postgres.NewCircuitBreaker(threshold, timeout)
+
+		// Open the circuit
+		for i := 0; i < threshold; i++ {
+			cb.RecordFailure()
+		}
+
+		assert.True(t, cb.IsOpen())
+
+		// Advance time past timeout
+		restore()
+
+		restore = postgres.MockTimeNow(initialTime.Add(timeout + 1*time.Millisecond))
 		defer restore()
 
 		// Check half-open state
@@ -51,30 +74,66 @@ func TestCircuitBreaker(t *testing.T) {
 		assert.True(t, cb.IsOpen(), "Circuit breaker should re-open immediately on failure in half-open state")
 	})
 
-	t.Run("half-open state after second timeout", func(t *testing.T) {
-		restore := postgres.MockTimeNow(initialTime.Add(2*timeout + 10*time.Millisecond))
+	t.Run("recovery after success in half-open state", func(t *testing.T) {
+		restore := postgres.MockTimeNow(initialTime)
 		defer restore()
 
-		assert.False(t, cb.IsOpen(), "Circuit breaker should be half-open after second timeout")
+		cb := postgres.NewCircuitBreaker(threshold, timeout)
 
-		// A single success in half-open state should close circuit and reset failures
+		// Open the circuit
+		for i := 0; i < threshold; i++ {
+			cb.RecordFailure()
+		}
+
+		assert.True(t, cb.IsOpen())
+
+		// Advance time past timeout to enter half-open state
+		restore()
+
+		restore = postgres.MockTimeNow(initialTime.Add(timeout + 1*time.Millisecond))
+		defer restore()
+
+		// Half-open: consume the allowed request
+		_ = cb.IsOpen()
+
+		// Record success to close circuit
 		cb.RecordSuccess()
 		assert.False(t, cb.IsOpen(), "Circuit breaker should be closed after success")
 	})
 
 	t.Run("failure count is reset after recovery", func(t *testing.T) {
-		restore := postgres.MockTimeNow(initialTime.Add(2*timeout + 10*time.Millisecond))
+		restore := postgres.MockTimeNow(initialTime)
 		defer restore()
 
-		// Verify failure count is reset
-		// It should take threshold failures to open again.
-		// Record threshold-1 failures (2 failures)
+		cb := postgres.NewCircuitBreaker(threshold, timeout)
+
+		// Open the circuit
+		for i := 0; i < threshold; i++ {
+			cb.RecordFailure()
+		}
+
+		assert.True(t, cb.IsOpen())
+
+		// Advance time and recover
+		restore()
+
+		restore = postgres.MockTimeNow(initialTime.Add(timeout + 1*time.Millisecond))
+		defer restore()
+
+		// Half-open: consume the allowed request
+		_ = cb.IsOpen()
+
+		// Record success to close and reset
+		cb.RecordSuccess()
+		assert.False(t, cb.IsOpen())
+
+		// Verify failure count is reset - should take threshold failures to open again
 		for i := 0; i < threshold-1; i++ {
 			cb.RecordFailure()
 			assert.False(t, cb.IsOpen(), "Circuit breaker should stay closed until threshold reached again")
 		}
 
-		// Record last failure
+		// Record last failure to reach threshold
 		cb.RecordFailure()
 		assert.True(t, cb.IsOpen(), "Circuit breaker should open after threshold reached again")
 	})

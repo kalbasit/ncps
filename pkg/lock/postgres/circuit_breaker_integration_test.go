@@ -106,11 +106,14 @@ func TestLocker_DegradedModeFallback(t *testing.T) {
 	assert.NoError(t, err, "Unlock should succeed in degraded mode")
 }
 
+//nolint:paralleltest // Modifying global state for mocking
 func TestLocker_CircuitBreakerRecovery(t *testing.T) {
-	t.Parallel()
-
 	// Set up a shorter timeout for testing
 	cbShort := postgres.NewCircuitBreaker(3, 100*time.Millisecond)
+	initialTime := time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	restore := postgres.MockTimeNow(initialTime)
+	defer restore()
 
 	// Open the circuit breaker
 	for i := 0; i < 3; i++ {
@@ -119,8 +122,11 @@ func TestLocker_CircuitBreakerRecovery(t *testing.T) {
 
 	assert.True(t, cbShort.IsOpen(), "Circuit breaker should be open")
 
-	// Wait for timeout to allow half-open state
-	time.Sleep(150 * time.Millisecond)
+	// Advance time past timeout to allow half-open state
+	restore()
+
+	restore = postgres.MockTimeNow(initialTime.Add(150 * time.Millisecond))
+	defer restore()
 
 	// Circuit should now be in half-open state (AllowRequest returns true for one request)
 	assert.False(t, cbShort.IsOpen(), "Circuit breaker should be half-open")
@@ -212,8 +218,8 @@ func TestLocker_CircuitBreakerReopensOnFailure(t *testing.T) {
 	// Advance time past timeout
 	restore()
 
-	restore2 := postgres.MockTimeNow(initialTime.Add(150 * time.Millisecond))
-	defer restore2()
+	restore = postgres.MockTimeNow(initialTime.Add(150 * time.Millisecond))
+	defer restore()
 
 	// Half-open state
 	assert.False(t, cbShort.IsOpen(), "Circuit should be half-open")
