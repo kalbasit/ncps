@@ -17,6 +17,9 @@ var (
 	// ErrLockAcquisitionFailed is returned when lock acquisition fails after all retries.
 	ErrLockAcquisitionFailed = errors.New("failed to acquire lock after retries")
 
+	// ErrLockContention is returned when a lock is already held by another process.
+	ErrLockContention = errors.New("lock held by another process")
+
 	// ErrNoDatabase is returned when no database connection is provided.
 	ErrNoDatabase = errors.New("no database connection provided")
 )

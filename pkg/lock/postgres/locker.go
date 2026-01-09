@@ -196,10 +196,12 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			continue
 		}
 
-		// Try to acquire the lock using pg_advisory_lock
-		// Note: pg_advisory_lock returns void, so we use ExecContext instead of QueryRowContext
-		_, err = conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockID)
+		// Try to acquire the lock using pg_try_advisory_lock (non-blocking)
+		var lockResult bool
+
+		err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", lockID).Scan(&lockResult)
 		if err != nil {
+			// Clean up connection on error
 			_ = conn.Close()
 			lastErr = err
 
@@ -219,6 +221,18 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 				}
 			}
 
+			// database_error metric in TryLock but here we can just continue
+			continue
+		}
+
+		if !lockResult {
+			// Lock is held by someone else, retry
+			_ = conn.Close()
+
+			// Treat as contention error for lastErr, but we will retry
+			lastErr = ErrLockContention
+
+			// We don't record failure here because we are retrying
 			continue
 		}
 
