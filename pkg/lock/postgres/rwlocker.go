@@ -66,7 +66,7 @@ func NewRWLocker(
 // is called or the underlying database connection is closed.
 func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
-	if rw.circuitBreaker.AllowRequest() {
+	if !rw.circuitBreaker.AllowRequest() {
 		if rw.allowDegradedMode {
 			zerolog.Ctx(ctx).Warn().
 				Str("key", key).
@@ -112,7 +112,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 
 			rw.circuitBreaker.recordFailure()
 
-			if rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
+			if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
 					Err(err).
 					Str("key", key).
@@ -120,9 +120,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 
 				lock.RecordLockFailure(ctx, lock.LockTypeRead, "distributed-postgres", lock.LockFailureCircuitBreaker)
 
-				return rw.fallbackLocker.(interface {
-					RLock(context.Context, string, time.Duration) error
-				}).RLock(ctx, key, ttl)
+				return rw.fallbackLocker.(lock.RWLocker).RLock(ctx, key, ttl)
 			}
 
 			continue
@@ -139,7 +137,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 			if isConnectionError(err) {
 				rw.circuitBreaker.recordFailure()
 
-				if rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
+				if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 					zerolog.Ctx(ctx).Warn().
 						Err(err).
 						Str("key", key).
@@ -184,7 +182,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 // RUnlock releases a shared read lock.
 func (rw *RWLocker) RUnlock(ctx context.Context, key string) error {
 	// Check if we're in degraded mode
-	if rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
+	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 		return rw.fallbackLocker.(lock.RWLocker).RUnlock(ctx, key)
 	}
 

@@ -168,7 +168,7 @@ func (l *Locker) releaseConn(key string) {
 // is called or the underlying database connection is closed.
 func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
-	if l.circuitBreaker.AllowRequest() {
+	if !l.circuitBreaker.AllowRequest() {
 		if l.allowDegradedMode {
 			zerolog.Ctx(ctx).Warn().
 				Str("key", key).
@@ -214,7 +214,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 			l.circuitBreaker.recordFailure()
 
-			if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
+			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
 					Err(err).
 					Str("key", key).
@@ -238,7 +238,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			if isConnectionError(err) {
 				l.circuitBreaker.recordFailure()
 
-				if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
+				if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 					zerolog.Ctx(ctx).Warn().
 						Err(err).
 						Str("key", key).
@@ -288,7 +288,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 	}
 
 	// Check if we're in degraded mode
-	if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
+	if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 		return l.fallbackLocker.Unlock(ctx, key)
 	}
 
@@ -343,7 +343,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 // is called or the underlying database connection is closed.
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
-	if l.circuitBreaker.AllowRequest() {
+	if !l.circuitBreaker.AllowRequest() {
 		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
 
 		if l.allowDegradedMode {
@@ -360,7 +360,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	if err != nil {
 		l.circuitBreaker.recordFailure()
 
-		if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
+		if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
 
 			return l.fallbackLocker.TryLock(ctx, key, ttl)
@@ -380,7 +380,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 		if isConnectionError(err) {
 			l.circuitBreaker.recordFailure()
 
-			if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
+			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
 
 				return l.fallbackLocker.TryLock(ctx, key, ttl)

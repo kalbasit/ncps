@@ -22,3 +22,8 @@ func MockTimeNow(t time.Time) func() {
 func CalculateBackoff(cfg RetryConfig, attempt int) time.Duration {
 	return calculateBackoff(cfg, attempt)
 }
+
+// GetCircuitBreaker returns the circuit breaker from a Locker for testing.
+func (l *Locker) GetCircuitBreaker() *circuitBreaker {
+	return l.circuitBreaker
+}
