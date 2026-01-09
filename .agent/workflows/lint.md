@@ -6,12 +6,17 @@ description: Lint and format code
 golangci-lint run --fix
 ```
 
-2. Format all files using Nix:
+2. (Optional) Run linter on specific files:
+```bash
+golangci-lint run --fix $FILE
+```
+
+3. Format all files using Nix:
 ```bash
 nix fmt
 ```
 
-3. (If SQL files modified) Lint SQL files:
+4. (If SQL files modified) Lint SQL files:
 ```bash
 sqlfluff lint db/query.*.sql db/migrations/
 ```

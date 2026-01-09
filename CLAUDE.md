@@ -149,7 +149,8 @@ The service configurations match the test environment variables to ensure consis
 
 ### CI/CD and GitHub Actions
 
-The project uses GitHub Actions for continuous integration. The workflows are configured to optimize for **Graphite-style stacked PRs**.
+- **CI/CD**: GitHub Actions optimized for Graphite-style stacked PRs.
+- **Auto-run Permissions**: Commands whitelisted in `.claude/settings.local.json` are pre-approved for Antigravity (SafeToAutoRun).
 
 **Key Workflows:**
 

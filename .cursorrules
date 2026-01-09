@@ -1,11 +1,10 @@
-# Project Rules
+You are an agentic AI coding assistant.
+You MUST read CLAUDE.md at the beginning of the session to understand the project's rules, guidelines, and architecture.
+CLAUDE.md is the single source of truth for all project context.
+If the user asks you to perform a common task (test, lint, migrate), look for a corresponding workflow in .agent/workflows/ before proceeding.
+Always follow the specific instructions in CLAUDE.md and the agent workflows.
 
-This project uses `CLAUDE.md` as the single source of truth for all architectural decisions, coding standards, and development workflows.
-
-You must read `CLAUDE.md` at the beginning of your session to understand:
-- Project Overview & Architecture
-- Development Commands
-- Coding Style & Linting Rules
-- Database & Migration Guidelines (Critical!)
-
-All generated code and proposed changes MUST adhere to the guidelines set forth in `CLAUDE.md`.
+**Automatic Command Execution**:
+When deciding whether to set `SafeToAutoRun: true` for a command, you MUST check `.claude/settings.local.json`. Any command matching an entry in `permissions.allow` (e.g., `Bash(go test:*)`) is considered pre-approved by the user and safe to auto-run.
+- If a command is whitelisted there, you do NOT need a `// turbo` annotation in the workflow to auto-run it.
+- If you need to add a new command to the auto-run list, you can ask the user OR update `.claude/settings.local.json` directly if the user grants you permission.
