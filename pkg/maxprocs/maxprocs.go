@@ -1,4 +1,4 @@
-package cmd
+package maxprocs
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 // Inspired from:
 // https://github.com/elastic/apm-server/blob/d1b93c984d4cc1a214afaef95fbf06b854d6f1f1/internal/beatcmd/maxprocs.go#L63
 
-// autoMaxProcs automatically configures Go's runtime.GOMAXPROCS based on the
+// AutoMaxProcs automatically configures Go's runtime.GOMAXPROCS based on the
 // given quota in a container.
-func autoMaxProcs(ctx context.Context, d time.Duration, logger zerolog.Logger) error {
+func AutoMaxProcs(ctx context.Context, d time.Duration, logger zerolog.Logger) error {
 	log := logger.With().Str("operation", "auto-max-procs").Logger()
 
 	infof := diffInfof(log)

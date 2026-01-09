@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/kalbasit/ncps/cmd"
+	"github.com/kalbasit/ncps/pkg/ncps"
 )
 
 func main() {
@@ -13,7 +13,7 @@ func main() {
 }
 
 func realMain() int {
-	c, err := cmd.New()
+	c, err := ncps.New()
 	if err != nil {
 		log.Printf("error creating the application: %s", err)
 
