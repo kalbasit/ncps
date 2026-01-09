@@ -94,11 +94,7 @@ data:
       {{- end }}
 
       lock:
-        {{- $lockBackend := .Values.config.lock.backend }}
-        {{- if .Values.config.redis.enabled }}
-          {{- $lockBackend = "redis" }}
-        {{- end }}
-        backend: {{ $lockBackend | quote }}
+        backend: {{ include "ncps.lockBackend" . | quote }}
         redis:
           key-prefix: {{ .Values.config.lock.redis.keyPrefix | quote }}
         postgres:

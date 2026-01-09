@@ -157,10 +157,7 @@ Validate configuration for incompatible settings
 This function will fail the template rendering if invalid configurations are detected
 */}}
 {{- define "ncps.validate" -}}
-{{- $lockBackend := .Values.config.lock.backend -}}
-{{- if .Values.config.redis.enabled -}}
-  {{- $lockBackend = "redis" -}}
-{{- end -}}
+{{- $lockBackend := include "ncps.lockBackend" . -}}
 
 {{- /* HA mode validation */ -}}
 {{- if gt (int .Values.replicaCount) 1 -}}
@@ -244,4 +241,16 @@ This function will fail the template rendering if invalid configurations are det
   {{- fail "mode must be either 'deployment' or 'statefulset'" -}}
 {{- end -}}
 
+{{- end -}}
+
+{{/*
+Return the effective lock backend.
+Redis overrides the configured backend when enabled.
+*/}}
+{{- define "ncps.lockBackend" -}}
+{{- if .Values.config.redis.enabled -}}
+redis
+{{- else -}}
+{{ .Values.config.lock.backend }}
+{{- end -}}
 {{- end -}}
