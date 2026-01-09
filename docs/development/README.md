@@ -75,7 +75,7 @@ go test -race ./...
 
 ```bash
 # Create new migration
-dbmate new migration_name
+dbmate --migrations-dir db/migrations/sqlite new migration_name
 
 # Run migrations
 dbmate migrate up

@@ -131,10 +131,9 @@ The server automatically restarts when you modify code files.
 **Creating a new migration:**
 
 ```bash
-# dbmate auto-detects the correct migrations directory based on --url
-dbmate --url "sqlite:path/to/db.sqlite" new migration_name
-dbmate --url "postgresql://user:pass@localhost:5432/ncps" new migration_name
-dbmate --url "mysql://user:pass@localhost:3306/ncps" new migration_name
+dbmate --migrations-dir db/migrations/sqlite new migration_name
+dbmate --migrations-dir db/migrations/postgres new migration_name
+dbmate --migrations-dir db/migrations/mysql new migration_name
 ```
 
 The `dbmate` command is a wrapper that automatically:
@@ -588,9 +587,9 @@ Both local (sync.Mutex) and Redis (Redlock) backends implement these interfaces.
 
 ```bash
 # Create migration for all databases
-dbmate --url "sqlite:./test.db" new add_new_feature
-dbmate --url "postgresql://localhost/test" new add_new_feature
-dbmate --url "mysql://localhost/test" new add_new_feature
+dbmate --migrations-dir db/migrations/sqlite new add_new_feature
+dbmate --migrations-dir db/migrations/postgres new add_new_feature
+dbmate --migrations-dir db/migrations/mysql new add_new_feature
 
 # Edit the migration files in:
 # - db/migrations/sqlite/TIMESTAMP_add_new_feature.sql

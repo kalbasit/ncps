@@ -149,7 +149,8 @@ The service configurations match the test environment variables to ensure consis
 
 ### CI/CD and GitHub Actions
 
-The project uses GitHub Actions for continuous integration. The workflows are configured to optimize for **Graphite-style stacked PRs**.
+- **CI/CD**: GitHub Actions optimized for Graphite-style stacked PRs.
+- **Auto-run Permissions**: Commands whitelisted in `.claude/settings.local.json` are pre-approved for Antigravity (SafeToAutoRun).
 
 **Key Workflows:**
 
@@ -232,9 +233,9 @@ Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db
 When creating new database migrations, always use `dbmate new` to generate properly timestamped migration files:
 
 ```bash
-dbmate --url sqlite:/path/to/db.sqlite new migration_name
-dbmate --url postgresql://user:pass@localhost:5432/ncps new migration_name
-dbmate --url mysql://user:pass@localhost:3306/ncps new migration_name
+dbmate --migrations-dir db/migrations/sqlite new migration_name
+dbmate --migrations-dir db/migrations/postgres new migration_name
+dbmate --migrations-dir db/migrations/mysql new migration_name
 ```
 
 This creates timestamped migration files (e.g., `20251230223951_migration_name.sql`) with the standard dbmate template:
@@ -309,6 +310,13 @@ The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
 Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`). Key linters: err113, exhaustive, gosec, paralleltest, testpackage.
 
 **IMPORTANT**: Always use `golangci-lint run --fix` first to automatically fix fixable issues before doing manual fixes. This saves tokens and is more efficient.
+
+**Manual Fixes**:
+
+- `testpackage`: Test files must be in the `package_test` package, even if in the same directory.
+- `paralleltest`: All tests and subtests (`t.Run`) must call `t.Parallel()`. If a test relies on specific ordering and cannot be parallelized, use `//nolint:paralleltest` to document the exception. Parallel tests are highly encouraged unless absolutely impossible.
+- `testifylint`: Use `require.NoError` for errors that should stop the test, and `assert` for others.
+- `lll`: Break long lines (especially function calls) into multiple lines.
 
 ### Formatting
 
