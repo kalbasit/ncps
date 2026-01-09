@@ -337,6 +337,8 @@ cache:
 
   lock:
     backend: postgres  # Options: local, redis, postgres
+    postgres:
+      key-prefix: "ncps:lock:"
     allow-degraded-mode: false
 ```
 
@@ -345,6 +347,7 @@ cache:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--cache-lock-backend` | Lock backend: `local`, `redis`, or `postgres` | `local` |
+| `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `"ncps:lock:"` |
 | `--cache-lock-allow-degraded-mode` | Fall back to local locks if distributed backend unavailable | `false` |
 
 > [!WARNING]
@@ -448,6 +451,9 @@ ncps uses two types of distributed locks:
 **Purpose:** Prevent duplicate downloads of the same package
 
 **Lock Key Pattern:** `ncps:lock:download:nar:{hash}` or `ncps:lock:download:narinfo:{hash}`
+
+> [!NOTE]
+> For PostgreSQL, the key prefix is hashed along with the rest of the key to produce a 64-bit integer advisory lock ID.
 
 **Behavior:**
 
