@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"math"
+	"net"
 	"sync"
 	"time"
 
@@ -450,8 +452,16 @@ func isConnectionError(err error) bool {
 		return false
 	}
 
-	// Check for common connection errors
-	return errors.Is(err, sql.ErrConnDone) ||
+	// Check for common context and sql errors that indicate a broken connection.
+	if errors.Is(err, sql.ErrConnDone) ||
 		errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, context.Canceled)
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, io.EOF) { // pgx can return io.EOF on connection loss
+		return true
+	}
+
+	// Check for underlying network errors.
+	var netErr net.Error
+
+	return errors.As(err, &netErr)
 }

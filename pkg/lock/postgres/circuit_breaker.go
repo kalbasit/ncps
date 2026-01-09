@@ -80,11 +80,13 @@ func (cb *circuitBreaker) AllowRequest() bool {
 	}
 
 	if timeNow().Sub(cb.openedAt) >= cb.timeout {
-		// Half-open state: allow one request through by resetting the open timer.
+		// Half-open state: allow one request through by resetting openedAt to current time.
+		// This prevents a thundering herd - only one request is allowed through while
+		// concurrent requests are blocked until the next timeout cycle.
 		// The failure count is preserved. If the next attempt fails, recordFailure()
 		// will see that the threshold is still met and immediately re-open the circuit.
 		// If it succeeds, recordSuccess() will reset the failure count and close the circuit.
-		cb.openedAt = time.Time{}
+		cb.openedAt = timeNow()
 
 		return true
 	}
