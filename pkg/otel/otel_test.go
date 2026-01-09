@@ -13,16 +13,13 @@ import (
 	"github.com/kalbasit/ncps/pkg/otel"
 )
 
+//nolint:paralleltest
 func TestSetupOTelSDK(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
 	res, err := resource.New(ctx, resource.WithAttributes(semconv.ServiceNameKey.String("test-service")))
 	require.NoError(t, err)
 
 	t.Run("Disabled", func(t *testing.T) {
-		t.Parallel()
-
 		shutdown, err := otel.SetupOTelSDK(ctx, false, "", res)
 		require.NoError(t, err)
 		assert.NotNil(t, shutdown)
@@ -30,8 +27,6 @@ func TestSetupOTelSDK(t *testing.T) {
 	})
 
 	t.Run("EnabledStdout", func(t *testing.T) {
-		t.Parallel()
-
 		shutdown, err := otel.SetupOTelSDK(ctx, true, "", res)
 		require.NoError(t, err)
 		assert.NotNil(t, shutdown)
