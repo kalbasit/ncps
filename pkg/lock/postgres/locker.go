@@ -416,11 +416,8 @@ func calculateBackoff(cfg lock.RetryConfig, attempt int) time.Duration {
 
 	// Apply jitter if enabled
 	if cfg.Jitter {
-		// Calculate jitter: rand(0, delay * jitterFactor)
-		factor := cfg.JitterFactor
-		if factor <= 0 {
-			factor = 0.5
-		}
+		// Calculate jitter: rand(0, delay * JitterFactor)
+		factor := cfg.GetJitterFactor()
 
 		// Use the global math/rand which is safe for concurrent use.
 		// This avoids creating a new source on every call.

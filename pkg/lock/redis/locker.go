@@ -359,10 +359,7 @@ func (l *Locker) calculateBackoff(attempt int) time.Duration {
 
 	// Add jitter to prevent thundering herd
 	if l.retryConfig.Jitter {
-		factor := l.retryConfig.JitterFactor
-		if factor <= 0 {
-			factor = 0.5
-		}
+		factor := l.retryConfig.GetJitterFactor()
 
 		jitter := mathrand.Float64() * delay * factor //nolint:gosec // jitter doesn't need crypto randomness
 		delay += jitter
