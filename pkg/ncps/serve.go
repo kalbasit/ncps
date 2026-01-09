@@ -1,4 +1,4 @@
-package cmd
+package ncps
 
 import (
 	"context"
@@ -33,6 +33,8 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
+	"github.com/kalbasit/ncps/pkg/maxprocs"
+	"github.com/kalbasit/ncps/pkg/otel"
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
@@ -374,7 +376,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		defer cancel()
 
 		g.Go(func() error {
-			return autoMaxProcs(ctx, 30*time.Second, logger)
+			return maxprocs.AutoMaxProcs(ctx, 30*time.Second, logger)
 		})
 
 		db, err := createDatabaseQuerier(cmd)
@@ -417,7 +419,12 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		otelShutdown, err := setupOTelSDK(ctx, cmd, otelResource)
+		otelShutdown, err := otel.SetupOTelSDK(
+			ctx,
+			cmd.Root().Bool("otel-enabled"),
+			cmd.Root().String("otel-grpc-url"),
+			otelResource,
+		)
 		if err != nil {
 			return err
 		}

@@ -1,4 +1,4 @@
-package cmd
+package otel
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/rs/zerolog"
-	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -24,11 +23,12 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// setupOTelSDK bootstraps the OpenTelemetry pipeline.
+// SetupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
-func setupOTelSDK(
+func SetupOTelSDK(
 	ctx context.Context,
-	cmd *cli.Command,
+	enabled bool,
+	colURL string,
 	otelResource *resource.Resource,
 ) (func(context.Context) error, error) {
 	var shutdownFuncs []func(context.Context) error
@@ -60,9 +60,6 @@ func setupOTelSDK(
 	// Set up propagator.
 	prop := newPropagator()
 	otel.SetTextMapPropagator(prop)
-
-	colURL := cmd.String("otel-grpc-url")
-	enabled := cmd.Bool("otel-enabled")
 
 	ctx = zerolog.Ctx(ctx).
 		With().
