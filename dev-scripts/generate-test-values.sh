@@ -668,7 +668,73 @@ affinity:
           topologyKey: kubernetes.io/hostname
 EOF
 
-echo "✅ Generated 10 values files"
+# 11. HA - S3 storage + PostgreSQL + PostgreSQL Advisory Locks
+cat > "$TEST_VALUES_DIR/ha-s3-postgres-lock.yaml" <<EOFCONFIG
+# High availability with S3 storage and PostgreSQL (using PostgreSQL advisory locks instead of Redis)
+image:
+  registry: $IMAGE_REGISTRY
+  repository: $IMAGE_REPOSITORY
+  tag: "$IMAGE_TAG"
+
+replicaCount: 2
+mode: deployment
+
+migration:
+  enabled: true
+  mode: job
+
+config:
+  analytics:
+    reporting:
+      enabled: false
+
+  hostname: "ncps-ha-s3-postgres-lock.local"
+
+  storage:
+    type: s3
+    s3:
+      bucket: $S3_BUCKET
+      endpoint: $S3_ENDPOINT
+      region: us-east-1
+      accessKeyId: $S3_ACCESS_KEY
+      secretAccessKey: $S3_SECRET_KEY
+
+  database:
+    type: postgresql
+    postgresql:
+      host: $PG_HOST
+      port: $PG_PORT
+      database: $PG_DB
+      username: $PG_USER
+      password: "$PG_PASS"
+      sslMode: disable
+
+  lock:
+    backend: postgres
+
+  redis:
+    enabled: false
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - ncps
+          topologyKey: kubernetes.io/hostname
+EOFCONFIG
+
+
+echo "✅ Generated 11 values files"
 
 # Generate QUICK-INSTALL.sh
 cat > "$TEST_VALUES_DIR/QUICK-INSTALL.sh" <<'INSTALL_EOF'
@@ -759,6 +825,12 @@ helm upgrade --install ncps-ha-s3-mariadb . \
   --create-namespace \
   --namespace ncps-ha-s3-mariadb
 
+echo "1️⃣1️⃣  Installing ncps-ha-s3-postgres-lock..."
+helm upgrade --install ncps-ha-s3-postgres-lock . \
+  -f test-values/ha-s3-postgres-lock.yaml \
+  --create-namespace \
+  --namespace ncps-ha-s3-postgres-lock
+
 echo ""
 echo "========================================="
 echo "✅ All deployments installed!"
@@ -799,6 +871,7 @@ namespaces=(
   "ncps-single-s3-mariadb-existing-secret"
   "ncps-ha-s3-postgres"
   "ncps-ha-s3-mariadb"
+  "ncps-ha-s3-postgres-lock"
 )
 
 for ns in "${namespaces[@]}"; do
@@ -1190,6 +1263,15 @@ deployments:
       type: "s3"
     database:
       type: "mysql"
+
+  - name: "ncps-ha-s3-postgres-lock"
+    namespace: "ncps-ha-s3-postgres-lock"
+    mode: "deployment"
+    replicas: 2
+    storage:
+      type: "s3"
+    database:
+      type: "postgresql"
 TEST_CONFIG_EOF
 
 echo "✅ Generated test-config.yaml"
@@ -1214,9 +1296,10 @@ This directory contains test values files for various NCPS deployment scenarios 
 - **single-s3-postgres-existing-secret.yaml** - S3 storage + PostgreSQL + Existing Secret
 - **single-s3-mariadb-existing-secret.yaml** - S3 storage + MariaDB + Existing Secret
 
-### High Availability Deployments (With Redis, Distributed Locking)
-- **ha-s3-postgres.yaml** - 2 replicas + S3 storage + PostgreSQL + Redis
-- **ha-s3-mariadb.yaml** - 2 replicas + S3 storage + MariaDB + Redis
+### High Availability Deployments (Distributed Locking)
+- **ha-s3-postgres.yaml** - 2 replicas + S3 storage + PostgreSQL + Redis locks
+- **ha-s3-mariadb.yaml** - 2 replicas + S3 storage + MariaDB + Redis locks
+- **ha-s3-postgres-lock.yaml** - 2 replicas + S3 storage + PostgreSQL + PostgreSQL advisory locks
 
 ## Quick Start
 
