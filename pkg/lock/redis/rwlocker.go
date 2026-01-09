@@ -263,7 +263,9 @@ func (rw *RWLocker) calculateBackoff(attempt int) time.Duration {
 
 	// Add jitter to prevent thundering herd
 	if rw.retryConfig.Jitter {
-		jitter := mathrand.Float64() * delay * 0.1 //nolint:gosec // jitter doesn't need crypto randomness
+		factor := rw.retryConfig.GetJitterFactor()
+
+		jitter := mathrand.Float64() * delay * factor //nolint:gosec // jitter doesn't need crypto randomness
 		delay += jitter
 	}
 

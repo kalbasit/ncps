@@ -21,11 +21,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock/local"
 )
 
-const (
-	// jitterFactor is the maximum proportion of delay to add as random jitter.
-	jitterFactor = 0.5
-)
-
 // Locker implements lock.Locker using PostgreSQL advisory locks.
 type Locker struct {
 	db                *sql.DB
@@ -415,14 +410,13 @@ func calculateBackoff(cfg lock.RetryConfig, attempt int) time.Duration {
 
 	// Apply jitter if enabled
 	if cfg.Jitter {
-		// Calculate jitter: rand(0, delay * jitterFactor)
-		// We use a factor of 0.5 (random +/- 25% would be better, but simple additive jitter is common)
-		// Here: delay + rand(0, delay * 0.5)
+		// Calculate jitter: rand(0, delay * JitterFactor)
+		factor := cfg.GetJitterFactor()
 
 		// Use the global math/rand which is safe for concurrent use.
 		// This avoids creating a new source on every call.
 		//nolint:gosec // G404: math/rand is acceptable for jitter, doesn't need crypto-grade randomness
-		jitter := mathrand.Float64() * float64(delay) * jitterFactor
+		jitter := mathrand.Float64() * float64(delay) * factor
 		delay += time.Duration(jitter)
 	}
 

@@ -32,8 +32,6 @@ const (
 	stateClosed = "closed"
 )
 
-const jitterFactor = 0.1
-
 // Config holds Redis configuration for distributed locking.
 type Config struct {
 	// Addrs is a list of Redis server addresses.
