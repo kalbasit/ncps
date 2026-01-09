@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/postgres"
 )
 
@@ -26,7 +27,7 @@ func TestLocker_CircuitBreakerOpensAfterFailures(t *testing.T) {
 
 	// Create a locker with a low circuit breaker threshold for testing
 	cfg := getTestConfig()
-	retryCfg := postgres.RetryConfig{
+	retryCfg := lock.RetryConfig{
 		MaxAttempts:  2, // Low retry count for faster test
 		InitialDelay: 10 * time.Millisecond,
 		MaxDelay:     50 * time.Millisecond,
@@ -72,7 +73,7 @@ func TestLocker_DegradedModeFallback(t *testing.T) {
 	defer cleanup()
 
 	cfg := getTestConfig()
-	retryCfg := postgres.RetryConfig{
+	retryCfg := lock.RetryConfig{
 		MaxAttempts:  2,
 		InitialDelay: 10 * time.Millisecond,
 		MaxDelay:     50 * time.Millisecond,
@@ -156,7 +157,7 @@ func TestRWLocker_DegradedMode(t *testing.T) {
 	defer cleanup()
 
 	cfg := getTestConfig()
-	retryCfg := postgres.RetryConfig{
+	retryCfg := lock.RetryConfig{
 		MaxAttempts:  2,
 		InitialDelay: 10 * time.Millisecond,
 		MaxDelay:     50 * time.Millisecond,

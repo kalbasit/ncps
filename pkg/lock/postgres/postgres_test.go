@@ -89,8 +89,8 @@ func getTestConfig() postgres.Config {
 }
 
 // getTestRetryConfig returns a retry configuration for testing.
-func getTestRetryConfig() postgres.RetryConfig {
-	return postgres.RetryConfig{
+func getTestRetryConfig() lock.RetryConfig {
+	return lock.RetryConfig{
 		MaxAttempts:  3,
 		InitialDelay: 50 * time.Millisecond,
 		MaxDelay:     500 * time.Millisecond,
@@ -229,7 +229,7 @@ func TestLocker_RetryWithBackoff(t *testing.T) {
 	defer cleanup()
 
 	cfg := getTestConfig()
-	retryCfg := postgres.RetryConfig{
+	retryCfg := lock.RetryConfig{
 		MaxAttempts:  5,
 		InitialDelay: 100 * time.Millisecond,
 		MaxDelay:     1 * time.Second,

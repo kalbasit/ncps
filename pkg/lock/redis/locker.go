@@ -25,7 +25,7 @@ type Locker struct {
 	clients           []*redis.Client // All connected Redis clients for HA
 	redsync           *redsync.Redsync
 	keyPrefix         string
-	retryConfig       RetryConfig
+	retryConfig       lock.RetryConfig
 	allowDegradedMode bool
 
 	// mutexes tracks acquired locks for cleanup
@@ -43,7 +43,12 @@ type Locker struct {
 }
 
 // NewLocker creates a new Redis-based locker.
-func NewLocker(ctx context.Context, cfg Config, retryCfg RetryConfig, allowDegradedMode bool) (lock.Locker, error) {
+func NewLocker(
+	ctx context.Context,
+	cfg Config,
+	retryCfg lock.RetryConfig,
+	allowDegradedMode bool,
+) (lock.Locker, error) {
 	if len(cfg.Addrs) == 0 {
 		return nil, ErrNoRedisAddrs
 	}

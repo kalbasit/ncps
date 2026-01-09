@@ -30,7 +30,7 @@ const (
 type Locker struct {
 	db                *sql.DB
 	keyPrefix         string
-	retryConfig       RetryConfig
+	retryConfig       lock.RetryConfig
 	allowDegradedMode bool
 
 	// connections tracks dedicated connections for each active lock
@@ -52,7 +52,7 @@ func NewLocker(
 	ctx context.Context,
 	querier database.Querier,
 	cfg Config,
-	retryCfg RetryConfig,
+	retryCfg lock.RetryConfig,
 	allowDegradedMode bool,
 ) (lock.Locker, error) {
 	if querier == nil {
@@ -404,7 +404,7 @@ func (l *Locker) calculateBackoff(attempt int) time.Duration {
 }
 
 // calculateBackoff calculates the backoff duration based on retry config and attempt number.
-func calculateBackoff(cfg RetryConfig, attempt int) time.Duration {
+func calculateBackoff(cfg lock.RetryConfig, attempt int) time.Duration {
 	// Formula: InitialDelay * 2^(attempt-1)
 	delay := cfg.InitialDelay * time.Duration(math.Pow(2, float64(attempt-1)))
 
