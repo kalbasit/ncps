@@ -1,7 +1,9 @@
----
-description: Run project tests
----
+______________________________________________________________________
+
+## description: Run project tests
+
 1. Run standard tests with race detection:
+
 ```bash
 go test -race ./...
 ```

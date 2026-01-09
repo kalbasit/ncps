@@ -312,6 +312,7 @@ Strict linting via golangci-lint with 30+ linters enabled (see `.golangci.yml`).
 **IMPORTANT**: Always use `golangci-lint run --fix` first to automatically fix fixable issues before doing manual fixes. This saves tokens and is more efficient.
 
 **Manual Fixes**:
+
 - `testpackage`: Test files must be in the `package_test` package, even if in the same directory.
 - `paralleltest`: All tests and subtests (`t.Run`) must call `t.Parallel()`. If a test relies on specific ordering and cannot be parallelized, use `//nolint:paralleltest` to document the exception. Parallel tests are highly encouraged unless absolutely impossible.
 - `testifylint`: Use `require.NoError` for errors that should stop the test, and `assert` for others.
