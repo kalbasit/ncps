@@ -19,6 +19,11 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock/local"
 )
 
+const (
+	// jitterFactor is the maximum proportion of delay to add as random jitter.
+	jitterFactor = 0.5
+)
+
 // Locker implements lock.Locker using PostgreSQL advisory locks.
 type Locker struct {
 	db                *sql.DB
@@ -112,7 +117,7 @@ func NewLocker(
 		allowDegradedMode: allowDegradedMode,
 		connections:       make(map[string]*sql.Conn),
 		fallbackLocker:    local.NewLocker(),
-		circuitBreaker:    newCircuitBreaker(5, 1*time.Minute),
+		circuitBreaker:    newCircuitBreaker(defaultCircuitBreakerThreshold, defaultCircuitBreakerTimeout),
 	}, nil
 }
 
@@ -221,10 +226,9 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			continue
 		}
 
-		// Try to acquire the lock using pg_lock_advisory
-		var lockResult bool
-
-		err = conn.QueryRowContext(ctx, "SELECT pg_advisory_lock($1)", lockID).Scan(&lockResult)
+		// Try to acquire the lock using pg_advisory_lock
+		// Note: pg_advisory_lock returns void, so we use ExecContext instead of QueryRowContext
+		_, err = conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockID)
 		if err != nil {
 			lastErr = err
 
@@ -414,7 +418,11 @@ func (l *Locker) calculateBackoff(attempt int) time.Duration {
 
 	// Add jitter to prevent thundering herd
 	if l.retryConfig.Jitter {
-		jitter := mathrand.Float64() * delay * jitterFactor //nolint:gosec // jitter doesn't need crypto randomness
+		// Create a local random generator with current nanosecond time as seed
+		// This provides randomness without using globals or init functions
+		//nolint:gosec // G404: math/rand is acceptable for jitter, doesn't need crypto-grade randomness
+		rng := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+		jitter := rng.Float64() * delay * jitterFactor
 		delay += jitter
 	}
 

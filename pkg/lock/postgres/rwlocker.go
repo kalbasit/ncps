@@ -120,9 +120,8 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		}
 
 		// Try to acquire the shared lock using pg_advisory_lock_shared
-		var lockResult bool
-
-		err = conn.QueryRowContext(ctx, "SELECT pg_advisory_lock_shared($1)", lockID).Scan(&lockResult)
+		// Note: pg_advisory_lock_shared returns void, so we use ExecContext instead of QueryRowContext
+		_, err = conn.ExecContext(ctx, "SELECT pg_advisory_lock_shared($1)", lockID)
 		if err != nil {
 			_ = conn.Close()
 			lastErr = err

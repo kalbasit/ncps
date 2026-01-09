@@ -6,9 +6,6 @@ import (
 )
 
 const (
-	// jitterFactor is the maximum proportion of delay to add as random jitter.
-	jitterFactor = 0.5
-
 	// defaultCircuitBreakerThreshold is the number of consecutive failures before
 	// the circuit breaker opens.
 	defaultCircuitBreakerThreshold = 5
