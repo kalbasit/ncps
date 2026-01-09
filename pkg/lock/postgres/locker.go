@@ -134,37 +134,6 @@ func (l *Locker) hashKey(key string) int64 {
 	return int64(h.Sum64())
 }
 
-// getOrCreateConn gets or creates a dedicated connection for the given key.
-func (l *Locker) getOrCreateConn(ctx context.Context, key string) (*sql.Conn, error) {
-	l.connMu.Lock()
-	defer l.connMu.Unlock()
-
-	if conn, ok := l.connections[key]; ok {
-		return conn, nil
-	}
-
-	conn, err := l.db.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create dedicated connection: %w", err)
-	}
-
-	l.connections[key] = conn
-
-	return conn, nil
-}
-
-// releaseConn releases the dedicated connection for the given key.
-func (l *Locker) releaseConn(key string) {
-	l.connMu.Lock()
-	defer l.connMu.Unlock()
-
-	if conn, ok := l.connections[key]; ok {
-		_ = conn.Close()
-
-		delete(l.connections, key)
-	}
-}
-
 // Lock acquires an exclusive lock with retry and exponential backoff.
 // NOTE: The `ttl` parameter is ignored. The lock is held until Unlock()
 // is called or the underlying database connection is closed.
@@ -211,8 +180,8 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			}
 		}
 
-		// Get or create a dedicated connection for this lock
-		conn, err := l.getOrCreateConn(ctx, key)
+		// Create a new dedicated connection for this lock attempt
+		conn, err := l.db.Conn(ctx)
 		if err != nil {
 			lastErr = err
 
@@ -236,10 +205,8 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		// Note: pg_advisory_lock returns void, so we use ExecContext instead of QueryRowContext
 		_, err = conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockID)
 		if err != nil {
+			_ = conn.Close()
 			lastErr = err
-
-			// Clean up the connection since lock acquisition failed
-			l.releaseConn(key)
 
 			// Check if this is a connection error
 			if isConnectionError(err) {
@@ -260,7 +227,11 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			continue
 		}
 
-		// Success!
+		// Success! Store the connection
+		l.connMu.Lock()
+		l.connections[key] = conn
+		l.connMu.Unlock()
+
 		l.circuitBreaker.recordSuccess()
 
 		// Record metrics
@@ -301,9 +272,14 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 
 	lockID := l.hashKey(key)
 
-	// Get the dedicated connection for this lock
+	// Atomically get and remove the dedicated connection for this lock
 	l.connMu.Lock()
+
 	conn, ok := l.connections[key]
+	if ok {
+		delete(l.connections, key)
+	}
+
 	l.connMu.Unlock()
 
 	if !ok {
@@ -316,8 +292,8 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 
 	err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", lockID).Scan(&unlockResult)
 
-	// Always release the connection, even if unlock failed
-	l.releaseConn(key)
+	// Always close the connection, even if unlock failed
+	_ = conn.Close()
 
 	if err != nil {
 		// Don't fail here - just log the error
@@ -362,8 +338,8 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 
 	lockID := l.hashKey(key)
 
-	// Get or create a dedicated connection for this lock
-	conn, err := l.getOrCreateConn(ctx, key)
+	// Create a new dedicated connection for this lock attempt
+	conn, err := l.db.Conn(ctx)
 	if err != nil {
 		l.circuitBreaker.recordFailure()
 
@@ -382,7 +358,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", lockID).Scan(&lockResult)
 	if err != nil {
 		// Clean up connection on error
-		l.releaseConn(key)
+		_ = conn.Close()
 
 		if isConnectionError(err) {
 			l.circuitBreaker.recordFailure()
@@ -401,13 +377,18 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 
 	if !lockResult {
 		// Lock is held by someone else
-		l.releaseConn(key)
+		_ = conn.Close()
+
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockResultContention)
 
 		return false, nil
 	}
 
-	// Success!
+	// Success! Store the connection
+	l.connMu.Lock()
+	l.connections[key] = conn
+	l.connMu.Unlock()
+
 	l.circuitBreaker.recordSuccess()
 
 	// Record metrics
