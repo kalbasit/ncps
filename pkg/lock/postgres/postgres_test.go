@@ -38,7 +38,7 @@ func getTestDatabase(t *testing.T) (database.Querier, func()) {
 	require.NoError(t, err, "failed to connect to admin database")
 
 	// Create ephemeral test database
-	dbName := "test_lock_" + helper.MustRandString(40, nil)
+	dbName := "test-lock-" + helper.MustRandString(40, nil)
 
 	_, err = adminDb.DB().ExecContext(context.Background(), "SELECT create_test_db($1)", dbName)
 	require.NoError(t, err, "failed to create test database")

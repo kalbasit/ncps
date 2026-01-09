@@ -7,10 +7,18 @@ func NewCircuitBreaker(threshold int, timeout time.Duration) *circuitBreaker {
 	return newCircuitBreaker(threshold, timeout)
 }
 
-func (cb *circuitBreaker) IsOpen() bool   { return cb.isOpen() }
+func (cb *circuitBreaker) IsOpen() bool   { return !cb.AllowRequest() }
 func (cb *circuitBreaker) RecordFailure() { cb.recordFailure() }
 func (cb *circuitBreaker) RecordSuccess() { cb.recordSuccess() }
 
-func (l *Locker) CalculateBackoff(attempt int) time.Duration {
-	return l.calculateBackoff(attempt)
+// MockTimeNow allows mocking time.Now for testing purposes.
+func MockTimeNow(t time.Time) func() {
+	original := timeNow
+	timeNow = func() time.Time { return t }
+
+	return func() { timeNow = original }
+}
+
+func CalculateBackoff(cfg RetryConfig, attempt int) time.Duration {
+	return calculateBackoff(cfg, attempt)
 }

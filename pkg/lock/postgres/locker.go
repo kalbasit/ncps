@@ -168,7 +168,7 @@ func (l *Locker) releaseConn(key string) {
 // is called or the underlying database connection is closed.
 func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
-	if l.circuitBreaker.isOpen() {
+	if l.circuitBreaker.AllowRequest() {
 		if l.allowDegradedMode {
 			zerolog.Ctx(ctx).Warn().
 				Str("key", key).
@@ -214,7 +214,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 			l.circuitBreaker.recordFailure()
 
-			if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+			if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
 					Err(err).
 					Str("key", key).
@@ -238,7 +238,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			if isConnectionError(err) {
 				l.circuitBreaker.recordFailure()
 
-				if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+				if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 					zerolog.Ctx(ctx).Warn().
 						Err(err).
 						Str("key", key).
@@ -288,7 +288,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 	}
 
 	// Check if we're in degraded mode
-	if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+	if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 		return l.fallbackLocker.Unlock(ctx, key)
 	}
 
@@ -343,7 +343,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 // is called or the underlying database connection is closed.
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
-	if l.circuitBreaker.isOpen() {
+	if l.circuitBreaker.AllowRequest() {
 		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
 
 		if l.allowDegradedMode {
@@ -360,7 +360,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	if err != nil {
 		l.circuitBreaker.recordFailure()
 
-		if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+		if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
 
 			return l.fallbackLocker.TryLock(ctx, key, ttl)
@@ -380,7 +380,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 		if isConnectionError(err) {
 			l.circuitBreaker.recordFailure()
 
-			if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+			if l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
 
 				return l.fallbackLocker.TryLock(ctx, key, ttl)
@@ -410,26 +410,35 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	return true, nil
 }
 
-// calculateBackoff calculates the backoff delay with exponential backoff and optional jitter.
+// calculateBackoff calculates the backoff duration for a given attempt.
 func (l *Locker) calculateBackoff(attempt int) time.Duration {
-	// Exponential backoff: initialDelay * 2^attempt
-	delay := float64(l.retryConfig.InitialDelay) * math.Pow(2, float64(attempt))
+	return calculateBackoff(l.retryConfig, attempt)
+}
 
-	// Cap at max delay
-	if delay > float64(l.retryConfig.MaxDelay) {
-		delay = float64(l.retryConfig.MaxDelay)
+// calculateBackoff calculates the backoff duration based on retry config and attempt number.
+func calculateBackoff(cfg RetryConfig, attempt int) time.Duration {
+	// Formula: InitialDelay * 2^(attempt-1)
+	delay := cfg.InitialDelay * time.Duration(math.Pow(2, float64(attempt-1)))
+
+	// Cap at MaxDelay
+	if delay > cfg.MaxDelay {
+		delay = cfg.MaxDelay
 	}
 
-	// Add jitter to prevent thundering herd
-	if l.retryConfig.Jitter {
+	// Apply jitter if enabled
+	if cfg.Jitter {
+		// Calculate jitter: rand(0, delay * jitterFactor)
+		// We use a factor of 0.5 (random +/- 25% would be better, but simple additive jitter is common)
+		// Here: delay + rand(0, delay * 0.5)
+
 		// Use the global math/rand which is safe for concurrent use.
 		// This avoids creating a new source on every call.
 		//nolint:gosec // G404: math/rand is acceptable for jitter, doesn't need crypto-grade randomness
-		jitter := mathrand.Float64() * delay * jitterFactor
-		delay += jitter
+		jitter := mathrand.Float64() * float64(delay) * jitterFactor
+		delay += time.Duration(jitter)
 	}
 
-	return time.Duration(delay)
+	return delay
 }
 
 // isConnectionError checks if an error is a database connection error.

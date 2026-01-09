@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// timeNow allows mocking time.Now for testing purposes
+//
+//nolint:gochecknoglobals // This is used for testing purposes
+var timeNow = time.Now
+
 const (
 	// defaultCircuitBreakerThreshold is the number of consecutive failures before
 	// the circuit breaker opens.
@@ -49,8 +54,8 @@ func (cb *circuitBreaker) recordFailure() {
 
 	cb.failureCount++
 
-	if cb.failureCount >= cb.threshold && cb.openedAt.IsZero() {
-		cb.openedAt = time.Now()
+	if cb.failureCount >= cb.threshold {
+		cb.openedAt = timeNow()
 	}
 }
 
@@ -63,21 +68,26 @@ func (cb *circuitBreaker) recordSuccess() {
 	cb.openedAt = time.Time{}
 }
 
-// isOpen returns true if the circuit breaker is open and should reject requests.
-func (cb *circuitBreaker) isOpen() bool {
+// AllowRequest checks if the circuit breaker allows a request to go through.
+// It handles the state transition from Open to Half-Open.
+func (cb *circuitBreaker) AllowRequest() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	if cb.openedAt.IsZero() {
-		return false
+		// Circuit is closed
+		return true
 	}
 
-	// Check if timeout has passed - if so, allow one request through (half-open)
-	if time.Since(cb.openedAt) >= cb.timeout {
-		cb.openedAt = time.Time{} // Reset to allow retry
+	if timeNow().Sub(cb.openedAt) >= cb.timeout {
+		// Half-open state: allow one request through by resetting the open timer.
+		// The failure count is preserved. If the next attempt fails, recordFailure()
+		// will see that the threshold is still met and immediately re-open the circuit.
+		// If it succeeds, recordSuccess() will reset the failure count and close the circuit.
+		cb.openedAt = time.Time{}
 
-		return false
+		return true
 	}
 
-	return true
+	return false
 }
