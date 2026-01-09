@@ -132,12 +132,6 @@ func (l *Locker) hashKey(key string) int64 {
 // Lock acquires an exclusive lock with retry and exponential backoff.
 // NOTE: The `ttl` parameter is ignored. The lock is held until Unlock()
 // is called or the underlying database connection is closed.
-// Lock acquires an exclusive lock with retry and exponential backoff.
-// NOTE: The `ttl` parameter is ignored. The lock is held until Unlock()
-// is called or the underlying database connection is closed.
-// Lock acquires an exclusive lock with retry and exponential backoff.
-// NOTE: The `ttl` parameter is ignored. The lock is held until Unlock()
-// is called or the underlying database connection is closed.
 func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if !l.circuitBreaker.AllowRequest() {
