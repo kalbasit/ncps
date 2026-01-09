@@ -33,6 +33,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
+	"github.com/kalbasit/ncps/pkg/otel"
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
@@ -417,7 +418,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		otelShutdown, err := setupOTelSDK(ctx, cmd, otelResource)
+		otelShutdown, err := otel.SetupOTelSDK(ctx, cmd.Root().Bool("otel-enabled"), cmd.Root().String("otel-grpc-url"), otelResource)
 		if err != nil {
 			return err
 		}
