@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/resource"
 
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
 	"github.com/kalbasit/ncps/pkg/otel"
 )
