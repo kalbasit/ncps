@@ -1,13 +1,19 @@
 package mysql_test
 
 import (
+	"context"
+	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/mysql"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func TestCalculateBackoff(t *testing.T) {
@@ -46,6 +52,39 @@ func TestCalculateBackoff(t *testing.T) {
 	d = mysql.CalculateBackoff(cfgJitter, 1)
 	assert.GreaterOrEqual(t, d, 100*time.Millisecond, "With jitter, delay should be at least base delay")
 	// jitterFactor is 0.5, so max is 1.5x
-	assert.LessOrEqual(t, d, time.Duration(float64(100*time.Millisecond)*1.6),
+	assert.LessOrEqual(t, d, time.Duration(float64(100*time.Millisecond)*1.5),
 		"With jitter, delay should be within reasonable bounds")
 }
+
+func TestNewLocker_ReturnType(t *testing.T) {
+	t.Parallel()
+
+	// Connect to a non-existent database to trigger degraded mode
+	// We need a mock querier
+	db, err := sql.Open("mysql", "invalid:password@tcp(localhost:9999)/invalid")
+	require.NoError(t, err)
+
+	defer db.Close()
+
+	querier := &mockQuerier{db: db}
+
+	ctx := context.Background()
+	cfg := mysql.Config{}
+	retryCfg := lock.RetryConfig{}
+
+	// When allowDegradedMode is true, it should return *mysql.Locker even if DB is down
+	l, err := mysql.NewLocker(ctx, querier, cfg, retryCfg, true)
+	require.NoError(t, err)
+	assert.IsType(t, (*mysql.Locker)(nil), l, "NewLocker should return *mysql.Locker in degraded mode")
+
+	// When allowDegradedMode is false, it should return an error
+	_, err = mysql.NewLocker(ctx, querier, cfg, retryCfg, false)
+	assert.Error(t, err)
+}
+
+type mockQuerier struct {
+	database.Querier
+	db *sql.DB
+}
+
+func (m *mockQuerier) DB() *sql.DB { return m.db }

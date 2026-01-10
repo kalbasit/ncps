@@ -51,15 +51,6 @@ type Locker struct {
 	fallbackLocker lock.Locker
 
 	// circuitBreaker tracks database health
-	// We'll re-use the circuit breaker logic possibly, but we need to see if it's exported.
-	// It seems it was unexported in postgres package. I should duplicate it or make it shared.
-	// For now, I will implement a basic version or check if I can share it.
-	// Looking at the file list, `circuit_breaker.go` is in `pkg/lock/postgres`.
-	// I should probably move `circuit_breaker.go` to `pkg/lock` or duplicate it.
-	// Given the task constraints, duplication is safer to avoid breaking postgres package right now,
-	// but ideally it should be shared.
-	// Actually, the user asked to implement `pkg/lock/mysql`.
-	// I will duplicate the circuit breaker for now to avoid refactoring huge parts of postgres package unless necessary.
 	circuitBreaker *circuitBreaker
 
 	// Track lock acquisition times for duration metrics
@@ -71,6 +62,14 @@ type Config struct {
 	// KeyPrefix is the prefix for all lock keys.
 	// If empty, defaults to "ncps:lock:".
 	KeyPrefix string
+
+	// CircuitBreakerThreshold is the number of failures before the circuit breaker opens.
+	// If zero, defaults to 5.
+	CircuitBreakerThreshold int
+
+	// CircuitBreakerResetTimeout is the duration before the circuit breaker tries to close again.
+	// If zero, defaults to 30 seconds.
+	CircuitBreakerResetTimeout time.Duration
 }
 
 // NewLocker creates a new MySQL/MariaDB advisory lock-based locker.
@@ -80,10 +79,24 @@ func NewLocker(
 	cfg Config,
 	retryCfg lock.RetryConfig,
 	allowDegradedMode bool,
-) (lock.Locker, error) {
+) (*Locker, error) {
 	if querier == nil {
 		return nil, ErrNoDatabase
 	}
+
+	if cfg.CircuitBreakerThreshold == 0 {
+		cfg.CircuitBreakerThreshold = 5
+	}
+
+	if cfg.CircuitBreakerResetTimeout == 0 {
+		cfg.CircuitBreakerResetTimeout = 30 * time.Second
+	}
+
+	if cfg.KeyPrefix == "" {
+		cfg.KeyPrefix = "ncps:lock:"
+	}
+
+	cb := newCircuitBreaker(cfg.CircuitBreakerThreshold, cfg.CircuitBreakerResetTimeout)
 
 	// Get the underlying database connection
 	db := querier.DB()
@@ -99,19 +112,28 @@ func NewLocker(
 				Err(err).
 				Msg("failed to connect to MySQL, falling back to local locks (DEGRADED MODE)")
 
-			return local.NewLocker(), nil
+			cb.recordFailure() // Trip the breaker immediately
+
+			for cb.failures < cb.threshold {
+				cb.recordFailure()
+			}
+
+			return &Locker{
+				db:                db,
+				keyPrefix:         cfg.KeyPrefix,
+				retryConfig:       retryCfg,
+				allowDegradedMode: allowDegradedMode,
+				connections:       make(map[string]*sql.Conn),
+				fallbackLocker:    local.NewLocker(),
+				circuitBreaker:    cb,
+			}, nil
 		}
 
 		return nil, fmt.Errorf("failed to connect to MySQL: %w", err)
 	}
 	defer conn.Close()
 
-	// Try a test advisory lock to verify functionality
-	// MySQL uses GET_LOCK(str, timeout)
-	// We use timeout 0 for immediate return
 	var testLockResult int
-	// In MySQL GET_LOCK returns 1 if success, 0 if timeout, NULL if error.
-	// We scan into int.
 
 	err = conn.QueryRowContext(testCtx, "SELECT GET_LOCK('ncps_test_lock', 0)").Scan(&testLockResult)
 	if err != nil {
@@ -120,7 +142,21 @@ func NewLocker(
 				Err(err).
 				Msg("MySQL advisory locks not available, falling back to local locks (DEGRADED MODE)")
 
-			return local.NewLocker(), nil
+			cb.recordFailure() // Trip the breaker immediately
+
+			for cb.failures < cb.threshold {
+				cb.recordFailure()
+			}
+
+			return &Locker{
+				db:                db,
+				keyPrefix:         cfg.KeyPrefix,
+				retryConfig:       retryCfg,
+				allowDegradedMode: allowDegradedMode,
+				connections:       make(map[string]*sql.Conn),
+				fallbackLocker:    local.NewLocker(),
+				circuitBreaker:    cb,
+			}, nil
 		}
 
 		return nil, fmt.Errorf("MySQL advisory locks not available: %w", err)
@@ -129,10 +165,6 @@ func NewLocker(
 	// Unlock the test lock
 	if testLockResult == 1 {
 		_, _ = conn.ExecContext(testCtx, "SELECT RELEASE_LOCK('ncps_test_lock')")
-	}
-
-	if cfg.KeyPrefix == "" {
-		cfg.KeyPrefix = "ncps:lock:"
 	}
 
 	zerolog.Ctx(ctx).Info().
@@ -145,7 +177,7 @@ func NewLocker(
 		allowDegradedMode: allowDegradedMode,
 		connections:       make(map[string]*sql.Conn),
 		fallbackLocker:    local.NewLocker(),
-		circuitBreaker:    newCircuitBreaker(5, 30*time.Second), // Hardcoded defaults for now
+		circuitBreaker:    cb,
 	}, nil
 }
 
@@ -159,8 +191,9 @@ func (l *Locker) hashKey(key string) string {
 }
 
 // Lock acquires an exclusive lock with retry and exponential backoff.
-// It establishes a new dedicated connection for the lock, which is closed
-// when Unlock is called or if the context is canceled.
+// NOTE: MySQL advisory locks are connection-bound and do not support a TTL.
+// The lock is held until Unlock() is called or the underlying database connection
+// is closed (e.g., on application exit). The `ttl` parameter is ignored.
 func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if !l.circuitBreaker.AllowRequest() {
