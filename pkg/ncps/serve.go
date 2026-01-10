@@ -198,8 +198,9 @@ func serveCommand(
 				Value:   "Local",
 			},
 			&cli.StringFlag{
-				Name:    "cache-secret-key-path",
-				Usage:   "The path to the secret key used for signing cached paths",
+				Name: "cache-secret-key-path",
+				Usage: "The path to the secret key used for signing cached paths. " +
+					"If set, it will be stored in the database if different.",
 				Sources: flagSources("cache.secret-key-path", "CACHE_SECRET_KEY_PATH"),
 			},
 			&cli.BoolFlag{
@@ -692,6 +693,7 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 	return ucs, nil
 }
 
+//nolint:staticcheck // deprecated: migration support
 func getStorageBackend(
 	ctx context.Context,
 	cmd *cli.Command,
@@ -730,6 +732,7 @@ func getStorageBackend(
 	}
 }
 
+//nolint:staticcheck // deprecated: migration support
 func createLocalStorage(
 	ctx context.Context,
 	dataPath string,
@@ -744,6 +747,7 @@ func createLocalStorage(
 	return localStore, localStore, localStore, nil
 }
 
+//nolint:staticcheck // deprecated: migration support
 func createS3Storage(
 	ctx context.Context,
 	cmd *cli.Command,

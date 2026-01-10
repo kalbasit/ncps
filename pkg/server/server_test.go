@@ -37,6 +37,7 @@ const cacheName = "cache.example.com"
 func newTestCache(
 	ctx context.Context,
 	db database.Querier,
+	//nolint:staticcheck // using deprecated ConfigStore interface for testing migration
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,

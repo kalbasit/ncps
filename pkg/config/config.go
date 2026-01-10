@@ -14,21 +14,29 @@ import (
 )
 
 const (
+	// KeyClusterUUID is the key for the cluster UUID in the configuration database.
 	KeyClusterUUID = "cluster_uuid"
+	// KeySecretKey is the key for the secret key in the configuration database.
+	KeySecretKey = "secret_key"
 
+	// lockKeyPrefix is the prefix used for locking configuration keys.
 	lockKeyPrefix = "config_"
 
+	// lockTTL is the time-to-live for configuration locks.
 	lockTTL = 5 * time.Minute
 )
 
 // ErrConfigNotFound is returned if no config with this key was found.
 var ErrConfigNotFound = errors.New("no config was found for this key")
 
+// Config provides access to the persistent configuration stored in the database.
+// It uses an RWLocker to ensure thread-safe access to configuration keys.
 type Config struct {
 	db       database.Querier
 	rwLocker lock.RWLocker
 }
 
+// New returns a new Config instance.
 func New(db database.Querier, rwLocker lock.RWLocker) *Config {
 	return &Config{
 		db:       db,
@@ -36,14 +44,27 @@ func New(db database.Querier, rwLocker lock.RWLocker) *Config {
 	}
 }
 
+// GetClusterUUID returns the cluster UUID from the configuration.
 func (c *Config) GetClusterUUID(ctx context.Context) (string, error) {
 	return c.getConfig(ctx, KeyClusterUUID)
 }
 
+// SetClusterUUID stores the cluster UUID in the configuration.
 func (c *Config) SetClusterUUID(ctx context.Context, value string) error {
 	return c.setConfig(ctx, KeyClusterUUID, value)
 }
 
+// GetSecretKey returns the secret key from the configuration.
+func (c *Config) GetSecretKey(ctx context.Context) (string, error) {
+	return c.getConfig(ctx, KeySecretKey)
+}
+
+// SetSecretKey stores the secret key in the configuration.
+func (c *Config) SetSecretKey(ctx context.Context, value string) error {
+	return c.setConfig(ctx, KeySecretKey, value)
+}
+
+// getConfig retrieves a configuration value by key, acquiring a read lock.
 func (c *Config) getConfig(ctx context.Context, key string) (string, error) {
 	lockKey := getLockKey(key)
 
@@ -77,6 +98,7 @@ func (c *Config) getConfig(ctx context.Context, key string) (string, error) {
 	return cu.Value, nil
 }
 
+// setConfig stores a configuration value for the given key, acquiring a write lock.
 func (c *Config) setConfig(ctx context.Context, key, value string) error {
 	lockKey := getLockKey(key)
 
@@ -104,6 +126,7 @@ func (c *Config) setConfig(ctx context.Context, key, value string) error {
 	})
 }
 
+// getLockKey returns the lock key for the specified configuration key.
 func getLockKey(key string) string {
 	return lockKeyPrefix + key
 }

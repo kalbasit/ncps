@@ -22,14 +22,23 @@ var (
 
 // ConfigStore represents a store for the ncps to use for storing
 // configurations.
+//
+// Deprecated: The configuration is now stored in the database. This interface
+// will be removed in a future release.
 type ConfigStore interface {
 	// GetSecretKey returns secret key from the store.
+	//
+	// Deprecated: Use config.GetSecretKey instead.
 	GetSecretKey(ctx context.Context) (signature.SecretKey, error)
 
 	// PutSecretKey stores the secret key in the store.
+	//
+	// Deprecated: Use config.SetSecretKey instead.
 	PutSecretKey(ctx context.Context, sk signature.SecretKey) error
 
 	// DeleteSecretKey deletes the secret key in the store.
+	//
+	// Deprecated: The secret key is stored in the database.
 	DeleteSecretKey(ctx context.Context) error
 }
 
