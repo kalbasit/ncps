@@ -49,7 +49,7 @@ func NewLocker(
 	cfg Config,
 	retryCfg lock.RetryConfig,
 	allowDegradedMode bool,
-) (lock.Locker, error) {
+) (*Locker, error) {
 	if querier == nil {
 		return nil, ErrNoDatabase
 	}
@@ -72,7 +72,22 @@ func NewLocker(
 				Err(err).
 				Msg("failed to connect to PostgreSQL, falling back to local locks (DEGRADED MODE)")
 
-			return local.NewLocker(), nil
+			cb := newCircuitBreaker(defaultCircuitBreakerThreshold, defaultCircuitBreakerTimeout)
+			cb.recordFailure()
+
+			for cb.failureCount < cb.threshold {
+				cb.recordFailure()
+			}
+
+			return &Locker{
+				db:                db,
+				keyPrefix:         cfg.KeyPrefix,
+				retryConfig:       retryCfg,
+				allowDegradedMode: allowDegradedMode,
+				connections:       make(map[string]*sql.Conn),
+				fallbackLocker:    local.NewLocker(),
+				circuitBreaker:    cb,
+			}, nil
 		}
 
 		return nil, fmt.Errorf("%w: %w", ErrDatabaseConnectionFailed, err)
@@ -89,7 +104,22 @@ func NewLocker(
 				Err(err).
 				Msg("PostgreSQL advisory locks not available, falling back to local locks (DEGRADED MODE)")
 
-			return local.NewLocker(), nil
+			cb := newCircuitBreaker(defaultCircuitBreakerThreshold, defaultCircuitBreakerTimeout)
+			cb.recordFailure()
+
+			for cb.failureCount < cb.threshold {
+				cb.recordFailure()
+			}
+
+			return &Locker{
+				db:                db,
+				keyPrefix:         cfg.KeyPrefix,
+				retryConfig:       retryCfg,
+				allowDegradedMode: allowDegradedMode,
+				connections:       make(map[string]*sql.Conn),
+				fallbackLocker:    local.NewLocker(),
+				circuitBreaker:    cb,
+			}, nil
 		}
 
 		return nil, fmt.Errorf("PostgreSQL advisory locks not available: %w", err)

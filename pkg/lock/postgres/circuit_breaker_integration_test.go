@@ -39,8 +39,7 @@ func TestLocker_CircuitBreakerOpensAfterFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify initial state
-	pgLocker, ok := locker.(*postgres.Locker)
-	require.True(t, ok, "Expected postgres.Locker")
+	pgLocker := locker
 
 	cb := pgLocker.GetCircuitBreaker()
 	assert.False(t, cb.IsOpen(), "Circuit breaker should be closed initially")
@@ -84,8 +83,7 @@ func TestLocker_DegradedModeFallback(t *testing.T) {
 	locker, err := postgres.NewLocker(ctx, querier, cfg, retryCfg, true)
 	require.NoError(t, err)
 
-	pgLocker, ok := locker.(*postgres.Locker)
-	require.True(t, ok, "Expected postgres.Locker")
+	pgLocker := locker
 
 	cb := pgLocker.GetCircuitBreaker()
 

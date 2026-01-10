@@ -32,24 +32,12 @@ func NewRWLocker(
 	retryCfg lock.RetryConfig,
 	allowDegradedMode bool,
 ) (lock.RWLocker, error) {
-	locker, err := NewLocker(ctx, querier, cfg, retryCfg, allowDegradedMode)
+	pgLocker, err := NewLocker(ctx, querier, cfg, retryCfg, allowDegradedMode)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if we got a fallback local locker (degraded mode)
-	if _, ok := locker.(*Locker); !ok {
-		// It's a local locker fallback, return a local RWLocker
-		if allowDegradedMode {
-			return local.NewRWLocker(), nil
-		}
-
-		return nil, ErrCircuitBreakerOpen
-	}
-
-	pgLocker := locker.(*Locker)
-
-	// The embedded Locker has a fallbackLocker of type *local.Locker.
+	// The embedded Locker has a fallbackLocker of type lock.Locker (local.NewLocker()).
 	// We must replace it with one that implements lock.RWLocker to prevent
 	// a panic when RLock/RUnlock fall back to degraded mode.
 	pgLocker.fallbackLocker = local.NewRWLocker()
