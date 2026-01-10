@@ -29,6 +29,32 @@ const (
 	DefaultTimeout = 1 * time.Minute
 )
 
+// State represents the state of the circuit breaker.
+type State int
+
+const (
+	// StateClosed means requests are allowed.
+	StateClosed State = iota
+	// StateOpen means requests are blocked.
+	StateOpen
+	// StateHalfOpen means a limited number of requests are allowed to test backend health.
+	StateHalfOpen
+)
+
+// String returns the string representation of the state.
+func (s State) String() string {
+	switch s {
+	case StateClosed:
+		return "closed"
+	case StateOpen:
+		return "open"
+	case StateHalfOpen:
+		return "half-open"
+	default:
+		return "unknown"
+	}
+}
+
 // CircuitBreaker implements a simple circuit breaker pattern for service health.
 // It tracks consecutive failures and opens the circuit after a threshold is reached.
 type CircuitBreaker struct {
@@ -104,18 +130,25 @@ func (cb *CircuitBreaker) AllowRequest() bool {
 	return false
 }
 
-// IsOpen returns true if the circuit breaker is currently open.
-func (cb *CircuitBreaker) IsOpen() bool {
+// State returns the current state of the circuit breaker.
+func (cb *CircuitBreaker) State() State {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	if cb.openedAt.IsZero() {
-		return false
+		return StateClosed
 	}
 
-	// Check if timeout has expired (half-open basically counts as open for status check usually,
-	// checking strictly if we are in the "blocked" window)
-	return timeNow().Sub(cb.openedAt) < cb.timeout
+	if timeNow().Sub(cb.openedAt) >= cb.timeout {
+		return StateHalfOpen
+	}
+
+	return StateOpen
+}
+
+// IsOpen returns true if the circuit breaker is currently open.
+func (cb *CircuitBreaker) IsOpen() bool {
+	return cb.State() != StateClosed
 }
 
 // ForceOpen forces the circuit breaker into an open state. This is useful for testing or degraded mode initialization.
