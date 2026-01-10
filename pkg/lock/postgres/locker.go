@@ -167,7 +167,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 	var lastErr error
 
-	for attempt := 0; attempt < l.retryConfig.MaxAttempts; attempt++ {
+	for attempt := range l.retryConfig.MaxAttempts {
 		if attempt > 0 {
 			// Record retry attempt for metrics
 			lock.RecordLockRetryAttempt(ctx, lock.LockTypeExclusive)
