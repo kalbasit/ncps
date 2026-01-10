@@ -7,20 +7,19 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"math"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 
-	mathrand "math/rand"
-
 	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
 )
+
+const mode = "distributed-postgres"
 
 // Locker implements lock.Locker using PostgreSQL advisory locks.
 type Locker struct {
@@ -73,19 +72,7 @@ func NewLocker(
 				Err(err).
 				Msg("failed to connect to PostgreSQL, falling back to local locks (DEGRADED MODE)")
 
-			cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
-			// Force the circuit breaker to open state.
-			cb.ForceOpen()
-
-			return &Locker{
-				db:                db,
-				keyPrefix:         cfg.KeyPrefix,
-				retryConfig:       retryCfg,
-				allowDegradedMode: allowDegradedMode,
-				connections:       make(map[string]*sql.Conn),
-				fallbackLocker:    local.NewLocker(),
-				circuitBreaker:    cb,
-			}, nil
+			return newDegradedLocker(db, cfg.KeyPrefix, retryCfg, allowDegradedMode), nil
 		}
 
 		return nil, fmt.Errorf("%w: %w", ErrDatabaseConnectionFailed, err)
@@ -102,18 +89,7 @@ func NewLocker(
 				Err(err).
 				Msg("PostgreSQL advisory locks not available, falling back to local locks (DEGRADED MODE)")
 
-			cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
-			cb.ForceOpen()
-
-			return &Locker{
-				db:                db,
-				keyPrefix:         cfg.KeyPrefix,
-				retryConfig:       retryCfg,
-				allowDegradedMode: allowDegradedMode,
-				connections:       make(map[string]*sql.Conn),
-				fallbackLocker:    local.NewLocker(),
-				circuitBreaker:    cb,
-			}, nil
+			return newDegradedLocker(db, cfg.KeyPrefix, retryCfg, allowDegradedMode), nil
 		}
 
 		return nil, fmt.Errorf("PostgreSQL advisory locks not available: %w", err)
@@ -140,6 +116,22 @@ func NewLocker(
 		fallbackLocker:    local.NewLocker(),
 		circuitBreaker:    circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout),
 	}, nil
+}
+
+// newDegradedLocker creates a Locker that starts in degraded mode with an open circuit breaker.
+func newDegradedLocker(db *sql.DB, keyPrefix string, retryCfg lock.RetryConfig, allowDegradedMode bool) *Locker {
+	cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
+	cb.ForceOpen()
+
+	return &Locker{
+		db:                db,
+		keyPrefix:         keyPrefix,
+		retryConfig:       retryCfg,
+		allowDegradedMode: allowDegradedMode,
+		connections:       make(map[string]*sql.Conn),
+		fallbackLocker:    local.NewLocker(),
+		circuitBreaker:    cb,
+	}
 }
 
 // hashKey converts a string key to an int64 for use with PostgreSQL advisory locks.
@@ -174,13 +166,13 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 	var lastErr error
 
-	for attempt := 0; attempt < l.retryConfig.MaxAttempts; attempt++ {
+	for attempt := range l.retryConfig.MaxAttempts {
 		if attempt > 0 {
 			// Record retry attempt for metrics
 			lock.RecordLockRetryAttempt(ctx, lock.LockTypeExclusive)
 
 			// Calculate backoff delay
-			delay := l.calculateBackoff(attempt)
+			delay := lock.CalculateBackoff(l.retryConfig, attempt)
 
 			zerolog.Ctx(ctx).Debug().
 				Str("key", key).
@@ -192,7 +184,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureContextCanceled)
+				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureContextCanceled)
 
 				return ctx.Err()
 			case <-timer.C:
@@ -212,7 +204,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 					Str("key", key).
 					Msg("database connection failed, switching to degraded mode")
 
-				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
+				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureCircuitBreaker)
 
 				return l.fallbackLocker.Lock(ctx, key, ttl)
 			}
@@ -239,7 +231,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 						Str("key", key).
 						Msg("database connection failed, switching to degraded mode")
 
-					lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
+					lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureCircuitBreaker)
 
 					return l.fallbackLocker.Lock(ctx, key, ttl)
 				}
@@ -268,7 +260,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		l.circuitBreaker.RecordSuccess()
 
 		// Record metrics
-		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockResultSuccess)
+		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, mode, lock.LockResultSuccess)
 		l.acquisitionTimes.Store(key, time.Now())
 
 		zerolog.Ctx(ctx).Debug().
@@ -282,7 +274,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 	}
 
 	// All retries exhausted
-	lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureMaxRetries)
+	lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureMaxRetries)
 
 	return fmt.Errorf("%w: key=%s after %d attempts: %w",
 		ErrLockAcquisitionFailed, key, l.retryConfig.MaxAttempts, lastErr)
@@ -294,7 +286,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 	if val, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
 		if startTime, ok := val.(time.Time); ok {
 			duration := time.Since(startTime).Seconds()
-			lock.RecordLockDuration(ctx, lock.LockTypeExclusive, "distributed-postgres", duration)
+			lock.RecordLockDuration(ctx, lock.LockTypeExclusive, mode, duration)
 		}
 	}
 
@@ -360,7 +352,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
 	if !l.circuitBreaker.AllowRequest() {
-		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
+		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureCircuitBreaker)
 
 		if l.allowDegradedMode {
 			return l.fallbackLocker.TryLock(ctx, key, ttl)
@@ -377,7 +369,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 		l.circuitBreaker.RecordFailure()
 
 		if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
-			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
+			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureCircuitBreaker)
 
 			return l.fallbackLocker.TryLock(ctx, key, ttl)
 		}
@@ -397,13 +389,13 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 			l.circuitBreaker.RecordFailure()
 
 			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
-				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
+				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureCircuitBreaker)
 
 				return l.fallbackLocker.TryLock(ctx, key, ttl)
 			}
 		}
 
-		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureDatabaseError)
+		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureDatabaseError)
 
 		return false, fmt.Errorf("error trying to acquire lock: %w", err)
 	}
@@ -412,7 +404,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 		// Lock is held by someone else
 		_ = conn.Close()
 
-		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockResultContention)
+		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, mode, lock.LockResultContention)
 
 		return false, nil
 	}
@@ -425,40 +417,10 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	l.circuitBreaker.RecordSuccess()
 
 	// Record metrics
-	lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockResultSuccess)
+	lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, mode, lock.LockResultSuccess)
 	l.acquisitionTimes.Store(key, time.Now())
 
 	return true, nil
-}
-
-// calculateBackoff calculates the backoff duration for a given attempt.
-func (l *Locker) calculateBackoff(attempt int) time.Duration {
-	return calculateBackoff(l.retryConfig, attempt)
-}
-
-// calculateBackoff calculates the backoff duration based on retry config and attempt number.
-func calculateBackoff(cfg lock.RetryConfig, attempt int) time.Duration {
-	// Formula: InitialDelay * 2^(attempt-1)
-	delay := cfg.InitialDelay * time.Duration(math.Pow(2, float64(attempt-1)))
-
-	// Cap at MaxDelay
-	if delay > cfg.MaxDelay {
-		delay = cfg.MaxDelay
-	}
-
-	// Apply jitter if enabled
-	if cfg.Jitter {
-		// Calculate jitter: rand(0, delay * JitterFactor)
-		factor := cfg.GetJitterFactor()
-
-		// Use the global math/rand which is safe for concurrent use.
-		// This avoids creating a new source on every call.
-		//nolint:gosec // G404: math/rand is acceptable for jitter, doesn't need crypto-grade randomness
-		jitter := mathrand.Float64() * float64(delay) * factor
-		delay += time.Duration(jitter)
-	}
-
-	return delay
 }
 
 // isConnectionError checks if an error is a database connection error.

@@ -76,7 +76,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 			lock.RecordLockRetryAttempt(ctx, lock.LockTypeRead)
 
 			// Calculate backoff delay
-			delay := rw.calculateBackoff(attempt)
+			delay := lock.CalculateBackoff(rw.retryConfig, attempt)
 
 			zerolog.Ctx(ctx).Debug().
 				Str("key", key).

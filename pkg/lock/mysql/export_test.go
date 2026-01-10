@@ -9,7 +9,7 @@ import (
 )
 
 func CalculateBackoff(cfg lock.RetryConfig, attempt int) time.Duration {
-	return calculateBackoff(cfg, attempt)
+	return lock.CalculateBackoff(cfg, attempt)
 }
 
 // GetCircuitBreaker returns the circuit breaker from a Locker for testing.
