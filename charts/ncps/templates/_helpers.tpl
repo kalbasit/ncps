@@ -162,8 +162,8 @@ This function will fail the template rendering if invalid configurations are det
 {{- /* HA mode validation */ -}}
 {{- if gt (int .Values.replicaCount) 1 -}}
   {{- /* HA requires distributed locking (Redis, PostgreSQL, or MySQL) */ -}}
-  {{- if and (ne $lockBackend "redis") (ne $lockBackend "postgres") (ne $lockBackend "mysql") -}}
-    {{- fail "High availability mode (replicaCount > 1) requires either Redis to be enabled (config.redis.enabled=true), PostgreSQL advisory locks to be enabled (config.lock.backend='postgres'), or MySQL advisory locks to be enabled (config.lock.backend='mysql')" -}}
+  {{- if not (has $lockBackend (list "redis" "postgres" "mysql")) -}}
+    {{- fail "High availability mode (replicaCount > 1) requires a distributed lock backend: 'redis', 'postgres', or 'mysql'." -}}
   {{- end -}}
 
   {{- /* If using PostgreSQL lock, database type must be postgresql */ -}}
