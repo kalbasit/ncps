@@ -391,18 +391,33 @@ SELECT pg_try_advisory_lock(key_hash); -- Non-blocking lock attempt
 - Native database feature - no configuration or extensions needed
 - Same connection must be used for lock() and unlock()
 
-#### Connection Management
+#### Connection Management & Scalability
 
-Each active lock uses a dedicated database connection to ensure:
+> [!WARNING]
+> **Scalability Risk:** Each active lock consumes one database connection.
 
-- The same connection is used for lock/unlock operations
-- Locks don't interfere with other database operations
-- Connection pool doesn't cause lock/unlock mismatches
+PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated connection model**:
 
-**Example:** With 10 concurrent downloads, ncps will use:
+1.  When `Lock(key)` is called, a dedicated connection is pulled from the pool (or created).
+2.  The lock is acquired on that connection.
+3.  The connection is **held open** and removed from the pool until `Unlock(key)` is called.
 
-- 1 main database connection for queries
-- Up to 10 dedicated connections for locks
+**Implication:** If your database has `max_connections = 100` and you try to acquire 101 concurrent locks across your cluster, the 101st attempt will fail (and eventually trigger the circuit breaker).
+
+**Recommendation:**
+- Carefully monitor `pg_stat_activity` or equivalent.
+- Ensure your database's `max_connections` is comfortably higher than `(num_instances * max_concurrent_downloads) + (num_instances * pool_size)`.
+- If you need thousands of concurrent locks, **use Redis**.
+
+#### Redis vs. Database Locking Model
+
+| Feature | Redis (Redlock) | PostgreSQL / MySQL |
+| :--- | :--- | :--- |
+| **Model** | **Connection Pooling** | **Dedicated Connection** |
+| **Connection Usage** | Borrow -> Set Key -> Return | Borrow -> Lock -> **Hold** -> Unlock -> Return |
+| **Scalability** | extremely High (10 conns can handle 10k locks) | Limited by DB `max_connections` |
+| **Safety** | Good (TTL based) | Excellent (Auto-release on disconnect) |
+| **Performance** | < 1ms | 1-5ms |
 
 #### Choosing Between Redis, PostgreSQL, and MySQL
 
@@ -438,6 +453,23 @@ For most deployments, PostgreSQL advisory locks provide excellent performance. R
 - Very high lock contention (hundreds of locks/second)
 - Extremely latency-sensitive workloads
 - Geographic distribution with distant database
+- Geographic distribution with distant database
+
+### Recommended Stack
+
+For best performance, reliability, and scalability in production:
+
+1.  **Distributed Locking:** **Redis**
+    *   Why: Decouples locking load from your primary database. Handles thousands of concurrent locks with minimal connection overhead.
+2.  **Metadata Database:** **PostgreSQL**
+    *   Why: Robust, transactional reliability for cache metadata.
+3.  **Storage:** **S3 (AWS or MinIO)**
+    *   Why: Infinite scalability for binary artifacts.
+
+**Use Database Advisory Locks only if:**
+*   You cannot maintain a functional Redis setup.
+*   Your concurrency is low (< 100 concurrent downloads cluster-wide).
+*   You want strict "single dependency" simplicity over scalability.
 
 ## How It Works
 
