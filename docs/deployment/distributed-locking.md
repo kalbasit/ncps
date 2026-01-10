@@ -415,7 +415,7 @@ PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated con
 | :--- | :--- | :--- |
 | **Model** | **Connection Pooling** | **Dedicated Connection** |
 | **Connection Usage** | Borrow -> Set Key -> Return | Borrow -> Lock -> **Hold** -> Unlock -> Return |
-| **Scalability** | extremely High (10 conns can handle 10k locks) | Limited by DB `max_connections` |
+| **Scalability** | Very high (10 conns can handle 10k locks) | Limited by DB `max_connections` |
 | **Safety** | Good (TTL based) | Excellent (Auto-release on disconnect) |
 | **Performance** | < 1ms | 1-5ms |
 
