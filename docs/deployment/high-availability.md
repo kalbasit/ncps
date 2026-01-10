@@ -36,10 +36,11 @@ Running multiple ncps instances provides:
       ┌───────────┼────────────┬───────────┐
       │           │            │           │
       ▼           ▼            ▼           ▼
-┌──────────┐ ┌────────┐  ┌──────────┐ ┌─────────┐
-│  Redis   │ │   S3   │  │PostgreSQL│ │  Load   │
-│ (Locks)  │ │Storage │  │  /MySQL  │ │Balancer │
-└──────────┘ └────────┘  └──────────┘ └─────────┘
+    ┌──────────┐ ┌────────┐  ┌──────────┐ ┌─────────┐
+    │  Redis / │ │   S3   │  │PostgreSQL│ │  Load   │
+    │ Database │ │Storage │  │ / MySQL  │ │Balancer │
+    │ (Locks)  │ │        │  │ (Data)   │ │         │
+    └──────────┘ └────────┘  └──────────┘ └─────────┘
 ```
 
 ## Requirements
@@ -47,9 +48,10 @@ Running multiple ncps instances provides:
 ### Required Components
 
 1. **Multiple ncps instances** (2+, recommended 3+)
-1. **Redis server** for distributed locking
-   - Single instance or cluster
-   - Version 5.0+ required
+1. **Distributed locking backend**
+   - **Redis server** (version 5.0+)
+   - **PostgreSQL advisory locks** (version 9.1+)
+   - **MySQL advisory locks** (version 8.0+)
 1. **S3-compatible storage** (shared across all instances)
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
 1. **PostgreSQL or MySQL database** (shared across all instances)
@@ -208,6 +210,7 @@ cache:
     password: ${REDIS_PASSWORD}  # If using auth
 
   lock:
+    backend: redis  # Options: local, redis, postgres, mysql
     download-lock-ttl: 5m
     lru-lock-ttl: 30m
     retry:
@@ -340,7 +343,7 @@ Only one instance runs cache cleanup at a time:
 - Avoids cache corruption
 - Distributes LRU load
 
-See [Distributed Locking Guide](distributed-locking.md) for technical details.
+See [Distributed Locking Guide](distributed-locking.md) for technical details and database advisory lock configuration (PostgreSQL/MySQL).
 
 ## Health Checks
 

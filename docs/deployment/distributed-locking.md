@@ -17,7 +17,7 @@ This document provides comprehensive guidance on using distributed locking in nc
 
 ## Overview
 
-ncps supports running multiple instances in a high-availability configuration using either **Redis** or **PostgreSQL advisory locks** for distributed locking. This enables:
+ncps supports running multiple instances in a high-availability configuration using **Redis**, **PostgreSQL advisory locks**, or **MySQL advisory locks** for distributed locking. This enables:
 
 - **Zero-downtime deployments** - Update instances one at a time
 - **Horizontal scaling** - Add instances to handle more traffic
@@ -31,13 +31,10 @@ ncps supports running multiple instances in a high-availability configuration us
 - **Retry with Backoff**: Failed lock acquisitions retry automatically with exponential backoff and jitter
 - **Lock Expiry**: All locks have TTLs to prevent deadlocks from instance failures
 
-### Lock Backend Options
-
-ncps provides three lock backend options:
-
 1. **Local Locks** (default) - In-memory locks using Go's `sync.Mutex`, suitable for single-instance deployments
 1. **Redis** - Distributed locks using the Redlock algorithm, ideal for HA deployments with existing Redis infrastructure
-1. **PostgreSQL Advisory Locks** - Distributed locks using PostgreSQL's native advisory lock feature, perfect for PostgreSQL users who want to minimize infrastructure dependencies
+1. **PostgreSQL Advisory Locks** - Distributed locks using PostgreSQL's native advisory lock feature
+1. **MySQL Advisory Locks** - Distributed locks using MySQL/MariaDB's `GET_LOCK` feature
 
 ## Architecture
 
@@ -95,14 +92,14 @@ ncps provides three lock backend options:
 - Load balancer distributes traffic
 - Instances can be added/removed dynamically
 
-### High-Availability Mode (PostgreSQL Advisory Locks)
+### High-Availability Mode (Database Advisory Locks)
 
 ```
 ┌────────────────┐      ┌────────────────┐      ┌────────────────┐
 │ ncps Instance  │      │ ncps Instance  │      │ ncps Instance  │
 │ #1             │      │ #2             │      │ #3             │
 │                │      │                │      │                │
-│ PG Adv. Locks  │      │ PG Adv. Locks  │      │ PG Adv. Locks  │
+│ DB Adv. Locks  │      │ DB Adv. Locks  │      │ DB Adv. Locks  │
 └────┬───────────┘      └────┬───────────┘      └────┬───────────┘
      │                       │                       │
      │                       │                       │
@@ -110,7 +107,7 @@ ncps provides three lock backend options:
      │                       │                       │
      │      ┌────────────────▼────────┐              │
      │      │                         │              │
-     ├─────►│  PostgreSQL Database    │◄─────────────┤
+     ├─────►│  PG or MySQL Database   │◄─────────────┤
      │      │ (Data + Advisory Locks) │
      │      └─────────────────────────┘
      │
@@ -123,10 +120,10 @@ ncps provides three lock backend options:
 └─────────┘    └──────────┘
 ```
 
-- PostgreSQL serves both as the database AND the distributed lock coordinator
+- The shared database serves both as the metadata store AND the distributed lock coordinator
 - Reduces infrastructure complexity (no Redis needed)
-- Uses PostgreSQL's native advisory lock feature (session-level locks)
-- All instances share the same S3 storage and PostgreSQL database
+- Uses native advisory lock features (PG `pg_advisory_lock` or MySQL `GET_LOCK`)
+- All instances share the same S3 storage and database
 - Load balancer distributes traffic
 
 ## When to Use Distributed Locking
@@ -297,7 +294,7 @@ PostgreSQL advisory locks provide an alternative to Redis for distributed lockin
 #### Prerequisites
 
 > [!IMPORTANT]
-> PostgreSQL advisory locks require PostgreSQL 9.1 or later. MySQL and SQLite do not support advisory locks.
+> Database advisory locks require PostgreSQL 9.1+ or MySQL 8.0+. SQLite does not support advisory locks.
 
 1. **PostgreSQL Database** (version 9.1 or later, 12+ recommended)
 
@@ -336,8 +333,10 @@ cache:
       region: us-east-1
 
   lock:
-    backend: postgres  # Options: local, redis, postgres
+    backend: postgres  # Options: local, redis, postgres, mysql
     postgres:
+      key-prefix: "ncps:lock:"
+    mysql:
       key-prefix: "ncps:lock:"
     allow-degraded-mode: false
 ```
@@ -346,8 +345,9 @@ cache:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--cache-lock-backend` | Lock backend: `local`, `redis`, or `postgres` | `local` |
+| `--cache-lock-backend` | Lock backend: `local`, `redis`, `postgres`, or `mysql` | `local` |
 | `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `"ncps:lock:"` |
+| `--cache-lock-mysql-key-prefix` | Key prefix for all MySQL locks | `"ncps:lock:"` |
 | `--cache-lock-allow-degraded-mode` | Fall back to local locks if distributed backend unavailable | `false` |
 
 > [!WARNING]
@@ -404,21 +404,20 @@ Each active lock uses a dedicated database connection to ensure:
 - 1 main database connection for queries
 - Up to 10 dedicated connections for locks
 
-#### Choosing Between Redis and PostgreSQL
+#### Choosing Between Redis, PostgreSQL, and MySQL
 
 **Use Redis when:**
 
 - ✅ You already have Redis infrastructure
 - ✅ Need the highest performance (Redis is optimized for in-memory operations)
 - ✅ Want to use Redis for other purposes (caching, pub/sub)
-- ✅ Have a dedicated operations team managing Redis
 
-**Use PostgreSQL Advisory Locks when:**
+**Use PostgreSQL or MySQL Advisory Locks when:**
 
-- ✅ You already use PostgreSQL as the database
+- ✅ You already use PostgreSQL or MySQL as the database
 - ✅ Want to minimize infrastructure (one less service to manage)
 - ✅ Prefer keeping everything in the database
-- ✅ Lock contention is moderate (advisory locks are fast but not as fast as Redis)
+- ✅ Lock contention is moderate (database locks are fast but not as fast as Redis)
 - ✅ Want automatic cleanup when instances crash (connection closes)
 
 **Use Local Locks when:**
