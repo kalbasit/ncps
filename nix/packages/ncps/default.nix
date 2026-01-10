@@ -15,7 +15,7 @@
 
           version = if tag != "" then tag else rev;
 
-          vendorHash = "sha256-GuUhJ0Zf2Zjfgstxcy6/DAs0Eq7PU4aiiJMSNcNqsqI=";
+          vendorHash = "sha256-JlDhRlZ7bfopuymPg4R32z58OAY4oi0uNPTsexbLWng=";
         in
         pkgs.buildGoModule {
           name = "ncps-${shortRev}";
