@@ -100,7 +100,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		if err != nil {
 			lastErr = err
 
-			rw.circuitBreaker.recordFailure()
+			rw.circuitBreaker.RecordFailure()
 
 			if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
@@ -125,7 +125,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 
 			// Check if this is a connection error
 			if isConnectionError(err) {
-				rw.circuitBreaker.recordFailure()
+				rw.circuitBreaker.RecordFailure()
 
 				if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 					zerolog.Ctx(ctx).Warn().
@@ -147,7 +147,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		rw.readConnections[key] = append(rw.readConnections[key], conn)
 		rw.readConnMu.Unlock()
 
-		rw.circuitBreaker.recordSuccess()
+		rw.circuitBreaker.RecordSuccess()
 
 		// Record metrics
 		lock.RecordLockAcquisition(ctx, lock.LockTypeRead, "distributed-postgres", lock.LockResultSuccess)

@@ -15,6 +15,7 @@ import (
 
 	mathrand "math/rand"
 
+	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
 )
@@ -34,7 +35,7 @@ type RWLocker struct {
 	fallbackLocker lock.RWLocker
 
 	// circuitBreaker tracks Redis health
-	circuitBreaker *circuitBreaker
+	circuitBreaker *circuitbreaker.CircuitBreaker
 
 	// Track lock acquisition times for duration metrics (write locks only)
 	// Note: Read lock duration tracking is not supported due to concurrent access
@@ -79,12 +80,9 @@ func NewRWLocker(
 				Err(err).
 				Msg("Redis unavailable, running in degraded mode with local locks")
 
-			cb := newCircuitBreaker(5, 1*time.Minute)
-			cb.recordFailure()
+			cb := circuitbreaker.New(5, 1*time.Minute)
 
-			for !cb.isOpen() {
-				cb.recordFailure()
-			}
+			cb.ForceOpen()
 
 			return &RWLocker{
 				client:            client,
@@ -119,14 +117,14 @@ func NewRWLocker(
 		retryConfig:       retryCfg,
 		allowDegradedMode: allowDegradedMode,
 		fallbackLocker:    local.NewRWLocker(),
-		circuitBreaker:    newCircuitBreaker(5, 1*time.Minute),
+		circuitBreaker:    circuitbreaker.New(5, 1*time.Minute),
 	}, nil
 }
 
 // Lock acquires an exclusive write lock with retry and exponential backoff.
 func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
-	if rw.circuitBreaker.isOpen() {
+	if !rw.circuitBreaker.AllowRequest() {
 		lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 		if rw.allowDegradedMode {
@@ -165,9 +163,9 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 			lastErr = err
 
 			if isConnectionError(err) {
-				rw.circuitBreaker.recordFailure()
+				rw.circuitBreaker.RecordFailure()
 
-				if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+				if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 					lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 					return rw.fallbackLocker.Lock(ctx, key, ttl)
@@ -229,7 +227,7 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 
 			if activeReaders == 0 {
 				// Success!
-				rw.circuitBreaker.recordSuccess()
+				rw.circuitBreaker.RecordSuccess()
 
 				// Record successful acquisition
 				lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultSuccess)
@@ -296,7 +294,7 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 		}
 	}
 
-	if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 		return rw.fallbackLocker.Unlock(ctx, key)
 	}
 
@@ -308,7 +306,7 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 
 // TryLock attempts to acquire an exclusive write lock without blocking.
 func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	if rw.circuitBreaker.isOpen() {
+	if !rw.circuitBreaker.AllowRequest() {
 		lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 		if rw.allowDegradedMode {
@@ -326,9 +324,9 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 	success, err := rw.client.SetNX(ctx, writerKey, "1", ttl).Result()
 	if err != nil {
 		if isConnectionError(err) {
-			rw.circuitBreaker.recordFailure()
+			rw.circuitBreaker.RecordFailure()
 
-			if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+			if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 				lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 				return rw.fallbackLocker.TryLock(ctx, key, ttl)
@@ -385,7 +383,7 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 		return false, nil
 	}
 
-	rw.circuitBreaker.recordSuccess()
+	rw.circuitBreaker.RecordSuccess()
 
 	// Record successful acquisition
 	lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultSuccess)
@@ -396,7 +394,7 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 
 // RLock acquires a shared read lock.
 func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) error {
-	if rw.circuitBreaker.isOpen() {
+	if !rw.circuitBreaker.AllowRequest() {
 		lock.RecordLockFailure(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 		if rw.allowDegradedMode {
@@ -420,9 +418,9 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		exists, err := rw.client.Exists(ctx, writerKey).Result()
 		if err != nil {
 			if isConnectionError(err) {
-				rw.circuitBreaker.recordFailure()
+				rw.circuitBreaker.RecordFailure()
 
-				if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+				if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 					lock.RecordLockFailure(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 					return rw.fallbackLocker.RLock(ctx, key, ttl)
@@ -457,7 +455,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		return fmt.Errorf("error acquiring read lock: %w", err)
 	}
 
-	rw.circuitBreaker.recordSuccess()
+	rw.circuitBreaker.RecordSuccess()
 
 	// Record successful acquisition
 	lock.RecordLockAcquisition(ctx, lock.LockTypeRead, lock.LockModeDistributed, lock.LockResultSuccess)
@@ -467,7 +465,7 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 
 // RUnlock releases a shared read lock.
 func (rw *RWLocker) RUnlock(ctx context.Context, key string) error {
-	if rw.circuitBreaker.isOpen() && rw.allowDegradedMode {
+	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 		return rw.fallbackLocker.RUnlock(ctx, key)
 	}
 
@@ -490,58 +488,6 @@ func (rw *RWLocker) getOrCreateReaderID() string {
 	}
 
 	return rw.readerID
-}
-
-// circuitBreaker implements a simple circuit breaker for Redis health monitoring.
-type circuitBreaker struct {
-	mu               sync.RWMutex
-	failureCount     int
-	failureThreshold int
-	resetTimeout     time.Duration
-	lastFailure      time.Time
-	state            string // "closed", "open"
-}
-
-//nolint:unparam // Parameters are currently always the same, but kept for future configurability and consistency.
-func newCircuitBreaker(failureThreshold int, resetTimeout time.Duration) *circuitBreaker {
-	return &circuitBreaker{
-		failureThreshold: failureThreshold,
-		resetTimeout:     resetTimeout,
-		state:            stateClosed,
-	}
-}
-
-func (cb *circuitBreaker) recordFailure() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	cb.failureCount++
-	cb.lastFailure = time.Now()
-
-	if cb.failureCount >= cb.failureThreshold {
-		cb.state = stateOpen
-	}
-}
-
-func (cb *circuitBreaker) recordSuccess() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	cb.failureCount = 0
-	cb.state = stateClosed
-}
-
-func (cb *circuitBreaker) isOpen() bool {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	if cb.state == stateOpen && time.Since(cb.lastFailure) > cb.resetTimeout {
-		// The timeout has passed, so we can transition back to closed.
-		cb.state = stateClosed
-		cb.failureCount = 0
-	}
-
-	return cb.state == stateOpen
 }
 
 // isConnectionError checks if an error is a connection error.

@@ -18,6 +18,7 @@ import (
 
 	mathrand "math/rand"
 
+	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
@@ -51,7 +52,7 @@ type Locker struct {
 	fallbackLocker lock.Locker
 
 	// circuitBreaker tracks database health
-	circuitBreaker *circuitBreaker
+	circuitBreaker *circuitbreaker.CircuitBreaker
 
 	// Track lock acquisition times for duration metrics
 	acquisitionTimes sync.Map
@@ -96,7 +97,7 @@ func NewLocker(
 		cfg.KeyPrefix = "ncps:lock:"
 	}
 
-	cb := newCircuitBreaker(cfg.CircuitBreakerThreshold, cfg.CircuitBreakerResetTimeout)
+	cb := circuitbreaker.New(cfg.CircuitBreakerThreshold, cfg.CircuitBreakerResetTimeout)
 
 	// Get the underlying database connection
 	db := querier.DB()
@@ -112,11 +113,7 @@ func NewLocker(
 				Err(err).
 				Msg("failed to connect to MySQL, falling back to local locks (DEGRADED MODE)")
 
-			cb.recordFailure() // Trip the breaker immediately
-
-			for cb.failures < cb.threshold {
-				cb.recordFailure()
-			}
+			cb.ForceOpen()
 
 			return &Locker{
 				db:                db,
@@ -142,11 +139,7 @@ func NewLocker(
 				Err(err).
 				Msg("MySQL advisory locks not available, falling back to local locks (DEGRADED MODE)")
 
-			cb.recordFailure() // Trip the breaker immediately
-
-			for cb.failures < cb.threshold {
-				cb.recordFailure()
-			}
+			cb.ForceOpen()
 
 			return &Locker{
 				db:                db,
@@ -242,7 +235,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		if err != nil {
 			lastErr = err
 
-			l.circuitBreaker.recordFailure()
+			l.circuitBreaker.RecordFailure()
 
 			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
@@ -269,7 +262,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 			// Check if this is a connection error
 			if isConnectionError(err) {
-				l.circuitBreaker.recordFailure()
+				l.circuitBreaker.RecordFailure()
 
 				if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 					zerolog.Ctx(ctx).Warn().
@@ -302,7 +295,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		l.connections[key] = conn
 		l.connMu.Unlock()
 
-		l.circuitBreaker.recordSuccess()
+		l.circuitBreaker.RecordSuccess()
 
 		// Record metrics
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-mysql", lock.LockResultSuccess)
@@ -410,7 +403,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	// Create a new dedicated connection for this lock attempt
 	conn, err := l.db.Conn(ctx)
 	if err != nil {
-		l.circuitBreaker.recordFailure()
+		l.circuitBreaker.RecordFailure()
 
 		if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-mysql", lock.LockFailureCircuitBreaker)
@@ -430,7 +423,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 		_ = conn.Close()
 
 		if isConnectionError(err) {
-			l.circuitBreaker.recordFailure()
+			l.circuitBreaker.RecordFailure()
 
 			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-mysql", lock.LockFailureCircuitBreaker)
@@ -458,7 +451,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	l.connections[key] = conn
 	l.connMu.Unlock()
 
-	l.circuitBreaker.recordSuccess()
+	l.circuitBreaker.RecordSuccess()
 
 	// Record metrics
 	lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-mysql", lock.LockResultSuccess)
@@ -515,72 +508,4 @@ func isConnectionError(err error) bool {
 	var netErr net.Error
 
 	return errors.As(err, &netErr)
-}
-
-// circuitBreaker is a simple circuit breaker implementation.
-// Duplicated from pkg/lock/postgres/circuit_breaker.go.
-type circuitBreaker struct {
-	mu           sync.RWMutex
-	failures     int
-	threshold    int
-	lastFailure  time.Time
-	resetTimeout time.Duration
-	state        int // 0: Closed, 1: Open
-}
-
-const (
-	stateClosed = 0
-	stateOpen   = 1
-)
-
-func newCircuitBreaker(threshold int, resetTimeout time.Duration) *circuitBreaker {
-	return &circuitBreaker{
-		threshold:    threshold,
-		resetTimeout: resetTimeout,
-		state:        stateClosed,
-	}
-}
-
-func (cb *circuitBreaker) AllowRequest() bool {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
-
-	if cb.state == stateOpen {
-		if time.Since(cb.lastFailure) > cb.resetTimeout {
-			// Half-open state handled implicitly by allowing one request
-			// In a real implementation we might want a proper half-open state
-			return true
-		}
-
-		return false
-	}
-
-	return true
-}
-
-func (cb *circuitBreaker) recordSuccess() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	if cb.state == stateOpen {
-		cb.state = stateClosed
-		cb.failures = 0
-	} else {
-		// Reset failures on success in closed state too?
-		// A stricter implementation might require consecutive successes.
-		// For now simple reset is fine.
-		cb.failures = 0
-	}
-}
-
-func (cb *circuitBreaker) recordFailure() {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	cb.failures++
-	cb.lastFailure = time.Now()
-
-	if cb.failures >= cb.threshold {
-		cb.state = stateOpen
-	}
 }
