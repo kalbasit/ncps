@@ -73,19 +73,7 @@ func NewLocker(
 				Err(err).
 				Msg("failed to connect to PostgreSQL, falling back to local locks (DEGRADED MODE)")
 
-			cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
-			// Force the circuit breaker to open state.
-			cb.ForceOpen()
-
-			return &Locker{
-				db:                db,
-				keyPrefix:         cfg.KeyPrefix,
-				retryConfig:       retryCfg,
-				allowDegradedMode: allowDegradedMode,
-				connections:       make(map[string]*sql.Conn),
-				fallbackLocker:    local.NewLocker(),
-				circuitBreaker:    cb,
-			}, nil
+			return newDegradedLocker(db, cfg.KeyPrefix, retryCfg, allowDegradedMode), nil
 		}
 
 		return nil, fmt.Errorf("%w: %w", ErrDatabaseConnectionFailed, err)
@@ -102,18 +90,7 @@ func NewLocker(
 				Err(err).
 				Msg("PostgreSQL advisory locks not available, falling back to local locks (DEGRADED MODE)")
 
-			cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
-			cb.ForceOpen()
-
-			return &Locker{
-				db:                db,
-				keyPrefix:         cfg.KeyPrefix,
-				retryConfig:       retryCfg,
-				allowDegradedMode: allowDegradedMode,
-				connections:       make(map[string]*sql.Conn),
-				fallbackLocker:    local.NewLocker(),
-				circuitBreaker:    cb,
-			}, nil
+			return newDegradedLocker(db, cfg.KeyPrefix, retryCfg, allowDegradedMode), nil
 		}
 
 		return nil, fmt.Errorf("PostgreSQL advisory locks not available: %w", err)
@@ -140,6 +117,22 @@ func NewLocker(
 		fallbackLocker:    local.NewLocker(),
 		circuitBreaker:    circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout),
 	}, nil
+}
+
+// newDegradedLocker creates a Locker that starts in degraded mode with an open circuit breaker.
+func newDegradedLocker(db *sql.DB, keyPrefix string, retryCfg lock.RetryConfig, allowDegradedMode bool) *Locker {
+	cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
+	cb.ForceOpen()
+
+	return &Locker{
+		db:                db,
+		keyPrefix:         keyPrefix,
+		retryConfig:       retryCfg,
+		allowDegradedMode: allowDegradedMode,
+		connections:       make(map[string]*sql.Conn),
+		fallbackLocker:    local.NewLocker(),
+		circuitBreaker:    cb,
+	}
 }
 
 // hashKey converts a string key to an int64 for use with PostgreSQL advisory locks.
