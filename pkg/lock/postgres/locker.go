@@ -73,11 +73,11 @@ func NewLocker(
 				Msg("failed to connect to PostgreSQL, falling back to local locks (DEGRADED MODE)")
 
 			cb := newCircuitBreaker(defaultCircuitBreakerThreshold, defaultCircuitBreakerTimeout)
-			cb.recordFailure()
-
-			for cb.failureCount < cb.threshold {
+			// Force the circuit breaker to open state.
+			for i := 0; i < cb.threshold; i++ {
 				cb.recordFailure()
 			}
+
 
 			return &Locker{
 				db:                db,
