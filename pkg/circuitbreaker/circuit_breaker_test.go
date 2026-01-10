@@ -13,25 +13,19 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name              string
-		threshold         int
-		timeout           time.Duration
-		expectedThreshold int
-		expectedTimeout   time.Duration
+		name      string
+		threshold int
+		timeout   time.Duration
 	}{
 		{
-			name:              "defaults",
-			threshold:         0,
-			timeout:           0,
-			expectedThreshold: circuitbreaker.DefaultThreshold,
-			expectedTimeout:   circuitbreaker.DefaultTimeout,
+			name:      "defaults",
+			threshold: 0,
+			timeout:   0,
 		},
 		{
-			name:              "custom values",
-			threshold:         10,
-			timeout:           5 * time.Minute,
-			expectedThreshold: 10,
-			expectedTimeout:   5 * time.Minute,
+			name:      "custom values",
+			threshold: 10,
+			timeout:   5 * time.Minute,
 		},
 	}
 
