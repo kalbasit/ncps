@@ -15,6 +15,7 @@ var timeNow = time.Now
 func SetTimeNow(f func() time.Time) func() {
 	original := timeNow
 	timeNow = f
+
 	return func() { timeNow = original }
 }
 

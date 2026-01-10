@@ -26,12 +26,6 @@ var (
 	ErrWriteLockTimeout        = errors.New("timeout waiting for write lock to clear")
 )
 
-// Circuit breaker states.
-const (
-	stateOpen   = "open"
-	stateClosed = "closed"
-)
-
 // Config holds Redis configuration for distributed locking.
 type Config struct {
 	// Addrs is a list of Redis server addresses.

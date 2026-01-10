@@ -12,10 +12,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	mathrand "math/rand"
-
 	redsyncredis "github.com/go-redsync/redsync/v4/redis"
 	goredislib "github.com/go-redsync/redsync/v4/redis/goredis/v9"
+	mathrand "math/rand"
 
 	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/lock"
