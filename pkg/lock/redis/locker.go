@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 
 	redsyncredis "github.com/go-redsync/redsync/v4/redis"
 	goredislib "github.com/go-redsync/redsync/v4/redis/goredis/v9"
-	mathrand "math/rand"
 
 	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/lock"
@@ -173,7 +171,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			lock.RecordLockRetryAttempt(ctx, lock.LockTypeExclusive)
 
 			// Calculate backoff delay
-			delay := l.calculateBackoff(attempt)
+			delay := lock.CalculateBackoff(l.retryConfig, attempt)
 
 			zerolog.Ctx(ctx).Debug().
 				Str("key", key).
@@ -359,25 +357,4 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	l.acquisitionTimes.Store(key, time.Now())
 
 	return true, nil
-}
-
-// calculateBackoff calculates the backoff delay with exponential backoff and optional jitter.
-func (l *Locker) calculateBackoff(attempt int) time.Duration {
-	// Exponential backoff: initialDelay * 2^attempt
-	delay := float64(l.retryConfig.InitialDelay) * math.Pow(2, float64(attempt))
-
-	// Cap at max delay
-	if delay > float64(l.retryConfig.MaxDelay) {
-		delay = float64(l.retryConfig.MaxDelay)
-	}
-
-	// Add jitter to prevent thundering herd
-	if l.retryConfig.Jitter {
-		factor := l.retryConfig.GetJitterFactor()
-
-		jitter := mathrand.Float64() * delay * factor //nolint:gosec // jitter doesn't need crypto randomness
-		delay += jitter
-	}
-
-	return time.Duration(delay)
 }

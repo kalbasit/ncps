@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"math"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
-
-	mathrand "math/rand"
 
 	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -173,7 +170,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 			lock.RecordLockRetryAttempt(ctx, lock.LockTypeExclusive)
 
 			// Calculate backoff delay
-			delay := l.calculateBackoff(attempt)
+			delay := lock.CalculateBackoff(l.retryConfig, attempt)
 
 			zerolog.Ctx(ctx).Debug().
 				Str("key", key).
@@ -422,36 +419,6 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	l.acquisitionTimes.Store(key, time.Now())
 
 	return true, nil
-}
-
-// calculateBackoff calculates the backoff duration for a given attempt.
-func (l *Locker) calculateBackoff(attempt int) time.Duration {
-	return calculateBackoff(l.retryConfig, attempt)
-}
-
-// calculateBackoff calculates the backoff duration based on retry config and attempt number.
-func calculateBackoff(cfg lock.RetryConfig, attempt int) time.Duration {
-	// Formula: InitialDelay * 2^(attempt-1)
-	delay := cfg.InitialDelay * time.Duration(math.Pow(2, float64(attempt-1)))
-
-	// Cap at MaxDelay
-	if delay > cfg.MaxDelay {
-		delay = cfg.MaxDelay
-	}
-
-	// Apply jitter if enabled
-	if cfg.Jitter {
-		// Calculate jitter: rand(0, delay * JitterFactor)
-		factor := cfg.GetJitterFactor()
-
-		// Use the global math/rand which is safe for concurrent use.
-		// This avoids creating a new source on every call.
-		//nolint:gosec // G404: math/rand is acceptable for jitter, doesn't need crypto-grade randomness
-		jitter := mathrand.Float64() * float64(delay) * factor
-		delay += time.Duration(jitter)
-	}
-
-	return delay
 }
 
 // isConnectionError checks if an error is a database connection error.
