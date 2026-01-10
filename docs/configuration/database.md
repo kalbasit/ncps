@@ -19,7 +19,7 @@ ncps supports three database backends for storing metadata (NarInfo, cache stati
 | **Setup Complexity** | None (embedded) | Moderate | Moderate |
 | **External Service** | ❌ No | ✅ Yes | ✅ Yes |
 | **Concurrent Writes** | ❌ Limited (1 connection) | ✅ Excellent | ✅ Excellent |
-| **HA Support** | ❌ Not supported | ✅ Required | ✅ Supported |
+| **HA Support** | ❌ Not supported | ✅ Supported | ✅ Supported |
 | **Performance** | Good (embedded) | Excellent | Excellent |
 | **Best For** | Single-instance | HA, Production | HA, Production |
 
