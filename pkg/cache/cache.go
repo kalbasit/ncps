@@ -1832,14 +1832,14 @@ func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error 
 	}
 
 	// 4. Generate a new key and store it in the database
-	var err error
-
-	c.secretKey, _, err = signature.GenerateKeypair(c.hostName, nil)
+	secretKey, _, err := signature.GenerateKeypair(c.hostName, nil)
 	if err != nil {
 		return fmt.Errorf("error generating a secret key pair: %w", err)
 	}
 
-	if err := c.config.SetSecretKey(ctx, c.secretKey.String()); err != nil {
+	c.secretKey = secretKey
+
+	if err := c.config.SetSecretKey(ctx, secretKey.String()); err != nil {
 		return fmt.Errorf("error storing the generated secret key in the database: %w", err)
 	}
 
