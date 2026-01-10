@@ -1,12 +1,12 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # get-unresolved-comments.sh: Fetches unresolved PR comments using GitHub GraphQL API.
 # Usage: ./get-unresolved-comments.sh <pr-number>
 
 PR_NUMBER=$1
 if [ -z "$PR_NUMBER" ]; then
-  echo "Usage: $0 <pr-number>"
+  echo "Usage: $0 <pr-number>" >&2
   exit 1
 fi
 
@@ -27,7 +27,7 @@ query($owner: String!, $name: String!, $pr: Int!) {
       reviewThreads(first: 100) {
         nodes {
           isResolved
-          comments(first: 10) {
+          comments(first: 100) {
             nodes {
               body
               path
