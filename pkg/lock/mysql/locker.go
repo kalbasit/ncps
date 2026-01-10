@@ -439,7 +439,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 			}
 		}
 
-		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-mysql", "database_error")
+		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-mysql", lock.LockFailureDatabaseError)
 
 		return false, fmt.Errorf("error trying to acquire lock: %w", err)
 	}

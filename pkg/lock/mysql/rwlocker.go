@@ -50,6 +50,3 @@ func (l *RWLocker) RUnlock(ctx context.Context, key string) error {
 
 // Ensure interface compliance.
 var _ lock.RWLocker = (*RWLocker)(nil)
-
-// Ensure interface compliance.
-var _ lock.RWLocker = (*RWLocker)(nil)

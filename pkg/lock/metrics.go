@@ -31,6 +31,7 @@ const (
 	LockFailureContextCanceled = "context_canceled"
 	LockFailureCircuitBreaker  = "circuit_breaker"
 	LockFailureMaxRetries      = "max_retries"
+	LockFailureDatabaseError   = "database_error"
 )
 
 var (
