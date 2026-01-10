@@ -78,7 +78,6 @@ func NewLocker(
 				cb.recordFailure()
 			}
 
-
 			return &Locker{
 				db:                db,
 				keyPrefix:         cfg.KeyPrefix,
