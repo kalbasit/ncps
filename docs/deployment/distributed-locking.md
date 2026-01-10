@@ -398,13 +398,14 @@ SELECT pg_try_advisory_lock(key_hash); -- Non-blocking lock attempt
 
 PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated connection model**:
 
-1.  When `Lock(key)` is called, a dedicated connection is pulled from the pool (or created).
-2.  The lock is acquired on that connection.
-3.  The connection is **held open** and removed from the pool until `Unlock(key)` is called.
+1. When `Lock(key)` is called, a dedicated connection is pulled from the pool (or created).
+1. The lock is acquired on that connection.
+1. The connection is **held open** and removed from the pool until `Unlock(key)` is called.
 
 **Implication:** If your database has `max_connections = 100` and you try to acquire 101 concurrent locks across your cluster, the 101st attempt will fail (and eventually trigger the circuit breaker).
 
 **Recommendation:**
+
 - Carefully monitor `pg_stat_activity` or equivalent.
 - Ensure your database's `max_connections` is comfortably higher than `(num_instances * max_concurrent_downloads) + (num_instances * pool_size)`.
 - If you need thousands of concurrent locks, **use Redis**.
@@ -453,23 +454,23 @@ For most deployments, PostgreSQL advisory locks provide excellent performance. R
 - Very high lock contention (hundreds of locks/second)
 - Extremely latency-sensitive workloads
 - Geographic distribution with distant database
-- Geographic distribution with distant database
 
 ### Recommended Stack
 
 For best performance, reliability, and scalability in production:
 
-1.  **Distributed Locking:** **Redis**
-    *   Why: Decouples locking load from your primary database. Handles thousands of concurrent locks with minimal connection overhead.
-2.  **Metadata Database:** **PostgreSQL**
-    *   Why: Robust, transactional reliability for cache metadata.
-3.  **Storage:** **S3 (AWS or MinIO)**
-    *   Why: Infinite scalability for binary artifacts.
+1. **Distributed Locking:** **Redis**
+   - Why: Decouples locking load from your primary database. Handles thousands of concurrent locks with minimal connection overhead.
+1. **Metadata Database:** **PostgreSQL**
+   - Why: Robust, transactional reliability for cache metadata.
+1. **Storage:** **S3 (AWS or MinIO)**
+   - Why: Infinite scalability for binary artifacts.
 
 **Use Database Advisory Locks only if:**
-*   You cannot maintain a functional Redis setup.
-*   Your concurrency is low (< 100 concurrent downloads cluster-wide).
-*   You want strict "single dependency" simplicity over scalability.
+
+- You cannot maintain a functional Redis setup.
+- Your concurrency is low (< 100 concurrent downloads cluster-wide).
+- You want strict "single dependency" simplicity over scalability.
 
 ## How It Works
 
