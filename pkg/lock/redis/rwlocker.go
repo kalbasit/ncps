@@ -81,7 +81,6 @@ func NewRWLocker(
 				Msg("Redis unavailable, running in degraded mode with local locks")
 
 			cb := circuitbreaker.New(5, 1*time.Minute)
-			cb.RecordFailure()
 
 			cb.ForceOpen()
 

@@ -106,7 +106,6 @@ func NewLocker(
 				Msg("insufficient Redis nodes for quorum, running in degraded mode")
 
 			cb := circuitbreaker.New(5, 1*time.Minute)
-			cb.RecordFailure()
 
 			cb.ForceOpen()
 

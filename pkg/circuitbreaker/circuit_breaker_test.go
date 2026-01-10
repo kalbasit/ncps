@@ -55,17 +55,12 @@ func TestNew(t *testing.T) {
 //nolint:paralleltest // modifying global timeNow
 func TestCircuitBreaker_Flow(t *testing.T) {
 	// Not parallel because we mock timeNow
-	originalTimeNow := circuitbreaker.SetTimeNow(func() time.Time {
-		return time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
-	})
-	defer originalTimeNow()
-
-	// Capture the current mocked time to increment it
 	currentTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	circuitbreaker.SetTimeNow(func() time.Time {
+	cleanup := circuitbreaker.SetTimeNow(func() time.Time {
 		return currentTime
 	})
+	defer cleanup()
 
 	cb := circuitbreaker.New(3, 1*time.Minute)
 
