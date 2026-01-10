@@ -12,6 +12,8 @@ import (
 // Note: MySQL's GET_LOCK is exclusive ONLY. There is no shared lock equivalent.
 // Therefore, RLock behaves exactly like Lock, and RUnlock behaves like Unlock.
 // This matches the behavior of exclusive locking but satisfies the interface.
+// If your application requires high read concurrency that can be shared,
+// consider using Redis or PostgreSQL backends instead.
 type RWLocker struct {
 	*Locker
 }

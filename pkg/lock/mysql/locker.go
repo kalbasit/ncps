@@ -1,3 +1,5 @@
+// Package mysql implements a distributed locking mechanism using MySQL/MariaDB advisory locks.
+// It uses the GET_LOCK and RELEASE_LOCK functions to manage exclusive locks.
 package mysql
 
 import (
@@ -33,6 +35,8 @@ var (
 )
 
 // Locker implements lock.Locker using MySQL/MariaDB GET_LOCK function.
+// It manages a dedicated connection for each active lock to ensure the lock
+// is held for the duration of the connection.
 type Locker struct {
 	db                *sql.DB
 	keyPrefix         string
@@ -155,6 +159,8 @@ func (l *Locker) hashKey(key string) string {
 }
 
 // Lock acquires an exclusive lock with retry and exponential backoff.
+// It establishes a new dedicated connection for the lock, which is closed
+// when Unlock is called or if the context is canceled.
 func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
 	if !l.circuitBreaker.AllowRequest() {
@@ -285,7 +291,8 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 	return fmt.Errorf("failed to acquire lock for key=%s after %d attempts: %w", key, l.retryConfig.MaxAttempts, lastErr)
 }
 
-// Unlock releases an exclusive lock.
+// Unlock releases an exclusive lock by calling RELEASE_LOCK on the dedicated connection.
+// The connection is closed after the lock is released.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
 	// Record lock duration
 	if val, ok := l.acquisitionTimes.LoadAndDelete(key); ok {
@@ -352,6 +359,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 }
 
 // TryLock attempts to acquire an exclusive lock without retries.
+// It returns true if the lock was acquired, false if it was already held.
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
 	if !l.circuitBreaker.AllowRequest() {
