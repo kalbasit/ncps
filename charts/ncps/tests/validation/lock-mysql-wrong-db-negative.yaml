@@ -1,0 +1,28 @@
+# Negative test: MySQL lock without MySQL database
+# This should FAIL validation - mysql lock requires mysql database type
+mode: deployment
+replicaCount: 3
+
+config:
+  hostname: "test.example.com"
+
+  storage:
+    type: s3
+    s3:
+      bucket: my-bucket
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      accessKeyId: test-key
+      secretAccessKey: test-secret
+
+  database:
+    type: postgresql  # Wrong database type for mysql lock
+    postgresql:
+      host: postgres.default.svc
+      password: test123
+
+  lock:
+    backend: mysql  # Requires mysql database
+
+  redis:
+    enabled: false

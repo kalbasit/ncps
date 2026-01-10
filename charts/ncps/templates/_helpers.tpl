@@ -161,14 +161,19 @@ This function will fail the template rendering if invalid configurations are det
 
 {{- /* HA mode validation */ -}}
 {{- if gt (int .Values.replicaCount) 1 -}}
-  {{- /* HA requires distributed locking (Redis or PostgreSQL) */ -}}
-  {{- if and (ne $lockBackend "redis") (ne $lockBackend "postgres") -}}
-    {{- fail "High availability mode (replicaCount > 1) requires either Redis to be enabled (config.redis.enabled=true) or PostgreSQL advisory locks to be enabled (config.lock.backend='postgres')" -}}
+  {{- /* HA requires distributed locking (Redis, PostgreSQL, or MySQL) */ -}}
+  {{- if and (ne $lockBackend "redis") (ne $lockBackend "postgres") (ne $lockBackend "mysql") -}}
+    {{- fail "High availability mode (replicaCount > 1) requires either Redis to be enabled (config.redis.enabled=true), PostgreSQL advisory locks to be enabled (config.lock.backend='postgres'), or MySQL advisory locks to be enabled (config.lock.backend='mysql')" -}}
   {{- end -}}
 
   {{- /* If using PostgreSQL lock, database type must be postgresql */ -}}
   {{- if and (eq $lockBackend "postgres") (ne .Values.config.database.type "postgresql") -}}
     {{- fail "PostgreSQL advisory locks (config.lock.backend='postgres') require the database type to be 'postgresql' (config.database.type)" -}}
+  {{- end -}}
+
+  {{- /* If using MySQL lock, database type must be mysql */ -}}
+  {{- if and (eq $lockBackend "mysql") (ne .Values.config.database.type "mysql") -}}
+    {{- fail "MySQL advisory locks (config.lock.backend='mysql') require the database type to be 'mysql' (config.database.type)" -}}
   {{- end -}}
 
   {{- /* HA cannot use SQLite */ -}}
