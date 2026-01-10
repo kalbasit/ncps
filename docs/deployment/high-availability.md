@@ -36,11 +36,11 @@ Running multiple ncps instances provides:
       ┌───────────┼────────────┬───────────┐
       │           │            │           │
       ▼           ▼            ▼           ▼
-┌──────────┐ ┌────────┐  ┌──────────┐ ┌─────────┐
-│  Redis   │ │   S3   │  │PostgreSQL│ │  Load   │
-│/Database │ │Storage │  │  /MySQL  │ │Balancer │
-│ (Locks)  │ │        │  │  (Data)  │ │         │
-└──────────┘ └────────┘  └──────────┘ └─────────┘
+    ┌──────────┐ ┌────────┐  ┌──────────┐ ┌─────────┐
+    │  Redis / │ │   S3   │  │PostgreSQL│ │  Load   │
+    │ Database │ │Storage │  │ / MySQL  │ │Balancer │
+    │ (Locks)  │ │        │  │ (Data)   │ │         │
+    └──────────┘ └────────┘  └──────────┘ └─────────┘
 ```
 
 ## Requirements

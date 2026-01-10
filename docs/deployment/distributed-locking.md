@@ -92,9 +92,6 @@ ncps supports running multiple instances in a high-availability configuration us
 - Load balancer distributes traffic
 - Instances can be added/removed dynamically
 
-- Load balancer distributes traffic
-- Instances can be added/removed dynamically
-
 ### High-Availability Mode (Database Advisory Locks)
 
 ```
