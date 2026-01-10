@@ -55,3 +55,20 @@ func TestCalculateBackoff_Jitter(t *testing.T) {
 		assert.LessOrEqual(t, delay, 150*time.Millisecond)
 	}
 }
+
+func TestCalculateBackoff_Overflow(t *testing.T) {
+	t.Parallel()
+
+	cfg := lock.RetryConfig{
+		InitialDelay: 1 * time.Second,
+		MaxDelay:     10 * time.Second,
+		Jitter:       false,
+	}
+
+	// Use a large attempt number that would cause integer overflow if not handled.
+	// 2^63 is large enough to overflow int64.
+	// The function should cap the result at MaxDelay without panicking or returning negative values.
+	delay := lock.CalculateBackoff(cfg, 100)
+	assert.Equal(t, 10*time.Second, delay)
+	assert.Positive(t, delay)
+}

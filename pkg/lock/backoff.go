@@ -15,13 +15,14 @@ func CalculateBackoff(cfg RetryConfig, attempt int) time.Duration {
 	}
 
 	// Formula: InitialDelay * 2^(attempt-1)
+	// Use float64 for backoff calculation to prevent integer overflow.
 	// For attempt 1 (first retry), delay is InitialDelay * 2^0 = InitialDelay
 	// For attempt 2, delay is InitialDelay * 2^1 = 2 * InitialDelay
-	delay := cfg.InitialDelay * time.Duration(math.Pow(2, float64(attempt-1)))
+	delay := float64(cfg.InitialDelay) * math.Pow(2, float64(attempt-1))
 
 	// Cap at MaxDelay
-	if delay > cfg.MaxDelay {
-		delay = cfg.MaxDelay
+	if delay > float64(cfg.MaxDelay) {
+		delay = float64(cfg.MaxDelay)
 	}
 
 	// Apply jitter if enabled
@@ -32,9 +33,9 @@ func CalculateBackoff(cfg RetryConfig, attempt int) time.Duration {
 		// Use the global math/rand which is safe for concurrent use.
 		// This avoids creating a new source on every call.
 		//nolint:gosec // G404: math/rand is acceptable for jitter, doesn't need crypto-grade randomness
-		jitter := mathrand.Float64() * float64(delay) * factor
-		delay += time.Duration(jitter)
+		jitter := mathrand.Float64() * delay * factor
+		delay += jitter
 	}
 
-	return delay
+	return time.Duration(delay)
 }
