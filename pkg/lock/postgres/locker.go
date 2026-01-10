@@ -409,7 +409,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 			}
 		}
 
-		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", "database_error")
+		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureDatabaseError)
 
 		return false, fmt.Errorf("error trying to acquire lock: %w", err)
 	}
