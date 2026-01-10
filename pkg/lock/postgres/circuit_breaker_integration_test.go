@@ -129,7 +129,7 @@ func TestLocker_CircuitBreakerRecovery(t *testing.T) {
 	defer restore()
 
 	// Circuit should now be in half-open state (AllowRequest returns true for one request)
-	assert.False(t, cbShort.IsOpen(), "Circuit breaker should be half-open")
+	assert.Equal(t, circuitbreaker.StateHalfOpen, cbShort.State(), "Circuit breaker should be half-open")
 
 	// Record a success to close the circuit
 	cbShort.RecordSuccess()
@@ -222,7 +222,7 @@ func TestLocker_CircuitBreakerReopensOnFailure(t *testing.T) {
 	defer restore()
 
 	// Half-open state
-	assert.False(t, cbShort.IsOpen(), "Circuit should be half-open")
+	assert.Equal(t, circuitbreaker.StateHalfOpen, cbShort.State(), "Circuit should be half-open")
 
 	// Record a failure in half-open state - should immediately reopen
 	cbShort.RecordFailure()
