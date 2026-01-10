@@ -15,6 +15,7 @@ import (
 
 const (
 	KeyClusterUUID = "cluster_uuid"
+	KeySecretKey   = "secret_key"
 
 	lockKeyPrefix = "config_"
 
@@ -42,6 +43,14 @@ func (c *Config) GetClusterUUID(ctx context.Context) (string, error) {
 
 func (c *Config) SetClusterUUID(ctx context.Context, value string) error {
 	return c.setConfig(ctx, KeyClusterUUID, value)
+}
+
+func (c *Config) GetSecretKey(ctx context.Context) (string, error) {
+	return c.getConfig(ctx, KeySecretKey)
+}
+
+func (c *Config) SetSecretKey(ctx context.Context, value string) error {
+	return c.setConfig(ctx, KeySecretKey, value)
 }
 
 func (c *Config) getConfig(ctx context.Context, key string) (string, error) {

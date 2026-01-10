@@ -26,6 +26,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache/healthcheck"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -125,6 +126,8 @@ type Cache struct {
 	// tempDir is used to store nar files temporarily.
 	tempDir string
 	// stores
+	config *config.Config
+	//nolint:staticcheck // deprecated: migration support
 	configStore  storage.ConfigStore
 	narInfoStore storage.NarInfoStore
 	narStore     storage.NarStore
@@ -208,6 +211,7 @@ func New(
 	ctx context.Context,
 	hostName string,
 	db database.Querier,
+	//nolint:staticcheck // deprecated: migration support
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
@@ -220,6 +224,7 @@ func New(
 	c := &Cache{
 		baseContext:          ctx,
 		db:                   db,
+		config:               config.New(db, cacheLocker),
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
@@ -1785,38 +1790,83 @@ func (c *Cache) validateHostname(hostName string) error {
 }
 
 func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error {
+	// 1. If a secret key path is provided, load it from there
 	if secretKeyPath != "" {
-		skc, err := os.ReadFile(secretKeyPath)
-		if err != nil {
-			return fmt.Errorf("error reading the given secret key located at %q: %w", secretKeyPath, err)
-		}
+		return c.setupSecretKeyFromFile(ctx, secretKeyPath)
+	}
 
-		c.secretKey, err = signature.LoadSecretKey(string(skc))
+	// 2. Try to load from the database
+	if dbKeyStr, err := c.config.GetSecretKey(ctx); err == nil {
+		c.secretKey, err = signature.LoadSecretKey(dbKeyStr)
 		if err != nil {
-			return fmt.Errorf("error loading the given secret key located at %q: %w", secretKeyPath, err)
+			return fmt.Errorf("error loading the secret key from the database: %w", err)
 		}
 
 		return nil
+	} else if !errors.Is(err, config.ErrConfigNotFound) {
+		return fmt.Errorf("error fetching the secret key from the database: %w", err)
 	}
 
+	// 3. Try to load from the deprecated config store (FS/S3)
+	// If found, migrate to DB and delete from store
+	//nolint:staticcheck // Migration logic requires using the deprecated interface
+	if oldKey, err := c.configStore.GetSecretKey(ctx); err == nil {
+		c.secretKey = oldKey
+
+		// Migrate to DB
+		if err := c.config.SetSecretKey(ctx, c.secretKey.String()); err != nil {
+			return fmt.Errorf("error storing the migrated secret key in the database: %w", err)
+		}
+
+		// Delete from old store
+		//nolint:staticcheck // Migration logic requires using the deprecated interface
+		if err := c.configStore.DeleteSecretKey(ctx); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to delete the secret key from the deprecated config store")
+		}
+
+		zerolog.Ctx(ctx).Info().Msg("migrated secret key from config store to database")
+
+		return nil
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return fmt.Errorf("error fetching the secret key from the config store: %w", err)
+	}
+
+	// 4. Generate a new key and store it in the database
 	var err error
-
-	c.secretKey, err = c.configStore.GetSecretKey(ctx)
-	if err == nil {
-		return nil
-	}
-
-	if !errors.Is(err, storage.ErrNotFound) {
-		return fmt.Errorf("error fetching the secret key from the store: %w", err)
-	}
 
 	c.secretKey, _, err = signature.GenerateKeypair(c.hostName, nil)
 	if err != nil {
 		return fmt.Errorf("error generating a secret key pair: %w", err)
 	}
 
-	if err = c.configStore.PutSecretKey(ctx, c.secretKey); err != nil {
-		return fmt.Errorf("error storing the generated secret key in the store: %w", err)
+	if err := c.config.SetSecretKey(ctx, c.secretKey.String()); err != nil {
+		return fmt.Errorf("error storing the generated secret key in the database: %w", err)
+	}
+
+	zerolog.Ctx(ctx).Info().Msg("generated and stored a new secret key in the database")
+
+	return nil
+}
+
+func (c *Cache) setupSecretKeyFromFile(ctx context.Context, secretKeyPath string) error {
+	skc, err := os.ReadFile(secretKeyPath)
+	if err != nil {
+		return fmt.Errorf("error reading the given secret key located at %q: %w", secretKeyPath, err)
+	}
+
+	c.secretKey, err = signature.LoadSecretKey(string(skc))
+	if err != nil {
+		return fmt.Errorf("error loading the given secret key located at %q: %w", secretKeyPath, err)
+	}
+
+	// Store it in the database if it doesn't exist or is different
+	// We ignore the error here because we don't want to fail if the DB is down or read-only
+	// The primary source of truth is the file in this case.
+	dbKeyStr, err := c.config.GetSecretKey(ctx)
+	if err != nil || dbKeyStr != c.secretKey.String() {
+		if err := c.config.SetSecretKey(ctx, c.secretKey.String()); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to store the secret key in the database")
+		}
 	}
 
 	return nil

@@ -41,6 +41,7 @@ func newTestCache(
 	ctx context.Context,
 	hostName string,
 	db database.Querier,
+	//nolint:staticcheck // using deprecated ConfigStore interface for testing migration
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
@@ -167,10 +168,17 @@ func TestNew(t *testing.T) {
 			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 			require.NoError(t, err)
 
-			sk, err := localStore.GetSecretKey(newContext())
+			// Verify key is NOT in local store
+			_, err = localStore.GetSecretKey(newContext())
+			require.ErrorIs(t, err, storage.ErrNotFound)
+
+			// Verify key IS in database
+			conf, err := db.GetConfigByKey(newContext(), "secret_key")
+			require.NoError(t, err)
+			sk, err := signature.LoadSecretKey(conf.Value)
 			require.NoError(t, err)
 
-			assert.Equal(t, sk.ToPublicKey(), c.PublicKey(), "ensure the cache public key matches the one in the local store")
+			assert.Equal(t, sk.ToPublicKey(), c.PublicKey(), "ensure the cache public key matches the one in the DB")
 		})
 
 		t.Run("given", func(t *testing.T) {
@@ -206,10 +214,54 @@ func TestNew(t *testing.T) {
 			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, skFile.Name())
 			require.NoError(t, err)
 
+			// Verify key is NOT in local store
 			_, err = localStore.GetSecretKey(newContext())
 			require.ErrorIs(t, err, storage.ErrNotFound)
 
+			// Verify key IS in database (it should be stored there now)
+			conf, err := db.GetConfigByKey(newContext(), "secret_key")
+			require.NoError(t, err)
+			assert.Equal(t, sk.String(), conf.Value, "ensure the given secret key is stored in the DB")
+
 			assert.Equal(t, sk.ToPublicKey(), c.PublicKey(), "ensure the cache public key matches the one given")
+		})
+
+		t.Run("migrated", func(t *testing.T) {
+			t.Parallel()
+
+			dir, err := os.MkdirTemp("", "cache-path-")
+			require.NoError(t, err)
+
+			defer os.RemoveAll(dir) // clean up
+
+			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+			testhelper.CreateMigrateDatabase(t, dbFile)
+
+			db, err := database.Open("sqlite:"+dbFile, nil)
+			require.NoError(t, err)
+
+			localStore, err := local.New(newContext(), dir)
+			require.NoError(t, err)
+
+			// Pre-populate key in local store
+			sk, _, err := signature.GenerateKeypair(cacheName, nil)
+			require.NoError(t, err)
+			err = localStore.PutSecretKey(newContext(), sk)
+			require.NoError(t, err)
+
+			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
+			require.NoError(t, err)
+
+			// Verify key is NOT in local store anymore
+			_, err = localStore.GetSecretKey(newContext())
+			require.ErrorIs(t, err, storage.ErrNotFound)
+
+			// Verify key IS in database
+			conf, err := db.GetConfigByKey(newContext(), "secret_key")
+			require.NoError(t, err)
+			assert.Equal(t, sk.String(), conf.Value, "ensure the migrated secret key is stored in the DB")
+
+			assert.Equal(t, sk.ToPublicKey(), c.PublicKey(), "ensure the cache public key matches the generated one")
 		})
 	})
 }
