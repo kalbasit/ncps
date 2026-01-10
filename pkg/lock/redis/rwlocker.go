@@ -79,7 +79,21 @@ func NewRWLocker(
 				Err(err).
 				Msg("Redis unavailable, running in degraded mode with local locks")
 
-			return local.NewRWLocker(), nil
+			cb := newCircuitBreaker(5, 1*time.Minute)
+			cb.recordFailure()
+
+			for !cb.isOpen() {
+				cb.recordFailure()
+			}
+
+			return &RWLocker{
+				client:            client,
+				keyPrefix:         cfg.KeyPrefix,
+				retryConfig:       retryCfg,
+				allowDegradedMode: allowDegradedMode,
+				fallbackLocker:    local.NewRWLocker(),
+				circuitBreaker:    cb,
+			}, nil
 		}
 
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
@@ -488,6 +502,7 @@ type circuitBreaker struct {
 	state            string // "closed", "open"
 }
 
+//nolint:unparam // Parameters are currently always the same, but kept for future configurability and consistency.
 func newCircuitBreaker(failureThreshold int, resetTimeout time.Duration) *circuitBreaker {
 	return &circuitBreaker{
 		failureThreshold: failureThreshold,
