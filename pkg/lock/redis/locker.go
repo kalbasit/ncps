@@ -48,9 +48,13 @@ func NewLocker(
 	cfg Config,
 	retryCfg lock.RetryConfig,
 	allowDegradedMode bool,
-) (lock.Locker, error) {
+) (*Locker, error) {
 	if len(cfg.Addrs) == 0 {
 		return nil, ErrNoRedisAddrs
+	}
+
+	if cfg.KeyPrefix == "" {
+		cfg.KeyPrefix = "ncps:lock:"
 	}
 
 	// Connect to all Redis nodes for Redlock HA
@@ -100,7 +104,23 @@ func NewLocker(
 				Int("required", quorum).
 				Msg("insufficient Redis nodes for quorum, running in degraded mode")
 
-			return local.NewLocker(), nil
+			cb := newCircuitBreaker(5, 1*time.Minute)
+			cb.recordFailure()
+
+			for !cb.isOpen() {
+				cb.recordFailure()
+			}
+
+			return &Locker{
+				clients:           clients,
+				redsync:           redsync.New(pools...),
+				keyPrefix:         cfg.KeyPrefix,
+				retryConfig:       retryCfg,
+				allowDegradedMode: allowDegradedMode,
+				mutexes:           make(map[string]*redsync.Mutex),
+				fallbackLocker:    local.NewLocker(),
+				circuitBreaker:    cb,
+			}, nil
 		}
 
 		if firstErr != nil {
@@ -112,10 +132,6 @@ func NewLocker(
 	}
 
 	rs := redsync.New(pools...)
-
-	if cfg.KeyPrefix == "" {
-		cfg.KeyPrefix = "ncps:lock:"
-	}
 
 	zerolog.Ctx(ctx).Info().
 		Int("connected_nodes", len(clients)).
