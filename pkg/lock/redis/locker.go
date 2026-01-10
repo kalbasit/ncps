@@ -12,10 +12,12 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	redsyncredis "github.com/go-redsync/redsync/v4/redis"
-	goredislib "github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	mathrand "math/rand"
 
+	redsyncredis "github.com/go-redsync/redsync/v4/redis"
+	goredislib "github.com/go-redsync/redsync/v4/redis/goredis/v9"
+
+	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
 )
@@ -36,7 +38,7 @@ type Locker struct {
 	fallbackLocker lock.Locker
 
 	// circuitBreaker tracks Redis health
-	circuitBreaker *circuitBreaker
+	circuitBreaker *circuitbreaker.CircuitBreaker
 
 	// Track lock acquisition times for duration metrics
 	acquisitionTimes sync.Map
@@ -104,12 +106,10 @@ func NewLocker(
 				Int("required", quorum).
 				Msg("insufficient Redis nodes for quorum, running in degraded mode")
 
-			cb := newCircuitBreaker(5, 1*time.Minute)
-			cb.recordFailure()
+			cb := circuitbreaker.New(5, 1*time.Minute)
+			cb.RecordFailure()
 
-			for !cb.isOpen() {
-				cb.recordFailure()
-			}
+			cb.ForceOpen()
 
 			return &Locker{
 				clients:           clients,
@@ -146,14 +146,14 @@ func NewLocker(
 		allowDegradedMode: allowDegradedMode,
 		mutexes:           make(map[string]*redsync.Mutex),
 		fallbackLocker:    local.NewLocker(),
-		circuitBreaker:    newCircuitBreaker(5, 1*time.Minute),
+		circuitBreaker:    circuitbreaker.New(5, 1*time.Minute),
 	}, nil
 }
 
 // Lock acquires an exclusive lock with retry and exponential backoff.
 func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error {
 	// Check circuit breaker
-	if l.circuitBreaker.isOpen() {
+	if !l.circuitBreaker.AllowRequest() {
 		if l.allowDegradedMode {
 			zerolog.Ctx(ctx).Warn().
 				Str("key", key).
@@ -203,9 +203,9 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 			// Check if this is a connection error (circuit breaker)
 			if isConnectionError(err) {
-				l.circuitBreaker.recordFailure()
+				l.circuitBreaker.RecordFailure()
 
-				if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+				if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 					zerolog.Ctx(ctx).Warn().
 						Err(err).
 						Str("key", key).
@@ -234,7 +234,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		l.mutexes[key] = mutex
 		l.mu.Unlock()
 
-		l.circuitBreaker.recordSuccess()
+		l.circuitBreaker.RecordSuccess()
 
 		// Record metrics
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockResultSuccess)
@@ -267,7 +267,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 	}
 
 	// Check if we're in degraded mode
-	if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+	if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 		return l.fallbackLocker.Unlock(ctx, key)
 	}
 
@@ -301,7 +301,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 // TryLock attempts to acquire an exclusive lock without retries.
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker
-	if l.circuitBreaker.isOpen() {
+	if !l.circuitBreaker.AllowRequest() {
 		lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 		if l.allowDegradedMode {
@@ -335,9 +335,9 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 		}
 
 		if isConnectionError(err) {
-			l.circuitBreaker.recordFailure()
+			l.circuitBreaker.RecordFailure()
 
-			if l.circuitBreaker.isOpen() && l.allowDegradedMode {
+			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, lock.LockModeDistributed, lock.LockFailureCircuitBreaker)
 
 				return l.fallbackLocker.TryLock(ctx, key, ttl)
@@ -354,7 +354,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	l.mutexes[key] = mutex
 	l.mu.Unlock()
 
-	l.circuitBreaker.recordSuccess()
+	l.circuitBreaker.RecordSuccess()
 
 	// Record metrics
 	lock.RecordLockAcquisition(ctx, "exclusive", "distributed", "success")

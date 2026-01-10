@@ -16,6 +16,7 @@ import (
 
 	mathrand "math/rand"
 
+	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
@@ -36,7 +37,7 @@ type Locker struct {
 	fallbackLocker lock.Locker
 
 	// circuitBreaker tracks database health
-	circuitBreaker *circuitBreaker
+	circuitBreaker *circuitbreaker.CircuitBreaker
 
 	// Track lock acquisition times for duration metrics
 	acquisitionTimes sync.Map
@@ -72,11 +73,9 @@ func NewLocker(
 				Err(err).
 				Msg("failed to connect to PostgreSQL, falling back to local locks (DEGRADED MODE)")
 
-			cb := newCircuitBreaker(defaultCircuitBreakerThreshold, defaultCircuitBreakerTimeout)
+			cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
 			// Force the circuit breaker to open state.
-			for i := 0; i < cb.threshold; i++ {
-				cb.recordFailure()
-			}
+			cb.ForceOpen()
 
 			return &Locker{
 				db:                db,
@@ -103,12 +102,8 @@ func NewLocker(
 				Err(err).
 				Msg("PostgreSQL advisory locks not available, falling back to local locks (DEGRADED MODE)")
 
-			cb := newCircuitBreaker(defaultCircuitBreakerThreshold, defaultCircuitBreakerTimeout)
-			cb.recordFailure()
-
-			for cb.failureCount < cb.threshold {
-				cb.recordFailure()
-			}
+			cb := circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout)
+			cb.ForceOpen()
 
 			return &Locker{
 				db:                db,
@@ -143,7 +138,7 @@ func NewLocker(
 		allowDegradedMode: allowDegradedMode,
 		connections:       make(map[string]*sql.Conn),
 		fallbackLocker:    local.NewLocker(),
-		circuitBreaker:    newCircuitBreaker(defaultCircuitBreakerThreshold, defaultCircuitBreakerTimeout),
+		circuitBreaker:    circuitbreaker.New(circuitbreaker.DefaultThreshold, circuitbreaker.DefaultTimeout),
 	}, nil
 }
 
@@ -209,7 +204,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		if err != nil {
 			lastErr = err
 
-			l.circuitBreaker.recordFailure()
+			l.circuitBreaker.RecordFailure()
 
 			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
@@ -236,7 +231,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 
 			// Check if this is a connection error
 			if isConnectionError(err) {
-				l.circuitBreaker.recordFailure()
+				l.circuitBreaker.RecordFailure()
 
 				if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 					zerolog.Ctx(ctx).Warn().
@@ -270,7 +265,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		l.connections[key] = conn
 		l.connMu.Unlock()
 
-		l.circuitBreaker.recordSuccess()
+		l.circuitBreaker.RecordSuccess()
 
 		// Record metrics
 		lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockResultSuccess)
@@ -379,7 +374,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	// Create a new dedicated connection for this lock attempt
 	conn, err := l.db.Conn(ctx)
 	if err != nil {
-		l.circuitBreaker.recordFailure()
+		l.circuitBreaker.RecordFailure()
 
 		if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
@@ -399,7 +394,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 		_ = conn.Close()
 
 		if isConnectionError(err) {
-			l.circuitBreaker.recordFailure()
+			l.circuitBreaker.RecordFailure()
 
 			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				lock.RecordLockFailure(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockFailureCircuitBreaker)
@@ -427,7 +422,7 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	l.connections[key] = conn
 	l.connMu.Unlock()
 
-	l.circuitBreaker.recordSuccess()
+	l.circuitBreaker.RecordSuccess()
 
 	// Record metrics
 	lock.RecordLockAcquisition(ctx, lock.LockTypeExclusive, "distributed-postgres", lock.LockResultSuccess)

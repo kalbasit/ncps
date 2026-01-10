@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/circuitbreaker"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/postgres"
 )
@@ -108,10 +109,10 @@ func TestLocker_DegradedModeFallback(t *testing.T) {
 //nolint:paralleltest // Modifying global state for mocking
 func TestLocker_CircuitBreakerRecovery(t *testing.T) {
 	// Set up a shorter timeout for testing
-	cbShort := postgres.NewCircuitBreaker(3, 100*time.Millisecond)
+	cbShort := circuitbreaker.New(3, 100*time.Millisecond)
 	initialTime := time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	restore := postgres.MockTimeNow(initialTime)
+	restore := circuitbreaker.SetTimeNow(func() time.Time { return initialTime })
 	defer restore()
 
 	// Open the circuit breaker
@@ -124,7 +125,7 @@ func TestLocker_CircuitBreakerRecovery(t *testing.T) {
 	// Advance time past timeout to allow half-open state
 	restore()
 
-	restore = postgres.MockTimeNow(initialTime.Add(150 * time.Millisecond))
+	restore = circuitbreaker.SetTimeNow(func() time.Time { return initialTime.Add(150 * time.Millisecond) })
 	defer restore()
 
 	// Circuit should now be in half-open state (AllowRequest returns true for one request)
@@ -199,12 +200,12 @@ func TestRWLocker_DegradedMode(t *testing.T) {
 //nolint:paralleltest
 func TestLocker_CircuitBreakerReopensOnFailure(t *testing.T) {
 	// Note: Cannot run in parallel as it modifies global timeNow variable
-	cbShort := postgres.NewCircuitBreaker(3, 100*time.Millisecond)
+	cbShort := circuitbreaker.New(3, 100*time.Millisecond)
 
 	// Mock time for controlled testing
 	initialTime := time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	restore := postgres.MockTimeNow(initialTime)
+	restore := circuitbreaker.SetTimeNow(func() time.Time { return initialTime })
 	defer restore()
 
 	// Open the circuit
@@ -217,7 +218,7 @@ func TestLocker_CircuitBreakerReopensOnFailure(t *testing.T) {
 	// Advance time past timeout
 	restore()
 
-	restore = postgres.MockTimeNow(initialTime.Add(150 * time.Millisecond))
+	restore = circuitbreaker.SetTimeNow(func() time.Time { return initialTime.Add(150 * time.Millisecond) })
 	defer restore()
 
 	// Half-open state
