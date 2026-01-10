@@ -388,9 +388,10 @@
               "enum": [
                 "local",
                 "redis",
-                "postgres"
+                "postgres",
+                "mysql"
               ],
-              "description": "Lock backend to use (local, redis, or postgres)"
+              "description": "Lock backend to use (local, redis, postgres, or mysql)"
             },
             "redis": {
               "type": "object",
@@ -401,6 +402,14 @@
               }
             },
             "postgres": {
+              "type": "object",
+              "properties": {
+                "keyPrefix": {
+                  "type": "string"
+                }
+              }
+            },
+            "mysql": {
               "type": "object",
               "properties": {
                 "keyPrefix": {

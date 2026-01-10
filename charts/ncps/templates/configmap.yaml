@@ -99,6 +99,8 @@ data:
           key-prefix: {{ .Values.config.lock.redis.keyPrefix | quote }}
         postgres:
           key-prefix: {{ .Values.config.lock.postgres.keyPrefix | quote }}
+        mysql:
+          key-prefix: {{ .Values.config.lock.mysql.keyPrefix | quote }}
         download-lock-ttl: {{ .Values.config.lock.downloadTTL | quote }}
         lru-lock-ttl: {{ .Values.config.lock.lruTTL | quote }}
         retry:
