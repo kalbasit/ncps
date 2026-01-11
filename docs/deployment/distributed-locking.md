@@ -166,22 +166,22 @@ ncps supports running multiple instances in a high-availability configuration us
 
 ### Use Local Locking When:
 
-❌ **Single Server Deployment**
+✅ **Single Server Deployment**
 
 - Running on a single machine
 - No redundancy required
 - Development/testing environments
 
-❌ **Low Traffic Environments**
+✅ **Low Traffic Environments**
 
 - Small teams or personal use
 - Limited concurrent requests
 - Resource-constrained environments
 
-❌ **Simplified Operations**
+✅ **Simplified Operations**
 
 - Want minimal infrastructure
-- No Redis server available
+- Distributed lock backend is not necessary
 - Prefer embedded solutions (SQLite)
 
 ## Configuration Guide
@@ -190,11 +190,11 @@ ncps supports running multiple instances in a high-availability configuration us
 
 For high-availability mode, you need:
 
-1. **Redis Server** (version 5.0 or later)
+1. **Distributed Lock Backend** (one of the following):
 
-   - Single node or cluster
-   - Persistent storage recommended but not required
-   - Authentication via username/password (optional)
+   - **Redis** (version 5.0 or later)
+   - **PostgreSQL** (version 9.1 or later)
+   - **MySQL** (version 8.0 or later)
 
 1. **Shared Storage** (S3-compatible)
 
@@ -244,6 +244,7 @@ cache:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--cache-lock-backend` | Lock backend: `local`, `redis`, `postgres`, or `mysql` | `local` |
 | `--cache-redis-addrs` | Comma-separated Redis addresses | (none - local mode) |
 | `--cache-redis-username` | Username for Redis ACL | "" |
 | `--cache-redis-password` | Password for authentication | "" |
@@ -299,15 +300,15 @@ cache:
 --cache-lock-retry-max-delay=5s
 ```
 
-### PostgreSQL Advisory Lock Configuration
+### PostgreSQL & MySQL Advisory Lock Configuration
 
-PostgreSQL advisory locks provide an alternative to Redis for distributed locking, perfect for deployments that:
+Advisory locks provide a distributed locking alternative for deployments that:
 
-- Already use PostgreSQL as the database
+- Already use PostgreSQL or MySQL as the primary database
 - Want to minimize infrastructure dependencies (no Redis needed)
 - Prefer a single database for both data and coordination
 
-#### Prerequisites
+#### Advisory Lock Prerequisites
 
 > [!IMPORTANT]
 > Database advisory locks require PostgreSQL 9.1+ or MySQL 8.0+. SQLite does not support advisory locks.
@@ -323,7 +324,7 @@ PostgreSQL advisory locks provide an alternative to Redis for distributed lockin
    - Same requirement as Redis mode
    - All instances must access the same bucket
 
-#### Basic Configuration
+#### Advisory Lock Configuration (CLI)
 
 **Using PostgreSQL advisory locks (CLI):**
 
@@ -357,7 +358,7 @@ cache:
     allow-degraded-mode: false
 ```
 
-#### Configuration Options
+#### Advisory Lock Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
