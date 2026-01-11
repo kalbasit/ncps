@@ -61,30 +61,38 @@ ncps supports running multiple instances in a high-availability configuration us
 ### High-Availability Mode
 
 ```
-┌────────────────┐      ┌────────────────┐      ┌────────────────┐
-│ ncps Instance  │      │ ncps Instance  │      │ ncps Instance  │
-│ #1             │      │ #2             │      │ #3             │
-│                │      │                │      │                │
-│ Redis Locks    │      │ Redis Locks    │      │ Redis Locks    │
-│ (Redlock)      │      │ (Redlock)      │      │ (Redlock)      │
-└────┬───────────┘      └────┬───────────┘      └────┬───────────┘
-     │                       │                       │
-     │                       │                       │
-     ├───────────────────────┼───────────────────────┤
-     │                       │                       │
-     │      ┌────────────────▼────────┐              │
-     │      │                         │              │
-     ├─────►│    Redis Server         │◄─────────────┤
-     │      │  (Distributed Locks)    │
-     │      └─────────────────────────┘
+                    ┌──────────┐
+                    │   Load   │
+                    │ Balancer │
+                    └────┬─────┘
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+        ▼                ▼                ▼
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ ncps Instance  │ │ ncps Instance  │ │ ncps Instance  │
+│ #1             │ │ #2             │ │ #3             │
+│                │ │                │ │                │
+│ Redis Locks    │ │ Redis Locks    │ │ Redis Locks    │
+│ (Redlock)      │ │ (Redlock)      │ │ (Redlock)      │
+└────┬───────────┘ └────┬───────────┘ └────┬───────────┘
+     │                  │                  │
+     │                  │                  │
+     ├──────────────────┼──────────────────┤
+     │                  │                  │
+     │   ┌──────────────▼──────────┐       │
+     │   │                         │       │
+     ├──►│    Redis Server         │◄──────┤
+     │   │  (Distributed Locks)    │
+     │   └─────────────────────────┘
      │
-     ├────────────────┬─────────────────┐
-     │                │                 │
-     ▼                ▼                 ▼
-┌─────────┐    ┌───────────┐    ┌──────────┐
-│   S3    │    │PostgreSQL │    │   Load   │
-│ Storage │    │ Database  │    │ Balancer │
-└─────────┘    └───────────┘    └──────────┘
+     ├──────────────┐
+     │              │
+     ▼              ▼
+┌─────────┐  ┌───────────┐
+│   S3    │  │PostgreSQL │
+│ Storage │  │ Database  │
+└─────────┘  └───────────┘
 ```
 
 - All instances share the same S3 storage and database
@@ -95,29 +103,37 @@ ncps supports running multiple instances in a high-availability configuration us
 ### High-Availability Mode (Database Advisory Locks)
 
 ```
-┌────────────────┐      ┌────────────────┐      ┌────────────────┐
-│ ncps Instance  │      │ ncps Instance  │      │ ncps Instance  │
-│ #1             │      │ #2             │      │ #3             │
-│                │      │                │      │                │
-│ DB Adv. Locks  │      │ DB Adv. Locks  │      │ DB Adv. Locks  │
-└────┬───────────┘      └────┬───────────┘      └────┬───────────┘
-     │                       │                       │
-     │                       │                       │
-     ├───────────────────────┼───────────────────────┤
-     │                       │                       │
-     │      ┌────────────────▼────────┐              │
-     │      │                         │              │
-     ├─────►│  PG or MySQL Database   │◄─────────────┤
-     │      │ (Data + Advisory Locks) │
-     │      └─────────────────────────┘
+                    ┌──────────┐
+                    │   Load   │
+                    │ Balancer │
+                    └────┬─────┘
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+        ▼                ▼                ▼
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ ncps Instance  │ │ ncps Instance  │ │ ncps Instance  │
+│ #1             │ │ #2             │ │ #3             │
+│                │ │                │ │                │
+│ DB Adv. Locks  │ │ DB Adv. Locks  │ │ DB Adv. Locks  │
+└────┬───────────┘ └────┬───────────┘ └────┬───────────┘
+     │                  │                  │
+     │                  │                  │
+     ├──────────────────┼──────────────────┤
+     │                  │                  │
+     │   ┌──────────────▼──────────┐       │
+     │   │                         │       │
+     ├──►│  PG or MySQL Database   │◄──────┤
+     │   │ (Data + Advisory Locks) │
+     │   └─────────────────────────┘
      │
-     ├─────────────────┐
-     │                 │
-     ▼                 ▼
-┌─────────┐    ┌──────────┐
-│   S3    │    │   Load   │
-│ Storage │    │ Balancer │
-└─────────┘    └──────────┘
+     │
+     │
+     ▼
+┌─────────┐
+│   S3    │
+│ Storage │
+└─────────┘
 ```
 
 - The shared database serves both as the metadata store AND the distributed lock coordinator
