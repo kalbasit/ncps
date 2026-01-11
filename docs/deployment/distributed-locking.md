@@ -166,22 +166,22 @@ ncps supports running multiple instances in a high-availability configuration us
 
 ### Use Local Locking When:
 
-❌ **Single Server Deployment**
+✅ **Single Server Deployment**
 
 - Running on a single machine
 - No redundancy required
 - Development/testing environments
 
-❌ **Low Traffic Environments**
+✅ **Low Traffic Environments**
 
 - Small teams or personal use
 - Limited concurrent requests
 - Resource-constrained environments
 
-❌ **Simplified Operations**
+✅ **Simplified Operations**
 
 - Want minimal infrastructure
-- No Redis server available
+- Distributed lock backend is not necessary
 - Prefer embedded solutions (SQLite)
 
 ## Configuration Guide
@@ -190,11 +190,11 @@ ncps supports running multiple instances in a high-availability configuration us
 
 For high-availability mode, you need:
 
-1. **Redis Server** (version 5.0 or later)
+1. **Distributed Lock Backend** (one of the following):
 
-   - Single node or cluster
-   - Persistent storage recommended but not required
-   - Authentication via username/password (optional)
+   - **Redis** (version 5.0 or later)
+   - **PostgreSQL** (version 9.1 or later)
+   - **MySQL** (version 8.0 or later)
 
 1. **Shared Storage** (S3-compatible)
 
@@ -237,6 +237,19 @@ cache:
     addrs:
       - redis:6379
 ```
+
+### Lock Backend Selection
+
+The `--cache-lock-backend` flag determines which mechanism ncps uses to coordinate locks across instances.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--cache-lock-backend` | Lock backend: `local`, `redis`, `postgres`, or `mysql` | `local` |
+
+- **local**: Uses in-memory locks. Only suitable for single-instance deployments.
+- **redis**: Uses Redis (Redlock algorithm). Best for high-traffic, multi-instance deployments.
+- **postgres**: Uses PostgreSQL advisory locks. Good balance of simplicity and HA.
+- **mysql**: Uses MySQL/MariaDB advisory locks. Alternative to Postgres for HA.
 
 ### Redis Configuration Options
 
@@ -299,41 +312,51 @@ cache:
 --cache-lock-retry-max-delay=5s
 ```
 
-### PostgreSQL Advisory Lock Configuration
+### PostgreSQL & MySQL Advisory Lock Configuration
 
-PostgreSQL advisory locks provide an alternative to Redis for distributed locking, perfect for deployments that:
+Advisory locks provide a distributed locking alternative for deployments that:
 
-- Already use PostgreSQL as the database
+- Already use PostgreSQL or MySQL as the primary database
 - Want to minimize infrastructure dependencies (no Redis needed)
 - Prefer a single database for both data and coordination
 
-#### Prerequisites
+#### Advisory Lock Prerequisites
 
 > [!IMPORTANT]
 > Database advisory locks require PostgreSQL 9.1+ or MySQL 8.0+. SQLite does not support advisory locks.
 
-1. **PostgreSQL Database** (version 9.1 or later, 12+ recommended)
+1. **Shared Database** (PostgreSQL or MySQL)
 
-   - Must be shared across all ncps instances
-   - Requires no special configuration or extensions
-   - Uses PostgreSQL's native advisory lock functions
+   - **PostgreSQL**: Version 9.1 or later (12+ recommended). Uses native advisory lock functions.
+   - **MySQL/MariaDB**: MySQL 8.0+ or MariaDB 10.2+. Uses `GET_LOCK()` and `RELEASE_LOCK()`.
+   - Must be shared across all ncps instances.
+   - Requires no special configuration or extensions.
 
 1. **Shared Storage** (S3-compatible)
 
    - Same requirement as Redis mode
    - All instances must access the same bucket
 
-#### Basic Configuration
+#### Advisory Lock Configuration (CLI)
 
-**Using PostgreSQL advisory locks (CLI):**
+**Using PostgreSQL advisory locks:**
 
 ```bash
 ncps serve \
   --cache-hostname=cache.example.com \
   --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
   --cache-storage-s3-bucket=ncps-cache \
-  --cache-storage-s3-region=us-east-1 \
   --cache-lock-backend=postgres
+```
+
+**Using MySQL advisory locks:**
+
+```bash
+ncps serve \
+  --cache-hostname=cache.example.com \
+  --cache-database-url=mysql://user:pass@mysql:3306/ncps \
+  --cache-storage-s3-bucket=ncps-cache \
+  --cache-lock-backend=mysql
 ```
 
 **Configuration file (config.yaml):**
@@ -357,17 +380,16 @@ cache:
     allow-degraded-mode: false
 ```
 
-#### Configuration Options
+#### PostgreSQL & MySQL Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--cache-lock-backend` | Lock backend: `local`, `redis`, `postgres`, or `mysql` | `local` |
 | `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `"ncps:lock:"` |
 | `--cache-lock-mysql-key-prefix` | Key prefix for all MySQL locks | `"ncps:lock:"` |
 | `--cache-lock-allow-degraded-mode` | Fall back to local locks if distributed backend unavailable | `false` |
 
 > [!WARNING]
-> When `allow-degraded-mode` is enabled, ncps will fall back to local locks if PostgreSQL is unavailable. This breaks HA guarantees and should only be used in specific scenarios (e.g., gradual rollout, testing).
+> When `allow-degraded-mode` is enabled, ncps will fall back to local locks if the database is unavailable. This breaks HA guarantees and should only be used in specific scenarios (e.g., gradual rollout, testing).
 
 #### Lock Timing Settings (Shared with Redis)
 
@@ -382,12 +404,11 @@ These settings apply to both Redis and PostgreSQL backends:
 | `--cache-lock-retry-max-delay` | Maximum retry delay (exponential backoff cap) | 2s |
 | `--cache-lock-retry-jitter` | Enable random jitter in retries | `true` |
 
-#### How PostgreSQL Advisory Locks Work
+#### How Advisory Locks Work
 
-PostgreSQL provides two types of advisory locks:
+**PostgreSQL Implementation**
 
-1. **Session-level locks** - Held until explicitly released or connection closes (used by ncps)
-1. **Transaction-level locks** - Auto-released at transaction end (not used)
+PostgreSQL provides session-level advisory locks that are automatically released if the connection closes.
 
 ```sql
 -- ncps uses these PostgreSQL functions internally:
@@ -398,6 +419,17 @@ SELECT pg_advisory_lock_shared(key_hash);      -- Acquire shared (read) lock
 SELECT pg_advisory_unlock_shared(key_hash);    -- Release shared (read) lock
 
 SELECT pg_try_advisory_lock(key_hash); -- Non-blocking lock attempt
+```
+
+**MySQL/MariaDB Implementation**
+
+MySQL provides user-level locks via the `GET_LOCK()` and `RELEASE_LOCK()` functions. These are also session-level and auto-release on disconnect.
+
+```sql
+-- ncps uses these MySQL functions internally:
+SELECT GET_LOCK('key_string', timeout);   -- Acquire lock
+SELECT RELEASE_LOCK('key_string');        -- Release lock
+SELECT IS_USED_LOCK('key_string');        -- Check lock status
 ```
 
 **Key Features:**
