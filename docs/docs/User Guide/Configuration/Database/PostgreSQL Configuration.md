@@ -1,0 +1,135 @@
+# PostgreSQL Configuration
+
+### When to Use
+
+- **High availability deployments**: Multiple ncps instances
+- **Production environments**: Scalability and reliability required
+- **Large teams**: High concurrent access
+- **Cloud-native deployments**
+
+### Prerequisites
+
+- PostgreSQL 12+ server
+- Database and user created
+- Network connectivity from ncps to PostgreSQL
+
+### Setup PostgreSQL
+
+```
+# Create database and user
+sudo -u postgres psql
+```
+
+```
+CREATE DATABASE ncps;
+CREATE USER ncps WITH PASSWORD 'your-secure-password';
+GRANT ALL PRIVILEGES ON DATABASE ncps TO ncps;
+\q
+```
+
+### Configuration
+
+**Command-line:**
+
+```
+ncps serve \
+  --cache-database-url="postgresql://ncps:password@localhost:5432/ncps?sslmode=require"
+```
+
+**Configuration file:**
+
+```yaml
+cache:
+  database-url: postgresql://ncps:password@postgres:5432/ncps?sslmode=require
+```
+
+**Environment variable:**
+
+```
+export CACHE_DATABASE_URL="postgresql://ncps:password@localhost:5432/ncps?sslmode=require"
+```
+
+### URL Format
+
+```
+postgresql://[username]:[password]@[host]:[port]/[database]?[options]
+```
+
+**Common options:**
+
+- `sslmode=require` - Require TLS encryption
+- `sslmode=disable` - Disable TLS (not recommended for production)
+- `connect_timeout=10` - Connection timeout in seconds
+
+**Examples:**
+
+```
+# Local without TLS
+postgresql://ncps:password@localhost:5432/ncps?sslmode=disable
+
+# Remote with TLS
+postgresql://ncps:password@db.example.com:5432/ncps?sslmode=require
+
+# With connection timeout
+postgresql://ncps:password@localhost:5432/ncps?sslmode=require&connect_timeout=10
+```
+
+### Connection Pool Settings
+
+**Defaults for PostgreSQL:**
+
+- Max open connections: 25
+- Max idle connections: 5
+
+**Custom settings:**
+
+```
+ncps serve \
+  --cache-database-url="postgresql://..." \
+  --cache-database-pool-max-open-conns=50 \
+  --cache-database-pool-max-idle-conns=10
+```
+
+**Configuration file:**
+
+```yaml
+cache:
+  database-url: postgresql://ncps:password@postgres:5432/ncps
+  database:
+    pool:
+      max-open-conns: 50
+      max-idle-conns: 10
+```
+
+### Initialization
+
+```
+# Run migrations
+dbmate --url="postgresql://ncps:password@localhost:5432/ncps?sslmode=disable" migrate up
+```
+
+### Performance Tuning
+
+**PostgreSQL server configuration** (`postgresql.conf`):
+
+```
+max_connections = 100
+shared_buffers = 256MB
+effective_cache_size = 1GB
+work_mem = 4MB
+maintenance_work_mem = 64MB
+```
+
+### Backup and Restore
+
+**Backup:**
+
+```
+pg_dump -h localhost -U ncps ncps > /backup/ncps.sql
+```
+
+**Restore:**
+
+```
+psql -h localhost -U ncps ncps < /backup/ncps.sql
+```

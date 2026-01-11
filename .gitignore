@@ -47,3 +47,6 @@ charts/ncps/test-values/
 
 # Local ncps instances
 /var/ncps/
+
+# Websites
+/public

@@ -1,0 +1,9 @@
+baseUrl: "https://docs.ncps.dev"
+noteMappings:
+  - rootNoteId: "C3Wj5rq7ksjn"
+    path: "docs"
+    format: "markdown"
+  - rootNoteId: "C3Wj5rq7ksjn"
+    path: "public/docs"
+    format: "share"
+    exportOnly: true

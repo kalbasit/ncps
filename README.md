@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/kalbasit/ncps/raw/main/docs/images/logo.svg" alt="ncps logo" width="200"/>
+  <img src="https://github.com/kalbasit/ncps/raw/main/assets/images/logo.svg" alt="ncps logo" width="200"/>
 </p>
 
 # ncps: Nix Cache Proxy Server
@@ -50,35 +50,35 @@ docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
   --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
-Your cache will be available at `http://localhost:8501`. See the [Quick Start Guide](docs/getting-started/quick-start.md) for more options including S3 storage.
+Your cache will be available at `http://localhost:8501`. See the [Quick Start Guide](https://docs.ncps.dev/user-guide/getting-started/quick-start.html) for more options including S3 storage.
 
 ## Documentation
 
-- **[Getting Started](docs/getting-started/)** - Quick start guide, core concepts, and architecture
-- **[Installation](docs/installation/)** - Docker, Docker Compose, Kubernetes, Helm, NixOS
-- **[Configuration](docs/configuration/)** - Complete configuration reference, storage and database options
-- **[Deployment](docs/deployment/)** - Single-instance and high-availability deployment guides
-- **[Usage](docs/usage/)** - Client setup and cache management
-- **[Operations](docs/operations/)** - Monitoring, troubleshooting, backup and upgrades
-- **[Architecture](docs/architecture/)** - System architecture and design details
-- **[Development](docs/development/)** - Contributing, development setup, and testing
+- **[Getting Started](https://docs.ncps.dev/user-guide/getting-started.html)** - Quick start guide, core concepts, and architecture
+- **[Installation](https://docs.ncps.dev/user-guide/installation.html)** - Docker, Docker Compose, Kubernetes, Helm, NixOS
+- **[Configuration](https://docs.ncps.dev/user-guide/configuration.html)** - Complete configuration reference, storage and database options
+- **[Deployment](https://docs.ncps.dev/user-guide/deployment.html)** - Single-instance and high-availability deployment guides
+- **[Usage](https://docs.ncps.dev/user-guide/usage.html)** - Client setup and cache management
+- **[Operations](https://docs.ncps.dev/user-guide/operations.html)** - Monitoring, troubleshooting, backup and upgrades
+- **[Architecture](https://docs.ncps.dev/developer-guide/architecture.html)** - System architecture and design details
+- [**Development**](https://docs.ncps.dev/developer-guide.html) - Contributing, development setup, and testing
 
 ## Installation Methods
 
 | Method | Best For | Documentation |
 | ------------------ | ------------------------------------- | ----------------------------------------------------------- |
-| **Docker** | Quick setup, single-instance | [Docker Guide](docs/installation/docker.md) |
-| **Docker Compose** | Automated setup with dependencies | [Docker Compose Guide](docs/installation/docker-compose.md) |
-| **Kubernetes** | Production, manual K8s deployment | [Kubernetes Guide](docs/installation/kubernetes.md) |
-| **Helm Chart** | Production, simplified K8s management | [Helm Guide](docs/installation/helm.md) |
-| **NixOS** | NixOS systems with native integration | [NixOS Guide](docs/installation/nixos.md) |
+| **Docker** | Quick setup, single-instance | [Docker Guide](https://docs.ncps.dev/user-guide/installation/docker.html) |
+| **Docker Compose** | Automated setup with dependencies | [Docker Compose Guide](https://docs.ncps.dev/user-guide/installation/docker-compose.html) |
+| **Kubernetes** | Production, manual K8s deployment | [Kubernetes Guide](https://docs.ncps.dev/user-guide/installation/kubernetes.html) |
+| **Helm Chart** | Production, simplified K8s management | [Helm Guide](https://docs.ncps.dev/user-guide/installation/helm-chart.html) |
+| **NixOS** | NixOS systems with native integration | [NixOS Guide](https://docs.ncps.dev/user-guide/installation/nixos.html) |
 
 ## Deployment Modes
 
 - **Single-instance**: Simple deployment with local or S3 storage, SQLite or shared database
 - **High Availability**: Multiple instances with S3 storage, PostgreSQL/MySQL, and Redis for zero-downtime operation
 
-See the [Deployment Guide](docs/deployment/) for detailed setup instructions.
+See the [Deployment Guide](https://docs.ncps.dev/user-guide/deployment.html) for detailed setup instructions.
 
 ## Support the Project
 
@@ -90,7 +90,7 @@ If you find `ncps` useful, please consider supporting its development! Sponsorin
 
 Contributions are welcome! We appreciate bug reports, feature requests, documentation improvements, and code contributions.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+See the [Developer Guide](https://docs.ncps.dev/developer-guide.html) for:
 
 - Development setup and workflow
 - Code quality standards and testing procedures
