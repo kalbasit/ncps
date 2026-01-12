@@ -18,7 +18,7 @@ replicaCount: 1
 mode: statefulset
 
 image:
-  registry: docker.io
+  registry: ghcr.io
   repository: kalbasit/ncps
   pullPolicy: IfNotPresent
   # Overrides the image tag (default is chart appVersion)
