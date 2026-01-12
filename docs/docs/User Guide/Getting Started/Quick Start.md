@@ -55,7 +55,7 @@ docker run -d \
   --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
-**Replace** `**your-ncps-hostname**` with the actual hostname or IP where ncps will be accessible to clients.
+**Replace `your-ncps-hostname`** with the actual hostname or IP where ncps will be accessible to clients.
 
 ### Step 5: Verify Installation
 
@@ -158,7 +158,7 @@ Your ncps instance is now:
 - Check you provided all required flags: `--cache-hostname`, storage, database, upstream
 - Check logs: `docker logs ncps`
 
-**Can't access** [**http://localhost:8501**](http://localhost:8501)**:**
+**Can't access [http://localhost:8501](http://localhost:8501):**
 
 - Verify container is running: `docker ps | grep ncps`
 - Check port mapping: `-p 8501:8501`

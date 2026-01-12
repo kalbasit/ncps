@@ -228,4 +228,4 @@ ncps serve --config=config.yaml --log-level=debug
 
 - [Example configuration file](https://github.com/kalbasit/ncps/blob/main/config.example.yaml) - Complete configuration example
 - [Installation Guides](Installation.md) - Installation-specific configuration
-- [Observability Configuration](Configuration/Observability.md) - Deployment-specific configuration
+- [Observability Configuration](Configuration/Observability.md) - Observability-specific configuration

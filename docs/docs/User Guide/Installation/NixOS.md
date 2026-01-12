@@ -387,7 +387,7 @@ sudo nixos-rebuild switch
 
 ## Related Documentation
 
-- <a class="reference-link" href="https://search.nixos.org/options?query=services.ncps">[missing note]</a> - All module options
+- <a class="reference-link" href="https://search.nixos.org/options?query=services.ncps">NixOS Options Search</a> - All module options
 - <a class="reference-link" href="Docker.md">Docker</a> - For S3 storage on NixOS
 - <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
 - <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Configure Nix clients
