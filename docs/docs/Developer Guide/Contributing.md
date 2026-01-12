@@ -383,8 +383,6 @@ The cluster can be reused across test runs. Use `./dev-scripts/k8s-cluster.sh de
 ./charts/ncps/test-values/CLEANUP.sh
 ```
 
-### Helper Scripts Locations
-
 **Alternative: Use External Registry**
 
 If you prefer to push to an external registry (e.g., Docker Hub, your own Zot instance):
