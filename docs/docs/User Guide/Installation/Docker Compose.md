@@ -31,7 +31,7 @@ services:
     restart: "no"
 
   migrate-database:
-    image: kalbasit/ncps:latest
+    image: ghcr.io/kalbasit/ncps:latest
     depends_on:
       create-directories:
         condition: service_completed_successfully
@@ -42,7 +42,7 @@ services:
     restart: "no"
 
   ncps:
-    image: kalbasit/ncps:latest
+    image: ghcr.io/kalbasit/ncps:latest
     depends_on:
       migrate-database:
         condition: service_completed_successfully
@@ -160,7 +160,7 @@ services:
 
   # Migrate database
   migrate-database:
-    image: kalbasit/ncps:latest
+    image: ghcr.io/kalbasit/ncps:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,7 +170,7 @@ services:
 
   # ncps instance 1
   ncps-1:
-    image: kalbasit/ncps:latest
+    image: ghcr.io/kalbasit/ncps:latest
     depends_on:
       migrate-database:
         condition: service_completed_successfully
@@ -196,7 +196,7 @@ services:
 
   # ncps instance 2 (for HA)
   ncps-2:
-    image: kalbasit/ncps:latest
+    image: ghcr.io/kalbasit/ncps:latest
     depends_on:
       migrate-database:
         condition: service_completed_successfully

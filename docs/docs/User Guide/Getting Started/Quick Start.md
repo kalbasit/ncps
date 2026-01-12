@@ -18,7 +18,7 @@ This is the simplest setup perfect for testing and single-machine deployments.
 
 ```
 docker pull alpine
-docker pull kalbasit/ncps
+docker pull ghcr.io/kalbasit/ncps
 ```
 
 ### Step 2: Create and Initialize Storage
@@ -35,7 +35,7 @@ docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
 ### Step 3: Initialize Database
 
 ```
-docker run --rm -v ncps-storage:/storage kalbasit/ncps \
+docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
   /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite up
 ```
 
@@ -46,7 +46,7 @@ docker run -d \
   --name ncps \
   -p 8501:8501 \
   -v ncps-storage:/storage \
-  kalbasit/ncps \
+  ghcr.io/kalbasit/ncps \
   /bin/ncps serve \
   --cache-hostname=your-ncps-hostname \
   --cache-storage-local=/storage \
@@ -79,7 +79,7 @@ This setup uses S3-compatible storage, which is required for high-availability d
 ### Step 1: Pull Image
 
 ```
-docker pull kalbasit/ncps
+docker pull ghcr.io/kalbasit/ncps
 ```
 
 ### Step 2: Create Database Volume
@@ -93,7 +93,7 @@ docker run --rm -v ncps-db:/db alpine mkdir -m 0700 -p /db
 ### Step 3: Initialize Database
 
 ```
-docker run --rm -v ncps-db:/db kalbasit/ncps \
+docker run --rm -v ncps-db:/db ghcr.io/kalbasit/ncps \
   /bin/dbmate --url=sqlite:/db/db.sqlite up
 ```
 
@@ -104,7 +104,7 @@ docker run -d \
   --name ncps \
   -p 8501:8501 \
   -v ncps-db:/db \
-  kalbasit/ncps \
+  ghcr.io/kalbasit/ncps \
   /bin/ncps serve \
   --cache-hostname=your-ncps-hostname \
   --cache-storage-s3-bucket=my-ncps-cache \
