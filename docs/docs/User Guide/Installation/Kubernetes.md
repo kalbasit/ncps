@@ -90,7 +90,7 @@ spec:
 
         # Run database migrations
         - name: migrate-database
-          image: kalbasit/ncps:latest
+          image: ghcr.io/kalbasit/ncps:latest
           command:
             - /bin/dbmate
             - --url=sqlite:/storage/var/ncps/db/db.sqlite
@@ -102,7 +102,7 @@ spec:
 
       containers:
         - name: ncps
-          image: kalbasit/ncps:latest
+          image: ghcr.io/kalbasit/ncps:latest
           args:
             - /bin/ncps
             - serve
@@ -291,7 +291,7 @@ spec:
     spec:
       initContainers:
         - name: migrate-database
-          image: kalbasit/ncps:latest
+          image: ghcr.io/kalbasit/ncps:latest
           command:
             - /bin/dbmate
             - migrate
@@ -309,7 +309,7 @@ spec:
 
       containers:
         - name: ncps
-          image: kalbasit/ncps:latest
+          image: ghcr.io/kalbasit/ncps:latest
           args:
             - /bin/ncps
             - serve

@@ -31,17 +31,17 @@ Get ncps running in minutes with Docker:
 
 ```bash
 # Pull images and create storage
-docker pull alpine && docker pull kalbasit/ncps
+docker pull alpine && docker pull ghcr.io/kalbasit/ncps
 docker volume create ncps-storage
 docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
   "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
 
 # Initialize database
-docker run --rm -v ncps-storage:/storage kalbasit/ncps \
+docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
   /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite up
 
 # Start the server
-docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage kalbasit/ncps \
+docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
   /bin/ncps serve \
   --cache-hostname=your-ncps-hostname \
   --cache-storage-local=/storage \

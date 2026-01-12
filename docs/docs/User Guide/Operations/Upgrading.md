@@ -13,7 +13,7 @@ Upgrade ncps to newer versions.
 docker stop ncps
 
 # Pull new version
-docker pull kalbasit/ncps:latest
+docker pull ghcr.io/kalbasit/ncps:latest
 
 # Remove old container
 docker rm ncps
@@ -47,7 +47,7 @@ Perform rolling updates:
 # Update instance 1
 docker stop ncps-1
 docker rm ncps-1
-docker pull kalbasit/ncps:latest
+docker pull ghcr.io/kalbasit/ncps:latest
 docker run -d --name ncps-1 ...
 
 # Wait and verify instance 1 is healthy
@@ -90,7 +90,7 @@ If upgrade fails:
 ```
 docker stop ncps
 docker rm ncps
-docker run -d --name ncps kalbasit/ncps:v0.4.0 ...  # Previous version
+docker run -d --name ncps ghcr.io/kalbasit/ncps:v0.4.0 ...  # Previous version
 ```
 
 **Helm:**

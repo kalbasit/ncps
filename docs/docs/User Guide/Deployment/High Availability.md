@@ -237,17 +237,17 @@ prometheus:
 # Start instance 1
 docker run -d --name ncps-1 -p 8501:8501 \
   -v $(pwd)/config.yaml:/config.yaml \
-  kalbasit/ncps /bin/ncps serve --config=/config.yaml
+  ghcr.io/kalbasit/ncps /bin/ncps serve --config=/config.yaml
 
 # Start instance 2
 docker run -d --name ncps-2 -p 8502:8501 \
   -v $(pwd)/config.yaml:/config.yaml \
-  kalbasit/ncps /bin/ncps serve --config=/config.yaml
+  ghcr.io/kalbasit/ncps /bin/ncps serve --config=/config.yaml
 
 # Start instance 3
 docker run -d --name ncps-3 -p 8503:8501 \
   -v $(pwd)/config.yaml:/config.yaml \
-  kalbasit/ncps /bin/ncps serve --config=/config.yaml
+  ghcr.io/kalbasit/ncps /bin/ncps serve --config=/config.yaml
 ```
 
 **Kubernetes:**
@@ -269,7 +269,7 @@ spec:
     spec:
       containers:
         - name: ncps
-          image: kalbasit/ncps:latest
+          image: ghcr.io/kalbasit/ncps:latest
           # ... configuration ...
 ```
 
@@ -387,7 +387,7 @@ Update instances one at a time for zero downtime:
 # Update instance 1
 docker stop ncps-1
 docker rm ncps-1
-docker pull kalbasit/ncps:latest
+docker pull ghcr.io/kalbasit/ncps:latest
 docker run -d --name ncps-1 ... # Same command
 
 # Wait and verify instance 1 is healthy
