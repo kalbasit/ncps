@@ -1,4 +1,7 @@
 name: Docker images
+permissions:
+  contents: read
+  packages: write
 on:
   push:
     branches:
