@@ -366,6 +366,15 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 
 	resp, err := c.doRequest(ctx, http.MethodHead, u)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return false, nil
+		}
+
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return false, nil
+		}
+
 		return false, err
 	}
 
@@ -460,6 +469,15 @@ func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 
 	resp, err := c.doRequest(ctx, http.MethodHead, u, mutators...)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return false, nil
+		}
+
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return false, nil
+		}
+
 		return false, err
 	}
 
