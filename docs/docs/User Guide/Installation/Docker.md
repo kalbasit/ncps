@@ -139,7 +139,7 @@ docker run -d \
 
 **For MinIO:**
 
-```yaml
+```sh
 --cache-storage-s3-endpoint=http://minio.example.com:9000 \
 --cache-storage-s3-use-ssl=false \
 ```
