@@ -307,8 +307,9 @@ func TestHasNarInfo(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = c.HasNarInfo(context.Background(), "hash")
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+		exists, err := c.HasNarInfo(context.Background(), "hash")
+		require.NoError(t, err)
+		assert.False(t, exists)
 	})
 }
 
@@ -441,8 +442,9 @@ func TestHasNar(t *testing.T) {
 		require.NoError(t, err)
 
 		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
-		_, err = c.HasNar(context.Background(), nu)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
+		exists, err := c.HasNar(context.Background(), nu)
+		require.NoError(t, err)
+		assert.False(t, exists)
 	})
 }
 
