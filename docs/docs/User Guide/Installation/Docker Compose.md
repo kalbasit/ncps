@@ -65,6 +65,9 @@ volumes:
   ncps-storage:
 ```
 
+> [!NOTE]
+> All ncps images are also available on Docker Hub as `kalbasit/ncps`. You can replace `ghcr.io/kalbasit/ncps` with `kalbasit/ncps` in the `image` field if preferred.
+
 **Important:** Replace `your-ncps-hostname` with your actual hostname.
 
 ### Step 2: Start the Services

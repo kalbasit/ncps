@@ -139,6 +139,9 @@ spec:
             sizeLimit: 5Gi
 ```
 
+> [!NOTE]
+> All ncps images are also available on Docker Hub as `kalbasit/ncps`. You can use `kalbasit/ncps` in the `image` field if preferred.
+
 Apply:
 
 ```
