@@ -1,6 +1,6 @@
-______________________________________________________________________
-
-## description: Create a new database migration
+---
+description: Create a new database migration
+---
 
 1. Read `CLAUDE.md` section "Creating Database Migrations" and "Transaction Handling" to understand the critical rules (NO manual transactions).
 

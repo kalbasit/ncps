@@ -1,6 +1,6 @@
-______________________________________________________________________
-
-## description: Build the project
+---
+description: Build the project
+---
 
 1. Build with Go:
 
