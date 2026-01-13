@@ -4,6 +4,9 @@
 
 This chart bootstraps a ncps deployment on a Kubernetes cluster using the Helm package manager. ncps is a local binary cache proxy for Nix that fetches store paths from upstream caches and caches them locally, reducing download times and bandwidth usage.
 
+> [!NOTE]
+> The ncps Docker image is primarily hosted on GitHub Container Registry (`ghcr.io`), but it is also available on Docker Hub as `kalbasit/ncps` (or `docker.io/kalbasit/ncps`).
+
 ## Prerequisites
 
 - Kubernetes 1.19+
@@ -65,7 +68,7 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `global.imageRegistry` | Global image registry override | `""` |
 | `replicaCount` | Number of replicas (1 for single instance, 2+ for HA) | `1` |
 | `mode` | Deployment mode: `deployment` or `statefulset` | `statefulset` |
-| `image.registry` | Image registry | `docker.io` |
+| `image.registry` | Image registry (also available on `docker.io`) | `ghcr.io` |
 | `image.repository` | Image repository | `kalbasit/ncps` |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `image.tag` | Image tag (defaults to chart appVersion) | `""` |

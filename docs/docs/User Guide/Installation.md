@@ -54,7 +54,7 @@ Choose the installation method that best fits your environment and requirements.
 
 - Docker installed (version 20.10+)
 - 2GB+ available disk space
-- Network access to Docker Hub
+- Network access to a container registry (GHCR or Docker Hub)
 
 ### Docker Compose
 

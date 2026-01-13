@@ -11,23 +11,24 @@ Install and run ncps using Docker. This is the simplest installation method, per
 - 2GB+ available disk space
 - Network access to upstream caches
 
-## Installation Steps
-
-### Step 1: Pull the Image
+## Step 1: Pull the Image
 
 ```sh
 docker pull ghcr.io/kalbasit/ncps
 ```
 
+> [!NOTE]
+> The image is also available on Docker Hub as `kalbasit/ncps` (or `docker.io/kalbasit/ncps`).
+
 **Available tags:**
 
 - `latest` - Latest stable release
 - `vX.Y.Z` - Specific version (recommended for production)
-- See [Docker Hub](https://hub.docker.com/r/kalbasit/ncps) for all tags
+- See [Docker Hub](https://hub.docker.com/r/kalbasit/ncps) or [GitHub packages](https://github.com/kalbasit/ncps/pkgs/container/ncps) for all tags
 
 ### Step 2: Initialize Storage and Database
 
-```
+```sh
 # Create storage volume
 docker volume create ncps-storage
 
@@ -84,7 +85,7 @@ docker run -d \
 
 ### Step 4: Verify Installation
 
-```
+```sh
 # Check container is running
 docker ps | grep ncps
 
@@ -108,7 +109,7 @@ curl http://localhost:8501/pubkey
 
 For production deployments or HA setups, use S3-compatible storage instead of local storage:
 
-```
+```sh
 # Create volume for database only (cache data goes to S3)
 docker volume create ncps-db
 docker run --rm -v ncps-db:/db alpine mkdir -m 0700 -p /db
@@ -138,7 +139,7 @@ docker run -d \
 
 **For MinIO:**
 
-```
+```sh
 --cache-storage-s3-endpoint=http://minio.example.com:9000 \
 --cache-storage-s3-use-ssl=false \
 ```
@@ -213,7 +214,7 @@ docker restart ncps
 
 ### Update to Latest Version
 
-```
+```sh
 docker pull ghcr.io/kalbasit/ncps:latest
 docker stop ncps
 docker rm ncps
@@ -248,19 +249,19 @@ docker logs ncps
 
 **Check container is running:**
 
-```
+```sh
 docker ps | grep ncps
 ```
 
 **Check from inside container:**
 
-```
+```sh
 docker exec ncps wget -O- http://localhost:8501/nix-cache-info
 ```
 
 **Check port binding:**
 
-```
+```sh
 docker port ncps
 ```
 
@@ -270,7 +271,7 @@ docker port ncps
 
 **Solution:** Run the database migration step:
 
-```
+```sh
 docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
   /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
 ```
@@ -279,7 +280,7 @@ docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
 
 **Ensure correct permissions:**
 
-```
+```sh
 docker run --rm -v ncps-storage:/storage alpine ls -la /storage/var/ncps
 ```
 

@@ -18,6 +18,7 @@ replicaCount: 1
 mode: statefulset
 
 image:
+  # The image is also available at docker.io/kalbasit/ncps
   registry: ghcr.io
   repository: kalbasit/ncps
   pullPolicy: IfNotPresent
@@ -67,7 +68,7 @@ securityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop:
-    - ALL
+      - ALL
   readOnlyRootFilesystem: true
 
 config:
@@ -80,8 +81,8 @@ config:
   # Used for key generation and signing
   hostname: "ncps.example.com"
 
-  # Logging level
-  logLevel: "info"  # trace, debug, info, warn, error, fatal, panic
+  # Logging level (trace, debug, info, warn, error, fatal, panic)
+  logLevel: "info"
 
   # Server configuration
   server:
