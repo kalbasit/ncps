@@ -1,6 +1,6 @@
-______________________________________________________________________
-
-## description: Lint and format code
+---
+description: Lint and format code
+---
 
 // turbo-all
 

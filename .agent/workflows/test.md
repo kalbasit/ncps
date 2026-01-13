@@ -1,6 +1,6 @@
-______________________________________________________________________
-
-## description: Run project tests
+---
+description: Run project tests
+---
 
 1. Run standard tests with race detection:
 
