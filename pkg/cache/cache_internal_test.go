@@ -511,6 +511,93 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 	}
 }
 
+func TestRunLRUWithSharedNar(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	// Initial State:
+	// ni4 (50 bytes) -> NarFile B
+	// ni1 (100 bytes) -> NarFile A
+	// ni2 (100 bytes) -> NarFile A
+	// Total unique size: 150 bytes.
+
+	// NarFile B (50 bytes), NarInfo 4 (oldest)
+	narFileB, err := c.db.CreateNarFile(ctx, database.CreateNarFileParams{
+		Hash:        "nar-file-b",
+		Compression: "xz",
+		FileSize:    50,
+	})
+	require.NoError(t, err)
+	ni4, err := c.db.CreateNarInfo(ctx, "nar-info-4")
+	require.NoError(t, err)
+	require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		NarInfoID: ni4.ID,
+		NarFileID: narFileB.ID,
+	}))
+
+	// NarFile A (100 bytes), NarInfo 1
+	narFileA, err := c.db.CreateNarFile(ctx, database.CreateNarFileParams{
+		Hash:        "nar-file-a",
+		Compression: "xz",
+		FileSize:    100,
+	})
+	require.NoError(t, err)
+	ni1, err := c.db.CreateNarInfo(ctx, "nar-info-1")
+	require.NoError(t, err)
+	require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		NarInfoID: ni1.ID,
+		NarFileID: narFileA.ID,
+	}))
+
+	// NarFile A (100 bytes), NarInfo 2
+	ni2, err := c.db.CreateNarInfo(ctx, "nar-info-2")
+	require.NoError(t, err)
+	require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		NarInfoID: ni2.ID,
+		NarFileID: narFileA.ID,
+	}))
+
+	// Set deterministic timestamps to avoid time.Sleep and flaky tests.
+	// We set ni4 (oldest), then ni1, then ni2 (newest).
+	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	_, err = c.db.DB().ExecContext(ctx,
+		"UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?", baseTime.Add(-3*time.Hour), "nar-info-4")
+	require.NoError(t, err)
+	_, err = c.db.DB().ExecContext(ctx,
+		"UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?", baseTime.Add(-2*time.Hour), "nar-info-1")
+	require.NoError(t, err)
+	_, err = c.db.DB().ExecContext(ctx,
+		"UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?", baseTime.Add(-1*time.Hour), "nar-info-2")
+	require.NoError(t, err)
+
+	// Set MaxSize to 0 to trigger eviction of all reclaimable records.
+	// If the query double-counts, it selects ni such that sum <= 0.
+	// With double-counting, sums are: ni4: 50, ni1: 150, ni2: 250.
+	// without double-counting, sums are: ni4: 50, ni1: 150, ni2: 150.
+	// We use maxSize = 0 to reclaim all 150 unique bytes.
+	c.SetMaxSize(0)
+
+	c.runLRU(ctx)()
+
+	// Verify that all narinfos were deleted.
+	_, err = c.db.GetNarInfoByHash(ctx, "nar-info-4")
+	require.ErrorIs(t, err, sql.ErrNoRows, "ni4 should have been deleted")
+	_, err = c.db.GetNarInfoByHash(ctx, "nar-info-1")
+	require.ErrorIs(t, err, sql.ErrNoRows, "ni1 should have been deleted")
+	_, err = c.db.GetNarInfoByHash(ctx, "nar-info-2")
+	require.ErrorIs(t, err, sql.ErrNoRows, "ni2 should have been deleted")
+
+	// Verify that all nar files were deleted as they are now orphaned.
+	_, err = c.db.GetNarFileByHash(ctx, "nar-file-a")
+	require.ErrorIs(t, err, sql.ErrNoRows, "nar-file-a should have been deleted")
+	_, err = c.db.GetNarFileByHash(ctx, "nar-file-b")
+	require.ErrorIs(t, err, sql.ErrNoRows, "nar-file-b should have been deleted")
+}
+
 func TestStoreInDatabaseDuplicateDetection(t *testing.T) {
 	t.Parallel()
 

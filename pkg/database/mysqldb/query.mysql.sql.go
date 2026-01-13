@@ -305,12 +305,15 @@ const getLeastUsedNarInfos = `-- name: GetLeastUsedNarInfos :many
 SELECT ni1.id, ni1.hash, ni1.created_at, ni1.updated_at, ni1.last_accessed_at
 FROM narinfos ni1
 WHERE (
-    SELECT COALESCE(SUM(nf2.file_size), 0)
-    FROM narinfos ni2
-    LEFT JOIN narinfo_nar_files ninf2 ON ni2.id = ninf2.narinfo_id
-    LEFT JOIN nar_files nf2 ON ninf2.nar_file_id = nf2.id
-    WHERE ni2.last_accessed_at < ni1.last_accessed_at
-        OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
+    SELECT COALESCE(SUM(nf.file_size), 0)
+    FROM nar_files nf
+    WHERE nf.id IN (
+        SELECT nnf.nar_file_id
+        FROM narinfo_nar_files nnf
+        INNER JOIN narinfos ni2 ON nnf.narinfo_id = ni2.id
+        WHERE ni2.last_accessed_at < ni1.last_accessed_at
+            OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
+    )
 ) <= ?
 `
 
@@ -322,12 +325,15 @@ WHERE (
 //	SELECT ni1.id, ni1.hash, ni1.created_at, ni1.updated_at, ni1.last_accessed_at
 //	FROM narinfos ni1
 //	WHERE (
-//	    SELECT COALESCE(SUM(nf2.file_size), 0)
-//	    FROM narinfos ni2
-//	    LEFT JOIN narinfo_nar_files ninf2 ON ni2.id = ninf2.narinfo_id
-//	    LEFT JOIN nar_files nf2 ON ninf2.nar_file_id = nf2.id
-//	    WHERE ni2.last_accessed_at < ni1.last_accessed_at
-//	        OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
+//	    SELECT COALESCE(SUM(nf.file_size), 0)
+//	    FROM nar_files nf
+//	    WHERE nf.id IN (
+//	        SELECT nnf.nar_file_id
+//	        FROM narinfo_nar_files nnf
+//	        INNER JOIN narinfos ni2 ON nnf.narinfo_id = ni2.id
+//	        WHERE ni2.last_accessed_at < ni1.last_accessed_at
+//	            OR (ni2.last_accessed_at = ni1.last_accessed_at AND ni2.id <= ni1.id)
+//	    )
 //	) <= ?
 func (q *Queries) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNarInfos, fileSize)
