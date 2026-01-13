@@ -366,6 +366,10 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 
 	resp, err := c.doRequest(ctx, http.MethodHead, u)
 	if err != nil {
+		if isTimeout(err) {
+			return false, nil
+		}
+
 		return false, err
 	}
 
@@ -460,6 +464,10 @@ func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 
 	resp, err := c.doRequest(ctx, http.MethodHead, u, mutators...)
 	if err != nil {
+		if isTimeout(err) {
+			return false, nil
+		}
+
 		return false, err
 	}
 
@@ -525,4 +533,11 @@ func (c *Cache) validateURL(u *url.URL) error {
 	}
 
 	return nil
+}
+
+// isTimeout checks if an error is a timeout error.
+func isTimeout(err error) bool {
+	var netErr net.Error
+
+	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
 }
