@@ -39,6 +39,12 @@ const (
 	cacheLockKey         = "cache"
 )
 
+// narInfoJobKey returns the key used for tracking narinfo download jobs.
+func narInfoJobKey(hash string) string { return "download:narinfo:" + hash }
+
+// narJobKey returns the key used for tracking NAR download jobs.
+func narJobKey(hash string) string { return "download:nar:" + hash }
+
 var (
 	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
@@ -790,7 +796,7 @@ func (c *Cache) pullNarIntoStore(
 	defer func() {
 		// Clean up local job tracking
 		c.upstreamJobsMu.Lock()
-		delete(c.upstreamJobs, narURL.Hash)
+		delete(c.upstreamJobs, narJobKey(narURL.Hash))
 		c.upstreamJobsMu.Unlock()
 
 		select {
@@ -1128,7 +1134,7 @@ func (c *Cache) pullNarInfo(
 	done := func() {
 		// Clean up local job tracking
 		c.upstreamJobsMu.Lock()
-		delete(c.upstreamJobs, hash)
+		delete(c.upstreamJobs, narInfoJobKey(hash))
 		c.upstreamJobsMu.Unlock()
 
 		// Ensure ds.start is closed to unblock waiters
@@ -1397,7 +1403,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 
 	return c.coordinateDownload(
 		ctx,
-		"download:narinfo:",
+		narInfoJobKey(hash),
 		hash,
 		func(ctx context.Context) bool {
 			return c.narInfoStore.HasNarInfo(ctx, hash)
@@ -1427,7 +1433,7 @@ func (c *Cache) prePullNar(
 
 	return c.coordinateDownload(
 		ctx,
-		"download:nar:",
+		narJobKey(narURL.Hash),
 		narURL.Hash,
 		func(ctx context.Context) bool {
 			return c.narStore.HasNar(ctx, *narURL)
@@ -1876,9 +1882,10 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	c.upstreamJobsMu.Lock()
 	defer c.upstreamJobsMu.Unlock()
 
-	_, ok := c.upstreamJobs[hash]
+	_, narJobExists := c.upstreamJobs[narJobKey(hash)]
+	_, narInfoJobExists := c.upstreamJobs[narInfoJobKey(hash)]
 
-	return ok
+	return narJobExists || narInfoJobExists
 }
 
 // coordinateDownload manages distributed download coordination with lock acquisition,
@@ -1886,13 +1893,11 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 // for download progress and errors.
 func (c *Cache) coordinateDownload(
 	ctx context.Context,
-	lockPrefix string,
+	lockKey string,
 	hash string,
 	hasAsset func(context.Context) bool,
 	startJob func(*downloadState),
 ) *downloadState {
-	lockKey := lockPrefix + hash
-
 	// Acquire lock with retry (handled internally by Redis locker)
 	// If using local locks, this returns immediately
 	// If using Redis and lock fails, this returns immediately (lock will auto-expire)
@@ -1937,10 +1942,10 @@ func (c *Cache) coordinateDownload(
 	// Check upstreamJobs map (protected by local mutex) and create downloadState if needed
 	c.upstreamJobsMu.Lock()
 
-	ds, ok := c.upstreamJobs[hash]
+	ds, ok := c.upstreamJobs[lockKey]
 	if !ok {
 		ds = newDownloadState()
-		c.upstreamJobs[hash] = ds
+		c.upstreamJobs[lockKey] = ds
 
 		// Start download in background
 		// IMPORTANT: We must wait for the asset to be stored (ds.stored) before releasing
