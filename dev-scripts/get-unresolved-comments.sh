@@ -26,6 +26,7 @@ query($owner: String!, $name: String!, $pr: Int!) {
     pullRequest(number: $pr) {
       reviewThreads(first: 100) {
         nodes {
+          id
           isResolved
           comments(first: 100) {
             nodes {
@@ -48,5 +49,5 @@ RESULT_FILE="$TMP_DIR/result.json"
 
 gh api graphql -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -f query="$QUERY" > "$RESULT_FILE"
 
-# Filter and output only unresolved comments
-jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .comments.nodes[]' "$RESULT_FILE"
+# Filter and output only unresolved comments, including the thread ID
+jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) as $thread | $thread.comments.nodes[] | . + {threadId: $thread.id}' "$RESULT_FILE"
