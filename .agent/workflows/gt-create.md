@@ -2,7 +2,7 @@
 description: Create a new Graphite stack (semantic commit)
 ---
 
-1. You MUST first thing first run the `/lint` workflow.
+1. You MUST first run the `/lint` workflow.
    - If there are any linting issues, you must fix them before proceeding.
    - Only when all issues are fixed, proceed to the next step.
 
