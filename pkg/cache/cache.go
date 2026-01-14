@@ -39,12 +39,6 @@ const (
 	cacheLockKey         = "cache"
 )
 
-// narInfoJobKey returns the key used for tracking narinfo download jobs.
-func narInfoJobKey(hash string) string { return "download:narinfo:" + hash }
-
-// narJobKey returns the key used for tracking NAR download jobs.
-func narJobKey(hash string) string { return "download:nar:" + hash }
-
 var (
 	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
@@ -796,7 +790,7 @@ func (c *Cache) pullNarIntoStore(
 	defer func() {
 		// Clean up local job tracking
 		c.upstreamJobsMu.Lock()
-		delete(c.upstreamJobs, narJobKey(narURL.Hash))
+		delete(c.upstreamJobs, narURL.Hash)
 		c.upstreamJobsMu.Unlock()
 
 		select {
@@ -1404,7 +1398,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 	return c.coordinateDownload(
 		ctx,
 		"download:narinfo:",
-		narInfoJobKey(hash),
+		hash,
 		func(ctx context.Context) bool {
 			return c.narInfoStore.HasNarInfo(ctx, hash)
 		},
@@ -1434,7 +1428,7 @@ func (c *Cache) prePullNar(
 	return c.coordinateDownload(
 		ctx,
 		"download:nar:",
-		narJobKey(narURL.Hash),
+		narURL.Hash,
 		func(ctx context.Context) bool {
 			return c.narStore.HasNar(ctx, *narURL)
 		},
