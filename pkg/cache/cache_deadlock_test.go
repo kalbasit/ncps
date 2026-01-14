@@ -118,7 +118,9 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 			t.Fatal("Deadlock detected! GetNarInfo timed out.")
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("2 Deadlock detected! GetNarInfo timed out.")
+		// This shouldn't happen but just in case the context is no longer being handled correctly,
+		// this protects against infinite wait.
+		t.Fatal("Timeout waiting for GetNarInfo to complete, likely due to deadlock and broken context timeout handling.")
 	}
 
 	require.NoError(t, err)
