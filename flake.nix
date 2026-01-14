@@ -21,6 +21,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
       url = "github:numtide/treefmt-nix";
     };
+
+    trilium = {
+      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:TriliumNext/Trilium";
+    };
   };
 
   outputs =

@@ -1,6 +1,11 @@
+{ inputs, ... }:
 {
   perSystem =
-    { config, pkgs, ... }:
+    {
+      config,
+      pkgs,
+      ...
+    }:
     {
       devShells.default = pkgs.mkShell {
         buildInputs = [
@@ -123,6 +128,20 @@
           pkgs.sqlc
           pkgs.sqlfluff
           pkgs.watchexec
+
+          # Provide trilium-edit-docs in the environment so the user can easily edit the docs using Trilium.
+          (pkgs.writeShellScriptBin "trilium-edit-docs" (
+            let
+              # Construct the URI for the trilium-edit-docs package lazily.
+              # We use inputs.trilium.rev to pin it to the same version as the flake.lock.
+              # If rev is not available (e.g. local input), we fall back to the URL.
+              rev = inputs.trilium.rev or null;
+              uri = if rev != null then "github:TriliumNext/Trilium/${rev}" else "github:TriliumNext/Trilium";
+            in
+            ''
+              exec nix run "${uri}#edit-docs" -- "$@"
+            ''
+          ))
         ];
 
         _GO_VERSION = "${pkgs.go.version}";
