@@ -2,6 +2,7 @@ package cache //nolint:testpackage
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -100,24 +101,24 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 	ctx, cancel := context.WithTimeout(newContext(), 5*time.Second)
 	defer cancel()
 
-	// detect a hang
 	done := make(chan struct{})
 
 	var narInfo *narinfo.NarInfo
 
 	go func() {
-		narInfo, err = c.GetNarInfo(ctx, entry.NarInfoHash)
+		defer close(done)
 
-		close(done)
+		narInfo, err = c.GetNarInfo(ctx, entry.NarInfoHash)
 	}()
 
 	select {
 	case <-done:
 	case <-ctx.Done():
-		t.Fatal("Deadlock detected! GetNarInfo timed out.")
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			t.Fatal("Deadlock detected! GetNarInfo timed out.")
+		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("Deadlock detected! GetNarInfo timed out.")
-		cancel()
+		t.Fatal("2 Deadlock detected! GetNarInfo timed out.")
 	}
 
 	require.NoError(t, err)
