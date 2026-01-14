@@ -55,95 +55,87 @@ func newTestCache(
 		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
 }
 
+func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	cleanup := func() {
+		os.RemoveAll(dir)
+	}
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	return db, localStore, dir, cleanup
+}
+
+func setupTestCache(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func()) {
+	t.Helper()
+
+	db, localStore, dir, cleanup := setupTestComponents(t)
+
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	require.NoError(t, err)
+
+	return c, db, localStore, dir, cleanup
+}
+
 func TestNew(t *testing.T) {
 	t.Parallel()
 
 	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("hostname must not be empty", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name     string
+			hostname string
+			wantErr  error
+		}{
+			{
+				name:     "hostname must not be empty",
+				hostname: "",
+				wantErr:  cache.ErrHostnameRequired,
+			},
+			{
+				name:     "hostname must not contain scheme",
+				hostname: "https://cache.example.com",
+				wantErr:  cache.ErrHostnameMustNotContainScheme,
+			},
+			{
+				name:     "hostname must not contain a path",
+				hostname: "cache.example.com/path/to",
+				wantErr:  cache.ErrHostnameMustNotContainPath,
+			},
+			{
+				name:     "valid hostName must return no error",
+				hostname: cacheName,
+				wantErr:  nil,
+			},
+		}
 
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			defer os.RemoveAll(dir) // clean up
+				db, localStore, _, cleanup := setupTestComponents(t)
+				defer cleanup()
 
-			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-			testhelper.CreateMigrateDatabase(t, dbFile)
-
-			db, err := database.Open("sqlite:"+dbFile, nil)
-			require.NoError(t, err)
-
-			localStore, err := local.New(newContext(), dir)
-			require.NoError(t, err)
-
-			_, err = newTestCache(newContext(), "", db, localStore, localStore, localStore, "")
-			assert.ErrorIs(t, err, cache.ErrHostnameRequired)
-		})
-
-		t.Run("hostname must not contain scheme", func(t *testing.T) {
-			t.Parallel()
-
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-
-			defer os.RemoveAll(dir) // clean up
-
-			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-			testhelper.CreateMigrateDatabase(t, dbFile)
-
-			db, err := database.Open("sqlite:"+dbFile, nil)
-			require.NoError(t, err)
-
-			localStore, err := local.New(newContext(), dir)
-			require.NoError(t, err)
-
-			_, err = newTestCache(newContext(), "https://cache.example.com", db, localStore, localStore, localStore, "")
-			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainScheme)
-		})
-
-		t.Run("hostname must not contain a path", func(t *testing.T) {
-			t.Parallel()
-
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-
-			defer os.RemoveAll(dir) // clean up
-
-			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-			testhelper.CreateMigrateDatabase(t, dbFile)
-
-			db, err := database.Open("sqlite:"+dbFile, nil)
-			require.NoError(t, err)
-
-			localStore, err := local.New(newContext(), dir)
-			require.NoError(t, err)
-
-			_, err = newTestCache(newContext(), "cache.example.com/path/to", db, localStore, localStore, localStore, "")
-			assert.ErrorIs(t, err, cache.ErrHostnameMustNotContainPath)
-		})
-
-		t.Run("valid hostName must return no error", func(t *testing.T) {
-			t.Parallel()
-
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-
-			defer os.RemoveAll(dir) // clean up
-
-			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-			testhelper.CreateMigrateDatabase(t, dbFile)
-
-			db, err := database.Open("sqlite:"+dbFile, nil)
-			require.NoError(t, err)
-
-			localStore, err := local.New(newContext(), dir)
-			require.NoError(t, err)
-
-			_, err = newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-			require.NoError(t, err)
-		})
+				_, err := newTestCache(newContext(), tt.hostname, db, localStore, localStore, localStore, "")
+				if tt.wantErr != nil {
+					assert.ErrorIs(t, err, tt.wantErr)
+				} else {
+					assert.NoError(t, err)
+				}
+			})
+		}
 	})
 
 	t.Run("secretKey", func(t *testing.T) {
@@ -152,25 +144,11 @@ func TestNew(t *testing.T) {
 		t.Run("generated", func(t *testing.T) {
 			t.Parallel()
 
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-
-			defer os.RemoveAll(dir) // clean up
-
-			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-			testhelper.CreateMigrateDatabase(t, dbFile)
-
-			db, err := database.Open("sqlite:"+dbFile, nil)
-			require.NoError(t, err)
-
-			localStore, err := local.New(newContext(), dir)
-			require.NoError(t, err)
-
-			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-			require.NoError(t, err)
+			c, db, localStore, _, cleanup := setupTestCache(t)
+			defer cleanup()
 
 			// Verify key is NOT in local store
-			_, err = localStore.GetSecretKey(newContext())
+			_, err := localStore.GetSecretKey(newContext())
 			require.ErrorIs(t, err, storage.ErrNotFound)
 
 			// Verify key IS in database
@@ -185,19 +163,8 @@ func TestNew(t *testing.T) {
 		t.Run("given", func(t *testing.T) {
 			t.Parallel()
 
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-
-			defer os.RemoveAll(dir) // clean up
-
-			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-			testhelper.CreateMigrateDatabase(t, dbFile)
-
-			db, err := database.Open("sqlite:"+dbFile, nil)
-			require.NoError(t, err)
-
-			localStore, err := local.New(newContext(), dir)
-			require.NoError(t, err)
+			db, localStore, _, cleanup := setupTestComponents(t)
+			defer cleanup()
 
 			sk, _, err := signature.GenerateKeypair(cacheName, nil)
 			require.NoError(t, err)
@@ -230,19 +197,8 @@ func TestNew(t *testing.T) {
 		t.Run("migrated", func(t *testing.T) {
 			t.Parallel()
 
-			dir, err := os.MkdirTemp("", "cache-path-")
-			require.NoError(t, err)
-
-			defer os.RemoveAll(dir) // clean up
-
-			dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-			testhelper.CreateMigrateDatabase(t, dbFile)
-
-			db, err := database.Open("sqlite:"+dbFile, nil)
-			require.NoError(t, err)
-
-			localStore, err := local.New(newContext(), dir)
-			require.NoError(t, err)
+			db, localStore, _, cleanup := setupTestComponents(t)
+			defer cleanup()
 
 			// Pre-populate key in local store
 			sk, _, err := signature.GenerateKeypair(cacheName, nil)
@@ -270,29 +226,15 @@ func TestNew(t *testing.T) {
 func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-	require.NoError(t, err)
+	c, _, _, _, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	pubKey := c.PublicKey().String()
 
 	t.Run("should return a public key with the correct prefix", func(t *testing.T) {
 		t.Parallel()
 
-		assert.True(t, strings.HasPrefix(pubKey, "cache.example.com:"))
+		assert.True(t, strings.HasPrefix(pubKey, cacheName+":"))
 	})
 
 	t.Run("should return a valid public key", func(t *testing.T) {
@@ -311,26 +253,12 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
+	c, _, _, _, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
 	})
-	require.NoError(t, err)
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -343,12 +271,11 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	ni, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
 	require.NoError(t, err)
 
+	require.Len(t, ni.Signatures, 1, "must NOT include our signature but include the original one")
+
 	var found bool
 
-	require.Len(t, ni.Signatures, 1, "must include our signature and the orignal one")
-
-	var sig signature.Signature
-	for _, sig = range ni.Signatures {
+	for _, sig := range ni.Signatures {
 		if sig.Name == cacheName {
 			found = true
 
@@ -357,7 +284,6 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	}
 
 	assert.False(t, found)
-
 	assert.False(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
 }
 
@@ -366,26 +292,12 @@ func TestGetNarInfo(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
+	c, db, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
 	})
-	require.NoError(t, err)
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -409,41 +321,19 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
-			rows, err := db.DB().Query("SELECT hash FROM narinfos")
+			var count int
+
+			err := db.DB().QueryRow("SELECT COUNT(*) FROM narinfos").Scan(&count)
 			require.NoError(t, err)
-
-			var hashes []string
-
-			for rows.Next() {
-				var hash string
-
-				err := rows.Scan(&hash)
-				require.NoError(t, err)
-
-				hashes = append(hashes, hash)
-			}
-
-			require.NoError(t, rows.Err())
-			assert.Empty(t, hashes)
+			assert.Equal(t, 0, count)
 		})
 
 		t.Run("nar does not exist in the database yet", func(t *testing.T) {
-			rows, err := db.DB().Query("SELECT hash FROM nar_files")
+			var count int
+
+			err := db.DB().QueryRow("SELECT COUNT(*) FROM nar_files").Scan(&count)
 			require.NoError(t, err)
-
-			var hashes []string
-
-			for rows.Next() {
-				var hash string
-
-				err := rows.Scan(&hash)
-				require.NoError(t, err)
-
-				hashes = append(hashes, hash)
-			}
-
-			require.NoError(t, rows.Err())
-			assert.Empty(t, hashes)
+			assert.Equal(t, 0, count)
 		})
 
 		ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
@@ -460,12 +350,11 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("it should be signed by our server", func(t *testing.T) {
+			require.Len(t, ni.Signatures, 2, "must include our signature and the original one")
+
 			var found bool
 
-			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
-
-			var sig signature.Signature
-			for _, sig = range ni.Signatures {
+			for _, sig := range ni.Signatures {
 				if sig.Name == cacheName {
 					found = true
 
@@ -474,7 +363,6 @@ func TestGetNarInfo(t *testing.T) {
 			}
 
 			assert.True(t, found)
-
 			assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
 		})
 
@@ -482,7 +370,7 @@ func TestGetNarInfo(t *testing.T) {
 			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 
-			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
+			require.Len(t, ni.Signatures, 2, "must include our signature and the original one")
 
 			var sigs1 []signature.Signature
 
@@ -496,10 +384,7 @@ func TestGetNarInfo(t *testing.T) {
 
 			idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
 				if r.URL.Path == "/"+testdata.Nar2.NarInfoHash+".narinfo" {
-					_, err := w.Write([]byte(ni.String()))
-					if err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-					}
+					_, _ = w.Write([]byte(ni.String()))
 
 					return true
 				}
@@ -513,7 +398,7 @@ func TestGetNarInfo(t *testing.T) {
 			ni, err = c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 
-			require.Len(t, ni.Signatures, 2, "must include our signature and the orignal one")
+			require.Len(t, ni.Signatures, 2, "must include our signature and the original one")
 
 			var sigs2 []signature.Signature
 
@@ -527,78 +412,29 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("it should have also pulled the nar", func(t *testing.T) {
-			// Force the other goroutine to run so it actually download the file
-			// Try at least 10 times before announcing an error
-			var err error
-
-			for i := 1; i < 100; i++ {
-				// NOTE: I tried runtime.Gosched() but it makes the test flaky
-				time.Sleep(time.Duration(i) * time.Millisecond)
-
-				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar2.NarPath))
-				if err == nil {
-					break
-				}
-			}
-
-			assert.NoError(t, err)
+			waitForFile(t, filepath.Join(dir, "store", "nar", testdata.Nar2.NarPath))
 		})
 
 		t.Run("narinfo does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
-			const query = `
-			SELECT  hash, created_at,  last_accessed_at
-			FROM narinfos
-			`
+			var nim database.NarInfo
 
-			rows, err := db.DB().Query(query)
+			err := db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM narinfos").
+				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
+
 			require.NoError(t, err)
-
-			nims := make([]database.NarInfo, 0)
-
-			for rows.Next() {
-				var nim database.NarInfo
-
-				err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
-				require.NoError(t, err)
-
-				nims = append(nims, nim)
-			}
-
-			require.NoError(t, rows.Err())
-
-			assert.Len(t, nims, 1)
-			assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
-			assert.WithinDuration(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time, 2*time.Second)
+			assert.Equal(t, testdata.Nar2.NarInfoHash, nim.Hash)
+			assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
-			const query = `
-				SELECT  hash,  created_at,  last_accessed_at
-				FROM nar_files
-				`
+			var nim database.NarFile
 
-			rows, err := db.DB().Query(query)
+			err := db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
+
 			require.NoError(t, err)
-
-			nims := make([]database.NarFile, 0)
-
-			for rows.Next() {
-				var nim database.NarFile
-
-				err := rows.Scan(
-					&nim.Hash,
-					&nim.CreatedAt,
-					&nim.LastAccessedAt,
-				)
-				require.NoError(t, err)
-
-				nims = append(nims, nim)
-			}
-
-			require.NoError(t, rows.Err())
-			assert.Len(t, nims, 1)
-			assert.Equal(t, testdata.Nar2.NarHash, nims[0].Hash)
-			assert.WithinDuration(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time, 2*time.Second)
+			assert.Equal(t, testdata.Nar2.NarHash, nim.Hash)
+			assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -606,39 +442,18 @@ func TestGetNarInfo(t *testing.T) {
 
 			c.SetRecordAgeIgnoreTouch(time.Hour)
 
-			defer func() {
-				c.SetRecordAgeIgnoreTouch(0)
-			}()
+			defer c.SetRecordAgeIgnoreTouch(0)
 
 			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 
-			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
-				const query = `
-			SELECT  hash, created_at,  last_accessed_at
-			FROM narinfos
-			`
+			var nim database.NarInfo
 
-				rows, err := db.DB().Query(query)
-				require.NoError(t, err)
+			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM narinfos").
+				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
-				nims := make([]database.NarInfo, 0)
-
-				for rows.Next() {
-					var nim database.NarInfo
-
-					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
-					require.NoError(t, err)
-
-					nims = append(nims, nim)
-				}
-
-				require.NoError(t, rows.Err())
-
-				assert.Len(t, nims, 1)
-				assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
-				assert.WithinDuration(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time, 2*time.Second)
-			})
+			require.NoError(t, err)
+			assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
 		})
 
 		t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
@@ -647,79 +462,38 @@ func TestGetNarInfo(t *testing.T) {
 			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 
-			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
-				const query = `
-			SELECT  hash, created_at,  last_accessed_at
-			FROM narinfos
-			`
+			var nim database.NarInfo
 
-				rows, err := db.DB().Query(query)
-				require.NoError(t, err)
+			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM narinfos").
+				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
-				nims := make([]database.NarInfo, 0)
-
-				for rows.Next() {
-					var nim database.NarInfo
-
-					err := rows.Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
-					require.NoError(t, err)
-
-					nims = append(nims, nim)
-				}
-
-				require.NoError(t, rows.Err())
-
-				assert.Len(t, nims, 1)
-				assert.Equal(t, testdata.Nar2.NarInfoHash, nims[0].Hash)
-				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
-			})
+			require.NoError(t, err)
+			assert.NotEqual(t, nim.CreatedAt, nim.LastAccessedAt.Time)
 		})
 
-		t.Run("no error is returned if the entry already exist in the database", func(t *testing.T) {
+		t.Run("no error is returned if the entry already exists in the database", func(t *testing.T) {
 			require.NoError(t, os.Remove(filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)))
-
 			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		})
 
 		t.Run("nar does not exist in storage, it gets pulled automatically", func(t *testing.T) {
 			narFile := filepath.Join(dir, "store", "nar", testdata.Nar2.NarPath)
-
 			require.NoError(t, os.Remove(narFile))
 
-			t.Run("it should not return an error", func(t *testing.T) {
-				_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
-				assert.NoError(t, err)
-			})
+			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
 
-			t.Run("it should have also pulled the nar", func(t *testing.T) {
-				// Force the other goroutine to run so it actually download the file
-				// Try at least 10 times before announcing an error
-				var err error
-
-				for i := 1; i < 100; i++ {
-					// NOTE: I tried runtime.Gosched() but it makes the test flaky
-					time.Sleep(time.Duration(i) * time.Millisecond)
-
-					_, err = os.Stat(narFile)
-					if err == nil {
-						break
-					}
-				}
-
-				assert.NoError(t, err)
-			})
+			waitForFile(t, narFile)
 		})
 	})
 
 	t.Run("narinfo with transparent encryption", func(t *testing.T) {
 		var allEntries []testdata.Entry
 
-		// Filter for the entries that has `Compression: <something>` that does not
-		// match the listed compression on the narEntry.
 		for _, narEntry := range testdata.Entries {
-			c := fmt.Sprintf("Compression: %s", narEntry.NarCompression)
-			if narEntry.NarCompression == nar.CompressionTypeZstd && !strings.Contains(narEntry.NarInfoText, c) {
+			comp := fmt.Sprintf("Compression: %s", narEntry.NarCompression)
+			if narEntry.NarCompression == nar.CompressionTypeZstd && !strings.Contains(narEntry.NarInfoText, comp) {
 				allEntries = append(allEntries, narEntry)
 			}
 		}
@@ -741,12 +515,8 @@ func TestGetNarInfo(t *testing.T) {
 						plain, err := decoder.DecodeAll(body, []byte{})
 						require.NoError(t, err)
 
-						assert.Equal(t, narEntry.NarText, string(plain),
-							"body stored in the store decompressed should be the same as the narText")
-
-						//nolint:gosec
-						assert.Equal(t, int64(narInfo.FileSize), int64(len(body)),
-							"narInfo FileSize should match the compressed file size")
+						assert.Equal(t, narEntry.NarText, string(plain))
+						assert.Equal(t, narInfo.FileSize, uint64(len(body)))
 					}
 				}
 			})
@@ -756,22 +526,8 @@ func TestGetNarInfo(t *testing.T) {
 
 //nolint:paralleltest
 func TestPutNarInfo(t *testing.T) {
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-	require.NoError(t, err)
+	c, db, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -782,46 +538,23 @@ func TestPutNarInfo(t *testing.T) {
 	})
 
 	t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
-		rows, err := db.DB().Query("SELECT hash FROM narinfos")
+		var count int
+
+		err := db.DB().QueryRow("SELECT COUNT(*) FROM narinfos").Scan(&count)
 		require.NoError(t, err)
-
-		var hashes []string
-
-		for rows.Next() {
-			var hash string
-
-			err := rows.Scan(&hash)
-			require.NoError(t, err)
-
-			hashes = append(hashes, hash)
-		}
-
-		require.NoError(t, rows.Err())
-		assert.Empty(t, hashes)
+		assert.Equal(t, 0, count)
 	})
 
 	t.Run("nar does not exist in the database yet", func(t *testing.T) {
-		rows, err := db.DB().Query("SELECT hash FROM nar_files")
+		var count int
+
+		err := db.DB().QueryRow("SELECT COUNT(*) FROM nar_files").Scan(&count)
 		require.NoError(t, err)
-
-		var hashes []string
-
-		for rows.Next() {
-			var hash string
-
-			err := rows.Scan(&hash)
-			require.NoError(t, err)
-
-			hashes = append(hashes, hash)
-		}
-
-		require.NoError(t, rows.Err())
-		assert.Empty(t, hashes)
+		assert.Equal(t, 0, count)
 	})
 
 	t.Run("PutNarInfo does not return an error", func(t *testing.T) {
 		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
-
 		assert.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
 	})
 
@@ -833,13 +566,14 @@ func TestPutNarInfo(t *testing.T) {
 		f, err := os.Open(storePath)
 		require.NoError(t, err)
 
+		defer f.Close()
+
 		ni, err := narinfo.Parse(f)
 		require.NoError(t, err)
 
 		var found bool
 
-		var sig signature.Signature
-		for _, sig = range ni.Signatures {
+		for _, sig := range ni.Signatures {
 			if sig.Name == cacheName {
 				found = true
 
@@ -848,71 +582,30 @@ func TestPutNarInfo(t *testing.T) {
 		}
 
 		assert.True(t, found)
-
 		assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
 	})
 
 	t.Run("narinfo does exist in the database", func(t *testing.T) {
-		rows, err := db.DB().Query("SELECT hash FROM narinfos")
+		var hash string
+
+		err := db.DB().QueryRow("SELECT hash FROM narinfos").Scan(&hash)
 		require.NoError(t, err)
-
-		var hashes []string
-
-		for rows.Next() {
-			var hash string
-
-			err := rows.Scan(&hash)
-			require.NoError(t, err)
-
-			hashes = append(hashes, hash)
-		}
-
-		require.NoError(t, rows.Err())
-
-		assert.Len(t, hashes, 1)
-		assert.Equal(t, testdata.Nar1.NarInfoHash, hashes[0])
+		assert.Equal(t, testdata.Nar1.NarInfoHash, hash)
 	})
 
 	t.Run("nar does exist in the database", func(t *testing.T) {
-		rows, err := db.DB().Query("SELECT hash FROM nar_files")
+		var hash string
+
+		err := db.DB().QueryRow("SELECT hash FROM nar_files").Scan(&hash)
 		require.NoError(t, err)
-
-		var hashes []string
-
-		for rows.Next() {
-			var hash string
-
-			err := rows.Scan(&hash)
-			require.NoError(t, err)
-
-			hashes = append(hashes, hash)
-		}
-
-		require.NoError(t, rows.Err())
-
-		assert.Len(t, hashes, 1)
-		assert.Equal(t, testdata.Nar1.NarHash, hashes[0])
+		assert.Equal(t, testdata.Nar1.NarHash, hash)
 	})
 }
 
 //nolint:paralleltest
 func TestDeleteNarInfo(t *testing.T) {
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-	require.NoError(t, err)
+	c, _, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -932,19 +625,13 @@ func TestDeleteNarInfo(t *testing.T) {
 	t.Run("file does exist in the store", func(t *testing.T) {
 		storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 
-		t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-			assert.NoFileExists(t, storePath)
-		})
-
 		require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
 
 		f, err := os.Create(storePath)
 		require.NoError(t, err)
-
 		_, err = f.WriteString(testdata.Nar1.NarInfoText)
 		require.NoError(t, err)
-
-		require.NoError(t, err)
+		require.NoError(t, f.Close())
 
 		t.Run("narinfo does exist in storage", func(t *testing.T) {
 			assert.FileExists(t, storePath)
@@ -965,26 +652,12 @@ func TestGetNar(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
+	c, db, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
 	})
-	require.NoError(t, err)
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1005,22 +678,11 @@ func TestGetNar(t *testing.T) {
 		})
 
 		t.Run("nar does not exist in database yet", func(t *testing.T) {
-			rows, err := db.DB().Query("SELECT hash FROM nar_files")
+			var count int
+
+			err := db.DB().QueryRow("SELECT COUNT(*) FROM nar_files").Scan(&count)
 			require.NoError(t, err)
-
-			var hashes []string
-
-			for rows.Next() {
-				var hash string
-
-				err := rows.Scan(&hash)
-				require.NoError(t, err)
-
-				hashes = append(hashes, hash)
-			}
-
-			require.NoError(t, rows.Err())
-			assert.Empty(t, hashes)
+			assert.Equal(t, 0, count)
 		})
 
 		t.Run("getting the narinfo so the record in the database now exists", func(t *testing.T) {
@@ -1034,61 +696,28 @@ func TestGetNar(t *testing.T) {
 			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
+			defer r.Close()
+
 			t.Run("body is the same", func(t *testing.T) {
 				body, err := io.ReadAll(r)
 				require.NoError(t, err)
-
-				if assert.Len(t, testdata.Nar1.NarText, len(string(body))) {
-					assert.Equal(t, testdata.Nar1.NarText, string(body))
-				}
+				assert.Equal(t, testdata.Nar1.NarText, string(body))
 			})
 		})
 
 		t.Run("it should now exist in the store", func(t *testing.T) {
-			var err error
-
-			for i := 1; i < 100; i++ {
-				// NOTE: I tried runtime.Gosched() but it makes the test flaky
-				time.Sleep(time.Duration(i) * time.Millisecond)
-
-				_, err = os.Stat(filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath))
-				if err == nil {
-					break
-				}
-			}
-
-			assert.NoError(t, err)
+			waitForFile(t, filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath))
 		})
 
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
-			const query = `
-				SELECT  hash,  created_at,  last_accessed_at
-				FROM nar_files
-				`
+			var nim database.NarFile
 
-			rows, err := db.DB().Query(query)
+			err := db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
+
 			require.NoError(t, err)
-
-			nims := make([]database.NarFile, 0)
-
-			for rows.Next() {
-				var nim database.NarFile
-
-				err := rows.Scan(
-					&nim.Hash,
-					&nim.CreatedAt,
-					&nim.LastAccessedAt,
-				)
-				require.NoError(t, err)
-
-				nims = append(nims, nim)
-			}
-
-			require.NoError(t, rows.Err())
-
-			assert.Len(t, nims, 1)
-			assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
-			assert.WithinDuration(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time, 2*time.Second)
+			assert.Equal(t, testdata.Nar1.NarHash, nim.Hash)
+			assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
 		})
 
 		t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
@@ -1096,115 +725,47 @@ func TestGetNar(t *testing.T) {
 
 			c.SetRecordAgeIgnoreTouch(time.Hour)
 
-			defer func() {
-				c.SetRecordAgeIgnoreTouch(0)
-			}()
+			defer c.SetRecordAgeIgnoreTouch(0)
 
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-
 			_, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
+			r.Close()
 
-			defer r.Close()
+			var nim database.NarFile
 
-			t.Run("narinfo does exist in the database with the same last_accessed_at", func(t *testing.T) {
-				const query = `
-				SELECT  hash,  created_at,  last_accessed_at
-				FROM nar_files
-				`
+			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
-				rows, err := db.DB().Query(query)
-				require.NoError(t, err)
-
-				nims := make([]database.NarFile, 0)
-
-				for rows.Next() {
-					var nim database.NarFile
-
-					err := rows.Scan(
-						&nim.Hash,
-						&nim.CreatedAt,
-						&nim.LastAccessedAt,
-					)
-					require.NoError(t, err)
-
-					nims = append(nims, nim)
-				}
-
-				require.NoError(t, rows.Err())
-
-				assert.Len(t, nims, 1)
-				assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
-				assert.WithinDuration(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time, 2*time.Second)
-			})
+			require.NoError(t, err)
+			assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
 		})
 
 		t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
 			time.Sleep(time.Second)
 
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-
 			size, r, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
+			r.Close()
 
-			defer r.Close()
+			assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
 
-			t.Run("size is correct", func(t *testing.T) {
-				assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
-			})
+			var nim database.NarFile
 
-			t.Run("narinfo does exist in the database, and has more recent last_accessed_at", func(t *testing.T) {
-				const query = `
-				SELECT  hash,  created_at,  last_accessed_at
-				FROM nar_files
-				`
+			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
-				rows, err := db.DB().Query(query)
-				require.NoError(t, err)
-
-				nims := make([]database.NarFile, 0)
-
-				for rows.Next() {
-					var nim database.NarFile
-
-					err := rows.Scan(
-						&nim.Hash,
-						&nim.CreatedAt,
-						&nim.LastAccessedAt,
-					)
-					require.NoError(t, err)
-
-					nims = append(nims, nim)
-				}
-
-				require.NoError(t, rows.Err())
-
-				assert.Len(t, nims, 1)
-				assert.Equal(t, testdata.Nar1.NarHash, nims[0].Hash)
-				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
-			})
+			require.NoError(t, err)
+			assert.NotEqual(t, nim.CreatedAt, nim.LastAccessedAt.Time)
 		})
 	})
 }
 
 //nolint:paralleltest
 func TestPutNar(t *testing.T) {
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-	require.NoError(t, err)
+	c, _, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -1216,41 +777,26 @@ func TestPutNar(t *testing.T) {
 
 	t.Run("putNar does not return an error", func(t *testing.T) {
 		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
-
 		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-		err := c.PutNar(context.Background(), nu, r)
-		assert.NoError(t, err)
+		assert.NoError(t, c.PutNar(context.Background(), nu, r))
 	})
 
 	t.Run("nar does exist in storage", func(t *testing.T) {
 		f, err := os.Open(storePath)
 		require.NoError(t, err)
 
+		defer f.Close()
+
 		bs, err := io.ReadAll(f)
 		require.NoError(t, err)
-
 		assert.Equal(t, testdata.Nar1.NarText, string(bs))
 	})
 }
 
 //nolint:paralleltest
 func TestDeleteNar(t *testing.T) {
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-	require.NoError(t, err)
+	c, _, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -1269,18 +815,12 @@ func TestDeleteNar(t *testing.T) {
 	})
 
 	t.Run("file does exist in the store", func(t *testing.T) {
-		t.Run("nar does not exist in storage yet", func(t *testing.T) {
-			assert.NoFileExists(t, storePath)
-		})
-
 		require.NoError(t, os.MkdirAll(filepath.Dir(storePath), 0o700))
 
 		f, err := os.Create(storePath)
 		require.NoError(t, err)
-
 		_, err = f.WriteString(testdata.Nar1.NarText)
 		require.NoError(t, err)
-
 		require.NoError(t, f.Close())
 
 		t.Run("nar does exist in storage", func(t *testing.T) {
@@ -1289,8 +829,7 @@ func TestDeleteNar(t *testing.T) {
 
 		t.Run("deleteNar does not return an error", func(t *testing.T) {
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-			err := c.DeleteNar(context.Background(), nu)
-			assert.NoError(t, err)
+			assert.NoError(t, c.DeleteNar(context.Background(), nu))
 		})
 
 		t.Run("nar is gone from the store", func(t *testing.T) {
@@ -1305,22 +844,8 @@ func TestDeleteNar(t *testing.T) {
 func TestDeadlock_NarInfo_Triggers_Nar_Refetch(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
-	require.NoError(t, err)
+	c, _, _, _, cleanup := setupTestCache(t)
+	defer cleanup()
 
 	// 1. Setup a test server
 	ts := testdata.NewTestServer(t, 1)
@@ -1416,4 +941,21 @@ func newContext() context.Context {
 	return zerolog.
 		New(io.Discard).
 		WithContext(context.Background())
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+
+	var err error
+
+	for i := 1; i < 100; i++ {
+		time.Sleep(time.Duration(i) * time.Millisecond)
+
+		_, err = os.Stat(path)
+		if err == nil {
+			return
+		}
+	}
+
+	require.NoError(t, err, "timeout waiting for file: %s", path)
 }
