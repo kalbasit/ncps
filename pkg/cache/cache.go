@@ -1883,9 +1883,8 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	defer c.upstreamJobsMu.Unlock()
 
 	_, narJobExists := c.upstreamJobs[narJobKey(hash)]
-	_, narInfoJobExists := c.upstreamJobs[narInfoJobKey(hash)]
 
-	return narJobExists || narInfoJobExists
+	return narJobExists
 }
 
 // coordinateDownload manages distributed download coordination with lock acquisition,
