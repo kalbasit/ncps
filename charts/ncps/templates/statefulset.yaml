@@ -97,7 +97,7 @@ spec:
             - /etc/ncps/config.yaml
             - serve
             {{- if and (ne .Values.config.signing.enabled false) (or .Values.config.signing.secretKey .Values.config.signing.existingSecret) }}
-            - --cache-secret-key-file
+            - --cache-secret-key-path
             - /etc/ncps/secrets/signing-key
             {{- end }}
           env:
