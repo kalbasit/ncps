@@ -155,6 +155,16 @@ func (w *mysqlWrapper) GetConfigByKey(ctx context.Context, key string) (Config, 
 	return Config(res), nil
 }
 
+func (w *mysqlWrapper) GetAllNarInfos(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetAllNarInfos(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {

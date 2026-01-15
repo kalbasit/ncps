@@ -34,6 +34,7 @@ const (
 	routeNarCompression = "/nar/{hash:[a-z0-9]+}.nar.{compression:*}"
 	routeNarInfo        = "/{hash:[a-z0-9]+}.narinfo"
 	routeCacheInfo      = "/nix-cache-info"
+	routeCacheIndex     = "/nix-cache-index/*"
 	routeCachePublicKey = "/pubkey"
 
 	contentLength      = "Content-Length"
@@ -145,6 +146,8 @@ func (s *Server) createRouter() {
 	s.router.Get(routeNar, s.getNar(true))
 	s.router.Put(routeNar, s.putNar)
 	s.router.Delete(routeNar, s.deleteNar)
+
+	s.router.Get(routeCacheIndex, s.getCacheIndex)
 
 	// Add Prometheus metrics endpoint if gatherer is configured
 	if prometheusGatherer != nil {
@@ -609,4 +612,51 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusNoContent)
 	}).ServeHTTP(w, r)
+}
+
+func (s *Server) getCacheIndex(w http.ResponseWriter, r *http.Request) {
+	path := "/nix-cache-index/" + chi.URLParam(r, "*")
+
+	ctx, span := tracer.Start(
+		r.Context(),
+		"server.getCacheIndex",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("path", path),
+		),
+	)
+	defer span.End()
+
+	r = r.WithContext(
+		zerolog.Ctx(ctx).
+			With().
+			Str("path", path).
+			Logger().
+			WithContext(ctx))
+
+	rc, err := s.cache.Fetch(r.Context(), path)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+
+			return
+		}
+
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error fetching cache index file")
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+	defer rc.Close()
+
+	if _, err := io.Copy(w, rc); err != nil {
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error writing cache index file to response")
+	}
 }

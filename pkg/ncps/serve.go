@@ -255,6 +255,11 @@ func serveCommand(
 				Usage:   "Enable the use of the experimental binary cache index",
 				Sources: flagSources("experimental.cache-index", "EXPERIMENTAL_CACHE_INDEX"),
 			},
+			&cli.BoolFlag{
+				Name:    "experimental-cache-index-https",
+				Usage:   "Use HTTPS for the experimental binary cache index URLs",
+				Sources: flagSources("experimental.cache-index-https", "EXPERIMENTAL_CACHE_INDEX_HTTPS"),
+			},
 
 			// Redis Configuration (optional - for distributed locking in HA deployments)
 			&cli.StringSliceFlag{
@@ -723,7 +728,7 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 func getStorageBackend(
 	ctx context.Context,
 	cmd *cli.Command,
-) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, storage.FileStore, error) {
 	// Handle backward compatibility for cache-data-path (deprecated)
 	deprecatedDataPath := cmd.String("cache-data-path")
 	localDataPath := cmd.String("cache-storage-local")
@@ -745,7 +750,7 @@ func getStorageBackend(
 
 	switch {
 	case localDataPath != "" && s3Bucket != "":
-		return nil, nil, nil, ErrStorageConflict
+		return nil, nil, nil, nil, ErrStorageConflict
 
 	case localDataPath != "":
 		return createLocalStorage(ctx, localDataPath)
@@ -754,7 +759,7 @@ func getStorageBackend(
 		return createS3Storage(ctx, cmd)
 
 	default:
-		return nil, nil, nil, ErrStorageConfigRequired
+		return nil, nil, nil, nil, ErrStorageConfigRequired
 	}
 }
 
@@ -762,22 +767,22 @@ func getStorageBackend(
 func createLocalStorage(
 	ctx context.Context,
 	dataPath string,
-) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, storage.FileStore, error) {
 	localStore, err := localstorage.New(ctx, dataPath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("error creating a new local store at %q: %w", dataPath, err)
+		return nil, nil, nil, nil, fmt.Errorf("error creating a new local store at %q: %w", dataPath, err)
 	}
 
 	zerolog.Ctx(ctx).Info().Str("path", dataPath).Msg("using local storage")
 
-	return localStore, localStore, localStore, nil
+	return localStore, localStore, localStore, localStore, nil
 }
 
 //nolint:staticcheck // deprecated: migration support
 func createS3Storage(
 	ctx context.Context,
 	cmd *cli.Command,
-) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, storage.FileStore, error) {
 	s3Bucket := cmd.String("cache-storage-s3-bucket")
 	s3Endpoint := cmd.String("cache-storage-s3-endpoint")
 	s3AccessKeyID := cmd.String("cache-storage-s3-access-key-id")
@@ -785,7 +790,7 @@ func createS3Storage(
 	s3ForcePathStyle := cmd.Bool("cache-storage-s3-force-path-style")
 
 	if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
-		return nil, nil, nil, ErrS3ConfigIncomplete
+		return nil, nil, nil, nil, ErrS3ConfigIncomplete
 	}
 
 	ctx = zerolog.Ctx(ctx).
@@ -809,12 +814,12 @@ func createS3Storage(
 
 	s3Store, err := s3.New(ctx, s3Cfg)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("error creating a new S3 store: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error creating a new S3 store: %w", err)
 	}
 
 	zerolog.Ctx(ctx).Info().Msg("using S3 storage")
 
-	return s3Store, s3Store, s3Store, nil
+	return s3Store, s3Store, s3Store, s3Store, nil
 }
 
 func createDatabaseQuerier(cmd *cli.Command) (database.Querier, error) {
@@ -849,7 +854,7 @@ func createCache(
 	rwLocker lock.RWLocker,
 	ucs []*upstream.Cache,
 ) (*cache.Cache, error) {
-	configStore, narInfoStore, narStore, err := getStorageBackend(ctx, cmd)
+	configStore, narInfoStore, narStore, fileStore, err := getStorageBackend(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -861,6 +866,7 @@ func createCache(
 		configStore,
 		narInfoStore,
 		narStore,
+		fileStore,
 		cmd.String("cache-secret-key-path"),
 		locker,
 		rwLocker,
@@ -873,6 +879,8 @@ func createCache(
 
 	c.SetTempDir(cmd.String("cache-temp-path"))
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
+	c.SetExperimentalCacheIndex(cmd.Bool("experimental-cache-index"))
+	c.SetExperimentalCacheIndexHTTPS(cmd.Bool("experimental-cache-index-https"))
 	c.AddUpstreamCaches(ctx, ucs...)
 
 	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.

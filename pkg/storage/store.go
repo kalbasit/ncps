@@ -72,3 +72,19 @@ type NarStore interface {
 	// DeleteNar deletes the nar from the store.
 	DeleteNar(ctx context.Context, narURL nar.URL) error
 }
+
+// FileStore represents a store capable of storing arbitrary files.
+type FileStore interface {
+	// PutFile puts the file in the store at the given path.
+	PutFile(ctx context.Context, path string, body io.Reader) (int64, error)
+
+	// GetFile returns the file from the store at the given path.
+	// NOTE: The caller must close the returned io.ReadCloser!
+	GetFile(ctx context.Context, path string) (int64, io.ReadCloser, error)
+
+	// HasFile returns true if the store has the file at the given path.
+	HasFile(ctx context.Context, path string) bool
+
+	// DeleteFile deletes the file from the store at the given path.
+	DeleteFile(ctx context.Context, path string) error
+}

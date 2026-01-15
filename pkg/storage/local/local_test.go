@@ -797,3 +797,45 @@ func newContext() context.Context {
 		New(io.Discard).
 		WithContext(context.Background())
 }
+
+func TestPathTraversal(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctx := newContext()
+	s, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	maliciousPath := "../../../etc/passwd"
+
+	t.Run("HasFile", func(t *testing.T) {
+		t.Parallel()
+
+		assert.False(t, s.HasFile(ctx, maliciousPath))
+	})
+
+	t.Run("GetFile", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := s.GetFile(ctx, maliciousPath)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
+	})
+
+	t.Run("PutFile", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := s.PutFile(ctx, maliciousPath, strings.NewReader("malicious content"))
+		assert.ErrorIs(t, err, storage.ErrNotFound)
+	})
+
+	t.Run("DeleteFile", func(t *testing.T) {
+		t.Parallel()
+
+		err := s.DeleteFile(ctx, maliciousPath)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
+	})
+}
