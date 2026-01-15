@@ -35,29 +35,32 @@ func (r Result) String() string {
 
 // Fetcher abstraction for retrieving files (e.g., HTTP, local file system).
 type Fetcher interface {
-	Fetch(path string) (io.ReadCloser, error)
+	Fetch(ctx context.Context, path string) (io.ReadCloser, error)
 }
 
 // Client for querying the binary cache index.
 type Client struct {
-	fetcher  Fetcher
-	manifest *Manifest
-
+	fetcher      Fetcher
+	baseCtx      context.Context
+	manifest     *Manifest
+	manifestOnce sync.Once
+	manifestErr  error
 	shardCacheMu sync.Mutex
 	shardCache   map[string]*ShardReader
 }
 
 // NewClient creates a new client.
-func NewClient(fetcher Fetcher) *Client {
+func NewClient(ctx context.Context, fetcher Fetcher) *Client {
 	return &Client{
 		fetcher:    fetcher,
+		baseCtx:    ctx,
 		shardCache: make(map[string]*ShardReader),
 	}
 }
 
 // LoadManifest fetches and parses the manifest.
-func (c *Client) LoadManifest() error {
-	r, err := c.fetcher.Fetch(ManifestPath)
+func (c *Client) LoadManifest(ctx context.Context) error {
+	r, err := c.fetcher.Fetch(ctx, ManifestPath)
 	if err != nil {
 		return err
 	}
@@ -76,10 +79,12 @@ func (c *Client) LoadManifest() error {
 // Query checks if the cache contains the given hash.
 // hashStr is the 32-character base32 hash.
 func (c *Client) Query(ctx context.Context, hashStr string) (Result, error) {
-	if c.manifest == nil {
-		if err := c.LoadManifest(); err != nil {
-			return DefiniteMiss, err
-		}
+	c.manifestOnce.Do(func() {
+		c.manifestErr = c.LoadManifest(c.baseCtx)
+	})
+
+	if c.manifestErr != nil {
+		return DefiniteMiss, c.manifestErr
 	}
 
 	// 1. Check Journal (Layer 1)
@@ -151,7 +156,7 @@ func (c *Client) Query(ctx context.Context, hashStr string) (Result, error) {
 		// In reality, some segments might not exist if no writes happened?
 		// Or if rotation logic is strict.
 
-		rc, err := c.fetcher.Fetch(path)
+		rc, err := c.fetcher.Fetch(ctx, path)
 		if err != nil {
 			// If journal segment is missing, we assume no mutations in that window.
 			zerolog.Ctx(ctx).Debug().Err(err).Str("path", path).
@@ -217,7 +222,7 @@ func (c *Client) Query(ctx context.Context, hashStr string) (Result, error) {
 		return c.queryShard(shardReader, hashStr)
 	}
 
-	rc, err := c.fetcher.Fetch(shardPath)
+	rc, err := c.fetcher.Fetch(ctx, shardPath)
 	if err == nil {
 		defer rc.Close()
 
@@ -241,7 +246,7 @@ func (c *Client) Query(ctx context.Context, hashStr string) (Result, error) {
 		return c.queryShard(shardReader, hashStr)
 	}
 
-	rc, err = c.fetcher.Fetch(shardPath)
+	rc, err = c.fetcher.Fetch(ctx, shardPath)
 	if err != nil {
 		return DefiniteMiss, err // Both missing -> Miss (or error)
 	}
