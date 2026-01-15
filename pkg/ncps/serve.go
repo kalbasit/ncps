@@ -250,6 +250,11 @@ func serveCommand(
 				Sources: flagSources("server.addr", "SERVER_ADDR"),
 				Value:   ":8501",
 			},
+			&cli.BoolFlag{
+				Name:    "experimental-cache-index",
+				Usage:   "Enable the use of the experimental binary cache index",
+				Sources: flagSources("experimental.cache-index", "EXPERIMENTAL_CACHE_INDEX"),
+			},
 
 			// Redis Configuration (optional - for distributed locking in HA deployments)
 			&cli.StringSliceFlag{
@@ -583,6 +588,7 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 	dialerTimeout := cmd.Duration("cache-upstream-dialer-timeout")
 	deprecatedResponseHeaderTimeout := cmd.Duration("upstream-response-header-timeout")
 	responseHeaderTimeout := cmd.Duration("cache-upstream-response-header-timeout")
+	experimentalCacheIndex := cmd.Bool("experimental-cache-index")
 
 	// Show deprecation warning for upstream-cache
 	if len(deprecatedUpstreamCache) > 0 {
@@ -679,8 +685,9 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 
 		// Build options for this upstream cache
 		opts := &upstream.Options{
-			DialerTimeout:         dialerTimeout,
-			ResponseHeaderTimeout: responseHeaderTimeout,
+			DialerTimeout:          dialerTimeout,
+			ResponseHeaderTimeout:  responseHeaderTimeout,
+			ExperimentalCacheIndex: experimentalCacheIndex,
 		}
 
 		// Find public keys for this upstream

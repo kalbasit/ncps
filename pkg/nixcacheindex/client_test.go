@@ -23,7 +23,7 @@ type MockFetcher struct {
 	fetchCalls int
 }
 
-func (m *MockFetcher) Fetch(path string) (io.ReadCloser, error) {
+func (m *MockFetcher) Fetch(_ context.Context, path string) (io.ReadCloser, error) {
 	m.fetchCalls++
 	if data, ok := m.files[path]; ok {
 		return io.NopCloser(bytes.NewReader(data)), nil
@@ -96,7 +96,7 @@ func TestClientQuery_EndToEnd(t *testing.T) {
 	}
 
 	fetcher := &MockFetcher{files: mockFiles}
-	client := nixcacheindex.NewClient(fetcher)
+	client := nixcacheindex.NewClient(context.Background(), fetcher)
 
 	// Test Cases
 
@@ -164,7 +164,7 @@ func TestClientQuery_Caching(t *testing.T) {
 	mockFiles["https://mock/shards/1/root.idx.zst"] = compressedShardBuf.Bytes()
 
 	fetcher := &MockFetcher{files: mockFiles}
-	client := nixcacheindex.NewClient(fetcher)
+	client := nixcacheindex.NewClient(context.Background(), fetcher)
 
 	// First query: should fetch shard
 	res, err := client.Query(context.Background(), hashA)
