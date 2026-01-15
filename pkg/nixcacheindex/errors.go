@@ -17,4 +17,10 @@ var (
 	ErrShardNotFound = errors.New("shard not found")
 	// ErrInvalidJournalOp is returned when a journal operation is invalid.
 	ErrInvalidJournalOp = errors.New("invalid journal operation")
+	// ErrInvalidDeltaOp is returned when a delta operation is invalid.
+	ErrInvalidDeltaOp = errors.New("invalid delta operation")
+	// ErrDeltaNotSorted is returned when delta entries are not sorted.
+	ErrDeltaNotSorted = errors.New("delta entries not sorted")
+	// ErrHashNotFound is returned when trying to delete a hash that is not present.
+	ErrHashNotFound = errors.New("hash not found")
 )
