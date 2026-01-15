@@ -53,7 +53,7 @@ func TestHealthCheck(t *testing.T) {
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
 	require.NoError(t, err)
 
