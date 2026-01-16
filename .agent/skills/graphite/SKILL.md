@@ -72,6 +72,7 @@ Many Graphite commands (`gt modify`, `gt move`, `gt split`, `gt restack`) are in
 
 **The Solution**: Always prefer `gt` commands over their standard `git` counterparts for commit and branch management.
 
+- **Creating a new branch**: Use `gt create <branch-name>` instead of `git checkout -b <branch-name>`.
 - **Creating a new commit**: Use `gt modify -c -m "message"` instead of `git commit -m "message"`.
 - **Amending a commit**: Use `gt modify --amend` instead of `git commit --amend`.
 - **Staging and committing everything**: Use `gt modify -cam "message"` instead of `git commit -am "message"`.
