@@ -5,8 +5,8 @@
   perSystem = {
     treefmt = {
       settings.global.excludes = [
-        ".agent/skills/*.md"
-        ".agent/workflows/*.md"
+        ".agent/skills/**/*.md"
+        ".agent/workflows/**/*.md"
         ".env"
         ".envrc"
         "LICENSE"

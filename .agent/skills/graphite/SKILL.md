@@ -21,8 +21,8 @@ Use these commands to navigate through a stack of branches:
 | :--- | :--- |
 | `gt up` | Move to the branch immediately above the current one in the stack. |
 | `gt down` | Move to the parent of the current branch. |
-| `gt prev` | Move to the previous branch in the stack. |
-| `gt next` | Move to the next branch in the stack. |
+| `gt prev` | Move to the previous branch in the stack, as ordered by `gt log`. |
+| `gt next` | Move to the next branch in the stack, as ordered by `gt log`. |
 | `gt top` | Move to the tip branch of the current stack. |
 | `gt bottom` | Move to the branch closest to trunk in the current stack. |
 | `gt ls` | Display all tracked branches and their dependency relationships in a short format. |
@@ -43,9 +43,9 @@ Use these commands to manage branches within your stack.
 
 | Command | Action |
 | :--- | :--- |
-| `gt create` | Create a new branch and stack it on top of the current one. **Always follow the `/gt-create` workflow.** |
-| `gt move` | Rebase the current branch onto a target branch and restack descendants. |
-| `gt split` | Split the current branch into multiple branches. |
+| `gt create <branch-name>` | Create a new branch with the given name and stack it on top of the current one. **Always follow the `/gt-create` workflow.** |
+| `gt move` | Rebase the current branch onto a target branch and restack descendants. Use `--onto <target-branch>` to avoid interactive mode. |
+| `gt split` | Split the current branch into multiple branches. This command is highly interactive. |
 
 ## Commit Management
 
@@ -53,12 +53,12 @@ Use `gt modify` to manage commits within your stack. It automatically restacks d
 
 | Command | Action |
 | :--- | :--- |
-| `gt modify` | Amend the current commit of the branch. |
+| `gt modify --amend` | Amend the head commit of the current branch. |
 | `gt modify -c` | Create a new commit on the current branch. **Preferred** for adding new changes while keeping history clean. |
 
 ## Dealing with Interactivity
 
-Many Graphite commands (`gt move`, `gt split`, `gt restack`) are interactive by default, opening selectors, editors, or specialized menus.
+Many Graphite commands (`gt modify`, `gt move`, `gt split`, `gt restack`) are interactive by default, opening selectors, editors, or specialized menus.
 
 - **For the Agent**: Avoid using these commands in an interactive way. If a command requires user input that cannot be provided via flags (e.g., resolving complex rebase conflicts), **stop and notify the user**.
 - **Rebase Conflicts**: If `gt restack` or `gt move` hits a conflict, Graphite will pause. Use `gt status` to understand the state, and if you cannot resolve it automatically, ask the user for help.
