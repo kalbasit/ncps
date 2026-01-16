@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 )
@@ -31,6 +33,11 @@ func NewRWLocker(
 	if err != nil {
 		return nil, err
 	}
+
+	// Log a warning about MySQL's exclusive-only locking limitation
+	zerolog.Ctx(ctx).Warn().
+		Msg("MySQL RWLocker uses exclusive locks for both RLock and Lock - no read concurrency is provided. " +
+			"Consider using PostgreSQL or Redis for true shared read locks.")
 
 	return &RWLocker{
 		Locker: locker,
