@@ -387,26 +387,42 @@ These settings apply to both Redis and PostgreSQL backends:
 
 **PostgreSQL Implementation**
 
-PostgreSQL provides session-level advisory locks that are automatically released if the connection closes.
+PostgreSQL provides session-level advisory locks that are automatically released if the connection closes. PostgreSQL supports both **exclusive** and **shared** (read) locks.
 
 ```
 -- ncps uses these PostgreSQL functions internally:
-SELECT pg_advisory_lock(key_hash);     -- Acquire exclusive lock
+SELECT pg_advisory_lock(key_hash);     -- Acquire exclusive lock (blocking)
 SELECT pg_advisory_unlock(key_hash);   -- Release exclusive lock
 
-SELECT pg_advisory_lock_shared(key_hash);      -- Acquire shared (read) lock
-SELECT pg_advisory_unlock_shared(key_hash);    -- Release shared (read) lock
+SELECT pg_try_advisory_lock(key_hash); -- Acquire exclusive lock (non-blocking)
 
-SELECT pg_try_advisory_lock(key_hash); -- Non-blocking lock attempt
+SELECT pg_advisory_lock_shared(key_hash);      -- Acquire shared (read) lock (blocking)
+SELECT pg_try_advisory_lock_shared(key_hash);  -- Acquire shared (read) lock (non-blocking)
+SELECT pg_advisory_unlock_shared(key_hash);    -- Release shared (read) lock
 ```
 
 **MySQL/MariaDB Implementation**
 
 MySQL provides user-level locks via the `GET_LOCK()` and `RELEASE_LOCK()` functions. These are also session-level and auto-release on disconnect.
 
+> [!WARNING]
+> **MySQL Limitation: Exclusive Locks Only**
+>
+> MySQL's `GET_LOCK()` provides **exclusive locks only**. There is no shared/read lock equivalent in MySQL/MariaDB.
+>
+> This means:
+>
+> - **RLock() behaves exactly like Lock()** - both acquire exclusive locks
+> - **No read concurrency** - multiple readers cannot hold the lock simultaneously
+> - **Performance impact** - read operations that could be concurrent are serialized
+>
+> **Impact on ncps**: When using MySQL for distributed locking, serving cached files (`GetNar`, `GetNarInfo`) will acquire exclusive locks instead of shared locks. This reduces concurrency compared to PostgreSQL or Redis.
+>
+> **Recommendation**: For high-traffic deployments requiring read concurrency, use **PostgreSQL** (shared advisory locks) or **Redis** (distributed RWLocks) instead of MySQL.
+
 ```
 -- ncps uses these MySQL functions internally:
-SELECT GET_LOCK('key_string', timeout);   -- Acquire lock
+SELECT GET_LOCK('key_string', timeout);   -- Acquire EXCLUSIVE lock (no shared locks available)
 SELECT RELEASE_LOCK('key_string');        -- Release lock
 SELECT IS_USED_LOCK('key_string');        -- Check lock status
 ```
@@ -453,15 +469,36 @@ PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated con
 
 - ✅ You already have Redis infrastructure
 - ✅ Need the highest performance (Redis is optimized for in-memory operations)
+- ✅ Need true read-write lock semantics with high read concurrency
 - ✅ Want to use Redis for other purposes (caching, pub/sub)
+- ✅ High-traffic deployments with thousands of concurrent requests
 
-**Use PostgreSQL or MySQL Advisory Locks when:**
+**Use PostgreSQL Advisory Locks when:**
 
-- ✅ You already use PostgreSQL or MySQL as the database
+- ✅ You already use PostgreSQL as the database
 - ✅ Want to minimize infrastructure (one less service to manage)
 - ✅ Prefer keeping everything in the database
+- ✅ Need true shared read locks for concurrent cache access
 - ✅ Lock contention is moderate (database locks are fast but not as fast as Redis)
 - ✅ Want automatic cleanup when instances crash (connection closes)
+
+**Use MySQL Advisory Locks when:**
+
+- ✅ You already use MySQL/MariaDB as the database
+- ✅ Want to minimize infrastructure (one less service to manage)
+- ✅ Prefer keeping everything in the database
+- ⚠️ **Understand the limitation**: No shared read locks - all locks are exclusive
+- ⚠️ **Accept reduced read concurrency** compared to PostgreSQL or Redis
+- ✅ Lock contention is low to moderate
+- ✅ Want automatic cleanup when instances crash (connection closes)
+
+> [!NOTE]
+> **PostgreSQL vs MySQL for Distributed Locking**:
+>
+> - **PostgreSQL**: ✅ Supports both exclusive AND shared (read) locks
+> - **MySQL**: ⚠️ Supports exclusive locks ONLY (no read concurrency)
+>
+> For high-traffic caches where multiple instances frequently serve the same cached files, **PostgreSQL or Redis** will provide significantly better performance than MySQL due to shared read lock support.
 
 **Use Local Locks when:**
 
