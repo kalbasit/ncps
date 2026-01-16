@@ -61,7 +61,12 @@ Use `gt modify` to manage commits within your stack. It automatically restacks d
 Many Graphite commands (`gt modify`, `gt move`, `gt split`, `gt restack`) are interactive by default, opening selectors, editors, or specialized menus.
 
 - **For the Agent**: Avoid using these commands in an interactive way. If a command requires user input that cannot be provided via flags (e.g., resolving complex rebase conflicts), **stop and notify the user**.
-- **Rebase Conflicts**: If `gt restack` or `gt move` hits a conflict, Graphite will pause. Use `gt status` to understand the state, and if you cannot resolve it automatically, ask the user for help.
+- **Rebase Conflicts**: If `gt restack` or `gt move` hits a conflict, Graphite will pause. Follow these steps to resolve:
+    1. **Locate Conflicts**: Use `git status` or look at the error output to identify files with merge conflicts.
+    2. **Edit Files**: Open the conflicting files and resolve the merge markers (`<<<<<<<`, `=======`, `>>>>>>>`). Ensure the code is functionally correct and includes necessary changes from both sides.
+    3. **Stage Changes**: Run `gt add -A` (or `git add <file>`) to mark the conflicts as resolved.
+    4. **Continue**: Run `gt continue` to resume the restack process. **IMPORTANT**: NEVER use `git rebase --continue` as Graphite tracks its own state.
+    5. **Verify**: Once the restack completes, run tests to ensure the merged state is stable.
 - **Interactive Selectors**: Prefer providing explicit branch names or flags (like `--onto` for `gt move`) to avoid interactive selectors.
 
 ## Common Fixes & Lessons
