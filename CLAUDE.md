@@ -147,6 +147,14 @@ Configuration in `nix/process-compose/flake-module.nix` defines:
 
 The service configurations match the test environment variables to ensure consistency between dependency setup and application configuration.
 
+### Agent Workflow (Important)
+
+**PAGER Management**: To avoid stalls and empty output during CLI command execution, agents MUST ensure that interactive pagers are disabled.
+
+- Prefix commands with `PAGER=cat` (e.g., `PAGER=cat git status`).
+- Use command-specific flags to disable pagers (e.g., `git --no-pager diff`).
+- When creating or modifying scripts, include `export PAGER=""` at the top.
+
 ### CI/CD and GitHub Actions
 
 - **CI/CD**: GitHub Actions optimized for Graphite-style stacked PRs.
@@ -170,7 +178,7 @@ on:
 
 This prevents wasted CI resources when using Graphite stacks where PRs merge into each other:
 
-```
+```bash
 PR #7: feature-g → main          ← ✅ CI runs (only this one)
 PR #6: feature-f → feature-g     ← ❌ CI skipped
 PR #5: feature-e → feature-f     ← ❌ CI skipped
