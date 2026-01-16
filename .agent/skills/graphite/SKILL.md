@@ -74,7 +74,7 @@ Many Graphite commands (`gt modify`, `gt move`, `gt split`, `gt restack`) are in
 
 **Best Practices**:
 
-1. **Globally**: Prefix commands with `PAGER=cat`:
+1. **Per-command**: Prefix commands with `PAGER=cat`:
 
    ```bash
    PAGER=cat git status
