@@ -71,6 +71,22 @@ Many Graphite commands (`gt modify`, `gt move`, `gt split`, `gt restack`) are in
 
 ## Common Fixes & Lessons
 
+### Using Graphite over Git
+
+**The Problem**: Using standard `git commit` or `git commit --amend` fails to update Graphite's internal stack metadata and does not trigger automatic restacking of descendants. This can lead to a desynchronized stack where Graphite is unaware of the new commits or changes.
+
+**The Solution**: Always prefer `gt` commands over their standard `git` counterparts for commit and branch management.
+
+- **Creating a new branch**: Use `gt create <branch-name>` instead of `git checkout -b <branch-name>`.
+- **Creating a new commit**: Use `gt modify -c -m "message"` instead of `git commit -m "message"`.
+- **Amending a commit**: Use `gt modify --amend` instead of `git commit --amend`.
+- **Staging and committing everything**: Use `gt modify -cam "message"` instead of `git commit -am "message"`.
+
+**Benefits**:
+1.  **Metadata Integrity**: Graphite keeps its internal view of the stack consistent.
+2.  **Automatic Restacking**: Descendant branches are automatically updated if you change a parent branch.
+3.  **Visual Clarity**: Graphite's CLI output stays accurate and helpful.
+
 ### Pager Interference
 
 **The Problem**: Commands like `git diff`, `git status`, or `gt ls` may produce empty output or stall if the `PAGER` environment variable is set to an interactive tool like `less` or `more`.
