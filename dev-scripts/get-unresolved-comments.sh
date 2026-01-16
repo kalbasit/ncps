@@ -6,8 +6,12 @@ set -eo pipefail
 
 PR_NUMBER=$1
 if [ -z "$PR_NUMBER" ]; then
-  echo "Usage: $0 <pr-number>" >&2
-  exit 1
+  PR_NUMBER=$(PAGER= gh pr view --json number --jq '.number' || true)
+  if [ -z "$PR_NUMBER" ]; then
+    echo "Error: No PR number provided and could not find a PR for the current branch." >&2
+    echo "Usage: $0 <pr-number>" >&2
+    exit 1
+  fi
 fi
 
 # Infer repo owner and name
