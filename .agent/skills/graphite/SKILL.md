@@ -70,11 +70,17 @@ Many Graphite commands (`gt modify`, `gt move`, `gt split`, `gt restack`) are in
 
 If you accidentally commit a change to the wrong branch in a stack:
 
-1. **Undo the commit** on the wrong branch: `git reset --hard HEAD~1` (assuming it's the latest commit).
-2. **Move to the correct branch**: `gt down` or `gt up` to the target branch.
-3. **Apply the change**: Manually or via cherry-pick.
-4. **Incorporate the change**: Use `gt modify` to amend the branch or `gt modify -c` to add a new commit.
-5. **Repair the stack**: Move back to the tip and run `gt restack` to ensure all descendant branches are updated with the parent's new state.
+1. **Stash uncommitted changes**: If you have uncommitted work, `git stash` to keep it safe.
+1. **Move the change to a new branch** (if the commit belongs in its own new branch):
+   1. `gt create <new-branch>` to safely move the head.
+   1. `gt down` to move back to the parent.
+   1. `git reset --hard HEAD~1` (Safe now because the commit is preserved in the new branch).
+1. **Move to an existing branch**:
+   1. `git reset HEAD~1` (Soft reset to keep changes in the working tree).
+   1. `gt down`/`gt up` to the target branch.
+   1. `gt modify -c` or `gt modify --amend` to incorporate the changes.
+1. **Restore stashed changes**: `git stash pop` to resume your work.
+1. **Repair the stack**: Move back to the tip and run `gt restack` to ensure all descendant branches are updated with the parent's new state.
 
 ## Prohibited Commands
 
