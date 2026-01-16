@@ -16,10 +16,13 @@ This workflow guides you through fetching unresolved comments from a GitHub Pull
 
 ### 1. Fetch Unresolved Comments
 
-Use the helper script to fetch the unresolved comments for a specific PR.
+Use the helper script to fetch the unresolved comments. If no PR number is provided, it will attempt to find the PR for the current branch.
 
 ```bash
-# Replace <PR_NUMBER> with the actual PR number
+# Fetch comments for the current PR
+./dev-scripts/get-unresolved-comments.sh
+
+# Or specify a PR number
 ./dev-scripts/get-unresolved-comments.sh <PR_NUMBER>
 ```
 
