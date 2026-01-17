@@ -284,18 +284,29 @@ func (ge *Encoder) EncodeBig(d *big.Int) error {
 	// Go's big.Int doesn't support "iterate up to value" easily without loop/cmp.
 	// But we can check BitLen.
 
-	zero := big.NewInt(0)
-	one := big.NewInt(1)
-
 	// Write q ones
-	// We decrement q until 0
-	currQ := new(big.Int).Set(q)
-	for currQ.Cmp(zero) > 0 {
-		if err := ge.BitWriter.WriteBit(true); err != nil {
-			return err
+	if q.IsUint64() {
+		qVal := q.Uint64()
+		for i := uint64(0); i < qVal; i++ {
+			if err := ge.BitWriter.WriteBit(true); err != nil {
+				return err
+			}
 		}
+	} else {
+		// This path is for q > 2^64, which will produce an enormous output
+		// and be extremely slow. It's kept for correctness with very large numbers,
+		// but in practice, `k` should be chosen to keep `q` small.
+		zero := big.NewInt(0)
+		one := big.NewInt(1)
 
-		currQ.Sub(currQ, one)
+		currQ := new(big.Int).Set(q)
+		for currQ.Cmp(zero) > 0 {
+			if err := ge.BitWriter.WriteBit(true); err != nil {
+				return err
+			}
+
+			currQ.Sub(currQ, one)
+		}
 	}
 
 	// Write zero delimiter
@@ -312,7 +323,10 @@ func (ge *Encoder) EncodeBig(d *big.Int) error {
 func (gd *Decoder) DecodeBig() (*big.Int, error) {
 	// Decode unary q
 	q := new(big.Int)
-	one := big.NewInt(1)
+
+	var qUint64 uint64
+
+	useBigInt := false
 
 	for {
 		bit, err := gd.br.ReadBit()
@@ -324,7 +338,20 @@ func (gd *Decoder) DecodeBig() (*big.Int, error) {
 			break
 		}
 
-		q.Add(q, one)
+		if useBigInt {
+			q.Add(q, big.NewInt(1)) // This is slow, but q is already huge.
+		} else if qUint64 < ^uint64(0) {
+			qUint64++
+		} else {
+			useBigInt = true
+
+			q.SetUint64(qUint64)
+			q.Add(q, big.NewInt(1))
+		}
+	}
+
+	if !useBigInt {
+		q.SetUint64(qUint64)
 	}
 
 	// Decode binary r: k bits

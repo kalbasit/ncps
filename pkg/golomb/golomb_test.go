@@ -92,7 +92,7 @@ func TestGolombExample(t *testing.T) {
 	err = enc.Encode(1000)
 	require.NoError(t, err)
 
-	_ = enc.Flush()
+	require.NoError(t, enc.Flush())
 
 	// 1110 1110 1000 0000 (padded) -> EE 80
 	decodedBytes := buf.Bytes()
