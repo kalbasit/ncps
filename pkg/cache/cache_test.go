@@ -1109,16 +1109,17 @@ func TestBackgroundDownloadCompletion_AfterCancellation(t *testing.T) {
 
 	// Add a handler that serves the NAR slowly to allow cancellation mid-download
 	slowNarServed := make(chan struct{})
+
+	var slowNarServedOnce sync.Once
+
 	downloadComplete := make(chan struct{})
+
+	var downloadCompleteOnce sync.Once
 
 	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
 			// Signal that we started serving
-			select {
-			case <-slowNarServed:
-			default:
-				close(slowNarServed)
-			}
+			slowNarServedOnce.Do(func() { close(slowNarServed) })
 
 			// Write data slowly in chunks
 			data := []byte(entry.NarText)
@@ -1145,11 +1146,7 @@ func TestBackgroundDownloadCompletion_AfterCancellation(t *testing.T) {
 			}
 
 			// Signal download is complete
-			select {
-			case <-downloadComplete:
-			default:
-				close(downloadComplete)
-			}
+			downloadCompleteOnce.Do(func() { close(downloadComplete) })
 
 			return true
 		}
@@ -1226,11 +1223,8 @@ func TestBackgroundDownloadCompletion_AfterCancellation(t *testing.T) {
 		t.Fatal("timeout waiting for background download to complete")
 	}
 
-	// Give the cache time to store the file and update the database
+	// Wait for the cache to store the file
 	waitForFile(t, narPath)
-
-	// Give extra time for database updates to complete
-	time.Sleep(100 * time.Millisecond)
 
 	// STEP 3: Verify the asset is now available in storage
 	assert.FileExists(t, narPath, "NAR should exist in cache after background download completes")
@@ -1261,7 +1255,8 @@ func TestBackgroundDownloadCompletion_AfterCancellation(t *testing.T) {
 	require.NotNil(t, readerC, "reader should not be nil")
 
 	bodyCPreview := make([]byte, 100)
-	n, _ := readerC.Read(bodyCPreview)
+	n, err := readerC.Read(bodyCPreview)
+	require.NoError(t, err, "should be able to read from caller C's reader")
 	readerC.Close()
 
 	assert.Equal(t, entry.NarText[:n], string(bodyCPreview[:n]), "NAR content preview should match")
@@ -1301,16 +1296,17 @@ func TestConcurrentDownload_CancelOneClient_OthersContinue(t *testing.T) {
 
 	// Add a handler that serves the NAR slowly to allow cancellation mid-download
 	slowNarServed := make(chan struct{})
+
+	var slowNarServedOnce sync.Once
+
 	downloadComplete := make(chan struct{})
+
+	var downloadCompleteOnce sync.Once
 
 	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
 			// Signal that we started serving
-			select {
-			case <-slowNarServed:
-			default:
-				close(slowNarServed)
-			}
+			slowNarServedOnce.Do(func() { close(slowNarServed) })
 
 			// Write data slowly in chunks
 			data := []byte(entry.NarText)
@@ -1337,11 +1333,7 @@ func TestConcurrentDownload_CancelOneClient_OthersContinue(t *testing.T) {
 			}
 
 			// Signal download is complete
-			select {
-			case <-downloadComplete:
-			default:
-				close(downloadComplete)
-			}
+			downloadCompleteOnce.Do(func() { close(downloadComplete) })
 
 			return true
 		}
