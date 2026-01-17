@@ -283,7 +283,10 @@ Configure anonymous usage statistics reporting to help improve ncps.
 
 **What is collected:**
 
-- **Resource attributes**: Database type (`sqlite`/`postgres`/`mysql`), lock type (`local`/`redis`), cluster UUID
+- **Resource attributes**:
+  - Database backend type: `sqlite`, `postgres`, or `mysql`
+  - Lock mechanism type: `local`, `redis`, or `postgres`
+  - Cluster UUID (randomly generated identifier)
 - **Metrics** (hourly): Total cache size, upstream count, upstream health
 - **Logs**: Startup events, panic/crash events with stack traces
 
@@ -414,8 +417,6 @@ cache:
     redis:
       key-prefix: "ncps:lock:"
     postgres:
-      key-prefix: "ncps:lock:"
-    mysql:
       key-prefix: "ncps:lock:"
     retry:
       max-attempts: 3

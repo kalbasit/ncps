@@ -122,6 +122,12 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `config.signing.secretKey` | Signing secret key | `""` |
 | `config.signing.existingSecret` | Existing secret with signing key | `""` |
 
+### Analytics
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `config.analytics.reporting.enabled` | Enable anonymous usage statistics reporting | `true` |
+
 ### Cache Management
 
 | Parameter | Description | Default |
@@ -203,6 +209,7 @@ The following table lists the configurable parameters of the ncps chart and thei
 
 | Parameter | Description | Default |
 | --- | --- | --- |
+| `config.lock.backend` | Lock backend: `local`, `redis`, or `postgres` (auto-set to `redis` if `config.redis.enabled=true`) | `local` |
 | `config.lock.redis.keyPrefix` | Redis lock key prefix | `ncps:lock:` |
 | `config.lock.postgres.keyPrefix` | PostgreSQL lock key prefix | `ncps:lock:` |
 | `config.lock.downloadTTL` | Download lock TTL | `5m` |
@@ -212,6 +219,10 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `config.lock.retry.maxDelay` | Maximum retry delay | `2s` |
 | `config.lock.retry.jitter` | Enable retry jitter | `true` |
 | `config.lock.allowDegradedMode` | Allow degraded mode | `false` |
+
+**Note on Lock Backend Selection:**
+
+When `config.redis.enabled=true`, the chart automatically sets the lock backend to `redis`, regardless of the `config.lock.backend` value. This ensures proper distributed locking for HA deployments using Redis. If you want to use PostgreSQL advisory locks instead, set `config.redis.enabled=false` and `config.lock.backend=postgres`.
 
 ### Observability
 
