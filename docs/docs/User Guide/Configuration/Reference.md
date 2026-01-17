@@ -243,7 +243,6 @@ Lock timing and retry configuration for distributed locking.
 | --- | --- | --- | --- |
 | `--cache-lock-redis-key-prefix` | Key prefix for all Redis locks | `CACHE_LOCK_REDIS_KEY_PREFIX` | `"ncps:lock:"` |
 | `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `CACHE_LOCK_POSTGRES_KEY_PREFIX` | `"ncps:lock:"` |
-| `--cache-lock-mysql-key-prefix` | Key prefix for all MySQL locks | `CACHE_LOCK_MYSQL_KEY_PREFIX` | `"ncps:lock:"` |
 
 ### Lock Timeouts
 

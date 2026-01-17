@@ -51,7 +51,6 @@ Running multiple ncps instances provides:
 1. **Distributed locking backend**
    - **Redis server** (version 5.0+)
    - **PostgreSQL advisory locks** (version 9.1+)
-   - **MySQL advisory locks** (version 8.0+)
 1. **S3-compatible storage** (shared across all instances)
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
 1. **PostgreSQL or MySQL database** (shared across all instances)
@@ -343,7 +342,7 @@ Only one instance runs cache cleanup at a time:
 - Avoids cache corruption
 - Distributes LRU load
 
-See <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> for technical details and database advisory lock configuration (PostgreSQL/MySQL).
+See <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> for technical details and database advisory lock configuration (PostgreSQL).
 
 ## Health Checks
 

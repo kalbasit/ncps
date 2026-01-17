@@ -4,7 +4,7 @@ This document provides comprehensive guidance on using distributed locking in nc
 
 ## Overview
 
-ncps supports running multiple instances in a high-availability configuration using **Redis**, **PostgreSQL advisory locks**, or **MySQL advisory locks** for distributed locking. This enables:
+ncps supports running multiple instances in a high-availability configuration using **Redis** or **PostgreSQL advisory locks** for distributed locking. This enables:
 
 - **Zero-downtime deployments** - Update instances one at a time
 - **Horizontal scaling** - Add instances to handle more traffic
@@ -21,7 +21,6 @@ ncps supports running multiple instances in a high-availability configuration us
 1. **Local Locks** (default) - In-memory locks using Go's `sync.Mutex`, suitable for single-instance deployments
 1. **Redis** - Distributed locks using the Redlock algorithm, ideal for HA deployments with existing Redis infrastructure
 1. **PostgreSQL Advisory Locks** - Distributed locks using PostgreSQL's native advisory lock feature
-1. **MySQL Advisory Locks** - Distributed locks using MySQL/MariaDB's `GET_LOCK` feature
 
 ## Architecture
 
@@ -110,7 +109,7 @@ ncps supports running multiple instances in a high-availability configuration us
      │                  │                  │
      │   ┌──────────────▼──────────┐       │
      │   │                         │       │
-     ├──►│  PG or MySQL Database   │◄──────┘
+     ├──►│  PostgreSQL Database    │◄──────┘
      │   │ (Data + Advisory Locks) │
      │   └─────────────────────────┘
      │
@@ -125,7 +124,7 @@ ncps supports running multiple instances in a high-availability configuration us
 
 - The shared database serves both as the metadata store AND the distributed lock coordinator
 - Reduces infrastructure complexity (no Redis needed)
-- Uses native advisory lock features (PG `pg_advisory_lock` or MySQL `GET_LOCK`)
+- Uses PostgreSQL's native advisory lock feature (`pg_advisory_lock`)
 - All instances share the same S3 storage and database
 - Load balancer distributes traffic
 
@@ -180,12 +179,11 @@ For high-availability mode, you need:
 1. **Distributed Lock Backend** (one of the following):
    - **Redis** (version 5.0 or later)
    - **PostgreSQL** (version 9.1 or later)
-   - **MySQL** (version 8.0 or later)
 1. **Shared Storage** (S3-compatible)
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
    - All instances must access the same bucket
 1. **Shared Database** (PostgreSQL or MySQL)
-   - PostgreSQL 12+ or MySQL 8.0+
+   - PostgreSQL 12+ or MySQL 8.0+ recommended
    - All instances must connect to the same database
    - SQLite is NOT supported in HA mode
 
@@ -226,12 +224,11 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--cache-lock-backend` | Lock backend: `local`, `redis`, `postgres`, or `mysql` | `local` |
+| `--cache-lock-backend` | Lock backend: `local`, `redis`, or `postgres` | `local` |
 
 - **local**: Uses in-memory locks. Only suitable for single-instance deployments.
 - **redis**: Uses Redis (Redlock algorithm). Best for high-traffic, multi-instance deployments.
 - **postgres**: Uses PostgreSQL advisory locks. Good balance of simplicity and HA.
-- **mysql**: Uses MySQL/MariaDB advisory locks. Alternative to Postgres for HA.
 
 ### Redis Configuration Options
 
@@ -294,24 +291,24 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 --cache-lock-retry-max-delay=5s
 ```
 
-### PostgreSQL & MySQL Advisory Lock Configuration
+### PostgreSQL Advisory Lock Configuration
 
 Advisory locks provide a distributed locking alternative for deployments that:
 
-- Already use PostgreSQL or MySQL as the primary database
+- Already use PostgreSQL as the primary database
 - Want to minimize infrastructure dependencies (no Redis needed)
 - Prefer a single database for both data and coordination
 
 #### Advisory Lock Prerequisites
 
 > [!IMPORTANT]
-> Database advisory locks require PostgreSQL 9.1+ or MySQL 8.0+. SQLite does not support advisory locks.
+> Database advisory locks require PostgreSQL 9.1+. SQLite does not support advisory locks.
 
-1. **Shared Database** (PostgreSQL or MySQL)
-   - **PostgreSQL**: Version 9.1 or later (12+ recommended). Uses native advisory lock functions.
-   - **MySQL/MariaDB**: MySQL 8.0+ or MariaDB 10.2+. Uses `GET_LOCK()` and `RELEASE_LOCK()`.
-   - Must be shared across all ncps instances.
-   - Requires no special configuration or extensions.
+1. **Shared Database** (PostgreSQL)
+   - Version 9.1 or later (12+ recommended)
+   - Uses native advisory lock functions
+   - Must be shared across all ncps instances
+   - Requires no special configuration or extensions
 1. **Shared Storage** (S3-compatible)
    - Same requirement as Redis mode
    - All instances must access the same bucket
@@ -328,16 +325,6 @@ ncps serve \
   --cache-lock-backend=postgres
 ```
 
-**Using MySQL advisory locks:**
-
-```
-ncps serve \
-  --cache-hostname=cache.example.com \
-  --cache-database-url=mysql://user:pass@mysql:3306/ncps \
-  --cache-storage-s3-bucket=ncps-cache \
-  --cache-lock-backend=mysql
-```
-
 **Configuration file (config.yaml):**
 
 ```yaml
@@ -351,20 +338,17 @@ cache:
       region: us-east-1
 
   lock:
-    backend: postgres  # Options: local, redis, postgres, mysql
+    backend: postgres  # Options: local, redis, postgres
     postgres:
-      key-prefix: "ncps:lock:"
-    mysql:
       key-prefix: "ncps:lock:"
     allow-degraded-mode: false
 ```
 
-#### PostgreSQL & MySQL Options
+#### PostgreSQL Options
 
 | Option | Description | Default |
 | --- | --- | --- |
 | `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `"ncps:lock:"` |
-| `--cache-lock-mysql-key-prefix` | Key prefix for all MySQL locks | `"ncps:lock:"` |
 | `--cache-lock-allow-degraded-mode` | Fall back to local locks if distributed backend unavailable | `false` |
 
 > [!WARNING]
@@ -401,32 +385,6 @@ SELECT pg_try_advisory_lock_shared(key_hash);  -- Acquire shared (read) lock (no
 SELECT pg_advisory_unlock_shared(key_hash);    -- Release shared (read) lock
 ```
 
-**MySQL/MariaDB Implementation**
-
-MySQL provides user-level locks via the `GET_LOCK()` and `RELEASE_LOCK()` functions. These are also session-level and auto-release on disconnect.
-
-> [!WARNING]
-> **MySQL Limitation: Exclusive Locks Only**
->
-> MySQL's `GET_LOCK()` provides **exclusive locks only**. There is no shared/read lock equivalent in MySQL/MariaDB.
->
-> This means:
->
-> - **RLock() behaves exactly like Lock()** - both acquire exclusive locks
-> - **No read concurrency** - multiple readers cannot hold the lock simultaneously
-> - **Performance impact** - read operations that could be concurrent are serialized
->
-> **Impact on ncps**: When using MySQL for distributed locking, serving cached files (`GetNar`, `GetNarInfo`) will acquire exclusive locks instead of shared locks. This reduces concurrency compared to PostgreSQL or Redis.
->
-> **Recommendation**: For high-traffic deployments requiring read concurrency, use **PostgreSQL** (shared advisory locks) or **Redis** (distributed RWLocks) instead of MySQL.
-
-```
--- ncps uses these MySQL functions internally:
-SELECT GET_LOCK('key_string', timeout);   -- Acquire EXCLUSIVE lock (no shared locks available)
-SELECT RELEASE_LOCK('key_string');        -- Release lock
-SELECT IS_USED_LOCK('key_string');        -- Check lock status
-```
-
 **Key Features:**
 
 - Locks are identified by 64-bit integers (ncps hashes string keys to int64)
@@ -439,7 +397,7 @@ SELECT IS_USED_LOCK('key_string');        -- Check lock status
 > [!WARNING]
 > **Scalability Risk:** Each active lock consumes one database connection.
 
-PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated connection model**:
+PostgreSQL advisory lock implementations in ncps use a **dedicated connection model**:
 
 1. When `Lock(key)` is called, a dedicated connection is pulled from the pool (or created).
 1. The lock is acquired on that connection.
@@ -455,7 +413,7 @@ PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated con
 
 #### Redis vs. Database Locking Model
 
-| Feature | Redis (Redlock) | PostgreSQL / MySQL |
+| Feature | Redis (Redlock) | PostgreSQL |
 | --- | --- | --- |
 | **Model** | **Connection Pooling** | **Dedicated Connection** |
 | **Connection Usage** | Borrow -> Set Key -> Return | Borrow -> Lock -> **Hold** -> Unlock -> Return |
@@ -463,7 +421,7 @@ PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated con
 | **Safety** | Good (TTL based) | Excellent (Auto-release on disconnect) |
 | **Performance** | < 1ms | 1-5ms |
 
-#### Choosing Between Redis, PostgreSQL, and MySQL
+#### Choosing Between Redis and PostgreSQL
 
 **Use Redis when:**
 
@@ -481,24 +439,6 @@ PostgreSQL and MySQL advisory lock implementations in ncps use a **dedicated con
 - ✅ Need true shared read locks for concurrent cache access
 - ✅ Lock contention is moderate (database locks are fast but not as fast as Redis)
 - ✅ Want automatic cleanup when instances crash (connection closes)
-
-**Use MySQL Advisory Locks when:**
-
-- ✅ You already use MySQL/MariaDB as the database
-- ✅ Want to minimize infrastructure (one less service to manage)
-- ✅ Prefer keeping everything in the database
-- ⚠️ **Understand the limitation**: No shared read locks - all locks are exclusive
-- ⚠️ **Accept reduced read concurrency** compared to PostgreSQL or Redis
-- ✅ Lock contention is low to moderate
-- ✅ Want automatic cleanup when instances crash (connection closes)
-
-> [!NOTE]
-> **PostgreSQL vs MySQL for Distributed Locking**:
->
-> - **PostgreSQL**: ✅ Supports both exclusive AND shared (read) locks
-> - **MySQL**: ⚠️ Supports exclusive locks ONLY (no read concurrency)
->
-> For high-traffic caches where multiple instances frequently serve the same cached files, **PostgreSQL or Redis** will provide significantly better performance than MySQL due to shared read lock support.
 
 **Use Local Locks when:**
 
@@ -904,7 +844,7 @@ nc -zv redis-host 6379
    - Use IAM roles or credentials with proper permissions
    - Enable S3 server-side encryption for security
 1. **Database**
-   - Use connection pooling in PostgreSQL/MySQL
+   - Use connection pooling in PostgreSQL
    - Configure appropriate timeouts
    - Monitor connection counts
 
@@ -945,7 +885,7 @@ nc -zv redis-host 6379
 
 **Prerequisites:**
 
-1. ✅ Set up PostgreSQL or MySQL database
+1. ✅ Set up PostgreSQL database
 1. ✅ Migrate from SQLite (if applicable)
 1. ✅ Set up S3-compatible storage
 1. ✅ Deploy Redis server

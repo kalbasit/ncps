@@ -32,7 +32,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
-	"github.com/kalbasit/ncps/pkg/lock/mysql"
 	"github.com/kalbasit/ncps/pkg/lock/postgres"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 	"github.com/kalbasit/ncps/pkg/maxprocs"
@@ -71,7 +70,6 @@ const (
 	lockBackendLocal    = "local"
 	lockBackendRedis    = "redis"
 	lockBackendPostgres = "postgres"
-	lockBackendMysql    = "mysql"
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -290,7 +288,7 @@ func serveCommand(
 			&cli.StringFlag{
 				Name: "cache-lock-backend",
 				Usage: "Lock backend to use: 'local' (single instance), 'redis' (distributed), " +
-					"'postgres' (distributed, requires PostgreSQL) or 'mysql' (distributed, requires MySQL/MariaDB)",
+					"or 'postgres' (distributed, requires PostgreSQL)",
 				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
 				Value:   "local",
 			},
@@ -305,12 +303,6 @@ func serveCommand(
 				Name:    "cache-lock-postgres-key-prefix",
 				Usage:   "Prefix for all PostgreSQL advisory lock keys (only used when PostgreSQL is configured as lock backend)",
 				Sources: flagSources("cache.lock.postgres.key-prefix", "CACHE_LOCK_POSTGRES_KEY_PREFIX"),
-				Value:   "ncps:lock:",
-			},
-			&cli.StringFlag{
-				Name:    "cache-lock-mysql-key-prefix",
-				Usage:   "Prefix for all MySQL advisory lock keys (only used when MySQL is configured as lock backend)",
-				Sources: flagSources("cache.lock.mysql.key-prefix", "CACHE_LOCK_MYSQL_KEY_PREFIX"),
 				Value:   "ncps:lock:",
 			},
 			&cli.DurationFlag{
@@ -1094,25 +1086,6 @@ func getLockers(
 		zerolog.Ctx(ctx).Info().
 			Msg("distributed locking enabled with PostgreSQL advisory locks")
 
-	case lockBackendMysql:
-		// MySQL advisory locks - use database connection
-		mysqlCfg := mysql.Config{
-			KeyPrefix: cmd.String("cache-lock-mysql-key-prefix"),
-		}
-
-		locker, err = mysql.NewLocker(ctx, db, mysqlCfg, retryCfg, allowDegradedMode)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error creating MySQL advisory lock locker: %w", err)
-		}
-
-		rwLocker, err = mysql.NewRWLocker(ctx, db, mysqlCfg, retryCfg, allowDegradedMode)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error creating MySQL advisory lock RW locker: %w", err)
-		}
-
-		zerolog.Ctx(ctx).Info().
-			Msg("distributed locking enabled with MySQL advisory locks")
-
 	case lockBackendLocal:
 		// No distributed backend - use local locks (single-instance mode)
 		locker = local.NewLocker()
@@ -1123,7 +1096,7 @@ func getLockers(
 			Msg("using local locks (single-instance mode)")
 
 	default:
-		return nil, nil, fmt.Errorf("%w: %s (must be 'local', 'redis', 'postgres', or 'mysql')",
+		return nil, nil, fmt.Errorf("%w: %s (must be 'local', 'redis', or 'postgres')",
 			ErrUnknownLockBackend, backend)
 	}
 

@@ -733,72 +733,7 @@ affinity:
           topologyKey: kubernetes.io/hostname
 EOFCONFIG
 
-# 12. HA - S3 storage + MariaDB + MySQL Advisory Locks
-cat > "$TEST_VALUES_DIR/ha-s3-mariadb-lock.yaml" <<EOFCONFIG
-# High availability with S3 storage and MariaDB (using MySQL advisory locks instead of Redis)
-image:
-  registry: $IMAGE_REGISTRY
-  repository: $IMAGE_REPOSITORY
-  tag: "$IMAGE_TAG"
-
-replicaCount: 2
-mode: deployment
-
-migration:
-  enabled: true
-  mode: job
-
-config:
-  analytics:
-    reporting:
-      enabled: false
-
-  hostname: "ncps-ha-s3-mariadb-lock.local"
-
-  storage:
-    type: s3
-    s3:
-      bucket: $S3_BUCKET
-      endpoint: $S3_ENDPOINT
-      region: us-east-1
-      accessKeyId: $S3_ACCESS_KEY
-      secretAccessKey: $S3_SECRET_KEY
-
-  database:
-    type: mysql
-    mysql:
-      host: $MARIA_HOST
-      port: $MARIA_PORT
-      database: $MARIA_DB
-      username: $MARIA_USER
-      password: "$MARIA_PASS"
-
-  lock:
-    backend: mysql
-
-  redis:
-    enabled: false
-
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 1
-
-affinity:
-  podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 100
-        podAffinityTerm:
-          labelSelector:
-            matchExpressions:
-              - key: app.kubernetes.io/name
-                operator: In
-                values:
-                  - ncps
-          topologyKey: kubernetes.io/hostname
-EOFCONFIG
-
-
-echo "✅ Generated 12 values files"
+echo "✅ Generated 11 values files"
 
 # Generate QUICK-INSTALL.sh
 cat > "$TEST_VALUES_DIR/QUICK-INSTALL.sh" <<'INSTALL_EOF'
@@ -895,12 +830,6 @@ helm upgrade --install ncps-ha-s3-postgres-lock . \
   --create-namespace \
   --namespace ncps-ha-s3-postgres-lock
 
-echo "1️⃣2️⃣  Installing ncps-ha-s3-mariadb-lock..."
-helm upgrade --install ncps-ha-s3-mariadb-lock . \
-  -f test-values/ha-s3-mariadb-lock.yaml \
-  --create-namespace \
-  --namespace ncps-ha-s3-mariadb-lock
-
 echo ""
 echo "========================================="
 echo "✅ All deployments installed!"
@@ -942,7 +871,6 @@ namespaces=(
   "ncps-ha-s3-postgres"
   "ncps-ha-s3-mariadb"
   "ncps-ha-s3-postgres-lock"
-  "ncps-ha-s3-mariadb-lock"
 )
 
 for ns in "${namespaces[@]}"; do
@@ -1343,15 +1271,6 @@ deployments:
       type: "s3"
     database:
       type: "postgresql"
-
-  - name: "ncps-ha-s3-mariadb-lock"
-    namespace: "ncps-ha-s3-mariadb-lock"
-    mode: "deployment"
-    replicas: 2
-    storage:
-      type: "s3"
-    database:
-      type: "mysql"
 TEST_CONFIG_EOF
 
 echo "✅ Generated test-config.yaml"
@@ -1380,7 +1299,6 @@ This directory contains test values files for various NCPS deployment scenarios 
 - **ha-s3-postgres.yaml** - 2 replicas + S3 storage + PostgreSQL + Redis locks
 - **ha-s3-mariadb.yaml** - 2 replicas + S3 storage + MariaDB + Redis locks
 - **ha-s3-postgres-lock.yaml** - 2 replicas + S3 storage + PostgreSQL + PostgreSQL advisory locks
-- **ha-s3-mariadb-lock.yaml** - 2 replicas + S3 storage + MariaDB + MySQL advisory locks
 
 ## Quick Start
 
@@ -1448,13 +1366,13 @@ With `--push`, this will:
 1. Build the Docker image using Nix
 2. Push to the local Kind registry (127.0.0.1:30000)
 3. Query the Kind cluster for current credentials
-4. Generate all 12 values files with updated image and credentials
+4. Generate all 11 values files with updated image and credentials
 5. Generate test-config.yaml with cluster credentials and test data
 6. Regenerate install/cleanup/test scripts
 
 Otherwise, it will:
 1. Query the Kind cluster for current credentials
-2. Generate all 12 values files with updated image and credentials
+2. Generate all 11 values files with updated image and credentials
 3. Generate test-config.yaml with cluster credentials and test data
 4. Regenerate install/cleanup/test scripts
 
@@ -1483,7 +1401,6 @@ Cluster credentials are automatically discovered from the running Kind cluster.
 | ha-s3-postgres | S3 | PostgreSQL | Yes | 2 | Deployment | No |
 | ha-s3-mariadb | S3 | MariaDB | Yes | 2 | Deployment | No |
 | ha-s3-postgres-lock | S3 | PostgreSQL | No | 2 | Deployment | No |
-| ha-s3-mariadb-lock | S3 | MariaDB | No | 2 | Deployment | No |
 
 ## Verification
 
@@ -1605,13 +1522,6 @@ helm upgrade --install ncps-ha-s3-postgres-lock . \
   --namespace ncps-ha-s3-postgres-lock
 ```
 
-### 10. HA - S3 Storage + MariaDB + MySQL Advisory Locks
-```bash
-helm upgrade --install ncps-ha-s3-mariadb-lock . \
-  -f test-values/ha-s3-mariadb-lock.yaml \
-  --create-namespace \
-  --namespace ncps-ha-s3-mariadb-lock
-```
 
 ## Verification Commands
 
