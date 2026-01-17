@@ -937,6 +937,153 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 	assert.NotNil(t, narInfo)
 }
 
+// TestDeadlock_ContextCancellation_DuringDownload reproduces a deadlock that occurs when
+// a context is canceled during a download, causing cleanup code to attempt closing channels
+// that may have already been closed. This test specifically targets the issue fixed in #433
+// where sync.Once was needed to make channel closures idempotent.
+//
+// The deadlock scenario:
+// 1. Start downloading a NAR file from upstream
+// 2. Cancel the context mid-download to trigger cleanup
+// 3. Without sync.Once protection, multiple goroutines may try to close the same channels
+// 4. This can cause a panic or deadlock depending on timing.
+func TestDeadlock_ContextCancellation_DuringDownload(t *testing.T) {
+	t.Parallel()
+
+	c, _, _, _, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	// Setup a test server with a slow response to ensure we can cancel mid-download
+	ts := testdata.NewTestServer(t, 1)
+	defer ts.Close()
+
+	testHash := "deadlock-test-hash-123456789012"
+	entry := testdata.Entry{
+		NarInfoHash:    testHash,
+		NarHash:        testHash + "-nar",
+		NarCompression: "xz",
+		NarInfoText: `StorePath: /nix/store/` + testHash + `-test-1.0
+URL: nar/` + testHash + `-nar.nar.xz
+Compression: xz
+FileHash: sha256:1111111111111111111111111111111111111111111111111111
+FileSize: 1048576
+NarHash: sha256:1111111111111111111111111111111111111111111111111111
+NarSize: 1048576
+References: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dummy
+Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
+`,
+		NarText: strings.Repeat("x", 1048576), // 1MB of data
+	}
+	ts.AddEntry(entry)
+
+	// Add a handler that serves the NAR slowly to allow cancellation mid-download
+	slowNarServed := make(chan struct{})
+
+	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/nar/"+testHash+"-nar.nar.xz" {
+			// Signal that we started serving
+			close(slowNarServed)
+
+			// Write data slowly in chunks
+			data := []byte(entry.NarText)
+
+			chunkSize := 1024
+			for i := 0; i < len(data); i += chunkSize {
+				end := i + chunkSize
+				if end > len(data) {
+					end = len(data)
+				}
+
+				// Check if client disconnected
+				select {
+				case <-r.Context().Done():
+					return true
+				default:
+				}
+
+				_, err := w.Write(data[i:end])
+				if err != nil {
+					return true
+				}
+
+				// Flush to ensure data is sent
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+
+				// Sleep to make download slow
+				time.Sleep(10 * time.Millisecond)
+			}
+
+			return true
+		}
+
+		return false
+	})
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+
+	// Wait for health check
+	select {
+	case <-c.GetHealthChecker().Trigger():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for upstream health check")
+	}
+
+	// Create a context that we'll cancel mid-download
+	ctx, cancel := context.WithCancel(newContext())
+
+	done := make(chan struct{})
+
+	var getNarErr error
+
+	// Start the download in a goroutine
+	go func() {
+		defer close(done)
+
+		nu := nar.URL{Hash: testHash + "-nar", Compression: nar.CompressionTypeXz}
+		_, r, err := c.GetNar(ctx, nu)
+		getNarErr = err
+
+		if r != nil {
+			// Try to read some data
+			buf := make([]byte, 1024)
+			_, _ = r.Read(buf)
+			r.Close()
+		}
+	}()
+
+	// Wait for the slow NAR handler to start serving
+	select {
+	case <-slowNarServed:
+		// Good, download started
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for NAR download to start")
+	}
+
+	// Give it a moment to start downloading
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel the context to trigger cleanup while download is in progress
+	cancel()
+
+	// Wait for the download to complete or timeout
+	// The download should complete even though we canceled, because it continues in the background
+	select {
+	case <-done:
+		// GetNar returned successfully (no deadlock!)
+		t.Logf("GetNar completed without deadlock, err=%v", getNarErr)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Deadlock detected! GetNar did not complete after context cancellation")
+	}
+
+	// Success! The deadlock is fixed. GetNar completed without hanging.
+	// Note: The background download continues even after the caller cancels, which is the intended behavior.
+}
+
 func newContext() context.Context {
 	return zerolog.
 		New(io.Discard).
