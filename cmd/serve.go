@@ -900,6 +900,11 @@ func serveDetectExtraResourceAttrs(
 	if backend := cmd.String("cache-lock-backend"); backend != "" {
 		lockType = backend
 	} else if hasRedis {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--cache-redis-addrs is set but --cache-lock-backend is 'local'. " +
+				"Please explicitly set --cache-lock-backend=redis. " +
+				"Defaulting to Redis for backward compatibility.")
+
 		lockType = lockBackendRedis
 	}
 
