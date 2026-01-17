@@ -1,4 +1,4 @@
-package telemetry
+package analytics
 
 import (
 	"context"
@@ -9,7 +9,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
-// NewResource creates a new OpenTelemetry resource with standard attributes.
+// NewResource creates a new OpenTelemetry resource with standard attributes
+// but WITHOUT hostname and process owner to preserve anonymity.
 func NewResource(
 	ctx context.Context,
 	serviceName,
@@ -40,10 +41,10 @@ func NewResource(
 		resource.WithTelemetrySDK(),
 
 		// Discover and provide process information.
+		// NOTE: resource.WithProcessOwner() is deliberately excluded to avoid PII
 		resource.WithProcessPID(),
 		resource.WithProcessExecutableName(),
 		resource.WithProcessExecutablePath(),
-		resource.WithProcessOwner(),
 		resource.WithProcessRuntimeName(),
 		resource.WithProcessRuntimeVersion(),
 		resource.WithProcessRuntimeDescription(),
@@ -55,6 +56,6 @@ func NewResource(
 		resource.WithContainer(),
 
 		// Discover and provide host information.
-		resource.WithHost(),
+		// NOTE: resource.WithHost() is deliberately excluded to avoid PII
 	)
 }
