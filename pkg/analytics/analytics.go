@@ -189,8 +189,6 @@ func (r *reporter) newLogger(ctx context.Context) error {
 	if r.reportingSamples {
 		exporter, err = stdoutlog.New()
 	} else {
-		// Uncomment the line below to see the logs on stdout.
-		// exporter, err := stdoutlog.New()
 		exporter, err = otlploghttp.New(ctx,
 			otlploghttp.WithEndpoint(DefaultEndpoint),
 			otlploghttp.WithCompression(otlploghttp.GzipCompression),
@@ -221,8 +219,6 @@ func (r *reporter) newMeter(ctx context.Context) error {
 	if r.reportingSamples {
 		exporter, err = stdoutmetric.New()
 	} else {
-		// Uncomment the line below to see the metrics on stdout.
-		// exporter, err := stdoutmetric.New()
 		exporter, err = otlpmetrichttp.New(ctx,
 			otlpmetrichttp.WithEndpoint(DefaultEndpoint),
 			otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
