@@ -283,9 +283,8 @@ func serveCommand(
 
 			// Lock Configuration
 			&cli.StringFlag{
-				Name: "cache-lock-backend",
-				//nolint:lll
-				Usage:   "The backend to use for locking. Supported values: local, redis. If not set, it defaults to redis if configured, otherwise local.",
+				Name:    "cache-lock-backend",
+				Usage:   "Lock backend to use: 'local' (single instance), 'redis' (distributed)",
 				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
 			},
 			&cli.StringFlag{
