@@ -187,6 +187,11 @@ def main():
         default=3,
         help="Number of instances for HA mode (default: 3)",
     )
+    parser.add_argument(
+        "--analytics-reporting-samples",
+        action="store_true",
+        help="Enable printing analytics samples to stdout",
+    )
 
     args = parser.parse_args()
 
@@ -268,6 +273,9 @@ def main():
             "--cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=",
             f"--server-addr=:{port}",
         ]
+
+        if args.analytics_reporting_samples:
+            cmd.append("--analytics-reporting-samples")
 
         # Storage Args
         if args.storage == "local":
