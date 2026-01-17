@@ -9,6 +9,8 @@ import (
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -73,6 +75,8 @@ type reporter struct {
 	meter  metric.Meter
 
 	shutdownFns map[string]shutdownFn
+
+	reportingSamples bool
 }
 
 // New initializes the analytics reporting pipeline.
@@ -81,11 +85,13 @@ func New(
 	ctx context.Context,
 	db database.Querier,
 	res *resource.Resource,
+	reportingSamples bool,
 ) (Reporter, error) {
 	r := &reporter{
-		db:          db,
-		res:         res,
-		shutdownFns: make(map[string]shutdownFn),
+		db:               db,
+		res:              res,
+		shutdownFns:      make(map[string]shutdownFn),
+		reportingSamples: reportingSamples,
 	}
 
 	if err := r.newLogger(ctx); err != nil {
@@ -176,12 +182,21 @@ func (r *reporter) WithContext(ctx context.Context) context.Context {
 }
 
 func (r *reporter) newLogger(ctx context.Context) error {
-	// Uncomment the line below to see the logs on stdout.
-	// exporter, err := stdoutlog.New()
-	exporter, err := otlploghttp.New(ctx,
-		otlploghttp.WithEndpoint(DefaultEndpoint),
-		otlploghttp.WithCompression(otlploghttp.GzipCompression),
+	var (
+		exporter sdklog.Exporter
+		err      error
 	)
+	if r.reportingSamples {
+		exporter, err = stdoutlog.New()
+	} else {
+		// Uncomment the line below to see the logs on stdout.
+		// exporter, err := stdoutlog.New()
+		exporter, err = otlploghttp.New(ctx,
+			otlploghttp.WithEndpoint(DefaultEndpoint),
+			otlploghttp.WithCompression(otlploghttp.GzipCompression),
+		)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create analytics log exporter: %w", err)
 	}
@@ -199,12 +214,21 @@ func (r *reporter) newLogger(ctx context.Context) error {
 }
 
 func (r *reporter) newMeter(ctx context.Context) error {
-	// Uncomment the line below to see the metrics on stdout.
-	// exporter, err := stdoutmetric.New()
-	exporter, err := otlpmetrichttp.New(ctx,
-		otlpmetrichttp.WithEndpoint(DefaultEndpoint),
-		otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
+	var (
+		exporter sdkmetric.Exporter
+		err      error
 	)
+	if r.reportingSamples {
+		exporter, err = stdoutmetric.New()
+	} else {
+		// Uncomment the line below to see the metrics on stdout.
+		// exporter, err := stdoutmetric.New()
+		exporter, err = otlpmetrichttp.New(ctx,
+			otlpmetrichttp.WithEndpoint(DefaultEndpoint),
+			otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
+		)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create analytics metric exporter: %w", err)
 	}

@@ -62,6 +62,7 @@ Analytics reporting explicitly **does not** collect:
 
 - **Personal information** - No usernames, emails, or other PII
 - **Network information** - No IP addresses, hostnames, or network topology
+- **Host information** - No hostname or process owner user
 - **Cache contents** - No store paths, package names, or derivation data
 - **Configuration secrets** - No passwords, keys, or authentication tokens
 - **Request logs** - No HTTP requests, client information, or access patterns
@@ -201,6 +202,16 @@ When analytics is enabled, you'll see a log message at startup:
 ```
 
 When disabled, no message is logged and no data is sent.
+
+## Debugging
+
+You can inspect the exact data being reported by using the `--analytics-reporting-samples` flag. This will print all analytics data (logs and metrics) to `stdout` instead of sending it to the analytics endpoint.
+
+```sh
+ncps serve --analytics-reporting-samples
+```
+
+**Note:** This is intended for debugging and verification only. It produces verbose output and prevents data from being sent to the maintainers. This flag can be used independently of `--analytics-reporting-enabled`.
 
 ## Panic Logging and Recovery
 

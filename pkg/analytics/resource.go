@@ -1,4 +1,4 @@
-package telemetry
+package analytics
 
 import (
 	"context"
@@ -9,13 +9,13 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
-// NewResource creates a new OpenTelemetry resource with standard attributes.
-// This function consolidates the common resource creation logic used by both
-// OpenTelemetry and Prometheus telemetry setups.
+// NewResource creates a new OpenTelemetry resource with standard attributes
+// but WITHOUT hostname and process owner to preserve anonymity.
 func NewResource(
 	ctx context.Context,
 	serviceName,
-	serviceVersion string,
+	serviceVersion,
+	schemaURL string,
 	extraAttrs ...attribute.KeyValue,
 ) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{
@@ -28,10 +28,7 @@ func NewResource(
 		ctx,
 
 		// Set the Schema URL.
-		// NOTE: This will fail if the semconv version being used within the
-		// detectors is different. If an error occurs, change the import path of
-		// semconv in the imports section at the top of this file.
-		resource.WithSchemaURL(semconv.SchemaURL),
+		resource.WithSchemaURL(schemaURL),
 
 		// Add Custom attributes.
 		resource.WithAttributes(attrs...),
@@ -44,13 +41,10 @@ func NewResource(
 		resource.WithTelemetrySDK(),
 
 		// Discover and provide process information.
-		// Do not use resource.WithProcess(). It includes command-line arguments via
-		// resource.WithProcessCommandArgs(), which can leak sensitive information like
-		// credentials passed as flags. Instead, we explicitly include only safe attributes.
+		// NOTE: resource.WithProcessOwner() is deliberately excluded to avoid PII
 		resource.WithProcessPID(),
 		resource.WithProcessExecutableName(),
 		resource.WithProcessExecutablePath(),
-		resource.WithProcessOwner(),
 		resource.WithProcessRuntimeName(),
 		resource.WithProcessRuntimeVersion(),
 		resource.WithProcessRuntimeDescription(),
@@ -62,6 +56,6 @@ func NewResource(
 		resource.WithContainer(),
 
 		// Discover and provide host information.
-		resource.WithHost(),
+		// NOTE: resource.WithHost() is deliberately excluded to avoid PII
 	)
 }

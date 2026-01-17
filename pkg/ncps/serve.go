@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache"
@@ -40,7 +41,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/s3"
-	"github.com/kalbasit/ncps/pkg/telemetry"
 )
 
 var (
@@ -443,12 +443,18 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		otelResource, err := telemetry.NewResource(ctx, cmd.Root().Name, Version, extraResourceAttrs...)
+		otelResource, err := otel.NewResource(
+			ctx,
+			cmd.Root().Name,
+			Version,
+			semconv.SchemaURL,
+			extraResourceAttrs...,
+		)
 		if err != nil {
 			logger.
 				Error().
 				Err(err).
-				Msg("error creating a new telemetry resource")
+				Msg("error creating a new otel resource")
 
 			return err
 		}
@@ -481,8 +487,29 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 		}
 
 		analyticsReporter := analytics.Ctx(ctx) // get the noop reporter
-		if cmd.Bool("analytics-reporting-enabled") {
-			analyticsReporter, err = analytics.New(ctx, db, otelResource)
+		if cmd.Bool("analytics-reporting-enabled") || cmd.Bool("analytics-reporting-samples") {
+			analyticsResource, err := analytics.NewResource(
+				ctx,
+				cmd.Root().Name,
+				Version,
+				semconv.SchemaURL,
+				extraResourceAttrs...,
+			)
+			if err != nil {
+				logger.
+					Error().
+					Err(err).
+					Msg("error creating a new analytics resource")
+
+				return err
+			}
+
+			analyticsReporter, err = analytics.New(
+				ctx,
+				db,
+				analyticsResource,
+				cmd.Bool("analytics-reporting-samples"),
+			)
 			if err != nil {
 				zerolog.Ctx(ctx).
 					Error().
