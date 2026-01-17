@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -446,9 +447,8 @@ func isConnectionError(err error) bool {
 	}
 
 	// Check if the error string contains indicators of a closed database.
-	// sql.ErrDBClosed is not always returned directly; sometimes it's wrapped or just the string.
-	errStr := err.Error()
-	if errStr == "sql: database is closed" {
+	// "sql: database is closed" is an internal error in database/sql and not exported as a sentinel.
+	if strings.Contains(err.Error(), "sql: database is closed") {
 		return true
 	}
 
