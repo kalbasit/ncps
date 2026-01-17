@@ -196,7 +196,9 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) error 
 		if err != nil {
 			lastErr = err
 
-			l.circuitBreaker.RecordFailure()
+			if isConnectionError(err) {
+				l.circuitBreaker.RecordFailure()
+			}
 
 			if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
@@ -366,7 +368,9 @@ func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bo
 	// Create a new dedicated connection for this lock attempt
 	conn, err := l.db.Conn(ctx)
 	if err != nil {
-		l.circuitBreaker.RecordFailure()
+		if isConnectionError(err) {
+			l.circuitBreaker.RecordFailure()
+		}
 
 		if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
 			lock.RecordLockFailure(ctx, lock.LockTypeExclusive, mode, lock.LockFailureCircuitBreaker)
@@ -429,11 +433,22 @@ func isConnectionError(err error) bool {
 		return false
 	}
 
-	// Check for common context and sql errors that indicate a broken connection.
+	// Never treat context cancellation or deadline exceeded as a connection error.
+	// These are client-side or request-level completions.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	// Check for common sql errors that indicate a broken connection or closed database.
 	if errors.Is(err, sql.ErrConnDone) ||
-		errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, context.Canceled) ||
 		errors.Is(err, io.EOF) { // pgx can return io.EOF on connection loss
+		return true
+	}
+
+	// Check if the error string contains indicators of a closed database.
+	// sql.ErrDBClosed is not always returned directly; sometimes it's wrapped or just the string.
+	errStr := err.Error()
+	if errStr == "sql: database is closed" {
 		return true
 	}
 
