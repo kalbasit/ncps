@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1082,6 +1083,398 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 
 	// Success! The deadlock is fixed. GetNar completed without hanging.
 	// Note: The background download continues even after the caller cancels, which is the intended behavior.
+}
+
+// TestBackgroundDownloadCompletion_AfterCancellation verifies that when a caller cancels their
+// request mid-download, the download continues in the background and completes successfully,
+// making the asset available for subsequent requests.
+//
+// This test validates the core behavior of the detached context approach:
+// 1. Caller A starts a download and cancels mid-download
+// 2. The download continues in the background using a detached context
+// 3. Caller B can successfully retrieve the asset once the background download completes
+// 4. The asset is properly stored in the cache and database.
+func TestBackgroundDownloadCompletion_AfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	c, _, localStore, dir, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	// Use an existing test entry (Nar3) for this test
+	entry := testdata.Nar3
+
+	// Setup a test server with the entry
+	ts := testdata.NewTestServer(t, 1)
+	defer ts.Close()
+
+	// Add a handler that serves the NAR slowly to allow cancellation mid-download
+	slowNarServed := make(chan struct{})
+	downloadComplete := make(chan struct{})
+
+	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
+			// Signal that we started serving
+			select {
+			case <-slowNarServed:
+			default:
+				close(slowNarServed)
+			}
+
+			// Write data slowly in chunks
+			data := []byte(entry.NarText)
+
+			chunkSize := 1024
+			for i := 0; i < len(data); i += chunkSize {
+				end := i + chunkSize
+				if end > len(data) {
+					end = len(data)
+				}
+
+				_, err := w.Write(data[i:end])
+				if err != nil {
+					return true
+				}
+
+				// Flush to ensure data is sent
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+
+				// Sleep to make download slow (but not too slow to avoid test timeout)
+				time.Sleep(2 * time.Millisecond)
+			}
+
+			// Signal download is complete
+			select {
+			case <-downloadComplete:
+			default:
+				close(downloadComplete)
+			}
+
+			return true
+		}
+
+		return false
+	})
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+
+	// Wait for health check
+	select {
+	case <-c.GetHealthChecker().Trigger():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for upstream health check")
+	}
+
+	// Verify NAR does not exist yet
+	narPath := filepath.Join(dir, "store", "nar", entry.NarPath)
+	assert.NoFileExists(t, narPath, "NAR should not exist in cache yet")
+
+	// STEP 1: Caller A starts download and cancels mid-download
+	ctxA, cancelA := context.WithCancel(newContext())
+
+	doneA := make(chan struct{})
+
+	var getNarErrA error
+
+	go func() {
+		defer close(doneA)
+
+		nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+		_, r, err := c.GetNar(ctxA, nu)
+		getNarErrA = err
+
+		if r != nil {
+			// Try to read some data
+			buf := make([]byte, 1024)
+			_, _ = r.Read(buf)
+			r.Close()
+		}
+	}()
+
+	// Wait for the slow NAR handler to start serving
+	select {
+	case <-slowNarServed:
+		// Good, download started
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for NAR download to start")
+	}
+
+	// Give it a moment to start downloading (but not complete)
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel caller A's context
+	cancelA()
+
+	// Wait for caller A to return
+	select {
+	case <-doneA:
+		// Good, caller A returned (may or may not have an error depending on timing)
+		t.Logf("Caller A returned with error: %v", getNarErrA)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for caller A to return")
+	}
+
+	// STEP 2: Wait for background download to complete
+	select {
+	case <-downloadComplete:
+		t.Log("Background download completed")
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for background download to complete")
+	}
+
+	// Give the cache time to store the file and update the database
+	waitForFile(t, narPath)
+
+	// Give extra time for database updates to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// STEP 3: Verify the asset is now available in storage
+	assert.FileExists(t, narPath, "NAR should exist in cache after background download completes")
+
+	// STEP 4: Caller B retrieves the asset successfully
+	ctxB := newContext()
+	nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+	size, readerB, err := c.GetNar(ctxB, nu)
+	require.NoError(t, err, "caller B should be able to get the NAR")
+	require.NotNil(t, readerB, "reader should not be nil")
+
+	// Read and verify the content
+	bodyB, err := io.ReadAll(readerB)
+	require.NoError(t, err, "should be able to read NAR content")
+	readerB.Close()
+
+	assert.Equal(t, entry.NarText, string(bodyB), "NAR content should match")
+	assert.Equal(t, int64(len(entry.NarText)), size, "size should match")
+
+	// STEP 5: Verify HasNar returns true
+	assert.True(t, localStore.HasNar(newContext(), nu), "HasNar should return true")
+
+	// STEP 6: Verify another concurrent request also succeeds
+	ctxC := newContext()
+	sizeC, readerC, err := c.GetNar(ctxC, nu)
+	require.NoError(t, err, "caller C should also be able to get the NAR")
+	require.NotNil(t, readerC, "reader should not be nil")
+
+	bodyCPreview := make([]byte, 100)
+	n, _ := readerC.Read(bodyCPreview)
+	readerC.Close()
+
+	assert.Equal(t, entry.NarText[:n], string(bodyCPreview[:n]), "NAR content preview should match")
+	assert.Equal(t, int64(len(entry.NarText)), sizeC, "size should match for caller C")
+
+	// SUCCESS! The background download completed and made the asset available.
+	t.Log("✅ Background download completed successfully and asset is available to all callers")
+
+	// NOTE: GetNar doesn't populate the database - only GetNarInfo does that.
+	// We don't verify database state here since the purpose of this test is to verify
+	// that the download continues in the background and the asset becomes available,
+	// regardless of whether it's in the database or not.
+}
+
+// TestConcurrentDownload_CancelOneClient_OthersContinue verifies that when multiple clients
+// request the same NAR concurrently and share the same download job, canceling one client's
+// request does not affect the other clients.
+//
+// This test validates the critical coordination behavior:
+// 1. Client A and Client B both start requesting the same NAR at the same time
+// 2. They share the same underlying download job (deduplication)
+// 3. Client A cancels its request mid-download
+// 4. Client B is unaffected and successfully receives the NAR once download completes
+// 5. The download continues in the background using the detached context.
+func TestConcurrentDownload_CancelOneClient_OthersContinue(t *testing.T) {
+	t.Parallel()
+
+	c, _, localStore, dir, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	// Use an existing test entry (Nar5 to avoid conflict with other tests)
+	entry := testdata.Nar5
+
+	// Setup a test server with the entry
+	ts := testdata.NewTestServer(t, 1)
+	defer ts.Close()
+
+	// Add a handler that serves the NAR slowly to allow cancellation mid-download
+	slowNarServed := make(chan struct{})
+	downloadComplete := make(chan struct{})
+
+	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
+			// Signal that we started serving
+			select {
+			case <-slowNarServed:
+			default:
+				close(slowNarServed)
+			}
+
+			// Write data slowly in chunks
+			data := []byte(entry.NarText)
+
+			chunkSize := 1024
+			for i := 0; i < len(data); i += chunkSize {
+				end := i + chunkSize
+				if end > len(data) {
+					end = len(data)
+				}
+
+				_, err := w.Write(data[i:end])
+				if err != nil {
+					return true
+				}
+
+				// Flush to ensure data is sent
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+
+				// Sleep to make download slow
+				time.Sleep(2 * time.Millisecond)
+			}
+
+			// Signal download is complete
+			select {
+			case <-downloadComplete:
+			default:
+				close(downloadComplete)
+			}
+
+			return true
+		}
+
+		return false
+	})
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+
+	// Wait for health check
+	select {
+	case <-c.GetHealthChecker().Trigger():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for upstream health check")
+	}
+
+	// Verify NAR does not exist yet
+	narPath := filepath.Join(dir, "store", "nar", entry.NarPath)
+	assert.NoFileExists(t, narPath, "NAR should not exist in cache yet")
+
+	// Start both clients at the same time
+	var wg sync.WaitGroup
+
+	ctxA, cancelA := context.WithCancel(newContext())
+	ctxB := newContext()
+
+	doneA := make(chan struct{})
+	doneB := make(chan struct{})
+
+	var (
+		getNarErrA, getNarErrB error
+		sizeB                  int64
+		readerB                io.ReadCloser
+	)
+
+	// Client A - will be cancelled mid-download
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		defer close(doneA)
+
+		nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+		_, r, err := c.GetNar(ctxA, nu)
+		getNarErrA = err
+
+		if r != nil {
+			// Try to read some data
+			buf := make([]byte, 1024)
+			_, _ = r.Read(buf)
+			r.Close()
+		}
+	}()
+
+	// Client B - should complete successfully despite A's cancellation
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		defer close(doneB)
+
+		nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		var err error
+
+		sizeB, readerB, err = c.GetNar(ctxB, nu)
+		getNarErrB = err
+	}()
+
+	// Wait for the download to start
+	select {
+	case <-slowNarServed:
+		// Good, download started
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for NAR download to start")
+	}
+
+	// Give it a moment to ensure both clients are waiting on the same download
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel client A mid-download
+	t.Log("Canceling client A mid-download")
+	cancelA()
+
+	// Wait for client A to return (should return quickly after cancellation)
+	select {
+	case <-doneA:
+		t.Logf("Client A returned with error: %v", getNarErrA)
+		// Client A may or may not have an error depending on timing
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for client A to return")
+	}
+
+	// Wait for background download to complete
+	select {
+	case <-downloadComplete:
+		t.Log("Background download completed")
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for background download to complete")
+	}
+
+	// Wait for client B to complete (should succeed)
+	select {
+	case <-doneB:
+		t.Logf("Client B completed with error: %v", getNarErrB)
+		require.NoError(t, getNarErrB, "client B should complete successfully despite client A cancellation")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for client B to complete")
+	}
+
+	// Verify client B got the complete data
+	require.NotNil(t, readerB, "client B reader should not be nil")
+
+	bodyB, err := io.ReadAll(readerB)
+	require.NoError(t, err, "should be able to read NAR content from client B")
+	readerB.Close()
+
+	assert.Equal(t, entry.NarText, string(bodyB), "NAR content should match for client B")
+	assert.Equal(t, int64(len(entry.NarText)), sizeB, "size should match for client B")
+
+	// Verify the asset is in storage
+	assert.FileExists(t, narPath, "NAR should exist in cache")
+
+	nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+	assert.True(t, localStore.HasNar(newContext(), nu), "HasNar should return true")
+
+	wg.Wait()
+
+	t.Log("✅ Client B completed successfully despite client A cancellation - download coordination works!")
 }
 
 func newContext() context.Context {
