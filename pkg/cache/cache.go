@@ -182,6 +182,10 @@ type downloadState struct {
 	done   chan struct{} // Signals download fully complete (including database updates)
 	start  chan struct{} // Signals streaming can begin (temp file ready)
 	stored chan struct{} // Signals asset is in final storage (for distributed lock release)
+
+	doneOnce   sync.Once
+	startOnce  sync.Once
+	storedOnce sync.Once
 }
 
 func newDownloadState() *downloadState {
@@ -479,7 +483,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			zerolog.Ctx(ctx).WithContext(c.baseContext),
 			trace.SpanFromContext(ctx),
 		)
-		ds := c.prePullNar(detachedCtx, &narURL, nil, nil, false)
+		ds := c.prePullNar(ctx, detachedCtx, &narURL, nil, nil, false)
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
 		// This prevents race with cleanup goroutine calling ds.wg.Wait()
@@ -518,7 +522,15 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			attribute.String("status", "success"),
 		)
 
-		<-ds.start
+		select {
+		case <-ds.start:
+			// Download has started
+		case <-ctx.Done():
+			// Context canceled before download started
+			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
+			return ctx.Err()
+		}
 
 		err := ds.getError()
 		if err != nil {
@@ -691,17 +703,6 @@ func (c *Cache) createTempNarFile(ctx context.Context, narURL *nar.URL, ds *down
 
 	ds.assetPath = f.Name()
 
-	// Wait until nothing is using the asset and remove it
-	ds.wg.Add(1)
-
-	analytics.SafeGo(ctx, func() {
-		ds.wg.Wait()
-
-		if err := os.Remove(ds.assetPath); err != nil {
-			zerolog.Ctx(ctx).Warn().Err(err).Str("file", ds.assetPath).Msg("failed to remove temporary NAR file")
-		}
-	})
-
 	return f, nil
 }
 
@@ -793,26 +794,20 @@ func (c *Cache) pullNarIntoStore(
 	enableZSTD bool,
 	ds *downloadState,
 ) {
+	// Track download completion for cleanup synchronization
+	ds.cleanupWg.Add(1)
+	defer ds.cleanupWg.Done()
+
 	defer func() {
 		// Clean up local job tracking
 		c.upstreamJobsMu.Lock()
 		delete(c.upstreamJobs, narJobKey(narURL.Hash))
 		c.upstreamJobsMu.Unlock()
 
-		select {
-		case <-ds.start:
-		default:
-			close(ds.start)
-		}
-
-		select {
-		case <-ds.stored:
-		default:
-			close(ds.stored)
-		}
+		ds.startOnce.Do(func() { close(ds.start) })
 
 		// Inform watchers that we are fully done and the asset is now in the store.
-		close(ds.done)
+		ds.doneOnce.Do(func() { close(ds.done) })
 
 		// Final broadcast
 		ds.cond.Broadcast()
@@ -871,10 +866,6 @@ func (c *Cache) pullNarIntoStore(
 
 	ds.assetPath = f.Name()
 
-	// Track download completion for cleanup synchronization
-	ds.cleanupWg.Add(1)
-	defer ds.cleanupWg.Done()
-
 	// Cleanup: wait for download to complete, then wait for all readers to finish
 	analytics.SafeGo(ctx, func() {
 		ds.cleanupWg.Wait() // Wait for download to complete
@@ -889,7 +880,7 @@ func (c *Cache) pullNarIntoStore(
 	})
 
 	// Signal that temp file is ready for streaming
-	close(ds.start)
+	ds.startOnce.Do(func() { close(ds.start) })
 
 	err = c.streamResponseToFile(ctx, resp, f, ds)
 	if err != nil {
@@ -907,7 +898,7 @@ func (c *Cache) pullNarIntoStore(
 
 	// Signal that the asset is now in final storage and the distributed lock can be released
 	// This prevents the race condition where other instances check hasAsset() before storage completes
-	close(ds.stored)
+	ds.storedOnce.Do(func() { close(ds.stored) })
 
 	if enableZSTD && written > 0 {
 		narInfo.FileSize = uint64(written)
@@ -1138,19 +1129,9 @@ func (c *Cache) pullNarInfo(
 		c.upstreamJobsMu.Unlock()
 
 		// Ensure ds.start is closed to unblock waiters
-		select {
-		case <-ds.start:
-		default:
-			close(ds.start)
-		}
+		ds.startOnce.Do(func() { close(ds.start) })
 
-		select {
-		case <-ds.stored:
-		default:
-			close(ds.stored)
-		}
-
-		close(ds.done)
+		ds.doneOnce.Do(func() { close(ds.done) })
 	}
 
 	defer done()
@@ -1200,7 +1181,7 @@ func (c *Cache) pullNarInfo(
 	}
 
 	// Signal that we've successfully fetched the narinfo (no streaming for narinfo)
-	close(ds.start)
+	ds.startOnce.Do(func() { close(ds.start) })
 
 	var enableZSTD bool
 
@@ -1226,7 +1207,7 @@ func (c *Cache) pullNarInfo(
 			zerolog.Ctx(ctx).WithContext(c.baseContext),
 			trace.SpanFromContext(ctx),
 		)
-		narDs := c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
+		narDs := c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
 		<-narDs.done
 
 		err := narDs.getError()
@@ -1249,7 +1230,7 @@ func (c *Cache) pullNarInfo(
 			zerolog.Ctx(ctx).WithContext(c.baseContext),
 			trace.SpanFromContext(ctx),
 		)
-		c.prePullNar(detachedCtx, &narURL, uc, narInfo, enableZSTD)
+		c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -1279,7 +1260,7 @@ func (c *Cache) pullNarInfo(
 
 	// Signal that the asset is now in final storage and the distributed lock can be released
 	// This prevents the race condition where other instances check hasAsset() before storage completes
-	close(ds.stored)
+	ds.storedOnce.Do(func() { close(ds.stored) })
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
 		if errors.Is(err, ErrAlreadyExists) {
@@ -1403,6 +1384,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 
 	return c.coordinateDownload(
 		ctx,
+		ctx,
 		narInfoJobKey(hash),
 		hash,
 		func(ctx context.Context) bool {
@@ -1415,6 +1397,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 }
 
 func (c *Cache) prePullNar(
+	coordCtx context.Context,
 	ctx context.Context,
 	narURL *nar.URL,
 	uc *upstream.Cache,
@@ -1431,7 +1414,12 @@ func (c *Cache) prePullNar(
 	)
 	defer span.End()
 
+	// coordCtx is the original context for coordination (not detached)
+	// ctx is the detached context for the download itself
+	// We need both: coordCtx to respond to caller cancellation, ctx for background download
+
 	return c.coordinateDownload(
+		coordCtx,
 		ctx,
 		narJobKey(narURL.Hash),
 		narURL.Hash,
@@ -1890,7 +1878,10 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 // coordinateDownload manages distributed download coordination with lock acquisition,
 // storage checking, and job tracking. Returns a downloadState that can be monitored
 // for download progress and errors.
+// The coordCtx is used for coordination (responding to caller's cancellation),
+// while ctx is used for the download itself (may be detached to allow background downloads).
 func (c *Cache) coordinateDownload(
+	coordCtx context.Context,
 	ctx context.Context,
 	lockKey string,
 	hash string,
@@ -1931,9 +1922,9 @@ func (c *Cache) coordinateDownload(
 
 		// Return a completed downloadState
 		ds := newDownloadState()
-		close(ds.start)
-		close(ds.stored)
-		close(ds.done)
+		ds.startOnce.Do(func() { close(ds.start) })
+		ds.storedOnce.Do(func() { close(ds.stored) })
+		ds.doneOnce.Do(func() { close(ds.done) })
 
 		return ds
 	}
@@ -1960,22 +1951,28 @@ func (c *Cache) coordinateDownload(
 
 	// Wait for the asset to be in final storage before releasing the distributed lock
 	// This ensures other instances will find the asset when they call hasAsset() after acquiring the lock
+	// Use coordCtx to respond to caller's cancellation
 	select {
 	case <-ds.stored:
 		// Asset is now in storage
-	case <-ctx.Done():
-		// Context canceled, return error state
+	case <-ds.done:
+		// Download completed (successfully or with error)
+		// Check if it was stored or failed
+		if ds.getError() != nil {
+			zerolog.Ctx(ctx).Warn().
+				Str("hash", hash).
+				Str("lock_key", lockKey).
+				Err(ds.getError()).
+				Msg("download completed with error")
+		}
+	case <-coordCtx.Done():
+		// Coordination context canceled (caller gave up waiting)
+		// The download continues in the background with the detached ctx
+		// We don't set downloadError here because the download is still proceeding
 		zerolog.Ctx(ctx).Warn().
 			Str("hash", hash).
 			Str("lock_key", lockKey).
-			Msg("context canceled while waiting for asset storage")
-		ds.mu.Lock()
-
-		if ds.downloadError == nil {
-			ds.downloadError = ctx.Err()
-		}
-
-		ds.mu.Unlock()
+			Msg("caller context canceled while waiting for asset storage, download continues in background")
 	}
 
 	// Now release the distributed lock
