@@ -285,9 +285,12 @@ def main():
             )
 
         # Locker Args
+        if args.locker == "local":
+            cmd.extend(["--cache-lock-backend=local"])
         if args.locker == "redis":
             cmd.extend(
                 [
+                    "--cache-lock-backend=redis",
                     f"--cache-redis-addrs={REDIS_ADDR}",
                     "--cache-lock-download-ttl=5m",
                     "--cache-lock-lru-ttl=30m",

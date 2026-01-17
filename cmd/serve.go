@@ -40,6 +40,11 @@ import (
 	"github.com/kalbasit/ncps/pkg/telemetry"
 )
 
+const (
+	lockBackendLocal = "local"
+	lockBackendRedis = "redis"
+)
+
 var (
 	// ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
 	ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
@@ -56,6 +61,12 @@ var (
 
 	// ErrUpstreamCacheRequired is returned if no upstream cache is configured.
 	ErrUpstreamCacheRequired = errors.New("at least one --cache-upstream-url is required")
+
+	// ErrRedisConfigRequired is returned if the lock backend is set to redis but no redis addresses are configured.
+	ErrRedisConfigRequired = errors.New("cache lock backend is set to redis but no redis addresses are configured")
+
+	// ErrUnsupportedLockBackend is returned if the cache lock backend is not supported.
+	ErrUnsupportedLockBackend = errors.New("unsupported cache lock backend")
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -271,6 +282,11 @@ func serveCommand(
 			},
 
 			// Lock Configuration
+			&cli.StringFlag{
+				Name:    "cache-lock-backend",
+				Usage:   "Lock backend to use: 'local' (single instance), 'redis' (distributed)",
+				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
+			},
 			&cli.StringFlag{
 				Name:    "cache-lock-redis-key-prefix",
 				Usage:   "Prefix for all Redis lock keys (only used when Redis is configured)",
@@ -876,13 +892,20 @@ func serveDetectExtraResourceAttrs(
 	attrs = append(attrs, attribute.String("ncps.db_type", dbType.String()))
 
 	// 2. Identify Lock Type
-	lockType := "local"
+	lockType := lockBackendLocal
 	redisAddrs := cmd.StringSlice("cache-redis-addrs")
 	// Filter out empty addresses
 	hasRedis := slices.ContainsFunc(redisAddrs, func(addr string) bool { return addr != "" })
 
-	if hasRedis {
-		lockType = "redis"
+	if backend := cmd.String("cache-lock-backend"); backend != "" {
+		lockType = backend
+	} else if hasRedis {
+		zerolog.Ctx(ctx).Warn().
+			Msg("--cache-redis-addrs is set but --cache-lock-backend is 'local'. " +
+				"Please explicitly set --cache-lock-backend=redis. " +
+				"Defaulting to Redis for backward compatibility.")
+
+		lockType = lockBackendRedis
 	}
 
 	attrs = append(attrs, attribute.String("ncps.lock_type", lockType))
@@ -941,7 +964,32 @@ func getLockers(
 		}
 	}
 
-	if len(validRedisAddrs) == 0 {
+	var (
+		backend  = cmd.String("cache-lock-backend")
+		useRedis bool
+	)
+
+	switch backend {
+	case lockBackendRedis:
+		useRedis = true
+
+		if len(validRedisAddrs) == 0 {
+			return nil, nil, ErrRedisConfigRequired
+		}
+	case lockBackendLocal:
+		useRedis = false
+
+		if len(validRedisAddrs) > 0 {
+			zerolog.Ctx(ctx).Warn().
+				Msg("Redis is configured but cache lock backend is set to local. Distributed locking will NOT be used.")
+		}
+	case "":
+		useRedis = len(validRedisAddrs) > 0
+	default:
+		return nil, nil, fmt.Errorf("%w: %q", ErrUnsupportedLockBackend, backend)
+	}
+
+	if !useRedis {
 		// No Redis - use local locks (single-instance mode)
 		locker = local.NewLocker()
 		rwLocker = local.NewRWLocker()
