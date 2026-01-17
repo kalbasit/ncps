@@ -102,6 +102,12 @@ func New() (*cli.Command, error) {
 				Sources: flagSources("analytics.reporting.enabled", "ANALYTICS_REPORTING_ENABLED"),
 				Value:   true,
 			},
+			&cli.BoolFlag{
+				Name: "analytics-reporting-samples",
+				//nolint:lll
+				Usage: "Enable printing the analytics samples to stdout. This is useful for debugging and verification purposes only.",
+				Value: false,
+			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Set the log level",
