@@ -10,6 +10,12 @@ log:
   # - panic
   #
   level: "error"
+# Analytics configuration
+analytics:
+  reporting:
+    # Enable reporting anonymous usage statistics (DB type, Lock type, Total Size)
+    # to the project maintainers
+    enabled: true
 # OpenTelemetry support.
 opentelemetry:
   enabled: true
@@ -129,10 +135,22 @@ cache:
     pool-size: 10
   # Lock configuration
   lock:
-    # Redis-specific lock settings (only used when Redis is configured above)
+    # Lock backend selection (optional)
+    # Options: "local" (default), "redis", "postgres"
+    # - local: In-memory locks (single instance only)
+    # - redis: Distributed locks using Redis (requires cache.redis.addrs)
+    # - postgres: Distributed locks using PostgreSQL advisory locks (requires PostgreSQL database)
+    # backend: "local"
+
+    # Redis-specific lock settings (only used when backend is "redis")
     redis:
       # Key prefix for all distributed locks (default: "ncps:lock:")
       key-prefix: "ncps:lock:"
+    # PostgreSQL-specific lock settings (only used when backend is "postgres")
+    # postgres:
+    #   # Key prefix for all distributed locks (default: "ncps:lock:")
+    #   key-prefix: "ncps:lock:"
+
     # Timeout for download locks (per-hash locks)
     download-lock-ttl: 5m
     # Timeout for LRU lock (global exclusive lock)
