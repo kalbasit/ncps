@@ -76,7 +76,6 @@ Detailed breakdown of ncps system components.
 - **Local** (`lock/local/`) - In-process locks (sync.Mutex, sync.RWMutex)
 - **Redis** (`lock/redis/`) - Distributed locks (Redlock algorithm)
 - **PostgreSQL** (`lock/postgres/`) - Distributed locks (PostgreSQL advisory locks)
-- **MySQL** (`lock/mysql/`) - Distributed locks (MySQL/MariaDB GET_LOCK)
 
 **Responsibilities:**
 
@@ -90,7 +89,6 @@ Detailed breakdown of ncps system components.
 - `Locker` - Exclusive locks only (Lock/Unlock/TryLock)
 - `RWLocker` - Read-write locks (Lock/Unlock/RLock/RUnlock)
   - PostgreSQL: True shared read locks via `pg_advisory_lock_shared()`
-  - MySQL: **Exclusive only** (RLock behaves like Lock - no read concurrency)
   - Redis: True shared read locks via Redis hash sets
 
 ## NAR Handler (pkg/nar/)
