@@ -68,7 +68,7 @@ ncps supports running multiple instances in a high-availability configuration us
      │                  │                  │
      │   ┌──────────────▼──────────┐       │
      │   │                         │       │
-     ├──►│    Redis Server         │◄──────┤
+     ├──►│    Redis Server         │◄──────┘
      │   │  (Distributed Locks)    │
      │   └─────────────────────────┘
      │
@@ -302,7 +302,7 @@ Advisory locks provide a distributed locking alternative for deployments that:
 #### Advisory Lock Prerequisites
 
 > [!IMPORTANT]
-> Database advisory locks require PostgreSQL 9.1+. SQLite does not support advisory locks.
+> Database advisory locks require PostgreSQL 9.1+. SQLite and MySQL do not support advisory locks in ncps. If you use MySQL as your database, you must use Redis for distributed locking.
 
 1. **Shared Database** (PostgreSQL)
    - Version 9.1 or later (12+ recommended)

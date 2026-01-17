@@ -56,6 +56,7 @@ Running multiple ncps instances provides:
 1. **PostgreSQL or MySQL database** (shared across all instances)
    - PostgreSQL 12+ or MySQL 8.0+
    - **SQLite is NOT supported for HA**
+   - **NOTE: MySQL is only supported for data storage, NOT for distributed locking. If using MySQL, you must use Redis for locking.**
 1. **Load balancer** to distribute requests
    - nginx, HAProxy, cloud load balancer, etc.
 
@@ -209,7 +210,7 @@ cache:
     password: ${REDIS_PASSWORD}  # If using auth
 
   lock:
-    backend: redis  # Options: local, redis, postgres, mysql
+    backend: redis  # Options: local, redis, postgres
     download-lock-ttl: 5m
     lru-lock-ttl: 30m
     retry:
