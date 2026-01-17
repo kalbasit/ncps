@@ -41,11 +41,12 @@ func newTestCache(
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
+	fileStore storage.FileStore,
 ) (*cache.Cache, error) {
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	return cache.New(ctx, cacheName, db, configStore, narInfoStore, narStore, "",
+	return cache.New(ctx, cacheName, db, configStore, narInfoStore, narStore, fileStore, "",
 		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
 }
 
@@ -74,7 +75,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -121,7 +122,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -261,7 +262,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -378,7 +379,7 @@ func TestServeHTTP(t *testing.T) {
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)

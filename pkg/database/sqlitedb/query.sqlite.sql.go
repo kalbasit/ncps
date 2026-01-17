@@ -233,6 +233,38 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 	return result.RowsAffected()
 }
 
+const getAllNarInfos = `-- name: GetAllNarInfos :many
+SELECT hash
+FROM narinfos
+`
+
+// GetAllNarInfos
+//
+//	SELECT hash
+//	FROM narinfos
+func (q *Queries) GetAllNarInfos(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getAllNarInfos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		items = append(items, hash)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConfigByID = `-- name: GetConfigByID :one
 SELECT id, "key", value, created_at, updated_at
 FROM config
@@ -343,7 +375,7 @@ WHERE (
     SELECT COALESCE(SUM(nf.file_size), 0)
     FROM nar_files nf
     WHERE nf.id IN (
-        SELECT nnf.nar_file_id
+        SELECT DISTINCT nnf.nar_file_id
         FROM narinfo_nar_files nnf
         INNER JOIN narinfos ni2 ON nnf.narinfo_id = ni2.id
         WHERE ni2.last_accessed_at < ni1.last_accessed_at
@@ -363,7 +395,7 @@ WHERE (
 //	    SELECT COALESCE(SUM(nf.file_size), 0)
 //	    FROM nar_files nf
 //	    WHERE nf.id IN (
-//	        SELECT nnf.nar_file_id
+//	        SELECT DISTINCT nnf.nar_file_id
 //	        FROM narinfo_nar_files nnf
 //	        INNER JOIN narinfos ni2 ON nnf.narinfo_id = ni2.id
 //	        WHERE ni2.last_accessed_at < ni1.last_accessed_at

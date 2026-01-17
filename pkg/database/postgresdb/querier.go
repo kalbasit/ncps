@@ -72,6 +72,11 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
+	//GetAllNarInfos
+	//
+	//  SELECT hash
+	//  FROM narinfos
+	GetAllNarInfos(ctx context.Context) ([]string, error)
 	//GetConfigByID
 	//
 	//  SELECT id, key, value, created_at, updated_at
@@ -108,7 +113,7 @@ type Querier interface {
 	//      SELECT COALESCE(SUM(nf.file_size), 0)
 	//      FROM nar_files nf
 	//      WHERE nf.id IN (
-	//          SELECT nnf.nar_file_id
+	//          SELECT DISTINCT nnf.nar_file_id
 	//          FROM narinfo_nar_files nnf
 	//          INNER JOIN narinfos ni2 ON nnf.narinfo_id = ni2.id
 	//          WHERE ni2.last_accessed_at < ni1.last_accessed_at

@@ -164,3 +164,7 @@ SELECT nf.*
 FROM nar_files nf
 LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 WHERE ninf.narinfo_id IS NULL;
+
+-- name: GetAllNarInfos :many
+SELECT hash
+FROM narinfos;

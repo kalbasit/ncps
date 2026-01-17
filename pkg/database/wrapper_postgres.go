@@ -140,6 +140,16 @@ func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Confi
 	return Config(res), nil
 }
 
+func (w *postgresWrapper) GetAllNarInfos(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetAllNarInfos(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {

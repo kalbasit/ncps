@@ -20,6 +20,7 @@ type Querier interface {
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	GetConfigByID(ctx context.Context, id int64) (Config, error)
 	GetConfigByKey(ctx context.Context, key string) (Config, error)
+	GetAllNarInfos(ctx context.Context) ([]string, error)
 	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error)
 	GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error)
 	GetNarFileByHash(ctx context.Context, hash string) (NarFile, error)
