@@ -40,6 +40,11 @@ import (
 	"github.com/kalbasit/ncps/pkg/telemetry"
 )
 
+const (
+	lockBackendLocal = "local"
+	lockBackendRedis = "redis"
+)
+
 var (
 	// ErrCacheMaxSizeRequired is returned if --cache-lru-schedule was given but not --cache-max-size.
 	ErrCacheMaxSizeRequired = errors.New("--cache-max-size is required when --cache-lru-schedule is specified")
@@ -888,7 +893,7 @@ func serveDetectExtraResourceAttrs(
 	attrs = append(attrs, attribute.String("ncps.db_type", dbType.String()))
 
 	// 2. Identify Lock Type
-	lockType := "local"
+	lockType := lockBackendLocal
 	redisAddrs := cmd.StringSlice("cache-redis-addrs")
 	// Filter out empty addresses
 	hasRedis := slices.ContainsFunc(redisAddrs, func(addr string) bool { return addr != "" })
@@ -896,7 +901,7 @@ func serveDetectExtraResourceAttrs(
 	if backend := cmd.String("cache-lock-backend"); backend != "" {
 		lockType = backend
 	} else if hasRedis {
-		lockType = "redis"
+		lockType = lockBackendRedis
 	}
 
 	attrs = append(attrs, attribute.String("ncps.lock_type", lockType))
@@ -961,13 +966,13 @@ func getLockers(
 	)
 
 	switch backend {
-	case "redis":
+	case lockBackendRedis:
 		useRedis = true
 
 		if len(validRedisAddrs) == 0 {
 			return nil, nil, ErrRedisConfigRequired
 		}
-	case "local":
+	case lockBackendLocal:
 		useRedis = false
 
 		if len(validRedisAddrs) > 0 {
