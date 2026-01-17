@@ -182,8 +182,8 @@ For high-availability mode, you need:
 1. **Shared Storage** (S3-compatible)
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
    - All instances must access the same bucket
-1. **Shared Database** (PostgreSQL)
-   - PostgreSQL 12+ recommended
+1. **Shared Database** (PostgreSQL or MySQL)
+   - PostgreSQL 12+ or MySQL 8.0+ recommended
    - All instances must connect to the same database
    - SQLite is NOT supported in HA mode
 
