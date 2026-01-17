@@ -22,6 +22,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/nixcacheindex"
 	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
 )
 
@@ -70,6 +71,9 @@ type Cache struct {
 	publicKeys []signature.PublicKey
 	netrcAuth  *NetrcCredentials
 
+	// indexClient is the client for the binary cache index.
+	indexClient *nixcacheindex.Client
+
 	mu        sync.RWMutex
 	isHealthy bool
 
@@ -100,6 +104,9 @@ type Options struct {
 	// ResponseHeaderTimeout is the timeout for waiting for the server's response headers.
 	// If zero, defaults to defaultHTTPTimeout (3s).
 	ResponseHeaderTimeout time.Duration
+
+	// ExperimentalCacheIndex enables the use of the experimental binary cache index.
+	ExperimentalCacheIndex bool
 }
 
 // New creates a new upstream cache with the given URL and options.
@@ -176,6 +183,10 @@ func New(ctx context.Context, u *url.URL, opts *Options) (*Cache, error) {
 		}
 	} else {
 		c.priority = 40 // Default priority
+	}
+
+	if opts.ExperimentalCacheIndex {
+		c.indexClient = nixcacheindex.NewClient(ctx, c)
 	}
 
 	return c, nil
@@ -294,6 +305,10 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		Info().
 		Msg("download the narinfo from upstream")
 
+	if c.isDefiniteMissFromIndex(ctx, hash) {
+		return nil, ErrNotFound
+	}
+
 	resp, err := c.doRequest(ctx, http.MethodGet, u)
 	if err != nil {
 		return nil, err
@@ -363,6 +378,10 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("heading the narinfo from upstream")
+
+	if c.isDefiniteMissFromIndex(ctx, hash) {
+		return false, nil
+	}
 
 	resp, err := c.doRequest(ctx, http.MethodHead, u)
 	if err != nil {
@@ -533,6 +552,64 @@ func (c *Cache) validateURL(u *url.URL) error {
 	}
 
 	return nil
+}
+
+// isDefiniteMissFromIndex checks the cache index for a hash.
+// It returns true if the index reports a definite miss, and false otherwise.
+func (c *Cache) isDefiniteMissFromIndex(ctx context.Context, hash string) bool {
+	if c.indexClient == nil {
+		return false
+	}
+
+	res, err := c.indexClient.Query(ctx, hash)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Msg("failed to query the index")
+
+		return false // On error, fallback to normal behavior.
+	}
+
+	if res == nixcacheindex.DefiniteMiss {
+		zerolog.Ctx(ctx).
+			Debug().
+			Str("hash", hash).
+			Msg("definite miss from index")
+
+		return true
+	}
+
+	return false
+}
+
+// Fetch implements nixcacheindex.Fetcher.
+func (c *Cache) Fetch(ctx context.Context, path string) (io.ReadCloser, error) {
+	var u string
+
+	// Check if path is an absolute URL
+	if parsed, err := url.Parse(path); err == nil && parsed.IsAbs() {
+		u = path
+	} else {
+		u = c.url.JoinPath(path).String()
+	}
+
+	resp, err := c.doRequest(ctx, http.MethodGet, u)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, nixcacheindex.ErrShardNotFound
+		}
+
+		return nil, fmt.Errorf("%w: %d", ErrUnexpectedHTTPStatusCode, resp.StatusCode)
+	}
+
+	return resp.Body, nil
 }
 
 // isTimeout checks if an error is a timeout error.
