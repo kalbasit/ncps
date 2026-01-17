@@ -228,3 +228,79 @@ func TestLocker_CircuitBreakerReopensOnFailure(t *testing.T) {
 	cbShort.RecordFailure()
 	assert.True(t, cbShort.IsOpen(), "Circuit should reopen immediately on failure in half-open")
 }
+
+//nolint:paralleltest
+func TestLocker_CircuitBreaker_HealthClassification(t *testing.T) {
+	skipIfPostgresNotAvailable(t)
+
+	ctx := context.Background()
+
+	querier, cleanup := getTestDatabase(t)
+	defer cleanup()
+
+	cfg := getTestConfig()
+	// Use low threshold for faster reproduction
+	retryCfg := lock.RetryConfig{
+		MaxAttempts:  1,
+		InitialDelay: 0,
+		MaxDelay:     0,
+		Jitter:       false,
+	}
+
+	locker, err := postgres.NewLocker(ctx, querier, cfg, retryCfg, false)
+	require.NoError(t, err)
+
+	pgLocker := locker
+	cb := pgLocker.GetCircuitBreaker()
+	key := getUniqueKey(t, "health-class")
+
+	t.Run("ContextCanceledDoesNotTripCircuitBreaker", func(t *testing.T) {
+		assert.False(t, cb.IsOpen())
+
+		for i := 0; i < 5; i++ {
+			canceledCtx, cancel := context.WithCancel(ctx)
+			cancel()
+
+			err = locker.Lock(canceledCtx, key, 1*time.Second)
+			require.ErrorIs(t, err, context.Canceled)
+		}
+
+		assert.False(t, cb.IsOpen(), "Circuit breaker should STILL be closed after context cancellations")
+	})
+
+	t.Run("ContextTimeoutDoesNotTripCircuitBreaker", func(t *testing.T) {
+		assert.False(t, cb.IsOpen())
+
+		for i := 0; i < 5; i++ {
+			timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
+			cancel()
+
+			err = locker.Lock(timeoutCtx, key, 1*time.Second)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+		}
+
+		assert.False(t, cb.IsOpen(), "Circuit breaker should STILL be closed after context timeouts")
+	})
+
+	t.Run("RealConnectionErrorTripsCircuitBreaker", func(t *testing.T) {
+		// Create a new locker with same DB but we will close the DB
+		db2, cleanup2 := getTestDatabase(t)
+		defer cleanup2()
+
+		locker2, err := postgres.NewLocker(ctx, db2, cfg, retryCfg, false)
+		require.NoError(t, err)
+
+		cb2 := locker2.GetCircuitBreaker()
+		assert.False(t, cb2.IsOpen())
+
+		db2.DB().Close()
+
+		for i := 0; i < 5; i++ {
+			err = locker2.Lock(ctx, key, 1*time.Second)
+			require.Error(t, err)
+		}
+
+		assert.True(t, cb2.IsOpen(), "Circuit breaker should OPEN after real database failures")
+	})
+}

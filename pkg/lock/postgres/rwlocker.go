@@ -100,7 +100,9 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, ttl time.Duration) er
 		if err != nil {
 			lastErr = err
 
-			rw.circuitBreaker.RecordFailure()
+			if isConnectionError(err) {
+				rw.circuitBreaker.RecordFailure()
+			}
 
 			if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 				zerolog.Ctx(ctx).Warn().
