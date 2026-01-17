@@ -97,6 +97,14 @@ sudo chown -R ncps:ncps /var/lib/ncps
 
 See <a class="reference-link" href="../Deployment/Distributed%20Locking.md">Distributed Locking</a>.
 
+### Database Connection Exhaustion (HA)
+
+**Symptom:** Requests hang for 5 minutes and then fail with "context canceled" or "bad connection".
+
+**Common Cause:** Using PostgreSQL advisory locks with a small connection pool. Each request can consume up to 3 connections, leading to deadlocks if the pool is exhausted.
+
+**Solution:** Increase `--cache-database-pool-max-open-conns` to at least 50-100 or switch to Redis for locking.
+
 ## Debug Logging
 
 Enable debug mode:
