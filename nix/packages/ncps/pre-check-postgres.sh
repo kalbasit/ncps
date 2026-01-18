@@ -7,16 +7,19 @@ export POSTGRES_DATA_DIR=$(mktemp -d)
 export POSTGRES_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
 # Export the environment variables required by the init script and the tests
-export PGHOST="127.0.0.1";
-export PGPORT="$POSTGRES_PORT";
-export PGUSER="postgres";
-export PGDATABASE="postgres";
-export PG_DEV_DB="dev-db";
-export PG_DEV_USER="dev-user";
-export PG_DEV_PASSWORD="dev-password";
-export PG_TEST_DB="test-db";
-export PG_TEST_USER="test-user";
-export PG_TEST_PASSWORD="test-password";
+export PGHOST="127.0.0.1"
+export PGPORT="$POSTGRES_PORT"
+export PGUSER="postgres"
+export PGDATABASE="postgres"
+export PG_DEV_DB="dev-db"
+export PG_DEV_USER="dev-user"
+export PG_DEV_PASSWORD="dev-password"
+export PG_TEST_DB="test-db"
+export PG_TEST_USER="test-user"
+export PG_TEST_PASSWORD="test-password"
+export PG_MIGRATION_USER="migration-user"
+export PG_MIGRATION_PASSWORD="migration-password"
+export PG_MIGRATION_DB="migration-db"
 
 # Start PostgreSQL server in background
 bash $src/nix/process-compose/start-postgres.sh &

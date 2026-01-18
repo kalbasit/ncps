@@ -19,6 +19,9 @@
         MYSQL_TEST_DB = "test-db";
         MYSQL_TEST_USER = "test-user";
         MYSQL_TEST_PASSWORD = "test-password";
+        MYSQL_MIGRATION_DB = "migration-db";
+        MYSQL_MIGRATION_USER = "migration-user";
+        MYSQL_MIGRATION_PASSWORD = "migration-password";
       };
 
       minioEnvironment = {
@@ -48,6 +51,9 @@
         PG_TEST_DB = "test-db";
         PG_TEST_USER = "test-user";
         PG_TEST_PASSWORD = "test-password";
+        PG_MIGRATION_DB = "migration-db";
+        PG_MIGRATION_USER = "migration-user";
+        PG_MIGRATION_PASSWORD = "migration-password";
       };
 
       redisEnvironment = {

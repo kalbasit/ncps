@@ -17,9 +17,9 @@ NC = "\033[0m"  # No Color
 
 # Database URLs
 POSTGRES_URL = (
-    "postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable"
+    "postgresql://migration-user:migration-password@127.0.0.1:5432/migration-db?sslmode=disable"
 )
-MYSQL_URL = "mysql://dev-user:dev-password@127.0.0.1:3306/dev-db"
+MYSQL_URL = "mysql://migration-user:migration-password@127.0.0.1:3306/migration-db"
 
 # Handle SQLite temp directory safely
 SQLITE_DIR = tempfile.mkdtemp()
@@ -53,17 +53,34 @@ def check_command(cmd_list, name):
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         log(f"ERROR: {name} is not running or accessible", RED)
-        log(f"Skipping migration for {name}...", YELLOW)
         return False
 
 
 def run_dbmate(url):
-    """Runs dbmate up for the given URL. Returns True on success."""
+    """
+    Runs dbmate drop, create, and up for the given URL.
+    Returns True on success.
+    """
     try:
+        # 1. Drop existing database (ignore errors if it doesn't exist)
+        #    We suppress output to keep the console clean-ish, assuming
+        #    'dbmate drop' failing is often acceptable (e.g. first run).
+        subprocess.run(
+            ["dbmate", "--url", url, "drop"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # 2. Create fresh database
+        subprocess.run(["dbmate", "--url", url, "create"], check=True)
+
+        # 3. Run migrations
         subprocess.run(["dbmate", "--url", url, "up"], check=True)
         return True
-    except subprocess.CalledProcessError:
-        log("Migration failed", RED)
+
+    except subprocess.CalledProcessError as e:
+        log(f"Migration failed during step '{e.cmd}': {e}", RED)
         return False
 
 
@@ -90,10 +107,9 @@ def migrate_postgres():
             print()
             return False
     else:
-        log("Skipped PostgreSQL.", RED)
+        # check_command logs the error
         print()
-        # If the service isn't running, we consider this "skipped" rather than "failed"
-        return True
+        return False
 
 
 def migrate_mysql():
@@ -121,9 +137,9 @@ def migrate_mysql():
             print()
             return False
     else:
-        log("Skipped MySQL.", RED)
+        # check_command logs the error
         print()
-        return True
+        return False
 
 
 def migrate_sqlite():
@@ -149,22 +165,18 @@ def main():
     print()
 
     # Collect results
-    results = {
-        "PostgreSQL": migrate_postgres(),
-        "MySQL": migrate_mysql(),
-        "SQLite": migrate_sqlite(),
-    }
-
-    # Determine final exit status
-    if all(results.values()):
-        log("All requested migrations finished successfully.", GREEN)
-        sys.exit(0)
-    else:
-        log("Some migrations failed:", RED)
-        for name, success in results.items():
-            if not success:
-                log(f"  - {name} failed", RED)
+    # Run migrations sequentially and fail immediately on error
+    if not migrate_postgres():
         sys.exit(1)
+
+    if not migrate_mysql():
+        sys.exit(1)
+
+    if not migrate_sqlite():
+        sys.exit(1)
+
+    log("All requested migrations finished successfully.", GREEN)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
