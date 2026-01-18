@@ -62,6 +62,12 @@ go build .
 
 # Build with Nix
 nix build
+
+# Database Migrations
+# Use the /migrate-new, /migrate-up, or /migrate-down workflows for database changes.
+# /migrate-new - Creates new migration files for all engines.
+# /migrate-up - Applies all migrations and updates schema files from a clean state.
+# /migrate-down - Rolls back the last migration.
 ```
 
 ## Development Workflow
@@ -146,6 +152,19 @@ Configuration in `nix/process-compose/flake-module.nix` defines:
 - `redis-server` process - Redis server with health checks
 
 The service configurations match the test environment variables to ensure consistency between dependency setup and application configuration.
+
+### Workflows
+
+The project defines several automated workflows in the `.agent/workflows/` directory. These are referred to as `/workflow-name` (e.g., `/migrate-new`). When performing a task that has a corresponding workflow, you MUST read the workflow file and follow its steps.
+
+### Skills
+
+The project uses "Skills" to provide detailed instructions and best practices for specific tools or domains. These are located in `.agent/skills/<skill-name>/SKILL.md`.
+
+- **graphite**: Instructions for using Graphite (`gt`) for branch management and restacking.
+- **dbmate**: Detailed rules and best practices for writing and applying database migrations.
+
+When working with these tools, you SHOULD read the corresponding `SKILL.md` to ensure compliance with project-specific rules.
 
 ### Agent Workflow (Important)
 
@@ -236,45 +255,17 @@ Database selection is done via URL scheme in the `--cache-database-url` flag:
 
 Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db/query.postgres.sql`, and `db/query.mysql.sql`. Run `sqlc generate` after modifying queries.
 
+- This keeps the wrapper simple and doesn't require rebuilding ncps to update it
+
 **Creating Database Migrations:**
 
-When creating new database migrations, always use `dbmate new` to generate properly timestamped migration files:
+For ANY database changes, you MUST use one of the migration workflows:
 
-```bash
-dbmate --migrations-dir db/migrations/sqlite new migration_name
-dbmate --migrations-dir db/migrations/postgres new migration_name
-dbmate --migrations-dir db/migrations/mysql new migration_name
-```
+- **/migrate-new**: To create new timestamped migration files for all engines.
+- **/migrate-up**: To apply migrations and update schema files properly using `./dev-scripts/migrate-all.py`.
+- **/migrate-down**: To roll back migrations.
 
-This creates timestamped migration files (e.g., `20251230223951_migration_name.sql`) with the standard dbmate template:
-
-```sql
--- migrate:up
-
-
--- migrate:down
-
-```
-
-**Transaction Handling:**
-
-**IMPORTANT:** Do NOT wrap migrations in `BEGIN`/`COMMIT` blocks. dbmate automatically wraps each migration in a transaction for atomicity. Adding manual transaction blocks will cause "cannot start a transaction within a transaction" errors.
-
-```sql
--- ❌ WRONG - Don't add manual transactions
--- migrate:up
-BEGIN;
-CREATE TABLE example (...);
-COMMIT;
-
--- ✅ CORRECT - Let dbmate handle transactions
--- migrate:up
-CREATE TABLE example (...);
-```
-
-dbmate's automatic transaction handling ensures that if any part of a migration fails, the entire migration is rolled back, preventing partial migrations from corrupting your database.
-
-**How the dbmate wrapper works:**
+**Implementation details:**
 
 The `dbmate` command in the development environment and Docker images is actually a wrapper (separate `dbmate-wrapper` binary in `nix/dbmate-wrapper/`). The wrapper automatically detects the migrations directory based on the database URL scheme:
 
