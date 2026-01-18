@@ -422,7 +422,7 @@ import (
 
 type Querier interface {
 {{- range .}}
-	{{range .Docs}}
+	{{- range .Docs}}
 	{{.}}
 	{{- end}}
 	{{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}})
