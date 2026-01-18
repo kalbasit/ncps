@@ -31,11 +31,9 @@ psql -c "CREATE DATABASE \"$PG_DEV_DB\" OWNER \"$PG_DEV_USER\";"
 # ---------------------------------------------------
 # SETUP: Migration User (Standard)
 # ---------------------------------------------------
-if [[ -n "$PG_MIGRATION_USER" && -n "$PG_MIGRATION_PASSWORD" && -n "$PG_MIGRATION_DB" ]]; then
-  echo "Creating migration user and database..."
-  psql -c "CREATE USER \"$PG_MIGRATION_USER\" WITH PASSWORD '$PG_MIGRATION_PASSWORD' CREATEDB;"
-  psql -c "CREATE DATABASE \"$PG_MIGRATION_DB\" OWNER \"$PG_MIGRATION_USER\";"
-fi
+echo "Creating migration user and database..."
+psql -c "CREATE USER \"$PG_MIGRATION_USER\" WITH PASSWORD '$PG_MIGRATION_PASSWORD' CREATEDB;"
+psql -c "CREATE DATABASE \"$PG_MIGRATION_DB\" OWNER \"$PG_MIGRATION_USER\";"
 
 # ---------------------------------------------------
 # SETUP: Test User (Restricted via dblink)
@@ -105,47 +103,45 @@ fi
 # ---------------------------------------------------
 # Check $PG_MIGRATION_USER connectivity and operations
 # ---------------------------------------------------
-if [[ -n "$PG_MIGRATION_USER" && -n "$PG_MIGRATION_PASSWORD" && -n "$PG_MIGRATION_DB" ]]; then
-  echo -n "Migration Connection Test... "
-  if psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -c "SELECT 1" > /dev/null 2>&1; then
-    echo "✅ Success"
-  else
-    echo "❌ Failed"
-    exit 1
-  fi
+echo -n "Migration Connection Test... "
+if psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -c "SELECT 1" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
 
-  echo -n "Migration Table Operations... "
-  if psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -c "
-    CREATE TABLE IF NOT EXISTS test_table (
-      id SERIAL PRIMARY KEY,
-      message TEXT NOT NULL
-    );
-    INSERT INTO test_table (message) VALUES ('Test data');
-  " > /dev/null 2>&1; then
-    echo "✅ Success"
-  else
-    echo "❌ Failed"
-    exit 1
-  fi
+echo -n "Migration Table Operations... "
+if psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -c "
+  CREATE TABLE IF NOT EXISTS test_table (
+    id SERIAL PRIMARY KEY,
+    message TEXT NOT NULL
+  );
+  INSERT INTO test_table (message) VALUES ('Test data');
+" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
+fi
 
-  echo -n "Migration Query Test... "
-  if RESULT="$(psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -t -c "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null | xargs)" && [ "$RESULT" = "Test data" ]; then
-    echo "✅ Success"
-    echo "   Content verified: ✅"
-  else
-    echo "❌ Failed"
-    echo "   Expected: 'Test data', Got: '$RESULT'"
-  fi
+echo -n "Migration Query Test... "
+if RESULT="$(psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -t -c "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null | xargs)" && [ "$RESULT" = "Test data" ]; then
+  echo "✅ Success"
+  echo "   Content verified: ✅"
+else
+  echo "❌ Failed"
+  echo "   Expected: 'Test data', Got: '$RESULT'"
+fi
 
-  echo -n "   Clean up after Migration Table Operations... "
-  if psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -c "
-    DROP TABLE IF EXISTS test_table;
-  " > /dev/null 2>&1; then
-    echo "✅ Success"
-  else
-    echo "❌ Failed"
-    exit 1
-  fi
+echo -n "   Clean up after Migration Table Operations... "
+if psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -c "
+  DROP TABLE IF EXISTS test_table;
+" > /dev/null 2>&1; then
+  echo "✅ Success"
+else
+  echo "❌ Failed"
+  exit 1
 fi
 
 # ---------------------------------------------------

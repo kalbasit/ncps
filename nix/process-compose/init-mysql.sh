@@ -18,15 +18,14 @@ EOF
 # ---------------------------------------------------
 # SETUP: Migration User (Standard)
 # ---------------------------------------------------
-if [[ -n "$MYSQL_MIGRATION_USER" && -n "$MYSQL_MIGRATION_PASSWORD" && -n "$MYSQL_MIGRATION_DB" ]]; then
-  echo "Creating migration user and database..."
-  mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" <<EOF
+echo "Creating migration user and database..."
+mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" <<EOF
 CREATE USER IF NOT EXISTS '$MYSQL_MIGRATION_USER'@'$MYSQL_HOST' IDENTIFIED BY '$MYSQL_MIGRATION_PASSWORD';
 CREATE DATABASE IF NOT EXISTS \`$MYSQL_MIGRATION_DB\`;
 GRANT ALL PRIVILEGES ON \`$MYSQL_MIGRATION_DB\`.* TO '$MYSQL_MIGRATION_USER'@'$MYSQL_HOST';
 FLUSH PRIVILEGES;
 EOF
-fi
+
 
 # ---------------------------------------------------
 # SETUP: Test User (Restricted Pattern)
@@ -43,10 +42,9 @@ EOF
 
 echo "Verifying user creation..."
 mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -e "SELECT user, host FROM mysql.user WHERE user IN ('$MYSQL_DEV_USER', '$MYSQL_TEST_USER');"
-if [[ -n "$MYSQL_MIGRATION_USER" && -n "$MYSQL_MIGRATION_PASSWORD" && -n "$MYSQL_MIGRATION_DB" ]]; then
-  echo "Verifying migration user creation..."
-  mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -e "SELECT user, host FROM mysql.user WHERE user IN ('$MYSQL_MIGRATION_USER');"
-fi
+
+echo "Verifying migration user creation..."
+mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -e "SELECT user, host FROM mysql.user WHERE user IN ('$MYSQL_MIGRATION_USER');"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"
