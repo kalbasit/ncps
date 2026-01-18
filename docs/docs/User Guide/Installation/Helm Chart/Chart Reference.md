@@ -309,6 +309,9 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `migration.job.tolerations` | Tolerations for migration job | `[]` |
 | `migration.job.affinity` | Affinity for migration job | `{}` |
 
+> [!WARNING]
+> **Breaking Change for HA Upgrades:** With migrations enabled by default, upgrading an existing High Availability (HA) deployment (`replicaCount > 1`) will fail if you are using the default `migration.mode: initContainer`. To avoid this, explicitly set `migration.mode: job` or `migration.mode: argocd` in your values when upgrading.
+
 ## Examples
 
 ### Single Instance with Local Storage
