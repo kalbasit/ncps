@@ -23,6 +23,21 @@ func (w *sqliteWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoR
 	return nil
 }
 
+func (w *sqliteWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error {
+	for _, v := range arg.Reference {
+		err := w.adapter.AddNarInfoReference(ctx, sqlitedb.AddNarInfoReferenceParams{
+			NarInfoID: arg.NarInfoID,
+			Reference: v})
+		if err != nil {
+			if IsDuplicateKeyError(err) {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *sqliteWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
 	err := w.adapter.AddNarInfoSignature(ctx, sqlitedb.AddNarInfoSignatureParams(arg))
 	if err != nil {
@@ -30,6 +45,21 @@ func (w *sqliteWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoS
 	}
 
 	// No return value (void)
+	return nil
+}
+
+func (w *sqliteWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error {
+	for _, v := range arg.Signature {
+		err := w.adapter.AddNarInfoSignature(ctx, sqlitedb.AddNarInfoSignatureParams{
+			NarInfoID: arg.NarInfoID,
+			Signature: v})
+		if err != nil {
+			if IsDuplicateKeyError(err) {
+				continue
+			}
+			return err
+		}
+	}
 	return nil
 }
 

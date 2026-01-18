@@ -17,6 +17,13 @@ type Querier interface {
 	//      $1, $2
 	//  )
 	AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error
+	// @bulk-for AddNarInfoReference
+	//
+	//  INSERT INTO narinfo_references (
+	//      narinfo_id, reference
+	//  )
+	//  SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, reference) DO NOTHING
+	AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error
 	//AddNarInfoSignature
 	//
 	//  INSERT INTO narinfo_signatures (
@@ -25,6 +32,13 @@ type Querier interface {
 	//      $1, $2
 	//  )
 	AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error
+	// @bulk-for AddNarInfoSignature
+	//
+	//  INSERT INTO narinfo_signatures (
+	//      narinfo_id, signature
+	//  )
+	//  SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, signature) DO NOTHING
+	AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error
 	//CreateConfig
 	//
 	//  INSERT INTO config (

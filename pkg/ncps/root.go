@@ -149,7 +149,10 @@ func New() (*cli.Command, error) {
 				Sources: flagSources("prometheus.enabled", "PROMETHEUS_ENABLED"),
 			},
 		},
-		Commands: []*cli.Command{serveCommand(userDirs, flagSources, registerShutdown)},
+		Commands: []*cli.Command{
+			serveCommand(userDirs, flagSources, registerShutdown),
+			migrateNarInfoCommand(flagSources),
+		},
 	}
 
 	return c, nil

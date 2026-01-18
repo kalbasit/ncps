@@ -74,12 +74,26 @@ INSERT INTO narinfo_references (
     $1, $2
 );
 
+-- @bulk-for AddNarInfoReference
+-- name: AddNarInfoReferences :exec
+INSERT INTO narinfo_references (
+    narinfo_id, reference
+)
+SELECT $1, unnest(sqlc.arg(reference)::text[]) ON CONFLICT (narinfo_id, reference) DO NOTHING;
+
 -- name: AddNarInfoSignature :exec
 INSERT INTO narinfo_signatures (
     narinfo_id, signature
 ) VALUES (
     $1, $2
 );
+
+-- @bulk-for AddNarInfoSignature
+-- name: AddNarInfoSignatures :exec
+INSERT INTO narinfo_signatures (
+    narinfo_id, signature
+)
+SELECT $1, unnest(sqlc.arg(signature)::text[]) ON CONFLICT (narinfo_id, signature) DO NOTHING;
 
 -- name: GetNarInfoReferences :many
 SELECT reference
