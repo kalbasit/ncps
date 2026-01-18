@@ -411,6 +411,17 @@ PostgreSQL advisory lock implementations in ncps use a **dedicated connection mo
 - Ensure your database's `max_connections` is comfortably higher than `(num_instances * max_concurrent_downloads) + (num_instances * pool_size)`.
 - If you need thousands of concurrent locks, **use Redis**.
 
+> [!CAUTION]
+> **Risk of Deadlock with Low Connection Pool Limits**
+>
+> When using PostgreSQL advisory locks, a single request that requires a download can consume up to **3 concurrent database connections**:
+>
+> 1. One connection to hold the **shared cache lock** for the duration of the request.
+> 1. One connection to hold the **exclusive download lock** while the asset is being pulled.
+> 1. One connection for the **database transaction** to store the metadata once the download completes.
+>
+> If your connection pool (`--cache-database-pool-max-open-conns`) is too small (e.g., 10), as few as 4-5 concurrent requests can completely exhaust the pool, causing a deadlock where all requests are waiting for a connection to start a transaction while holding locks on other connections.
+
 #### Redis vs. Database Locking Model
 
 | Feature | Redis (Redlock) | PostgreSQL |

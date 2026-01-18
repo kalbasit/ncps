@@ -131,6 +131,9 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 | `--cache-lru-schedule` | LRU cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
 | `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
+> [!IMPORTANT]
+> When using PostgreSQL advisory locks (`--cache-lock-backend=postgres`), each active lock consumes one connection from this pool. A single request can use up to 3 connections. Set this value high (e.g., 50-100) to avoid deadlocks.
+
 **Database URL Formats:**
 
 - SQLite: `sqlite:/var/lib/ncps/db/db.sqlite`
