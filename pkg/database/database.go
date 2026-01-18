@@ -1,3 +1,4 @@
+//go:generate gen-db-wrappers postgresdb/querier.go
 package database
 
 import (

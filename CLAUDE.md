@@ -44,8 +44,9 @@ sqlfluff lint db/migrations/              # Lint all migration files
 sqlfluff format db/query.*.sql            # Format all SQL query files
 sqlfluff format db/migrations/            # Format all migration files
 
-# Generate SQL code (after modifying db/query.sql or migrations)
+# Generate SQL code and Database Wrappers (after modifying db/query.sql or migrations)
 sqlc generate
+go generate ./pkg/database
 
 # Create new database migrations (creates timestamped migration files)
 dbmate --migrations-dir db/migrations/sqlite new migration_name
