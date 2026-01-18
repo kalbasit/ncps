@@ -7,6 +7,9 @@ on:
     paths:
       - "go.mod"
       - "go.sum"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 jobs:
   update-vendor-hash:
     if: github.event.pull_request.head.repo.fork == false
