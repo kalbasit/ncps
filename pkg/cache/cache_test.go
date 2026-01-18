@@ -1491,3 +1491,82 @@ func waitForFile(t *testing.T, path string) {
 
 	require.NoError(t, err, "timeout waiting for file: %s", path)
 }
+
+func TestGetNarInfo_BackgroundMigration(t *testing.T) {
+	t.Parallel()
+
+	c, db, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	hash := testdata.Nar1.NarInfoHash
+	narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
+	narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+
+	// 1. Manually put the NarInfo and Nar into storage but NOT in the database
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+	// Verify it's not in the database
+	var count int
+
+	err := db.DB().QueryRow("SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	t.Run("without deletion config", func(t *testing.T) {
+		t.Parallel()
+
+		// 2. Call GetNarInfo
+		ni, err := c.GetNarInfo(context.Background(), hash)
+		require.NoError(t, err)
+		assert.NotNil(t, ni)
+
+		// 3. Wait for background migration
+		require.Eventually(t, func() bool {
+			var count int
+
+			err := db.DB().QueryRow("SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+
+			return err == nil && count > 0
+		}, 5*time.Second, 100*time.Millisecond)
+
+		// 4. Verify it's still in storage
+		assert.FileExists(t, narInfoPath)
+	})
+
+	t.Run("with deletion config", func(t *testing.T) {
+		t.Parallel()
+
+		// Clear it from DB first
+		_, err := db.DB().Exec("DELETE FROM narinfos WHERE hash = ?", hash)
+		require.NoError(t, err)
+
+		// Set config to delete
+		require.NoError(t, c.GetConfig().SetDeleteNarInfoAfterMigration(context.Background(), true))
+
+		// Ensure it's in storage
+		if _, err := os.Stat(narInfoPath); os.IsNotExist(err) {
+			require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
+		}
+
+		// Call GetNarInfo
+		_, err = c.GetNarInfo(context.Background(), hash)
+		require.NoError(t, err)
+
+		// Wait for background migration and deletion
+		require.Eventually(t, func() bool {
+			var count int
+
+			err := db.DB().QueryRow("SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+			if err != nil || count == 0 {
+				return false
+			}
+
+			_, err = os.Stat(narInfoPath)
+
+			return os.IsNotExist(err)
+		}, 5*time.Second, 100*time.Millisecond)
+	})
+}

@@ -18,6 +18,8 @@ const (
 	KeyClusterUUID = "cluster_uuid"
 	// KeySecretKey is the key for the secret key in the configuration database.
 	KeySecretKey = "secret_key"
+	// KeyDeleteNarInfoAfterMigration is the key for whether to delete narinfo files after migration.
+	KeyDeleteNarInfoAfterMigration = "delete_narinfo_after_migration"
 
 	// lockKeyPrefix is the prefix used for locking configuration keys.
 	lockKeyPrefix = "config_"
@@ -62,6 +64,30 @@ func (c *Config) GetSecretKey(ctx context.Context) (string, error) {
 // SetSecretKey stores the secret key in the configuration.
 func (c *Config) SetSecretKey(ctx context.Context, value string) error {
 	return c.setConfig(ctx, KeySecretKey, value)
+}
+
+// GetDeleteNarInfoAfterMigration returns whether to delete narinfo files after migration.
+func (c *Config) GetDeleteNarInfoAfterMigration(ctx context.Context) (bool, error) {
+	v, err := c.getConfig(ctx, KeyDeleteNarInfoAfterMigration)
+	if err != nil {
+		if errors.Is(err, ErrConfigNotFound) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return v == "true", nil
+}
+
+// SetDeleteNarInfoAfterMigration stores whether to delete narinfo files after migration.
+func (c *Config) SetDeleteNarInfoAfterMigration(ctx context.Context, value bool) error {
+	v := "false"
+	if value {
+		v = "true"
+	}
+
+	return c.setConfig(ctx, KeyDeleteNarInfoAfterMigration, v)
 }
 
 // getConfig retrieves a configuration value by key, acquiring a read lock.
