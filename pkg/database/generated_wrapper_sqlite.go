@@ -203,6 +203,18 @@ func (w *sqliteWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int
 	return NarFile(res), nil
 }
 
+func (w *sqliteWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetNarFileCount(ctx)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
 func (w *sqliteWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	res, err := w.adapter.GetNarInfoByHash(ctx, hash)
 	if err != nil {
@@ -223,6 +235,18 @@ func (w *sqliteWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, 
 	// Convert Single Domain Struct
 
 	return NarInfo(res), nil
+}
+
+func (w *sqliteWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetNarInfoCount(ctx)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
 }
 
 func (w *sqliteWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {

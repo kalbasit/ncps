@@ -135,6 +135,11 @@ type Querier interface {
 	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 	//  WHERE nnf.narinfo_id = ?
 	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error)
+	//GetNarFileCount
+	//
+	//  SELECT CAST(COUNT(*) AS INTEGER) AS count
+	//  FROM nar_files
+	GetNarFileCount(ctx context.Context) (int64, error)
 	//GetNarInfoByHash
 	//
 	//  SELECT id, hash, created_at, updated_at, last_accessed_at
@@ -147,6 +152,11 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE id = ?
 	GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
+	//GetNarInfoCount
+	//
+	//  SELECT CAST(COUNT(*) AS INTEGER) AS count
+	//  FROM narinfos
+	GetNarInfoCount(ctx context.Context) (int64, error)
 	//GetNarInfoHashesByNarFileID
 	//
 	//  SELECT ni.hash
