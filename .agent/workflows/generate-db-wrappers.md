@@ -8,21 +8,18 @@ This workflow guides you through generating the database wrappers for SQLite, Po
 
 ## Prerequisites
 
-- Go installed and configured.
-- `sqlc` installed (if SQL queries change).
-- The `gen-db-wrappers` tool must be available in your PATH or via `go run`.
 - **Nix environment**: This project uses Nix for its development environment. The `gen-db-wrappers` tool is available in the Nix shell. You should run the following steps within `nix develop` or after loading `direnv`.
 
 ## Workflow Steps
 
 ### 1. Generate Wrappers
 
-Run the `go generate` command specifically for the `pkg/database` package. If you are not inside a Nix shell, use `nix develop --command`.
+Run `sqlc generate` followed by the `go generate` command for the `pkg/database` package. Both should be run within the Nix environment.
 
 // turbo
 
 ```bash
-nix develop --command go generate ./pkg/database
+nix develop --command bash -c "sqlc generate && go generate ./pkg/database"
 ```
 
 ### 2. Verify Generated Files

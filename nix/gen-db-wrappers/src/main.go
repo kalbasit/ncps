@@ -16,6 +16,8 @@ import (
 	"text/template"
 )
 
+const generatedFilePrefix = "generated_"
+
 // Engine configuration
 type Engine struct {
 	Name    string // e.g. "sqlite"
@@ -238,7 +240,7 @@ func generateModels(dir string, structs []StructInfo) {
 	if err := t.Execute(&buf, structs); err != nil {
 		log.Fatalf("executing models template: %v", err)
 	}
-	writeFile(dir, "generated_models.go", buf.Bytes())
+	writeFile(dir, generatedFilePrefix+"models.go", buf.Bytes())
 }
 
 func generateQuerier(dir string, methods []MethodInfo) {
@@ -251,7 +253,7 @@ func generateQuerier(dir string, methods []MethodInfo) {
 	if err := t.Execute(&buf, methods); err != nil {
 		log.Fatalf("executing querier template: %v", err)
 	}
-	writeFile(dir, "generated_querier.go", buf.Bytes())
+	writeFile(dir, generatedFilePrefix+"querier.go", buf.Bytes())
 }
 
 func generateWrapper(dir string, engine Engine, methods []MethodInfo) {
@@ -274,7 +276,7 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo) {
 	if err := t.Execute(&buf, data); err != nil {
 		log.Fatalf("executing wrapper template: %v", err)
 	}
-	writeFile(dir, fmt.Sprintf("generated_wrapper_%s.go", engine.Name), buf.Bytes())
+	writeFile(dir, fmt.Sprintf("%swrapper_%s.go", generatedFilePrefix, engine.Name), buf.Bytes())
 }
 
 func writeFile(dir, filename string, content []byte) {
