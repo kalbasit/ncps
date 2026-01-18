@@ -132,6 +132,7 @@ if RESULT="$(psql -U "$PG_MIGRATION_USER" -d "$PG_MIGRATION_DB" -t -c "SELECT me
 else
   echo "❌ Failed"
   echo "   Expected: 'Test data', Got: '$RESULT'"
+  exit 1
 fi
 
 echo -n "   Clean up after Migration Table Operations... "
