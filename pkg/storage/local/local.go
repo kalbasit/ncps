@@ -156,6 +156,47 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	return err == nil
 }
 
+// WalkNarInfos walks all narinfos in the store and calls fn for each one.
+func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) error {
+	root := s.storeNarInfoPath()
+
+	_, span := tracer.Start(
+		ctx,
+		"local.WalkNarInfos",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("root", root),
+		),
+	)
+	defer span.End()
+
+	return filepath.Walk(root, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			// If root doesn't exist, it's not an error, just empty
+			if os.IsNotExist(err) && path == root {
+				return nil
+			}
+
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		if filepath.Ext(path) != ".narinfo" {
+			return nil
+		}
+
+		// path is something like .../store/narinfo/h/ha/hash.narinfo
+		// we want hash
+		fileName := filepath.Base(path)
+		hash := fileName[:len(fileName)-len(".narinfo")]
+
+		return fn(hash)
+	})
+}
+
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))

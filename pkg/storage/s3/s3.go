@@ -249,6 +249,47 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	return err == nil
 }
 
+// WalkNarInfos walks all narinfos in the store and calls fn for each one.
+func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) error {
+	prefix := "store/narinfo/"
+
+	_, span := tracer.Start(
+		ctx,
+		"s3.WalkNarInfos",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("prefix", prefix),
+		),
+	)
+	defer span.End()
+
+	opts := minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}
+
+	for object := range s.client.ListObjects(ctx, s.bucket, opts) {
+		if object.Err != nil {
+			return object.Err
+		}
+
+		// key: store/narinfo/h/ha/hash.narinfo
+		if !strings.HasSuffix(object.Key, ".narinfo") {
+			continue
+		}
+
+		parts := strings.Split(object.Key, "/")
+		fileName := parts[len(parts)-1]
+
+		hash := fileName[:len(fileName)-len(".narinfo")]
+		if err := fn(hash); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
 	key := s.narInfoPath(hash)
