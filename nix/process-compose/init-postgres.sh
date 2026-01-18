@@ -88,6 +88,7 @@ if RESULT="$(psql -U "$PG_DEV_USER" -d "$PG_DEV_DB" -t -c "SELECT message FROM t
 else
   echo "❌ Failed"
   echo "   Expected: 'Test data', Got: '$RESULT'"
+  exit 1
 fi
 
 echo -n "   Clean up after Dev Table Operations... "
@@ -194,6 +195,7 @@ if RESULT="$(psql -U "$PG_TEST_USER" -d test-123 -t -c "SELECT message FROM test
 else
   echo "❌ Failed"
   echo "   Expected: 'Test data', Got: '$RESULT'"
+  exit 1
 fi
 
 echo -n "   Clean up after Test Table Operations... "
