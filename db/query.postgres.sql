@@ -61,11 +61,35 @@ DO UPDATE SET
 
 -- name: CreateNarInfo :one
 INSERT INTO narinfos (
-    hash
+    hash, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 ) VALUES (
-    $1
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
 RETURNING *;
+
+-- name: AddNarInfoReference :exec
+INSERT INTO narinfo_references (
+    narinfo_id, reference
+) VALUES (
+    $1, $2
+);
+
+-- name: AddNarInfoSignature :exec
+INSERT INTO narinfo_signatures (
+    narinfo_id, signature
+) VALUES (
+    $1, $2
+);
+
+-- name: GetNarInfoReferences :many
+SELECT reference
+FROM narinfo_references
+WHERE narinfo_id = $1;
+
+-- name: GetNarInfoSignatures :many
+SELECT signature
+FROM narinfo_signatures
+WHERE narinfo_id = $1;
 
 -- name: CreateNarFile :one
 INSERT INTO nar_files (

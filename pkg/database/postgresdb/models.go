@@ -35,7 +35,7 @@ type NarInfo struct {
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
 	StorePath      sql.NullString
-	Url            sql.NullString
+	URL            sql.NullString
 	Compression    sql.NullString
 	FileHash       sql.NullString
 	FileSize       sql.NullInt64

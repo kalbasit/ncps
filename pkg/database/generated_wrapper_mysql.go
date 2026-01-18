@@ -13,6 +13,26 @@ type mysqlWrapper struct {
 	adapter *mysqldb.Adapter
 }
 
+func (w *mysqlWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error {
+	err := w.adapter.AddNarInfoReference(ctx, mysqldb.AddNarInfoReferenceParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
+}
+
+func (w *mysqlWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
+	err := w.adapter.AddNarInfoSignature(ctx, mysqldb.AddNarInfoSignatureParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
+}
+
 func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
 	// MySQL does not support RETURNING for INSERTs.
 	// We insert, get LastInsertId, and then fetch the object.
@@ -45,10 +65,10 @@ func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParam
 	return w.GetNarFileByID(ctx, id)
 }
 
-func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
+func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
 	// MySQL does not support RETURNING for INSERTs.
 	// We insert, get LastInsertId, and then fetch the object.
-	res, err := w.adapter.CreateNarInfo(ctx, hash)
+	res, err := w.adapter.CreateNarInfo(ctx, mysqldb.CreateNarInfoParams(arg))
 	if err != nil {
 		return NarInfo{}, err
 	}
@@ -266,6 +286,26 @@ func (w *mysqlWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 
 func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *mysqlWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
+	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *mysqlWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error) {
+	res, err := w.adapter.GetNarInfoSignatures(ctx, narinfoID)
 	if err != nil {
 		return nil, err
 	}
