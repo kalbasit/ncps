@@ -371,7 +371,15 @@ func (c *Cache) GetHealthyUpstreamCount() int {
 
 // GetHealthChecker returns the instance of haelth checker used by the cache.
 // It's useful for testing the behavior of ncps.
-func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker { return c.healthChecker }
+func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker {
+	return c.healthChecker
+}
+
+// GetConfig returns the configuration instance.
+// It's useful for testing the behavior of ncps.
+func (c *Cache) GetConfig() *config.Config {
+	return c.config
+}
 
 // SetCacheSignNarinfo configure ncps to sign or not sign narinfos.
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
@@ -1521,8 +1529,9 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
 		nir, err := qtx.GetNarInfoByHash(ctx, hash)
 		if err != nil {
-			// TODO: If record not found, record it instead!
 			if errors.Is(err, sql.ErrNoRows) {
+				c.backgroundMigrateNarInfo(hash, ni)
+
 				return nil
 			}
 
@@ -1768,6 +1777,35 @@ func (c *Cache) storeInDatabase(
 
 		return nil
 	})
+}
+
+func (c *Cache) backgroundMigrateNarInfo(hash string, ni *narinfo.NarInfo) {
+	// We use a detached context because this is a background job.
+	ctx := context.WithoutCancel(c.baseContext)
+
+	go func() {
+		log := zerolog.Ctx(ctx).With().Str("narinfo_hash", hash).Logger()
+
+		err := c.storeInDatabase(ctx, hash, ni)
+		if err != nil && !errors.Is(err, ErrAlreadyExists) {
+			log.Error().Err(err).Msg("failed to migrate narinfo to database in background")
+
+			return
+		}
+
+		shouldDelete, err := c.config.GetDeleteNarInfoAfterMigration(ctx)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to check if narinfo should be deleted after migration")
+
+			return
+		}
+
+		if shouldDelete {
+			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+				log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
+			}
+		}
+	}()
 }
 
 func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
