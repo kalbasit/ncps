@@ -15,6 +15,7 @@ sql:
             go_type: uint64
         rename:
           narinfo_id: NarInfoID
+          url: URL
   # PostgreSQL engine
   - engine: "postgresql"
     queries: "db/query.postgres.sql"
@@ -30,6 +31,7 @@ sql:
             go_type: uint64
         rename:
           narinfo_id: NarInfoID
+          url: URL
   # MySQL engine
   - engine: "mysql"
     queries: "db/query.mysql.sql"
@@ -45,6 +47,7 @@ sql:
             go_type: uint64
         rename:
           narinfo_id: NarInfoID
+          url: URL
 overrides:
   go:
     rename:

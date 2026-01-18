@@ -59,10 +59,34 @@ ON DUPLICATE KEY UPDATE
 
 -- name: CreateNarInfo :execresult
 INSERT INTO narinfos (
-    hash
+    hash, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 ) VALUES (
-    ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 );
+
+-- name: AddNarInfoReference :exec
+INSERT INTO narinfo_references (
+    narinfo_id, reference
+) VALUES (
+    ?, ?
+);
+
+-- name: AddNarInfoSignature :exec
+INSERT INTO narinfo_signatures (
+    narinfo_id, signature
+) VALUES (
+    ?, ?
+);
+
+-- name: GetNarInfoReferences :many
+SELECT reference
+FROM narinfo_references
+WHERE narinfo_id = ?;
+
+-- name: GetNarInfoSignatures :many
+SELECT signature
+FROM narinfo_signatures
+WHERE narinfo_id = ?;
 
 -- name: CreateNarFile :execresult
 INSERT INTO nar_files (

@@ -35,8 +35,8 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 	return NarFile(res), nil
 }
 
-func (w *postgresWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
-	res, err := w.adapter.CreateNarInfo(ctx, hash)
+func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
+	res, err := w.adapter.CreateNarInfo(ctx, postgresdb.CreateNarInfoParams(arg))
 	if err != nil {
 		return NarInfo{}, err
 	}
@@ -44,6 +44,26 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, hash string) (NarIn
 	// Convert Single Domain Struct
 
 	return NarInfo(res), nil
+}
+
+func (w *postgresWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error {
+	err := w.adapter.AddNarInfoReference(ctx, postgresdb.AddNarInfoReferenceParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
+}
+
+func (w *postgresWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
+	err := w.adapter.AddNarInfoSignature(ctx, postgresdb.AddNarInfoSignatureParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
@@ -227,6 +247,26 @@ func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo
 
 func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
+	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *postgresWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error) {
+	res, err := w.adapter.GetNarInfoSignatures(ctx, narinfoID)
 	if err != nil {
 		return nil, err
 	}

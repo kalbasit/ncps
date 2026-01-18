@@ -11,7 +11,9 @@ import (
 type Querier interface {
 	CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error)
 	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error)
-	CreateNarInfo(ctx context.Context, hash string) (NarInfo, error)
+	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error)
+	AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error
+	AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error
 	DeleteNarFileByHash(ctx context.Context, hash string) (int64, error)
 	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
 	DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error)
@@ -28,6 +30,8 @@ type Querier interface {
 	GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error)
 	GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
 	GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error)
+	GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error)
+	GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error)
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
