@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -163,7 +164,11 @@ func main() {
 							typeStr := exprToString(field.Type)
 							tag := ""
 							if field.Tag != nil {
-								tag = field.Tag.Value
+								unquoted, err := strconv.Unquote(field.Tag.Value)
+								if err != nil {
+									log.Fatalf("failed to unquote struct tag %s: %v", field.Tag.Value, err)
+								}
+								tag = unquoted
 							}
 							if len(field.Names) > 0 {
 								for _, name := range field.Names {
@@ -389,7 +394,7 @@ func exprToString(expr ast.Expr) string {
 		return "[]" + exprToString(t.Elt)
 	default:
 		// Fallback for types we missed or complex types
-		return fmt.Sprintf("%s", t)
+		panic(fmt.Sprintf("unhandled expression type: %T", t))
 	}
 }
 
@@ -406,7 +411,7 @@ import (
 {{range .}}
 type {{.Name}} struct {
 {{- range .Fields}}
-	{{.Name}} {{.Type}} {{if .Tag}}` + "`{{.Tag}}`" + `{{end}}
+	{{.Name}} {{.Type}} {{if .Tag}}` + "`" + `{{.Tag}}` + "`" + `{{end}}
 {{- end}}
 }
 {{end}}
