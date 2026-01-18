@@ -34,9 +34,29 @@ type NarInfo struct {
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
+	StorePath      sql.NullString
+	Url            sql.NullString
+	Compression    sql.NullString
+	FileHash       sql.NullString
+	FileSize       sql.NullInt64
+	NarHash        sql.NullString
+	NarSize        sql.NullInt64
+	Deriver        sql.NullString
+	System         sql.NullString
+	Ca             sql.NullString
 }
 
 type NarinfoNarFile struct {
 	NarInfoID int64
 	NarFileID int64
+}
+
+type NarinfoReference struct {
+	NarInfoID int64
+	Reference string
+}
+
+type NarinfoSignature struct {
+	NarInfoID int64
+	Signature string
 }

@@ -95,7 +95,7 @@ INSERT INTO narinfos (
 ) VALUES (
     $1
 )
-RETURNING id, hash, created_at, updated_at, last_accessed_at
+RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 `
 
 // CreateNarInfo
@@ -105,7 +105,7 @@ RETURNING id, hash, created_at, updated_at, last_accessed_at
 //	) VALUES (
 //	    $1
 //	)
-//	RETURNING id, hash, created_at, updated_at, last_accessed_at
+//	RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, createNarInfo, hash)
 	var i NarInfo
@@ -115,6 +115,16 @@ func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
+		&i.StorePath,
+		&i.Url,
+		&i.Compression,
+		&i.FileHash,
+		&i.FileSize,
+		&i.NarHash,
+		&i.NarSize,
+		&i.Deriver,
+		&i.System,
+		&i.Ca,
 	)
 	return i, err
 }
@@ -337,13 +347,13 @@ func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]
 }
 
 const getLeastUsedNarInfos = `-- name: GetLeastUsedNarInfos :many
-SELECT ni1.id, ni1.hash, ni1.created_at, ni1.updated_at, ni1.last_accessed_at
+SELECT ni1.id, ni1.hash, ni1.created_at, ni1.updated_at, ni1.last_accessed_at, ni1.store_path, ni1.url, ni1.compression, ni1.file_hash, ni1.file_size, ni1.nar_hash, ni1.nar_size, ni1.deriver, ni1.system, ni1.ca
 FROM narinfos ni1
 WHERE (
     SELECT COALESCE(SUM(nf.file_size), 0)
     FROM nar_files nf
     WHERE nf.id IN (
-        SELECT nnf.nar_file_id
+        SELECT DISTINCT nnf.nar_file_id
         FROM narinfo_nar_files nnf
         INNER JOIN narinfos ni2 ON nnf.narinfo_id = ni2.id
         WHERE ni2.last_accessed_at < ni1.last_accessed_at
@@ -357,13 +367,13 @@ WHERE (
 // does not properly support filtering on window function results in subqueries.
 // Gets the least-used narinfos up to a certain total file size (accounting for their nar_files).
 //
-//	SELECT ni1.id, ni1.hash, ni1.created_at, ni1.updated_at, ni1.last_accessed_at
+//	SELECT ni1.id, ni1.hash, ni1.created_at, ni1.updated_at, ni1.last_accessed_at, ni1.store_path, ni1.url, ni1.compression, ni1.file_hash, ni1.file_size, ni1.nar_hash, ni1.nar_size, ni1.deriver, ni1.system, ni1.ca
 //	FROM narinfos ni1
 //	WHERE (
 //	    SELECT COALESCE(SUM(nf.file_size), 0)
 //	    FROM nar_files nf
 //	    WHERE nf.id IN (
-//	        SELECT nnf.nar_file_id
+//	        SELECT DISTINCT nnf.nar_file_id
 //	        FROM narinfo_nar_files nnf
 //	        INNER JOIN narinfos ni2 ON nnf.narinfo_id = ni2.id
 //	        WHERE ni2.last_accessed_at < ni1.last_accessed_at
@@ -385,6 +395,16 @@ func (q *Queries) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LastAccessedAt,
+			&i.StorePath,
+			&i.Url,
+			&i.Compression,
+			&i.FileHash,
+			&i.FileSize,
+			&i.NarHash,
+			&i.NarSize,
+			&i.Deriver,
+			&i.System,
+			&i.Ca,
 		); err != nil {
 			return nil, err
 		}
@@ -483,14 +503,14 @@ func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (N
 }
 
 const getNarInfoByHash = `-- name: GetNarInfoByHash :one
-SELECT id, hash, created_at, updated_at, last_accessed_at
+SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 FROM narinfos
 WHERE hash = $1
 `
 
 // GetNarInfoByHash
 //
-//	SELECT id, hash, created_at, updated_at, last_accessed_at
+//	SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 //	FROM narinfos
 //	WHERE hash = $1
 func (q *Queries) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
@@ -502,19 +522,29 @@ func (q *Queries) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
+		&i.StorePath,
+		&i.Url,
+		&i.Compression,
+		&i.FileHash,
+		&i.FileSize,
+		&i.NarHash,
+		&i.NarSize,
+		&i.Deriver,
+		&i.System,
+		&i.Ca,
 	)
 	return i, err
 }
 
 const getNarInfoByID = `-- name: GetNarInfoByID :one
-SELECT id, hash, created_at, updated_at, last_accessed_at
+SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 FROM narinfos
 WHERE id = $1
 `
 
 // GetNarInfoByID
 //
-//	SELECT id, hash, created_at, updated_at, last_accessed_at
+//	SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 //	FROM narinfos
 //	WHERE id = $1
 func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
@@ -526,6 +556,16 @@ func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
+		&i.StorePath,
+		&i.Url,
+		&i.Compression,
+		&i.FileHash,
+		&i.FileSize,
+		&i.NarHash,
+		&i.NarSize,
+		&i.Deriver,
+		&i.System,
+		&i.Ca,
 	)
 	return i, err
 }
