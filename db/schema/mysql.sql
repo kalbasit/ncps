@@ -71,6 +71,36 @@ CREATE TABLE `narinfo_nar_files` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `narinfo_references`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `narinfo_references` (
+  `narinfo_id` bigint(20) NOT NULL,
+  `reference` varchar(255) NOT NULL,
+  PRIMARY KEY (`narinfo_id`,`reference`),
+  KEY `idx_narinfo_references_reference` (`reference`),
+  CONSTRAINT `fk_narinfo_references_narinfo_id` FOREIGN KEY (`narinfo_id`) REFERENCES `narinfos` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `narinfo_signatures`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `narinfo_signatures` (
+  `narinfo_id` bigint(20) NOT NULL,
+  `signature` varchar(255) NOT NULL,
+  PRIMARY KEY (`narinfo_id`,`signature`),
+  KEY `idx_narinfo_signatures_signature` (`signature`),
+  CONSTRAINT `fk_narinfo_signatures_narinfo_id` FOREIGN KEY (`narinfo_id`) REFERENCES `narinfos` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `narinfos`
 --
 
@@ -82,6 +112,16 @@ CREATE TABLE `narinfos` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT NULL,
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
+  `store_path` text DEFAULT NULL,
+  `url` text DEFAULT NULL,
+  `compression` varchar(255) DEFAULT NULL,
+  `file_hash` varchar(255) DEFAULT NULL,
+  `file_size` bigint(20) unsigned DEFAULT NULL,
+  `nar_hash` varchar(255) DEFAULT NULL,
+  `nar_size` bigint(20) unsigned DEFAULT NULL,
+  `deriver` text DEFAULT NULL,
+  `system` varchar(255) DEFAULT NULL,
+  `ca` text DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_narinfos_hash` (`hash`),
   KEY `idx_narinfos_last_accessed_at` (`last_accessed_at`)
@@ -121,5 +161,6 @@ CREATE TABLE `schema_migrations` (
 
 LOCK TABLES `schema_migrations` WRITE;
 INSERT INTO `schema_migrations` (version) VALUES
-  ('20260101000000');
+  ('20260101000000'),
+  ('20260117195000');
 UNLOCK TABLES;
