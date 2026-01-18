@@ -323,16 +323,9 @@ func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, er
 
 func (w *mysqlWrapper) WithTx(tx *sql.Tx) Querier {
 	res := w.adapter.WithTx(tx)
-
-	// Wrap the returned adapter (for WithTx)
-
 	return &mysqlWrapper{adapter: res}
 }
 
 func (w *mysqlWrapper) DB() *sql.DB {
-	res := w.adapter.DB()
-
-	// Return Primitive / *sql.DB / etc
-
-	return res
+	return w.adapter.DB()
 }
