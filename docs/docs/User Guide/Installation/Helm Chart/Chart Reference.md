@@ -298,7 +298,7 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `migration.enabled` | Enable database migration | `false` |
+| `migration.enabled` | Enable database migration | `true` |
 | `migration.mode` | Migration mode: `initContainer`, `job`, `argocd` | `initContainer` |
 | `migration.resources` | Resources for migration container/job | `{}` |
 | `migration.securityContext` | Security context for migration container/job | See values.yaml |

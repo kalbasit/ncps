@@ -434,7 +434,7 @@ sidecars: []
 # Database migration
 migration:
   # Enable database migration
-  enabled: false
+  enabled: true
 
   # Migration mode:
   # - "initContainer": Run as init container in each pod (default, safest)
