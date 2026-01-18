@@ -1,7 +1,11 @@
-# Negative test: HA + SQLite database
-# This should FAIL validation (SQLite not compatible with HA)
+# Positive test: Migration with argocd mode and multiple replicas
+# This should PASS validation - argocd mode is safe for HA
 mode: deployment
 replicaCount: 3
+
+migration:
+  enabled: true
+  mode: argocd
 
 config:
   hostname: "test.example.com"
@@ -16,12 +20,14 @@ config:
       secretAccessKey: test-secret
 
   database:
-    type: sqlite # Not allowed for HA
+    type: postgresql
+    postgresql:
+      host: postgres.example.com
+      database: ncps
+      username: ncps
+      password: secret
 
   redis:
     enabled: true
     addresses:
       - redis:6379
-
-migration:
-  mode: job

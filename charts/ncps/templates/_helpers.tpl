@@ -185,6 +185,11 @@ This function will fail the template rendering if invalid configurations are det
       {{- end -}}
     {{- end -}}
   {{- end -}}
+
+  {{- /* HA with initContainer migrations risks database corruption */ -}}
+  {{- if and .Values.migration.enabled (eq .Values.migration.mode "initContainer") (gt (int .Values.replicaCount) 1) (not .Values.migration.iLoveCorruptedDatabases) -}}
+    {{- fail "You should not enable migrations with mode 'initContainer' when running multiple replicas, you risk corrupting your database. Set migration.mode to 'job' or 'argocd' instead, or set migration.iLoveCorruptedDatabases to true if you know what you are doing." -}}
+  {{- end -}}
 {{- end -}}
 
 {{- /* Storage validation */ -}}
