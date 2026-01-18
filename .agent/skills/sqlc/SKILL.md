@@ -31,24 +31,20 @@ Run the `sqlc generate` command to update the generated Go files for all engines
 sqlc generate
 ```
 
-### 2. Update the Querier Interface
+### 2. Regenerate Database Wrappers and Models
 
-If a function in the SQL file is **added, updated, or deleted**, you MUST update the `Querier` interface in `pkg/database/querier.go`.
-
-The `Querier` interface defines the common methods that all database implementations must satisfy.
-
-> [!IMPORTANT]
-> Ensure the method signature in `querier.go` matches the generated signatures in the engine-specific packages.
-
-### 3. Regenerate Database Wrappers
-
-After updating `querier.go`, you MUST run `go generate` for the `pkg/database` package to update the database wrappers (`wrapper_sqlite.go`, `wrapper_postgres.go`, `wrapper_mysql.go`).
+Run `go generate` for the `pkg/database` package. This command uses `gen-db-wrappers` to automatically:
+1. Extract the `Querier` interface from the `postgresdb` backend.
+2. Generate the common `Querier` interface in `pkg/database/querier.go`.
+3. Generate common domain models in `pkg/database/models.go`.
+4. Generate database wrappers (`wrapper_sqlite.go`, `wrapper_postgres.go`, `wrapper_mysql.go`).
 
 ```bash
 go generate ./pkg/database
 ```
 
-The database wrappers are generated using a custom tool `gen-db-wrappers` (located in `nix/gen-db-wrappers/`) which uses the `Querier` interface as the source of truth.
+> [!IMPORTANT]
+> Do NOT manually edit `pkg/database/querier.go` or `pkg/database/models.go`. They are fully automated.
 
 ## Best Practices
 
@@ -59,4 +55,3 @@ The database wrappers are generated using a custom tool `gen-db-wrappers` (locat
   sqlfluff lint db/query.*.sql
   sqlfluff format db/query.*.sql
   ```
-- **Domain Structs**: The `gen-db-wrappers` tool has special handling for domain structs (e.g., `NarInfo`, `NarFile`). If you add new structs to the models, ensure they are handled correctly by the wrapper generation.

@@ -10,6 +10,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -36,6 +38,7 @@ type MethodInfo struct {
 	ReturnsError bool   // Does the method return an error?
 	ReturnsSelf  bool   // Does it return the wrapper type (like WithTx)?
 	HasValue     bool   // Does it return a value (non-error)?
+	Docs         []string
 }
 
 type Param struct {
@@ -47,125 +50,220 @@ type Return struct {
 	Type string
 }
 
+type StructInfo struct {
+	Name   string
+	Fields []FieldInfo
+}
+
+type FieldInfo struct {
+	Name string
+	Type string
+	Tag  string
+}
+
 func main() {
-	if len(os.Args) != 2 {
-		log.Fatalf("USAGE: %s /path/to/querier.go", os.Args[0])
+	var querierPath string
+	// Handle cases where go run might pass "--"
+	for _, arg := range os.Args[1:] {
+		if arg != "--" && !strings.HasPrefix(arg, "-") {
+			querierPath = arg
+			break
+		}
 	}
 
-	querierPath := os.Args[1]
+	if querierPath == "" {
+		log.Printf("DEBUG: Args len=%d, Args=%v", len(os.Args), os.Args)
+		log.Fatalf("USAGE: %s /path/to/source/querier.go", os.Args[0])
+	}
 
 	if _, err := os.Stat(querierPath); err != nil {
 		log.Fatalf("stat(%q): %s", querierPath, err)
 	}
 
-	baseDir := filepath.Dir(querierPath)
+	sourceDir := filepath.Dir(querierPath)
+	targetDir := filepath.Dir(sourceDir) // Parent of postgresdb is pkg/database
 
-	// 1. Parse the interface definition
+	// 1. Parse all files in sourceDir to find struct definitions and Querier interface
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, querierPath, nil, parser.ParseComments)
+	pkgs, err := parser.ParseDir(fset, sourceDir, nil, parser.ParseComments)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	var methods []MethodInfo
+	structs := make(map[string]StructInfo)
 
-	// 2. Extract methods from the "Querier" interface
-	ast.Inspect(node, func(n ast.Node) bool {
-		typeSpec, ok := n.(*ast.TypeSpec)
-		if !ok || typeSpec.Name.Name != "Querier" {
-			return true
-		}
-		interfaceType, ok := typeSpec.Type.(*ast.InterfaceType)
-		if !ok {
-			return true
-		}
-
-		for _, field := range interfaceType.Methods.List {
-			m := MethodInfo{Name: field.Names[0].Name}
-			funcType := field.Type.(*ast.FuncType)
-
-			// Parse Params
-			for _, param := range funcType.Params.List {
-				typeStr := exprToString(param.Type)
-				for _, name := range param.Names {
-					m.Params = append(m.Params, Param{Name: name.Name, Type: typeStr})
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			ast.Inspect(file, func(n ast.Node) bool {
+				typeSpec, ok := n.(*ast.TypeSpec)
+				if !ok {
+					return true
 				}
-			}
 
-			// Parse Returns
-			if funcType.Results != nil {
-				for _, res := range funcType.Results.List {
-					typeStr := exprToString(res.Type)
-					m.Returns = append(m.Returns, Return{Type: typeStr})
+				// Handle Interface -> Querier
+				if typeSpec.Name.Name == "Querier" {
+					interfaceType, ok := typeSpec.Type.(*ast.InterfaceType)
+					if !ok {
+						return true
+					}
+					for _, field := range interfaceType.Methods.List {
+						m := MethodInfo{Name: field.Names[0].Name}
 
-					if typeStr == "error" {
-						m.ReturnsError = true
-					} else if typeStr == "Querier" {
-						m.ReturnsSelf = true
-						m.HasValue = true
-					} else {
-						m.HasValue = true
-						// Capture element type for both Slices and Singles
-						m.ReturnElem = strings.TrimPrefix(typeStr, "[]")
+						// Capture docs
+						if field.Doc != nil {
+							for _, comment := range field.Doc.List {
+								m.Docs = append(m.Docs, comment.Text)
+							}
+						}
+
+						funcType := field.Type.(*ast.FuncType)
+
+						// Parse Params
+						for _, param := range funcType.Params.List {
+							typeStr := exprToString(param.Type)
+							for _, name := range param.Names {
+								m.Params = append(m.Params, Param{Name: name.Name, Type: typeStr})
+							}
+						}
+
+						// Parse Returns
+						if funcType.Results != nil {
+							for _, res := range funcType.Results.List {
+								typeStr := exprToString(res.Type)
+								m.Returns = append(m.Returns, Return{Type: typeStr})
+
+								if typeStr == "error" {
+									m.ReturnsError = true
+								} else if typeStr == "Querier" {
+									m.ReturnsSelf = true
+									m.HasValue = true
+								} else {
+									m.HasValue = true
+									// Capture element type for both Slices and Singles
+									m.ReturnElem = strings.TrimPrefix(typeStr, "[]")
+								}
+							}
+						}
+
+						// Detect if it's a Create method returning a Domain struct (for MySQL)
+						// Heuristic: Name starts with Create, returns a struct (not primitive/slice) that is a domain struct
+						if strings.HasPrefix(m.Name, "Create") && isDomainStruct(m.ReturnElem) { // Note: structs map might be incomplete here, but names are string based
+							m.IsCreate = true
+						}
+
+						methods = append(methods, m)
 					}
 				}
-			}
 
-			// Detect if it's a Create method returning a Domain struct (for MySQL)
-			if strings.HasPrefix(m.Name, "Create") && isDomainStruct(m.ReturnElem) {
-				m.IsCreate = true
-			}
+				// Handle Struct Definitions
+				if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+					s := StructInfo{Name: typeSpec.Name.Name}
+					if structType.Fields != nil {
+						for _, field := range structType.Fields.List {
+							typeStr := exprToString(field.Type)
+							tag := ""
+							if field.Tag != nil {
+								unquoted, err := strconv.Unquote(field.Tag.Value)
+								if err != nil {
+									log.Fatalf("failed to unquote struct tag %s: %v", field.Tag.Value, err)
+								}
+								tag = unquoted
+							}
+							if len(field.Names) > 0 {
+								for _, name := range field.Names {
+									s.Fields = append(s.Fields, FieldInfo{Name: name.Name, Type: typeStr, Tag: tag})
+								}
+							} else {
+								// Embedded field
+								s.Fields = append(s.Fields, FieldInfo{Name: "", Type: typeStr, Tag: tag})
+							}
+						}
+					}
+					structs[s.Name] = s
+				}
 
-			methods = append(methods, m)
+				return true
+			})
 		}
-		return false
+	}
+
+	// Sort methods by name for internal consistency
+	sort.Slice(methods, func(i, j int) bool {
+		return methods[i].Name < methods[j].Name
 	})
 
-	// 3. Generate files for each engine
+	// 2. Identify used structs from methods (params and return types)
+	usedStructNames := make(map[string]bool)
+	for _, m := range methods {
+		for _, p := range m.Params {
+			cleanType := strings.TrimPrefix(p.Type, "[]")
+			if _, exists := structs[cleanType]; exists {
+				usedStructNames[cleanType] = true
+			}
+		}
+		for _, r := range m.Returns {
+			cleanType := strings.TrimPrefix(r.Type, "[]")
+			if _, exists := structs[cleanType]; exists {
+				usedStructNames[cleanType] = true
+			}
+		}
+	}
+
+	// Convert used structs map to slice and sort
+	var sortedStructs []StructInfo
+	for name := range usedStructNames {
+		sortedStructs = append(sortedStructs, structs[name])
+	}
+	sort.Slice(sortedStructs, func(i, j int) bool {
+		return sortedStructs[i].Name < sortedStructs[j].Name
+	})
+
+	// 3. Generate models.go
+	generateModels(targetDir, sortedStructs)
+
+	// 4. Generate querier.go
+	generateQuerier(targetDir, methods)
+
+	// 5. Generate wrappers
+	// We need to re-evaluate IsCreate now that we have full struct knowledge, or just rely on naming convention
+	// The previous isDomainStruct check relied on string pattern, which is still valid.
 	for _, engine := range engines {
-		generateFile(baseDir, engine, methods)
+		generateWrapper(targetDir, engine, methods)
 	}
 }
 
-// generateFile writes the wrapper_*.go file
-func generateFile(dir string, engine Engine, methods []MethodInfo) {
+func generateModels(dir string, structs []StructInfo) {
+	t := template.Must(template.New("models").Parse(modelsTemplate))
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, structs); err != nil {
+		log.Fatalf("executing models template: %v", err)
+	}
+	writeFile(dir, "models.go", buf.Bytes())
+}
+
+func generateQuerier(dir string, methods []MethodInfo) {
+	t := template.Must(template.New("querier").Funcs(template.FuncMap{
+		"joinParamsSignature": joinParamsSignature,
+		"joinReturns":         joinReturns,
+	}).Parse(querierTemplate))
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, methods); err != nil {
+		log.Fatalf("executing querier template: %v", err)
+	}
+	writeFile(dir, "querier.go", buf.Bytes())
+}
+
+func generateWrapper(dir string, engine Engine, methods []MethodInfo) {
 	t := template.Must(template.New("wrapper").Funcs(template.FuncMap{
-		"joinParamsSignature": func(params []Param) string {
-			var p []string
-			for _, param := range params {
-				p = append(p, fmt.Sprintf("%s %s", param.Name, param.Type))
-			}
-			return strings.Join(p, ", ")
-		},
-		"joinParamsCall": func(params []Param, engPkg string) string {
-			var p []string
-			for _, param := range params {
-				if isDomainStruct(param.Type) {
-					p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
-				} else {
-					p = append(p, param.Name)
-				}
-			}
-			return strings.Join(p, ", ")
-		},
-		"joinReturns": func(returns []Return) string {
-			var r []string
-			for _, ret := range returns {
-				r = append(r, ret.Type)
-			}
-			return strings.Join(r, ", ")
-		},
-		"isSlice": func(retType string) bool {
-			return strings.HasPrefix(retType, "[]")
-		},
-		"firstReturnType": func(returns []Return) string {
-			if len(returns) > 0 {
-				return returns[0].Type
-			}
-			return ""
-		},
-		"isDomainStruct": isDomainStruct,
-		"zeroValue":      zeroValue, // Add the helper to the template
+		"joinParamsSignature": joinParamsSignature,
+		"joinParamsCall":      joinParamsCall,
+		"joinReturns":         joinReturns,
+		"isSlice":             isSlice,
+		"firstReturnType":     firstReturnType,
+		"isDomainStruct":      isDomainStructFunc,
+		"zeroValue":           zeroValue,
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
@@ -175,30 +273,80 @@ func generateFile(dir string, engine Engine, methods []MethodInfo) {
 	}
 
 	if err := t.Execute(&buf, data); err != nil {
-		log.Fatalf("executing template: %v", err)
+		log.Fatalf("executing wrapper template: %v", err)
 	}
+	writeFile(dir, fmt.Sprintf("wrapper_%s.go", engine.Name), buf.Bytes())
+}
 
-	// Format code
-	formatted, err := format.Source(buf.Bytes())
+func writeFile(dir, filename string, content []byte) {
+	formatted, err := format.Source(content)
 	if err != nil {
-		log.Println(buf.String())
-		log.Fatalf("formatting code: %v", err)
+		log.Println(string(content))
+		log.Fatalf("formatting %s: %v", filename, err)
 	}
-
-	filename := fmt.Sprintf("wrapper_%s.go", engine.Name)
 	if err := os.WriteFile(filepath.Join(dir, filename), formatted, 0o644); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Generated %s\n", filename)
 }
 
-// Helper to determine if a type is a Domain Struct (defined in models.go)
-func isDomainStruct(t string) bool {
-	// Heuristic: Uppercase start, no dots, not standard interface/type
+// Helpers
+
+func joinParamsSignature(params []Param) string {
+	var p []string
+	for _, param := range params {
+		p = append(p, fmt.Sprintf("%s %s", param.Name, param.Type))
+	}
+	return strings.Join(p, ", ")
+}
+
+func joinParamsCall(params []Param, engPkg string) string {
+	var p []string
+	for _, param := range params {
+		if isDomainStructFunc(param.Type) {
+			p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
+		} else {
+			p = append(p, param.Name)
+		}
+	}
+	return strings.Join(p, ", ")
+}
+
+func joinReturns(returns []Return) string {
+	var r []string
+	for _, ret := range returns {
+		r = append(r, ret.Type)
+	}
+	return strings.Join(r, ", ")
+}
+
+func isSlice(retType string) bool {
+	return strings.HasPrefix(retType, "[]")
+}
+
+func firstReturnType(returns []Return) string {
+	if len(returns) > 0 {
+		return returns[0].Type
+	}
+	return ""
+}
+
+// isDomainStructFunc checks if type is a "Domain Struct" based on naming convention
+// This is used inside templates where we don't have the struct map handy,
+// but we know domain structs are Uppercase and no dot (unless it's in this package).
+func isDomainStructFunc(t string) bool {
+	// Remove slice prefix
+	t = strings.TrimPrefix(t, "[]")
+	// Uppercase start, no dots (implies local type), not Querier, not primitive
 	return len(t) > 0 && t[0] >= 'A' && t[0] <= 'Z' && !strings.Contains(t, ".") && t != "Querier"
 }
 
-// Helper to determine the zero value string for a given type
+// isDomainStruct is used during parsing, same logic
+func isDomainStruct(t string) bool {
+	// In parsing phase we might not have map fully populated, but string check is robust enough
+	return isDomainStructFunc(t)
+}
+
 func zeroValue(t string) string {
 	if isNumeric(t) {
 		return "0"
@@ -211,15 +359,12 @@ func zeroValue(t string) string {
 	case "error":
 		return "nil"
 	}
-	// Pointers, slices, maps, interfaces
 	if strings.HasPrefix(t, "*") || strings.HasPrefix(t, "[]") || strings.HasPrefix(t, "map[") || t == "interface{}" {
 		return "nil"
 	}
-	// Handle special interfaces if known, otherwise assume struct
 	if t == "sql.Result" || t == "Querier" {
 		return "nil"
 	}
-	// Default to struct initializer (e.g. time.Time{}, uuid.UUID{})
 	return fmt.Sprintf("%s{}", t)
 }
 
@@ -237,7 +382,6 @@ func isNumeric(t string) bool {
 	return false
 }
 
-// Simple AST expression to string converter
 func exprToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
@@ -249,12 +393,50 @@ func exprToString(expr ast.Expr) string {
 	case *ast.ArrayType:
 		return "[]" + exprToString(t.Elt)
 	default:
+		// Fallback for types we missed or complex types
 		panic(fmt.Sprintf("unhandled expression type: %T", t))
 	}
 }
 
-// Helper for template
-func (e Engine) IsMySQL() bool { return e.Name == "mysql" }
+// Templates
+
+const modelsTemplate = `// Code generated by gen-db-wrappers. DO NOT EDIT.
+package database
+
+import (
+	"database/sql"
+	"time"
+)
+
+{{range .}}
+type {{.Name}} struct {
+{{- range .Fields}}
+	{{.Name}} {{.Type}} {{if .Tag}}` + "`" + `{{.Tag}}` + "`" + `{{end}}
+{{- end}}
+}
+{{end}}
+`
+
+const querierTemplate = `// Code generated by gen-db-wrappers. DO NOT EDIT.
+package database
+
+import (
+	"context"
+	"database/sql"
+)
+
+type Querier interface {
+{{- range .}}
+	{{- range .Docs}}
+	{{.}}
+	{{- end}}
+	{{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}})
+{{- end}}
+
+	WithTx(tx *sql.Tx) Querier
+	DB() *sql.DB
+}
+`
 
 const wrapperTemplate = `// Code generated by gen-db-wrappers. DO NOT EDIT.
 package database
@@ -358,4 +540,15 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 	{{- end}}
 }
 {{end}}
+
+func (w *{{.Engine.Name}}Wrapper) WithTx(tx *sql.Tx) Querier {
+	res := w.adapter.WithTx(tx)
+	return &{{.Engine.Name}}Wrapper{adapter: res}
+}
+
+func (w *{{.Engine.Name}}Wrapper) DB() *sql.DB {
+	return w.adapter.DB()
+}
 `
+
+func (e Engine) IsMySQL() bool { return e.Name == "mysql" }
