@@ -23,6 +23,7 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v13
       - run: nix develop --command sqlc generate
       - run: nix develop --command go generate ./pkg/database
+      - run: nix fmt
       - uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "Auto Generate Code"
