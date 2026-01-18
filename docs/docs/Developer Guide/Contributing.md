@@ -619,13 +619,27 @@ dbmate --url "mysql://..." up
 # - db/query.postgres.sql (PostgreSQL-specific queries)
 # - db/query.mysql.sql (MySQL-specific queries)
 
-# Generate Go code
-sqlc generate
+### Generating SQL Code
 
-# The generated code appears in:
-# - pkg/database/sqlitedb/
-# - pkg/database/postgresdb/
-# - pkg/database/mysqldb/
+After modifying SQL queries or migrations:
+
+```
+
+sqlc generate
+go generate ./pkg/database
+
+```
+
+This generates type-safe Go code from:
+
+- `db/query.sqlite.sql` → `pkg/database/sqlitedb/`
+- `db/query.postgres.sql` → `pkg/database/postgresdb/`
+- `db/query.mysql.sql` → `pkg/database/mysqldb/`
+
+And automatically updates:
+- `pkg/database/querier.go` (Common interface)
+- `pkg/database/models.go` (Common models)
+- `pkg/database/wrapper_*.go` (Engine adaptors)
 ```
 
 ### Adding a New Storage Backend
