@@ -16,6 +16,7 @@ import (
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/nix-community/go-nix/pkg/nixhash"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
@@ -1079,10 +1080,24 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 		var err error
 
+		narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
+		if err == nil {
+			metricAttrs = append(metricAttrs,
+				attribute.String("result", "hit"),
+				attribute.String("status", "success"),
+				attribute.String("source", "database"),
+			)
+
+			return nil
+		} else if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
+			return fmt.Errorf("error fetching narinfo from database: %w", err)
+		}
+
 		if c.narInfoStore.HasNarInfo(ctx, hash) {
 			metricAttrs = append(metricAttrs,
 				attribute.String("result", "hit"),
 				attribute.String("status", "success"),
+				attribute.String("source", "storage"),
 			)
 
 			narInfo, err = c.getNarInfoFromStore(ctx, hash)
@@ -1548,6 +1563,125 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	return ni, nil
+}
+
+func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.getNarInfoFromDatabase",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
+	var (
+		ni     *narinfo.NarInfo
+		narURL *nar.URL
+	)
+
+	err := c.withTransaction(ctx, "getNarInfoFromDatabase", func(qtx database.Querier) error {
+		nir, err := qtx.GetNarInfoByHash(ctx, hash)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return storage.ErrNotFound
+			}
+
+			return fmt.Errorf("error fetching the narinfo record from database: %w", err)
+		}
+
+		// If store_path is not valid, it means this record hasn't been migrated yet
+		// (it might have been created by an older version of ncps as a placeholder).
+		if !nir.StorePath.Valid {
+			return storage.ErrNotFound
+		}
+
+		ni = &narinfo.NarInfo{
+			StorePath:   nir.StorePath.String,
+			URL:         nir.URL.String,
+			Compression: nir.Compression.String,
+			FileSize:    uint64(nir.FileSize.Int64), //nolint:gosec
+			NarSize:     uint64(nir.NarSize.Int64),  //nolint:gosec
+			Deriver:     nir.Deriver.String,
+			System:      nir.System.String,
+			CA:          nir.Ca.String,
+		}
+
+		if nir.FileHash.Valid {
+			h, err := nixhash.ParseAny(nir.FileHash.String, nil)
+			if err != nil {
+				return fmt.Errorf("error parsing file_hash: %w", err)
+			}
+
+			ni.FileHash = h
+		}
+
+		if nir.NarHash.Valid {
+			h, err := nixhash.ParseAny(nir.NarHash.String, nil)
+			if err != nil {
+				return fmt.Errorf("error parsing nar_hash: %w", err)
+			}
+
+			ni.NarHash = h
+		}
+
+		// Fetch references
+		ni.References, err = qtx.GetNarInfoReferences(ctx, nir.ID)
+		if err != nil {
+			return fmt.Errorf("error fetching narinfo references: %w", err)
+		}
+
+		// Fetch signatures
+		sigs, err := qtx.GetNarInfoSignatures(ctx, nir.ID)
+		if err != nil {
+			return fmt.Errorf("error fetching narinfo signatures: %w", err)
+		}
+
+		for _, sigStr := range sigs {
+			sig, err := signature.ParseSignature(sigStr)
+			if err != nil {
+				return fmt.Errorf("error parsing signature %q: %w", sigStr, err)
+			}
+
+			ni.Signatures = append(ni.Signatures, sig)
+		}
+
+		// Parse narURL for subsequent HasNar check
+		parsedURL, err := nar.ParseURL(ni.URL)
+		if err != nil {
+			return fmt.Errorf("error parsing nar URL %q: %w", ni.URL, err)
+		}
+
+		narURL = &parsedURL
+
+		// Touch the record if needed
+		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
+			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
+				return fmt.Errorf("error touching the narinfo record: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify Nar file exists in storage
+	if !c.narStore.HasNar(ctx, *narURL) && !c.hasUpstreamJob(narURL.Hash) {
+		zerolog.Ctx(ctx).
+			Error().
+			Msg("narinfo was found in the database but no nar was found in storage, requesting a purge")
+
+		if err := c.purgeNarInfo(ctx, hash, narURL); err != nil {
+			return nil, fmt.Errorf("error purging the narinfo: %w", err)
+		}
+
+		return nil, errNarInfoPurged
 	}
 
 	return ni, nil
