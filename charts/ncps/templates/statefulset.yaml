@@ -28,7 +28,7 @@ spec:
       serviceAccountName: {{ include "ncps.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if or (eq .Values.config.database.type "sqlite") (and .Values.migration.enabled (eq .Values.migration.mode "initContainer")) .Values.initContainers }}
+      {{- if or (eq .Values.config.database.type "sqlite") (and .Values.migration .Values.migration.enabled (eq .Values.migration.mode "initContainer")) .Values.initContainers }}
       initContainers:
         {{- if eq .Values.config.database.type "sqlite" }}
         - name: create-db-dir
@@ -58,7 +58,7 @@ spec:
             runAsUser: 1000
             runAsGroup: 1000
         {{- end }}
-        {{- if and .Values.migration.enabled (eq .Values.migration.mode "initContainer") }}
+        {{- if and .Values.migration .Values.migration.enabled (eq .Values.migration.mode "initContainer") }}
         - name: migration
           securityContext:
             {{- toYaml .Values.migration.securityContext | nindent 12 }}
