@@ -163,6 +163,7 @@ The project uses "Skills" to provide detailed instructions and best practices fo
 
 - **graphite**: Instructions for using Graphite (`gt`) for branch management and restacking.
 - **dbmate**: Detailed rules and best practices for writing and applying database migrations.
+- **sqlc**: Workflow for modifying database queries, generating code, and updating wrappers.
 
 When working with these tools, you SHOULD read the corresponding `SKILL.md` to ensure compliance with project-specific rules.
 
@@ -250,7 +251,9 @@ Supports multiple database engines via sqlc for type-safe SQL:
 Database selection is done via URL scheme in the `--cache-database-url` flag:
 
 - SQLite: `sqlite:/path/to/db.sqlite`
+
 - PostgreSQL: `postgresql://user:password@host:port/database`
+
 - MySQL/MariaDB: `mysql://user:password@host:port/database`
 
 Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db/query.postgres.sql`, and `db/query.mysql.sql`. Run `sqlc generate` after modifying queries.
