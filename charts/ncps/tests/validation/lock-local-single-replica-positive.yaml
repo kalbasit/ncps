@@ -17,3 +17,6 @@ config:
 
   redis:
     enabled: false
+
+migration:
+  mode: job

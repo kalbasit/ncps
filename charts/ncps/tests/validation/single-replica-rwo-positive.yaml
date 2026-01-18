@@ -17,3 +17,6 @@ config:
 
   database:
     type: sqlite
+
+migration:
+  mode: job

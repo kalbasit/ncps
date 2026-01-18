@@ -16,13 +16,16 @@ config:
       secretAccessKey: test-secret
 
   database:
-    type: mysql  # Wrong database type for postgres lock
+    type: mysql # Wrong database type for postgres lock
     mysql:
       host: mysql.default.svc
       password: test123
 
   lock:
-    backend: postgres  # Requires postgresql database
+    backend: postgres # Requires postgresql database
 
   redis:
     enabled: false
+
+migration:
+  mode: job

@@ -25,3 +25,6 @@ config:
     enabled: true
     addresses:
       - redis:6379
+
+migration:
+  mode: job

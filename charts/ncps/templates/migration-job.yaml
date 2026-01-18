@@ -1,4 +1,4 @@
-{{- if and .Values.migration.enabled (or (eq .Values.migration.mode "job") (eq .Values.migration.mode "argocd")) }}
+{{- if and .Values.migration .Values.migration.enabled (or (eq .Values.migration.mode "job") (eq .Values.migration.mode "argocd")) }}
 apiVersion: batch/v1
 kind: Job
 metadata:

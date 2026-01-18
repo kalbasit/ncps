@@ -298,7 +298,7 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `migration.enabled` | Enable database migration | `false` |
+| `migration.enabled` | Enable database migration | `true` |
 | `migration.mode` | Migration mode: `initContainer`, `job`, `argocd` | `initContainer` |
 | `migration.resources` | Resources for migration container/job | `{}` |
 | `migration.securityContext` | Security context for migration container/job | See values.yaml |
@@ -308,6 +308,9 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `migration.job.nodeSelector` | Node selector for migration job | `{}` |
 | `migration.job.tolerations` | Tolerations for migration job | `[]` |
 | `migration.job.affinity` | Affinity for migration job | `{}` |
+
+> [!WARNING]
+> **Breaking Change for HA Upgrades:** With migrations enabled by default, upgrading an existing High Availability (HA) deployment (`replicaCount > 1`) will fail if you are using the default `migration.mode: initContainer`. To avoid this, explicitly set `migration.mode: job` or `migration.mode: argocd` in your values when upgrading.
 
 ## Examples
 

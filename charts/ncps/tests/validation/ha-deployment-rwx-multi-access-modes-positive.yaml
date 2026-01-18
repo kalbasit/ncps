@@ -13,7 +13,7 @@ config:
         enabled: true
         accessModes:
           - ReadWriteOnce
-          - ReadWriteMany  # Should be detected even though it's not first
+          - ReadWriteMany # Should be detected even though it's not first
         size: 10Gi
 
   database:
@@ -26,3 +26,6 @@ config:
     enabled: true
     addresses:
       - redis:6379
+
+migration:
+  mode: job
