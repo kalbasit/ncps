@@ -7,15 +7,18 @@ export MYSQL_DATA_DIR=$(mktemp -d)
 export MYSQL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
 # Export the environment variables required by the init script and the tests
-export MYSQL_TCP_PORT="$MYSQL_PORT";
-export MYSQL_HOST="127.0.0.1";
-export MYSQL_USER="root";
-export MYSQL_DEV_DB="dev-db";
-export MYSQL_DEV_USER="dev-user";
-export MYSQL_DEV_PASSWORD="dev-password";
-export MYSQL_TEST_DB="test-db";
-export MYSQL_TEST_USER="test-user";
-export MYSQL_TEST_PASSWORD="test-password";
+export MYSQL_TCP_PORT="$MYSQL_PORT"
+export MYSQL_HOST="127.0.0.1"
+export MYSQL_USER="root"
+export MYSQL_DEV_DB="dev-db"
+export MYSQL_DEV_USER="dev-user"
+export MYSQL_DEV_PASSWORD="dev-password"
+export MYSQL_TEST_DB="test-db"
+export MYSQL_TEST_USER="test-user"
+export MYSQL_TEST_PASSWORD="test-password"
+export MYSQL_MIGRATION_USER="migration-user"
+export MYSQL_MIGRATION_PASSWORD="migration-password"
+export MYSQL_MIGRATION_DB="migration-db"
 
 # Start MariaDB server in background
 bash $src/nix/process-compose/start-mysql.sh &

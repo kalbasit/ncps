@@ -16,6 +16,18 @@ FLUSH PRIVILEGES;
 EOF
 
 # ---------------------------------------------------
+# SETUP: Migration User (Standard)
+# ---------------------------------------------------
+echo "Creating migration user and database..."
+mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" <<EOF
+CREATE USER IF NOT EXISTS '$MYSQL_MIGRATION_USER'@'$MYSQL_HOST' IDENTIFIED BY '$MYSQL_MIGRATION_PASSWORD';
+CREATE DATABASE IF NOT EXISTS \`$MYSQL_MIGRATION_DB\`;
+GRANT ALL PRIVILEGES ON \`$MYSQL_MIGRATION_DB\`.* TO '$MYSQL_MIGRATION_USER'@'$MYSQL_HOST';
+FLUSH PRIVILEGES;
+EOF
+
+
+# ---------------------------------------------------
 # SETUP: Test User (Restricted Pattern)
 # ---------------------------------------------------
 echo "Creating test user and default $MYSQL_TEST_DB..."
@@ -30,6 +42,9 @@ EOF
 
 echo "Verifying user creation..."
 mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -e "SELECT user, host FROM mysql.user WHERE user IN ('$MYSQL_DEV_USER', '$MYSQL_TEST_USER');"
+
+echo "Verifying migration user creation..."
+mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -e "SELECT user, host FROM mysql.user WHERE user IN ('$MYSQL_MIGRATION_USER');"
 
 echo "---------------------------------------------------"
 echo "🔍 VERIFICATION CHECKS:"
@@ -62,12 +77,13 @@ else
 fi
 
 echo -n "Dev Query Test... "
-# Inlined execution to prevent set -e from killing the script on failure
-if [ "$(mysql -h "$MYSQL_HOST" -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" "$MYSQL_DEV_DB" -N -e "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null)" = "Test data" ]; then
+# Inlined assignment to prevent set -e from killing the script on failure
+if RESULT="$(mysql -h "$MYSQL_HOST" -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" "$MYSQL_DEV_DB" -N -e "SELECT message FROM test_table WHERE message = 'Test data'" 2>/dev/null)" && [ "$RESULT" = "Test data" ]; then
   echo "✅ Success"
   echo "   Content verified: ✅"
 else
   echo "❌ Failed"
+  echo "   Expected: 'Test data', Got: '$RESULT'"
   exit 1
 fi
 

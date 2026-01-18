@@ -1,7 +1,7 @@
 /*M!999999\- enable the sandbox mode */
 -- MariaDB dump 10.19-11.4.8-MariaDB, for osx14.0 (arm64)
 --
--- Host: 127.0.0.1    Database: dev-db
+-- Host: 127.0.0.1    Database: migration-db
 -- ------------------------------------------------------
 -- Server version	11.4.8-MariaDB
 
@@ -101,7 +101,7 @@ CREATE TABLE `schema_migrations` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Dumping routines for database 'dev-db'
+-- Dumping routines for database 'migration-db'
 --
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

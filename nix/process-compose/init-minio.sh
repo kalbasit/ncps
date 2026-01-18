@@ -58,6 +58,7 @@ else
   echo "Debug URL: $SIGNED_URL"
   echo "Testing with verbose output:"
   curl -v "$SIGNED_URL" 2>&1 | tail -20
+  exit 1
 fi
 echo "---------------------------------------------------"
 echo ""
