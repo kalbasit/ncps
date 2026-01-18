@@ -126,6 +126,14 @@ WHERE id NOT IN (
 SELECT CAST(COALESCE(SUM(file_size), 0) AS SIGNED) AS total_size
 FROM nar_files;
 
+-- name: GetNarInfoCount :one
+SELECT CAST(COUNT(*) AS SIGNED) AS count
+FROM narinfos;
+
+-- name: GetNarFileCount :one
+SELECT CAST(COUNT(*) AS SIGNED) AS count
+FROM nar_files;
+
 -- name: GetLeastUsedNarInfos :many
 -- NOTE: This query uses a correlated subquery which is not optimal for performance.
 -- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0

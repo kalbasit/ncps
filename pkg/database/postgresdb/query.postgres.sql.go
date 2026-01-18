@@ -482,6 +482,22 @@ func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (N
 	return i, err
 }
 
+const getNarFileCount = `-- name: GetNarFileCount :one
+SELECT CAST(COUNT(*) AS BIGINT) AS count
+FROM nar_files
+`
+
+// GetNarFileCount
+//
+//	SELECT CAST(COUNT(*) AS BIGINT) AS count
+//	FROM nar_files
+func (q *Queries) GetNarFileCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getNarFileCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getNarInfoByHash = `-- name: GetNarInfoByHash :one
 SELECT id, hash, created_at, updated_at, last_accessed_at
 FROM narinfos
@@ -528,6 +544,22 @@ func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
 		&i.LastAccessedAt,
 	)
 	return i, err
+}
+
+const getNarInfoCount = `-- name: GetNarInfoCount :one
+SELECT CAST(COUNT(*) AS BIGINT) AS count
+FROM narinfos
+`
+
+// GetNarInfoCount
+//
+//	SELECT CAST(COUNT(*) AS BIGINT) AS count
+//	FROM narinfos
+func (q *Queries) GetNarInfoCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getNarInfoCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const getNarInfoHashesByNarFileID = `-- name: GetNarInfoHashesByNarFileID :many

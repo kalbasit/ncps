@@ -81,6 +81,43 @@ var (
 
 	//nolint:gochecknoglobals
 	totalSizeMetric metric.Int64ObservableGauge
+
+	// Object count metrics
+	//nolint:gochecknoglobals
+	narInfoCountMetric metric.Int64ObservableGauge
+
+	//nolint:gochecknoglobals
+	narFileCountMetric metric.Int64ObservableGauge
+
+	// Cache eviction metrics
+	//nolint:gochecknoglobals
+	lruCleanupRunsTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	lruNarInfosEvictedTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	lruNarFilesEvictedTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	lruBytesFreedTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	lruCleanupDuration metric.Float64Histogram
+
+	// Cache utilization metrics
+	//nolint:gochecknoglobals
+	cacheUtilizationRatio metric.Float64ObservableGauge
+
+	//nolint:gochecknoglobals
+	cacheMaxSizeBytes metric.Int64ObservableGauge
+
+	// Upstream fetch duration metrics
+	//nolint:gochecknoglobals
+	upstreamNarInfoFetchDuration metric.Float64Histogram
+
+	//nolint:gochecknoglobals
+	upstreamNarFetchDuration metric.Float64Histogram
 )
 
 //nolint:gochecknoinits
@@ -112,6 +149,109 @@ func init() {
 		"ncps_store_total_size_bytes",
 		metric.WithDescription("The total size of all NAR files in the store."),
 		metric.WithUnit("By"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	// Initialize object count metrics
+	narInfoCountMetric, err = meter.Int64ObservableGauge(
+		"ncps_narinfo_count",
+		metric.WithDescription("Number of narinfo objects currently in cache."),
+		metric.WithUnit("{object}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	narFileCountMetric, err = meter.Int64ObservableGauge(
+		"ncps_nar_file_count",
+		metric.WithDescription("Number of NAR file objects currently in cache."),
+		metric.WithUnit("{object}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	// Initialize cache eviction metrics
+	lruCleanupRunsTotal, err = meter.Int64Counter(
+		"ncps_lru_cleanup_runs_total",
+		metric.WithDescription("Total number of LRU cleanup executions."),
+		metric.WithUnit("{run}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	lruNarInfosEvictedTotal, err = meter.Int64Counter(
+		"ncps_lru_narinfos_evicted_total",
+		metric.WithDescription("Total number of narinfos evicted by LRU."),
+		metric.WithUnit("{object}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	lruNarFilesEvictedTotal, err = meter.Int64Counter(
+		"ncps_lru_nar_files_evicted_total",
+		metric.WithDescription("Total number of NAR files evicted by LRU."),
+		metric.WithUnit("{object}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	lruBytesFreedTotal, err = meter.Int64Counter(
+		"ncps_lru_bytes_freed_total",
+		metric.WithDescription("Total bytes freed by LRU eviction."),
+		metric.WithUnit("By"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	lruCleanupDuration, err = meter.Float64Histogram(
+		"ncps_lru_cleanup_duration_seconds",
+		metric.WithDescription("Duration of LRU cleanup operations."),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	// Initialize cache utilization metrics
+	cacheUtilizationRatio, err = meter.Float64ObservableGauge(
+		"ncps_cache_utilization_ratio",
+		metric.WithDescription("Current cache size as a ratio of maximum size (0.0 to 1.0)."),
+		metric.WithUnit("1"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	cacheMaxSizeBytes, err = meter.Int64ObservableGauge(
+		"ncps_cache_max_size_bytes",
+		metric.WithDescription("Configured maximum cache size in bytes."),
+		metric.WithUnit("By"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	// Initialize upstream fetch duration metrics
+	upstreamNarInfoFetchDuration, err = meter.Float64Histogram(
+		"ncps_upstream_narinfo_fetch_duration_seconds",
+		metric.WithDescription("Duration of narinfo fetches from upstream caches."),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	upstreamNarFetchDuration, err = meter.Float64Histogram(
+		"ncps_upstream_nar_fetch_duration_seconds",
+		metric.WithDescription("Duration of NAR fetches from upstream caches."),
+		metric.WithUnit("s"),
 	)
 	if err != nil {
 		panic(err)
@@ -178,6 +318,9 @@ type downloadState struct {
 	// Store any download errors in this field
 	downloadError error
 
+	// Track which upstream served this download (for metrics)
+	upstreamHostname string
+
 	// Channel to signal starting the pull and its completion
 	done   chan struct{} // Signals download fully complete (including database updates)
 	start  chan struct{} // Signals streaming can begin (temp file ready)
@@ -214,6 +357,22 @@ func (ds *downloadState) getError() error {
 	defer ds.mu.Unlock()
 
 	return ds.downloadError
+}
+
+// setUpstreamHostname safely sets the upstream hostname with mutex protection.
+func (ds *downloadState) setUpstreamHostname(hostname string) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	ds.upstreamHostname = hostname
+}
+
+// getUpstreamHostname safely retrieves the upstream hostname with mutex protection.
+func (ds *downloadState) getUpstreamHostname() string {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	return ds.upstreamHostname
 }
 
 // New returns a new Cache.
@@ -281,6 +440,7 @@ func New(
 
 func (c *Cache) setupMetricCallbacks() error {
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		// Observe total size
 		size, err := c.db.GetNarTotalSize(ctx)
 		if err != nil {
 			// Log error but don't fail the scrape entirely
@@ -288,14 +448,46 @@ func (c *Cache) setupMetricCallbacks() error {
 				Warn().
 				Err(err).
 				Msg("failed to get total nar size for metrics")
-
-			return nil
+		} else {
+			o.ObserveInt64(totalSizeMetric, size)
 		}
 
-		o.ObserveInt64(totalSizeMetric, size)
+		// Observe narinfo count
+		narInfoCount, err := c.db.GetNarInfoCount(ctx)
+		if err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to get narinfo count for metrics")
+		} else {
+			o.ObserveInt64(narInfoCountMetric, narInfoCount)
+		}
+
+		// Observe nar file count
+		narFileCount, err := c.db.GetNarFileCount(ctx)
+		if err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to get nar file count for metrics")
+		} else {
+			o.ObserveInt64(narFileCountMetric, narFileCount)
+		}
+
+		// Observe cache max size (static value)
+		//nolint:gosec // G115: Cache max size is configured and unlikely to exceed int64 max (9.2 exabytes)
+		o.ObserveInt64(cacheMaxSizeBytes, int64(c.maxSize))
+
+		// Observe cache utilization ratio
+		if c.maxSize > 0 && size > 0 {
+			utilizationRatio := float64(size) / float64(c.maxSize)
+			o.ObserveFloat64(cacheUtilizationRatio, utilizationRatio)
+		} else {
+			o.ObserveFloat64(cacheUtilizationRatio, 0.0)
+		}
 
 		return nil
-	}, totalSizeMetric)
+	}, totalSizeMetric, narInfoCountMetric, narFileCountMetric, cacheMaxSizeBytes, cacheUtilizationRatio)
 	if err != nil {
 		return err
 	}
@@ -536,7 +728,19 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		if err != nil {
 			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
+			// Add upstream hostname to metrics even on error
+			if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
+				metricAttrs = append(metricAttrs,
+					attribute.String("upstream_hostname", upstreamHostname))
+			}
+
 			return err
+		}
+
+		// Add upstream hostname to metrics on success
+		if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
+			metricAttrs = append(metricAttrs,
+				attribute.String("upstream_hostname", upstreamHostname))
 		}
 
 		// create a pipe to stream file down to the http client
@@ -813,6 +1017,11 @@ func (c *Cache) pullNarIntoStore(
 		ds.cond.Broadcast()
 	}()
 
+	// Store upstream hostname for metrics (early in function)
+	if uc != nil {
+		ds.setUpstreamHostname(uc.GetHostname())
+	}
+
 	ctx, span := tracer.Start(
 		ctx,
 		"cache.pullNar",
@@ -972,6 +1181,14 @@ func (c *Cache) getNarFromUpstream(
 	)
 	defer span.End()
 
+	// Track fetch start time
+	startTime := time.Now()
+
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		upstreamNarFetchDuration.Record(ctx, duration)
+	}()
+
 	var mutators []func(*http.Request)
 
 	if enableZSTD {
@@ -1103,7 +1320,19 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		if err != nil {
 			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
+			// Add upstream hostname to metrics even on error
+			if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
+				metricAttrs = append(metricAttrs,
+					attribute.String("upstream_hostname", upstreamHostname))
+			}
+
 			return err
+		}
+
+		// Add upstream hostname to metrics on success
+		if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
+			metricAttrs = append(metricAttrs,
+				attribute.String("upstream_hostname", upstreamHostname))
 		}
 
 		narInfo, err = c.narInfoStore.GetNarInfo(ctx, hash)
@@ -1165,6 +1394,11 @@ func (c *Cache) pullNarInfo(
 		ds.setError(err)
 
 		return
+	}
+
+	// Store upstream hostname for metrics
+	if uc != nil {
+		ds.setUpstreamHostname(uc.GetHostname())
 	}
 
 	narURL, err := nar.ParseURL(narInfo.URL)
@@ -1557,6 +1791,14 @@ func (c *Cache) getNarInfoFromUpstream(
 		),
 	)
 	defer span.End()
+
+	// Track fetch start time
+	startTime := time.Now()
+
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		upstreamNarInfoFetchDuration.Record(ctx, duration)
+	}()
 
 	uc, err := c.selectNarInfoUpstream(ctx, hash)
 	if err != nil {
@@ -2282,10 +2524,16 @@ func (c *Cache) parallelDeleteFromStores(
 
 func (c *Cache) runLRU(ctx context.Context) func() {
 	return func() {
+		// Track cleanup start time
+		startTime := time.Now()
+
 		lockKey := cacheLockKey
 
 		// Try to acquire LRU lock (non-blocking)
 		acquired, err := c.withTryLock(ctx, "runLRU", lockKey, func() error {
+			// Increment run counter
+			lruCleanupRunsTotal.Add(ctx, 1)
+
 			log := zerolog.Ctx(ctx).With().
 				Str("op", "lru").
 				Uint64("max_size", c.maxSize).
@@ -2320,6 +2568,14 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 				return err
 			}
 
+			// Track eviction counts
+			lruNarInfosEvictedTotal.Add(ctx, int64(len(narInfoHashesToRemove)))
+			lruNarFilesEvictedTotal.Add(ctx, int64(len(narURLsToRemove)))
+
+			// Track bytes freed (approximate as cleanupSize)
+			//nolint:gosec // G115: Cleanup size is bounded by cache max size, unlikely to exceed int64 max
+			lruBytesFreedTotal.Add(ctx, int64(cleanupSize))
+
 			// Commit the database transaction before deleting from stores
 			if err := tx.Commit(); err != nil {
 				log.Error().Err(err).Msg("error committing the transaction")
@@ -2332,6 +2588,11 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 
 			return nil
 		})
+
+		// Record cleanup duration
+		duration := time.Since(startTime).Seconds()
+		lruCleanupDuration.Record(ctx, duration)
+
 		if err != nil {
 			return
 		}
