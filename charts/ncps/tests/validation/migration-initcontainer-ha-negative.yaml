@@ -1,7 +1,11 @@
-# Positive test: HA + Deployment + S3
-# This should PASS validation
+# Negative test: Migration with initContainer mode and multiple replicas
+# This should FAIL validation - initContainer risks database corruption with HA
 mode: deployment
-replicaCount: 3
+replicaCount: 2
+
+migration:
+  enabled: true
+  mode: initContainer
 
 config:
   hostname: "test.example.com"
@@ -18,13 +22,12 @@ config:
   database:
     type: postgresql
     postgresql:
-      host: postgres.default.svc
-      password: test123
+      host: postgres.example.com
+      database: ncps
+      username: ncps
+      password: secret
 
   redis:
     enabled: true
     addresses:
       - redis:6379
-
-migration:
-  mode: job

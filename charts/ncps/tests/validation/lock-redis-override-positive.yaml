@@ -22,9 +22,12 @@ config:
       password: test123
 
   lock:
-    backend: postgres  # This will be overridden by Redis
+    backend: postgres # This will be overridden by Redis
 
   redis:
     enabled: true
     addresses:
       - redis:6379
+
+migration:
+  mode: job

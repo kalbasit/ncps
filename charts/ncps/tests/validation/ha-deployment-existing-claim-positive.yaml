@@ -13,7 +13,7 @@ config:
         enabled: true
         existingClaim: my-existing-pvc
         accessModes:
-          - ReadWriteOnce  # Doesn't matter when existingClaim is set
+          - ReadWriteOnce # Doesn't matter when existingClaim is set
         size: 10Gi
 
   database:
@@ -26,3 +26,6 @@ config:
     enabled: true
     addresses:
       - redis:6379
+
+migration:
+  mode: job

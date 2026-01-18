@@ -22,4 +22,7 @@ config:
       password: test123
 
   redis:
-    enabled: false  # Not allowed for HA
+    enabled: false # Not allowed for HA
+
+migration:
+  mode: job

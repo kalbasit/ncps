@@ -1,0 +1,34 @@
+# Positive test: Migration with initContainer mode, multiple replicas, and override flag
+# This should PASS validation - iLoveCorruptedDatabases override is set
+mode: deployment
+replicaCount: 2
+
+migration:
+  enabled: true
+  mode: initContainer
+  iLoveCorruptedDatabases: true
+
+config:
+  hostname: "test.example.com"
+
+  storage:
+    type: s3
+    s3:
+      bucket: my-bucket
+      endpoint: https://s3.amazonaws.com
+      region: us-east-1
+      accessKeyId: test-key
+      secretAccessKey: test-secret
+
+  database:
+    type: postgresql
+    postgresql:
+      host: postgres.example.com
+      database: ncps
+      username: ncps
+      password: secret
+
+  redis:
+    enabled: true
+    addresses:
+      - redis:6379
