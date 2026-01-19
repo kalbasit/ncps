@@ -3,8 +3,10 @@ package ncps_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -899,6 +902,140 @@ func TestMigrateNarInfo_ProgressTracking(t *testing.T) {
 	//nolint:gosec // Test data size is controlled and safe to convert
 	assert.Equal(t, int32(len(entries)), atomic.LoadInt32(&succeeded))
 	assert.Equal(t, int32(0), atomic.LoadInt32(&failed))
+}
+
+func TestMigrateNarInfo_LargeNarInfo(t *testing.T) {
+	t.Parallel()
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+	// Setup
+	dir := t.TempDir()
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	store, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	// Create a large narinfo with many references and signatures
+	const numReferences = 100
+
+	const numSignatures = 50
+
+	hash := "largenarinfo1234567890abcdef1234567890abcdef"
+	narHash := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+
+	// Build references string
+	var referencesBuilder strings.Builder
+
+	referencesBuilder.WriteString("References:")
+
+	for i := 0; i < numReferences; i++ {
+		referencesBuilder.WriteString(fmt.Sprintf(" ref%d-abcdefgh1234567890abcdefgh1234567890", i))
+	}
+
+	referencesStr := referencesBuilder.String()
+
+	// Build narinfo text with many references
+	var narInfoBuilder strings.Builder
+
+	narInfoBuilder.WriteString("StorePath: /nix/store/")
+	narInfoBuilder.WriteString(hash)
+	narInfoBuilder.WriteString("-large-package\n")
+	narInfoBuilder.WriteString("URL: nar/")
+	narInfoBuilder.WriteString(narHash)
+	narInfoBuilder.WriteString(".nar.xz\n")
+	narInfoBuilder.WriteString("Compression: xz\n")
+	narInfoBuilder.WriteString("FileHash: sha256:")
+	narInfoBuilder.WriteString(narHash)
+	narInfoBuilder.WriteString("\n")
+	narInfoBuilder.WriteString("FileSize: 999999\n")
+	narInfoBuilder.WriteString("NarHash: sha256:")
+	narInfoBuilder.WriteString(narHash)
+	narInfoBuilder.WriteString("\n")
+	narInfoBuilder.WriteString("NarSize: 999999\n")
+	narInfoBuilder.WriteString(referencesStr)
+	narInfoBuilder.WriteString("\n")
+
+	// Add many signatures
+	for i := 0; i < numSignatures; i++ {
+		narInfoBuilder.WriteString(fmt.Sprintf(
+			"Sig: cache.test.org-%d:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==\n",
+			i,
+		))
+	}
+
+	narInfoText := narInfoBuilder.String()
+
+	// Write to storage
+	narInfoPath := filepath.Join(dir, "store", "narinfo", helper.NarInfoFilePath(hash))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o755))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(narInfoText), 0o600))
+
+	narPath := filepath.Join(dir, "store", "nar", helper.NarFilePath(narHash, "xz"))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
+	require.NoError(t, os.WriteFile(narPath, []byte(helper.MustRandString(999999, nil)), 0o600))
+
+	// Run migration
+	err = store.WalkNarInfos(ctx, func(h string) error {
+		ni, err := store.GetNarInfo(ctx, h)
+		if err != nil {
+			return fmt.Errorf("failed to get narinfo: %w", err)
+		}
+
+		return testhelper.MigrateNarInfoToDatabase(ctx, db, h, ni)
+	})
+	require.NoError(t, err)
+
+	// Verify in database
+	var count int
+
+	err = db.DB().QueryRowContext(
+		ctx, "SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash,
+	).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "Should have exactly one narinfo record")
+
+	// Get narinfo ID
+	nir, err := db.GetNarInfoByHash(ctx, hash)
+	require.NoError(t, err)
+
+	// Verify all references were migrated
+	references, err := db.GetNarInfoReferences(ctx, nir.ID)
+	require.NoError(t, err)
+	assert.Len(t, references, numReferences, "Should have all references migrated")
+
+	// Verify all signatures were migrated
+	signatures, err := db.GetNarInfoSignatures(ctx, nir.ID)
+	require.NoError(t, err)
+	assert.Len(t, signatures, numSignatures, "Should have all signatures migrated")
+
+	// Verify a few specific references (spot check)
+	assert.Contains(t, references, "ref0-abcdefgh1234567890abcdefgh1234567890")
+	assert.Contains(t, references, "ref50-abcdefgh1234567890abcdefgh1234567890")
+	assert.Contains(t, references, "ref99-abcdefgh1234567890abcdefgh1234567890")
+
+	// Verify a few specific signatures (spot check)
+	assert.Contains(
+		t,
+		signatures,
+		"cache.test.org-0:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==",
+	)
+	assert.Contains(
+		t,
+		signatures,
+		"cache.test.org-25:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==",
+	)
+	assert.Contains(
+		t,
+		signatures,
+		"cache.test.org-49:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==",
+	)
+
+	t.Logf("Successfully migrated large narinfo with %d references and %d signatures", numReferences, numSignatures)
 }
 
 func BenchmarkMigrateNarInfo(b *testing.B) {
