@@ -47,12 +47,13 @@ func newTestCache(
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
+	fileStore storage.FileStore,
 	secretKeyPath string,
 ) (*cache.Cache, error) {
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	return cache.New(ctx, hostName, db, configStore, narInfoStore, narStore, secretKeyPath,
+	return cache.New(ctx, hostName, db, configStore, narInfoStore, narStore, fileStore, secretKeyPath,
 		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
 }
 
@@ -83,7 +84,7 @@ func setupTestCache(t *testing.T) (*cache.Cache, database.Querier, *local.Store,
 
 	db, localStore, dir, cleanup := setupTestComponents(t)
 
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	return c, db, localStore, dir, cleanup
@@ -129,7 +130,7 @@ func TestNew(t *testing.T) {
 				db, localStore, _, cleanup := setupTestComponents(t)
 				defer cleanup()
 
-				_, err := newTestCache(newContext(), tt.hostname, db, localStore, localStore, localStore, "")
+				_, err := newTestCache(newContext(), tt.hostname, db, localStore, localStore, localStore, localStore, "")
 				if tt.wantErr != nil {
 					assert.ErrorIs(t, err, tt.wantErr)
 				} else {
@@ -180,7 +181,7 @@ func TestNew(t *testing.T) {
 
 			require.NoError(t, skFile.Close())
 
-			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, skFile.Name())
+			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, localStore, skFile.Name())
 			require.NoError(t, err)
 
 			// Verify key is NOT in local store
@@ -207,7 +208,7 @@ func TestNew(t *testing.T) {
 			err = localStore.PutSecretKey(newContext(), sk)
 			require.NoError(t, err)
 
-			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
+			c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, localStore, "")
 			require.NoError(t, err)
 
 			// Verify key is NOT in local store anymore

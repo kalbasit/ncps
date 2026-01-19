@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
@@ -379,9 +380,161 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	return nil
 }
 
-func (s *Store) configPath() string       { return filepath.Join(s.path, "config") }
-func (s *Store) secretKeyPath() string    { return filepath.Join(s.configPath(), "cache.key") }
-func (s *Store) storePath() string        { return filepath.Join(s.path, "store") }
+// HasFile returns true if the store has the file at the given path.
+func (s *Store) HasFile(ctx context.Context, path string) bool {
+	filePath, err := s.sanitizePath(path)
+	if err != nil {
+		return false
+	}
+
+	_, span := tracer.Start(
+		ctx,
+		"local.HasFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("file_path", filePath),
+		),
+	)
+	defer span.End()
+
+	_, err = os.Stat(filePath)
+
+	return err == nil
+}
+
+// GetFile returns the file from the store at the given path.
+// NOTE: The caller must close the returned io.ReadCloser!
+func (s *Store) GetFile(ctx context.Context, path string) (int64, io.ReadCloser, error) {
+	filePath, err := s.sanitizePath(path)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	_, span := tracer.Start(
+		ctx,
+		"local.GetFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("file_path", filePath),
+		),
+	)
+	defer span.End()
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil, storage.ErrNotFound
+		}
+
+		return 0, nil, fmt.Errorf("error stating the file %q: %w", filePath, err)
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, nil, fmt.Errorf("error opening the file %q: %w", filePath, err)
+	}
+
+	return info.Size(), f, nil
+}
+
+// PutFile puts the file in the store at the given path.
+func (s *Store) PutFile(ctx context.Context, path string, body io.Reader) (int64, error) {
+	filePath, err := s.sanitizePath(path)
+	if err != nil {
+		return 0, err
+	}
+
+	_, span := tracer.Start(
+		ctx,
+		"local.PutFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("file_path", filePath),
+		),
+	)
+	defer span.End()
+
+	if err := os.MkdirAll(filepath.Dir(filePath), dirMode); err != nil {
+		return 0, fmt.Errorf("error creating the directories for %q: %w", filePath, err)
+	}
+
+	f, err := os.CreateTemp(s.storeTMPPath(), filepath.Base(path)+"-*")
+	if err != nil {
+		return 0, fmt.Errorf("error creating the temporary file: %w", err)
+	}
+
+	written, err := io.Copy(f, body)
+	if err != nil {
+		f.Close()
+		os.Remove(f.Name())
+
+		return 0, fmt.Errorf("error writing to the temporary file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return 0, fmt.Errorf("error closing the temporary file: %w", err)
+	}
+
+	if err := os.Rename(f.Name(), filePath); err != nil {
+		return 0, fmt.Errorf("error moving the file to %q: %w", filePath, err)
+	}
+
+	if err := os.Chmod(filePath, fileMode); err != nil {
+		return 0, fmt.Errorf("error changing mode of %q: %w", filePath, err)
+	}
+
+	return written, nil
+}
+
+// DeleteFile deletes the file from the store at the given path.
+func (s *Store) DeleteFile(ctx context.Context, path string) error {
+	filePath, err := s.sanitizePath(path)
+	if err != nil {
+		return err
+	}
+
+	_, span := tracer.Start(
+		ctx,
+		"local.DeleteFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("file_path", filePath),
+		),
+	)
+	defer span.End()
+
+	if err := os.Remove(filePath); err != nil {
+		if os.IsNotExist(err) {
+			return storage.ErrNotFound
+		}
+
+		return fmt.Errorf("error deleting file %q: %w", filePath, err)
+	}
+
+	return nil
+}
+
+func (s *Store) configPath() string    { return filepath.Join(s.path, "config") }
+func (s *Store) secretKeyPath() string { return filepath.Join(s.configPath(), "cache.key") }
+func (s *Store) storePath() string     { return filepath.Join(s.path, "store") }
+
+func (s *Store) sanitizePath(path string) (string, error) {
+	// Sanitize path to prevent traversal.
+	relativePath := strings.TrimPrefix(path, "/")
+	filePath := filepath.Join(s.storePath(), relativePath)
+
+	// Final check to ensure the path is within the store directory.
+	if !strings.HasPrefix(filePath, s.storePath()) {
+		return "", storage.ErrNotFound
+	}
+
+	return filePath, nil
+}
+
 func (s *Store) storeNarInfoPath() string { return filepath.Join(s.storePath(), "narinfo") }
 func (s *Store) storeNarPath() string     { return filepath.Join(s.storePath(), "nar") }
 func (s *Store) storeTMPPath() string     { return filepath.Join(s.storePath(), "tmp") }

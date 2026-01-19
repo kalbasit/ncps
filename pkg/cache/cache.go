@@ -30,6 +30,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/nixcacheindex"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
 
@@ -137,9 +138,16 @@ type Cache struct {
 	configStore  storage.ConfigStore
 	narInfoStore storage.NarInfoStore
 	narStore     storage.NarStore
+	fileStore    storage.FileStore
 
 	// Should the cache sign the narinfos?
 	shouldSignNarinfo bool
+
+	// Should the cache generate the experimental cache index?
+	experimentalCacheIndex      bool
+	experimentalCacheIndexHTTPS bool
+	indexClient                 *nixcacheindex.Client
+	indexGenerationJobID        cron.EntryID
 
 	// recordAgeIgnoreTouch represents the duration at which a record is
 	// considered up to date and a touch is not invoked. This helps avoid
@@ -216,6 +224,13 @@ func (ds *downloadState) getError() error {
 	return ds.downloadError
 }
 
+// Fetch implements the nixcacheindex.Fetcher interface.
+func (c *Cache) Fetch(ctx context.Context, path string) (io.ReadCloser, error) {
+	_, rc, err := c.fileStore.GetFile(ctx, path)
+
+	return rc, err
+}
+
 // New returns a new Cache.
 func New(
 	ctx context.Context,
@@ -225,6 +240,7 @@ func New(
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
 	narStore storage.NarStore,
+	fileStore storage.FileStore,
 	secretKeyPath string,
 	downloadLocker lock.Locker,
 	cacheLocker lock.RWLocker,
@@ -238,6 +254,7 @@ func New(
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
+		fileStore:            fileStore,
 		shouldSignNarinfo:    true,
 		downloadLocker:       downloadLocker,
 		cacheLocker:          cacheLocker,
@@ -275,6 +292,9 @@ func New(
 	analytics.SafeGo(ctx, func() {
 		c.processHealthChanges(ctx, healthChangeCh)
 	})
+
+	c.cron = cron.New()
+	c.cron.Start()
 
 	return c, nil
 }
@@ -375,6 +395,40 @@ func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker { return c.healthC
 
 // SetCacheSignNarinfo configure ncps to sign or not sign narinfos.
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
+
+// SetExperimentalCacheIndex configure ncps to generate the cache index or not.
+func (c *Cache) SetExperimentalCacheIndex(experimentalCacheIndex bool) {
+	c.experimentalCacheIndex = experimentalCacheIndex
+
+	if !c.experimentalCacheIndex {
+		c.indexClient = nil
+
+		if c.indexGenerationJobID != 0 {
+			c.cron.Remove(c.indexGenerationJobID)
+			c.indexGenerationJobID = 0
+		}
+
+		return
+	}
+
+	c.indexClient = nixcacheindex.NewClient(c.baseContext, c)
+
+	if c.indexGenerationJobID != 0 {
+		return
+	}
+
+	jobID, err := c.cron.AddFunc("@hourly", c.generateIndex)
+	if err != nil {
+		zerolog.Ctx(c.baseContext).Error().Err(err).Msg("failed to schedule cache index generation")
+
+		return
+	}
+
+	c.indexGenerationJobID = jobID
+}
+
+// SetExperimentalCacheIndexHTTPS configure ncps to use HTTPS for the cache index.
+func (c *Cache) SetExperimentalCacheIndexHTTPS(https bool) { c.experimentalCacheIndexHTTPS = https }
 
 // SetMaxSize sets the maxsize of the cache. This will be used by the LRU
 // cronjob to automatically clean-up the store.
@@ -1084,6 +1138,19 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
 				return fmt.Errorf("error fetching the narinfo from the store: %w", err)
+			}
+		}
+
+		if c.indexClient != nil {
+			status, err := c.indexClient.Query(ctx, hash)
+			if err != nil {
+				// Don't fail the request if the index lookup fails, just log it and proceed
+				zerolog.Ctx(ctx).Warn().Err(err).Str("hash", hash).Msg("cache index query failed")
+			} else if status == nixcacheindex.DefiniteMiss {
+				// Avoid checking upstream if we know it's a definite miss
+				zerolog.Ctx(ctx).Debug().Str("hash", hash).Msg("cache index says definite miss")
+
+				return storage.ErrNotFound
 			}
 		}
 

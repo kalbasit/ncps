@@ -501,6 +501,128 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	return nil
 }
 
+// HasFile returns true if the store has the file at the given path.
+func (s *Store) HasFile(ctx context.Context, path string) bool {
+	key := "store/" + strings.TrimPrefix(path, "/")
+
+	_, span := tracer.Start(
+		ctx,
+		"s3.HasFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("key", key),
+		),
+	)
+	defer span.End()
+
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+
+	return err == nil
+}
+
+// GetFile returns the file from the store at the given path.
+// NOTE: The caller must close the returned io.ReadCloser!
+func (s *Store) GetFile(ctx context.Context, path string) (int64, io.ReadCloser, error) {
+	key := "store/" + strings.TrimPrefix(path, "/")
+
+	_, span := tracer.Start(
+		ctx,
+		"s3.GetFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("key", key),
+		),
+	)
+	defer span.End()
+
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return 0, nil, fmt.Errorf("error getting file from S3: %w", err)
+	}
+
+	// Get object info for size
+	info, err := obj.Stat()
+	if err != nil {
+		obj.Close()
+
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
+			return 0, nil, storage.ErrNotFound
+		}
+
+		return 0, nil, fmt.Errorf("error getting file info from S3: %w", err)
+	}
+
+	return info.Size, obj, nil
+}
+
+// PutFile puts the file in the store at the given path.
+func (s *Store) PutFile(ctx context.Context, path string, body io.Reader) (int64, error) {
+	key := "store/" + strings.TrimPrefix(path, "/")
+
+	_, span := tracer.Start(
+		ctx,
+		"s3.PutFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("key", key),
+		),
+	)
+	defer span.End()
+
+	// Put the file
+	info, err := s.client.PutObject(
+		ctx,
+		s.bucket,
+		key,
+		body,
+		-1, // unknown size
+		minio.PutObjectOptions{},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("error putting file to S3: %w", err)
+	}
+
+	return info.Size, nil
+}
+
+// DeleteFile deletes the file from the store at the given path.
+func (s *Store) DeleteFile(ctx context.Context, path string) error {
+	key := "store/" + strings.TrimPrefix(path, "/")
+
+	_, span := tracer.Start(
+		ctx,
+		"s3.DeleteFile",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("path", path),
+			attribute.String("key", key),
+		),
+	)
+	defer span.End()
+
+	// Check if key exists
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == s3NoSuchKey {
+			return storage.ErrNotFound
+		}
+
+		return fmt.Errorf("error checking if file exists: %w", err)
+	}
+
+	err = s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("error deleting file from S3: %w", err)
+	}
+
+	return nil
+}
+
 // Helper methods for key generation.
 func (s *Store) secretKeyPath() string {
 	return "config/cache.key"

@@ -69,7 +69,7 @@ func setupTestCache(t *testing.T) (*Cache, func()) {
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
 	if err != nil {
 		cleanup()
