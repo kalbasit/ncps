@@ -1728,3 +1728,165 @@ func TestBackgroundMigrateNarInfo_AfterCancellation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
+
+func TestGetNarInfo_ConcurrentPutNarInfoDuringMigration(t *testing.T) { //nolint:paralleltest
+	// This test verifies that if a PutNarInfo operation occurs while a background
+	// migration is happening for the same hash, both operations handle the duplicate
+	// key error correctly and the final state is consistent.
+	ctx := newContext()
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "ncps.db")
+
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	store, err := local.New(ctx, tmpDir)
+	require.NoError(t, err)
+
+	hash := testdata.Nar1.NarInfoHash
+	entry := testdata.Nar1
+
+	// Create a cache with background migration enabled
+	c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
+	require.NoError(t, err)
+
+	// 1. Pre-populate storage with narinfo (simulating old data before migration)
+	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
+	narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(entry.NarInfoText), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
+
+	// Verify it's not in the database
+	var count int
+
+	err = db.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	// 2. Start GetNarInfo which will trigger background migration
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		ni, err := c.GetNarInfo(ctx, hash)
+		assert.NoError(t, err)
+		assert.NotNil(t, ni)
+	}()
+
+	// Give GetNarInfo time to start the background migration
+	time.Sleep(100 * time.Millisecond)
+
+	// 3. Concurrently call PutNarInfo with the same hash
+	//    This simulates a client uploading the same narinfo while migration is happening
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		narInfoReader := io.NopCloser(strings.NewReader(entry.NarInfoText))
+		err := c.PutNarInfo(ctx, hash, narInfoReader)
+
+		// PutNarInfo should either succeed or handle the duplicate gracefully
+		assert.NoError(t, err)
+	}()
+
+	// Wait for both operations to complete
+	wg.Wait()
+
+	// 4. Verify final state: narinfo should be in database exactly once
+	err = db.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "narinfo should exist exactly once in database")
+
+	// 5. Verify we can still read it back
+	ni, err := c.GetNarInfo(ctx, hash)
+	require.NoError(t, err)
+	require.NotNil(t, ni)
+	assert.NotEmpty(t, ni.StorePath, "narinfo should have a store path")
+}
+
+func TestGetNarInfo_MultipleConcurrentPutsDuringMigration(t *testing.T) { //nolint:paralleltest
+	// This test simulates multiple concurrent PutNarInfo operations for the same
+	// hash while a background migration is happening. This is a more extreme version
+	// of the thundering herd scenario.
+	ctx := newContext()
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "ncps.db")
+
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	// Increase connection pool for concurrent operations
+	db.DB().SetMaxOpenConns(20)
+
+	store, err := local.New(ctx, tmpDir)
+	require.NoError(t, err)
+
+	hash := testdata.Nar1.NarInfoHash
+	entry := testdata.Nar1
+
+	c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
+	require.NoError(t, err)
+
+	// Pre-populate storage
+	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
+	narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(entry.NarInfoText), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
+
+	// Start multiple concurrent operations
+	const numConcurrent = 10
+
+	var wg sync.WaitGroup
+
+	wg.Add(numConcurrent)
+
+	for i := 0; i < numConcurrent; i++ {
+		go func(n int) {
+			defer wg.Done()
+
+			if n%2 == 0 {
+				// Half do GetNarInfo (triggers migration)
+				ni, err := c.GetNarInfo(ctx, hash)
+				assert.NoError(t, err)
+				assert.NotNil(t, ni)
+			} else {
+				// Half do PutNarInfo
+				narInfoReader := io.NopCloser(strings.NewReader(entry.NarInfoText))
+				err := c.PutNarInfo(ctx, hash, narInfoReader)
+				assert.NoError(t, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify final state: exactly one record
+	var count int
+
+	err = db.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "should have exactly one narinfo record despite concurrent operations")
+
+	// Verify the record is correct
+	ni, err := c.GetNarInfo(ctx, hash)
+	require.NoError(t, err)
+	require.NotNil(t, ni)
+	assert.NotEmpty(t, ni.StorePath, "narinfo should have a store path")
+}
