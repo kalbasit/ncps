@@ -237,6 +237,16 @@ func (w *mysqlWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64
 	return items, nil
 }
 
+func (w *mysqlWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetMigratedNarInfoHashes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
@@ -371,6 +381,16 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, erro
 	}
 
 	return items, nil
+}
+
+func (w *mysqlWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetUnmigratedNarInfoHashes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
 }
 
 func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {

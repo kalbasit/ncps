@@ -130,6 +130,12 @@ type Querier interface {
 	//      )
 	//  ) <= ?
 	GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error)
+	// Get all narinfo hashes that have a URL (migrated).
+	//
+	//  SELECT hash
+	//  FROM narinfos
+	//  WHERE url IS NOT NULL
+	GetMigratedNarInfoHashes(ctx context.Context) ([]string, error)
 	//GetNarFileByHash
 	//
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
@@ -202,6 +208,12 @@ type Querier interface {
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
 	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
+	// Get all narinfo hashes that have no URL (unmigrated).
+	//
+	//  SELECT hash
+	//  FROM narinfos
+	//  WHERE url IS NULL
+	GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error)
 	//LinkNarInfoToNarFile
 	//
 	//  INSERT INTO narinfo_nar_files (

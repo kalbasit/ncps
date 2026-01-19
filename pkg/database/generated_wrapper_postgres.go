@@ -210,6 +210,16 @@ func (w *postgresWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uin
 	return items, nil
 }
 
+func (w *postgresWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetMigratedNarInfoHashes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *postgresWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
@@ -344,6 +354,16 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 	}
 
 	return items, nil
+}
+
+func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetUnmigratedNarInfoHashes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
 }
 
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
