@@ -27,7 +27,8 @@ func (w *mysqlWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfoR
 	for _, v := range arg.Reference {
 		err := w.adapter.AddNarInfoReference(ctx, mysqldb.AddNarInfoReferenceParams{
 			NarInfoID: arg.NarInfoID,
-			Reference: v})
+			Reference: v,
+		})
 		if err != nil {
 			if IsDuplicateKeyError(err) {
 				continue
@@ -52,7 +53,8 @@ func (w *mysqlWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoS
 	for _, v := range arg.Signature {
 		err := w.adapter.AddNarInfoSignature(ctx, mysqldb.AddNarInfoSignatureParams{
 			NarInfoID: arg.NarInfoID,
-			Signature: v})
+			Signature: v,
+		})
 		if err != nil {
 			if IsDuplicateKeyError(err) {
 				continue
