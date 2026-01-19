@@ -502,7 +502,7 @@ type {{.Engine.Name}}Wrapper struct {
 }
 
 {{range .Methods}}
-{{- $methodParams := .Params -}}
+{{- $methodParams := .Params }}
 func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
 	{{- /* --- Auto-Loop for Bulk Insert on Non-Postgres --- */ -}}
 	{{- $isAutoLoop := false -}}
@@ -575,7 +575,6 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		if err != nil {
 			return {{.Method.ReturnElem}}{}, err
 		}
-
 
 		return w.Get{{.Method.ReturnElem}}ByID(ctx, id)
 
