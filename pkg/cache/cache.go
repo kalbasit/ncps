@@ -2068,19 +2068,25 @@ func (c *Cache) storeInDatabase(
 			return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
 		}
 
-		for _, ref := range narInfo.References {
-			if err := qtx.AddNarInfoReference(ctx, database.AddNarInfoReferenceParams{
+		if len(narInfo.References) > 0 {
+			if err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
 				NarInfoID: nir.ID,
-				Reference: ref,
+				Reference: narInfo.References,
 			}); err != nil {
 				return fmt.Errorf("error inserting narinfo reference: %w", err)
 			}
 		}
 
-		for _, sig := range narInfo.Signatures {
-			if err := qtx.AddNarInfoSignature(ctx, database.AddNarInfoSignatureParams{
+		// Signatures
+		sigStrings := make([]string, len(narInfo.Signatures))
+		for i, sig := range narInfo.Signatures {
+			sigStrings[i] = sig.String()
+		}
+
+		if len(sigStrings) > 0 {
+			if err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
 				NarInfoID: nir.ID,
-				Signature: sig.String(),
+				Signature: sigStrings,
 			}); err != nil {
 				return fmt.Errorf("error inserting narinfo signature: %w", err)
 			}
