@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/jinzhu/inflection"
 )
 
 const generatedFilePrefix = "generated_"
@@ -316,12 +318,7 @@ func extractBulkFor(comment string) string {
 	return ""
 }
 
-func toSingular(s string) string {
-	if strings.HasSuffix(s, "s") && !strings.HasSuffix(s, "ss") {
-		return strings.TrimSuffix(s, "s")
-	}
-	return s
-}
+func toSingular(s string) string { return inflection.Singular(s) }
 
 func writeFile(dir, filename string, content []byte) {
 	formatted, err := format.Source(content)

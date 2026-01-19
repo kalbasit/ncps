@@ -131,9 +131,9 @@ func TestToSingular(t *testing.T) {
 	}{
 		{"Users", "User"},
 		{"Process", "Process"},
-		{"GetStatus", "GetStatu"}, // Matches suggested AI logic, template handles the rest
-		{"Status", "Statu"},
-		{"Addresses", "Addresse"},
+		{"GetStatus", "GetStatus"},
+		{"Status", "Status"},
+		{"Addresses", "Address"},
 	}
 
 	for _, tt := range tests {
