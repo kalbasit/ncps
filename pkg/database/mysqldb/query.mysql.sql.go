@@ -450,6 +450,40 @@ func (q *Queries) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]
 	return items, nil
 }
 
+const getMigratedNarInfoHashes = `-- name: GetMigratedNarInfoHashes :many
+SELECT hash
+FROM narinfos
+WHERE url IS NOT NULL
+`
+
+// Get all narinfo hashes that have a URL (migrated).
+//
+//	SELECT hash
+//	FROM narinfos
+//	WHERE url IS NOT NULL
+func (q *Queries) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getMigratedNarInfoHashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		items = append(items, hash)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNarFileByHash = `-- name: GetNarFileByHash :one
 SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
 FROM nar_files
@@ -788,6 +822,40 @@ func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUnmigratedNarInfoHashes = `-- name: GetUnmigratedNarInfoHashes :many
+SELECT hash
+FROM narinfos
+WHERE url IS NULL
+`
+
+// Get all narinfo hashes that have no URL (unmigrated).
+//
+//	SELECT hash
+//	FROM narinfos
+//	WHERE url IS NULL
+func (q *Queries) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getUnmigratedNarInfoHashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		items = append(items, hash)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

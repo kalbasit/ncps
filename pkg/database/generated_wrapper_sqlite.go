@@ -222,6 +222,16 @@ func (w *sqliteWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint6
 	return items, nil
 }
 
+func (w *sqliteWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetMigratedNarInfoHashes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *sqliteWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
@@ -356,6 +366,16 @@ func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, err
 	}
 
 	return items, nil
+}
+
+func (w *sqliteWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	res, err := w.adapter.GetUnmigratedNarInfoHashes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
 }
 
 func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {

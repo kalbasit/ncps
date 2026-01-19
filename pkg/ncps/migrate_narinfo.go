@@ -132,7 +132,22 @@ func migrateNarInfoCommand(
 				return ErrStorageIterationNotSupported
 			}
 
-			// 3. Migrate
+			// 3. Setup Migrated Hashes Map
+			logger.Info().Msg("fetching existing narinfo hashes from the database")
+
+			migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to fetch migrated hashes from database: %w", err)
+			}
+
+			migratedHashesMap := make(map[string]struct{}, len(migratedHashes))
+			for _, hash := range migratedHashes {
+				migratedHashesMap[hash] = struct{}{}
+			}
+
+			logger.Info().Int("count", len(migratedHashesMap)).Msg("loaded migrated hashes from database")
+
+			// 4. Migrate
 			logger.Info().Msg("starting migration")
 
 			count := 0
@@ -144,6 +159,35 @@ func migrateNarInfoCommand(
 
 			err = walker.WalkNarInfos(ctx, func(hash string) error {
 				count++
+
+				if _, ok := migratedHashesMap[hash]; ok {
+					if !deleteAfter {
+						// Skip
+						return nil
+					}
+
+					// We need to delete it from storage, but we skip the DB migration part.
+					g.Go(func() error {
+						log := logger.With().Str("hash", hash).Logger()
+						log.Info().Msg("narinfo already migrated, deleting from storage")
+
+						if dryRun {
+							log.Info().Msg("[DRY-RUN] would delete from storage")
+
+							return nil
+						}
+
+						if err := narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+							log.Error().Err(err).Msg("failed to delete from store")
+
+							atomic.AddInt32(&errorsCount, 1)
+						}
+
+						return nil
+					})
+
+					return nil
+				}
 
 				g.Go(func() error {
 					log := logger.With().Str("hash", hash).Logger()
