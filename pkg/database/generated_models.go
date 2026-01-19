@@ -11,9 +11,19 @@ type AddNarInfoReferenceParams struct {
 	Reference string
 }
 
+type AddNarInfoReferencesParams struct {
+	NarInfoID int64
+	Reference []string
+}
+
 type AddNarInfoSignatureParams struct {
 	NarInfoID int64
 	Signature string
+}
+
+type AddNarInfoSignaturesParams struct {
+	NarInfoID int64
+	Signature []string
 }
 
 type Config struct {

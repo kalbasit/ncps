@@ -23,8 +23,28 @@ func (w *postgresWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInf
 	return nil
 }
 
+func (w *postgresWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error {
+	err := w.adapter.AddNarInfoReferences(ctx, postgresdb.AddNarInfoReferencesParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
+}
+
 func (w *postgresWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
 	err := w.adapter.AddNarInfoSignature(ctx, postgresdb.AddNarInfoSignatureParams(arg))
+	if err != nil {
+		return err
+	}
+
+	// No return value (void)
+	return nil
+}
+
+func (w *postgresWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error {
+	err := w.adapter.AddNarInfoSignatures(ctx, postgresdb.AddNarInfoSignaturesParams(arg))
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,8 @@ package postgresdb
 import (
 	"context"
 	"database/sql"
+
+	"github.com/lib/pq"
 )
 
 const addNarInfoReference = `-- name: AddNarInfoReference :exec
@@ -35,6 +37,29 @@ func (q *Queries) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferen
 	return err
 }
 
+const addNarInfoReferences = `-- name: AddNarInfoReferences :exec
+INSERT INTO narinfo_references (
+    narinfo_id, reference
+)
+SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, reference) DO NOTHING
+`
+
+type AddNarInfoReferencesParams struct {
+	NarInfoID int64
+	Reference []string
+}
+
+// @bulk-for AddNarInfoReference
+//
+//	INSERT INTO narinfo_references (
+//	    narinfo_id, reference
+//	)
+//	SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, reference) DO NOTHING
+func (q *Queries) AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error {
+	_, err := q.db.ExecContext(ctx, addNarInfoReferences, arg.NarInfoID, pq.Array(arg.Reference))
+	return err
+}
+
 const addNarInfoSignature = `-- name: AddNarInfoSignature :exec
 INSERT INTO narinfo_signatures (
     narinfo_id, signature
@@ -57,6 +82,29 @@ type AddNarInfoSignatureParams struct {
 //	)
 func (q *Queries) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
 	_, err := q.db.ExecContext(ctx, addNarInfoSignature, arg.NarInfoID, arg.Signature)
+	return err
+}
+
+const addNarInfoSignatures = `-- name: AddNarInfoSignatures :exec
+INSERT INTO narinfo_signatures (
+    narinfo_id, signature
+)
+SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, signature) DO NOTHING
+`
+
+type AddNarInfoSignaturesParams struct {
+	NarInfoID int64
+	Signature []string
+}
+
+// @bulk-for AddNarInfoSignature
+//
+//	INSERT INTO narinfo_signatures (
+//	    narinfo_id, signature
+//	)
+//	SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, signature) DO NOTHING
+func (q *Queries) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error {
+	_, err := q.db.ExecContext(ctx, addNarInfoSignatures, arg.NarInfoID, pq.Array(arg.Signature))
 	return err
 }
 

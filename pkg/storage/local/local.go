@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
@@ -154,6 +155,46 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	_, err := os.Stat(narInfoPath)
 
 	return err == nil
+}
+
+// WalkNarInfos walks all narinfos in the store and calls fn for each one.
+func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) error {
+	root := s.storeNarInfoPath()
+
+	_, span := tracer.Start(
+		ctx,
+		"local.WalkNarInfos",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("root", root),
+		),
+	)
+	defer span.End()
+
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return nil
+	}
+
+	return filepath.Walk(root, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		if filepath.Ext(path) != ".narinfo" {
+			return nil
+		}
+
+		// path is something like .../store/narinfo/h/ha/hash.narinfo
+		// we want hash
+		fileName := filepath.Base(path)
+		hash := strings.TrimSuffix(fileName, ".narinfo")
+
+		return fn(hash)
+	})
 }
 
 // GetNarInfo returns narinfo from the store.
