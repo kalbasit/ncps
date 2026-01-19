@@ -87,7 +87,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			ni1, err := db.CreateNarInfo(context.Background(), hash)
+			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			ni2, err := db.GetNarInfoByHash(context.Background(), hash)
@@ -104,7 +104,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			nio, err := db.CreateNarInfo(context.Background(), hash)
+			nio, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			rows, err := db.DB().QueryContext(
@@ -143,10 +143,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			_, err = db.CreateNarInfo(context.Background(), hash)
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			_, err = db.CreateNarInfo(context.Background(), hash)
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			assert.True(t, database.IsDuplicateKeyError(err))
 		})
 
@@ -170,7 +170,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 						return
 					}
 
-					if _, err := db.CreateNarInfo(context.Background(), hash); err != nil {
+					if _, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash}); err != nil {
 						errC <- fmt.Errorf("error creating the narinfo record: %w", err)
 					}
 				}()
@@ -202,7 +202,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			_, err = db.CreateNarInfo(context.Background(), hash)
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			t.Run("confirm created_at == last_accessed_at, and no updated_at", func(t *testing.T) {
@@ -290,7 +290,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			t.Run("create the narinfo", func(t *testing.T) {
-				_, err = db.CreateNarInfo(context.Background(), hash)
+				_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 				require.NoError(t, err)
 			})
 
@@ -392,7 +392,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			narInfoHash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			_, err = db.CreateNarInfo(context.Background(), narInfoHash)
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: narInfoHash})
 			require.NoError(t, err)
 
 			narHash, err := helper.RandString(32, nil)

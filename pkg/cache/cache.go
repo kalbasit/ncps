@@ -1900,7 +1900,19 @@ func (c *Cache) storeInDatabase(
 		Msg("storing narinfo and nar_file record in the database")
 
 	return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
-		nir, err := qtx.CreateNarInfo(ctx, hash)
+		nir, err := qtx.CreateNarInfo(ctx, database.CreateNarInfoParams{
+			Hash:        hash,
+			StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
+			URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
+			Compression: sql.NullString{String: narInfo.Compression, Valid: narInfo.Compression != ""},
+			FileHash:    sql.NullString{String: narInfo.FileHash.String(), Valid: narInfo.FileHash != nil},
+			FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: true}, //nolint:gosec
+			NarHash:     sql.NullString{String: narInfo.NarHash.String(), Valid: narInfo.NarHash != nil},
+			NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true}, //nolint:gosec
+			Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
+			System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
+			Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
+		})
 		if err != nil {
 			if database.IsDuplicateKeyError(err) {
 				zerolog.Ctx(ctx).
@@ -1911,6 +1923,24 @@ func (c *Cache) storeInDatabase(
 			}
 
 			return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
+		}
+
+		for _, ref := range narInfo.References {
+			if err := qtx.AddNarInfoReference(ctx, database.AddNarInfoReferenceParams{
+				NarInfoID: nir.ID,
+				Reference: ref,
+			}); err != nil {
+				return fmt.Errorf("error inserting narinfo reference: %w", err)
+			}
+		}
+
+		for _, sig := range narInfo.Signatures {
+			if err := qtx.AddNarInfoSignature(ctx, database.AddNarInfoSignatureParams{
+				NarInfoID: nir.ID,
+				Signature: sig.String(),
+			}); err != nil {
+				return fmt.Errorf("error inserting narinfo signature: %w", err)
+			}
 		}
 
 		narURL, err := nar.ParseURL(narInfo.URL)

@@ -532,7 +532,7 @@ func TestRunLRUWithSharedNar(t *testing.T) {
 		FileSize:    50,
 	})
 	require.NoError(t, err)
-	ni4, err := c.db.CreateNarInfo(ctx, "nar-info-4")
+	ni4, err := c.db.CreateNarInfo(ctx, database.CreateNarInfoParams{Hash: "nar-info-4"})
 	require.NoError(t, err)
 	require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
 		NarInfoID: ni4.ID,
@@ -546,7 +546,7 @@ func TestRunLRUWithSharedNar(t *testing.T) {
 		FileSize:    100,
 	})
 	require.NoError(t, err)
-	ni1, err := c.db.CreateNarInfo(ctx, "nar-info-1")
+	ni1, err := c.db.CreateNarInfo(ctx, database.CreateNarInfoParams{Hash: "nar-info-1"})
 	require.NoError(t, err)
 	require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
 		NarInfoID: ni1.ID,
@@ -554,7 +554,7 @@ func TestRunLRUWithSharedNar(t *testing.T) {
 	}))
 
 	// NarFile A (100 bytes), NarInfo 2
-	ni2, err := c.db.CreateNarInfo(ctx, "nar-info-2")
+	ni2, err := c.db.CreateNarInfo(ctx, database.CreateNarInfoParams{Hash: "nar-info-2"})
 	require.NoError(t, err)
 	require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
 		NarInfoID: ni2.ID,

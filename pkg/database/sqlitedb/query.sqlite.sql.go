@@ -7,7 +7,58 @@ package sqlitedb
 
 import (
 	"context"
+	"database/sql"
 )
+
+const addNarInfoReference = `-- name: AddNarInfoReference :exec
+INSERT INTO narinfo_references (
+    narinfo_id, reference
+) VALUES (
+    ?, ?
+)
+`
+
+type AddNarInfoReferenceParams struct {
+	NarInfoID int64
+	Reference string
+}
+
+// AddNarInfoReference
+//
+//	INSERT INTO narinfo_references (
+//	    narinfo_id, reference
+//	) VALUES (
+//	    ?, ?
+//	)
+func (q *Queries) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error {
+	_, err := q.db.ExecContext(ctx, addNarInfoReference, arg.NarInfoID, arg.Reference)
+	return err
+}
+
+const addNarInfoSignature = `-- name: AddNarInfoSignature :exec
+INSERT INTO narinfo_signatures (
+    narinfo_id, signature
+) VALUES (
+    ?, ?
+)
+`
+
+type AddNarInfoSignatureParams struct {
+	NarInfoID int64
+	Signature string
+}
+
+// AddNarInfoSignature
+//
+//	INSERT INTO narinfo_signatures (
+//	    narinfo_id, signature
+//	) VALUES (
+//	    ?, ?
+//	)
+func (q *Queries) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
+	_, err := q.db.ExecContext(ctx, addNarInfoSignature, arg.NarInfoID, arg.Signature)
+	return err
+}
 
 const createConfig = `-- name: CreateConfig :one
 INSERT INTO config (
@@ -91,23 +142,49 @@ func (q *Queries) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (N
 
 const createNarInfo = `-- name: CreateNarInfo :one
 INSERT INTO narinfos (
-    hash
+    hash, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 ) VALUES (
-    ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 `
 
+type CreateNarInfoParams struct {
+	Hash        string
+	StorePath   sql.NullString
+	URL         sql.NullString
+	Compression sql.NullString
+	FileHash    sql.NullString
+	FileSize    sql.NullInt64
+	NarHash     sql.NullString
+	NarSize     sql.NullInt64
+	Deriver     sql.NullString
+	System      sql.NullString
+	Ca          sql.NullString
+}
+
 // CreateNarInfo
 //
 //	INSERT INTO narinfos (
-//	    hash
+//	    hash, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 //	) VALUES (
-//	    ?
+//	    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 //	)
 //	RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
-func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
-	row := q.db.QueryRowContext(ctx, createNarInfo, hash)
+func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
+	row := q.db.QueryRowContext(ctx, createNarInfo,
+		arg.Hash,
+		arg.StorePath,
+		arg.URL,
+		arg.Compression,
+		arg.FileHash,
+		arg.FileSize,
+		arg.NarHash,
+		arg.NarSize,
+		arg.Deriver,
+		arg.System,
+		arg.Ca,
+	)
 	var i NarInfo
 	err := row.Scan(
 		&i.ID,
@@ -116,7 +193,7 @@ func (q *Queries) CreateNarInfo(ctx context.Context, hash string) (NarInfo, erro
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
 		&i.StorePath,
-		&i.Url,
+		&i.URL,
 		&i.Compression,
 		&i.FileHash,
 		&i.FileSize,
@@ -396,7 +473,7 @@ func (q *Queries) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]
 			&i.UpdatedAt,
 			&i.LastAccessedAt,
 			&i.StorePath,
-			&i.Url,
+			&i.URL,
 			&i.Compression,
 			&i.FileHash,
 			&i.FileSize,
@@ -539,7 +616,7 @@ func (q *Queries) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, e
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
 		&i.StorePath,
-		&i.Url,
+		&i.URL,
 		&i.Compression,
 		&i.FileHash,
 		&i.FileSize,
@@ -573,7 +650,7 @@ func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
 		&i.StorePath,
-		&i.Url,
+		&i.URL,
 		&i.Compression,
 		&i.FileHash,
 		&i.FileSize,
@@ -628,6 +705,74 @@ func (q *Queries) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int
 			return nil, err
 		}
 		items = append(items, hash)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNarInfoReferences = `-- name: GetNarInfoReferences :many
+SELECT reference
+FROM narinfo_references
+WHERE narinfo_id = ?
+`
+
+// GetNarInfoReferences
+//
+//	SELECT reference
+//	FROM narinfo_references
+//	WHERE narinfo_id = ?
+func (q *Queries) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getNarInfoReferences, narinfoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var reference string
+		if err := rows.Scan(&reference); err != nil {
+			return nil, err
+		}
+		items = append(items, reference)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNarInfoSignatures = `-- name: GetNarInfoSignatures :many
+SELECT signature
+FROM narinfo_signatures
+WHERE narinfo_id = ?
+`
+
+// GetNarInfoSignatures
+//
+//	SELECT signature
+//	FROM narinfo_signatures
+//	WHERE narinfo_id = ?
+func (q *Queries) GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getNarInfoSignatures, narinfoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var signature string
+		if err := rows.Scan(&signature); err != nil {
+			return nil, err
+		}
+		items = append(items, signature)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

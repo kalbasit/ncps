@@ -6,6 +6,16 @@ import (
 	"time"
 )
 
+type AddNarInfoReferenceParams struct {
+	NarInfoID int64
+	Reference string
+}
+
+type AddNarInfoSignatureParams struct {
+	NarInfoID int64
+	Signature string
+}
+
 type Config struct {
 	ID        int64
 	Key       string
@@ -24,6 +34,20 @@ type CreateNarFileParams struct {
 	Compression string
 	Query       string
 	FileSize    uint64
+}
+
+type CreateNarInfoParams struct {
+	Hash        string
+	StorePath   sql.NullString
+	URL         sql.NullString
+	Compression sql.NullString
+	FileHash    sql.NullString
+	FileSize    sql.NullInt64
+	NarHash     sql.NullString
+	NarSize     sql.NullInt64
+	Deriver     sql.NullString
+	System      sql.NullString
+	Ca          sql.NullString
 }
 
 type LinkNarInfoToNarFileParams struct {
@@ -49,7 +73,7 @@ type NarInfo struct {
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
 	StorePath      sql.NullString
-	Url            sql.NullString
+	URL            sql.NullString
 	Compression    sql.NullString
 	FileHash       sql.NullString
 	FileSize       sql.NullInt64
