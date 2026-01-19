@@ -267,7 +267,6 @@ func generateQuerier(dir string, methods []MethodInfo) {
 func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs map[string]StructInfo) {
 	t := template.Must(template.New("wrapper").Funcs(template.FuncMap{
 		"joinParamsSignature": joinParamsSignature,
-		"joinParamsCall":      joinParamsCall,
 		"joinReturns":         joinReturns,
 		"isSlice":             isSlice,
 		"firstReturnType":     firstReturnType,
@@ -278,6 +277,9 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 		"getSliceField":       getSliceField,
 		"toSingular":          toSingular,
 		"trimPrefix":          strings.TrimPrefix,
+		"joinParamsCall": func(params []Param, engPkg string) (string, error) {
+			return joinParamsCall(params, engPkg)
+		},
 		"dict": func(values ...interface{}) (map[string]interface{}, error) {
 			if len(values)%2 != 0 {
 				return nil, fmt.Errorf("invalid dict call")
@@ -342,12 +344,12 @@ func joinParamsSignature(params []Param) string {
 	return strings.Join(p, ", ")
 }
 
-func joinParamsCall(params []Param, engPkg string) string {
+func joinParamsCall(params []Param, engPkg string) (string, error) {
 	var p []string
 	for _, param := range params {
 		if isDomainStructFunc(param.Type) {
 			if strings.HasPrefix(param.Type, "[]") {
-				p = append(p, fmt.Sprintf("[]%s.%s(%s)", engPkg, strings.TrimPrefix(param.Type, "[]"), param.Name))
+				return "", fmt.Errorf("unsupported parameter type: slice of domain struct %s. Slices of domain structs are not supported as direct parameters, as they require a conversion loop to be generated. The auto-looping for bulk inserts handles this by operating on a struct parameter containing a slice.", param.Type)
 			} else {
 				p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
 			}
@@ -355,7 +357,7 @@ func joinParamsCall(params []Param, engPkg string) string {
 			p = append(p, param.Name)
 		}
 	}
-	return strings.Join(p, ", ")
+	return strings.Join(p, ", "), nil
 }
 
 func joinReturns(returns []Return) string {

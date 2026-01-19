@@ -143,6 +143,55 @@ func TestToSingular(t *testing.T) {
 	}
 }
 
+func TestJoinParamsCall(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  []Param
+		engPkg  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "Simple Params",
+			params: []Param{
+				{Name: "ctx", Type: "context.Context"},
+				{Name: "id", Type: "int64"},
+			},
+			engPkg: "sqlitedb",
+			want:   "ctx, id",
+		},
+		{
+			name: "Domain Struct Param",
+			params: []Param{
+				{Name: "user", Type: "User"},
+			},
+			engPkg: "postgresdb",
+			want:   "postgresdb.User(user)",
+		},
+		{
+			name: "Unsupported Slice of Domain Struct",
+			params: []Param{
+				{Name: "users", Type: "[]User"},
+			},
+			engPkg:  "postgresdb",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := joinParamsCall(tt.params, tt.engPkg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("joinParamsCall() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("joinParamsCall() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWrapperTemplate(t *testing.T) {
 	// Mock engines
 	sqlite := Engine{Name: "sqlite", Package: "sqlitedb"}
@@ -179,7 +228,6 @@ func TestWrapperTemplate(t *testing.T) {
 	// Helper functions as defined in main.go
 	funcMap := template.FuncMap{
 		"joinParamsSignature": joinParamsSignature,
-		"joinParamsCall":      joinParamsCall,
 		"joinReturns":         joinReturns,
 		"isSlice":             isSlice,
 		"firstReturnType":     firstReturnType,
@@ -196,6 +244,9 @@ func TestWrapperTemplate(t *testing.T) {
 				dict[values[i].(string)] = values[i+1]
 			}
 			return dict, nil
+		},
+		"joinParamsCall": func(params []Param, engPkg string) (string, error) {
+			return joinParamsCall(params, engPkg)
 		},
 		"hasSuffix": strings.HasSuffix,
 	}
