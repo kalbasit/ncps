@@ -6,7 +6,7 @@
         name = "gen-db-wrappers";
         src = ./src;
 
-        vendorHash = null;
+        vendorHash = "sha256-EsZuN5MPT1bTImjkcyNd5sxy7srSS0JlDJiGGfpEhtM=";
 
         meta = {
           description = "Generate database wrappers based on the Querier interface";
