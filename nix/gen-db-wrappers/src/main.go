@@ -117,11 +117,8 @@ func main() {
 							for _, comment := range field.Doc.List {
 								m.Docs = append(m.Docs, comment.Text)
 								if strings.Contains(comment.Text, "@bulk-for") {
-									parts := strings.Fields(comment.Text)
-									for i, p := range parts {
-										if p == "@bulk-for" && i+1 < len(parts) {
-											m.BulkFor = parts[i+1]
-										}
+									if bulkFor := extractBulkFor(comment.Text); bulkFor != "" {
+										m.BulkFor = bulkFor
 									}
 								}
 							}
@@ -277,9 +274,8 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 		"getStruct":           func(name string) StructInfo { return structs[name] },
 		"hasSliceField":       hasSliceField,
 		"getSliceField":       getSliceField,
-		"toSingular": func(s string) string {
-			return strings.TrimSuffix(s, "s")
-		},
+		"toSingular":          toSingular,
+		"trimPrefix":          strings.TrimPrefix,
 		"dict": func(values ...interface{}) (map[string]interface{}, error) {
 			if len(values)%2 != 0 {
 				return nil, fmt.Errorf("invalid dict call")
@@ -308,6 +304,23 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 		log.Fatalf("executing wrapper template: %v", err)
 	}
 	writeFile(dir, fmt.Sprintf("%swrapper_%s.go", generatedFilePrefix, engine.Name), buf.Bytes())
+}
+
+func extractBulkFor(comment string) string {
+	parts := strings.Fields(comment)
+	for i, p := range parts {
+		if p == "@bulk-for" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
+func toSingular(s string) string {
+	if strings.HasSuffix(s, "s") && !strings.HasSuffix(s, "ss") {
+		return strings.TrimSuffix(s, "s")
+	}
+	return s
 }
 
 func writeFile(dir, filename string, content []byte) {
@@ -507,10 +520,16 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 				{{- $paramType = $pType -}}
 				{{- $sliceField = getSliceField $sInfo -}}
 			{{- else if hasSuffix .Name "s" -}}
-				{{- $isAutoLoop = true -}}
 				{{- $singularMethodName = toSingular .Name -}}
-				{{- $paramType = $pType -}}
-				{{- $sliceField = getSliceField $sInfo -}}
+				{{- if ne $singularMethodName .Name -}}
+					{{- $singularParamType := printf "%sParams" $singularMethodName -}}
+					{{- $sInfoSingular := getStruct $singularParamType -}}
+					{{- if ne $sInfoSingular.Name "" -}}
+						{{- $isAutoLoop = true -}}
+						{{- $paramType = $pType -}}
+						{{- $sliceField = getSliceField $sInfo -}}
+					{{- end -}}
+				{{- end -}}
 			{{- end -}}
 		{{- end -}}
 	{{- end -}}
@@ -520,8 +539,9 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- $structInfo := getStruct $singularParamType -}}
 		for _, v := range {{(index $methodParams 1).Name}}.{{$sliceField.Name}} {
 			err := w.adapter.{{$singularMethodName}}({{(index $methodParams 0).Name}}, {{$.Engine.Package}}.{{$singularParamType}}{
+				{{- $sliceElemType := trimPrefix $sliceField.Type "[]" -}}
 				{{- range $structInfo.Fields -}}
-				{{- if eq .Name $sliceField.Name }}
+				{{- if eq .Type $sliceElemType }}
 					{{.Name}}: v,
 				{{- else }}
 					{{.Name}}: {{(index $methodParams 1).Name}}.{{.Name}},
