@@ -475,7 +475,11 @@ func TestGetNarInfo(t *testing.T) {
 		})
 
 		t.Run("no error is returned if the entry already exists in the database", func(t *testing.T) {
-			require.NoError(t, os.Remove(filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)))
+			narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)
+			if _, err := os.Stat(narInfoPath); err == nil {
+				require.NoError(t, os.Remove(narInfoPath))
+			}
+
 			_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 		})
@@ -1494,9 +1498,7 @@ func waitForFile(t *testing.T, path string) {
 	require.NoError(t, err, "timeout waiting for file: %s", path)
 }
 
-func TestGetNarInfo_BackgroundMigration(t *testing.T) {
-	t.Parallel()
-
+func TestGetNarInfo_BackgroundMigration(t *testing.T) { //nolint:paralleltest
 	c, db, _, dir, cleanup := setupTestCache(t)
 	defer cleanup()
 
