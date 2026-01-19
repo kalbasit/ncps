@@ -5,7 +5,7 @@ CREATE TABLE narinfos (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP,
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+, store_path TEXT, url TEXT, compression TEXT, file_hash TEXT, file_size BIGINT CHECK (file_size >= 0), nar_hash TEXT, nar_size BIGINT CHECK (nar_size >= 0), deriver TEXT, system TEXT, ca TEXT);
 CREATE INDEX idx_narinfos_last_accessed_at ON narinfos (last_accessed_at);
 CREATE TABLE IF NOT EXISTS "config" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +32,20 @@ CREATE TABLE narinfo_nar_files (
 );
 CREATE INDEX idx_narinfo_nar_files_narinfo_id ON narinfo_nar_files (narinfo_id);
 CREATE INDEX idx_narinfo_nar_files_nar_file_id ON narinfo_nar_files (nar_file_id);
+CREATE TABLE narinfo_references (
+    narinfo_id BIGINT NOT NULL,
+    reference TEXT NOT NULL,
+    PRIMARY KEY (narinfo_id, reference),
+    FOREIGN KEY (narinfo_id) REFERENCES narinfos (id) ON DELETE CASCADE
+);
+CREATE INDEX idx_narinfo_references_reference ON narinfo_references (reference);
+CREATE TABLE narinfo_signatures (
+    narinfo_id BIGINT NOT NULL,
+    signature TEXT NOT NULL,
+    PRIMARY KEY (narinfo_id, signature),
+    FOREIGN KEY (narinfo_id) REFERENCES narinfos (id) ON DELETE CASCADE
+);
+CREATE INDEX idx_narinfo_signatures_signature ON narinfo_signatures (signature);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20241210054814'),
@@ -40,4 +54,5 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20251230224159'),
   ('20260101000000'),
   ('20260105025735'),
-  ('20260105030513');
+  ('20260105030513'),
+  ('20260117195000');

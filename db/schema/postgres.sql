@@ -93,6 +93,26 @@ CREATE TABLE public.narinfo_nar_files (
 
 
 --
+-- Name: narinfo_references; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.narinfo_references (
+    narinfo_id bigint NOT NULL,
+    reference text NOT NULL
+);
+
+
+--
+-- Name: narinfo_signatures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.narinfo_signatures (
+    narinfo_id bigint NOT NULL,
+    signature text NOT NULL
+);
+
+
+--
 -- Name: narinfos; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -101,7 +121,19 @@ CREATE TABLE public.narinfos (
     hash text NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone,
-    last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+    last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    store_path text,
+    url text,
+    compression text,
+    file_hash text,
+    file_size bigint,
+    nar_hash text,
+    nar_size bigint,
+    deriver text,
+    system text,
+    ca text,
+    CONSTRAINT narinfos_file_size_check CHECK ((file_size >= 0)),
+    CONSTRAINT narinfos_nar_size_check CHECK ((nar_size >= 0))
 );
 
 
@@ -195,6 +227,22 @@ ALTER TABLE ONLY public.narinfo_nar_files
 
 
 --
+-- Name: narinfo_references narinfo_references_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.narinfo_references
+    ADD CONSTRAINT narinfo_references_pkey PRIMARY KEY (narinfo_id, reference);
+
+
+--
+-- Name: narinfo_signatures narinfo_signatures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.narinfo_signatures
+    ADD CONSTRAINT narinfo_signatures_pkey PRIMARY KEY (narinfo_id, signature);
+
+
+--
 -- Name: narinfos narinfos_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -233,6 +281,20 @@ CREATE INDEX idx_narinfo_nar_files_nar_file_id ON public.narinfo_nar_files USING
 
 
 --
+-- Name: idx_narinfo_references_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_narinfo_references_reference ON public.narinfo_references USING btree (reference);
+
+
+--
+-- Name: idx_narinfo_signatures_signature; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_narinfo_signatures_signature ON public.narinfo_signatures USING btree (signature);
+
+
+--
 -- Name: idx_narinfos_last_accessed_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -256,6 +318,22 @@ ALTER TABLE ONLY public.narinfo_nar_files
 
 
 --
+-- Name: narinfo_references narinfo_references_narinfo_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.narinfo_references
+    ADD CONSTRAINT narinfo_references_narinfo_id_fkey FOREIGN KEY (narinfo_id) REFERENCES public.narinfos(id) ON DELETE CASCADE;
+
+
+--
+-- Name: narinfo_signatures narinfo_signatures_narinfo_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.narinfo_signatures
+    ADD CONSTRAINT narinfo_signatures_narinfo_id_fkey FOREIGN KEY (narinfo_id) REFERENCES public.narinfos(id) ON DELETE CASCADE;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
@@ -266,4 +344,5 @@ ALTER TABLE ONLY public.narinfo_nar_files
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20260101000000');
+    ('20260101000000'),
+    ('20260117195000');
