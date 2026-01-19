@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
@@ -263,20 +262,21 @@ func (c *Client) processShardResponse(shardPath string, rc io.ReadCloser, hashSt
 	// Buffer it.
 	// Note: This is an optimization point (Range requests).
 	// For now, read all.
-	var reader io.Reader = rc
-	if strings.HasSuffix(shardPath, ".zst") {
-		zstdReader, err := zstd.NewReader(rc)
-		if err != nil {
-			return DefiniteMiss, fmt.Errorf("failed to create zstd reader for %s: %w", shardPath, err)
-		}
-		defer zstdReader.Close()
+	// Decompress if needed (based on extension or always for v2?)
+	// RFC v2: "Shard files MUST be compressed with zstd".
+	// Extension is .zst.
 
-		reader = zstdReader
-	}
-
-	data, err := io.ReadAll(reader)
+	// Wrap with zstd decoder
+	// We use io.ReadAll on the decoder.
+	decoder, err := zstd.NewReader(rc)
 	if err != nil {
-		return DefiniteMiss, err
+		return DefiniteMiss, fmt.Errorf("failed to create zstd reader for %s: %w", shardPath, err)
+	}
+	defer decoder.Close()
+
+	data, err := io.ReadAll(decoder)
+	if err != nil {
+		return DefiniteMiss, fmt.Errorf("failed to read/decompress shard: %w", err)
 	}
 
 	shardReader, err := ReadShard(bytes.NewReader(data))
