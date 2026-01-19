@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
@@ -150,37 +151,86 @@ func migrateNarInfoCommand(
 			// 4. Migrate
 			logger.Info().Msg("starting migration")
 
-			count := 0
+			startTime := time.Now()
 
-			var errorsCount int32
+			var totalFound int32
+
+			var totalProcessed int32
+
+			var totalSucceeded int32
+
+			var totalSkipped int32
+
+			var totalFailed int32
 
 			g, ctx := errgroup.WithContext(ctx)
 			g.SetLimit(cmd.Int("concurrency"))
 
+			// Start progress reporter
+			progressTicker := time.NewTicker(5 * time.Second)
+			defer progressTicker.Stop()
+
+			progressDone := make(chan struct{})
+			defer close(progressDone)
+
+			go func() {
+				for {
+					select {
+					case <-progressTicker.C:
+						elapsed := time.Since(startTime)
+						found := atomic.LoadInt32(&totalFound)
+						processed := atomic.LoadInt32(&totalProcessed)
+						succeeded := atomic.LoadInt32(&totalSucceeded)
+						skipped := atomic.LoadInt32(&totalSkipped)
+						failed := atomic.LoadInt32(&totalFailed)
+
+						rate := float64(processed) / elapsed.Seconds()
+
+						logger.Info().
+							Int32("found", found).
+							Int32("processed", processed).
+							Int32("succeeded", succeeded).
+							Int32("skipped", skipped).
+							Int32("failed", failed).
+							Str("elapsed", elapsed.Round(time.Second).String()).
+							Float64("rate", rate).
+							Msg("migration progress")
+					case <-progressDone:
+						return
+					}
+				}
+			}()
+
 			err = walker.WalkNarInfos(ctx, func(hash string) error {
-				count++
+				atomic.AddInt32(&totalFound, 1)
 
 				if _, ok := migratedHashesMap[hash]; ok {
 					if !deleteAfter {
 						// Skip
+						atomic.AddInt32(&totalSkipped, 1)
+
 						return nil
 					}
 
 					// We need to delete it from storage, but we skip the DB migration part.
 					g.Go(func() error {
+						atomic.AddInt32(&totalProcessed, 1)
+
 						log := logger.With().Str("hash", hash).Logger()
 						log.Info().Msg("narinfo already migrated, deleting from storage")
 
 						if dryRun {
 							log.Info().Msg("[DRY-RUN] would delete from storage")
+							atomic.AddInt32(&totalSucceeded, 1)
 
 							return nil
 						}
 
 						if err := narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
 							log.Error().Err(err).Msg("failed to delete from store")
-
-							atomic.AddInt32(&errorsCount, 1)
+							atomic.AddInt32(&totalFailed, 1)
+						} else {
+							atomic.AddInt32(&totalSucceeded, 1)
 						}
 
 						return nil
@@ -190,17 +240,20 @@ func migrateNarInfoCommand(
 				}
 
 				g.Go(func() error {
+					atomic.AddInt32(&totalProcessed, 1)
+
 					log := logger.With().Str("hash", hash).Logger()
 					log.Info().Msg("processing narinfo")
 
 					ctxWithLog := log.WithContext(ctx)
 					if err := migrateOne(ctxWithLog, db, narInfoStore, hash, dryRun, deleteAfter); err != nil {
 						log.Error().Err(err).Msg("failed to migrate narinfo")
-
-						atomic.AddInt32(&errorsCount, 1)
+						atomic.AddInt32(&totalFailed, 1)
 						// Continue migration even if one fails
 						return nil
 					}
+
+					atomic.AddInt32(&totalSucceeded, 1)
 
 					return nil
 				})
@@ -215,10 +268,28 @@ func migrateNarInfoCommand(
 				return err
 			}
 
-			logger.Info().Int("total", count).Int32("errors", atomic.LoadInt32(&errorsCount)).Msg("migration completed")
+			// Final summary
+			duration := time.Since(startTime)
+			found := atomic.LoadInt32(&totalFound)
+			processed := atomic.LoadInt32(&totalProcessed)
+			succeeded := atomic.LoadInt32(&totalSucceeded)
+			skipped := atomic.LoadInt32(&totalSkipped)
+			failed := atomic.LoadInt32(&totalFailed)
 
-			if atomic.LoadInt32(&errorsCount) > 0 {
-				return fmt.Errorf("%d %w", errorsCount, ErrMigrationFailed)
+			rate := float64(processed) / duration.Seconds()
+
+			logger.Info().
+				Int32("found", found).
+				Int32("processed", processed).
+				Int32("succeeded", succeeded).
+				Int32("skipped", skipped).
+				Int32("failed", failed).
+				Str("duration", duration.Round(time.Millisecond).String()).
+				Float64("rate", rate).
+				Msg("migration completed")
+
+			if failed > 0 {
+				return fmt.Errorf("%d %w", failed, ErrMigrationFailed)
 			}
 
 			return nil
