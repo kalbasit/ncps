@@ -563,7 +563,15 @@ func (c *Cache) GetHealthyUpstreamCount() int {
 
 // GetHealthChecker returns the instance of haelth checker used by the cache.
 // It's useful for testing the behavior of ncps.
-func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker { return c.healthChecker }
+func (c *Cache) GetHealthChecker() *healthcheck.HealthChecker {
+	return c.healthChecker
+}
+
+// GetConfig returns the configuration instance.
+// It's useful for testing the behavior of ncps.
+func (c *Cache) GetConfig() *config.Config {
+	return c.config
+}
 
 // SetCacheSignNarinfo configure ncps to sign or not sign narinfos.
 func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinfo = shouldSignNarinfo }
@@ -1755,8 +1763,9 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
 		nir, err := qtx.GetNarInfoByHash(ctx, hash)
 		if err != nil {
-			// TODO: If record not found, record it instead!
 			if errors.Is(err, sql.ErrNoRows) {
+				c.backgroundMigrateNarInfo(ctx, hash, ni)
+
 				return nil
 			}
 
@@ -2009,6 +2018,46 @@ func (c *Cache) storeInDatabase(
 		}
 
 		return nil
+	})
+}
+
+func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) {
+	// We use a detached context because this is a background job.
+	// But we keep the trace from the request context.
+	detachedCtx := context.WithoutCancel(ctx)
+
+	// Use a short-lived, non-blocking lock to coordinate migrations and prevent a "thundering herd".
+	lockKey := "migration:" + hash
+
+	acquired, err := c.downloadLocker.TryLock(detachedCtx, lockKey, 10*time.Second)
+	if err != nil || !acquired {
+		if err != nil {
+			zerolog.Ctx(detachedCtx).Error().Err(err).Str("narinfo_hash", hash).Msg("failed to try acquiring migration lock")
+		}
+
+		// If lock is not acquired, another process is already handling it.
+		return
+	}
+
+	analytics.SafeGo(detachedCtx, func() {
+		defer func() {
+			if err := c.downloadLocker.Unlock(detachedCtx, lockKey); err != nil {
+				zerolog.Ctx(detachedCtx).Error().Err(err).Str("narinfo_hash", hash).Msg("failed to release migration lock")
+			}
+		}()
+
+		log := zerolog.Ctx(detachedCtx).With().Str("narinfo_hash", hash).Logger()
+
+		err := c.storeInDatabase(detachedCtx, hash, ni)
+		if err != nil && !errors.Is(err, ErrAlreadyExists) {
+			log.Error().Err(err).Msg("failed to migrate narinfo to database in background")
+
+			return
+		}
+
+		if err := c.narInfoStore.DeleteNarInfo(detachedCtx, hash); err != nil {
+			log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
+		}
 	})
 }
 

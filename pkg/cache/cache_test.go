@@ -2,6 +2,7 @@ package cache_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -324,7 +325,7 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
 			var count int
 
-			err := db.DB().QueryRow("SELECT COUNT(*) FROM narinfos").Scan(&count)
+			err := db.DB().QueryRowContext(context.Background(), "SELECT COUNT(*) FROM narinfos").Scan(&count)
 			require.NoError(t, err)
 			assert.Equal(t, 0, count)
 		})
@@ -332,7 +333,7 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("nar does not exist in the database yet", func(t *testing.T) {
 			var count int
 
-			err := db.DB().QueryRow("SELECT COUNT(*) FROM nar_files").Scan(&count)
+			err := db.DB().QueryRowContext(context.Background(), "SELECT COUNT(*) FROM nar_files").Scan(&count)
 			require.NoError(t, err)
 			assert.Equal(t, 0, count)
 		})
@@ -419,7 +420,8 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("narinfo does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
 			var nim database.NarInfo
 
-			err := db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM narinfos").
+			err := db.DB().QueryRowContext(context.Background(),
+				"SELECT hash, created_at, last_accessed_at FROM narinfos").
 				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 			require.NoError(t, err)
@@ -430,7 +432,7 @@ func TestGetNarInfo(t *testing.T) {
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
 			var nim database.NarFile
 
-			err := db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+			err := db.DB().QueryRowContext(context.Background(), "SELECT hash, created_at, last_accessed_at FROM nar_files").
 				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 			require.NoError(t, err)
@@ -450,7 +452,7 @@ func TestGetNarInfo(t *testing.T) {
 
 			var nim database.NarInfo
 
-			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM narinfos").
+			err = db.DB().QueryRowContext(context.Background(), "SELECT hash, created_at, last_accessed_at FROM narinfos").
 				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 			require.NoError(t, err)
@@ -465,7 +467,7 @@ func TestGetNarInfo(t *testing.T) {
 
 			var nim database.NarInfo
 
-			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM narinfos").
+			err = db.DB().QueryRowContext(context.Background(), "SELECT hash, created_at, last_accessed_at FROM narinfos").
 				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 			require.NoError(t, err)
@@ -541,7 +543,7 @@ func TestPutNarInfo(t *testing.T) {
 	t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
 		var count int
 
-		err := db.DB().QueryRow("SELECT COUNT(*) FROM narinfos").Scan(&count)
+		err := db.DB().QueryRowContext(context.Background(), "SELECT COUNT(*) FROM narinfos").Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 	})
@@ -549,7 +551,7 @@ func TestPutNarInfo(t *testing.T) {
 	t.Run("nar does not exist in the database yet", func(t *testing.T) {
 		var count int
 
-		err := db.DB().QueryRow("SELECT COUNT(*) FROM nar_files").Scan(&count)
+		err := db.DB().QueryRowContext(context.Background(), "SELECT COUNT(*) FROM nar_files").Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 	})
@@ -589,7 +591,7 @@ func TestPutNarInfo(t *testing.T) {
 	t.Run("narinfo does exist in the database", func(t *testing.T) {
 		var hash string
 
-		err := db.DB().QueryRow("SELECT hash FROM narinfos").Scan(&hash)
+		err := db.DB().QueryRowContext(context.Background(), "SELECT hash FROM narinfos").Scan(&hash)
 		require.NoError(t, err)
 		assert.Equal(t, testdata.Nar1.NarInfoHash, hash)
 	})
@@ -597,7 +599,7 @@ func TestPutNarInfo(t *testing.T) {
 	t.Run("nar does exist in the database", func(t *testing.T) {
 		var hash string
 
-		err := db.DB().QueryRow("SELECT hash FROM nar_files").Scan(&hash)
+		err := db.DB().QueryRowContext(context.Background(), "SELECT hash FROM nar_files").Scan(&hash)
 		require.NoError(t, err)
 		assert.Equal(t, testdata.Nar1.NarHash, hash)
 	})
@@ -681,7 +683,7 @@ func TestGetNar(t *testing.T) {
 		t.Run("nar does not exist in database yet", func(t *testing.T) {
 			var count int
 
-			err := db.DB().QueryRow("SELECT COUNT(*) FROM nar_files").Scan(&count)
+			err := db.DB().QueryRowContext(context.Background(), "SELECT COUNT(*) FROM nar_files").Scan(&count)
 			require.NoError(t, err)
 			assert.Equal(t, 0, count)
 		})
@@ -713,7 +715,7 @@ func TestGetNar(t *testing.T) {
 		t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
 			var nim database.NarFile
 
-			err := db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+			err := db.DB().QueryRowContext(context.Background(), "SELECT hash, created_at, last_accessed_at FROM nar_files").
 				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 			require.NoError(t, err)
@@ -735,7 +737,7 @@ func TestGetNar(t *testing.T) {
 
 			var nim database.NarFile
 
-			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+			err = db.DB().QueryRowContext(context.Background(), "SELECT hash, created_at, last_accessed_at FROM nar_files").
 				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 			require.NoError(t, err)
@@ -754,7 +756,7 @@ func TestGetNar(t *testing.T) {
 
 			var nim database.NarFile
 
-			err = db.DB().QueryRow("SELECT hash, created_at, last_accessed_at FROM nar_files").
+			err = db.DB().QueryRowContext(context.Background(), "SELECT hash, created_at, last_accessed_at FROM nar_files").
 				Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 			require.NoError(t, err)
@@ -1490,4 +1492,237 @@ func waitForFile(t *testing.T, path string) {
 	}
 
 	require.NoError(t, err, "timeout waiting for file: %s", path)
+}
+
+func TestGetNarInfo_BackgroundMigration(t *testing.T) {
+	t.Parallel()
+
+	c, db, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	hash := testdata.Nar1.NarInfoHash
+	narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
+	narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+
+	// 1. Manually put the NarInfo and Nar into storage but NOT in the database
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+	// Verify it's not in the database
+	var count int
+
+	err := db.DB().QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	// Clear it from DB first
+	_, err = db.DB().ExecContext(context.Background(), "DELETE FROM narinfos WHERE hash = ?", hash)
+	require.NoError(t, err)
+
+	// Ensure it's in storage
+	if _, err := os.Stat(narInfoPath); os.IsNotExist(err) {
+		require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
+	}
+
+	// Call GetNarInfo
+	_, err = c.GetNarInfo(context.Background(), hash)
+	require.NoError(t, err)
+
+	// Wait for background migration and deletion
+	require.Eventually(t, func() bool {
+		var count int
+
+		err := db.DB().QueryRowContext(context.Background(),
+			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+		if err != nil || count == 0 {
+			return false
+		}
+
+		_, err = os.Stat(narInfoPath)
+
+		return os.IsNotExist(err)
+	}, 5*time.Second, 100*time.Millisecond)
+}
+
+type migrationSpy struct {
+	database.Querier
+	getNarInfoByHashCalls *int
+	createNarInfoCalls    *int
+	mu                    *sync.Mutex
+}
+
+func (s *migrationSpy) GetNarInfoByHash(ctx context.Context, hash string) (database.NarInfo, error) {
+	s.mu.Lock()
+	*s.getNarInfoByHashCalls++
+	s.mu.Unlock()
+
+	return s.Querier.GetNarInfoByHash(ctx, hash)
+}
+
+func (s *migrationSpy) CreateNarInfo(
+	ctx context.Context,
+	params database.CreateNarInfoParams,
+) (database.NarInfo, error) {
+	s.mu.Lock()
+	*s.createNarInfoCalls++
+	s.mu.Unlock()
+
+	return s.Querier.CreateNarInfo(ctx, params)
+}
+
+func (s *migrationSpy) WithTx(tx *sql.Tx) database.Querier {
+	return &migrationSpy{
+		Querier:               s.Querier.WithTx(tx),
+		getNarInfoByHashCalls: s.getNarInfoByHashCalls,
+		createNarInfoCalls:    s.createNarInfoCalls,
+		mu:                    s.mu,
+	}
+}
+
+func (s *migrationSpy) DB() *sql.DB {
+	return s.Querier.DB()
+}
+
+func TestBackgroundMigrateNarInfo_ThunderingHerd(t *testing.T) {
+	t.Parallel()
+
+	// Setup components
+	db, localStore, dir, cleanup := setupTestComponents(t)
+	defer cleanup()
+
+	hash := testdata.Nar1.NarInfoHash
+	narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
+	narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+
+	// Manually put the NarInfo and Nar into storage but NOT in the database
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+	// Create a spy that captures calls to GetNarInfoByHash
+	spy := &migrationSpy{
+		Querier:               db,
+		getNarInfoByHashCalls: new(int),
+		createNarInfoCalls:    new(int),
+		mu:                    new(sync.Mutex),
+	}
+
+	// Increase MaxOpenConns to avoid deadlocks during concurrent transactions in the test
+	db.DB().SetMaxOpenConns(10)
+
+	c, err := newTestCache(newContext(), "test.example.com", spy, localStore, localStore, localStore, "")
+	require.NoError(t, err)
+
+	// Call GetNarInfo multiple times concurrently
+	const concurrency = 3
+
+	var wg sync.WaitGroup
+
+	t.Logf("Starting %d concurrent GetNarInfo calls", concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+
+		go func(id int) {
+			defer wg.Done()
+
+			t.Logf("[%d] Calling GetNarInfo", id)
+
+			_, err := c.GetNarInfo(context.Background(), hash)
+			t.Logf("[%d] GetNarInfo returned: err=%v", id, err)
+		}(i)
+	}
+
+	// Wait for all calls to finish (they should return quickly because migrations are background)
+	wg.Wait()
+
+	// Wait for the background migration to complete.
+	require.Eventually(t, func() bool {
+		var count int
+
+		err := spy.DB().
+			QueryRowContext(context.Background(), "SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).
+			Scan(&count)
+
+		return err == nil && count > 0
+	}, 5*time.Second, 100*time.Millisecond, "background migration should complete")
+
+	spy.mu.Lock()
+	count := *spy.createNarInfoCalls
+	spy.mu.Unlock()
+
+	// If count > 1, we have a thundering herd!
+	// We expect count to be 1 because only one background migration should proceed.
+	assert.Equal(t, 1, count,
+		"Thundering herd detected: %d CreateNarInfo call(s) for %d concurrent requests",
+		count, concurrency)
+	t.Logf("Detected %d concurrent CreateNarInfo calls", count)
+}
+
+func TestBackgroundMigrateNarInfo_AfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	c, db, _, dir, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	// Use a unique hash for this test
+	entry := testdata.Nar2
+	hash := entry.NarInfoHash
+	narInfoPath := filepath.Join(dir, "store", "narinfo", entry.NarInfoPath)
+	narPath := filepath.Join(dir, "store", "nar", entry.NarPath)
+
+	// 1. Manually put the NarInfo and Nar into storage but NOT in the database
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(entry.NarInfoText), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
+
+	// Verify it's not in the database
+	var count int
+
+	err := db.DB().QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	// 2. Call GetNarInfo with a context that we'll cancel
+	ctx, cancel := context.WithCancel(newContext())
+
+	// Start GetNarInfo in a goroutine
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		_, _ = c.GetNarInfo(ctx, hash)
+	}()
+
+	// Give it a tiny bit of time to reach the DB check and trigger the background migration
+	time.Sleep(50 * time.Millisecond)
+
+	// 3. Cancel the context immediately to simulate a disconnected client
+	cancel()
+	<-done
+
+	// 4. Wait for background migration to complete
+	// If the implementation incorrectly uses the request context for the background job,
+	// this might fail because the background job will be canceled.
+	require.Eventually(t, func() bool {
+		var count int
+
+		err := db.DB().QueryRowContext(context.Background(),
+			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+
+		return err == nil && count > 0
+	}, 10*time.Second, 100*time.Millisecond, "background migration should complete even if request context is canceled")
+
+	// 5. Verify it's in the database
+	err = db.DB().QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }
