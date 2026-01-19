@@ -1859,9 +1859,9 @@ func (c *Cache) populateNarInfoFromDatabase(
 		return nil, nil, fmt.Errorf("error fetching the narinfo record from database: %w", err)
 	}
 
-	// If store_path is not valid, it means this record hasn't been migrated yet
+	// If URL is not valid, it means this record hasn't been migrated yet
 	// (it might have been created by an older version of ncps as a placeholder).
-	if !nir.StorePath.Valid {
+	if !nir.URL.Valid {
 		return nil, nil, storage.ErrNotFound
 	}
 
