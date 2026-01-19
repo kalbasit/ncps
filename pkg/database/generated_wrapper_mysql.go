@@ -28,6 +28,7 @@ func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams)
 
 	return w.GetConfigByID(ctx, id)
 }
+
 func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
 	// MySQL does not support RETURNING for INSERTs.
 	// We insert, get LastInsertId, and then fetch the object.
@@ -43,6 +44,7 @@ func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParam
 
 	return w.GetNarFileByID(ctx, id)
 }
+
 func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo, error) {
 	// MySQL does not support RETURNING for INSERTs.
 	// We insert, get LastInsertId, and then fetch the object.
@@ -58,6 +60,7 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, hash string) (NarInfo,
 
 	return w.GetNarInfoByID(ctx, id)
 }
+
 func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
 	if err != nil {
@@ -69,6 +72,7 @@ func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (in
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
@@ -80,6 +84,7 @@ func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, 
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
@@ -91,6 +96,7 @@ func (w *mysqlWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (in
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
@@ -102,6 +108,7 @@ func (w *mysqlWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, 
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
@@ -113,6 +120,7 @@ func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
@@ -124,6 +132,7 @@ func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
 	res, err := w.adapter.GetConfigByID(ctx, id)
 	if err != nil {
@@ -134,6 +143,7 @@ func (w *mysqlWrapper) GetConfigByID(ctx context.Context, id int64) (Config, err
 
 	return Config(res), nil
 }
+
 func (w *mysqlWrapper) GetConfigByKey(ctx context.Context, key string) (Config, error) {
 	res, err := w.adapter.GetConfigByKey(ctx, key)
 	if err != nil {
@@ -144,6 +154,7 @@ func (w *mysqlWrapper) GetConfigByKey(ctx context.Context, key string) (Config, 
 
 	return Config(res), nil
 }
+
 func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {
@@ -158,6 +169,7 @@ func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64
 
 	return items, nil
 }
+
 func (w *mysqlWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
 	res, err := w.adapter.GetLeastUsedNarInfos(ctx, fileSize)
 	if err != nil {
@@ -172,6 +184,7 @@ func (w *mysqlWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64
 
 	return items, nil
 }
+
 func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
@@ -182,6 +195,7 @@ func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFi
 
 	return NarFile(res), nil
 }
+
 func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByID(ctx, id)
 	if err != nil {
@@ -192,6 +206,7 @@ func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, e
 
 	return NarFile(res), nil
 }
+
 func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
 	if err != nil {
@@ -202,6 +217,7 @@ func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int6
 
 	return NarFile(res), nil
 }
+
 func (w *mysqlWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarFileCount(ctx)
 	if err != nil {
@@ -213,6 +229,7 @@ func (w *mysqlWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	res, err := w.adapter.GetNarInfoByHash(ctx, hash)
 	if err != nil {
@@ -223,6 +240,7 @@ func (w *mysqlWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarIn
 
 	return NarInfo(res), nil
 }
+
 func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
 	res, err := w.adapter.GetNarInfoByID(ctx, id)
 	if err != nil {
@@ -233,6 +251,7 @@ func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, e
 
 	return NarInfo(res), nil
 }
+
 func (w *mysqlWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarInfoCount(ctx)
 	if err != nil {
@@ -244,6 +263,7 @@ func (w *mysqlWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
 	if err != nil {
@@ -253,6 +273,7 @@ func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileI
 	// Return Slice of Primitives (direct match)
 	return res, nil
 }
+
 func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
@@ -264,6 +285,7 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
 	if err != nil {
@@ -278,6 +300,7 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, erro
 
 	return items, nil
 }
+
 func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	err := w.adapter.LinkNarInfoToNarFile(ctx, mysqldb.LinkNarInfoToNarFileParams(arg))
 	if err != nil {
@@ -287,6 +310,7 @@ func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfo
 	// No return value (void)
 	return nil
 }
+
 func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
 	err := w.adapter.SetConfig(ctx, mysqldb.SetConfigParams(arg))
 	if err != nil {
@@ -296,6 +320,7 @@ func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error
 	// No return value (void)
 	return nil
 }
+
 func (w *mysqlWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {
@@ -307,6 +332,7 @@ func (w *mysqlWrapper) TouchNarFile(ctx context.Context, hash string) (int64, er
 
 	return res, nil
 }
+
 func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
