@@ -440,6 +440,8 @@ func exprToString(expr ast.Expr) string {
 		return "*" + exprToString(t.X)
 	case *ast.ArrayType:
 		return "[]" + exprToString(t.Elt)
+	case *ast.InterfaceType:
+		return "interface{}"
 	default:
 		// Fallback for types we missed or complex types
 		panic(fmt.Sprintf("unhandled expression type: %T", t))
