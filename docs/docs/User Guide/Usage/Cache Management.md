@@ -132,6 +132,85 @@ rm /var/lib/ncps/nar/<hash>.nar
 # (requires database access and SQL knowledge)
 ```
 
+## NarInfo Migration
+
+### What is NarInfo Migration?
+
+NarInfo migration moves NarInfo metadata from storage (files) into the database for faster lookups and better scalability.
+
+### Background Migration (Automatic)
+
+NarInfo metadata is automatically migrated during normal operation when accessed. No action required.
+
+**How it works:**
+
+- Client requests a package
+- NCPS checks database first
+- If not found, reads from storage and migrates
+- Subsequent requests use faster database lookups
+
+### Explicit Migration (CLI)
+
+For faster bulk migration or to free up storage space:
+
+**Basic migration:**
+
+```sh
+ncps migrate-narinfo \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps"
+```
+
+**With deletion after migration:**
+
+```sh
+ncps migrate-narinfo --delete \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps" \
+  --concurrency=20
+```
+
+**Dry run (preview):**
+
+```sh
+ncps migrate-narinfo --dry-run \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps"
+```
+
+### Migration Progress
+
+Monitor migration progress through:
+
+- **Console logs** - Progress updates every 5 seconds
+- **Prometheus metrics** - `ncps_migration_*` metrics
+- **Final summary** - Completion report with statistics
+
+**Example output:**
+
+```
+INFO starting migration
+INFO migration progress found=1523 processed=1523 succeeded=1520 failed=3 elapsed=15s rate=101.53
+INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 duration=98.5s rate=101.52
+```
+
+### When to Migrate
+
+**Use background migration when:**
+
+- Running in production with uptime requirements
+- Cache has moderate traffic
+- No rush to complete migration
+
+**Use CLI migration when:**
+
+- Large cache (millions of narinfos)
+- Need faster completion
+- Storage space is limited (use `--delete`)
+- Upgrading from pre-database versions
+
+See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for comprehensive documentation.
+
 ## Best Practices
 
 1. **Set reasonable max-size** - Based on available disk space
@@ -139,6 +218,7 @@ rm /var/lib/ncps/nar/<hash>.nar
 1. **Monitor cache usage** - Watch for growth trends
 1. **Plan for growth** - Cache size increases over time
 1. **Use S3 for large caches** - Better for 1TB+ caches
+1. **Migrate narinfo to database** - Improves lookup performance
 
 ## Next Steps
 

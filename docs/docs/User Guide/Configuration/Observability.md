@@ -42,7 +42,7 @@ export PROMETHEUS_ENABLED=true
 
 Once enabled, metrics are available at:
 
-```
+```http
 http://your-ncps:8501/metrics
 ```
 
@@ -76,6 +76,25 @@ Note: Upstream health metrics are collected as part of analytics reporting. See 
 - `ncps_lock_failures_total{type,reason,mode}` - Lock failures
   - `reason`: "timeout", "redis_error", "circuit_breaker"
 - `ncps_lock_retry_attempts_total{type}` - Retry attempts
+
+**Migration Metrics** (during narinfo migration):
+
+- `ncps_migration_narinfos_total{operation,result}` - NarInfo migration operations
+  - `operation`: "migrate" or "delete"
+  - `result`: "success", "failure", or "skipped"
+- `ncps_migration_duration_seconds{operation}` - Migration operation duration histogram
+  - `operation`: "migrate" or "delete"
+- `ncps_migration_batch_size` - Migration batch size histogram
+
+**Background Migration Metrics** (during on-the-fly migration):
+
+- `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfo migration operations
+  - `operation`: "migrate" or "delete"
+  - `result`: "success" or "failure"
+- `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration histogram
+  - `operation`: "migrate" or "delete"
+
+See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for migration documentation.
 
 ### Prometheus Configuration
 
@@ -268,7 +287,7 @@ log-level: info
 
 Logs are output in JSON format with structured fields:
 
-```json
+```
 {
   "level": "info",
   "ts": "2024-01-15T10:30:00Z",
@@ -380,7 +399,7 @@ Traces include:
 
 **Cache Info:**
 
-```
+```sh
 curl http://localhost:8501/nix-cache-info
 ```
 
@@ -388,7 +407,7 @@ Returns cache metadata in Nix binary cache format.
 
 **Metrics (if Prometheus enabled):**
 
-```
+```sh
 curl http://localhost:8501/metrics
 ```
 

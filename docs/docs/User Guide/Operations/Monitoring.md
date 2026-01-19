@@ -34,6 +34,21 @@ Access metrics at: `http://your-ncps:8501/metrics`
 - `ncps_lock_hold_duration_seconds{type,mode}` - Lock hold time
 - `ncps_lock_failures_total{type,reason,mode}` - Lock failures
 
+**Migration Metrics:**
+
+- `ncps_migration_narinfos_total{operation,result}` - NarInfos migrated
+  - Labels: `operation` (migrate/delete), `result` (success/failure/skipped)
+- `ncps_migration_duration_seconds{operation}` - Migration operation duration
+  - Label: `operation` (migrate/delete)
+- `ncps_migration_batch_size` - Migration batch sizes
+
+**Background Migration Metrics:**
+
+- `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfos migrated
+  - Labels: `operation` (migrate/delete), `result` (success/failure)
+- `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration
+  - Label: `operation` (migrate/delete)
+
 ## Prometheus Configuration
 
 Add to `prometheus.yml`:
@@ -77,6 +92,29 @@ rate(ncps_lock_acquisitions_total{result="success"}[5m])
 / rate(ncps_lock_acquisitions_total[5m])
 ```
 
+**Migration throughput:**
+
+```
+rate(ncps_migration_narinfos_total[5m])
+```
+
+**Migration success rate:**
+
+```
+sum(rate(ncps_migration_narinfos_total{result="success"}[5m]))
+/ sum(rate(ncps_migration_narinfos_total[5m]))
+```
+
+**Migration duration (p50, p99):**
+
+```
+# Median
+histogram_quantile(0.5, ncps_migration_duration_seconds)
+
+# 99th percentile
+histogram_quantile(0.99, ncps_migration_duration_seconds)
+```
+
 ## Alerting
 
 ### Recommended Alerts
@@ -106,7 +144,7 @@ rate(ncps_lock_acquisitions_total{result="success"}[5m])
 
 **Example check:**
 
-```
+```sh
 curl -f http://localhost:8501/nix-cache-info || exit 1
 ```
 
