@@ -208,6 +208,322 @@ PR #5: feature-e → feature-f     ← ❌ CI skipped
 
 **When modifying workflows:** Maintain the `branches: [main]` restriction to keep CI efficient for stacked PR workflows.
 
+## NarInfo Migration Strategy
+
+The project supports migrating NarInfo metadata from filesystem/S3 storage to the database for improved performance and scalability. This section describes when and how to perform migrations.
+
+### Background
+
+Historically, ncps stored narinfo files in the storage backend (filesystem or S3). Starting with version 0.8.0, narinfo metadata is stored in the database while the actual NAR files remain in storage. This provides:
+
+- Faster lookups (database queries vs filesystem/S3 operations)
+- Better atomicity and consistency
+- Support for complex queries and filtering
+- Reduced storage backend load
+
+### Migration Approaches
+
+There are two ways narinfos are migrated to the database:
+
+#### 1. Background Automatic Migration (Recommended for Most Cases)
+
+**When it happens:**
+
+- Automatically during normal operations
+- Triggered when `GetNarInfo()` reads a narinfo from storage that isn't in the database yet
+- Runs asynchronously in a background goroutine
+- Non-blocking - doesn't delay the client response
+
+**How it works:**
+
+1. Client requests a narinfo via `GetNarInfo(hash)`
+1. System checks database first (cache hit = fast path)
+1. If not in database, checks storage backend
+1. If found in storage, returns it to client immediately
+1. Simultaneously spawns a background job to migrate it to the database
+1. Uses distributed locks to prevent thundering herd (multiple concurrent migrations of same narinfo)
+1. Optionally deletes from storage after successful migration (controlled by configuration)
+
+**Characteristics:**
+
+- Zero downtime
+- No manual intervention required
+- Gradual migration (narinfos migrate as they're accessed)
+- Minimal performance impact
+- Safe for production use
+
+**Configuration:**
+
+- Automatic migration is **always enabled** when using the database
+- No special flags needed
+- Migration happens transparently
+
+#### 2. Explicit CLI Migration (For Large-Scale Migration)
+
+**When to use:**
+
+- Migrating a large existing cache all at once
+- Before decommissioning the storage backend for narinfos
+- When you want predictable migration timing
+- For administrative control over the process
+
+**Command:**
+
+```bash
+ncps migrate-narinfo \
+  --cache-storage-local=/path/to/cache \
+  --cache-database-url=sqlite:/path/to/db.sqlite \
+  [--workers=10] \
+  [--delete] \
+  [--dry-run]
+```
+
+**Flags:**
+
+- `--cache-storage-local`: Path to the cache directory (required)
+- `--cache-database-url`: Database connection URL (required)
+- `--workers`: Number of concurrent migration workers (default: 10, max: 50)
+- `--delete`: Delete narinfos from storage after successful migration
+- `--dry-run`: Show what would be migrated without actually migrating
+
+**Process:**
+
+1. Pre-fetches list of already-migrated hashes from database (via `GetMigratedNarInfoHashes`)
+1. Walks all narinfos in the storage backend
+1. Skips narinfos already in database (idempotent)
+1. Migrates each narinfo in a transaction:
+   - Parses narinfo from storage
+   - Inserts into `narinfos` table
+   - Inserts references into `narinfo_references` table
+   - Inserts signatures into `narinfo_signatures` table
+   - Creates/links `nar_files` record
+1. Optionally deletes from storage (if `--delete-after-migration` is set)
+1. Reports progress and errors
+
+**Characteristics:**
+
+- Idempotent (safe to run multiple times)
+- Transaction-based (all-or-nothing per narinfo)
+- Handles duplicate key errors gracefully
+- Progress reporting
+- Can run while cache is serving requests (but may cause lock contention)
+
+**Example:**
+
+```bash
+# Dry run to see what would be migrated
+ncps migrate-narinfo \
+  --cache-data-path=/var/cache/ncps \
+  --cache-database-url=postgresql://user:pass@localhost/ncps \
+  --dry-run
+
+# Actual migration with 20 workers
+ncps migrate-narinfo \
+  --cache-data-path=/var/cache/ncps \
+  --cache-database-url=postgresql://user:pass@localhost/ncps \
+  --workers=20
+
+# Migration with deletion from storage
+ncps migrate-narinfo \
+  --cache-data-path=/var/cache/ncps \
+  --cache-database-url=sqlite:/var/cache/ncps/db.sqlite \
+  --workers=10 \
+  --delete-after-migration
+```
+
+### Recommended Migration Strategy
+
+For different deployment scenarios:
+
+**New Deployment:**
+
+- No migration needed
+- All new narinfos automatically go to database
+- Background migration handles any legacy data
+
+**Small Existing Cache (\<10K narinfos):**
+
+- Let background migration handle it automatically
+- Monitor metrics to ensure migration completes
+- No downtime required
+
+**Medium Cache (10K-100K narinfos):**
+
+- Option A: Use CLI migration during low-traffic period
+- Option B: Let background migration run over time
+- Consider using `--workers` flag to control load
+
+**Large Cache (>100K narinfos):**
+
+- Use CLI migration with careful planning:
+  1. Run with `--dry-run` first to estimate scope
+  1. Schedule during maintenance window or low-traffic period
+  1. Start with moderate worker count (e.g., 10-20)
+  1. Monitor database connection pool and performance
+  1. Optionally use `--delete-after-migration` to reclaim storage space
+
+**Multi-Node Deployment:**
+
+- CLI migration should run on ONE node only
+- Background migration works on all nodes (coordinated via distributed locks)
+- Ensure database is accessible from all nodes
+
+### Concurrent Operation Handling
+
+The system handles several concurrent scenarios safely:
+
+**Scenario: GetNarInfo + Background Migration (Same Hash)**
+
+- Uses distributed locks (`TryLock`) to prevent duplicate migrations
+- If lock is held, subsequent requests skip migration
+- Final state: exactly one database record
+
+**Scenario: PutNarInfo + Background Migration (Same Hash)**
+
+- Both operations may attempt database insert
+- Duplicate key errors are handled gracefully
+- First to commit wins, second gets `ErrAlreadyExists`
+- Final state: exactly one database record
+
+**Scenario: CLI Migration + Background Migration (Same Hash)**
+
+- Same as above - duplicate handling ensures consistency
+- Safe to run CLI migration while serving traffic
+- Idempotent operation
+
+**Scenario: Multiple GetNarInfo Requests (Thundering Herd)**
+
+- Only first request acquires migration lock
+- Others skip migration and return from storage
+- Tested in `TestGetNarInfo_BackgroundMigration_ThunderingHerd`
+
+### Migration Verification
+
+After migration, verify success:
+
+```sql
+-- Count narinfos in database
+SELECT COUNT(*) FROM narinfos WHERE url IS NOT NULL;
+
+-- Count narinfos in storage (using CLI)
+find /path/to/cache/store/narinfo -name "*.narinfo" | wc -l
+
+-- Check for unmigrated narinfos
+SELECT COUNT(*) FROM narinfos WHERE url IS NULL;
+```
+
+### Rollback / Recovery
+
+If migration issues occur:
+
+1. **Stop writing to database** (requires code deployment to disable)
+1. **Database has bad data**: Truncate and re-migrate:
+   ```sql
+   DELETE FROM narinfo_signatures;
+   DELETE FROM narinfo_references;
+   DELETE FROM narinfos;
+   ```
+1. **Storage accidentally deleted**: Restore from backup
+1. **Partial migration state**: Re-run CLI migration (idempotent)
+
+### Performance Considerations
+
+**Database Connection Pool:**
+
+- Increase max connections for high worker counts
+- PostgreSQL: `--cache-database-url=postgresql://...?pool_max_conns=50`
+- SQLite: Single-writer limitation (use lower worker count)
+
+**Worker Count Guidelines:**
+
+- Local filesystem storage: 10-30 workers
+- S3/MinIO storage: 20-50 workers (network-bound)
+- PostgreSQL database: Scale with connection pool
+- SQLite database: Use lower count (5-10) due to write serialization
+
+**Progress Monitoring:**
+
+- Watch database size growth
+- Monitor error logs for failed migrations
+- Track metrics (if implemented): `narinfo_migrated_total`, `narinfo_migration_errors_total`
+
+### Troubleshooting
+
+**Issue: Migration is slow**
+
+- Increase worker count (if database can handle it)
+- Check database connection pool size
+- Verify network latency to database
+- Consider running during low-traffic period
+
+**Issue: Duplicate key errors in logs**
+
+- Normal during concurrent operations
+- System handles gracefully
+
+**Issue: Storage deletions failed during migration**
+
+- Migration is idempotent - safe to re-run
+- Re-run with `--delete` flag to retry deletions
+- Only already-migrated narinfos will be processed
+- Database migration step is skipped for already-migrated items
+- Example: `ncps migrate-narinfo --delete --cache-database-url=... --cache-storage-local=...`
+- If excessive, reduce worker count
+
+**Issue: Transaction deadlocks**
+
+- Reduce worker count
+- May indicate database lock contention
+- Check database isolation level settings
+
+**Issue: Out of memory**
+
+- `GetMigratedNarInfoHashes` loads all hashes into memory
+- For very large caches (>1M narinfos), this may be problematic
+- Consider pagination (future enhancement)
+
+**Issue: Background migration not deleting from storage**
+
+- Deletion from storage after background migration is controlled by configuration
+- Check cache configuration
+- Manual cleanup may be needed
+
+### Testing
+
+The migration system has extensive test coverage:
+
+**Unit Tests (`pkg/ncps/migrate_narinfo_test.go`):**
+
+- Success cases
+- Idempotency
+- Dry-run mode
+- Delete-after-migration
+- Already-migrated scenarios
+- Error handling
+- Concurrent migration
+- Partial data (NULL fields)
+- Transaction rollback
+
+**Integration Tests (`pkg/cache/cache_test.go`):**
+
+- Background migration during GetNarInfo
+- Concurrent PutNarInfo during migration
+- Multiple concurrent operations (thundering herd)
+- Context cancellation handling
+
+Run tests:
+
+```bash
+# All migration tests
+go test -race -run TestMigrateNarInfo ./pkg/ncps -v
+
+# Background migration tests
+go test -race -run "TestGetNarInfo.*Migration" ./pkg/cache -v
+
+# Concurrent operation tests
+go test -race -run "TestGetNarInfo.*Concurrent" ./pkg/cache -v
+```
+
 ## Architecture
 
 ### Package Structure
