@@ -212,3 +212,19 @@ WHERE url IS NULL;
 SELECT hash
 FROM narinfos
 WHERE url IS NOT NULL;
+
+-- name: IsNarInfoMigrated :one
+-- Check if a narinfo hash has been migrated (has a URL).
+SELECT EXISTS(
+    SELECT 1
+    FROM narinfos
+    WHERE hash = ? AND url IS NOT NULL
+) AS is_migrated;
+
+-- name: GetMigratedNarInfoHashesPaginated :many
+-- Get migrated narinfo hashes with pagination support.
+SELECT hash
+FROM narinfos
+WHERE url IS NOT NULL
+ORDER BY hash
+LIMIT ? OFFSET ?;

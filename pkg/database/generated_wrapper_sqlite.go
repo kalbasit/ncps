@@ -254,6 +254,19 @@ func (w *sqliteWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]string,
 	return res, nil
 }
 
+func (w *sqliteWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error) {
+	res, err := w.adapter.GetMigratedNarInfoHashesPaginated(ctx, sqlitedb.GetMigratedNarInfoHashesPaginatedParams{
+		Limit:  int64(arg.Limit),
+		Offset: int64(arg.Offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *sqliteWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
@@ -395,6 +408,17 @@ func (w *sqliteWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]strin
 
 	// Return Slice of Primitives (direct match)
 	return res, nil
+}
+
+func (w *sqliteWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool, error) {
+	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return false, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res != 0, nil
 }
 
 func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {

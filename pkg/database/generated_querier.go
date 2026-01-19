@@ -150,6 +150,14 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url IS NOT NULL
 	GetMigratedNarInfoHashes(ctx context.Context) ([]string, error)
+	// Get migrated narinfo hashes with pagination support.
+	//
+	//  SELECT hash
+	//  FROM narinfos
+	//  WHERE url IS NOT NULL
+	//  ORDER BY hash
+	//  LIMIT $1 OFFSET $2
+	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHash
 	//
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
@@ -228,6 +236,14 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url IS NULL
 	GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error)
+	// Check if a narinfo hash has been migrated (has a URL).
+	//
+	//  SELECT EXISTS(
+	//      SELECT 1
+	//      FROM narinfos
+	//      WHERE hash = $1 AND url IS NOT NULL
+	//  ) AS is_migrated
+	IsNarInfoMigrated(ctx context.Context, hash string) (bool, error)
 	//LinkNarInfoToNarFile
 	//
 	//  INSERT INTO narinfo_nar_files (

@@ -578,6 +578,49 @@ func (q *Queries) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error
 	return items, nil
 }
 
+const getMigratedNarInfoHashesPaginated = `-- name: GetMigratedNarInfoHashesPaginated :many
+SELECT hash
+FROM narinfos
+WHERE url IS NOT NULL
+ORDER BY hash
+LIMIT $1 OFFSET $2
+`
+
+type GetMigratedNarInfoHashesPaginatedParams struct {
+	Limit  int32
+	Offset int32
+}
+
+// Get migrated narinfo hashes with pagination support.
+//
+//	SELECT hash
+//	FROM narinfos
+//	WHERE url IS NOT NULL
+//	ORDER BY hash
+//	LIMIT $1 OFFSET $2
+func (q *Queries) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getMigratedNarInfoHashesPaginated, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		items = append(items, hash)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNarFileByHash = `-- name: GetNarFileByHash :one
 SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
 FROM nar_files
@@ -958,6 +1001,28 @@ func (q *Queries) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, err
 		return nil, err
 	}
 	return items, nil
+}
+
+const isNarInfoMigrated = `-- name: IsNarInfoMigrated :one
+SELECT EXISTS(
+    SELECT 1
+    FROM narinfos
+    WHERE hash = $1 AND url IS NOT NULL
+) AS is_migrated
+`
+
+// Check if a narinfo hash has been migrated (has a URL).
+//
+//	SELECT EXISTS(
+//	    SELECT 1
+//	    FROM narinfos
+//	    WHERE hash = $1 AND url IS NOT NULL
+//	) AS is_migrated
+func (q *Queries) IsNarInfoMigrated(ctx context.Context, hash string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isNarInfoMigrated, hash)
+	var is_migrated bool
+	err := row.Scan(&is_migrated)
+	return is_migrated, err
 }
 
 const linkNarInfoToNarFile = `-- name: LinkNarInfoToNarFile :exec
