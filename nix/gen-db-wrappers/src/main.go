@@ -41,6 +41,7 @@ type MethodInfo struct {
 	ReturnsSelf  bool   // Does it return the wrapper type (like WithTx)?
 	HasValue     bool   // Does it return a value (non-error)?
 	Docs         []string
+	BulkFor      string // Extracted from @bulk-for annotation
 }
 
 type Param struct {
@@ -115,6 +116,14 @@ func main() {
 						if field.Doc != nil {
 							for _, comment := range field.Doc.List {
 								m.Docs = append(m.Docs, comment.Text)
+								if strings.Contains(comment.Text, "@bulk-for") {
+									parts := strings.Fields(comment.Text)
+									for i, p := range parts {
+										if p == "@bulk-for" && i+1 < len(parts) {
+											m.BulkFor = parts[i+1]
+										}
+									}
+								}
 							}
 						}
 
@@ -230,7 +239,7 @@ func main() {
 	// We need to re-evaluate IsCreate now that we have full struct knowledge, or just rely on naming convention
 	// The previous isDomainStruct check relied on string pattern, which is still valid.
 	for _, engine := range engines {
-		generateWrapper(targetDir, engine, methods)
+		generateWrapper(targetDir, engine, methods, structs)
 	}
 }
 
@@ -256,7 +265,7 @@ func generateQuerier(dir string, methods []MethodInfo) {
 	writeFile(dir, generatedFilePrefix+"querier.go", buf.Bytes())
 }
 
-func generateWrapper(dir string, engine Engine, methods []MethodInfo) {
+func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs map[string]StructInfo) {
 	t := template.Must(template.New("wrapper").Funcs(template.FuncMap{
 		"joinParamsSignature": joinParamsSignature,
 		"joinParamsCall":      joinParamsCall,
@@ -265,12 +274,34 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo) {
 		"firstReturnType":     firstReturnType,
 		"isDomainStruct":      isDomainStructFunc,
 		"zeroValue":           zeroValue,
+		"getStruct":           func(name string) StructInfo { return structs[name] },
+		"hasSliceField":       hasSliceField,
+		"getSliceField":       getSliceField,
+		"toSingular": func(s string) string {
+			return strings.TrimSuffix(s, "s")
+		},
+		"dict": func(values ...interface{}) (map[string]interface{}, error) {
+			if len(values)%2 != 0 {
+				return nil, fmt.Errorf("invalid dict call")
+			}
+			dict := make(map[string]interface{}, len(values)/2)
+			for i := 0; i < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict keys must be strings")
+				}
+				dict[key] = values[i+1]
+			}
+			return dict, nil
+		},
+		"hasSuffix": strings.HasSuffix,
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
 	data := map[string]interface{}{
 		"Engine":  engine,
 		"Methods": methods,
+		"Structs": structs,
 	}
 
 	if err := t.Execute(&buf, data); err != nil {
@@ -305,7 +336,11 @@ func joinParamsCall(params []Param, engPkg string) string {
 	var p []string
 	for _, param := range params {
 		if isDomainStructFunc(param.Type) {
-			p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
+			if strings.HasPrefix(param.Type, "[]") {
+				p = append(p, fmt.Sprintf("[]%s.%s(%s)", engPkg, strings.TrimPrefix(param.Type, "[]"), param.Name))
+			} else {
+				p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
+			}
 		} else {
 			p = append(p, param.Name)
 		}
@@ -455,47 +490,99 @@ type {{.Engine.Name}}Wrapper struct {
 }
 
 {{range .Methods}}
+{{- $methodParams := .Params -}}
 func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
+	{{- /* --- Auto-Loop for Bulk Insert on Non-Postgres --- */ -}}
+	{{- $isAutoLoop := false -}}
+	{{- $singularMethodName := "" -}}
+	{{- $paramType := "" -}}
+	{{- $sliceField := dict "Name" "" -}}
+	{{- if and (not $.Engine.IsPostgres) (gt (len .Params) 1) -}}
+		{{- $pType := (index .Params 1).Type -}}
+		{{- $sInfo := getStruct $pType -}}
+		{{- if hasSliceField $sInfo -}}
+			{{- if .BulkFor -}}
+				{{- $isAutoLoop = true -}}
+				{{- $singularMethodName = .BulkFor -}}
+				{{- $paramType = $pType -}}
+				{{- $sliceField = getSliceField $sInfo -}}
+			{{- else if hasSuffix .Name "s" -}}
+				{{- $isAutoLoop = true -}}
+				{{- $singularMethodName = toSingular .Name -}}
+				{{- $paramType = $pType -}}
+				{{- $sliceField = getSliceField $sInfo -}}
+			{{- end -}}
+		{{- end -}}
+	{{- end -}}
+
+	{{- if $isAutoLoop -}}
+		{{- $singularParamType := printf "%sParams" $singularMethodName -}}
+		{{- $structInfo := getStruct $singularParamType -}}
+		for _, v := range {{(index $methodParams 1).Name}}.{{$sliceField.Name}} {
+			err := w.adapter.{{$singularMethodName}}({{(index $methodParams 0).Name}}, {{$.Engine.Package}}.{{$singularParamType}}{
+				{{- range $structInfo.Fields -}}
+				{{- if eq .Name $sliceField.Name }}
+					{{.Name}}: v,
+				{{- else }}
+					{{.Name}}: {{(index $methodParams 1).Name}}.{{.Name}},
+				{{- end -}}
+				{{- end -}}
+			})
+			if err != nil {
+				if IsDuplicateKeyError(err) {
+					continue
+				}
+				return err
+			}
+		}
+		return nil
+	{{- else -}}
+		{{- template "standardBody" (dict "Method" . "Engine" $.Engine) -}}
+	{{- end -}}
+}
+{{end}}
+
+{{define "standardBody"}}
 	{{- /* --- MySQL CREATE Special Handling --- */ -}}
-	{{if and $.Engine.IsMySQL .IsCreate}}
+	{{if and .Engine.IsMySQL .Method.IsCreate}}
 		// MySQL does not support RETURNING for INSERTs.
 		// We insert, get LastInsertId, and then fetch the object.
-		res, err := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
+		res, err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package}})
 		if err != nil {
-			return {{.ReturnElem}}{}, err
+			return {{.Method.ReturnElem}}{}, err
 		}
 
 		id, err := res.LastInsertId()
 		if err != nil {
-			return {{.ReturnElem}}{}, err
+			return {{.Method.ReturnElem}}{}, err
 		}
 
 
-		return w.Get{{.ReturnElem}}ByID(ctx, id)
+		return w.Get{{.Method.ReturnElem}}ByID(ctx, id)
 
 	{{- else -}}
 
 	{{- /* --- Standard Handling --- */ -}}
-		{{- $retType := firstReturnType .Returns -}}
+		{{- $retType := firstReturnType .Method.Returns -}}
 
 		{{/* 1. CALL ADAPTER */}}
-		{{- if .HasValue -}}
-			res{{if .ReturnsError}}, err{{end}} := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
+		{{- if .Method.HasValue -}}
+			res{{if .Method.ReturnsError}}, err{{end}} := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package}})
 		{{- else -}}
-			err := w.adapter.{{.Name}}({{joinParamsCall .Params $.Engine.Package}})
+			err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package}})
 		{{- end -}}
 
 		{{/* 2. HANDLE ERROR */}}
-		{{- if .ReturnsError}}
+		{{- if .Method.ReturnsError}}
 		if err != nil {
-			{{- if .ReturnsSelf}}
+			{{- if .Method.ReturnsSelf}}
 				return nil // returns Querier
-			{{- else if not .HasValue}}
+			{{- else if not .Method.HasValue}}
 				return err
 			{{- else if isSlice $retType}}
 				return nil, err
-			{{- else if isDomainStruct .ReturnElem}}
-				return {{.ReturnElem}}{}, err
+			{{- else if isDomainStruct .Method.ReturnElem}}
+				return {{.Method.ReturnElem}}{}, err
 			{{- else}}
 				// Primitive return (int64, string, etc)
 				return {{zeroValue $retType}}, err
@@ -504,42 +591,41 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- end}}
 
 		{{/* 3. RETURN RESULTS */}}
-		{{- if .ReturnsSelf}}
+		{{- if .Method.ReturnsSelf}}
 			// Wrap the returned adapter (for WithTx)
 
-			return &{{$.Engine.Name}}Wrapper{adapter: res}
+			return &{{.Engine.Name}}Wrapper{adapter: res}
 
 		{{- else if isSlice $retType }}
-			{{- if isDomainStruct .ReturnElem}}
+			{{- if isDomainStruct .Method.ReturnElem}}
 				// Convert Slice of Domain Structs
-				items := make([]{{.ReturnElem}}, len(res))
+				items := make([]{{.Method.ReturnElem}}, len(res))
 				for i, v := range res {
-					items[i] = {{.ReturnElem}}(v)
+					items[i] = {{.Method.ReturnElem}}(v)
 				}
 
-				return items{{if .ReturnsError}}, nil{{end}}
+				return items{{if .Method.ReturnsError}}, nil{{end}}
 			{{- else}}
 				// Return Slice of Primitives (direct match)
-				return res{{if .ReturnsError}}, nil{{end}}
+				return res{{if .Method.ReturnsError}}, nil{{end}}
 			{{- end}}
 
-		{{- else if isDomainStruct .ReturnElem}}
+		{{- else if isDomainStruct .Method.ReturnElem}}
 			// Convert Single Domain Struct
 
-			return {{.ReturnElem}}(res){{if .ReturnsError}}, nil{{end}}
+			return {{.Method.ReturnElem}}(res){{if .Method.ReturnsError}}, nil{{end}}
 
-		{{- else if .HasValue}}
+		{{- else if .Method.HasValue}}
 			// Return Primitive / *sql.DB / etc
 
-			return res{{if .ReturnsError}}, nil{{end}}
+			return res{{if .Method.ReturnsError}}, nil{{end}}
 
 		{{- else}}
 			// No return value (void)
-			{{if .ReturnsError}}return nil{{end}}
+			{{if .Method.ReturnsError}}return nil{{end}}
 		{{- end}}
 
 	{{- end}}
-}
 {{end}}
 
 func (w *{{.Engine.Name}}Wrapper) WithTx(tx *sql.Tx) Querier {
@@ -552,4 +638,23 @@ func (w *{{.Engine.Name}}Wrapper) DB() *sql.DB {
 }
 `
 
-func (e Engine) IsMySQL() bool { return e.Name == "mysql" }
+func (e Engine) IsMySQL() bool    { return e.Name == "mysql" }
+func (e Engine) IsPostgres() bool { return e.Name == "postgres" }
+
+func hasSliceField(s StructInfo) bool {
+	for _, f := range s.Fields {
+		if strings.HasPrefix(f.Type, "[]") && f.Type != "[]byte" {
+			return true
+		}
+	}
+	return false
+}
+
+func getSliceField(s StructInfo) FieldInfo {
+	for _, f := range s.Fields {
+		if strings.HasPrefix(f.Type, "[]") && f.Type != "[]byte" {
+			return f
+		}
+	}
+	return FieldInfo{}
+}
