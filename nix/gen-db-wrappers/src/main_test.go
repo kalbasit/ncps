@@ -181,7 +181,7 @@ func TestJoinParamsCall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := joinParamsCall(tt.params, tt.engPkg, MethodInfo{}, nil)
+			got, err := joinParamsCall(tt.params, tt.engPkg, MethodInfo{}, nil, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("joinParamsCall() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -279,7 +279,7 @@ func TestWrapperTemplate(t *testing.T) {
 					Returns: []Return{{Type: "error"}},
 				}
 			}
-			return joinParamsCall(params, engPkg, targetMethod, structs)
+			return joinParamsCall(params, engPkg, targetMethod, structs, structs)
 		},
 		"hasSuffix": strings.HasSuffix,
 	}

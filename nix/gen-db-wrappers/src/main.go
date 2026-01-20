@@ -121,7 +121,6 @@ func main() {
 	})
 
 	// 3. Generate models.go and querier.go
-	globalStructs = sourceData.Structs
 	generateModels(targetDir, sortedStructs)
 	generateQuerier(targetDir, sourceData.Methods)
 
@@ -297,7 +296,7 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 					}
 				}
 			}
-			return joinParamsCall(params, engPkg, targetMethod, engData.Structs)
+			return joinParamsCall(params, engPkg, targetMethod, engData.Structs, structs)
 		},
 		"dict": func(values ...interface{}) (map[string]interface{}, error) {
 			if len(values)%2 != 0 {
@@ -363,7 +362,7 @@ func joinParamsSignature(params []Param) string {
 	return strings.Join(p, ", ")
 }
 
-func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targetStructs map[string]StructInfo) (string, error) {
+func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targetStructs map[string]StructInfo, sourceStructs map[string]StructInfo) (string, error) {
 	var p []string
 	for i, param := range params {
 		if isDomainStructFunc(param.Type) {
@@ -379,7 +378,7 @@ func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targ
 				if targetParamType != "" {
 					// Always use field-by-field conversion for domain structs to handle cases where
 					// the structs have the same name but different field types (e.g., int32 vs int64).
-					sourceStruct := getStructByName(param.Type)
+					sourceStruct := sourceStructs[param.Type]
 					targetStruct := targetStructs[targetParamType]
 
 					var fields []string
@@ -425,13 +424,6 @@ func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targ
 		}
 	}
 	return strings.Join(p, ", "), nil
-}
-
-// Global structs map for getStructByName (set during main execution)
-var globalStructs map[string]StructInfo
-
-func getStructByName(name string) StructInfo {
-	return globalStructs[name]
 }
 
 func joinReturns(returns []Return) string {
