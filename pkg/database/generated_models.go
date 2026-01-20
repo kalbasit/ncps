@@ -60,6 +60,11 @@ type CreateNarInfoParams struct {
 	Ca          sql.NullString
 }
 
+type GetMigratedNarInfoHashesPaginatedParams struct {
+	Limit  int32
+	Offset int32
+}
+
 type LinkNarInfoToNarFileParams struct {
 	NarInfoID int64
 	NarFileID int64

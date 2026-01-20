@@ -211,6 +211,7 @@ func migrateNarInfoCommand(
 					if !deleteAfter {
 						// Skip
 						atomic.AddInt32(&totalSkipped, 1)
+						RecordMigrationNarInfo(ctx, MigrationOperationMigrate, MigrationResultSkipped)
 
 						return nil
 					}
@@ -220,20 +221,24 @@ func migrateNarInfoCommand(
 						atomic.AddInt32(&totalProcessed, 1)
 
 						log := logger.With().Str("hash", hash).Logger()
+						ctxWithLog := log.WithContext(ctx)
 						log.Info().Msg("narinfo already migrated, deleting from storage")
 
 						if dryRun {
 							log.Info().Msg("[DRY-RUN] would delete from storage")
 							atomic.AddInt32(&totalSucceeded, 1)
+							RecordMigrationNarInfo(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
 
 							return nil
 						}
 
-						if err := narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+						if err := narInfoStore.DeleteNarInfo(ctxWithLog, hash); err != nil {
 							log.Error().Err(err).Msg("failed to delete from store")
 							atomic.AddInt32(&totalFailed, 1)
+							RecordMigrationNarInfo(ctxWithLog, MigrationOperationDelete, MigrationResultFailure)
 						} else {
 							atomic.AddInt32(&totalSucceeded, 1)
+							RecordMigrationNarInfo(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
 						}
 
 						return nil
@@ -249,14 +254,23 @@ func migrateNarInfoCommand(
 					log.Info().Msg("processing narinfo")
 
 					ctxWithLog := log.WithContext(ctx)
+
+					opStartTime := time.Now()
+
+					defer func() {
+						RecordMigrationDuration(ctxWithLog, MigrationOperationMigrate, time.Since(opStartTime).Seconds())
+					}()
+
 					if err := migrateOne(ctxWithLog, db, narInfoStore, hash, dryRun, deleteAfter); err != nil {
 						log.Error().Err(err).Msg("failed to migrate narinfo")
 						atomic.AddInt32(&totalFailed, 1)
+						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
 						// Continue migration even if one fails
 						return nil
 					}
 
 					atomic.AddInt32(&totalSucceeded, 1)
+					RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
 
 					return nil
 				})
@@ -283,6 +297,9 @@ func migrateNarInfoCommand(
 			if durationInSeconds := duration.Seconds(); durationInSeconds > 0 {
 				rate = float64(processed) / durationInSeconds
 			}
+
+			// Record batch size metric
+			RecordMigrationBatchSize(ctx, int64(found))
 
 			logger.Info().
 				Int32("found", found).

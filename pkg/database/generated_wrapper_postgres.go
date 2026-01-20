@@ -246,6 +246,19 @@ func (w *postgresWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]strin
 	return res, nil
 }
 
+func (w *postgresWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error) {
+	res, err := w.adapter.GetMigratedNarInfoHashesPaginated(ctx, postgresdb.GetMigratedNarInfoHashesPaginatedParams{
+		Limit:  arg.Limit,
+		Offset: arg.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *postgresWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
@@ -386,6 +399,17 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 	}
 
 	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *postgresWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool, error) {
+	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
+	if err != nil {
+		// Primitive return (int64, string, etc)
+		return false, err
+	}
+
+	// Return Primitive / *sql.DB / etc
 	return res, nil
 }
 
