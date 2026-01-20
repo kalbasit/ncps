@@ -38,6 +38,14 @@ const (
 	recordAgeIgnoreTouch = 5 * time.Minute
 	otelPackageName      = "github.com/kalbasit/ncps/pkg/cache"
 	cacheLockKey         = "cache"
+
+	// Migration operation constants for metrics.
+	migrationOperationMigrate = "migrate"
+	migrationOperationDelete  = "delete"
+
+	// Migration result constants for metrics.
+	migrationResultSuccess = "success"
+	migrationResultFailure = "failure"
 )
 
 // narInfoJobKey returns the key used for tracking narinfo download jobs.
@@ -119,6 +127,13 @@ var (
 
 	//nolint:gochecknoglobals
 	upstreamNarFetchDuration metric.Float64Histogram
+
+	// Background migration metrics
+	//nolint:gochecknoglobals
+	backgroundMigrationNarInfosTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	backgroundMigrationDuration metric.Float64Histogram
 )
 
 //nolint:gochecknoinits
@@ -252,6 +267,24 @@ func init() {
 	upstreamNarFetchDuration, err = meter.Float64Histogram(
 		"ncps_upstream_nar_fetch_duration_seconds",
 		metric.WithDescription("Duration of NAR fetches from upstream caches."),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	backgroundMigrationNarInfosTotal, err = meter.Int64Counter(
+		"ncps_background_migration_narinfos_total",
+		metric.WithDescription("Total number of narinfos processed during background migration"),
+		metric.WithUnit("{narinfo}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	backgroundMigrationDuration, err = meter.Float64Histogram(
+		"ncps_background_migration_duration_seconds",
+		metric.WithDescription("Duration of background narinfo migration operations"),
 		metric.WithUnit("s"),
 	)
 	if err != nil {
@@ -2188,16 +2221,63 @@ func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *n
 
 		log := zerolog.Ctx(detachedCtx).With().Str("narinfo_hash", hash).Logger()
 
+		opStartTime := time.Now()
+
 		err := c.storeInDatabase(detachedCtx, hash, ni)
 		if err != nil && !errors.Is(err, ErrAlreadyExists) {
 			log.Error().Err(err).Msg("failed to migrate narinfo to database in background")
 
+			backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
+				metric.WithAttributes(
+					attribute.String("operation", migrationOperationMigrate),
+					attribute.String("result", migrationResultFailure),
+				),
+			)
+			backgroundMigrationDuration.Record(detachedCtx, time.Since(opStartTime).Seconds(),
+				metric.WithAttributes(
+					attribute.String("operation", migrationOperationMigrate),
+				),
+			)
+
 			return
 		}
 
+		backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
+			metric.WithAttributes(
+				attribute.String("operation", migrationOperationMigrate),
+				attribute.String("result", migrationResultSuccess),
+			),
+		)
+		backgroundMigrationDuration.Record(detachedCtx, time.Since(opStartTime).Seconds(),
+			metric.WithAttributes(
+				attribute.String("operation", migrationOperationMigrate),
+			),
+		)
+
+		deleteStartTime := time.Now()
+
 		if err := c.narInfoStore.DeleteNarInfo(detachedCtx, hash); err != nil {
 			log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
+			backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
+				metric.WithAttributes(
+					attribute.String("operation", migrationOperationDelete),
+					attribute.String("result", migrationResultFailure),
+				),
+			)
+		} else {
+			backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
+				metric.WithAttributes(
+					attribute.String("operation", migrationOperationDelete),
+					attribute.String("result", migrationResultSuccess),
+				),
+			)
 		}
+
+		backgroundMigrationDuration.Record(detachedCtx, time.Since(deleteStartTime).Seconds(),
+			metric.WithAttributes(
+				attribute.String("operation", migrationOperationDelete),
+			),
+		)
 	})
 }
 
