@@ -14,7 +14,10 @@ type sqliteWrapper struct {
 }
 
 func (w *sqliteWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error {
-	err := w.adapter.AddNarInfoReference(ctx, sqlitedb.AddNarInfoReferenceParams(arg))
+	err := w.adapter.AddNarInfoReference(ctx, sqlitedb.AddNarInfoReferenceParams{
+		NarInfoID: arg.NarInfoID,
+		Reference: arg.Reference,
+	})
 	if err != nil {
 		return err
 	}
@@ -28,7 +31,8 @@ func (w *sqliteWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfo
 		err := w.adapter.AddNarInfoReference(ctx, sqlitedb.AddNarInfoReferenceParams{
 			NarInfoID: arg.NarInfoID,
 			Reference: v,
-		})
+		},
+		)
 		if err != nil {
 			if IsDuplicateKeyError(err) {
 				continue
@@ -40,7 +44,10 @@ func (w *sqliteWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfo
 }
 
 func (w *sqliteWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
-	err := w.adapter.AddNarInfoSignature(ctx, sqlitedb.AddNarInfoSignatureParams(arg))
+	err := w.adapter.AddNarInfoSignature(ctx, sqlitedb.AddNarInfoSignatureParams{
+		NarInfoID: arg.NarInfoID,
+		Signature: arg.Signature,
+	})
 	if err != nil {
 		return err
 	}
@@ -54,7 +61,8 @@ func (w *sqliteWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfo
 		err := w.adapter.AddNarInfoSignature(ctx, sqlitedb.AddNarInfoSignatureParams{
 			NarInfoID: arg.NarInfoID,
 			Signature: v,
-		})
+		},
+		)
 		if err != nil {
 			if IsDuplicateKeyError(err) {
 				continue
@@ -66,7 +74,10 @@ func (w *sqliteWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfo
 }
 
 func (w *sqliteWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
-	res, err := w.adapter.CreateConfig(ctx, sqlitedb.CreateConfigParams(arg))
+	res, err := w.adapter.CreateConfig(ctx, sqlitedb.CreateConfigParams{
+		Key:   arg.Key,
+		Value: arg.Value,
+	})
 	if err != nil {
 		return Config{}, err
 	}
@@ -77,7 +88,12 @@ func (w *sqliteWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams
 }
 
 func (w *sqliteWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
-	res, err := w.adapter.CreateNarFile(ctx, sqlitedb.CreateNarFileParams(arg))
+	res, err := w.adapter.CreateNarFile(ctx, sqlitedb.CreateNarFileParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+		FileSize:    arg.FileSize,
+	})
 	if err != nil {
 		return NarFile{}, err
 	}
@@ -88,7 +104,19 @@ func (w *sqliteWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePara
 }
 
 func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
-	res, err := w.adapter.CreateNarInfo(ctx, sqlitedb.CreateNarInfoParams(arg))
+	res, err := w.adapter.CreateNarInfo(ctx, sqlitedb.CreateNarInfoParams{
+		Hash:        arg.Hash,
+		StorePath:   arg.StorePath,
+		URL:         arg.URL,
+		Compression: arg.Compression,
+		FileHash:    arg.FileHash,
+		FileSize:    arg.FileSize,
+		NarHash:     arg.NarHash,
+		NarSize:     arg.NarSize,
+		Deriver:     arg.Deriver,
+		System:      arg.System,
+		Ca:          arg.Ca,
+	})
 	if err != nil {
 		return NarInfo{}, err
 	}
@@ -106,7 +134,6 @@ func (w *sqliteWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (i
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -118,7 +145,6 @@ func (w *sqliteWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64,
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -130,7 +156,6 @@ func (w *sqliteWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (i
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -142,7 +167,6 @@ func (w *sqliteWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64,
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -154,7 +178,6 @@ func (w *sqliteWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, erro
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -166,7 +189,6 @@ func (w *sqliteWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, erro
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -273,7 +295,6 @@ func (w *sqliteWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -307,7 +328,6 @@ func (w *sqliteWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -349,7 +369,6 @@ func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -379,7 +398,10 @@ func (w *sqliteWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]strin
 }
 
 func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
-	err := w.adapter.LinkNarInfoToNarFile(ctx, sqlitedb.LinkNarInfoToNarFileParams(arg))
+	err := w.adapter.LinkNarInfoToNarFile(ctx, sqlitedb.LinkNarInfoToNarFileParams{
+		NarInfoID: arg.NarInfoID,
+		NarFileID: arg.NarFileID,
+	})
 	if err != nil {
 		return err
 	}
@@ -389,7 +411,10 @@ func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInf
 }
 
 func (w *sqliteWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
-	err := w.adapter.SetConfig(ctx, sqlitedb.SetConfigParams(arg))
+	err := w.adapter.SetConfig(ctx, sqlitedb.SetConfigParams{
+		Key:   arg.Key,
+		Value: arg.Value,
+	})
 	if err != nil {
 		return err
 	}
@@ -406,7 +431,6 @@ func (w *sqliteWrapper) TouchNarFile(ctx context.Context, hash string) (int64, e
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -418,7 +442,6 @@ func (w *sqliteWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, e
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
