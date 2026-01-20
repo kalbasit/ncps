@@ -71,11 +71,52 @@ spec:
 
 ## Database Migrations
 
-Database migrations run automatically on startup. Ensure:
+Database schema migrations run automatically on startup. Ensure:
 
 1. Backup database before upgrading
-1. migrations complete successfully (check logs)
+1. Migrations complete successfully (check logs)
 1. All instances use same database schema version
+
+### NarInfo Migration
+
+When upgrading from versions before database-backed narinfo metadata, you have two migration options:
+
+**Option 1: Background Migration (Recommended)**
+
+- Continue normal operation
+- NarInfo migrated automatically on access
+- Zero downtime
+- Gradual migration over time
+- No manual intervention required
+
+**Option 2: Explicit CLI Migration**
+
+- Faster bulk migration
+- Use during maintenance window
+- Optional deletion from storage (saves space)
+- Progress monitoring and metrics
+
+**Example CLI migration:**
+
+```sh
+# Stop service
+systemctl stop ncps
+
+# Run migration
+ncps migrate-narinfo \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps"
+
+# Optionally delete from storage after migration
+ncps migrate-narinfo --delete \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps"
+
+# Start service
+systemctl start ncps
+```
+
+See [NarInfo Migration Guidee](NarInfo%20Migration.md) for comprehensive migration documentation.
 
 ## Breaking Changes
 
