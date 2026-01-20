@@ -184,7 +184,10 @@ func migrateNarInfoCommand(
 						skipped := atomic.LoadInt32(&totalSkipped)
 						failed := atomic.LoadInt32(&totalFailed)
 
-						rate := float64(processed) / elapsed.Seconds()
+						var rate float64
+						if durationInSeconds := elapsed.Seconds(); durationInSeconds > 0 {
+							rate = float64(processed) / durationInSeconds
+						}
 
 						logger.Info().
 							Int32("found", found).
@@ -276,7 +279,10 @@ func migrateNarInfoCommand(
 			skipped := atomic.LoadInt32(&totalSkipped)
 			failed := atomic.LoadInt32(&totalFailed)
 
-			rate := float64(processed) / duration.Seconds()
+			var rate float64
+			if durationInSeconds := duration.Seconds(); durationInSeconds > 0 {
+				rate = float64(processed) / durationInSeconds
+			}
 
 			logger.Info().
 				Int32("found", found).
