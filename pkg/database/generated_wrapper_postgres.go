@@ -14,7 +14,10 @@ type postgresWrapper struct {
 }
 
 func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
-	res, err := w.adapter.CreateConfig(ctx, postgresdb.CreateConfigParams(arg))
+	res, err := w.adapter.CreateConfig(ctx, postgresdb.CreateConfigParams{
+		Key:   arg.Key,
+		Value: arg.Value,
+	})
 	if err != nil {
 		return Config{}, err
 	}
@@ -25,7 +28,12 @@ func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigPara
 }
 
 func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
-	res, err := w.adapter.CreateNarFile(ctx, postgresdb.CreateNarFileParams(arg))
+	res, err := w.adapter.CreateNarFile(ctx, postgresdb.CreateNarFileParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+		FileSize:    arg.FileSize,
+	})
 	if err != nil {
 		return NarFile{}, err
 	}
@@ -54,7 +62,6 @@ func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) 
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -66,7 +73,6 @@ func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int6
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -78,7 +84,6 @@ func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) 
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -90,7 +95,6 @@ func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int6
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -102,7 +106,6 @@ func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, er
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -114,7 +117,6 @@ func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, er
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -211,7 +213,6 @@ func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -245,7 +246,6 @@ func (w *postgresWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -267,7 +267,6 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -287,7 +286,10 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 }
 
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
-	err := w.adapter.LinkNarInfoToNarFile(ctx, postgresdb.LinkNarInfoToNarFileParams(arg))
+	err := w.adapter.LinkNarInfoToNarFile(ctx, postgresdb.LinkNarInfoToNarFileParams{
+		NarInfoID: arg.NarInfoID,
+		NarFileID: arg.NarFileID,
+	})
 	if err != nil {
 		return err
 	}
@@ -297,7 +299,10 @@ func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarI
 }
 
 func (w *postgresWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
-	err := w.adapter.SetConfig(ctx, postgresdb.SetConfigParams(arg))
+	err := w.adapter.SetConfig(ctx, postgresdb.SetConfigParams{
+		Key:   arg.Key,
+		Value: arg.Value,
+	})
 	if err != nil {
 		return err
 	}
@@ -314,7 +319,6 @@ func (w *postgresWrapper) TouchNarFile(ctx context.Context, hash string) (int64,
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -326,7 +330,6 @@ func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64,
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
