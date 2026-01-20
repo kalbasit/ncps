@@ -66,6 +66,11 @@ type FieldInfo struct {
 	Tag  string
 }
 
+type PackageData struct {
+	Methods []MethodInfo
+	Structs map[string]StructInfo
+}
+
 func main() {
 	var querierPath string
 	// Handle cases where go run might pass "--"
@@ -87,9 +92,55 @@ func main() {
 	sourceDir := filepath.Dir(querierPath)
 	targetDir := filepath.Dir(sourceDir) // Parent of postgresdb is pkg/database
 
-	// 1. Parse all files in sourceDir to find struct definitions and Querier interface
+	// 1. Parse source package
+	sourceData := parsePackage(sourceDir)
+
+	// 2. Identify used structs from source methods
+	usedStructNames := make(map[string]bool)
+	for _, m := range sourceData.Methods {
+		for _, p := range m.Params {
+			cleanType := strings.TrimPrefix(p.Type, "[]")
+			if _, exists := sourceData.Structs[cleanType]; exists {
+				usedStructNames[cleanType] = true
+			}
+		}
+		for _, r := range m.Returns {
+			cleanType := strings.TrimPrefix(r.Type, "[]")
+			if _, exists := sourceData.Structs[cleanType]; exists {
+				usedStructNames[cleanType] = true
+			}
+		}
+	}
+
+	var sortedStructs []StructInfo
+	for name := range usedStructNames {
+		sortedStructs = append(sortedStructs, sourceData.Structs[name])
+	}
+	sort.Slice(sortedStructs, func(i, j int) bool {
+		return sortedStructs[i].Name < sortedStructs[j].Name
+	})
+
+	// 3. Generate models.go and querier.go
+	globalStructs = sourceData.Structs
+	generateModels(targetDir, sortedStructs)
+	generateQuerier(targetDir, sourceData.Methods)
+
+	// 4. Parse all target packages
+	engineData := make(map[string]PackageData)
+	for _, engine := range engines {
+		engineDir := filepath.Join(targetDir, engine.Package)
+		engineData[engine.Name] = parsePackage(engineDir)
+	}
+
+	// 5. Generate wrappers
+	for _, engine := range engines {
+		generateWrapper(targetDir, engine, sourceData.Methods, sourceData.Structs, engineData[engine.Name])
+	}
+}
+
+func parsePackage(dir string) PackageData {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, sourceDir, nil, parser.ParseComments)
+	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -105,7 +156,6 @@ func main() {
 					return true
 				}
 
-				// Handle Interface -> Querier
 				if typeSpec.Name.Name == "Querier" {
 					interfaceType, ok := typeSpec.Type.(*ast.InterfaceType)
 					if !ok {
@@ -113,8 +163,6 @@ func main() {
 					}
 					for _, field := range interfaceType.Methods.List {
 						m := MethodInfo{Name: field.Names[0].Name}
-
-						// Capture docs
 						if field.Doc != nil {
 							for _, comment := range field.Doc.List {
 								m.Docs = append(m.Docs, comment.Text)
@@ -127,8 +175,6 @@ func main() {
 						}
 
 						funcType := field.Type.(*ast.FuncType)
-
-						// Parse Params
 						for _, param := range funcType.Params.List {
 							typeStr := exprToString(param.Type)
 							for _, name := range param.Names {
@@ -136,12 +182,10 @@ func main() {
 							}
 						}
 
-						// Parse Returns
 						if funcType.Results != nil {
 							for _, res := range funcType.Results.List {
 								typeStr := exprToString(res.Type)
 								m.Returns = append(m.Returns, Return{Type: typeStr})
-
 								if typeStr == "error" {
 									m.ReturnsError = true
 								} else if typeStr == "Querier" {
@@ -149,23 +193,15 @@ func main() {
 									m.HasValue = true
 								} else {
 									m.HasValue = true
-									// Capture element type for both Slices and Singles
 									m.ReturnElem = strings.TrimPrefix(typeStr, "[]")
 								}
 							}
 						}
-
-						// Detect if it's a Create method returning a Domain struct (for MySQL)
-						// Heuristic: Name starts with Create, returns a struct (not primitive/slice) that is a domain struct
-						if strings.HasPrefix(m.Name, "Create") && isDomainStruct(m.ReturnElem) { // Note: structs map might be incomplete here, but names are string based
-							m.IsCreate = true
-						}
-
+						m.IsCreate = strings.HasPrefix(m.Name, "Create") && isDomainStruct(m.ReturnElem)
 						methods = append(methods, m)
 					}
 				}
 
-				// Handle Struct Definitions
 				if structType, ok := typeSpec.Type.(*ast.StructType); ok {
 					s := StructInfo{Name: typeSpec.Name.Name}
 					if structType.Fields != nil {
@@ -184,62 +220,22 @@ func main() {
 									s.Fields = append(s.Fields, FieldInfo{Name: name.Name, Type: typeStr, Tag: tag})
 								}
 							} else {
-								// Embedded field
 								s.Fields = append(s.Fields, FieldInfo{Name: "", Type: typeStr, Tag: tag})
 							}
 						}
 					}
 					structs[s.Name] = s
 				}
-
 				return true
 			})
 		}
 	}
 
-	// Sort methods by name for internal consistency
 	sort.Slice(methods, func(i, j int) bool {
 		return methods[i].Name < methods[j].Name
 	})
 
-	// 2. Identify used structs from methods (params and return types)
-	usedStructNames := make(map[string]bool)
-	for _, m := range methods {
-		for _, p := range m.Params {
-			cleanType := strings.TrimPrefix(p.Type, "[]")
-			if _, exists := structs[cleanType]; exists {
-				usedStructNames[cleanType] = true
-			}
-		}
-		for _, r := range m.Returns {
-			cleanType := strings.TrimPrefix(r.Type, "[]")
-			if _, exists := structs[cleanType]; exists {
-				usedStructNames[cleanType] = true
-			}
-		}
-	}
-
-	// Convert used structs map to slice and sort
-	var sortedStructs []StructInfo
-	for name := range usedStructNames {
-		sortedStructs = append(sortedStructs, structs[name])
-	}
-	sort.Slice(sortedStructs, func(i, j int) bool {
-		return sortedStructs[i].Name < sortedStructs[j].Name
-	})
-
-	// 3. Generate models.go
-	generateModels(targetDir, sortedStructs)
-
-	// 4. Generate querier.go
-	generateQuerier(targetDir, methods)
-
-	// 5. Generate wrappers
-	// We need to re-evaluate IsCreate now that we have full struct knowledge, or just rely on naming convention
-	// The previous isDomainStruct check relied on string pattern, which is still valid.
-	for _, engine := range engines {
-		generateWrapper(targetDir, engine, methods, structs)
-	}
+	return PackageData{Methods: methods, Structs: structs}
 }
 
 func generateModels(dir string, structs []StructInfo) {
@@ -264,7 +260,7 @@ func generateQuerier(dir string, methods []MethodInfo) {
 	writeFile(dir, generatedFilePrefix+"querier.go", buf.Bytes())
 }
 
-func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs map[string]StructInfo) {
+func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs map[string]StructInfo, engData PackageData) {
 	t := template.Must(template.New("wrapper").Funcs(template.FuncMap{
 		"joinParamsSignature": joinParamsSignature,
 		"joinReturns":         joinReturns,
@@ -277,8 +273,31 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 		"getSliceField":       getSliceField,
 		"toSingular":          toSingular,
 		"trimPrefix":          strings.TrimPrefix,
-		"joinParamsCall": func(params []Param, engPkg string) (string, error) {
-			return joinParamsCall(params, engPkg)
+		"getTargetMethod": func(name string) MethodInfo {
+			for _, m := range engData.Methods {
+				if m.Name == name {
+					return m
+				}
+			}
+			return MethodInfo{}
+		},
+		"getTargetStruct": func(name string) StructInfo {
+			if engData.Structs == nil {
+				return StructInfo{}
+			}
+			return engData.Structs[name]
+		},
+		"joinParamsCall": func(params []Param, engPkg string, targetMethodName string) (string, error) {
+			targetMethod := MethodInfo{}
+			if engData.Methods != nil {
+				for _, m := range engData.Methods {
+					if m.Name == targetMethodName {
+						targetMethod = m
+						break
+					}
+				}
+			}
+			return joinParamsCall(params, engPkg, targetMethod, engData.Structs)
 		},
 		"dict": func(values ...interface{}) (map[string]interface{}, error) {
 			if len(values)%2 != 0 {
@@ -344,20 +363,75 @@ func joinParamsSignature(params []Param) string {
 	return strings.Join(p, ", ")
 }
 
-func joinParamsCall(params []Param, engPkg string) (string, error) {
+func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targetStructs map[string]StructInfo) (string, error) {
 	var p []string
-	for _, param := range params {
+	for i, param := range params {
 		if isDomainStructFunc(param.Type) {
 			if strings.HasPrefix(param.Type, "[]") {
 				return "", fmt.Errorf("unsupported parameter type: slice of domain struct %s. Slices of domain structs are not supported as direct parameters, as they require a conversion loop to be generated. The auto-looping for bulk inserts handles this by operating on a struct parameter containing a slice.", param.Type)
 			} else {
-				p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
+				// Check if the target method has the same type for this parameter
+				targetParamType := ""
+				if i < len(targetMethod.Params) {
+					targetParamType = targetMethod.Params[i].Type
+				}
+
+				if targetParamType != "" {
+					// Always use field-by-field conversion for domain structs to handle cases where
+					// the structs have the same name but different field types (e.g., int32 vs int64).
+					sourceStruct := getStructByName(param.Type)
+					targetStruct := targetStructs[targetParamType]
+
+					var fields []string
+					for _, targetField := range targetStruct.Fields {
+						// Find matching field in source struct
+						var sourceField FieldInfo
+						found := false
+						for _, sf := range sourceStruct.Fields {
+							if sf.Name == targetField.Name {
+								sourceField = sf
+								found = true
+								break
+							}
+						}
+
+						if found {
+							if sourceField.Type == targetField.Type {
+								fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
+							} else {
+								// Type cast if needed
+								fields = append(fields, fmt.Sprintf("%s: %s(%s.%s)", targetField.Name, targetField.Type, param.Name, sourceField.Name))
+							}
+						}
+					}
+					p = append(p, fmt.Sprintf("%s.%s{\n%s,\n}", engPkg, targetParamType, strings.Join(fields, ",\n")))
+				} else {
+					// No target param type info? Fallback to direct conversion (best we can do)
+					p = append(p, fmt.Sprintf("%s.%s(%s)", engPkg, param.Type, param.Name))
+				}
 			}
 		} else {
-			p = append(p, param.Name)
+			// Primitive
+			targetParamType := ""
+			if i < len(targetMethod.Params) {
+				targetParamType = targetMethod.Params[i].Type
+			}
+
+			if targetParamType != "" && targetParamType != param.Type {
+				p = append(p, fmt.Sprintf("%s(%s)", targetParamType, param.Name))
+			} else {
+				p = append(p, param.Name)
+			}
 		}
 	}
 	return strings.Join(p, ", "), nil
+}
+
+// Global structs map for getStructByName (set during main execution)
+var globalStructs map[string]StructInfo
+
+func getStructByName(name string) StructInfo {
+	return globalStructs[name]
 }
 
 func joinReturns(returns []Return) string {
@@ -538,17 +612,37 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 	{{- if $isAutoLoop -}}
 		{{- $singularParamType := printf "%sParams" $singularMethodName -}}
 		{{- $structInfo := getStruct $singularParamType -}}
+		{{- $targetSingularParamType := $singularParamType -}} {{/* Assume same name for now */}}
+		{{- $targetStructInfo := getTargetStruct $targetSingularParamType -}}
 		for _, v := range {{(index $methodParams 1).Name}}.{{$sliceField.Name}} {
-			err := w.adapter.{{$singularMethodName}}({{(index $methodParams 0).Name}}, {{$.Engine.Package}}.{{$singularParamType}}{
+			err := w.adapter.{{$singularMethodName}}({{(index $methodParams 0).Name}}, {{$.Engine.Package}}.{{$targetSingularParamType}}{
 				{{- $sliceElemType := trimPrefix $sliceField.Type "[]" -}}
-				{{- range $structInfo.Fields -}}
-				{{- if eq .Type $sliceElemType }}
-					{{.Name}}: v,
-				{{- else }}
-					{{.Name}}: {{(index $methodParams 1).Name}}.{{.Name}},
-				{{- end -}}
-				{{- end -}}
-			})
+				{{- range $targetStructField := $targetStructInfo.Fields }}
+					{{- /* Find matching field in source struct */ -}}
+					{{- $sourceField := dict "Name" "" -}}
+					{{- range $structInfo.Fields }}
+						{{- if eq .Name $targetStructField.Name }}
+							{{- $sourceField = . }}
+						{{- end }}
+					{{- end }}
+					{{- if ne $sourceField.Name "" }}
+						{{- if eq $sourceField.Type $sliceElemType }}
+							{{- if eq $sourceField.Type $targetStructField.Type }}
+								{{$targetStructField.Name}}: v,
+							{{- else }}
+								{{$targetStructField.Name}}: {{$targetStructField.Type}}(v),
+							{{- end }}
+						{{- else }}
+							{{- if eq $sourceField.Type $targetStructField.Type }}
+								{{$targetStructField.Name}}: {{(index $methodParams 1).Name}}.{{$sourceField.Name}},
+							{{- else }}
+								{{$targetStructField.Name}}: {{$targetStructField.Type}}({{(index $methodParams 1).Name}}.{{$sourceField.Name}}),
+							{{- end }}
+						{{- end }}
+					{{- end }}
+				{{- end }}
+				},
+			)
 			if err != nil {
 				if IsDuplicateKeyError(err) {
 					continue
@@ -568,7 +662,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 	{{if and .Engine.IsMySQL .Method.IsCreate}}
 		// MySQL does not support RETURNING for INSERTs.
 		// We insert, get LastInsertId, and then fetch the object.
-		res, err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package}})
+		res, err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
 		if err != nil {
 			return {{.Method.ReturnElem}}{}, err
 		}
@@ -584,12 +678,14 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 
 	{{- /* --- Standard Handling --- */ -}}
 		{{- $retType := firstReturnType .Method.Returns -}}
+		{{- $targetMethod := getTargetMethod .Method.Name -}}
+		{{- $targetRetType := firstReturnType $targetMethod.Returns -}}
 
 		{{/* 1. CALL ADAPTER */}}
 		{{- if .Method.HasValue -}}
-			res{{if .Method.ReturnsError}}, err{{end}} := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package}})
+			res{{if .Method.ReturnsError}}, err{{end}} := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
 		{{- else -}}
-			err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package}})
+			err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
 		{{- end -}}
 
 		{{/* 2. HANDLE ERROR */}}
@@ -637,8 +733,13 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 
 		{{- else if .Method.HasValue}}
 			// Return Primitive / *sql.DB / etc
-
-			return res{{if .Method.ReturnsError}}, nil{{end}}
+			{{- if and (eq $retType "bool") (eq $targetRetType "int64") }}
+				return res != 0{{if .Method.ReturnsError}}, nil{{end}}
+			{{- else if and (ne $retType $targetRetType) (ne $targetRetType "")}}
+				return {{$retType}}(res){{if .Method.ReturnsError}}, nil{{end}}
+			{{- else}}
+				return res{{if .Method.ReturnsError}}, nil{{end}}
+			{{- end}}
 
 		{{- else}}
 			// No return value (void)

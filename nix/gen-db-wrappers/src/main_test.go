@@ -181,7 +181,7 @@ func TestJoinParamsCall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := joinParamsCall(tt.params, tt.engPkg)
+			got, err := joinParamsCall(tt.params, tt.engPkg, MethodInfo{}, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("joinParamsCall() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -253,8 +253,33 @@ func TestWrapperTemplate(t *testing.T) {
 			}
 			return dict, nil
 		},
-		"joinParamsCall": func(params []Param, engPkg string) (string, error) {
-			return joinParamsCall(params, engPkg)
+		"getTargetMethod": func(name string) MethodInfo {
+			if name == "CreateUsers" {
+				return MethodInfo{
+					Name: "CreateUsers",
+					Params: []Param{
+						{Name: "ctx", Type: "context.Context"},
+						{Name: "arg", Type: "CreateUsersParams"},
+					},
+					Returns: []Return{{Type: "error"}},
+				}
+			}
+			return MethodInfo{}
+		},
+		"getTargetStruct": func(name string) StructInfo { return structs[name] },
+		"joinParamsCall": func(params []Param, engPkg string, targetMethodName string) (string, error) {
+			targetMethod := MethodInfo{}
+			if targetMethodName == "CreateUsers" {
+				targetMethod = MethodInfo{
+					Name: "CreateUsers",
+					Params: []Param{
+						{Name: "ctx", Type: "context.Context"},
+						{Name: "arg", Type: "CreateUsersParams"},
+					},
+					Returns: []Return{{Type: "error"}},
+				}
+			}
+			return joinParamsCall(params, engPkg, targetMethod, structs)
 		},
 		"hasSuffix": strings.HasSuffix,
 	}

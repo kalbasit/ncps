@@ -14,7 +14,10 @@ type postgresWrapper struct {
 }
 
 func (w *postgresWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error {
-	err := w.adapter.AddNarInfoReference(ctx, postgresdb.AddNarInfoReferenceParams(arg))
+	err := w.adapter.AddNarInfoReference(ctx, postgresdb.AddNarInfoReferenceParams{
+		NarInfoID: arg.NarInfoID,
+		Reference: arg.Reference,
+	})
 	if err != nil {
 		return err
 	}
@@ -24,7 +27,10 @@ func (w *postgresWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInf
 }
 
 func (w *postgresWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error {
-	err := w.adapter.AddNarInfoReferences(ctx, postgresdb.AddNarInfoReferencesParams(arg))
+	err := w.adapter.AddNarInfoReferences(ctx, postgresdb.AddNarInfoReferencesParams{
+		NarInfoID: arg.NarInfoID,
+		Reference: arg.Reference,
+	})
 	if err != nil {
 		return err
 	}
@@ -34,7 +40,10 @@ func (w *postgresWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarIn
 }
 
 func (w *postgresWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
-	err := w.adapter.AddNarInfoSignature(ctx, postgresdb.AddNarInfoSignatureParams(arg))
+	err := w.adapter.AddNarInfoSignature(ctx, postgresdb.AddNarInfoSignatureParams{
+		NarInfoID: arg.NarInfoID,
+		Signature: arg.Signature,
+	})
 	if err != nil {
 		return err
 	}
@@ -44,7 +53,10 @@ func (w *postgresWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInf
 }
 
 func (w *postgresWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error {
-	err := w.adapter.AddNarInfoSignatures(ctx, postgresdb.AddNarInfoSignaturesParams(arg))
+	err := w.adapter.AddNarInfoSignatures(ctx, postgresdb.AddNarInfoSignaturesParams{
+		NarInfoID: arg.NarInfoID,
+		Signature: arg.Signature,
+	})
 	if err != nil {
 		return err
 	}
@@ -54,7 +66,10 @@ func (w *postgresWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarIn
 }
 
 func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
-	res, err := w.adapter.CreateConfig(ctx, postgresdb.CreateConfigParams(arg))
+	res, err := w.adapter.CreateConfig(ctx, postgresdb.CreateConfigParams{
+		Key:   arg.Key,
+		Value: arg.Value,
+	})
 	if err != nil {
 		return Config{}, err
 	}
@@ -65,7 +80,12 @@ func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigPara
 }
 
 func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
-	res, err := w.adapter.CreateNarFile(ctx, postgresdb.CreateNarFileParams(arg))
+	res, err := w.adapter.CreateNarFile(ctx, postgresdb.CreateNarFileParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+		FileSize:    arg.FileSize,
+	})
 	if err != nil {
 		return NarFile{}, err
 	}
@@ -76,7 +96,19 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 }
 
 func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
-	res, err := w.adapter.CreateNarInfo(ctx, postgresdb.CreateNarInfoParams(arg))
+	res, err := w.adapter.CreateNarInfo(ctx, postgresdb.CreateNarInfoParams{
+		Hash:        arg.Hash,
+		StorePath:   arg.StorePath,
+		URL:         arg.URL,
+		Compression: arg.Compression,
+		FileHash:    arg.FileHash,
+		FileSize:    arg.FileSize,
+		NarHash:     arg.NarHash,
+		NarSize:     arg.NarSize,
+		Deriver:     arg.Deriver,
+		System:      arg.System,
+		Ca:          arg.Ca,
+	})
 	if err != nil {
 		return NarInfo{}, err
 	}
@@ -94,7 +126,6 @@ func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) 
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -106,7 +137,6 @@ func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int6
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -118,7 +148,6 @@ func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) 
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -130,7 +159,6 @@ func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int6
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -142,7 +170,6 @@ func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, er
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -154,7 +181,6 @@ func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, er
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -261,7 +287,6 @@ func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -295,7 +320,6 @@ func (w *postgresWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -337,7 +361,6 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -367,7 +390,10 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 }
 
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
-	err := w.adapter.LinkNarInfoToNarFile(ctx, postgresdb.LinkNarInfoToNarFileParams(arg))
+	err := w.adapter.LinkNarInfoToNarFile(ctx, postgresdb.LinkNarInfoToNarFileParams{
+		NarInfoID: arg.NarInfoID,
+		NarFileID: arg.NarFileID,
+	})
 	if err != nil {
 		return err
 	}
@@ -377,7 +403,10 @@ func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarI
 }
 
 func (w *postgresWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
-	err := w.adapter.SetConfig(ctx, postgresdb.SetConfigParams(arg))
+	err := w.adapter.SetConfig(ctx, postgresdb.SetConfigParams{
+		Key:   arg.Key,
+		Value: arg.Value,
+	})
 	if err != nil {
 		return err
 	}
@@ -394,7 +423,6 @@ func (w *postgresWrapper) TouchNarFile(ctx context.Context, hash string) (int64,
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
@@ -406,7 +434,6 @@ func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64,
 	}
 
 	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 
