@@ -25,6 +25,8 @@ type Querier interface {
 	//  ) VALUES (
 	//      $1, $2, $3, $4
 	//  )
+	//  ON CONFLICT (hash) DO UPDATE SET
+	//      updated_at = EXCLUDED.updated_at
 	//  RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
 	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error)
 	//CreateNarInfo
