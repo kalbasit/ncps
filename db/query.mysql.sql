@@ -95,6 +95,7 @@ INSERT INTO nar_files (
     ?, ?, ?, ?
 )
 ON DUPLICATE KEY UPDATE
+    id = LAST_INSERT_ID(id),
     updated_at = CURRENT_TIMESTAMP;
 
 -- name: LinkNarInfoToNarFile :exec

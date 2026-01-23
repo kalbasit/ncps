@@ -2173,26 +2173,9 @@ func (c *Cache) ensureNarFile(
 	narURL nar.URL,
 	fileSize uint64,
 ) (int64, error) {
-	// Check if nar_file already exists (multiple narinfos can share the same nar_file)
-	existingNarFile, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("error checking for existing nar_file: %w", err)
-	}
-
-	if err == nil {
-		if err := c.validateNarFile(ctx, existingNarFile, narURL, fileSize); err != nil {
-			return 0, err
-		}
-
-		zerolog.Ctx(ctx).
-			Debug().
-			Str("nar_hash", narURL.Hash).
-			Msg("reusing existing nar_file")
-
-		return existingNarFile.ID, nil
-	}
-
-	// Create new nar_file
+	// Create (or update existing) nar_file record.
+	// The query uses ON CONFLICT DO UPDATE (or ON DUPLICATE KEY UPDATE), so duplicates are handled
+	// by updating the timestamp and returning the record.
 	newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
 		Hash:        narURL.Hash,
 		Compression: narURL.Compression.String(),
@@ -2200,26 +2183,12 @@ func (c *Cache) ensureNarFile(
 		FileSize:    fileSize,
 	})
 	if err != nil {
-		if !database.IsDuplicateKeyError(err) {
-			return 0, fmt.Errorf("error inserting the nar_file record in the database: %w", err)
-		}
+		return 0, fmt.Errorf("error creating or updating nar_file record in the database: %w", err)
+	}
 
-		// Handle race condition: record was inserted by another transaction
-		zerolog.Ctx(ctx).
-			Debug().
-			Str("nar_hash", narURL.Hash).
-			Msg("nar_file already exists (race condition handled), fetching existing record")
-
-		existingNarFile, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
-		if err != nil {
-			return 0, fmt.Errorf("error fetching existing nar_file after duplicate key error: %w", err)
-		}
-
-		if err := c.validateNarFile(ctx, existingNarFile, narURL, fileSize); err != nil {
-			return 0, err
-		}
-
-		return existingNarFile.ID, nil
+	// Validate that the returned record (new or existing) matches our expectations.
+	if err := c.validateNarFile(ctx, newNarFile, narURL, fileSize); err != nil {
+		return 0, err
 	}
 
 	return newNarFile.ID, nil
