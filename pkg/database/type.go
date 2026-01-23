@@ -24,6 +24,11 @@ func DetectFromDatabaseURL(dbURL string) (Type, error) {
 
 	scheme := strings.ToLower(u.Scheme)
 
+	// Normalize scheme by removing everything after + if it exists (e.g., mysql+unix -> mysql)
+	if idx := strings.Index(scheme, "+"); idx != -1 {
+		scheme = scheme[:idx]
+	}
+
 	switch scheme {
 	case "mysql":
 		return TypeMySQL, nil

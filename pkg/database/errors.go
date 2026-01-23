@@ -55,4 +55,10 @@ var (
 
 	// ErrUnsupportedDriver is returned when the database driver is not recognized.
 	ErrUnsupportedDriver = errors.New("unsupported database driver")
+
+	// ErrInvalidPostgresUnixURL is returned when a postgres+unix URL is invalid.
+	ErrInvalidPostgresUnixURL = errors.New("invalid postgres+unix URL")
+
+	// ErrInvalidMySQLUnixURL is returned when a mysql+unix URL is invalid.
+	ErrInvalidMySQLUnixURL = errors.New("invalid mysql+unix URL")
 )
