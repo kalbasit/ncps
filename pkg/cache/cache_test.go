@@ -1456,7 +1456,10 @@ func TestConcurrentDownload_CancelOneClient_OthersContinue(t *testing.T) {
 	readerB.Close()
 
 	assert.Equal(t, entry.NarText, string(bodyB), "NAR content should match for client B")
-	assert.Equal(t, int64(len(entry.NarText)), sizeB, "size should match for client B")
+
+	if sizeB != -1 {
+		assert.Equal(t, int64(len(entry.NarText)), sizeB, "size should match for client B")
+	}
 
 	// Verify the asset is in storage
 	assert.FileExists(t, narPath, "NAR should exist in cache")
@@ -1490,4 +1493,117 @@ func waitForFile(t *testing.T, path string) {
 	}
 
 	require.NoError(t, err, "timeout waiting for file: %s", path)
+}
+
+func TestNarStreaming(t *testing.T) {
+	t.Parallel()
+
+	// Setup test components
+	c, _, localStore, _, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ts := testdata.NewTestServer(t, 40)
+	defer ts.Close()
+
+	narEntry := testdata.Nar1
+	narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+
+	// Use a channel to coordinate the slow upstream response
+	continueServer := make(chan struct{})
+	serverStarted := make(chan struct{})
+
+	// Add a handler that simulates a slow download
+	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/nar/"+narEntry.NarHash+".nar.xz" {
+			// Use simplified size for streaming test - actual content doesn't matter
+			w.Header().Set("Content-Length", "100")
+			w.WriteHeader(http.StatusOK)
+
+			// Write the first byte
+			_, _ = w.Write([]byte("a"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			close(serverStarted)
+			<-continueServer
+
+			// Write the rest
+			_, _ = w.Write([]byte(string(make([]byte, 99))))
+
+			return true
+		}
+
+		return false
+	})
+
+	uc, err := upstream.New(context.Background(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	require.NoError(t, err)
+	c.AddUpstreamCaches(context.Background(), uc)
+	<-c.GetHealthChecker().Trigger()
+
+	// Start GetNar in a goroutine
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	streamingStarted := make(chan struct{})
+
+	var (
+		firstByteRead bool
+		getNarErr     error
+	)
+
+	go func() {
+		defer wg.Done()
+
+		_, r, err := c.GetNar(context.Background(), narURL)
+		if err != nil {
+			getNarErr = err
+
+			return
+		}
+		defer r.Close()
+
+		// Try to read the first byte
+		buf := make([]byte, 1)
+
+		n, err := r.Read(buf)
+		if err == nil && n == 1 {
+			firstByteRead = true
+
+			close(streamingStarted)
+		}
+
+		// Continue reading everything else
+		_, _ = io.ReadAll(r)
+	}()
+
+	// Wait for server to start and write the first byte
+	select {
+	case <-serverStarted:
+		// Server started
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for server to start")
+	}
+
+	// Check if streaming started (it should if we have fixed it)
+	select {
+	case <-streamingStarted:
+		// Success!
+	case <-time.After(5 * time.Second):
+		t.Error("Streaming should have started but it did not")
+	}
+
+	// Now allow the server to finish
+	close(continueServer)
+	wg.Wait()
+
+	require.NoError(t, getNarErr)
+	assert.True(t, firstByteRead)
+
+	// Verify the asset is in storage
+	nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+	assert.True(t, localStore.HasNar(context.Background(), nu), "NAR should exist in storage after streaming completes")
 }
