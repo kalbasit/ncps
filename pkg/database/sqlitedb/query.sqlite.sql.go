@@ -50,6 +50,8 @@ INSERT INTO nar_files (
 ) VALUES (
     ?, ?, ?, ?
 )
+ON CONFLICT (hash) DO UPDATE SET
+    updated_at = excluded.updated_at
 RETURNING id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 `
 
@@ -67,6 +69,8 @@ type CreateNarFileParams struct {
 //	) VALUES (
 //	    ?, ?, ?, ?
 //	)
+//	ON CONFLICT (hash) DO UPDATE SET
+//	    updated_at = excluded.updated_at
 //	RETURNING id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 func (q *Queries) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
 	row := q.db.QueryRowContext(ctx, createNarFile,

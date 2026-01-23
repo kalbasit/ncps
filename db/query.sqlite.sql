@@ -73,6 +73,8 @@ INSERT INTO nar_files (
 ) VALUES (
     ?, ?, ?, ?
 )
+ON CONFLICT (hash) DO UPDATE SET
+    updated_at = excluded.updated_at
 RETURNING *;
 
 -- name: LinkNarInfoToNarFile :exec
