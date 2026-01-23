@@ -1,9 +1,6 @@
 package database_test
 
 import (
-	"context"
-	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/testhelper"
 )
 
@@ -52,57 +48,8 @@ func TestBackends(t *testing.T) {
 			setup: func(t *testing.T) database.Querier {
 				t.Helper()
 
-				// Connect to the admin database to create/drop the ephemeral database.
-				adminDbURL := os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL")
-
-				adminDb, err := database.Open(adminDbURL, nil)
-				require.NoError(t, err, "failed to connect to the postgres database")
-
-				dbName := "test-" + helper.MustRandString(58, nil)
-
-				_, err = adminDb.DB().ExecContext(context.Background(), "SELECT create_test_db($1);", dbName)
-				require.NoError(t, err, "failed to create database %s", dbName)
-
-				// Replace the test-db with the ephemeral database in the dbURL
-				dbURL := replaceDataseName(t, adminDbURL, dbName)
-
-				// Migrate the ephemeral database.
-
-				var errMigration error
-
-				// The testhelper uses `require` which panics on failure. We must recover
-				// from this to capture the error and prevent other tests from running
-				// on a non-migrated database.
-				defer func() {
-					if r := recover(); r != nil {
-						errMigration = fmt.Errorf("database migration panicked: %v", r) //nolint:err113
-					}
-				}()
-
-				testhelper.MigratePostgresDatabase(t, dbURL)
-
-				if errMigration != nil {
-					t.Fatalf("Failed to migrate PostgreSQL database: %v", errMigration)
-				}
-
-				// Connect to the ephemeral database.
-				db, err := database.Open(dbURL, nil)
-				require.NoError(t, err)
-
-				t.Cleanup(func() {
-					if err := db.DB().Close(); err != nil {
-						t.Logf("error closing the connection to the testing database: %s", err)
-					}
-
-					_, err := adminDb.DB().ExecContext(context.Background(), "SELECT drop_test_db($1);", dbName)
-					if err != nil {
-						t.Logf("error deleting the testing database: %s", err)
-					}
-
-					if err := adminDb.DB().Close(); err != nil {
-						t.Logf("error closing the connection to the admin database: %s", err)
-					}
-				})
+				db, cleanup := testhelper.SetupPostgres(t)
+				t.Cleanup(cleanup)
 
 				return db
 			},
@@ -114,57 +61,8 @@ func TestBackends(t *testing.T) {
 			setup: func(t *testing.T) database.Querier {
 				t.Helper()
 
-				// Connect to the test database and create the new ephemeral database.
-				adminDbURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
-
-				adminDb, err := database.Open(adminDbURL, nil)
-				require.NoError(t, err, "failed to connect to the mysql database")
-
-				dbName := "test-" + helper.MustRandString(58, nil)
-
-				_, err = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("CREATE DATABASE `%s`;", dbName))
-				require.NoError(t, err, "failed to create database %s", dbName)
-
-				// Replace the test-db with the ephemeral database in the dbURL
-				dbURL := replaceDataseName(t, adminDbURL, dbName)
-
-				// Migrate the ephemeral database.
-
-				var errMigration error
-
-				// The testhelper uses `require` which panics on failure. We must recover
-				// from this to capture the error and prevent other tests from running
-				// on a non-migrated database.
-				defer func() {
-					if r := recover(); r != nil {
-						errMigration = fmt.Errorf("database migration panicked: %v", r) //nolint:err113
-					}
-				}()
-
-				testhelper.MigrateMySQLDatabase(t, dbURL)
-
-				if errMigration != nil {
-					t.Fatalf("Failed to migrate MySQL database: %v", errMigration)
-				}
-
-				// Connect to the ephemeral database.
-				db, err := database.Open(dbURL, nil)
-				require.NoError(t, err)
-
-				t.Cleanup(func() {
-					if err := db.DB().Close(); err != nil {
-						t.Logf("error closing the connection to the testing database: %s", err)
-					}
-
-					_, err := adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE `%s`;", dbName))
-					if err != nil {
-						t.Logf("error deleting the testing database: %s", err)
-					}
-
-					if err := adminDb.DB().Close(); err != nil {
-						t.Logf("error closing the connection to the testing database: %s", err)
-					}
-				})
+				db, cleanup := testhelper.SetupMySQL(t)
+				t.Cleanup(cleanup)
 
 				return db
 			},
@@ -184,13 +82,4 @@ func TestBackends(t *testing.T) {
 			runComplianceSuite(t, b.setup)
 		})
 	}
-}
-
-func replaceDataseName(t *testing.T, dbURL, dbName string) string {
-	u, err := url.Parse(dbURL)
-	require.NoError(t, err)
-
-	u.Path = "/" + dbName
-
-	return u.String()
 }
