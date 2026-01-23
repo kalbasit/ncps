@@ -183,7 +183,7 @@ func parsePostgreSQLURL(dbURL string) (string, error) {
 			return "", fmt.Errorf("%w: missing database name in path: %s", ErrInvalidPostgresUnixURL, dbURL)
 		}
 		// After split, socketDir will have a trailing slash. If path is just "/dbname", it will be "/".
-		if socketDir == "" || socketDir == "/" {
+		if socketDir == "" {
 			return "", fmt.Errorf("%w: missing socket directory in path: %s", ErrInvalidPostgresUnixURL, dbURL)
 		}
 
@@ -296,7 +296,7 @@ func parseMySQLUnixPath(cfg *mysql.Config, u *url.URL, dbURL string) error {
 		return fmt.Errorf("%w: missing database name in path: %s", ErrInvalidMySQLUnixURL, dbURL)
 	}
 
-	if socketPath == "" || socketPath == "/" {
+	if socketPath == "" {
 		return fmt.Errorf("%w: missing socket path in path: %s", ErrInvalidMySQLUnixURL, dbURL)
 	}
 

@@ -146,8 +146,8 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 
 For MySQL and PostgreSQL, you can use specialized schemes for Unix domain sockets:
 
-- `mysql+unix:///path/to/socket/database`
-- `postgres+unix:///path/to/socket/database`
+- `mysql+unix:///path/to/socket.sock/database`
+- `postgres+unix:///path/to/socket_dir/database`
 
 **Example:**
 
