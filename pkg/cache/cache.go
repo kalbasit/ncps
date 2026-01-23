@@ -2490,7 +2490,7 @@ func (c *Cache) coordinateDownload(
 	// Double check local jobs and asset presence under lock
 	if hasAsset(ctx) {
 		// Release the lock before returning
-		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+		if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("hash", hash).
@@ -2548,7 +2548,7 @@ func (c *Cache) coordinateDownload(
 	//   This allows immediate streaming to clients while preventing other instances
 	//   from starting redundant downloads. The lock is held until storage completes.
 	if waitForStorage {
-		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+		if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("hash", hash).
@@ -2562,7 +2562,7 @@ func (c *Cache) coordinateDownload(
 			case <-ds.done:
 			}
 
-			if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+			if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
 				zerolog.Ctx(ctx).Error().
 					Err(err).
 					Str("hash", hash).
