@@ -90,6 +90,8 @@ INSERT INTO nar_files (
 ) VALUES (
     ?, ?, ?, ?
 )
+ON DUPLICATE KEY UPDATE
+    updated_at = CURRENT_TIMESTAMP
 `
 
 type CreateNarFileParams struct {
@@ -106,6 +108,8 @@ type CreateNarFileParams struct {
 //	) VALUES (
 //	    ?, ?, ?, ?
 //	)
+//	ON DUPLICATE KEY UPDATE
+//	    updated_at = CURRENT_TIMESTAMP
 func (q *Queries) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createNarFile,
 		arg.Hash,

@@ -499,24 +499,25 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 					}
 				})
 
-				t.Run("hash is unique", func(t *testing.T) {
+				t.Run("upsert on duplicate hash", func(t *testing.T) {
 					hash, err := helper.RandString(32, nil)
 					require.NoError(t, err)
 
-					_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+					nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 						Hash:        hash,
 						Compression: "",
 						FileSize:    123,
 					})
 					require.NoError(t, err)
 
-					_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+					nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 						Hash:        hash,
 						Compression: "",
 						FileSize:    123,
 					})
+					require.NoError(t, err)
 
-					assert.True(t, database.IsDuplicateKeyError(err))
+					assert.Equal(t, nf1.ID, nf2.ID)
 				})
 			})
 		}

@@ -2,10 +2,13 @@ package cache_test
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -394,4 +397,138 @@ func TestDistributedLockFailover(t *testing.T) {
 	// Clean up
 	err = locker2.Unlock(ctx, testKey)
 	assert.NoError(t, err)
+}
+
+func TestPutNarInfoConcurrentSharedNar(t *testing.T) {
+	t.Parallel()
+	skipIfRedisNotAvailable(t)
+
+	runTest := func(t *testing.T, setupDB func(*testing.T) (database.Querier, func())) {
+		// We run this loop to increase chance of hitting the race condition.
+		for run := 0; run < 50; run++ {
+			func() {
+				ctx := newContext()
+
+				db, cleanup := setupDB(t)
+				defer cleanup()
+
+				// Redis setup
+				redisAddrs := []string{"localhost:6379"}
+				if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+					redisAddrs = []string{envAddrs}
+				}
+
+				// Use a unique prefix per run to ensure isolation
+				keyPrefix := fmt.Sprintf("ncps:test:race:%d:%d:", run, rand.Int()) //nolint:gosec
+
+				redisCfg := redis.Config{
+					Addrs:     redisAddrs,
+					KeyPrefix: keyPrefix,
+				}
+				retryCfg := lock.RetryConfig{MaxAttempts: 3, InitialDelay: 10 * time.Millisecond, MaxDelay: 100 * time.Millisecond}
+
+				downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
+				require.NoError(t, err)
+
+				cacheLocker := locklocal.NewRWLocker() // Local cache lock is fine for single-process test
+
+				// Shared storage
+				sharedDir, err := os.MkdirTemp("", "cache-race-")
+				require.NoError(t, err)
+
+				defer os.RemoveAll(sharedDir)
+
+				sharedStore, err := local.New(ctx, sharedDir)
+				require.NoError(t, err)
+
+				c, err := cache.New(
+					ctx,
+					cacheName,
+					db,
+					sharedStore,
+					sharedStore,
+					sharedStore,
+					"",
+					downloadLocker,
+					cacheLocker,
+					5*time.Minute,
+					30*time.Minute,
+				)
+				require.NoError(t, err)
+
+				// Define Data
+				narInfo1Hash := testdata.Nar1.NarInfoHash
+				narInfo1Text := testdata.Nar1.NarInfoText
+				narInfo2Hash := "different1234567890abcdefghijklmno"
+				narInfo2Text := `StorePath: /nix/store/different1234567890abcdefghijklmno-hello-2.12.1
+URL: nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz
+Compression: xz
+FileHash: sha256:1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri
+FileSize: 50160
+NarHash: sha256:07kc6swib31psygpmwi8952lvywlpqn474059yxl7grwsvr6k0fj
+NarSize: 226552
+References: different1234567890abcdefghijklmno-hello-2.12.1 qdcbgcj27x2kpxj2sf9yfvva7qsgg64g-glibc-2.38-77
+Deriver: 9zpqmcicrg8smi9jlqv6dmd7v20d2fsn-hello-2.12.1.drv
+Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==`
+
+				var wg sync.WaitGroup
+				wg.Add(2)
+
+				startCh := make(chan struct{})
+				errCh := make(chan error, 2)
+
+				go func() {
+					defer wg.Done()
+
+					<-startCh
+
+					errCh <- c.PutNarInfo(ctx, narInfo1Hash, io.NopCloser(strings.NewReader(narInfo1Text)))
+				}()
+
+				go func() {
+					defer wg.Done()
+
+					<-startCh
+
+					errCh <- c.PutNarInfo(ctx, narInfo2Hash, io.NopCloser(strings.NewReader(narInfo2Text)))
+				}()
+
+				close(startCh)
+				wg.Wait()
+				close(errCh)
+
+				var errs []error
+
+				for err := range errCh {
+					if err != nil {
+						errs = append(errs, err)
+					}
+				}
+
+				if len(errs) > 0 {
+					for _, err := range errs {
+						if strings.Contains(err.Error(), "duplicate key value violates unique constraint") ||
+							strings.Contains(err.Error(), "Duplicate entry") { // MySQL error
+							t.Logf("Hit race condition on run %d: %v", run, err)
+							t.Fail()
+
+							return
+						}
+
+						require.NoError(t, err)
+					}
+				}
+			}()
+		}
+	}
+
+	t.Run("PostgreSQL", func(t *testing.T) {
+		t.Parallel()
+		runTest(t, testhelper.SetupPostgres)
+	})
+
+	t.Run("MySQL", func(t *testing.T) {
+		t.Parallel()
+		runTest(t, testhelper.SetupMySQL)
+	})
 }
