@@ -265,7 +265,7 @@ func parseMySQLConfig(dbURL string) (*mysql.Config, error) {
 		cfg.Addr = u.Host
 	}
 
-	if u.Path != "" {
+	if cfg.DBName == "" && u.Path != "" {
 		cfg.DBName = strings.TrimPrefix(u.Path, "/")
 	}
 
@@ -299,7 +299,6 @@ func parseMySQLUnixPath(cfg *mysql.Config, u *url.URL, dbURL string) error {
 	cfg.Net = netTypeUnix
 	cfg.Addr = "/" + path[:lastSlash]
 	cfg.DBName = path[lastSlash+1:]
-	u.Path = "" // Prevent re-processing of path for DBName
 
 	return nil
 }
