@@ -282,6 +282,12 @@ func (c *Cache) doRequest(
 		if err != nil {
 			if (method == http.MethodGet || method == http.MethodHead) &&
 				strings.Contains(err.Error(), "http2: server sent GOAWAY") {
+				zerolog.Ctx(ctx).Warn().
+					Err(err).
+					Int("attempt", i+1).
+					Int("max_retries", defaultHTTPRetries).
+					Msg("GOAWAY error from upstream, retrying request")
+
 				continue
 			}
 
