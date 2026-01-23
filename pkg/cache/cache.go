@@ -855,6 +855,22 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 				}
 
 				if isDownloadComplete && bytesSent >= ds.finalSize {
+					// Wait for the asset to be fully stored before closing the stream
+					// This avoids a race condition where the client finishes reading
+					// but the asset is not yet in storage (HasNar would return false).
+					select {
+					case <-ds.stored:
+						// Asset successfully stored
+					case <-ds.done:
+						// Download completed - check for errors
+						if err := ds.getError(); err != nil {
+							zerolog.Ctx(ctx).Warn().
+								Err(err).
+								Str("nar_url", narURL.String()).
+								Msg("download completed with error during streaming")
+						}
+					}
+
 					return
 				}
 			}
@@ -1677,6 +1693,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		ctx,
 		narInfoJobKey(hash),
 		hash,
+		true,
 		func(ctx context.Context) bool {
 			return c.narInfoStore.HasNarInfo(ctx, hash)
 		},
@@ -1713,6 +1730,7 @@ func (c *Cache) prePullNar(
 		ctx,
 		narJobKey(narURL.Hash),
 		narURL.Hash,
+		false,
 		func(ctx context.Context) bool {
 			return c.narStore.HasNar(ctx, *narURL)
 		},
@@ -2426,12 +2444,36 @@ func (c *Cache) coordinateDownload(
 	ctx context.Context,
 	lockKey string,
 	hash string,
+	waitForStorage bool,
 	hasAsset func(context.Context) bool,
 	startJob func(*downloadState),
 ) *downloadState {
+	// First check local jobs to avoid blocking on distributed lock if already downloading locally
+	c.upstreamJobsMu.Lock()
+
+	if ds, ok := c.upstreamJobs[lockKey]; ok {
+		c.upstreamJobsMu.Unlock()
+
+		completionChan := ds.stored
+		if !waitForStorage {
+			completionChan = ds.start
+		}
+
+		select {
+		case <-completionChan:
+			// Desired state reached (start or stored)
+		case <-ds.done:
+			// Download completed (successfully or with error)
+		case <-coordCtx.Done():
+			// Caller context canceled
+		}
+
+		return ds
+	}
+
+	c.upstreamJobsMu.Unlock()
+
 	// Acquire lock with retry (handled internally by Redis locker)
-	// If using local locks, this returns immediately
-	// If using Redis and lock fails, this returns immediately (lock will auto-expire)
 	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
@@ -2445,11 +2487,10 @@ func (c *Cache) coordinateDownload(
 		return ds
 	}
 
-	// Check if asset is already in storage (critical for distributed deduplication)
-	// Another instance may have downloaded it while we were waiting for the lock
+	// Double check local jobs and asset presence under lock
 	if hasAsset(ctx) {
 		// Release the lock before returning
-		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+		if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("hash", hash).
@@ -2470,7 +2511,6 @@ func (c *Cache) coordinateDownload(
 		return ds
 	}
 
-	// Check upstreamJobs map (protected by local mutex) and create downloadState if needed
 	c.upstreamJobsMu.Lock()
 
 	ds, ok := c.upstreamJobs[lockKey]
@@ -2479,10 +2519,6 @@ func (c *Cache) coordinateDownload(
 		c.upstreamJobs[lockKey] = ds
 
 		// Start download in background
-		// IMPORTANT: We must wait for the asset to be stored (ds.stored) before releasing
-		// the distributed lock. The download job will close ds.stored only AFTER the asset
-		// is successfully stored in final storage. This ensures that when the lock is released,
-		// hasAsset() will return true for other instances, preventing duplicate downloads.
 		analytics.SafeGo(ctx, func() {
 			startJob(ds)
 		})
@@ -2490,39 +2526,50 @@ func (c *Cache) coordinateDownload(
 
 	c.upstreamJobsMu.Unlock()
 
-	// Wait for the asset to be in final storage before releasing the distributed lock
-	// This ensures other instances will find the asset when they call hasAsset() after acquiring the lock
-	// Use coordCtx to respond to caller's cancellation
-	select {
-	case <-ds.stored:
-		// Asset is now in storage
-	case <-ds.done:
-		// Download completed (successfully or with error)
-		// Check if it was stored or failed
-		if ds.getError() != nil {
-			zerolog.Ctx(ctx).Warn().
-				Str("hash", hash).
-				Str("lock_key", lockKey).
-				Err(ds.getError()).
-				Msg("download completed with error")
-		}
-	case <-coordCtx.Done():
-		// Coordination context canceled (caller gave up waiting)
-		// The download continues in the background with the detached ctx
-		// We don't set downloadError here because the download is still proceeding
-		zerolog.Ctx(ctx).Warn().
-			Str("hash", hash).
-			Str("lock_key", lockKey).
-			Msg("caller context canceled while waiting for asset storage, download continues in background")
+	// Wait for the requested state (started or stored)
+	completionChan := ds.stored
+	if !waitForStorage {
+		completionChan = ds.start
 	}
 
-	// Now release the distributed lock
-	if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("hash", hash).
-			Str("lock_key", lockKey).
-			Msg("failed to release download lock")
+	select {
+	case <-completionChan:
+		// Desired state reached
+	case <-ds.done:
+		// Download completed
+	case <-coordCtx.Done():
+		// Caller context canceled
+	}
+
+	// Release the download lock with different strategies based on waitForStorage:
+	// - waitForStorage=true (NarInfo): Release immediately after asset is stored.
+	//   NarInfo operations require full completion before serving to clients.
+	// - waitForStorage=false (NAR): Release in background after storage completes.
+	//   This allows immediate streaming to clients while preventing other instances
+	//   from starting redundant downloads. The lock is held until storage completes.
+	if waitForStorage {
+		if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", hash).
+				Str("lock_key", lockKey).
+				Msg("failed to release download lock")
+		}
+	} else {
+		analytics.SafeGo(ctx, func() {
+			select {
+			case <-ds.stored:
+			case <-ds.done:
+			}
+
+			if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
+				zerolog.Ctx(ctx).Error().
+					Err(err).
+					Str("hash", hash).
+					Str("lock_key", lockKey).
+					Msg("failed to release download lock in background")
+			}
+		})
 	}
 
 	return ds
