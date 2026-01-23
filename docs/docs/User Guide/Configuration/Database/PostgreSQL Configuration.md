@@ -57,15 +57,22 @@ postgresql://[username]:[password]@[host]:[port]/[database]?[options]
 
 **Common options:**
 
-- `sslmode=require` - Require TLS encryption
-- `sslmode=disable` - Disable TLS (not recommended for production)
-- `connect_timeout=10` - Connection timeout in seconds
+- `host` - Hostname or path to the directory containing the Unix domain socket.
+- `sslmode=require` - Require TLS encryption.
+- `sslmode=disable` - Disable TLS (not recommended for production).
+- `connect_timeout=10` - Connection timeout in seconds.
 
 **Examples:**
 
-```
-# Local without TLS
+```sh
+# Local via TCP without TLS
 postgresql://ncps:password@localhost:5432/ncps?sslmode=disable
+
+# Local via Unix Domain Socket
+postgresql:///ncps?host=/var/run/postgresql
+
+# Local via Unix Domain Socket (Specialized scheme)
+postgres+unix:///var/run/postgresql/ncps
 
 # Remote with TLS
 postgresql://ncps:password@db.example.com:5432/ncps?sslmode=require

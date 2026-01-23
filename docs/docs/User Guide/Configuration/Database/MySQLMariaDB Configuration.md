@@ -49,14 +49,21 @@ mysql://[username]:[password]@[host]:[port]/[database]?[options]
 
 **Common options:**
 
-- `tls=true` - Enable TLS
-- `charset=utf8mb4` - Set character encoding
+- `socket` - Path to the Unix domain socket.
+- `tls=true` - Enable TLS.
+- `charset=utf8mb4` - Set character encoding.
 
 **Examples:**
 
-```
-# Local connection
+```sh
+# Local connection (TCP)
 mysql://ncps:password@localhost:3306/ncps
+
+# Unix Domain Socket (Standard)
+mysql://ncps:password@/ncps?socket=/var/run/mysqld/mysqld.sock
+
+# Unix Domain Socket (Specialized scheme)
+mysql+unix:///var/run/mysqld/mysqld.sock/ncps
 
 # With TLS
 mysql://ncps:password@db.example.com:3306/ncps?tls=true
