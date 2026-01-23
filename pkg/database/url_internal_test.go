@@ -39,6 +39,12 @@ func TestParsePostgreSQLURL(t *testing.T) {
 			dbURL:   "postgres+unix:///dbname",
 			wantErr: true,
 		},
+		{
+			name:     "Postgres+unix with redundant slashes",
+			dbURL:    "postgres+unix:////var/run/postgresql//dbname",
+			expected: "postgres:///dbname?host=%2Fvar%2Frun%2Fpostgresql",
+			wantErr:  false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -97,6 +103,14 @@ func TestParseMySQLConfig(t *testing.T) {
 			name:    "Invalid mysql+unix - missing socket path",
 			dbURL:   "mysql+unix:///dbname",
 			wantErr: true,
+		},
+		{
+			name:           "MySQL+unix with redundant slashes",
+			dbURL:          "mysql+unix:////var/run/mysqld/mysqld.sock//dbname",
+			expectedNet:    "unix",
+			expectedAddr:   "/var/run/mysqld/mysqld.sock",
+			expectedDBName: "dbname",
+			wantErr:        false,
 		},
 	}
 

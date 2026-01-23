@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/XSAM/otelsql"
@@ -177,15 +178,16 @@ func parsePostgreSQLURL(dbURL string) (string, error) {
 	// and restructure the URL for pgx.
 	scheme := strings.ToLower(u.Scheme)
 	if strings.Contains(scheme, "+unix") {
-		path := strings.TrimPrefix(u.Path, "/")
-
-		lastSlash := strings.LastIndex(path, "/")
-		if lastSlash == -1 {
+		socketDir, dbName := path.Split(u.Path)
+		if dbName == "" {
 			return "", fmt.Errorf("%w: missing database name in path: %s", ErrInvalidPostgresUnixURL, dbURL)
 		}
+		// After split, socketDir will have a trailing slash. If path is just "/dbname", it will be "/".
+		if socketDir == "" || socketDir == "/" {
+			return "", fmt.Errorf("%w: missing socket directory in path: %s", ErrInvalidPostgresUnixURL, dbURL)
+		}
 
-		socketDir := "/" + path[:lastSlash]
-		dbName := path[lastSlash+1:]
+		socketDir = path.Clean(socketDir) // Clean up extra slashes and trailing slash.
 
 		// Rebuild URL for pgx: postgresql:///dbname?host=/path/to/socket
 		u.Path = "/" + dbName
@@ -289,16 +291,20 @@ func parseMySQLConfig(dbURL string) (*mysql.Config, error) {
 
 func parseMySQLUnixPath(cfg *mysql.Config, u *url.URL, dbURL string) error {
 	// Handle mysql+unix://<socket_path>/<db_name>
-	path := strings.TrimPrefix(u.Path, "/")
-
-	lastSlash := strings.LastIndex(path, "/")
-	if lastSlash == -1 {
+	socketPath, dbName := path.Split(u.Path)
+	if dbName == "" {
 		return fmt.Errorf("%w: missing database name in path: %s", ErrInvalidMySQLUnixURL, dbURL)
 	}
 
+	if socketPath == "" || socketPath == "/" {
+		return fmt.Errorf("%w: missing socket path in path: %s", ErrInvalidMySQLUnixURL, dbURL)
+	}
+
+	socketPath = path.Clean(socketPath)
+
 	cfg.Net = netTypeUnix
-	cfg.Addr = "/" + path[:lastSlash]
-	cfg.DBName = path[lastSlash+1:]
+	cfg.Addr = socketPath
+	cfg.DBName = dbName
 
 	return nil
 }
