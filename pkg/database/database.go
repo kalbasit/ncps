@@ -194,9 +194,7 @@ func parsePostgreSQLURL(dbURL string) (string, error) {
 		u.RawQuery = q.Encode()
 	}
 
-	// Normalize scheme for pgx.
-	scheme = strings.ToLower(u.Scheme)
-	if scheme != schemePostgres && scheme != schemePostgresql {
+	if strings.Contains(scheme, "+") {
 		if strings.HasPrefix(scheme, schemePostgresql) {
 			u.Scheme = schemePostgresql
 		} else if strings.HasPrefix(scheme, schemePostgres) {
