@@ -517,7 +517,15 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 					})
 					require.NoError(t, err)
 
+					nf3, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+						Hash:        hash,
+						Compression: "",
+						FileSize:    123,
+					})
+					require.NoError(t, err)
+
 					assert.Equal(t, nf1.ID, nf2.ID)
+					assert.Equal(t, nf1.ID, nf3.ID)
 				})
 			})
 		}
