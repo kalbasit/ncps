@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,8 @@ const (
 	otelPackageName = "github.com/kalbasit/ncps/pkg/cache/upstream"
 
 	defaultHTTPTimeout = 3 * time.Second
+
+	defaultHTTPRetries = 3
 )
 
 var (
@@ -100,6 +103,10 @@ type Options struct {
 	// ResponseHeaderTimeout is the timeout for waiting for the server's response headers.
 	// If zero, defaults to defaultHTTPTimeout (3s).
 	ResponseHeaderTimeout time.Duration
+
+	// Transport is the HTTP transport to use.
+	// If nil, a default transport will be created.
+	Transport http.RoundTripper
 }
 
 // New creates a new upstream cache with the given URL and options.
@@ -129,6 +136,9 @@ func New(ctx context.Context, u *url.URL, opts *Options) (*Cache, error) {
 		url:                   u,
 		dialerTimeout:         dialerTimeout,
 		responseHeaderTimeout: responseHeaderTimeout,
+		httpClient: &http.Client{
+			Transport: opts.Transport,
+		},
 	}
 
 	if opts.NetrcCredentials != nil {
@@ -182,6 +192,10 @@ func New(ctx context.Context, u *url.URL, opts *Options) (*Cache, error) {
 }
 
 func (c *Cache) setupHTTPClient() error {
+	if c.httpClient.Transport != nil {
+		return nil
+	}
+
 	dtP, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		return ErrTransportCastError
@@ -204,9 +218,7 @@ func (c *Cache) setupHTTPClient() error {
 	// Set timeout to first byte
 	dt.ResponseHeaderTimeout = c.responseHeaderTimeout
 
-	c.httpClient = &http.Client{
-		Transport: otelhttp.NewTransport(dt),
-	}
+	c.httpClient.Transport = otelhttp.NewTransport(dt)
 
 	return nil
 }
@@ -247,23 +259,45 @@ func (c *Cache) doRequest(
 	method, url string,
 	mutators ...func(*http.Request),
 ) (*http.Response, error) {
-	r, err := http.NewRequestWithContext(ctx, method, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating %s request to %s: %w", method, url, err)
+	var (
+		resp *http.Response
+		err  error
+	)
+
+	for i := 0; i < defaultHTTPRetries; i++ {
+		var r *http.Request
+
+		r, err = http.NewRequestWithContext(ctx, method, url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("error creating %s request to %s: %w", method, url, err)
+		}
+
+		c.addAuthToRequest(r)
+
+		for _, mutator := range mutators {
+			mutator(r)
+		}
+
+		resp, err = c.httpClient.Do(r)
+		if err != nil {
+			if (method == http.MethodGet || method == http.MethodHead) &&
+				strings.Contains(err.Error(), "http2: server sent GOAWAY") {
+				zerolog.Ctx(ctx).Warn().
+					Err(err).
+					Int("attempt", i+1).
+					Int("max_retries", defaultHTTPRetries).
+					Msg("GOAWAY error from upstream, retrying request")
+
+				continue
+			}
+
+			return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
+		}
+
+		return resp, nil
 	}
 
-	c.addAuthToRequest(r)
-
-	for _, mutator := range mutators {
-		mutator(r)
-	}
-
-	resp, err := c.httpClient.Do(r)
-	if err != nil {
-		return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
-	}
-
-	return resp, nil
+	return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
 }
 
 // GetNarInfo returns a parsed NarInfo from the cache server.
