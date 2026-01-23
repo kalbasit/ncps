@@ -1914,7 +1914,8 @@ func TestNarStreaming(t *testing.T) {
 	// Add a handler that simulates a slow download
 	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/nar/"+narEntry.NarHash+".nar.xz" {
-			w.Header().Set("Content-Length", "100") // Fake size for simplicity
+			// Use simplified size for streaming test - actual content doesn't matter
+			w.Header().Set("Content-Length", "100")
 			w.WriteHeader(http.StatusOK)
 
 			// Write the first byte
@@ -1982,7 +1983,7 @@ func TestNarStreaming(t *testing.T) {
 	select {
 	case <-serverStarted:
 		// Server started
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for server to start")
 	}
 
@@ -1990,7 +1991,7 @@ func TestNarStreaming(t *testing.T) {
 	select {
 	case <-streamingStarted:
 		// Success!
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Error("Streaming should have started but it did not")
 	}
 

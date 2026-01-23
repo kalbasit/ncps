@@ -860,7 +860,15 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 					// but the asset is not yet in storage (HasNar would return false).
 					select {
 					case <-ds.stored:
+						// Asset successfully stored
 					case <-ds.done:
+						// Download completed - check for errors
+						if err := ds.getError(); err != nil {
+							zerolog.Ctx(ctx).Warn().
+								Err(err).
+								Str("nar_url", narURL.String()).
+								Msg("download completed with error during streaming")
+						}
 					}
 
 					return
@@ -2446,13 +2454,13 @@ func (c *Cache) coordinateDownload(
 	if ds, ok := c.upstreamJobs[lockKey]; ok {
 		c.upstreamJobsMu.Unlock()
 
-		waitChan := ds.stored
+		completionChan := ds.stored
 		if !waitForStorage {
-			waitChan = ds.start
+			completionChan = ds.start
 		}
 
 		select {
-		case <-waitChan:
+		case <-completionChan:
 			// Desired state reached (start or stored)
 		case <-ds.done:
 			// Download completed (successfully or with error)
@@ -2519,13 +2527,13 @@ func (c *Cache) coordinateDownload(
 	c.upstreamJobsMu.Unlock()
 
 	// Wait for the requested state (started or stored)
-	waitChan := ds.stored
+	completionChan := ds.stored
 	if !waitForStorage {
-		waitChan = ds.start
+		completionChan = ds.start
 	}
 
 	select {
-	case <-waitChan:
+	case <-completionChan:
 		// Desired state reached
 	case <-ds.done:
 		// Download completed
@@ -2533,9 +2541,12 @@ func (c *Cache) coordinateDownload(
 		// Caller context canceled
 	}
 
-	// Release the distributed lock. If waitForStorage is false, we release it in
-	// background once stored to allow streaming to proceed immediately while
-	// still preventing other instances from starting a concurrent download.
+	// Release the download lock with different strategies based on waitForStorage:
+	// - waitForStorage=true (NarInfo): Release immediately after asset is stored.
+	//   NarInfo operations require full completion before serving to clients.
+	// - waitForStorage=false (NAR): Release in background after storage completes.
+	//   This allows immediate streaming to clients while preventing other instances
+	//   from starting redundant downloads. The lock is held until storage completes.
 	if waitForStorage {
 		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
