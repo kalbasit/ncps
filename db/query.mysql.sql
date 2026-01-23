@@ -93,7 +93,9 @@ INSERT INTO nar_files (
     hash, compression, `query`, file_size
 ) VALUES (
     ?, ?, ?, ?
-);
+)
+ON DUPLICATE KEY UPDATE
+    updated_at = CURRENT_TIMESTAMP;
 
 -- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (

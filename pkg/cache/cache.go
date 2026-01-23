@@ -2149,55 +2149,10 @@ func (c *Cache) storeInDatabase(
 		}
 
 		// Check if nar_file already exists (multiple narinfos can share the same nar_file)
-		existingNarFile, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("error checking for existing nar_file: %w", err)
-		}
 
-		var narFileID int64
-
-		if err == nil {
-			// Nar file already exists - verify properties match
-			if existingNarFile.Compression != narURL.Compression.String() ||
-				existingNarFile.Query != narURL.Query.Encode() ||
-				existingNarFile.FileSize != narInfo.FileSize {
-				zerolog.Ctx(ctx).
-					Warn().
-					Str("nar_hash", narURL.Hash).
-					Str("existing_compression", existingNarFile.Compression).
-					Str("new_compression", narURL.Compression.String()).
-					Str("existing_query", existingNarFile.Query).
-					Str("new_query", narURL.Query.Encode()).
-					Uint64("existing_file_size", existingNarFile.FileSize).
-					Uint64("new_file_size", narInfo.FileSize).
-					Msg("nar_file already exists but properties don't match")
-
-				return fmt.Errorf(
-					"%w: nar_file for hash %s already exists with different properties",
-					ErrInconsistentState,
-					narURL.Hash,
-				)
-			}
-
-			zerolog.Ctx(ctx).
-				Debug().
-				Str("nar_hash", narURL.Hash).
-				Msg("reusing existing nar_file")
-
-			narFileID = existingNarFile.ID
-		} else {
-			// Create new nar_file
-			newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-				Hash:        narURL.Hash,
-				Compression: narURL.Compression.String(),
-				Query:       narURL.Query.Encode(),
-				FileSize:    narInfo.FileSize,
-			})
-			if err != nil {
-				return fmt.Errorf("error inserting the nar_file record in the database: %w", err)
-			}
-
-			narFileID = newNarFile.ID
+		narFileID, err := c.ensureNarFile(ctx, qtx, narURL, narInfo.FileSize)
+		if err != nil {
+			return err
 		}
 
 		// Link narinfo to nar_file
@@ -2210,6 +2165,94 @@ func (c *Cache) storeInDatabase(
 
 		return nil
 	})
+}
+
+func (c *Cache) ensureNarFile(
+	ctx context.Context,
+	qtx database.Querier,
+	narURL nar.URL,
+	fileSize uint64,
+) (int64, error) {
+	// Check if nar_file already exists (multiple narinfos can share the same nar_file)
+	existingNarFile, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("error checking for existing nar_file: %w", err)
+	}
+
+	if err == nil {
+		if err := c.validateNarFile(ctx, existingNarFile, narURL, fileSize); err != nil {
+			return 0, err
+		}
+
+		zerolog.Ctx(ctx).
+			Debug().
+			Str("nar_hash", narURL.Hash).
+			Msg("reusing existing nar_file")
+
+		return existingNarFile.ID, nil
+	}
+
+	// Create new nar_file
+	newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+		Hash:        narURL.Hash,
+		Compression: narURL.Compression.String(),
+		Query:       narURL.Query.Encode(),
+		FileSize:    fileSize,
+	})
+	if err != nil {
+		if !database.IsDuplicateKeyError(err) {
+			return 0, fmt.Errorf("error inserting the nar_file record in the database: %w", err)
+		}
+
+		// Handle race condition: record was inserted by another transaction
+		zerolog.Ctx(ctx).
+			Debug().
+			Str("nar_hash", narURL.Hash).
+			Msg("nar_file already exists (race condition handled), fetching existing record")
+
+		existingNarFile, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
+		if err != nil {
+			return 0, fmt.Errorf("error fetching existing nar_file after duplicate key error: %w", err)
+		}
+
+		if err := c.validateNarFile(ctx, existingNarFile, narURL, fileSize); err != nil {
+			return 0, err
+		}
+
+		return existingNarFile.ID, nil
+	}
+
+	return newNarFile.ID, nil
+}
+
+func (c *Cache) validateNarFile(
+	ctx context.Context,
+	existingNarFile database.NarFile,
+	narURL nar.URL,
+	fileSize uint64,
+) error {
+	if existingNarFile.Compression != narURL.Compression.String() ||
+		existingNarFile.Query != narURL.Query.Encode() ||
+		existingNarFile.FileSize != fileSize {
+		zerolog.Ctx(ctx).
+			Warn().
+			Str("nar_hash", narURL.Hash).
+			Str("existing_compression", existingNarFile.Compression).
+			Str("new_compression", narURL.Compression.String()).
+			Str("existing_query", existingNarFile.Query).
+			Str("new_query", narURL.Query.Encode()).
+			Uint64("existing_file_size", existingNarFile.FileSize).
+			Uint64("new_file_size", fileSize).
+			Msg("nar_file already exists but properties don't match")
+
+		return fmt.Errorf(
+			"%w: nar_file for hash %s already exists with different properties",
+			ErrInconsistentState,
+			narURL.Hash,
+		)
+	}
+
+	return nil
 }
 
 func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) {

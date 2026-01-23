@@ -41,6 +41,8 @@ type Querier interface {
 	//  ) VALUES (
 	//      ?, ?, ?, ?
 	//  )
+	//  ON DUPLICATE KEY UPDATE
+	//      updated_at = CURRENT_TIMESTAMP
 	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (sql.Result, error)
 	//CreateNarInfo
 	//
