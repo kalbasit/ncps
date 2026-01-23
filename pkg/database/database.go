@@ -21,6 +21,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 )
 
+const (
+	netTypeUnix      = "unix"
+	schemePostgres   = "postgres"
+	schemePostgresql = "postgresql"
+)
+
 // PoolConfig holds database connection pool settings.
 type PoolConfig struct {
 	// MaxOpenConns is the maximum number of open connections to the database.
@@ -141,7 +147,12 @@ func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 }
 
 func openPostgreSQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
-	sdb, err := otelsql.Open("pgx", dbURL, otelsql.WithAttributes(
+	processedURL, err := parsePostgreSQLURL(dbURL)
+	if err != nil {
+		return nil, err
+	}
+
+	sdb, err := otelsql.Open("pgx", processedURL, otelsql.WithAttributes(
 		semconv.DBSystemPostgreSQL,
 	))
 	if err != nil {
@@ -155,52 +166,51 @@ func openPostgreSQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	return sdb, nil
 }
 
-func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
-	// Convert mysql://user:pass@host:port/database to the format expected by go-sql-driver/mysql
+func parsePostgreSQLURL(dbURL string) (string, error) {
 	u, err := url.Parse(dbURL)
 	if err != nil {
+		return "", err
+	}
+
+	// pgx only supports postgres:// and postgresql:// schemes.
+	// If the user provided postgres+unix:// or similar, we normalize it
+	// and restructure the URL for pgx.
+	scheme := strings.ToLower(u.Scheme)
+	if strings.Contains(scheme, "+unix") {
+		path := strings.TrimPrefix(u.Path, "/")
+
+		lastSlash := strings.LastIndex(path, "/")
+		if lastSlash == -1 {
+			return "", fmt.Errorf("%w: missing database name in path: %s", ErrInvalidPostgresUnixURL, dbURL)
+		}
+
+		socketDir := "/" + path[:lastSlash]
+		dbName := path[lastSlash+1:]
+
+		// Rebuild URL for pgx: postgresql:///dbname?host=/path/to/socket
+		u.Path = "/" + dbName
+		q := u.Query()
+		q.Set("host", socketDir)
+		u.RawQuery = q.Encode()
+	}
+
+	// Normalize scheme for pgx.
+	scheme = strings.ToLower(u.Scheme)
+	if scheme != schemePostgres && scheme != schemePostgresql {
+		if strings.HasPrefix(scheme, schemePostgresql) {
+			u.Scheme = schemePostgresql
+		} else if strings.HasPrefix(scheme, schemePostgres) {
+			u.Scheme = schemePostgres
+		}
+	}
+
+	return u.String(), nil
+}
+
+func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
+	cfg, err := parseMySQLConfig(dbURL)
+	if err != nil {
 		return nil, err
-	}
-
-	cfg := mysql.NewConfig()
-
-	// 1. Set credentials and address
-	if u.User != nil {
-		cfg.User = u.User.Username()
-		if password, ok := u.User.Password(); ok {
-			cfg.Passwd = password
-		}
-	}
-
-	if u.Host != "" {
-		cfg.Net = "tcp"
-		cfg.Addr = u.Host
-	}
-
-	if u.Path != "" {
-		cfg.DBName = strings.TrimPrefix(u.Path, "/")
-	}
-
-	// 2. Initialize params with your SAFE defaults
-	// These run regardless of whether the user provided other params.
-	cfg.Params = map[string]string{
-		"parseTime": "true",     // Required for scanning into time.Time
-		"loc":       "UTC",      // logical timezone for the driver
-		"time_zone": "'+00:00'", // Server-side session timezone (Critical for your test fix)
-	}
-
-	// 3. Overwrite defaults if the user explicitly specified them in the URL
-	if u.RawQuery != "" {
-		query, err := url.ParseQuery(u.RawQuery)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing MySQL query parameters: %w", err)
-		}
-
-		for k, v := range query {
-			if len(v) > 0 {
-				cfg.Params[k] = v[0]
-			}
-		}
 	}
 
 	dsn := cfg.FormatDSN()
@@ -215,4 +225,83 @@ func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	applyPoolSettings(sdb, poolCfg, 25, 5)
 
 	return sdb, nil
+}
+
+func parseMySQLConfig(dbURL string) (*mysql.Config, error) {
+	// Convert mysql://user:pass@host:port/database to the format expected by go-sql-driver/mysql
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := mysql.NewConfig()
+
+	// 1. Set credentials
+	if u.User != nil {
+		cfg.User = u.User.Username()
+		if password, ok := u.User.Password(); ok {
+			cfg.Passwd = password
+		}
+	}
+
+	// 2. Set address (TCP or Unix)
+	query := u.Query()
+
+	scheme := strings.ToLower(u.Scheme)
+	switch {
+	case strings.Contains(scheme, "+unix"):
+		if err := parseMySQLUnixPath(cfg, u, dbURL); err != nil {
+			return nil, err
+		}
+	case query.Get("socket") != "":
+		cfg.Net = netTypeUnix
+		cfg.Addr = query.Get("socket")
+	case query.Get("unix_socket") != "":
+		cfg.Net = netTypeUnix
+		cfg.Addr = query.Get("unix_socket")
+	case query.Get("host") != "" && strings.HasPrefix(query.Get("host"), "/"):
+		cfg.Net = netTypeUnix
+		cfg.Addr = query.Get("host")
+	case u.Host != "":
+		cfg.Net = "tcp"
+		cfg.Addr = u.Host
+	}
+
+	if u.Path != "" {
+		cfg.DBName = strings.TrimPrefix(u.Path, "/")
+	}
+
+	// 3. Initialize params with your SAFE defaults
+	// These run regardless of whether the user provided other params.
+	cfg.Params = map[string]string{
+		"parseTime": "true",     // Required for scanning into time.Time
+		"loc":       "UTC",      // logical timezone for the driver
+		"time_zone": "'+00:00'", // Server-side session timezone (Critical for your test fix)
+	}
+
+	// 4. Overwrite defaults if the user explicitly specified them in the URL
+	for k, v := range query {
+		if len(v) > 0 {
+			cfg.Params[k] = v[0]
+		}
+	}
+
+	return cfg, nil
+}
+
+func parseMySQLUnixPath(cfg *mysql.Config, u *url.URL, dbURL string) error {
+	// Handle mysql+unix://<socket_path>/<db_name>
+	path := strings.TrimPrefix(u.Path, "/")
+
+	lastSlash := strings.LastIndex(path, "/")
+	if lastSlash == -1 {
+		return fmt.Errorf("%w: missing database name in path: %s", ErrInvalidMySQLUnixURL, dbURL)
+	}
+
+	cfg.Net = netTypeUnix
+	cfg.Addr = "/" + path[:lastSlash]
+	cfg.DBName = path[lastSlash+1:]
+	u.Path = "" // Prevent re-processing of path for DBName
+
+	return nil
 }

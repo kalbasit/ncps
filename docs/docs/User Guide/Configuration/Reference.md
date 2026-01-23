@@ -138,11 +138,20 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 
 - SQLite: `sqlite:/var/lib/ncps/db/db.sqlite`
 - PostgreSQL: `postgresql://user:pass@host:5432/database?sslmode=require`
+- PostgreSQL (Socket): `postgresql:///database?host=/var/run/postgresql`
 - MySQL: `mysql://user:pass@host:3306/database`
+- MySQL (Socket): `mysql://user:pass@/database?socket=/var/run/mysqld/mysqld.sock`
+
+**Notes on Sockets:**
+
+For MySQL and PostgreSQL, you can use specialized schemes for Unix domain sockets:
+
+- `mysql+unix:///path/to/socket/database`
+- `postgres+unix:///path/to/socket/database`
 
 **Example:**
 
-```
+```sh
 ncps serve \
   --cache-database-url=postgresql://ncps:password@localhost:5432/ncps?sslmode=require \
   --cache-max-size=100G \
