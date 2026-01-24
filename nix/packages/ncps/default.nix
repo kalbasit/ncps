@@ -9,7 +9,6 @@
     {
       packages.ncps =
         let
-          shortRev = self.shortRev or self.dirtyShortRev;
           rev = self.rev or self.dirtyRev;
           tag = builtins.getEnv "RELEASE_VERSION";
 
@@ -18,7 +17,8 @@
           vendorHash = "sha256-GggDyzUYIZSucahVSQoZbXk+H+uz1Kj+9hXBX+csguQ=";
         in
         pkgs.buildGoModule {
-          name = "ncps-${shortRev}";
+          pname = "ncps";
+          inherit version;
 
           src = lib.fileset.toSource {
             fileset = lib.fileset.unions [
