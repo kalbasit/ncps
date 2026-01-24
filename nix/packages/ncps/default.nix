@@ -13,7 +13,7 @@
             let
               tag =
                 let
-                  semverRegex = "v[0-9]+(\\.[0-9]+){0,2}(-[a-zA-Z0-9]+)?";
+                  semverRegex = "v[0-9]+(\\.[0-9]+){0,2}(-[a-zA-Z0-9.-]+)?";
                   tag' = self.tag or "";
                 in
                 if builtins.match semverRegex tag' != null then tag' else "";
