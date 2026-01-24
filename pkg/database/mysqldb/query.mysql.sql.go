@@ -127,6 +127,19 @@ INSERT INTO narinfos (
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
+ON DUPLICATE KEY UPDATE
+    id = LAST_INSERT_ID(id),
+    store_path = IF(url IS NULL, VALUES(store_path), store_path),
+    url = IF(url IS NULL, VALUES(url), url),
+    compression = IF(url IS NULL, VALUES(compression), compression),
+    file_hash = IF(url IS NULL, VALUES(file_hash), file_hash),
+    file_size = IF(url IS NULL, VALUES(file_size), file_size),
+    nar_hash = IF(url IS NULL, VALUES(nar_hash), nar_hash),
+    nar_size = IF(url IS NULL, VALUES(nar_size), nar_size),
+    deriver = IF(url IS NULL, VALUES(deriver), deriver),
+    system = IF(url IS NULL, VALUES(system), system),
+    ca = IF(url IS NULL, VALUES(ca), ca),
+    updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at)
 `
 
 type CreateNarInfoParams struct {
@@ -150,6 +163,19 @@ type CreateNarInfoParams struct {
 //	) VALUES (
 //	    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 //	)
+//	ON DUPLICATE KEY UPDATE
+//	    id = LAST_INSERT_ID(id),
+//	    store_path = IF(url IS NULL, VALUES(store_path), store_path),
+//	    url = IF(url IS NULL, VALUES(url), url),
+//	    compression = IF(url IS NULL, VALUES(compression), compression),
+//	    file_hash = IF(url IS NULL, VALUES(file_hash), file_hash),
+//	    file_size = IF(url IS NULL, VALUES(file_size), file_size),
+//	    nar_hash = IF(url IS NULL, VALUES(nar_hash), nar_hash),
+//	    nar_size = IF(url IS NULL, VALUES(nar_size), nar_size),
+//	    deriver = IF(url IS NULL, VALUES(deriver), deriver),
+//	    system = IF(url IS NULL, VALUES(system), system),
+//	    ca = IF(url IS NULL, VALUES(ca), ca),
+//	    updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at)
 func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createNarInfo,
 		arg.Hash,
@@ -943,6 +969,7 @@ INSERT INTO narinfo_nar_files (
 ) VALUES (
     ?, ?
 )
+ON DUPLICATE KEY UPDATE narinfo_id = narinfo_id
 `
 
 type LinkNarInfoToNarFileParams struct {
@@ -957,6 +984,7 @@ type LinkNarInfoToNarFileParams struct {
 //	) VALUES (
 //	    ?, ?
 //	)
+//	ON DUPLICATE KEY UPDATE narinfo_id = narinfo_id
 func (q *Queries) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	_, err := q.db.ExecContext(ctx, linkNarInfoToNarFile, arg.NarInfoID, arg.NarFileID)
 	return err

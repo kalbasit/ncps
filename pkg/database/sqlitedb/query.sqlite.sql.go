@@ -150,6 +150,19 @@ INSERT INTO narinfos (
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
+ON CONFLICT(hash) DO UPDATE SET
+    store_path = excluded.store_path,
+    url = excluded.url,
+    compression = excluded.compression,
+    file_hash = excluded.file_hash,
+    file_size = excluded.file_size,
+    nar_hash = excluded.nar_hash,
+    nar_size = excluded.nar_size,
+    deriver = excluded.deriver,
+    system = excluded.system,
+    ca = excluded.ca,
+    updated_at = CURRENT_TIMESTAMP
+WHERE narinfos.url IS NULL
 RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 `
 
@@ -174,6 +187,19 @@ type CreateNarInfoParams struct {
 //	) VALUES (
 //	    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 //	)
+//	ON CONFLICT(hash) DO UPDATE SET
+//	    store_path = excluded.store_path,
+//	    url = excluded.url,
+//	    compression = excluded.compression,
+//	    file_hash = excluded.file_hash,
+//	    file_size = excluded.file_size,
+//	    nar_hash = excluded.nar_hash,
+//	    nar_size = excluded.nar_size,
+//	    deriver = excluded.deriver,
+//	    system = excluded.system,
+//	    ca = excluded.ca,
+//	    updated_at = CURRENT_TIMESTAMP
+//	WHERE narinfos.url IS NULL
 //	RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, createNarInfo,
@@ -987,6 +1013,7 @@ INSERT INTO narinfo_nar_files (
 ) VALUES (
     ?, ?
 )
+ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
 `
 
 type LinkNarInfoToNarFileParams struct {
@@ -1001,6 +1028,7 @@ type LinkNarInfoToNarFileParams struct {
 //	) VALUES (
 //	    ?, ?
 //	)
+//	ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
 func (q *Queries) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	_, err := q.db.ExecContext(ctx, linkNarInfoToNarFile, arg.NarInfoID, arg.NarFileID)
 	return err

@@ -1838,6 +1838,11 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 			return fmt.Errorf("error fetching the narinfo record: %w", err)
 		}
 
+		// Migrate narinfos from storage to the database.
+		if !nir.URL.Valid {
+			c.backgroundMigrateNarInfo(ctx, hash, ni)
+		}
+
 		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
 			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
 				return fmt.Errorf("error touching the narinfo record: %w", err)
@@ -2094,7 +2099,7 @@ func (c *Cache) storeInDatabase(
 		Msg("storing narinfo and nar_file record in the database")
 
 	return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
-		nir, err := qtx.CreateNarInfo(ctx, database.CreateNarInfoParams{
+		createNarInfoParams := database.CreateNarInfoParams{
 			Hash:        hash,
 			StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
 			URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
@@ -2106,17 +2111,31 @@ func (c *Cache) storeInDatabase(
 			Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
 			System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
 			Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
-		})
+		}
+
+		nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
 		if err != nil {
-			if database.IsDuplicateKeyError(err) {
-				zerolog.Ctx(ctx).
-					Debug().
-					Msg("narinfo record was not added to database because it already exists")
-
-				return ErrAlreadyExists
+			// Database-specific UPSERT behavior:
+			//
+			// PostgreSQL/SQLite: Use "ON CONFLICT ... DO UPDATE ... WHERE url IS NULL"
+			//   - If hash exists with NULL URL → updates and returns the row
+			//   - If hash exists with valid URL → condition fails, returns sql.ErrNoRows
+			//   - If hash doesn't exist → inserts and returns the row
+			//
+			// MySQL: Use "ON DUPLICATE KEY UPDATE ... IF(url IS NULL, VALUES(...), ...)"
+			//   - Always executes UPDATE clause (even if condition is false)
+			//   - Returns via LastInsertId() mechanism in wrapper
+			//   - Never hits this sql.ErrNoRows path
+			//
+			// In both cases, if a record exists with valid URL, we fetch it instead.
+			if errors.Is(err, sql.ErrNoRows) {
+				nir, err = qtx.GetNarInfoByHash(ctx, hash)
+				if err != nil {
+					return fmt.Errorf("upsert returned no rows (record exists with valid URL), failed to fetch: %w", err)
+				}
+			} else {
+				return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
 			}
-
-			return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
 		}
 
 		if len(narInfo.References) > 0 {
@@ -2251,6 +2270,8 @@ func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *n
 
 		log := zerolog.Ctx(detachedCtx).With().Str("narinfo_hash", hash).Logger()
 
+		log.Info().Msg("migrating narinfo to database in background")
+
 		opStartTime := time.Now()
 
 		err := c.storeInDatabase(detachedCtx, hash, ni)
@@ -2271,6 +2292,8 @@ func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *n
 
 			return
 		}
+
+		log.Debug().Dur("duration", time.Since(opStartTime)).Msg("successfully migrated narinfo to database")
 
 		backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
 			metric.WithAttributes(
@@ -2322,15 +2345,33 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 	)
 	defer span.End()
 
-	if !c.narInfoStore.HasNarInfo(ctx, hash) {
+	// Check if narinfo exists in storage or database
+	inStorage := c.narInfoStore.HasNarInfo(ctx, hash)
+	inDatabase := false
+
+	if _, err := c.db.GetNarInfoByHash(ctx, hash); err == nil {
+		inDatabase = true
+	}
+
+	if !inStorage && !inDatabase {
 		return storage.ErrNotFound
 	}
 
-	if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
-		return fmt.Errorf("error deleting narinfo from the database: %w", err)
+	// Delete from database (includes cascading deletes for references, signatures, and links)
+	if inDatabase {
+		if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
+			return fmt.Errorf("error deleting narinfo from the database: %w", err)
+		}
 	}
 
-	return c.narInfoStore.DeleteNarInfo(ctx, hash)
+	// Delete from storage if present
+	if inStorage {
+		if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+			return fmt.Errorf("error deleting narinfo from storage: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (c *Cache) validateHostname(hostName string) error {
