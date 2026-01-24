@@ -106,7 +106,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		for i := 1; i < 10; i++ {
 			ts := testdata.NewTestServer(t, i)
-			defer ts.Close()
+			t.Cleanup(ts.Close)
 
 			testServers[i] = ts
 		}
@@ -134,7 +134,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		}
 
 		c, cleanup := setupTestCache(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 
 		c.AddUpstreamCaches(newContext(), ucs...)
 
@@ -153,7 +153,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 
 		for i := 1; i < 10; i++ {
 			ts := testdata.NewTestServer(t, i)
-			defer ts.Close()
+			t.Cleanup(ts.Close)
 
 			testServers[i] = ts
 		}
@@ -181,7 +181,7 @@ func TestAddUpstreamCaches(t *testing.T) {
 		}
 
 		c, cleanup := setupTestCache(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 
 		for _, uc := range ucs {
 			c.AddUpstreamCaches(newContext(), uc)
@@ -202,10 +202,10 @@ func TestRunLRU(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)
@@ -378,10 +378,10 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
 	require.NoError(t, err)
@@ -555,7 +555,7 @@ func TestRunLRUWithSharedNar(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -650,7 +650,7 @@ func TestStoreInDatabaseDuplicateDetection(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Parse narinfo from testdata
 	narInfoReader := strings.NewReader(testdata.Nar1.NarInfoText)
@@ -680,7 +680,7 @@ func TestPutNarInfoConcurrentSameHash(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Test concurrent PutNarInfo calls for the same hash
 	// This tests hash-specific locking - multiple goroutines trying to write the same narinfo
@@ -737,7 +737,7 @@ func TestPutNarInfoWithSharedNar(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -797,7 +797,7 @@ func TestWithReadLock(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -831,7 +831,7 @@ func TestWithWriteLock(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -900,7 +900,7 @@ func TestWithTryLock(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -986,7 +986,7 @@ func TestMigration_DataIntegrity(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -1024,7 +1024,7 @@ func TestMigration_Success(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -1066,7 +1066,7 @@ func TestMigration_UpsertIdempotency(t *testing.T) {
 	// abort transactions or cause errors when attempting to store existing records.
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -1121,7 +1121,7 @@ func TestMigration_PartialRecordWithExistingReferences(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -1174,7 +1174,7 @@ func TestDeleteNarInfo_WithNullURL(t *testing.T) {
 	t.Parallel()
 
 	c, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ctx := newContext()
 
@@ -1310,13 +1310,13 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 
 				// Setup database
 				db, dbCleanup := setupDB(t)
-				defer dbCleanup()
+				t.Cleanup(dbCleanup)
 
 				// Setup storage
 				dir, err := os.MkdirTemp("", "cache-path-")
 				require.NoError(t, err)
 
-				defer os.RemoveAll(dir)
+				t.Cleanup(func() { os.RemoveAll(dir) })
 
 				localStore, err := local.New(ctx, dir)
 				require.NoError(t, err)
