@@ -4,6 +4,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/kalbasit/ncps/pkg/database/postgresdb"
 )
@@ -19,6 +20,9 @@ func (w *postgresWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInf
 		Reference: arg.Reference,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
 
@@ -32,6 +36,9 @@ func (w *postgresWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarIn
 		Reference: arg.Reference,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
 
@@ -45,6 +52,9 @@ func (w *postgresWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInf
 		Signature: arg.Signature,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
 
@@ -58,6 +68,9 @@ func (w *postgresWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarIn
 		Signature: arg.Signature,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
 
@@ -71,6 +84,9 @@ func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigPara
 		Value: arg.Value,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Config{}, ErrNotFound
+		}
 		return Config{}, err
 	}
 
@@ -87,6 +103,9 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 		FileSize:    arg.FileSize,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarFile{}, ErrNotFound
+		}
 		return NarFile{}, err
 	}
 
@@ -110,6 +129,9 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPa
 		Ca:          arg.Ca,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarInfo{}, ErrNotFound
+		}
 		return NarInfo{}, err
 	}
 
@@ -121,6 +143,10 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPa
 func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -132,6 +158,10 @@ func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) 
 func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -143,6 +173,10 @@ func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int6
 func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -154,6 +188,10 @@ func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) 
 func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -165,6 +203,10 @@ func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int6
 func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -176,6 +218,10 @@ func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, er
 func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -187,6 +233,9 @@ func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, er
 func (w *postgresWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
 	res, err := w.adapter.GetConfigByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Config{}, ErrNotFound
+		}
 		return Config{}, err
 	}
 
@@ -198,6 +247,9 @@ func (w *postgresWrapper) GetConfigByID(ctx context.Context, id int64) (Config, 
 func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Config, error) {
 	res, err := w.adapter.GetConfigByKey(ctx, key)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Config{}, ErrNotFound
+		}
 		return Config{}, err
 	}
 
@@ -209,6 +261,9 @@ func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Confi
 func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -224,6 +279,9 @@ func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uin
 func (w *postgresWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
 	res, err := w.adapter.GetLeastUsedNarInfos(ctx, fileSize)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -239,6 +297,9 @@ func (w *postgresWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uin
 func (w *postgresWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	res, err := w.adapter.GetMigratedNarInfoHashes(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -252,6 +313,9 @@ func (w *postgresWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context,
 		Offset: arg.Offset,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -262,6 +326,9 @@ func (w *postgresWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context,
 func (w *postgresWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHash(ctx, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarFile{}, ErrNotFound
+		}
 		return NarFile{}, err
 	}
 
@@ -273,6 +340,9 @@ func (w *postgresWrapper) GetNarFileByHash(ctx context.Context, hash string) (Na
 func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarFile{}, ErrNotFound
+		}
 		return NarFile{}, err
 	}
 
@@ -284,6 +354,9 @@ func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile
 func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarFile{}, ErrNotFound
+		}
 		return NarFile{}, err
 	}
 
@@ -295,6 +368,10 @@ func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID i
 func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarFileCount(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -306,6 +383,9 @@ func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 func (w *postgresWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	res, err := w.adapter.GetNarInfoByHash(ctx, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarInfo{}, ErrNotFound
+		}
 		return NarInfo{}, err
 	}
 
@@ -317,6 +397,9 @@ func (w *postgresWrapper) GetNarInfoByHash(ctx context.Context, hash string) (Na
 func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
 	res, err := w.adapter.GetNarInfoByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarInfo{}, ErrNotFound
+		}
 		return NarInfo{}, err
 	}
 
@@ -328,6 +411,10 @@ func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo
 func (w *postgresWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarInfoCount(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -339,6 +426,9 @@ func (w *postgresWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -349,6 +439,9 @@ func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFi
 func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -359,6 +452,9 @@ func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID in
 func (w *postgresWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoSignatures(ctx, narinfoID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -369,6 +465,10 @@ func (w *postgresWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID in
 func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -380,6 +480,9 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -395,6 +498,9 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	res, err := w.adapter.GetUnmigratedNarInfoHashes(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -405,6 +511,10 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 func (w *postgresWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool, error) {
 	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return false, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return false, err
 	}
@@ -419,6 +529,9 @@ func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarI
 		NarFileID: arg.NarFileID,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
 
@@ -432,6 +545,9 @@ func (w *postgresWrapper) SetConfig(ctx context.Context, arg SetConfigParams) er
 		Value: arg.Value,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
 
@@ -442,6 +558,10 @@ func (w *postgresWrapper) SetConfig(ctx context.Context, arg SetConfigParams) er
 func (w *postgresWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}
@@ -453,6 +573,10 @@ func (w *postgresWrapper) TouchNarFile(ctx context.Context, hash string) (int64,
 func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Primitive return (int64, string, etc)
+			return 0, ErrNotFound
+		}
 		// Primitive return (int64, string, etc)
 		return 0, err
 	}

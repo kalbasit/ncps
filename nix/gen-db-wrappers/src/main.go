@@ -560,6 +560,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/kalbasit/ncps/pkg/database/{{.Engine.Package}}"
 )
@@ -639,6 +640,9 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 				if IsDuplicateKeyError(err) {
 					continue
 				}
+				if errors.Is(err, sql.ErrNoRows) {
+					return ErrNotFound
+				}
 				return err
 			}
 		}
@@ -683,6 +687,20 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{/* 2. HANDLE ERROR */}}
 		{{- if .Method.ReturnsError}}
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				{{- if .Method.ReturnsSelf}}
+					return nil // returns Querier
+				{{- else if not .Method.HasValue}}
+					return ErrNotFound
+				{{- else if isSlice $retType}}
+					return nil, ErrNotFound
+				{{- else if isDomainStruct .Method.ReturnElem}}
+					return {{.Method.ReturnElem}}{}, ErrNotFound
+				{{- else}}
+					// Primitive return (int64, string, etc)
+					return {{zeroValue $retType}}, ErrNotFound
+				{{- end}}
+			}
 			{{- if .Method.ReturnsSelf}}
 				return nil // returns Querier
 			{{- else if not .Method.HasValue}}

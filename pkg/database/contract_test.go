@@ -2,7 +2,6 @@ package database_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -37,7 +36,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			_, err = db.GetConfigByKey(context.Background(), key)
-			assert.ErrorIs(t, err, sql.ErrNoRows)
+			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("key existing", func(t *testing.T) {
@@ -76,7 +75,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			_, err = db.GetNarInfoByHash(context.Background(), hash)
-			assert.ErrorIs(t, err, sql.ErrNoRows)
+			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("narinfo existing", func(t *testing.T) {
@@ -401,7 +400,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			_, err = db.GetNarFileByHash(context.Background(), narHash)
-			assert.ErrorIs(t, err, sql.ErrNoRows)
+			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("nar existing", func(t *testing.T) {

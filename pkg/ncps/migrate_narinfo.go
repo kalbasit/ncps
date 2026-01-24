@@ -450,7 +450,7 @@ func getOrCreateNarInfo(
 		return existing, nil
 	}
 	// If the error is anything other than "not found", it's a real error.
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !database.IsNotFoundError(err) {
 		return database.NarInfo{}, fmt.Errorf("failed to get narinfo record: %w", err)
 	}
 
@@ -500,7 +500,7 @@ func getOrCreateNarFile(
 		return existing, nil
 	}
 	// If the error is anything other than "not found", it's a real error.
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !database.IsNotFoundError(err) {
 		return database.NarFile{}, fmt.Errorf("failed to get existing nar file record: %w", err)
 	}
 
