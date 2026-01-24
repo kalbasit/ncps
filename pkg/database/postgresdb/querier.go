@@ -66,6 +66,19 @@ type Querier interface {
 	//  ) VALUES (
 	//      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 	//  )
+	//  ON CONFLICT (hash) DO UPDATE SET
+	//      store_path = EXCLUDED.store_path,
+	//      url = EXCLUDED.url,
+	//      compression = EXCLUDED.compression,
+	//      file_hash = EXCLUDED.file_hash,
+	//      file_size = EXCLUDED.file_size,
+	//      nar_hash = EXCLUDED.nar_hash,
+	//      nar_size = EXCLUDED.nar_size,
+	//      deriver = EXCLUDED.deriver,
+	//      system = EXCLUDED.system,
+	//      ca = EXCLUDED.ca,
+	//      updated_at = CURRENT_TIMESTAMP
+	//  WHERE narinfos.url IS NULL
 	//  RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error)
 	//DeleteNarFileByHash
@@ -255,6 +268,7 @@ type Querier interface {
 	//  ) VALUES (
 	//      $1, $2
 	//  )
+	//  ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
 	//SetConfig
 	//

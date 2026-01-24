@@ -37,6 +37,25 @@ const (
 
 var errTest = errors.New("test error")
 
+// buildInsertNarInfoSQL constructs a database-agnostic SQL INSERT statement
+// for inserting a minimal narinfo record (hash and created_at only).
+// It detects the database type by probing the database and uses appropriate parameter placeholders.
+func buildInsertNarInfoSQL(db database.Querier) string {
+	// Detect database type using a probe query
+	// PostgreSQL responds to this query with a version string starting with "PostgreSQL"
+	var version string
+
+	err := db.DB().QueryRowContext(context.Background(), "SELECT version()").Scan(&version)
+
+	if err == nil && strings.Contains(version, "PostgreSQL") {
+		// PostgreSQL uses $1, $2, etc. placeholders
+		return "INSERT INTO narinfos (hash, created_at) VALUES ($1, $2)"
+	}
+
+	// MySQL and SQLite use ? placeholders
+	return "INSERT INTO narinfos (hash, created_at) VALUES (?, ?)"
+}
+
 func setupTestCache(t *testing.T) (*Cache, func()) {
 	t.Helper()
 
@@ -617,14 +636,15 @@ func TestStoreInDatabaseDuplicateDetection(t *testing.T) {
 	_, err = c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
 	require.NoError(t, err, "record should exist in database")
 
-	// Second insert of the same narinfo should return ErrAlreadyExists
+	// Second insert of the same narinfo should succeed (UPSERT)
 	err = c.storeInDatabase(newContext(), testdata.Nar1.NarInfoHash, narInfo)
-	require.ErrorIs(
-		t,
-		err,
-		ErrAlreadyExists,
-		"duplicate insert should return ErrAlreadyExists to allow caller to distinguish from successful insert",
-	)
+	require.NoError(t, err, "duplicate insert should succeed with UPSERT")
+
+	// Verify the record persists and ID is consistent
+	ni2, err := c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "record should exist in database")
+
+	require.NotEmpty(t, ni2.ID)
 }
 
 func TestPutNarInfoConcurrentSameHash(t *testing.T) {
@@ -933,5 +953,390 @@ func TestWithTryLock(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, acquired, "lock should have been acquired after release")
 		assert.True(t, thirdExecuted, "function should have been executed")
+	})
+}
+
+func TestMigration_DataIntegrity(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	// 1. Setup: Insert a "finished" record (simulating an already migrated or valid record)
+	// We use the exact data from testdata.Nar1
+	narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+	require.NoError(t, err)
+
+	// Verify it exists and has the correct URL
+	niOriginal, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+	require.True(t, niOriginal.URL.Valid)
+	require.Equal(t, "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz", niOriginal.URL.String)
+
+	// 2. Action: Attempt to "migrate" (insert) different data for the same hash
+	// We create a modified narinfo that would damage the record if overwritten
+	modifiedNarInfo := *narInfo
+	modifiedNarInfo.Deriver = "damaging-change-deriver"
+
+	// This call should succeed (idempotent) but NOT update the DB record because it's already valid
+	err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, &modifiedNarInfo)
+	require.NoError(t, err)
+
+	// 3. Verification: Verify the DB record is UNTOUCHED
+	niAfter, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+	assert.Equal(t, niOriginal.Deriver.String, niAfter.Deriver.String, "Existing valid record should NOT be overwritten")
+	assert.NotEqual(t, modifiedNarInfo.Deriver, niAfter.Deriver.String, "Bad Deriver should not be present")
+}
+
+func TestMigration_Success(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	// 1. Setup: Insert a "partial" record (URL is NULL), simulating an unmigrated state
+	// We manually insert this to bypass storeInDatabase's logic
+	insertSQL := buildInsertNarInfoSQL(c.db)
+	_, err := c.db.DB().ExecContext(
+		ctx,
+		insertSQL,
+		testdata.Nar1.NarInfoHash,
+		time.Now(),
+	)
+	require.NoError(t, err)
+
+	// Verify it is indeed partial
+	niPartial, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+	require.False(t, niPartial.URL.Valid, "URL should be NULL initially")
+
+	// 2. Action: Run storeInDatabase with the full valid data
+	narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+	require.NoError(t, err)
+
+	// 3. Verification: Verify the DB record IS updated
+	niAfter, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+	require.True(t, niAfter.URL.Valid, "URL should be valid after migration")
+	assert.Equal(t, "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz", niAfter.URL.String)
+}
+
+func TestMigration_UpsertIdempotency(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies that UPSERT operations are idempotent and transaction-safe.
+	// With the ON CONFLICT DO UPDATE/NOTHING approach, duplicate inserts should not
+	// abort transactions or cause errors when attempting to store existing records.
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	// 1. Setup: Create a record
+	narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+	require.NoError(t, err)
+
+	// 2. Action: concurrent writes to trigger potential race/locking issues
+	// We use a transaction to wrap multiple operations to ensure the "abort" behavior would be caught if present
+	err = c.withTransaction(ctx, "test_transaction_safety", func(qtx database.Querier) error {
+		// Attempt to store the same record again within a transaction
+		// If the logic is "try insert, fail, delete, insert", the "fail" part aborts the transaction in Postgres
+
+		// Note: we can't easily call storeInDatabase here because it starts its own transaction.
+		// Instead, we manually call the CreateNarInfo which is what storeInDatabase does.
+		createNarInfoParams := database.CreateNarInfoParams{
+			Hash: testdata.Nar1.NarInfoHash,
+			// ... other params irrelevant for the crash, it fails on Hash unique constraint
+		}
+
+		// In the *incorrect* impl, this returns an error, which aborts the tx.
+		// In the *correct* impl (UPSERT), this returns success (or 0 rows affected), guarding the tx.
+		_, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
+
+		// With conditional upsert, if no update is performed, SQLite/Postgres might return ErrNoRows
+		// (if using RETURNING). This is NOT a transaction aborting error.
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		// If we are using Postgres, and CreateNarInfo failed (aborted tx), this next query would fail
+		// with "current transaction is aborted"
+		_, _ = qtx.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	// With UPSERT, we expect NO error here.
+	// With the original bug, we might get an error or not depending on how CreateNarInfo was implemented.
+	// But `storeInDatabase` (the high level function) specifically failed because it tried to recover.
+
+	// Let's test `storeInDatabase` directly as that's what we care about.
+	err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+	assert.NoError(t, err, "storeInDatabase should allow re-storing existing records safely")
+}
+
+func TestMigration_PartialRecordWithExistingReferences(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	// 1. Parse the narinfo to get the full data
+	narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	// 2. Manually insert a partial record with NULL URL
+	insertSQL := buildInsertNarInfoSQL(c.db)
+	_, err = c.db.DB().ExecContext(
+		ctx,
+		insertSQL,
+		testdata.Nar1.NarInfoHash,
+		time.Now(),
+	)
+	require.NoError(t, err)
+
+	// 3. Get the narinfo ID
+	niPartial, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+	require.False(t, niPartial.URL.Valid, "URL should be NULL initially")
+
+	// 4. Add some references to the partial record (simulating a partial migration)
+	if len(narInfo.References) > 0 {
+		// Add only the first reference
+		err = c.db.AddNarInfoReference(ctx, database.AddNarInfoReferenceParams{
+			NarInfoID: niPartial.ID,
+			Reference: narInfo.References[0],
+		})
+		require.NoError(t, err)
+	}
+
+	// 5. Now attempt full migration via storeInDatabase (which includes all references)
+	// This should handle duplicate references gracefully
+	err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+	require.NoError(t, err, "Migration should succeed even with existing references")
+
+	// 6. Verify the record is now complete
+	niAfter, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+	require.True(t, niAfter.URL.Valid, "URL should be valid after migration")
+
+	// 7. Verify all references exist (no duplicates, no missing)
+	refs, err := c.db.GetNarInfoReferences(ctx, niAfter.ID)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, narInfo.References, refs, "All references should be present exactly once")
+}
+
+func TestDeleteNarInfo_WithNullURL(t *testing.T) {
+	t.Parallel()
+
+	c, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	ctx := newContext()
+
+	// 1. Create a partial record with NULL URL (simulating pre-migration state)
+	insertSQL := buildInsertNarInfoSQL(c.db)
+	_, err := c.db.DB().ExecContext(
+		ctx,
+		insertSQL,
+		testdata.Nar1.NarInfoHash,
+		time.Now(),
+	)
+	require.NoError(t, err)
+
+	// 2. Add some references and signatures
+	niPartial, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+
+	err = c.db.AddNarInfoReference(ctx, database.AddNarInfoReferenceParams{
+		NarInfoID: niPartial.ID,
+		Reference: "/nix/store/test-ref1",
+	})
+	require.NoError(t, err)
+
+	err = c.db.AddNarInfoSignature(ctx, database.AddNarInfoSignatureParams{
+		NarInfoID: niPartial.ID,
+		Signature: "test-signature:1234567890abcdef",
+	})
+	require.NoError(t, err)
+
+	// 3. Verify the record exists
+	_, err = c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+
+	// 4. Delete the narinfo
+	err = c.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "Should be able to delete narinfo with NULL URL")
+
+	// 5. Verify the record is gone from database
+	_, err = c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+	require.ErrorIs(t, err, sql.ErrNoRows, "Record should be deleted from database")
+
+	// 6. Verify references are also gone (cascade delete)
+	refs, err := c.db.GetNarInfoReferences(ctx, niPartial.ID)
+	if err == nil {
+		assert.Empty(t, refs, "References should be deleted via cascade")
+	}
+
+	// 7. Verify signatures are also gone (cascade delete)
+	sigs, err := c.db.GetNarInfoSignatures(ctx, niPartial.ID)
+	if err == nil {
+		assert.Empty(t, sigs, "Signatures should be deleted via cascade")
+	}
+}
+
+func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies that the UPSERT behavior is consistent across all database engines.
+	// It focuses on the two critical scenarios:
+	// 1. Updating a record with NULL URL (migration)
+	// 2. Not updating a record with valid URL (data protection)
+
+	testCases := []struct {
+		name           string
+		setupFn        func(t *testing.T, c *Cache, ctx context.Context, hash string)
+		attemptInsert  func(t *testing.T, c *Cache, ctx context.Context, hash string, narInfo *narinfo.NarInfo)
+		validateResult func(t *testing.T, c *Cache, ctx context.Context, hash string, expectedURL string)
+	}{
+		{
+			name: "NULL URL should be updated",
+			setupFn: func(t *testing.T, c *Cache, ctx context.Context, hash string) {
+				t.Helper()
+				// Insert partial record with NULL URL
+				insertSQL := buildInsertNarInfoSQL(c.db)
+				_, err := c.db.DB().ExecContext(ctx, insertSQL, hash, time.Now())
+				require.NoError(t, err)
+			},
+			attemptInsert: func(t *testing.T, c *Cache, ctx context.Context, hash string, narInfo *narinfo.NarInfo) {
+				t.Helper()
+
+				err := c.storeInDatabase(ctx, hash, narInfo)
+				require.NoError(t, err)
+			},
+			validateResult: func(t *testing.T, c *Cache, ctx context.Context, hash string, expectedURL string) {
+				t.Helper()
+
+				ni, err := c.db.GetNarInfoByHash(ctx, hash)
+				require.NoError(t, err)
+				require.True(t, ni.URL.Valid, "URL should be valid after update")
+				assert.Equal(t, expectedURL, ni.URL.String, "URL should match the inserted value")
+			},
+		},
+		{
+			name: "Valid URL should NOT be overwritten",
+			setupFn: func(t *testing.T, c *Cache, ctx context.Context, hash string) {
+				t.Helper()
+				// Insert full record first
+				originalNarInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+				require.NoError(t, err)
+				err = c.storeInDatabase(ctx, hash, originalNarInfo)
+				require.NoError(t, err)
+			},
+			attemptInsert: func(t *testing.T, c *Cache, ctx context.Context, hash string, narInfo *narinfo.NarInfo) {
+				t.Helper()
+				// Try to insert different data
+				modifiedNarInfo := *narInfo
+				modifiedNarInfo.Deriver = "should-not-appear"
+				err := c.storeInDatabase(ctx, hash, &modifiedNarInfo)
+				require.NoError(t, err) // Should succeed but not update
+			},
+			validateResult: func(t *testing.T, c *Cache, ctx context.Context, hash string, expectedURL string) {
+				t.Helper()
+
+				ni, err := c.db.GetNarInfoByHash(ctx, hash)
+				require.NoError(t, err)
+				require.True(t, ni.URL.Valid, "URL should still be valid")
+				assert.Equal(t, expectedURL, ni.URL.String, "URL should be unchanged")
+				// Verify the attempted modification didn't apply
+				assert.NotEqual(t, "should-not-appear", ni.Deriver.String, "Deriver should not be overwritten")
+			},
+		},
+	}
+
+	// Helper function to run tests against a specific database backend
+	runTestsWithDB := func(t *testing.T, setupDB func(*testing.T) (database.Querier, func())) {
+		t.Helper()
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				ctx := newContext()
+
+				// Setup database
+				db, dbCleanup := setupDB(t)
+				defer dbCleanup()
+
+				// Setup storage
+				dir, err := os.MkdirTemp("", "cache-path-")
+				require.NoError(t, err)
+
+				defer os.RemoveAll(dir)
+
+				localStore, err := local.New(ctx, dir)
+				require.NoError(t, err)
+
+				// Use local locks for tests
+				downloadLocker := locklocal.NewLocker()
+				cacheLocker := locklocal.NewRWLocker()
+
+				c, err := New(ctx, cacheName, db, localStore, localStore, localStore, "",
+					downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+				require.NoError(t, err)
+
+				// Parse test narinfo
+				narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+				require.NoError(t, err)
+
+				hash := testdata.Nar1.NarInfoHash
+				expectedURL := "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz"
+
+				// Setup
+				tc.setupFn(t, c, ctx, hash)
+
+				// Attempt insert/update
+				tc.attemptInsert(t, c, ctx, hash, narInfo)
+
+				// Validate
+				tc.validateResult(t, c, ctx, hash, expectedURL)
+			})
+		}
+	}
+
+	// Test with SQLite (always runs)
+	t.Run("SQLite", func(t *testing.T) {
+		t.Parallel()
+		runTestsWithDB(t, testhelper.SetupSQLite)
+	})
+
+	// Test with PostgreSQL (only if enabled via environment variable)
+	t.Run("PostgreSQL", func(t *testing.T) {
+		t.Parallel()
+		runTestsWithDB(t, testhelper.SetupPostgres)
+	})
+
+	// Test with MySQL (only if enabled via environment variable)
+	t.Run("MySQL", func(t *testing.T) {
+		t.Parallel()
+		runTestsWithDB(t, testhelper.SetupMySQL)
 	})
 }

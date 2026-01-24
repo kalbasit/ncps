@@ -800,6 +800,148 @@ func TestPutNar(t *testing.T) {
 	})
 }
 
+func TestGetNarInfo_MigratesInvalidURL(t *testing.T) {
+	t.Parallel()
+
+	c, db, localStore, _, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	c.SetRecordAgeIgnoreTouch(0)
+
+	// 1. Put NarInfo into the file store (Storage) ONLY
+	// We use localStore directly to avoid the Cache.PutNarInfo logic which would write to the DB.
+	ctx := context.Background()
+
+	niParsed, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	require.NoError(t, localStore.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, niParsed))
+
+	nu := nar.URL{
+		Hash:        testdata.Nar1.NarHash,
+		Compression: testdata.Nar1.NarCompression,
+	}
+	_, err = localStore.PutNar(ctx, nu, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+	require.NoError(t, err)
+
+	// 2. Insert a minimal record into the database
+	// This simulates a record created before the de-normalization migration (schema 20260117195000)
+	// or a record that was only partially created. The key aspect is that URL is NULL.
+	query := "INSERT INTO narinfos (hash, created_at) VALUES (?, ?)"
+	_, err = db.DB().ExecContext(ctx, query, testdata.Nar1.NarInfoHash, time.Now())
+	require.NoError(t, err)
+
+	// Verify it is indeed NULL and correctly inserted
+	var url sql.NullString
+
+	err = db.DB().QueryRowContext(ctx, "SELECT url FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&url)
+	require.NoError(t, err)
+	require.False(t, url.Valid, "URL should be NULL before the test")
+
+	// 3. Call GetNarInfo
+	// This should trigger the background migration (if fixed)
+	ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err)
+	// SHA256 of the NAR file (compressed)
+	assert.Equal(t, "sha256:1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri", ni.FileHash.String())
+
+	// 4. Verify DB record is updated
+	expectedURL := "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz"
+
+	assert.Eventually(t, func() bool {
+		err = db.DB().QueryRowContext(ctx, "SELECT url FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&url)
+
+		return err == nil && url.Valid && url.String == expectedURL
+	}, 2*time.Second, 100*time.Millisecond, "URL should be populated in the database after GetNarInfo")
+
+	// 5. Verify the narinfo is gone from the store (migration logic includes deleting from store)
+	exists := localStore.HasNarInfo(ctx, testdata.Nar1.NarInfoHash)
+	assert.False(t, exists, "NarInfo should be removed from the store after migration")
+}
+
+func TestGetNarInfo_ConcurrentMigrationAttempts(t *testing.T) {
+	t.Parallel()
+
+	c, db, localStore, _, cleanup := setupTestCache(t)
+	defer cleanup()
+
+	c.SetRecordAgeIgnoreTouch(0)
+
+	ctx := context.Background()
+
+	// 1. Setup: Put NarInfo in storage and insert minimal DB record with NULL URL
+	niParsed, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	require.NoError(t, localStore.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, niParsed))
+
+	nu := nar.URL{
+		Hash:        testdata.Nar1.NarHash,
+		Compression: testdata.Nar1.NarCompression,
+	}
+	_, err = localStore.PutNar(ctx, nu, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+	require.NoError(t, err)
+
+	query := "INSERT INTO narinfos (hash, created_at) VALUES (?, ?)"
+	_, err = db.DB().ExecContext(ctx, query, testdata.Nar1.NarInfoHash, time.Now())
+	require.NoError(t, err)
+
+	// 2. Trigger multiple concurrent GetNarInfo requests
+	const concurrency = 10
+
+	var wg sync.WaitGroup
+
+	errChan := make(chan error, concurrency)
+	results := make([]*narinfo.NarInfo, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+
+		go func(idx int) {
+			defer wg.Done()
+
+			ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+			if err != nil {
+				errChan <- err
+
+				return
+			}
+
+			results[idx] = ni
+		}(i)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// 3. Verify all requests succeeded
+	for err := range errChan {
+		require.NoError(t, err, "All concurrent requests should succeed")
+	}
+
+	// 4. Verify all results are identical
+	for i, result := range results {
+		require.NotNil(t, result, "Result %d should not be nil", i)
+		assert.Equal(t, "sha256:1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri", result.FileHash.String())
+	}
+
+	// 5. Verify DB was updated exactly once (eventually, due to background migration)
+	expectedURL := "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz"
+
+	var url sql.NullString
+
+	assert.Eventually(t, func() bool {
+		err = db.DB().QueryRowContext(ctx, "SELECT url FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&url)
+
+		return err == nil && url.Valid && url.String == expectedURL
+	}, 2*time.Second, 100*time.Millisecond, "URL should be populated exactly once")
+
+	// 6. Verify storage deletion happened (background migration deletes from storage)
+	assert.Eventually(t, func() bool {
+		return !localStore.HasNarInfo(ctx, testdata.Nar1.NarInfoHash)
+	}, 2*time.Second, 100*time.Millisecond, "NarInfo should be removed from store after migration")
+}
+
 //nolint:paralleltest
 func TestDeleteNar(t *testing.T) {
 	c, _, _, dir, cleanup := setupTestCache(t)

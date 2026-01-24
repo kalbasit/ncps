@@ -143,11 +143,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
-			assert.True(t, database.IsDuplicateKeyError(err))
+			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			assert.Equal(t, ni1.ID, ni2.ID)
 		})
 
 		t.Run("can write many narinfos", func(t *testing.T) {

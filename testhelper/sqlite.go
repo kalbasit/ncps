@@ -234,3 +234,26 @@ func getOrCreateNarFile(
 
 	return narFile, nil
 }
+
+// SetupSQLite sets up a new temporary SQLite database for testing.
+// It returns a database connection and a cleanup function.
+// This function has the same signature as SetupPostgres and SetupMySQL for consistency.
+func SetupSQLite(t *testing.T) (database.Querier, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "sqlite-test-")
+	require.NoError(t, err)
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		db.DB().Close()
+		os.RemoveAll(dir)
+	}
+
+	return db, cleanup
+}

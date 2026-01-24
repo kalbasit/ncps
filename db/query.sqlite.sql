@@ -65,6 +65,19 @@ INSERT INTO narinfos (
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
+ON CONFLICT(hash) DO UPDATE SET
+    store_path = excluded.store_path,
+    url = excluded.url,
+    compression = excluded.compression,
+    file_hash = excluded.file_hash,
+    file_size = excluded.file_size,
+    nar_hash = excluded.nar_hash,
+    nar_size = excluded.nar_size,
+    deriver = excluded.deriver,
+    system = excluded.system,
+    ca = excluded.ca,
+    updated_at = CURRENT_TIMESTAMP
+WHERE narinfos.url IS NULL
 RETURNING *;
 
 -- name: AddNarInfoReference :exec
@@ -106,7 +119,8 @@ INSERT INTO narinfo_nar_files (
     narinfo_id, nar_file_id
 ) VALUES (
     ?, ?
-);
+)
+ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING;
 
 -- name: TouchNarInfo :execrows
 UPDATE narinfos
