@@ -22,7 +22,7 @@ export PG_MIGRATION_PASSWORD="migration-password"
 export PG_MIGRATION_DB="migration-db"
 
 # Start PostgreSQL server in background
-bash $src/nix/process-compose/start-postgres.sh &
+bash $src/nix/process-compose/start-postgres.sh >"$NIX_BUILD_TOP/postgres.log" 2>&1 &
 export POSTGRES_PID=$!
 
 # Wait for PostgreSQL to be ready
