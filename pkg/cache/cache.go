@@ -2347,11 +2347,13 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 
 	// Check if narinfo exists in storage or database
 	inStorage := c.narInfoStore.HasNarInfo(ctx, hash)
-	inDatabase := false
 
-	if _, err := c.db.GetNarInfoByHash(ctx, hash); err == nil {
-		inDatabase = true
+	_, err := c.db.GetNarInfoByHash(ctx, hash)
+	if err != nil && !database.IsNotFoundError(err) {
+		return fmt.Errorf("error checking for narinfo in database: %w", err)
 	}
+
+	inDatabase := err == nil
 
 	if !inStorage && !inDatabase {
 		return storage.ErrNotFound
@@ -2409,7 +2411,7 @@ func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error 
 		}
 
 		return nil
-	} else if !errors.Is(err, config.ErrConfigNotFound) {
+	} else if !errors.Is(err, config.ErrConfigNotFound) && !database.IsNotFoundError(err) {
 		return fmt.Errorf("error fetching the secret key from the database: %w", err)
 	}
 
