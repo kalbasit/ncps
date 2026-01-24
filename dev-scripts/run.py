@@ -213,6 +213,13 @@ def main():
             )
             # We will enforce a shared directory below instead of mktemp
 
+        if args.db == "sqlite":
+            log(
+                "⛔ ERROR: Running HA with SQLite is not supported. Switch to 'postgres' or 'mysql'.",
+                RED,
+            )
+            sys.exit(1)
+
     # Validate deps
     check_dependencies(args)
 
@@ -268,7 +275,7 @@ def main():
             "serve",
             "--cache-allow-put-verb",
             f"--cache-hostname=cache-{i}.example.com",
-            f"--cache-database-url={db_url}",
+            f"--cache-database-url='{db_url}'",
             "--cache-upstream-url=https://cache.nixos.org",
             "--cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=",
             f"--server-addr=:{port}",
@@ -296,6 +303,7 @@ def main():
         if args.locker == "redis":
             cmd.extend(
                 [
+                    "--cache-lock-backend=redis",
                     f"--cache-redis-addrs={REDIS_ADDR}",
                     "--cache-lock-download-ttl=5m",
                     "--cache-lock-lru-ttl=30m",
