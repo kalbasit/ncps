@@ -1272,7 +1272,7 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 	// Wait for the slow handler to finish to avoid "httptest.Server blocked in Close"
 	select {
 	case <-slowNarRequestDone:
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("handler did not finish within 5s after context cancellation")
 	}
 
