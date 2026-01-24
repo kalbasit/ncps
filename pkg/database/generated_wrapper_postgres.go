@@ -144,10 +144,8 @@ func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, hash string) 
 	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -159,10 +157,8 @@ func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int6
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -174,10 +170,8 @@ func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) 
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -189,10 +183,8 @@ func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int6
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -204,10 +196,8 @@ func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, er
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -219,10 +209,8 @@ func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, er
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -369,10 +357,8 @@ func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarFileCount(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -412,10 +398,8 @@ func (w *postgresWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarInfoCount(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -466,10 +450,8 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -512,10 +494,8 @@ func (w *postgresWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (b
 	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return false, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return false, err
 	}
 
@@ -559,10 +539,8 @@ func (w *postgresWrapper) TouchNarFile(ctx context.Context, hash string) (int64,
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -574,10 +552,8 @@ func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64,
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 

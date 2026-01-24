@@ -570,6 +570,21 @@ type {{.Engine.Name}}Wrapper struct {
 	adapter *{{.Engine.Package}}.Adapter
 }
 
+{{- define "handleErrorReturn" -}}
+	{{- $retType := firstReturnType .Method.Returns -}}
+	{{- if .Method.ReturnsSelf }}
+		return nil, {{.ErrorVar}} // Assuming Querier methods return (Querier, error)
+	{{- else if not .Method.HasValue }}
+		return {{.ErrorVar}}
+	{{- else if isSlice $retType }}
+		return nil, {{.ErrorVar}}
+	{{- else if isDomainStruct .Method.ReturnElem }}
+		return {{.Method.ReturnElem}}{}, {{.ErrorVar}}
+	{{- else }}
+		return {{zeroValue $retType}}, {{.ErrorVar}}
+	{{- end }}
+{{- end -}}
+
 {{range .Methods}}
 {{- $methodParams := .Params }}
 func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
@@ -641,9 +656,9 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 					continue
 				}
 				if errors.Is(err, sql.ErrNoRows) {
-					return ErrNotFound
+					{{- template "handleErrorReturn" (dict "Method" . "ErrorVar" "ErrNotFound") -}}
 				}
-				return err
+				{{- template "handleErrorReturn" (dict "Method" . "ErrorVar" "err") -}}
 			}
 		}
 		return nil
@@ -688,31 +703,9 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- if .Method.ReturnsError}}
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				{{- if .Method.ReturnsSelf}}
-					return nil // returns Querier
-				{{- else if not .Method.HasValue}}
-					return ErrNotFound
-				{{- else if isSlice $retType}}
-					return nil, ErrNotFound
-				{{- else if isDomainStruct .Method.ReturnElem}}
-					return {{.Method.ReturnElem}}{}, ErrNotFound
-				{{- else}}
-					// Primitive return (int64, string, etc)
-					return {{zeroValue $retType}}, ErrNotFound
-				{{- end}}
+				{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "ErrNotFound") -}}
 			}
-			{{- if .Method.ReturnsSelf}}
-				return nil // returns Querier
-			{{- else if not .Method.HasValue}}
-				return err
-			{{- else if isSlice $retType}}
-				return nil, err
-			{{- else if isDomainStruct .Method.ReturnElem}}
-				return {{.Method.ReturnElem}}{}, err
-			{{- else}}
-				// Primitive return (int64, string, etc)
-				return {{zeroValue $retType}}, err
-			{{- end}}
+			{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "err") -}}
 		}
 		{{- end}}
 

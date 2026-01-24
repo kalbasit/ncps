@@ -338,4 +338,31 @@ func TestWrapperTemplate(t *testing.T) {
 	if strings.Contains(output, "for _, v := range") {
 		t.Errorf("expected output NOT to contain loop for GetStatus, but it did\n%s", output)
 	}
+
+	// 3. Test ReturnsSelf (WithTx)
+	methods = []MethodInfo{
+		{
+			Name:         "WithTx",
+			Params:       []Param{{Name: "tx", Type: "*sql.Tx"}},
+			Returns:      []Return{{Type: "Querier"}},
+			ReturnsSelf:  true,
+			ReturnsError: true,
+			HasValue:     true,
+			Docs:         []string{"// WithTx returns a new Querier with transaction"},
+		},
+	}
+
+	data["Methods"] = methods
+	buf.Reset()
+	if err := tmpl.Execute(&buf, data); err != nil {
+		t.Fatalf("failed to execute template: %v", err)
+	}
+
+	output = buf.String()
+	if !strings.Contains(output, "return nil, ErrNotFound") {
+		t.Errorf("expected output to contain 'return nil, ErrNotFound' for WithTx, but it didn't\n%s", output)
+	}
+	if !strings.Contains(output, "return nil, err") {
+		t.Errorf("expected output to contain 'return nil, err' for WithTx, but it didn't\n%s", output)
+	}
 }

@@ -158,10 +158,8 @@ func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (in
 	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -173,10 +171,8 @@ func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, 
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -188,10 +184,8 @@ func (w *mysqlWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (in
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -203,10 +197,8 @@ func (w *mysqlWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, 
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -218,10 +210,8 @@ func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -233,10 +223,8 @@ func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -383,10 +371,8 @@ func (w *mysqlWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarFileCount(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -426,10 +412,8 @@ func (w *mysqlWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarInfoCount(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -480,10 +464,8 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -526,10 +508,8 @@ func (w *mysqlWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool
 	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return false, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return false, err
 	}
 
@@ -573,10 +553,8 @@ func (w *mysqlWrapper) TouchNarFile(ctx context.Context, hash string) (int64, er
 	res, err := w.adapter.TouchNarFile(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
@@ -588,10 +566,8 @@ func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, er
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Primitive return (int64, string, etc)
 			return 0, ErrNotFound
 		}
-		// Primitive return (int64, string, etc)
 		return 0, err
 	}
 
