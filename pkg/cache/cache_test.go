@@ -580,16 +580,52 @@ func TestPutNarInfo(t *testing.T) {
 	t.Run("it should be signed by our server", func(t *testing.T) {
 		// Query database directly to check signatures since GetNarInfo would purge
 		// the narinfo if the NAR file doesn't exist (which it doesn't in this test)
-		var sigCount int
+		var sigsStr []string
 
-		err := db.DB().QueryRowContext(context.Background(),
-			`SELECT COUNT(*) FROM narinfo_signatures
+		rows, err := db.DB().QueryContext(context.Background(),
+			`SELECT signature FROM narinfo_signatures
 			 WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`,
-			testdata.Nar1.NarInfoHash).Scan(&sigCount)
+			testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		// Should have at least 2 signatures (original + our cache's signature)
-		assert.GreaterOrEqual(t, sigCount, 2, "narinfo should have at least 2 signatures")
+		defer rows.Close()
+
+		for rows.Next() {
+			var sigStr string
+
+			require.NoError(t, rows.Scan(&sigStr))
+			sigsStr = append(sigsStr, sigStr)
+		}
+
+		require.NoError(t, rows.Err())
+
+		assert.GreaterOrEqual(t, len(sigsStr), 2, "narinfo should have at least 2 signatures")
+
+		var parsedSigs []signature.Signature
+
+		for _, sigStr := range sigsStr {
+			sig, err := signature.ParseSignature(sigStr)
+			require.NoError(t, err)
+
+			parsedSigs = append(parsedSigs, sig)
+		}
+
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		var found bool
+
+		for _, sig := range parsedSigs {
+			if sig.Name == cacheName {
+				found = true
+
+				break
+			}
+		}
+
+		assert.True(t, found, "cache signature should be present")
+		assert.True(t, signature.VerifyFirst(ni.Fingerprint(), parsedSigs, []signature.PublicKey{c.PublicKey()}),
+			"cache signature should be valid")
 	})
 
 	t.Run("narinfo does exist in the database", func(t *testing.T) {
