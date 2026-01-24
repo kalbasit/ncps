@@ -891,8 +891,9 @@ func TestGetNarInfo_MigratesInvalidURL(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond, "URL should be populated in the database after GetNarInfo")
 
 	// 5. Verify the narinfo is gone from the store (migration logic includes deleting from store)
-	exists := localStore.HasNarInfo(ctx, testdata.Nar1.NarInfoHash)
-	assert.False(t, exists, "NarInfo should be removed from the store after migration")
+	assert.Eventually(t, func() bool {
+		return !localStore.HasNarInfo(ctx, testdata.Nar1.NarInfoHash)
+	}, 2*time.Second, 100*time.Millisecond, "NarInfo should be removed from the store after migration")
 }
 
 func TestGetNarInfo_ConcurrentMigrationAttempts(t *testing.T) {
@@ -1163,9 +1164,12 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 
 	// Add a handler that serves the NAR slowly to allow cancellation mid-download
 	slowNarServed := make(chan struct{})
+	slowNarRequestDone := make(chan struct{})
 
 	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/nar/"+testHash+"-nar.nar.xz" {
+			defer close(slowNarRequestDone)
+
 			// Signal that we started serving
 			close(slowNarServed)
 
@@ -1263,6 +1267,13 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 		t.Logf("GetNar completed without deadlock, err=%v", getNarErr)
 	case <-time.After(10 * time.Second):
 		t.Fatal("Deadlock detected! GetNar did not complete after context cancellation")
+	}
+
+	// Wait for the slow handler to finish to avoid "httptest.Server blocked in Close"
+	select {
+	case <-slowNarRequestDone:
+	case <-time.After(5 * time.Second):
+		t.Log("Context was canceled, but handler might still be finishing")
 	}
 
 	// Success! The deadlock is fixed. GetNar completed without hanging.
