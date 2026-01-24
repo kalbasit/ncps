@@ -344,7 +344,7 @@ func TestWrapperTemplate(t *testing.T) {
 		{
 			Name:         "WithTx",
 			Params:       []Param{{Name: "tx", Type: "*sql.Tx"}},
-			Returns:      []Return{{Type: "Querier"}},
+			Returns:      []Return{{Type: "Querier"}, {Type: "error"}},
 			ReturnsSelf:  true,
 			ReturnsError: true,
 			HasValue:     true,
