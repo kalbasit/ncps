@@ -21,7 +21,7 @@ export MINIO_TEST_S3_BUCKET="test-bucket";
 export MINIO_TEST_S3_SECRET_ACCESS_KEY="test-secret-key";
 
 # Start MinIO server in background
-bash $src/nix/process-compose/start-minio.sh &
+bash $src/nix/process-compose/start-minio.sh >"$NIX_BUILD_TOP/minio.stdout" 2>"$NIX_BUILD_TOP/minio.stderr" &
 export MINIO_PID=$!
 
 # Wait for MinIO to be ready
