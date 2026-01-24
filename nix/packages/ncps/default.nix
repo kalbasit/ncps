@@ -9,16 +9,24 @@
     {
       packages.ncps =
         let
-          shortRev = self.shortRev or self.dirtyShortRev;
-          rev = self.rev or self.dirtyRev;
-          tag = builtins.getEnv "RELEASE_VERSION";
+          version =
+            let
+              tag =
+                let
+                  semverRegex = "v[0-9]+(\\.[0-9]+){0,2}(-[a-zA-Z0-9]+)?";
+                  tag' = self.tag or "";
+                in
+                if builtins.match semverRegex tag' != null then tag' else "";
 
-          version = if tag != "" then tag else rev;
+              rev = self.rev or self.dirtyRev;
+            in
+            if tag != "" then tag else rev;
 
           vendorHash = "sha256-GggDyzUYIZSucahVSQoZbXk+H+uz1Kj+9hXBX+csguQ=";
         in
         pkgs.buildGoModule {
-          name = "ncps-${shortRev}";
+          pname = "ncps";
+          inherit version;
 
           src = lib.fileset.toSource {
             fileset = lib.fileset.unions [
