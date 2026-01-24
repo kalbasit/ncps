@@ -324,12 +324,8 @@ func TestRunLRU(t *testing.T) {
 
 	c.runLRU(newContext())()
 
-	// confirm all narinfos except the last one are in the store
-	for _, nar := range entries {
-		assert.True(t, c.narInfoStore.HasNarInfo(newContext(), nar.NarInfoHash))
-	}
-
-	assert.False(t, c.narInfoStore.HasNarInfo(newContext(), lastEntry.NarInfoHash))
+	// Narinfos are now stored only in the database, not in storage.
+	// Skip storage checks for narinfos.
 
 	// confirm all nars except the last one are in the store
 	for _, narEntry := range entries {
@@ -497,12 +493,8 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 
 	c.runLRU(newContext())()
 
-	// confirm all narinfos except the last one are in the store
-	for _, nar := range entries {
-		assert.True(t, c.narInfoStore.HasNarInfo(newContext(), nar.NarInfoHash))
-	}
-
-	assert.False(t, c.narInfoStore.HasNarInfo(newContext(), lastEntry.NarInfoHash))
+	// Narinfos are now stored only in the database, not in storage.
+	// Skip storage checks and verify database state below.
 
 	// confirm all nars are in the store, the last one should not be deleted
 	// because it has another narinfo referring to it that was indeed pulled.
@@ -689,13 +681,10 @@ func TestPutNarInfoConcurrentSameHash(t *testing.T) {
 	// Bug: without proper ErrAlreadyExists handling in PutNarInfo, some may return errors
 	require.Equal(t, numGoroutines, successCount, "all PutNarInfo calls should succeed (PUT should be idempotent)")
 
-	// Verify the narinfo exists in storage and database
-	ni, err := c.narInfoStore.GetNarInfo(newContext(), testdata.Nar1.NarInfoHash)
-	require.NoError(t, err, "narinfo should exist in storage")
-	require.NotNil(t, ni)
-
-	_, err = c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
+	// Verify the narinfo exists in database (narinfos are no longer stored in storage)
+	ni, err := c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
 	require.NoError(t, err, "narinfo should exist in database")
+	require.NotNil(t, ni)
 }
 
 // TestPutNarInfoWithSharedNar verifies that multiple narinfos can share the same nar_file.
