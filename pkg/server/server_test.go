@@ -170,17 +170,27 @@ func TestServeHTTP(t *testing.T) {
 			defer ts.Close()
 
 			t.Run("narInfo", func(t *testing.T) {
-				storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
+				t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
+					var count int
 
-				t.Run("narinfo does not exist in storage yet", func(t *testing.T) {
-					assert.NoFileExists(t, storePath)
+					err := db.DB().QueryRowContext(newContext(),
+						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
+						testdata.Nar1.NarInfoHash).Scan(&count)
+					require.NoError(t, err)
+					assert.Equal(t, 0, count)
 				})
 
 				_, err := c.GetNarInfo(newContext(), testdata.Nar1.NarInfoHash)
 				require.NoError(t, err)
 
-				t.Run("narinfo does exist in storage", func(t *testing.T) {
-					assert.FileExists(t, storePath)
+				t.Run("narinfo does exist in the database", func(t *testing.T) {
+					var count int
+
+					err := db.DB().QueryRowContext(newContext(),
+						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
+						testdata.Nar1.NarInfoHash).Scan(&count)
+					require.NoError(t, err)
+					assert.Equal(t, 1, count, "narinfo should exist in database")
 				})
 
 				t.Run("DELETE returns no error", func(t *testing.T) {
@@ -195,8 +205,14 @@ func TestServeHTTP(t *testing.T) {
 					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 				})
 
-				t.Run("narinfo is gone from the store", func(t *testing.T) {
-					assert.NoFileExists(t, storePath)
+				t.Run("narinfo is gone from the database", func(t *testing.T) {
+					var count int
+
+					err := db.DB().QueryRowContext(newContext(),
+						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
+						testdata.Nar1.NarInfoHash).Scan(&count)
+					require.NoError(t, err)
+					assert.Equal(t, 0, count, "narinfo should be gone from database")
 				})
 			})
 
@@ -296,8 +312,22 @@ func TestServeHTTP(t *testing.T) {
 				body, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)
 
-				// NOTE: HasPrefix instead equality because we add our signature to the narInfo.
-				assert.True(t, strings.HasPrefix(string(body), testdata.Nar1.NarInfoText))
+				ni, err := narinfo.Parse(strings.NewReader(string(body)))
+				require.NoError(t, err)
+
+				assert.Contains(t, ni.StorePath, testdata.Nar1.NarInfoHash)
+
+				var found bool
+
+				for _, sig := range ni.Signatures {
+					if sig.Name == cacheName {
+						found = true
+
+						break
+					}
+				}
+
+				assert.True(t, found, "cache signature should be present")
 			})
 		})
 
@@ -459,32 +489,62 @@ func TestServeHTTP(t *testing.T) {
 					assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 				})
 
-				t.Run("narinfo does exist in storage", func(t *testing.T) {
-					_, err := os.Stat(storePath)
+				t.Run("narinfo does exist in the database", func(t *testing.T) {
+					var count int
+
+					err := db.DB().QueryRowContext(newContext(),
+						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
+						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
+					assert.Equal(t, 1, count, "narinfo should exist in database")
 				})
 
 				t.Run("it should be signed by our server", func(t *testing.T) {
-					f, err := os.Open(storePath)
+					var sigsStr []string
+
+					rows, err := db.DB().QueryContext(newContext(),
+						`SELECT signature FROM narinfo_signatures
+						 WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`,
+						testdata.Nar1.NarInfoHash)
 					require.NoError(t, err)
 
-					ni, err := narinfo.Parse(f)
+					defer rows.Close()
+
+					for rows.Next() {
+						var sigStr string
+						require.NoError(t, rows.Scan(&sigStr))
+						sigsStr = append(sigsStr, sigStr)
+					}
+
+					require.NoError(t, rows.Err())
+
+					assert.GreaterOrEqual(t, len(sigsStr), 1, "narinfo should have at least 1 signature")
+
+					var parsedSigs []signature.Signature
+
+					for _, sigStr := range sigsStr {
+						sig, err := signature.ParseSignature(sigStr)
+						require.NoError(t, err)
+
+						parsedSigs = append(parsedSigs, sig)
+					}
+
+					ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 					require.NoError(t, err)
 
 					var found bool
 
-					var sig signature.Signature
-					for _, sig = range ni.Signatures {
-						if sig.Name == cacheName {
+					for _, parsedSig := range parsedSigs {
+						if parsedSig.Name == cacheName {
 							found = true
 
 							break
 						}
 					}
 
-					assert.True(t, found)
-
-					assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
+					assert.True(t, found, "cache signature should be present")
+					assert.True(t, signature.VerifyFirst(ni.Fingerprint(), parsedSigs, []signature.PublicKey{c.PublicKey()}),
+						"cache signature should be valid")
 				})
 			})
 
