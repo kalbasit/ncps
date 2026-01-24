@@ -21,7 +21,7 @@ export MYSQL_MIGRATION_PASSWORD="migration-password"
 export MYSQL_MIGRATION_DB="migration-db"
 
 # Start MariaDB server in background
-bash $src/nix/process-compose/start-mysql.sh > "$NIX_BUILD_TOP/mariadb.stdout" 2> "$NIX_BUILD_TOP/mariadb.stderr" &
+bash $src/nix/process-compose/start-mysql.sh >"$NIX_BUILD_TOP/mariadb.log" 2>&1 &
 export MYSQL_PID=$!
 
 # Wait for MariaDB to be ready
