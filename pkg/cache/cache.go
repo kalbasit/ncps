@@ -1407,7 +1407,8 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 				attribute.String("upstream_hostname", upstreamHostname))
 		}
 
-		narInfo, err = c.narInfoStore.GetNarInfo(ctx, hash)
+		// After pulling from upstream, get the narinfo from the database (where it's now stored)
+		narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
 
 		return err
 	})
@@ -1548,21 +1549,9 @@ func (c *Cache) pullNarInfo(
 		return
 	}
 
-	if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-		if errors.Is(err, storage.ErrAlreadyExists) {
-			// Already exists is not an error - another request stored it first
-			zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
-		} else {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("error storing the narInfo in the store")
-
-			ds.setError(err)
-
-			return
-		}
-	}
+	// Narinfos are now stored ONLY in the database, not in the storage backend.
+	// The storage backend (S3/filesystem) is used only for NAR files.
+	// Legacy narinfos in storage are handled by background migration during GetNarInfo.
 
 	// Signal that the asset is now in final storage and the distributed lock can be released
 	// This prevents the race condition where other instances check hasAsset() before storage completes
@@ -1630,15 +1619,9 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 			return fmt.Errorf("error signing the narinfo: %w", err)
 		}
 
-		if err := c.narInfoStore.PutNarInfo(ctx, hash, narInfo); err != nil {
-			if errors.Is(err, storage.ErrAlreadyExists) {
-				// Already exists is not an error for PUT - continue to database storage
-				zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in storage, skipping")
-			} else {
-				return fmt.Errorf("error storing the narInfo in the store: %w", err)
-			}
-		}
-
+		// Narinfos are now stored ONLY in the database, not in the storage backend.
+		// The storage backend (S3/filesystem) is used only for NAR files.
+		// Legacy narinfos in storage are handled by background migration during GetNarInfo.
 		if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
 			if errors.Is(err, ErrAlreadyExists) {
 				// Already exists is not an error for PUT - return success

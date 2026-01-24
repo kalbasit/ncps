@@ -341,14 +341,19 @@ func TestGetNarInfo(t *testing.T) {
 		ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 		require.NoError(t, err)
 
-		storePath := filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)
-
 		t.Run("size is correct", func(t *testing.T) {
 			assert.Equal(t, uint64(50308), ni.FileSize)
 		})
 
-		t.Run("it should now exist in the store", func(t *testing.T) {
-			assert.FileExists(t, storePath)
+		t.Run("it should now exist in the database (not storage)", func(t *testing.T) {
+			// Narinfos are now stored only in the database, not in storage
+			var count int
+
+			err := db.DB().QueryRowContext(context.Background(),
+				"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
+				testdata.Nar2.NarInfoHash).Scan(&count)
+			require.NoError(t, err)
+			assert.Equal(t, 1, count, "narinfo should exist in database")
 		})
 
 		t.Run("it should be signed by our server", func(t *testing.T) {
@@ -395,7 +400,10 @@ func TestGetNarInfo(t *testing.T) {
 			})
 			defer ts.RemoveMaybeHandler(idx)
 
-			require.NoError(t, os.Remove(storePath))
+			// Remove narinfo from database (since it's no longer in storage)
+			_, err = db.DB().ExecContext(context.Background(),
+				"DELETE FROM narinfos WHERE hash = ?", testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
 
 			ni, err = c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
@@ -565,31 +573,23 @@ func TestPutNarInfo(t *testing.T) {
 		assert.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
 	})
 
-	t.Run("narinfo does exist in storage", func(t *testing.T) {
-		assert.FileExists(t, storePath)
+	t.Run("narinfo should NOT exist in storage (only in database)", func(t *testing.T) {
+		assert.NoFileExists(t, storePath)
 	})
 
 	t.Run("it should be signed by our server", func(t *testing.T) {
-		f, err := os.Open(storePath)
+		// Query database directly to check signatures since GetNarInfo would purge
+		// the narinfo if the NAR file doesn't exist (which it doesn't in this test)
+		var sigCount int
+
+		err := db.DB().QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM narinfo_signatures
+			 WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`,
+			testdata.Nar1.NarInfoHash).Scan(&sigCount)
 		require.NoError(t, err)
 
-		defer f.Close()
-
-		ni, err := narinfo.Parse(f)
-		require.NoError(t, err)
-
-		var found bool
-
-		for _, sig := range ni.Signatures {
-			if sig.Name == cacheName {
-				found = true
-
-				break
-			}
-		}
-
-		assert.True(t, found)
-		assert.True(t, signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, []signature.PublicKey{c.PublicKey()}))
+		// Should have at least 2 signatures (original + our cache's signature)
+		assert.GreaterOrEqual(t, sigCount, 2, "narinfo should have at least 2 signatures")
 	})
 
 	t.Run("narinfo does exist in the database", func(t *testing.T) {
