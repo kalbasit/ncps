@@ -3,7 +3,6 @@ package testhelper
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -154,7 +153,7 @@ func getOrCreateNarInfo(
 	}
 
 	// If the error is anything other than "not found", it's a real error.
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !database.IsNotFoundError(err) {
 		return database.NarInfo{}, fmt.Errorf("failed to get narinfo record: %w", err)
 	}
 
@@ -205,7 +204,7 @@ func getOrCreateNarFile(
 	}
 
 	// If the error is anything other than "not found", it's a real error.
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !database.IsNotFoundError(err) {
 		return database.NarFile{}, fmt.Errorf("failed to get existing nar file record: %w", err)
 	}
 

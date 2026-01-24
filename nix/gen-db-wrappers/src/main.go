@@ -560,6 +560,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/kalbasit/ncps/pkg/database/{{.Engine.Package}}"
 )
@@ -568,6 +569,21 @@ import (
 type {{.Engine.Name}}Wrapper struct {
 	adapter *{{.Engine.Package}}.Adapter
 }
+
+{{- define "handleErrorReturn" -}}
+	{{- $retType := firstReturnType .Method.Returns -}}
+	{{- if .Method.ReturnsSelf }}
+		return nil, {{.ErrorVar}} // Assuming Querier methods return (Querier, error)
+	{{- else if not .Method.HasValue }}
+		return {{.ErrorVar}}
+	{{- else if isSlice $retType }}
+		return nil, {{.ErrorVar}}
+	{{- else if isDomainStruct .Method.ReturnElem }}
+		return {{.Method.ReturnElem}}{}, {{.ErrorVar}}
+	{{- else }}
+		return {{zeroValue $retType}}, {{.ErrorVar}}
+	{{- end }}
+{{- end -}}
 
 {{range .Methods}}
 {{- $methodParams := .Params }}
@@ -639,7 +655,10 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 				if IsDuplicateKeyError(err) {
 					continue
 				}
-				return err
+				if errors.Is(err, sql.ErrNoRows) {
+					{{- template "handleErrorReturn" (dict "Method" . "ErrorVar" "ErrNotFound") -}}
+				}
+				{{- template "handleErrorReturn" (dict "Method" . "ErrorVar" "err") -}}
 			}
 		}
 		return nil
@@ -683,18 +702,10 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{/* 2. HANDLE ERROR */}}
 		{{- if .Method.ReturnsError}}
 		if err != nil {
-			{{- if .Method.ReturnsSelf}}
-				return nil // returns Querier
-			{{- else if not .Method.HasValue}}
-				return err
-			{{- else if isSlice $retType}}
-				return nil, err
-			{{- else if isDomainStruct .Method.ReturnElem}}
-				return {{.Method.ReturnElem}}{}, err
-			{{- else}}
-				// Primitive return (int64, string, etc)
-				return {{zeroValue $retType}}, err
-			{{- end}}
+			if errors.Is(err, sql.ErrNoRows) {
+				{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "ErrNotFound") -}}
+			}
+			{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "err") -}}
 		}
 		{{- end}}
 

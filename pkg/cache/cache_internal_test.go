@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -348,7 +347,7 @@ func TestRunLRU(t *testing.T) {
 	}
 
 	_, err = c.db.GetNarInfoByHash(context.Background(), lastEntry.NarInfoHash)
-	require.ErrorIs(t, err, sql.ErrNoRows)
+	require.ErrorIs(t, err, database.ErrNotFound)
 
 	// all nar_file records except the last one are in the database
 
@@ -358,7 +357,7 @@ func TestRunLRU(t *testing.T) {
 	}
 
 	_, err = c.db.GetNarFileByHash(context.Background(), lastEntry.NarHash)
-	require.ErrorIs(t, err, sql.ErrNoRows)
+	require.ErrorIs(t, err, database.ErrNotFound)
 }
 
 func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
@@ -519,7 +518,7 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 	}
 
 	_, err = c.db.GetNarInfoByHash(context.Background(), lastEntry.NarInfoHash)
-	require.ErrorIs(t, err, sql.ErrNoRows)
+	require.ErrorIs(t, err, database.ErrNotFound)
 
 	// confirm all nar_file records are in the database, the last one should not
 	// be deleted because it has another narinfo referring to it that was indeed
@@ -604,17 +603,17 @@ func TestRunLRUWithSharedNar(t *testing.T) {
 
 	// Verify that all narinfos were deleted.
 	_, err = c.db.GetNarInfoByHash(ctx, "nar-info-4")
-	require.ErrorIs(t, err, sql.ErrNoRows, "ni4 should have been deleted")
+	require.ErrorIs(t, err, database.ErrNotFound, "ni4 should have been deleted")
 	_, err = c.db.GetNarInfoByHash(ctx, "nar-info-1")
-	require.ErrorIs(t, err, sql.ErrNoRows, "ni1 should have been deleted")
+	require.ErrorIs(t, err, database.ErrNotFound, "ni1 should have been deleted")
 	_, err = c.db.GetNarInfoByHash(ctx, "nar-info-2")
-	require.ErrorIs(t, err, sql.ErrNoRows, "ni2 should have been deleted")
+	require.ErrorIs(t, err, database.ErrNotFound, "ni2 should have been deleted")
 
 	// Verify that all nar files were deleted as they are now orphaned.
 	_, err = c.db.GetNarFileByHash(ctx, "nar-file-a")
-	require.ErrorIs(t, err, sql.ErrNoRows, "nar-file-a should have been deleted")
+	require.ErrorIs(t, err, database.ErrNotFound, "nar-file-a should have been deleted")
 	_, err = c.db.GetNarFileByHash(ctx, "nar-file-b")
-	require.ErrorIs(t, err, sql.ErrNoRows, "nar-file-b should have been deleted")
+	require.ErrorIs(t, err, database.ErrNotFound, "nar-file-b should have been deleted")
 }
 
 func TestStoreInDatabaseDuplicateDetection(t *testing.T) {
@@ -1070,7 +1069,7 @@ func TestMigration_UpsertIdempotency(t *testing.T) {
 
 		// With conditional upsert, if no update is performed, SQLite/Postgres might return ErrNoRows
 		// (if using RETURNING). This is NOT a transaction aborting error.
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err != nil && !database.IsNotFoundError(err) {
 			return err
 		}
 
@@ -1188,7 +1187,7 @@ func TestDeleteNarInfo_WithNullURL(t *testing.T) {
 
 	// 5. Verify the record is gone from database
 	_, err = c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
-	require.ErrorIs(t, err, sql.ErrNoRows, "Record should be deleted from database")
+	require.ErrorIs(t, err, database.ErrNotFound, "Record should be deleted from database")
 
 	// 6. Verify references are also gone (cascade delete)
 	refs, err := c.db.GetNarInfoReferences(ctx, niPartial.ID)

@@ -1200,7 +1200,7 @@ func (c *Cache) getNarFromStore(
 		nr, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
 		if err != nil {
 			// TODO: If record not found, record it instead!
-			if errors.Is(err, sql.ErrNoRows) {
+			if database.IsNotFoundError(err) {
 				return nil
 			}
 
@@ -1829,7 +1829,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
 		nir, err := qtx.GetNarInfoByHash(ctx, hash)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+			if database.IsNotFoundError(err) {
 				c.backgroundMigrateNarInfo(ctx, hash, ni)
 
 				return nil
@@ -1908,7 +1908,7 @@ func (c *Cache) populateNarInfoFromDatabase(
 ) (*narinfo.NarInfo, *nar.URL, error) {
 	nir, err := qtx.GetNarInfoByHash(ctx, hash)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if database.IsNotFoundError(err) {
 			return nil, nil, storage.ErrNotFound
 		}
 
@@ -2119,16 +2119,16 @@ func (c *Cache) storeInDatabase(
 			//
 			// PostgreSQL/SQLite: Use "ON CONFLICT ... DO UPDATE ... WHERE url IS NULL"
 			//   - If hash exists with NULL URL → updates and returns the row
-			//   - If hash exists with valid URL → condition fails, returns sql.ErrNoRows
+			//   - If hash exists with valid URL → condition fails, returns database.ErrNotFound
 			//   - If hash doesn't exist → inserts and returns the row
 			//
 			// MySQL: Use "ON DUPLICATE KEY UPDATE ... IF(url IS NULL, VALUES(...), ...)"
 			//   - Always executes UPDATE clause (even if condition is false)
 			//   - Returns via LastInsertId() mechanism in wrapper
-			//   - Never hits this sql.ErrNoRows path
+			//   - Never hits this database.ErrNotFound path
 			//
 			// In both cases, if a record exists with valid URL, we fetch it instead.
-			if errors.Is(err, sql.ErrNoRows) {
+			if database.IsNotFoundError(err) {
 				nir, err = qtx.GetNarInfoByHash(ctx, hash)
 				if err != nil {
 					return fmt.Errorf("upsert returned no rows (record exists with valid URL), failed to fetch: %w", err)

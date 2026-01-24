@@ -2,7 +2,6 @@ package config
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -88,7 +87,7 @@ func (c *Config) getConfig(ctx context.Context, key string) (string, error) {
 
 	cu, err := c.db.GetConfigByKey(ctx, key)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if database.IsNotFoundError(err) {
 			return "", fmt.Errorf("%w: %s", ErrConfigNotFound, key)
 		}
 
