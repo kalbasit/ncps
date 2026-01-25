@@ -63,10 +63,6 @@ func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	cleanup := func() {
-		os.RemoveAll(dir)
-	}
-
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
@@ -76,16 +72,26 @@ func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
+	cleanup := func() {
+		db.DB().Close()
+		os.RemoveAll(dir)
+	}
+
 	return db, localStore, dir, cleanup
 }
 
 func setupTestCache(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func()) {
 	t.Helper()
 
-	db, localStore, dir, cleanup := setupTestComponents(t)
+	db, localStore, dir, cleanupComponents := setupTestComponents(t)
 
 	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
+
+	cleanup := func() {
+		c.Close()
+		cleanupComponents()
+	}
 
 	return c, db, localStore, dir, cleanup
 }
@@ -891,8 +897,9 @@ func TestGetNarInfo_MigratesInvalidURL(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond, "URL should be populated in the database after GetNarInfo")
 
 	// 5. Verify the narinfo is gone from the store (migration logic includes deleting from store)
-	exists := localStore.HasNarInfo(ctx, testdata.Nar1.NarInfoHash)
-	assert.False(t, exists, "NarInfo should be removed from the store after migration")
+	assert.Eventually(t, func() bool {
+		return !localStore.HasNarInfo(ctx, testdata.Nar1.NarInfoHash)
+	}, 2*time.Second, 100*time.Millisecond, "NarInfo should be removed from the store after migration")
 }
 
 func TestGetNarInfo_ConcurrentMigrationAttempts(t *testing.T) {
@@ -1163,9 +1170,12 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 
 	// Add a handler that serves the NAR slowly to allow cancellation mid-download
 	slowNarServed := make(chan struct{})
+	slowNarRequestDone := make(chan struct{})
 
 	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/nar/"+testHash+"-nar.nar.xz" {
+			defer close(slowNarRequestDone)
+
 			// Signal that we started serving
 			close(slowNarServed)
 
@@ -1263,6 +1273,13 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 		t.Logf("GetNar completed without deadlock, err=%v", getNarErr)
 	case <-time.After(10 * time.Second):
 		t.Fatal("Deadlock detected! GetNar did not complete after context cancellation")
+	}
+
+	// Wait for the slow handler to finish to avoid "httptest.Server blocked in Close"
+	select {
+	case <-slowNarRequestDone:
+	case <-time.After(15 * time.Second):
+		t.Fatal("handler did not finish within 5s after context cancellation")
 	}
 
 	// Success! The deadlock is fixed. GetNar completed without hanging.
@@ -2021,6 +2038,9 @@ func TestGetNarInfo_MultipleConcurrentPutsDuringMigration(t *testing.T) { //noli
 	c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
 	require.NoError(t, err)
 
+	defer c.Close()
+	defer db.DB().Close()
+
 	// Pre-populate storage
 	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
 	narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
@@ -2064,6 +2084,13 @@ func TestGetNarInfo_MultipleConcurrentPutsDuringMigration(t *testing.T) { //noli
 		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "should have exactly one narinfo record despite concurrent operations")
+
+	// Verify that the legacy narinfo was deleted from storage (migration complete)
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(narInfoPath)
+
+		return os.IsNotExist(err)
+	}, 10*time.Second, 100*time.Millisecond, "legacy narinfo should be deleted after migration")
 
 	// Verify the record is correct
 	ni, err := c.GetNarInfo(ctx, hash)

@@ -334,6 +334,9 @@ type Cache struct {
 	upstreamJobs   map[string]*downloadState
 
 	cron *cron.Cron
+
+	// Wait group to track background operations
+	backgroundWG sync.WaitGroup
 }
 
 type downloadState struct {
@@ -645,6 +648,15 @@ func (c *Cache) StartCron(ctx context.Context) {
 		Msg("starting the cron scheduler")
 
 	c.cron.Start()
+}
+
+// Close waits for all background operations to complete.
+func (c *Cache) Close() {
+	c.backgroundWG.Wait()
+
+	if c.cron != nil {
+		c.cron.Stop()
+	}
 }
 
 // SetRecordAgeIgnoreTouch changes the duration at which a record is considered
@@ -1134,7 +1146,10 @@ func (c *Cache) pullNarIntoStore(
 	ds.assetPath = f.Name()
 
 	// Cleanup: wait for download to complete, then wait for all readers to finish
+	c.backgroundWG.Add(1)
 	analytics.SafeGo(ctx, func() {
+		defer c.backgroundWG.Done()
+
 		ds.cleanupWg.Wait() // Wait for download to complete
 
 		// Mark as closed to prevent new readers from adding to WaitGroup
@@ -2244,7 +2259,9 @@ func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *n
 		return
 	}
 
+	c.backgroundWG.Add(1)
 	analytics.SafeGo(detachedCtx, func() {
+		defer c.backgroundWG.Done()
 		defer func() {
 			if err := c.downloadLocker.Unlock(detachedCtx, lockKey); err != nil {
 				zerolog.Ctx(detachedCtx).Error().Err(err).Str("narinfo_hash", hash).Msg("failed to release migration lock")
@@ -2557,7 +2574,10 @@ func (c *Cache) coordinateDownload(
 		c.upstreamJobs[lockKey] = ds
 
 		// Start download in background
+		c.backgroundWG.Add(1)
 		analytics.SafeGo(ctx, func() {
+			defer c.backgroundWG.Done()
+
 			startJob(ds)
 		})
 	}
@@ -2594,7 +2614,10 @@ func (c *Cache) coordinateDownload(
 				Msg("failed to release download lock")
 		}
 	} else {
+		c.backgroundWG.Add(1)
 		analytics.SafeGo(ctx, func() {
+			defer c.backgroundWG.Done()
+
 			select {
 			case <-ds.stored:
 			case <-ds.done:
