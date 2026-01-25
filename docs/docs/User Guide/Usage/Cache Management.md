@@ -164,7 +164,7 @@ ncps migrate-narinfo \
 **With deletion after migration:**
 
 ```sh
-ncps migrate-narinfo --delete \
+ncps migrate-narinfo \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps" \
   --concurrency=20
@@ -206,7 +206,7 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 du
 
 - Large cache (millions of narinfos)
 - Need faster completion
-- Storage space is limited (use `--delete`)
+- Storage space is limited (migration deletes narinfos)
 - Upgrading from pre-database versions
 
 See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for comprehensive documentation.

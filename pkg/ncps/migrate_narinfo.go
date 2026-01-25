@@ -39,10 +39,6 @@ func migrateNarInfoCommand(
 				Name:  "dry-run",
 				Usage: "Simulate migration without writing to DB",
 			},
-			&cli.BoolFlag{
-				Name:  "delete",
-				Usage: "Delete .narinfo file after successful migration",
-			},
 
 			// Storage Flags
 			&cli.StringFlag{
@@ -110,7 +106,6 @@ func migrateNarInfoCommand(
 			ctx = logger.WithContext(ctx)
 
 			dryRun := cmd.Bool("dry-run")
-			deleteAfter := cmd.Bool("delete")
 
 			// 1. Setup Database
 			db, err := createDatabaseQuerier(cmd)
@@ -208,14 +203,6 @@ func migrateNarInfoCommand(
 				atomic.AddInt32(&totalFound, 1)
 
 				if _, ok := migratedHashesMap[hash]; ok {
-					if !deleteAfter {
-						// Skip
-						atomic.AddInt32(&totalSkipped, 1)
-						RecordMigrationNarInfo(ctx, MigrationOperationMigrate, MigrationResultSkipped)
-
-						return nil
-					}
-
 					// We need to delete it from storage, but we skip the DB migration part.
 					g.Go(func() error {
 						atomic.AddInt32(&totalProcessed, 1)
@@ -261,7 +248,7 @@ func migrateNarInfoCommand(
 						RecordMigrationDuration(ctxWithLog, MigrationOperationMigrate, time.Since(opStartTime).Seconds())
 					}()
 
-					if err := migrateOne(ctxWithLog, db, narInfoStore, hash, dryRun, deleteAfter); err != nil {
+					if err := migrateOne(ctxWithLog, db, narInfoStore, hash, dryRun); err != nil {
 						log.Error().Err(err).Msg("failed to migrate narinfo")
 						atomic.AddInt32(&totalFailed, 1)
 						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
@@ -326,7 +313,6 @@ func migrateOne(
 	store storage.NarInfoStore,
 	hash string,
 	dryRun bool,
-	deleteAfter bool,
 ) error {
 	// Fetch from storage
 	ni, err := store.GetNarInfo(ctx, hash)
@@ -342,16 +328,14 @@ func migrateOne(
 		}
 	}
 
-	if deleteAfter {
-		if dryRun {
-			zerolog.Ctx(ctx).Info().Msg("[DRY-RUN] would delete from storage")
-		} else {
-			if err := store.DeleteNarInfo(ctx, hash); err != nil {
-				return fmt.Errorf("failed to delete from store: %w", err)
-			}
-
-			zerolog.Ctx(ctx).Info().Msg("deleted from storage")
+	if dryRun {
+		zerolog.Ctx(ctx).Info().Msg("[DRY-RUN] would delete from storage")
+	} else {
+		if err := store.DeleteNarInfo(ctx, hash); err != nil {
+			return fmt.Errorf("failed to delete from store: %w", err)
 		}
+
+		zerolog.Ctx(ctx).Info().Msg("deleted from storage")
 	}
 
 	return nil

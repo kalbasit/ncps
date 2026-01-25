@@ -55,7 +55,7 @@ Bulk migration using the CLI command for faster results.
 - Faster completion
 - Predictable timeline
 - Progress monitoring
-- Can delete from storage after migration
+- Deletes from storage after migration
 
 **Disadvantages:**
 
@@ -67,7 +67,7 @@ Bulk migration using the CLI command for faster results.
 - Large caches (millions of narinfos)
 - Maintenance windows
 - When migration speed is important
-- Storage space constraints (use `--delete`)
+- Storage space constraints (migration deletes files)
 
 ## CLI Migration Guide
 
@@ -86,13 +86,13 @@ ncps migrate-narinfo \
 Migrate and delete narinfos from storage to save space:
 
 ```sh
-ncps migrate-narinfo --delete \
+ncps migrate-narinfo \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps" \
   --concurrency=20
 ```
 
-**⚠️ Warning:** Only use `--delete` after successful migration. Keep backups.
+**⚠️ Note:** Migration deletes from storage upon success. Ensure you have backups if needed.
 
 ### Dry Run
 
@@ -267,12 +267,12 @@ WHERE hash = 'n5glp21rsz314qssw9fbvfswgy3kc68f';
 
 ### Storage Deletions Failed
 
-**Symptoms:** Migration succeeded but some storage deletions failed
+**Symptoms:** Migration partially succeeded but some storage deletions failed
 
-**Solution:** Re-run with `--delete` flag to retry deletions:
+**Solution:** Re-run the migration to retry deletions:
 
 ```sh
-ncps migrate-narinfo --delete \
+ncps migrate-narinfo \
   --cache-database-url="..." \
   --cache-storage-local="..."
 ```
@@ -280,8 +280,7 @@ ncps migrate-narinfo --delete \
 **How it works:**
 
 - Migration is idempotent
-- Already-migrated narinfos are skipped
-- Only deletion is attempted
+- Already-migrated narinfos are deleted from storage
 - Database migration step is skipped
 
 ### Transaction Deadlocks
@@ -370,8 +369,8 @@ ncps migrate-narinfo ...
 # Week 3: Verify and test
 # ... verify in database, test cache operation ...
 
-# Week 4: Delete from storage (optional)
-ncps migrate-narinfo --delete ...
+# Week 4: Run migration to delete from storage
+ncps migrate-narinfo ...
 ```
 
 ### High-Availability Migration
