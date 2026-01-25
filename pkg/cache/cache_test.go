@@ -63,10 +63,6 @@ func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	cleanup := func() {
-		os.RemoveAll(dir)
-	}
-
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
@@ -76,16 +72,26 @@ func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
+	cleanup := func() {
+		db.DB().Close()
+		os.RemoveAll(dir)
+	}
+
 	return db, localStore, dir, cleanup
 }
 
 func setupTestCache(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func()) {
 	t.Helper()
 
-	db, localStore, dir, cleanup := setupTestComponents(t)
+	db, localStore, dir, cleanupComponents := setupTestComponents(t)
 
 	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
 	require.NoError(t, err)
+
+	cleanup := func() {
+		c.Close()
+		cleanupComponents()
+	}
 
 	return c, db, localStore, dir, cleanup
 }
@@ -2032,6 +2038,9 @@ func TestGetNarInfo_MultipleConcurrentPutsDuringMigration(t *testing.T) { //noli
 	c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
 	require.NoError(t, err)
 
+	defer c.Close()
+	defer db.DB().Close()
+
 	// Pre-populate storage
 	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
 	narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
@@ -2075,6 +2084,13 @@ func TestGetNarInfo_MultipleConcurrentPutsDuringMigration(t *testing.T) { //noli
 		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "should have exactly one narinfo record despite concurrent operations")
+
+	// Verify that the legacy narinfo was deleted from storage (migration complete)
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(narInfoPath)
+
+		return os.IsNotExist(err)
+	}, 10*time.Second, 100*time.Millisecond, "legacy narinfo should be deleted after migration")
 
 	// Verify the record is correct
 	ni, err := c.GetNarInfo(ctx, hash)
