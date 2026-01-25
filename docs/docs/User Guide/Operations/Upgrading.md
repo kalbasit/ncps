@@ -107,16 +107,11 @@ ncps migrate-narinfo \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
 
-# Run migration (deletes from storage)
-ncps migrate-narinfo \
-  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
-  --cache-storage-local="/var/lib/ncps"
-
 # Start service
 systemctl start ncps
 ```
 
-See [NarInfo Migration Guidee](NarInfo%20Migration.md) for comprehensive migration documentation.
+See [NarInfo Migration Guide](NarInfo%20Migration.md) for comprehensive migration documentation.
 
 ## Breaking Changes
 

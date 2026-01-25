@@ -154,8 +154,6 @@ func migrateNarInfoCommand(
 
 			var totalSucceeded int32
 
-			var totalSkipped int32
-
 			var totalFailed int32
 
 			g, ctx := errgroup.WithContext(ctx)
@@ -176,7 +174,6 @@ func migrateNarInfoCommand(
 						found := atomic.LoadInt32(&totalFound)
 						processed := atomic.LoadInt32(&totalProcessed)
 						succeeded := atomic.LoadInt32(&totalSucceeded)
-						skipped := atomic.LoadInt32(&totalSkipped)
 						failed := atomic.LoadInt32(&totalFailed)
 
 						var rate float64
@@ -188,7 +185,6 @@ func migrateNarInfoCommand(
 							Int32("found", found).
 							Int32("processed", processed).
 							Int32("succeeded", succeeded).
-							Int32("skipped", skipped).
 							Int32("failed", failed).
 							Str("elapsed", elapsed.Round(time.Second).String()).
 							Float64("rate", rate).
@@ -277,7 +273,6 @@ func migrateNarInfoCommand(
 			found := atomic.LoadInt32(&totalFound)
 			processed := atomic.LoadInt32(&totalProcessed)
 			succeeded := atomic.LoadInt32(&totalSucceeded)
-			skipped := atomic.LoadInt32(&totalSkipped)
 			failed := atomic.LoadInt32(&totalFailed)
 
 			var rate float64
@@ -292,7 +287,6 @@ func migrateNarInfoCommand(
 				Int32("found", found).
 				Int32("processed", processed).
 				Int32("succeeded", succeeded).
-				Int32("skipped", skipped).
 				Int32("failed", failed).
 				Str("duration", duration.Round(time.Millisecond).String()).
 				Float64("rate", rate).
