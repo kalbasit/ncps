@@ -1865,6 +1865,17 @@ func (c *Cache) handleStorageFetchError(
 	narInfo **narinfo.NarInfo,
 	metricAttrs *[]attribute.KeyValue,
 ) error {
+	// updateAttr is a small helper to reduce duplication in metric updates.
+	updateAttr := func(key, value string) {
+		for i, attr := range *metricAttrs {
+			if attr.Key == attribute.Key(key) {
+				(*metricAttrs)[i] = attribute.String(key, value)
+
+				return
+			}
+		}
+	}
+
 	// Only retry on NotFound errors (file deleted by migration)
 	if errors.Is(storageErr, storage.ErrNotFound) {
 		var dbErr error
@@ -1873,13 +1884,7 @@ func (c *Cache) handleStorageFetchError(
 		if dbErr == nil {
 			// Migration succeeded while we were checking storage!
 			// The source is now the database, not storage. We need to update the metric.
-			for i, attr := range *metricAttrs {
-				if attr.Key == "source" {
-					(*metricAttrs)[i] = attribute.String("source", "database")
-
-					break
-				}
-			}
+			updateAttr("source", "database")
 
 			return nil // Signal success to caller
 		}
@@ -1893,13 +1898,7 @@ func (c *Cache) handleStorageFetchError(
 	}
 
 	// The fetch failed, so update the status metric from "success" to "error".
-	for i, attr := range *metricAttrs {
-		if attr.Key == "status" {
-			(*metricAttrs)[i] = attribute.String("status", "error")
-
-			break
-		}
-	}
+	updateAttr("status", "error")
 
 	return fmt.Errorf("error fetching the narinfo from the store: %w", storageErr)
 }
