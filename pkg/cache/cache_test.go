@@ -2429,10 +2429,11 @@ func TestGetNarInfo_RaceWithPutNarInfoDeterministic(t *testing.T) { //nolint:par
 	require.NoError(t, err)
 
 	// Ensure PutNarInfo actually ran
-	select {
+select {
 	case <-putFinished:
-	default:
-		t.Fatal("PutNarInfo was not triggered")
+		// ok
+	case <-time.After(5 * time.Second):
+		t.Fatal("PutNarInfo was not triggered or did not complete in time")
 	}
 
 	// Verify the narinfo was deleted from storage
