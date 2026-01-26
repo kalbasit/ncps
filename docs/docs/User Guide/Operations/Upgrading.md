@@ -99,16 +99,23 @@ When upgrading from versions before database-backed narinfo metadata, you have t
 **Example CLI migration:**
 
 ```sh
-# Stop service
+# Without Redis (requires downtime)
 systemctl stop ncps
 
-# Run migration
 ncps migrate-narinfo \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
 
-# Start service
 systemctl start ncps
+```
+
+```sh
+# With Redis (zero downtime - can run while serving)
+ncps migrate-narinfo \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps" \
+  --cache-redis-addrs="redis1:6379,redis2:6379,redis3:6379" \
+  --cache-redis-password="..."
 ```
 
 See [NarInfo Migration Guide](NarInfo%20Migration.md) for comprehensive migration documentation.

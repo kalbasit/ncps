@@ -83,6 +83,40 @@ ncps migrate-narinfo \
 
 **⚠️ Note:** Migration deletes from storage upon success. Ensure you have backups if needed.
 
+### Distributed Locking with Redis
+
+When migrating while ncps instances are running, use Redis for distributed coordination:
+
+```sh
+ncps migrate-narinfo \
+  --cache-database-url="postgresql://user:pass@localhost/ncps" \
+  --cache-storage-local="/var/lib/ncps" \
+  --cache-redis-addrs="redis1.example.com:6379,redis2.example.com:6379,redis3.example.com:6379" \
+  --cache-redis-password="your-redis-password" \
+  --concurrency=20
+```
+
+**With Redis locking:**
+
+- Migration can run safely while ncps is serving requests
+- Multiple migration workers coordinate to avoid duplicate work
+- Uses distributed locks to prevent race conditions
+- Same Redis configuration as your running ncps instances
+
+**Without Redis locking:**
+
+- Uses in-memory locking (no coordination with other instances)
+- Should only run when ncps instances are stopped
+- Still safe for single-instance deployments
+
+**Redis flags:**
+
+- `--cache-redis-addrs` - Comma-separated Redis server addresses (enables distributed locking)
+- `--cache-redis-username` - Redis username (optional)
+- `--cache-redis-password` - Redis password (optional)
+- `--cache-redis-db` - Redis database number (default: 0)
+- `--cache-redis-use-tls` - Use TLS for Redis connections (optional)
+
 ### Dry Run
 
 Preview what would be migrated without making changes:
@@ -105,6 +139,21 @@ ncps migrate-narinfo \
   --cache-storage-s3-region="us-east-1" \
   --cache-storage-s3-access-key-id="..." \
   --cache-storage-s3-secret-access-key="..." \
+  --concurrency=50
+```
+
+**With Redis for concurrent migration:**
+
+```sh
+ncps migrate-narinfo \
+  --cache-database-url="postgresql://user:pass@localhost/ncps" \
+  --cache-storage-s3-bucket="ncps-cache" \
+  --cache-storage-s3-endpoint="https://s3.amazonaws.com" \
+  --cache-storage-s3-region="us-east-1" \
+  --cache-storage-s3-access-key-id="..." \
+  --cache-storage-s3-secret-access-key="..." \
+  --cache-redis-addrs="redis1:6379,redis2:6379,redis3:6379" \
+  --cache-redis-password="..." \
   --concurrency=50
 ```
 
@@ -363,18 +412,48 @@ ncps migrate-narinfo ...
 
 ### High-Availability Migration
 
-For multi-instance deployments:
+For multi-instance deployments with Redis:
+
+**Option 1: Zero-downtime migration (with Redis locking)**
 
 ```sh
-# 1. Migrate database (all instances share database)
-# Run on ONE instance only:
+# Migration can run while instances are serving requests
+# Use the SAME Redis configuration as your running instances
 ncps migrate-narinfo \
   --cache-database-url="postgresql://..." \
-  --cache-storage-s3-bucket="..."
-
-# 2. Restart all instances to pick up changes
-# No need to run on each instance
+  --cache-storage-s3-bucket="..." \
+  --cache-redis-addrs="redis1:6379,redis2:6379,redis3:6379" \
+  --cache-redis-password="..." \
+  --concurrency=50
 ```
+
+**Benefits:**
+
+- No downtime required
+- Migration coordinates with running instances via distributed locks
+- Safe to run multiple migration processes simultaneously
+- Each narinfo is migrated exactly once (lock prevents duplicates)
+
+**Option 2: Maintenance window (without Redis)**
+
+```sh
+# 1. Stop all ncps instances
+systemctl stop ncps@*
+
+# 2. Run migration (no Redis needed)
+ncps migrate-narinfo \
+  --cache-database-url="postgresql://..." \
+  --cache-storage-s3-bucket="..." \
+  --concurrency=50
+
+# 3. Start all instances
+systemctl start ncps@*
+```
+
+**When to use each approach:**
+
+- **With Redis**: Production systems where downtime is unacceptable, or when you want to parallelize migration across multiple machines
+- **Without Redis**: Maintenance windows, single-instance deployments, or when Redis is not available
 
 ### Emergency Rollback
 

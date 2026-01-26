@@ -2241,84 +2241,123 @@ func (c *Cache) validateNarFile(
 	return nil
 }
 
-func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) {
-	// We use a detached context because this is a background job.
-	// But we keep the trace from the request context.
-	detachedCtx := context.WithoutCancel(ctx)
+// MigrateNarInfoToDatabase migrates a single narinfo from storage to the database.
+// It uses distributed locking to coordinate with other instances (if Redis is configured).
+// This is a convenience wrapper around MigrateNarInfo for use within the Cache.
+func (c *Cache) MigrateNarInfoToDatabase(
+	ctx context.Context,
+	hash string,
+	ni *narinfo.NarInfo,
+	deleteFromStorage bool,
+) error {
+	var narInfoStore storage.NarInfoStore
+	if deleteFromStorage {
+		narInfoStore = c.narInfoStore
+	}
 
+	return MigrateNarInfo(ctx, c.downloadLocker, c.db, narInfoStore, hash, ni)
+}
+
+// MigrateNarInfo migrates a single narinfo from storage to the database.
+// It uses distributed locking to coordinate with other instances (if a distributed locker is provided).
+// This function is used both by Cache.MigrateNarInfoToDatabase and the CLI migrate-narinfo command.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - locker: Distributed locker for coordination (can be in-memory for single-instance)
+//   - db: Database querier for storing the narinfo
+//   - narInfoStore: Optional storage backend to delete from after migration (nil to skip deletion)
+//   - hash: The narinfo hash to migrate
+//   - ni: The parsed narinfo to migrate
+//
+// Returns an error if migration fails. Returns nil if the narinfo is already migrated or
+// if another instance is currently migrating it.
+func MigrateNarInfo(
+	ctx context.Context,
+	locker lock.Locker,
+	db database.Querier,
+	narInfoStore storage.NarInfoStore,
+	hash string,
+	ni *narinfo.NarInfo,
+) error {
 	// Use a short-lived, non-blocking lock to coordinate migrations and prevent a "thundering herd".
 	lockKey := "migration:" + hash
 
-	acquired, err := c.downloadLocker.TryLock(detachedCtx, lockKey, 10*time.Second)
-	if err != nil || !acquired {
-		if err != nil {
-			zerolog.Ctx(detachedCtx).Error().Err(err).Str("narinfo_hash", hash).Msg("failed to try acquiring migration lock")
-		}
-
-		// If lock is not acquired, another process is already handling it.
-		return
+	acquired, err := locker.TryLock(ctx, lockKey, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to acquire migration lock: %w", err)
 	}
 
-	c.backgroundWG.Add(1)
-	analytics.SafeGo(detachedCtx, func() {
-		defer c.backgroundWG.Done()
-		defer func() {
-			if err := c.downloadLocker.Unlock(detachedCtx, lockKey); err != nil {
-				zerolog.Ctx(detachedCtx).Error().Err(err).Str("narinfo_hash", hash).Msg("failed to release migration lock")
-			}
-		}()
+	if !acquired {
+		// If lock is not acquired, another process is already handling it.
+		// This is not an error - the migration is being handled elsewhere.
+		zerolog.Ctx(ctx).Debug().Str("narinfo_hash", hash).Msg("migration already in progress by another instance")
 
-		log := zerolog.Ctx(detachedCtx).With().Str("narinfo_hash", hash).Logger()
+		return nil
+	}
 
-		log.Info().Msg("migrating narinfo to database in background")
-
-		opStartTime := time.Now()
-
-		err := c.storeInDatabase(detachedCtx, hash, ni)
-		if err != nil && !errors.Is(err, ErrAlreadyExists) {
-			log.Error().Err(err).Msg("failed to migrate narinfo to database in background")
-
-			backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
-				metric.WithAttributes(
-					attribute.String("operation", migrationOperationMigrate),
-					attribute.String("result", migrationResultFailure),
-				),
-			)
-			backgroundMigrationDuration.Record(detachedCtx, time.Since(opStartTime).Seconds(),
-				metric.WithAttributes(
-					attribute.String("operation", migrationOperationMigrate),
-				),
-			)
-
-			return
+	defer func() {
+		if err := locker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Str("narinfo_hash", hash).Msg("failed to release migration lock")
 		}
+	}()
 
-		log.Debug().Dur("duration", time.Since(opStartTime)).Msg("successfully migrated narinfo to database")
+	log := zerolog.Ctx(ctx).With().Str("narinfo_hash", hash).Logger()
 
-		backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
+	log.Info().Msg("migrating narinfo to database")
+
+	opStartTime := time.Now()
+
+	// Store narinfo in database using the UPSERT logic from storeInDatabase
+	err = storeNarInfoInDatabase(ctx, db, hash, ni)
+	if err != nil && !errors.Is(err, ErrAlreadyExists) {
+		log.Error().Err(err).Msg("failed to migrate narinfo to database")
+
+		backgroundMigrationNarInfosTotal.Add(ctx, 1,
 			metric.WithAttributes(
 				attribute.String("operation", migrationOperationMigrate),
-				attribute.String("result", migrationResultSuccess),
+				attribute.String("result", migrationResultFailure),
 			),
 		)
-		backgroundMigrationDuration.Record(detachedCtx, time.Since(opStartTime).Seconds(),
+		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(
 				attribute.String("operation", migrationOperationMigrate),
 			),
 		)
 
+		return fmt.Errorf("failed to store narinfo in database: %w", err)
+	}
+
+	log.Debug().Dur("duration", time.Since(opStartTime)).Msg("successfully migrated narinfo to database")
+
+	backgroundMigrationNarInfosTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("operation", migrationOperationMigrate),
+			attribute.String("result", migrationResultSuccess),
+		),
+	)
+	backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
+		metric.WithAttributes(
+			attribute.String("operation", migrationOperationMigrate),
+		),
+	)
+
+	// Only delete from storage if narInfoStore is provided
+	if narInfoStore != nil {
 		deleteStartTime := time.Now()
 
-		if err := c.narInfoStore.DeleteNarInfo(detachedCtx, hash); err != nil {
+		if err := narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
 			log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
-			backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
+			backgroundMigrationNarInfosTotal.Add(ctx, 1,
 				metric.WithAttributes(
 					attribute.String("operation", migrationOperationDelete),
 					attribute.String("result", migrationResultFailure),
 				),
 			)
+			// Don't return error - migration succeeded, only cleanup failed
 		} else {
-			backgroundMigrationNarInfosTotal.Add(detachedCtx, 1,
+			log.Debug().Msg("deleted narinfo from storage after successful migration")
+			backgroundMigrationNarInfosTotal.Add(ctx, 1,
 				metric.WithAttributes(
 					attribute.String("operation", migrationOperationDelete),
 					attribute.String("result", migrationResultSuccess),
@@ -2326,11 +2365,138 @@ func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *n
 			)
 		}
 
-		backgroundMigrationDuration.Record(detachedCtx, time.Since(deleteStartTime).Seconds(),
+		backgroundMigrationDuration.Record(ctx, time.Since(deleteStartTime).Seconds(),
 			metric.WithAttributes(
 				attribute.String("operation", migrationOperationDelete),
 			),
 		)
+	}
+
+	return nil
+}
+
+// storeNarInfoInDatabase is extracted from Cache.storeInDatabase for use by migration.
+// It contains the core UPSERT logic without Cache dependencies.
+func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash string, narInfo *narinfo.NarInfo) error {
+	tx, err := db.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("error beginning transaction: %w", err)
+	}
+
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			if !errors.Is(err, sql.ErrTxDone) {
+				zerolog.Ctx(ctx).Error().Err(err).Msg("error rolling back transaction")
+			}
+		}
+	}()
+
+	qtx := db.WithTx(tx)
+
+	createNarInfoParams := database.CreateNarInfoParams{
+		Hash:        hash,
+		StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
+		URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
+		Compression: sql.NullString{String: narInfo.Compression, Valid: narInfo.Compression != ""},
+		FileHash:    sql.NullString{String: narInfo.FileHash.String(), Valid: narInfo.FileHash != nil},
+		FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: true}, //nolint:gosec
+		NarHash:     sql.NullString{String: narInfo.NarHash.String(), Valid: narInfo.NarHash != nil},
+		NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true}, //nolint:gosec
+		Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
+		System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
+		Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
+	}
+
+	nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
+	if err != nil {
+		// Handle UPSERT behavior (see Cache.storeInDatabase for full comments)
+		if database.IsNotFoundError(err) {
+			nir, err = qtx.GetNarInfoByHash(ctx, hash)
+			if err != nil {
+				return fmt.Errorf("upsert returned no rows (record exists with valid URL), failed to fetch: %w", err)
+			}
+		} else {
+			return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
+		}
+	}
+
+	if len(narInfo.References) > 0 {
+		if err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
+			NarInfoID: nir.ID,
+			Reference: narInfo.References,
+		}); err != nil {
+			// Duplicate key errors are expected with UPSERT
+			if !database.IsDuplicateKeyError(err) {
+				return fmt.Errorf("error inserting narinfo reference: %w", err)
+			}
+		}
+	}
+
+	// Signatures
+	sigStrings := make([]string, len(narInfo.Signatures))
+	for i, sig := range narInfo.Signatures {
+		sigStrings[i] = sig.String()
+	}
+
+	if len(sigStrings) > 0 {
+		if err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
+			NarInfoID: nir.ID,
+			Signature: sigStrings,
+		}); err != nil {
+			// Duplicate key errors are expected with UPSERT
+			if !database.IsDuplicateKeyError(err) {
+				return fmt.Errorf("error inserting narinfo signature: %w", err)
+			}
+		}
+	}
+
+	narURL, err := nar.ParseURL(narInfo.URL)
+	if err != nil {
+		return fmt.Errorf("error parsing the nar URL: %w", err)
+	}
+
+	// Create or get nar_file record
+	newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+		Hash:        narURL.Hash,
+		Compression: narURL.Compression.String(),
+		Query:       narURL.Query.Encode(),
+		FileSize:    narInfo.FileSize,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating or updating nar_file record in the database: %w", err)
+	}
+
+	// Link narinfo to nar_file
+	if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		NarInfoID: nir.ID,
+		NarFileID: newNarFile.ID,
+	}); err != nil {
+		// Duplicate key errors are expected with UPSERT
+		if !database.IsDuplicateKeyError(err) {
+			return fmt.Errorf("error linking narinfo to nar_file: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) {
+	// We use a detached context because this is a background job.
+	// But we keep the trace from the request context.
+	detachedCtx := context.WithoutCancel(ctx)
+
+	c.backgroundWG.Add(1)
+	analytics.SafeGo(detachedCtx, func() {
+		defer c.backgroundWG.Done()
+
+		// Call the exported migration function with deletion enabled
+		if err := c.MigrateNarInfoToDatabase(detachedCtx, hash, ni, true); err != nil {
+			zerolog.Ctx(detachedCtx).Error().Err(err).Str("narinfo_hash", hash).Msg("background migration failed")
+		}
 	})
 }
 
