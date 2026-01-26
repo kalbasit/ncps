@@ -322,9 +322,9 @@ ncps migrate-narinfo \
    ncps migrate-narinfo --dry-run ...
    ```
 
-1. **Check available disk space** (database will grow)
+1. **Check available disk space** as the database will grow.
 
-1. **Plan for growth** as the database will grow
+1. **Plan for a maintenance window** since this is a destructive operation.
 
 ### During Migration
 
