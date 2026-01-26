@@ -18,3 +18,12 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v13
       - uses: DeterminateSystems/flake-checker-action@main
       - run: nix flake check -L
+      - id: build-coverage
+        if: github.event.pull_request.head.repo.fork == false
+        run: nix build .#ncps.coverage -L
+      - name: Upload coverage reports to Codecov
+        if: steps.build-coverage.outcome == 'success'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: result-coverage

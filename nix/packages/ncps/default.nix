@@ -61,9 +61,6 @@
             "-X github.com/kalbasit/ncps/pkg/ncps.Version=${version}"
           ];
 
-          doCheck = true;
-          checkFlags = [ "-race" ];
-
           nativeBuildInputs = [
             pkgs.curl # used for checking MinIO health check
             pkgs.dbmate # used for testing
@@ -76,7 +73,12 @@
             pkgs.redis # Redis for distributed locking integration tests
           ];
 
-          # pre and post checks
+          doCheck = true;
+          checkFlags = [
+            "-race"
+            "-coverprofile=coverage.txt"
+          ];
+
           preCheck = ''
             # Set up cleanup trap to ensure background processes are killed even if tests fail
             cleanup() {
@@ -91,6 +93,15 @@
             source $src/nix/packages/ncps/pre-check-mysql.sh
             source $src/nix/packages/ncps/pre-check-postgres.sh
             source $src/nix/packages/ncps/pre-check-redis.sh
+          '';
+
+          outputs = [
+            "out"
+            "coverage"
+          ];
+
+          postCheck = ''
+            mv coverage.txt $coverage
           '';
 
           postInstall = ''

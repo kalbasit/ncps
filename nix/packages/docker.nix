@@ -7,9 +7,18 @@
       ...
     }:
     let
+
       package-ncps = config.packages.ncps.overrideAttrs (oa: {
-        # Remove race-condition testing as it does not work on all platforms
-        checkFlags = lib.remove "-race" (oa.checkFlags or [ ]);
+        checkFlags = lib.subtractLists [
+          # Remove coverage since it's not going to test everything (see preCheck disabling below).
+          "-coverprofile=coverage.txt"
+
+          # Remove race-condition testing as it does not work on all platforms.
+          "-race"
+        ] (oa.checkFlags or [ ]);
+
+        # Since we are not running the coverage tests, disable coverage output
+        outputs = lib.remove "coverage" (oa.outputs or [ ]);
 
         # No need to run integration tests for the docker image, they are
         # covered by the other tests. Additionally, there seems to be a
