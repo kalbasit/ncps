@@ -1636,7 +1636,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		// This handles the race condition where PutNarInfo finishes before a background
 		// migration can trigger.
 		if c.narInfoStore.HasNarInfo(ctx, hash) {
-			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
 				zerolog.Ctx(ctx).Warn().
 					Err(err).
 					Str("hash", hash).
