@@ -93,7 +93,7 @@ When upgrading from versions before database-backed narinfo metadata, you have t
 
 - Faster bulk migration
 - Use during maintenance window
-- Optional deletion from storage (saves space)
+- Deletion from storage (saves space)
 - Progress monitoring and metrics
 
 **Example CLI migration:**
@@ -107,16 +107,11 @@ ncps migrate-narinfo \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
 
-# Optionally delete from storage after migration
-ncps migrate-narinfo --delete \
-  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
-  --cache-storage-local="/var/lib/ncps"
-
 # Start service
 systemctl start ncps
 ```
 
-See [NarInfo Migration Guidee](NarInfo%20Migration.md) for comprehensive migration documentation.
+See [NarInfo Migration Guide](NarInfo%20Migration.md) for comprehensive migration documentation.
 
 ## Breaking Changes
 

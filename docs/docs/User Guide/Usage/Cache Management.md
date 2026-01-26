@@ -151,20 +151,12 @@ NarInfo metadata is automatically migrated during normal operation when accessed
 
 ### Explicit Migration (CLI)
 
-For faster bulk migration or to free up storage space:
+For faster bulk migration and to free up storage space:
 
-**Basic migration:**
+**Basic migration (deletes after migration):**
 
 ```sh
 ncps migrate-narinfo \
-  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
-  --cache-storage-local="/var/lib/ncps"
-```
-
-**With deletion after migration:**
-
-```sh
-ncps migrate-narinfo --delete \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps" \
   --concurrency=20
@@ -206,7 +198,7 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 du
 
 - Large cache (millions of narinfos)
 - Need faster completion
-- Storage space is limited (use `--delete`)
+- Storage space is limited (migration deletes narinfos)
 - Upgrading from pre-database versions
 
 See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for comprehensive documentation.
