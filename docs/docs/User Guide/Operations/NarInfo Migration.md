@@ -116,6 +116,11 @@ ncps migrate-narinfo \
 - `--cache-redis-password` - Redis password (optional)
 - `--cache-redis-db` - Redis database number (default: 0)
 - `--cache-redis-use-tls` - Use TLS for Redis connections (optional)
+- `--cache-redis-pool-size` - Redis connection pool size (default: 10)
+- `--cache-lock-backend` - Lock backend to use: 'local', 'redis', or 'postgres' (default: 'local')
+- `--cache-lock-redis-key-prefix` - Prefix for Redis lock keys (default: 'ncps:lock:')
+- `--cache-lock-allow-degraded-mode` - Fallback to local locks if Redis is down
+- `--cache-lock-retry-max-attempts` - Max lock retry attempts (default: 3)
 
 ### Dry Run
 
@@ -203,9 +208,18 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 du
 - **failed**: Errors during migration
 - **rate**: Narinfos processed per second
 
-### Prometheus Metrics
+### OpenTelemetry
 
-If Prometheus is enabled, monitor via metrics:
+Migration metrics can be exported to an OpenTelemetry collector:
+
+```sh
+ncps migrate-narinfo \
+  --otel-enabled \
+  --otel-grpc-url="http://otel-collector:4317" \
+  ...
+```
+
+If OpenTelemetry is enabled, monitor via metrics:
 
 **ncps_migration_narinfos_total**
 
@@ -377,7 +391,7 @@ ncps migrate-narinfo \
 
 ### During Migration
 
-1. **Monitor progress** via console or Prometheus
+1. **Monitor progress** via console or OpenTelemetry
 1. **Watch error count** - some failures OK, many failures = investigate
 1. **Check database performance** - watch for resource constraints
 1. **Keep backups available** for quick rollback if needed

@@ -425,7 +425,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		extraResourceAttrs, err := serveDetectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+		extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, db, rwLocker)
 		if err != nil {
 			logger.
 				Error().
@@ -920,7 +920,7 @@ func createCache(
 	return c, nil
 }
 
-func serveDetectExtraResourceAttrs(
+func detectExtraResourceAttrs(
 	ctx context.Context,
 	cmd *cli.Command,
 	db database.Querier,

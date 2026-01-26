@@ -6,14 +6,14 @@ Set up monitoring, metrics, and alerting for ncps.
 
 ## Enable Prometheus
 
-Enable the `/metrics` endpoint:
+Enable the `/metrics` endpoint (supported by `serve` and `migrate-narinfo` commands):
 
 ```yaml
 prometheus:
   enabled: true
 ```
 
-Access metrics at: `http://your-ncps:8501/metrics`
+Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/OTel (for `migrate-narinfo`).
 
 ## Available Metrics
 

@@ -94,7 +94,7 @@ When upgrading from versions before database-backed narinfo metadata, you have t
 - Faster bulk migration
 - Use during maintenance window
 - Deletion from storage (saves space)
-- Progress monitoring and metrics
+- Progress monitoring and metrics with OpenTelemetry
 
 **Example CLI migration:**
 

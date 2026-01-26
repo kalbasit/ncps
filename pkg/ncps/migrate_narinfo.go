@@ -11,10 +11,10 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+
 	"github.com/kalbasit/ncps/pkg/cache"
-	"github.com/kalbasit/ncps/pkg/lock"
-	"github.com/kalbasit/ncps/pkg/lock/local"
-	"github.com/kalbasit/ncps/pkg/lock/redis"
+	"github.com/kalbasit/ncps/pkg/otel"
 )
 
 // ErrStorageIterationNotSupported is returned when the storage backend does not support iteration.
@@ -29,6 +29,7 @@ type NarInfoWalker interface {
 
 func migrateNarInfoCommand(
 	flagSources flagSourcesFn,
+	registerShutdown registerShutdownFn,
 ) *cli.Command {
 	return &cli.Command{
 		Name:  "migrate-narinfo",
@@ -135,6 +136,73 @@ to enable safe concurrent migration.`,
 				Value:   10,
 				Sources: flagSources("concurrency", "CONCURRENCY"),
 			},
+
+			&cli.StringFlag{
+				Name: "cache-lock-backend",
+				Usage: "Lock backend to use: 'local' (single instance), 'redis' (distributed), " +
+					"or 'postgres' (distributed, requires PostgreSQL)",
+				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
+				Value:   "local",
+			},
+			&cli.StringFlag{
+				Name:    "cache-lock-redis-key-prefix",
+				Usage:   "Prefix for all Redis lock keys (only used when Redis is configured)",
+				Sources: flagSources("cache.lock.redis.key-prefix", "CACHE_LOCK_REDIS_KEY_PREFIX"),
+				Value:   "ncps:lock:",
+			},
+			&cli.StringFlag{
+				Name:    "cache-lock-postgres-key-prefix",
+				Usage:   "Prefix for all PostgreSQL advisory lock keys (only used when PostgreSQL is configured as lock backend)",
+				Sources: flagSources("cache.lock.postgres.key-prefix", "CACHE_LOCK_POSTGRES_KEY_PREFIX"),
+				Value:   "ncps:lock:",
+			},
+			&cli.DurationFlag{
+				Name:    "cache-lock-download-ttl",
+				Usage:   "TTL for download locks (per-hash locks)",
+				Sources: flagSources("cache.lock.download-lock-ttl", "CACHE_LOCK_DOWNLOAD_TTL"),
+				Value:   5 * time.Minute,
+			},
+			&cli.DurationFlag{
+				Name:    "cache-lock-lru-ttl",
+				Usage:   "TTL for LRU lock (global exclusive lock)",
+				Sources: flagSources("cache.lock.lru-lock-ttl", "CACHE_LOCK_LRU_TTL"),
+				Value:   30 * time.Minute,
+			},
+			&cli.IntFlag{
+				Name:    "cache-lock-retry-max-attempts",
+				Usage:   "Maximum number of retry attempts for distributed locks",
+				Sources: flagSources("cache.lock.retry.max-attempts", "CACHE_LOCK_RETRY_MAX_ATTEMPTS"),
+				Value:   3,
+			},
+			&cli.DurationFlag{
+				Name:    "cache-lock-retry-initial-delay",
+				Usage:   "Initial retry delay for distributed locks",
+				Sources: flagSources("cache.lock.retry.initial-delay", "CACHE_LOCK_RETRY_INITIAL_DELAY"),
+				Value:   100 * time.Millisecond,
+			},
+			&cli.DurationFlag{
+				Name:    "cache-lock-retry-max-delay",
+				Usage:   "Maximum retry delay for distributed locks (exponential backoff caps at this)",
+				Sources: flagSources("cache.lock.retry.max-delay", "CACHE_LOCK_RETRY_MAX_DELAY"),
+				Value:   2 * time.Second,
+			},
+			&cli.BoolFlag{
+				Name:    "cache-lock-retry-jitter",
+				Usage:   "Enable jitter in retry delays to prevent thundering herd",
+				Sources: flagSources("cache.lock.retry.jitter", "CACHE_LOCK_RETRY_JITTER"),
+				Value:   true,
+			},
+			&cli.BoolFlag{
+				Name:    "cache-lock-allow-degraded-mode",
+				Usage:   "Allow falling back to local locks if Redis is unavailable (WARNING: breaks HA guarantees)",
+				Sources: flagSources("cache.lock.allow-degraded-mode", "CACHE_LOCK_ALLOW_DEGRADED_MODE"),
+			},
+			&cli.IntFlag{
+				Name:    "cache-redis-pool-size",
+				Usage:   "Redis connection pool size",
+				Sources: flagSources("cache.redis.pool-size", "CACHE_REDIS_POOL_SIZE"),
+				Value:   10,
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			logger := zerolog.Ctx(ctx).With().Str("cmd", "migrate-narinfo").Logger()
@@ -150,7 +218,54 @@ to enable safe concurrent migration.`,
 				return err
 			}
 
-			// 2. Setup Storage
+			// 2. Setup Lockers
+			locker, rwLocker, err := getLockers(ctx, cmd, db)
+			if err != nil {
+				logger.Error().Err(err).Msg("error creating the lockers")
+
+				return err
+			}
+
+			// 3. Setup OTel
+			extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+			if err != nil {
+				logger.
+					Error().
+					Err(err).
+					Msg("error detecting extra resource attributes")
+
+				return err
+			}
+
+			otelResource, err := otel.NewResource(
+				ctx,
+				cmd.Root().Name,
+				Version,
+				semconv.SchemaURL,
+				extraResourceAttrs...,
+			)
+			if err != nil {
+				logger.
+					Error().
+					Err(err).
+					Msg("error creating a new otel resource")
+
+				return err
+			}
+
+			otelShutdown, err := otel.SetupOTelSDK(
+				ctx,
+				cmd.Root().Bool("otel-enabled"),
+				cmd.Root().String("otel-grpc-url"),
+				otelResource,
+			)
+			if err != nil {
+				return err
+			}
+
+			registerShutdown("open telemetry", otelShutdown)
+
+			// 4. Setup Storage
 			_, narInfoStore, _, err := getStorageBackend(ctx, cmd)
 			if err != nil {
 				logger.Error().Err(err).Msg("error creating storage backend")
@@ -163,24 +278,7 @@ to enable safe concurrent migration.`,
 				return ErrStorageIterationNotSupported
 			}
 
-			// 3. Setup Lock Backend (optional - for coordination with running instances)
-			locker, err := createLocker(ctx, cmd)
-			if err != nil {
-				logger.Error().Err(err).Msg("error creating lock backend")
-
-				return err
-			}
-
-			redisAddrs := cmd.StringSlice("cache-redis-addrs")
-			if len(redisAddrs) > 0 {
-				logger.Info().
-					Strs("redis_addrs", redisAddrs).
-					Msg("using Redis for distributed locking (can coordinate with running ncps instances)")
-			} else {
-				logger.Info().Msg("using in-memory locking (no coordination with other instances)")
-			}
-
-			// 4. Setup Migrated Hashes Map
+			// 5. Setup Migrated Hashes Map
 			logger.Info().Msg("fetching existing narinfo hashes from the database")
 
 			migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
@@ -371,40 +469,4 @@ to enable safe concurrent migration.`,
 			return nil
 		},
 	}
-}
-
-// createLocker creates a lock.Locker based on configuration.
-// Returns an in-memory locker by default, or a Redis locker if Redis addresses are provided.
-func createLocker(ctx context.Context, cmd *cli.Command) (lock.Locker, error) {
-	redisAddrs := cmd.StringSlice("cache-redis-addrs")
-
-	if len(redisAddrs) == 0 {
-		// Use in-memory locker (no coordination with other instances)
-		return local.NewLocker(), nil
-	}
-
-	// Use Redis locker for distributed coordination
-	redisCfg := redis.Config{
-		Addrs:     redisAddrs,
-		Username:  cmd.String("cache-redis-username"),
-		Password:  cmd.String("cache-redis-password"),
-		DB:        cmd.Int("cache-redis-db"),
-		UseTLS:    cmd.Bool("cache-redis-use-tls"),
-		KeyPrefix: "ncps:lock:", // Default prefix used by the cache
-	}
-
-	// Use default retry config and enable degraded mode for migration
-	// (migration can continue even if some Redis nodes are down)
-	retryCfg := lock.RetryConfig{
-		MaxAttempts:  3,
-		InitialDelay: 100 * time.Millisecond,
-		MaxDelay:     2 * time.Second,
-	}
-
-	redisLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Redis locker: %w", err)
-	}
-
-	return redisLocker, nil
 }
