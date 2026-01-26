@@ -1381,10 +1381,11 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 			narInfo, err = c.getNarInfoFromStore(ctx, hash)
 			if err == nil {
 				return nil
-			} else if !errors.Is(err, errNarInfoPurged) {
-				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+			}
 
-				return fmt.Errorf("error fetching the narinfo from the store: %w", err)
+			// If narinfo was purged, continue to fetch from upstream
+			if !errors.Is(err, errNarInfoPurged) {
+				return c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs)
 			}
 		}
 
@@ -1837,6 +1838,63 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	}
 
 	return ni, nil
+}
+
+// handleStorageFetchError handles errors from storage fetches and implements retry logic for
+// race conditions with migration. Returns nil if retry succeeded, otherwise returns error.
+//
+// RACE CONDITION FIX: If storage read fails with NotFound, the file might have been deleted
+// by a concurrent migration. Retry database lookup to see if migration completed successfully.
+//
+// Race scenario:
+// 1. GetNarInfo checks database -> not found (NULL URL)
+// 2. GetNarInfo checks HasNarInfo -> true (file exists)
+// 3. Migration runs: writes to DB and deletes from storage
+// 4. GetNarInfo tries to read storage -> NotFound (file deleted!)
+// 5. Retry database -> SUCCESS (migration completed).
+func (c *Cache) handleStorageFetchError(
+	ctx context.Context,
+	hash string,
+	storageErr error,
+	narInfo **narinfo.NarInfo,
+	metricAttrs *[]attribute.KeyValue,
+) error {
+	// updateAttr is a small helper to reduce duplication in metric updates.
+	updateAttr := func(key, value string) {
+		for i, attr := range *metricAttrs {
+			if attr.Key == attribute.Key(key) {
+				(*metricAttrs)[i] = attribute.String(key, value)
+
+				return
+			}
+		}
+	}
+
+	// Only retry on NotFound errors (file deleted by migration)
+	if errors.Is(storageErr, storage.ErrNotFound) {
+		var dbErr error
+
+		*narInfo, dbErr = c.getNarInfoFromDatabase(ctx, hash)
+		if dbErr == nil {
+			// Migration succeeded while we were checking storage!
+			// The source is now the database, not storage. We need to update the metric.
+			updateAttr("source", "database")
+
+			return nil // Signal success to caller
+		}
+
+		// If the DB retry also fails with a non-NotFound error, it's a more serious issue.
+		// We should wrap this error to provide more context for debugging.
+		if !errors.Is(dbErr, storage.ErrNotFound) {
+			storageErr = fmt.Errorf("%w (db retry failed: %v)", storageErr, dbErr)
+		}
+		// Fall through to return storage error if database also fails
+	}
+
+	// The fetch failed, so update the status metric from "success" to "error".
+	updateAttr("status", "error")
+
+	return fmt.Errorf("error fetching the narinfo from the store: %w", storageErr)
 }
 
 func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
