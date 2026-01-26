@@ -11,22 +11,17 @@
         let
           version =
             let
-              tag =
-                let
-                  semverRegex = "v[0-9]+(\\.[0-9]+){0,2}(-[a-zA-Z0-9.-]+)?";
-                  tag' = self.tag or "";
-                in
-                if builtins.match semverRegex tag' != null then tag' else "";
-
               rev = self.rev or self.dirtyRev;
+              tag = builtins.getEnv "RELEASE_VERSION";
             in
             if tag != "" then tag else rev;
 
           vendorHash = "sha256-nnt4HIG4Fs7RhHjVb7mYJ39UgvFKc46Cu42cURMmr1s=";
         in
         pkgs.buildGoModule {
+          inherit version vendorHash;
+
           pname = "ncps";
-          inherit version;
 
           src = lib.fileset.toSource {
             fileset = lib.fileset.unions [
@@ -62,10 +57,8 @@
             root = ../../..;
           };
 
-          inherit vendorHash;
-
           ldflags = [
-            "-X github.com/kalbasit/ncps/cmd.Version=${version}"
+            "-X github.com/kalbasit/ncps/pkg/ncps.Version=${version}"
           ];
 
           doCheck = true;
