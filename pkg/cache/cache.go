@@ -1637,7 +1637,10 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		// migration can trigger.
 		if c.narInfoStore.HasNarInfo(ctx, hash) {
 			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
-				zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to delete legacy narinfo from storage after PutNarInfo")
+				zerolog.Ctx(ctx).Warn().
+					Err(err).
+					Str("hash", hash).
+					Msg("failed to delete legacy narinfo from storage after PutNarInfo")
 			}
 		}
 
