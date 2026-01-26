@@ -1385,13 +1385,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 			// If narinfo was purged, continue to fetch from upstream
 			if !errors.Is(err, errNarInfoPurged) {
-				retryErr := c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs)
-				if retryErr != nil {
-					return retryErr
-				}
-
-				// Retry succeeded, return success
-				return nil
+				return c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs)
 			}
 		}
 
