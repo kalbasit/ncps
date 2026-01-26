@@ -2,20 +2,19 @@ package ncps
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
 
-	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/nar"
-	"github.com/kalbasit/ncps/pkg/storage"
+	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/lock"
+	"github.com/kalbasit/ncps/pkg/lock/local"
+	"github.com/kalbasit/ncps/pkg/lock/redis"
 )
 
 // ErrStorageIterationNotSupported is returned when the storage backend does not support iteration.
@@ -34,10 +33,18 @@ func migrateNarInfoCommand(
 	return &cli.Command{
 		Name:  "migrate-narinfo",
 		Usage: "Migrate NarInfo files from storage to the database",
+		Description: `Migrates NarInfo metadata from storage (filesystem/S3) to the database.
+
+This command uses distributed locking to coordinate with running ncps instances when a
+Redis lock backend is configured. This allows safe migration while the cache is serving
+requests. Without Redis, the command uses in-memory locking (no coordination with other instances).
+
+For production deployments with multiple ncps instances, configure --cache-redis-addrs
+to enable safe concurrent migration.`,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "dry-run",
-				Usage: "Simulate migration without writing to DB",
+				Usage: "Simulate migration without writing to DB or deleting from storage",
 			},
 
 			// Storage Flags
@@ -94,6 +101,34 @@ func migrateNarInfoCommand(
 				Usage:   "Maximum number of idle connections in the pool",
 				Sources: flagSources("cache.database.pool.max-idle-conns", "CACHE_DATABASE_POOL_MAX_IDLE_CONNS"),
 			},
+
+			// Lock Backend Flags (optional - for coordination with running instances)
+			&cli.StringSliceFlag{
+				Name:    "cache-redis-addrs",
+				Usage:   "Redis server addresses for distributed locking (enables coordination with running ncps instances)",
+				Sources: flagSources("cache.redis.addrs", "CACHE_REDIS_ADDRS"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-redis-username",
+				Usage:   "Redis username",
+				Sources: flagSources("cache.redis.username", "CACHE_REDIS_USERNAME"),
+			},
+			&cli.StringFlag{
+				Name:    "cache-redis-password",
+				Usage:   "Redis password",
+				Sources: flagSources("cache.redis.password", "CACHE_REDIS_PASSWORD"),
+			},
+			&cli.IntFlag{
+				Name:    "cache-redis-db",
+				Usage:   "Redis database number",
+				Sources: flagSources("cache.redis.db", "CACHE_REDIS_DB"),
+			},
+			&cli.BoolFlag{
+				Name:    "cache-redis-use-tls",
+				Usage:   "Use TLS for Redis connections",
+				Sources: flagSources("cache.redis.use-tls", "CACHE_REDIS_USE_TLS"),
+			},
+
 			&cli.IntFlag{
 				Name:    "concurrency",
 				Usage:   "Number of concurrent migration workers",
@@ -128,7 +163,24 @@ func migrateNarInfoCommand(
 				return ErrStorageIterationNotSupported
 			}
 
-			// 3. Setup Migrated Hashes Map
+			// 3. Setup Lock Backend (optional - for coordination with running instances)
+			locker, err := createLocker(ctx, cmd)
+			if err != nil {
+				logger.Error().Err(err).Msg("error creating lock backend")
+
+				return err
+			}
+
+			redisAddrs := cmd.StringSlice("cache-redis-addrs")
+			if len(redisAddrs) > 0 {
+				logger.Info().
+					Strs("redis_addrs", redisAddrs).
+					Msg("using Redis for distributed locking (can coordinate with running ncps instances)")
+			} else {
+				logger.Info().Msg("using in-memory locking (no coordination with other instances)")
+			}
+
+			// 4. Setup Migrated Hashes Map
 			logger.Info().Msg("fetching existing narinfo hashes from the database")
 
 			migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
@@ -143,7 +195,7 @@ func migrateNarInfoCommand(
 
 			logger.Info().Int("count", len(migratedHashesMap)).Msg("loaded migrated hashes from database")
 
-			// 4. Migrate
+			// 5. Migrate
 			logger.Info().Msg("starting migration")
 
 			startTime := time.Now()
@@ -199,7 +251,7 @@ func migrateNarInfoCommand(
 				atomic.AddInt32(&totalFound, 1)
 
 				if _, ok := migratedHashesMap[hash]; ok {
-					// We need to delete it from storage, but we skip the DB migration part.
+					// Already migrated - only delete from storage if not dry-run
 					g.Go(func() error {
 						atomic.AddInt32(&totalProcessed, 1)
 
@@ -244,11 +296,31 @@ func migrateNarInfoCommand(
 						RecordMigrationDuration(ctxWithLog, MigrationOperationMigrate, time.Since(opStartTime).Seconds())
 					}()
 
-					if err := migrateOne(ctxWithLog, db, narInfoStore, hash, dryRun); err != nil {
+					// Fetch narinfo from storage
+					ni, err := narInfoStore.GetNarInfo(ctxWithLog, hash)
+					if err != nil {
+						log.Error().Err(err).Msg("failed to get narinfo from store")
+						atomic.AddInt32(&totalFailed, 1)
+						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
+
+						return nil
+					}
+
+					if dryRun {
+						log.Info().Msg("[DRY-RUN] would migrate and delete")
+						atomic.AddInt32(&totalSucceeded, 1)
+						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
+
+						return nil
+					}
+
+					// Use the shared migration function from pkg/cache
+					// Pass narInfoStore to enable deletion after migration
+					if err := cache.MigrateNarInfo(ctxWithLog, locker, db, narInfoStore, hash, ni); err != nil {
 						log.Error().Err(err).Msg("failed to migrate narinfo")
 						atomic.AddInt32(&totalFailed, 1)
 						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
-						// Continue migration even if one fails
+
 						return nil
 					}
 
@@ -301,208 +373,38 @@ func migrateNarInfoCommand(
 	}
 }
 
-func migrateOne(
-	ctx context.Context,
-	db database.Querier,
-	store storage.NarInfoStore,
-	hash string,
-	dryRun bool,
-) error {
-	// Fetch from storage
-	ni, err := store.GetNarInfo(ctx, hash)
+// createLocker creates a lock.Locker based on configuration.
+// Returns an in-memory locker by default, or a Redis locker if Redis addresses are provided.
+func createLocker(ctx context.Context, cmd *cli.Command) (lock.Locker, error) {
+	redisAddrs := cmd.StringSlice("cache-redis-addrs")
+
+	if len(redisAddrs) == 0 {
+		// Use in-memory locker (no coordination with other instances)
+		return local.NewLocker(), nil
+	}
+
+	// Use Redis locker for distributed coordination
+	redisCfg := redis.Config{
+		Addrs:     redisAddrs,
+		Username:  cmd.String("cache-redis-username"),
+		Password:  cmd.String("cache-redis-password"),
+		DB:        cmd.Int("cache-redis-db"),
+		UseTLS:    cmd.Bool("cache-redis-use-tls"),
+		KeyPrefix: "ncps:lock:", // Default prefix used by the cache
+	}
+
+	// Use default retry config and enable degraded mode for migration
+	// (migration can continue even if some Redis nodes are down)
+	retryCfg := lock.RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     2 * time.Second,
+	}
+
+	redisLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, true)
 	if err != nil {
-		return fmt.Errorf("failed to get narinfo from store: %w", err)
+		return nil, fmt.Errorf("failed to create Redis locker: %w", err)
 	}
 
-	if dryRun {
-		zerolog.Ctx(ctx).Info().Msg("[DRY-RUN] would store in DB")
-	} else {
-		if err := migrateOneToDatabase(ctx, db, hash, ni); err != nil {
-			return err
-		}
-	}
-
-	if dryRun {
-		zerolog.Ctx(ctx).Info().Msg("[DRY-RUN] would delete from storage")
-	} else {
-		if err := store.DeleteNarInfo(ctx, hash); err != nil {
-			return fmt.Errorf("failed to delete from store: %w", err)
-		}
-
-		zerolog.Ctx(ctx).Info().Msg("deleted from storage")
-	}
-
-	return nil
-}
-
-func migrateOneToDatabase(
-	ctx context.Context,
-	db database.Querier,
-	hash string,
-	ni *narinfo.NarInfo,
-) error {
-	// Explicit transaction
-	sqlDB := db.DB()
-
-	tx, err := sqlDB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	qtx := db.WithTx(tx)
-
-	// Create NarInfo
-	nir, err := getOrCreateNarInfo(ctx, qtx, hash, ni)
-	if err != nil {
-		return err
-	}
-
-	// References
-	if len(ni.References) > 0 {
-		err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
-			NarInfoID: nir.ID,
-			Reference: ni.References,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to add references: %w", err)
-		}
-	}
-
-	// Signatures
-	sigStrings := make([]string, len(ni.Signatures))
-	for i, sig := range ni.Signatures {
-		sigStrings[i] = sig.String()
-	}
-
-	if len(sigStrings) > 0 {
-		err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
-			NarInfoID: nir.ID,
-			Signature: sigStrings,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to add signatures: %w", err)
-		}
-	}
-
-	// NarFile
-	narURL, err := nar.ParseURL(ni.URL)
-	if err != nil {
-		return fmt.Errorf("error parsing the nar URL: %w", err)
-	}
-
-	narFile, err := getOrCreateNarFile(ctx, qtx, &narURL, ni.FileSize)
-	if err != nil {
-		return err
-	}
-
-	// Link NarInfo to NarFile
-	if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
-		NarInfoID: nir.ID,
-		NarFileID: narFile.ID,
-	}); err != nil {
-		if !database.IsDuplicateKeyError(err) {
-			return fmt.Errorf("failed to link narinfo to narfile: %w", err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
-}
-
-func getOrCreateNarInfo(
-	ctx context.Context,
-	qtx database.Querier,
-	hash string,
-	ni *narinfo.NarInfo,
-) (database.NarInfo, error) {
-	// First, try to get the record.
-	existing, err := qtx.GetNarInfoByHash(ctx, hash)
-	if err == nil {
-		// Found it, return.
-		zerolog.Ctx(ctx).Info().Msg("narinfo already in DB, skipping insert")
-
-		return existing, nil
-	}
-	// If the error is anything other than "not found", it's a real error.
-	if !database.IsNotFoundError(err) {
-		return database.NarInfo{}, fmt.Errorf("failed to get narinfo record: %w", err)
-	}
-
-	// Not found, so let's create it.
-	nir, err := qtx.CreateNarInfo(ctx, database.CreateNarInfoParams{
-		Hash:        hash,
-		StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
-		URL:         sql.NullString{String: ni.URL, Valid: ni.URL != ""},
-		Compression: sql.NullString{String: ni.Compression, Valid: ni.Compression != ""},
-		FileHash:    sql.NullString{String: ni.FileHash.String(), Valid: ni.FileHash != nil},
-		FileSize:    sql.NullInt64{Int64: int64(ni.FileSize), Valid: true}, //nolint:gosec
-		NarHash:     sql.NullString{String: ni.NarHash.String(), Valid: ni.NarHash != nil},
-		NarSize:     sql.NullInt64{Int64: int64(ni.NarSize), Valid: true}, //nolint:gosec
-		Deriver:     sql.NullString{String: ni.Deriver, Valid: ni.Deriver != ""},
-		System:      sql.NullString{String: ni.System, Valid: ni.System != ""},
-		Ca:          sql.NullString{String: ni.CA, Valid: ni.CA != ""},
-	})
-	if err != nil {
-		// If we get a duplicate key error, it means another worker created it between our GET and CREATE.
-		if database.IsDuplicateKeyError(err) {
-			zerolog.Ctx(ctx).Info().Msg("narinfo created by another worker, fetching again")
-			// Fetch the record again. This time it should exist.
-			existing, errGet := qtx.GetNarInfoByHash(ctx, hash)
-			if errGet != nil {
-				return database.NarInfo{}, fmt.Errorf("failed to get existing record after race: %w", errGet)
-			}
-
-			return existing, nil
-		}
-		// Another error occurred during creation.
-		return database.NarInfo{}, fmt.Errorf("failed to create narinfo record: %w", err)
-	}
-
-	return nir, nil
-}
-
-func getOrCreateNarFile(
-	ctx context.Context,
-	qtx database.Querier,
-	narURL *nar.URL,
-	narSize uint64,
-) (database.NarFile, error) {
-	// First, try to get the record.
-	existing, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
-	if err == nil {
-		// Found it, return.
-		return existing, nil
-	}
-	// If the error is anything other than "not found", it's a real error.
-	if !database.IsNotFoundError(err) {
-		return database.NarFile{}, fmt.Errorf("failed to get existing nar file record: %w", err)
-	}
-
-	// Not found, so let's create it.
-	narFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-		Hash:        narURL.Hash,
-		Compression: narURL.Compression.String(),
-		Query:       narURL.Query.Encode(),
-		FileSize:    narSize,
-	})
-	if err != nil {
-		// If we get a duplicate key error, it means another worker created it.
-		if database.IsDuplicateKeyError(err) {
-			// Fetch the record again. This time it should exist.
-			existing, errGet := qtx.GetNarFileByHash(ctx, narURL.Hash)
-			if errGet != nil {
-				return database.NarFile{}, fmt.Errorf("failed to get existing nar file record after race: %w", errGet)
-			}
-
-			return existing, nil
-		}
-		// Another error occurred during creation.
-		return database.NarFile{}, fmt.Errorf("error creating the nar file record: %w", err)
-	}
-
-	return narFile, nil
+	return redisLocker, nil
 }

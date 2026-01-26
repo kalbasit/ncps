@@ -162,6 +162,17 @@ ncps migrate-narinfo \
   --concurrency=20
 ```
 
+**With Redis (for concurrent migration while serving):**
+
+```sh
+ncps migrate-narinfo \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps" \
+  --cache-redis-addrs="redis1:6379,redis2:6379,redis3:6379" \
+  --cache-redis-password="..." \
+  --concurrency=20
+```
+
 **Dry run (preview):**
 
 ```sh
