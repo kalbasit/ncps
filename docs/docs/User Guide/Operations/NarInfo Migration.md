@@ -73,23 +73,12 @@ Bulk migration using the CLI command for faster results.
 
 ### Basic Migration
 
-Migrate all narinfos to database without deleting from storage:
+Migrate all narinfos to database (deletes from storage upon success):
 
 ```sh
 ncps migrate-narinfo \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
-```
-
-### Migration with Deletion
-
-Migrate and delete narinfos from storage to save space:
-
-```sh
-ncps migrate-narinfo \
-  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
-  --cache-storage-local="/var/lib/ncps" \
-  --concurrency=20
 ```
 
 **⚠️ Note:** Migration deletes from storage upon success. Ensure you have backups if needed.
@@ -152,9 +141,9 @@ Migration reports progress every 5 seconds:
 
 ```
 INFO starting migration
-INFO migration progress found=1523 processed=1523 succeeded=1520 skipped=0 failed=3 elapsed=15s rate=101.53
-INFO migration progress found=3042 processed=3042 succeeded=3035 skipped=0 failed=7 elapsed=30s rate=101.40
-INFO migration completed found=10000 processed=10000 succeeded=9987 skipped=0 failed=13 duration=98.5s rate=101.52
+INFO migration progress found=1523 processed=1523 succeeded=1520 failed=3 elapsed=15s rate=101.53
+INFO migration progress found=3042 processed=3042 succeeded=3035 failed=7 elapsed=30s rate=101.40
+INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 duration=98.5s rate=101.52
 ```
 
 **Metrics explained:**
@@ -162,7 +151,6 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 skipped=0 fa
 - **found**: Total narinfos discovered
 - **processed**: Entered worker pool
 - **succeeded**: Successfully migrated
-- **skipped**: Already migrated (no action needed)
 - **failed**: Errors during migration
 - **rate**: Narinfos processed per second
 
@@ -336,7 +324,7 @@ ncps migrate-narinfo \
 
 1. **Check available disk space** (database will grow)
 
-1. **Plan for downtime** if using `--delete`
+1. **Plan for growth** as the database will grow
 
 ### During Migration
 

@@ -88,6 +88,11 @@ func TestMigrateNarInfo_Success(t *testing.T) {
 			atomic.AddInt32(&errorsCount, 1)
 		}
 
+		// Delete from storage (default behavior)
+		if err := store.DeleteNarInfo(ctx, hash); err != nil {
+			atomic.AddInt32(&errorsCount, 1)
+		}
+
 		return nil
 	})
 	require.NoError(t, err)
@@ -101,8 +106,8 @@ func TestMigrateNarInfo_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	// Verify still in storage (no delete flag)
-	assert.FileExists(t, narInfoPath)
+	// Verify deleted from storage (default behavior)
+	assert.NoFileExists(t, narInfoPath)
 }
 
 func TestMigrateNarInfo_DryRun(t *testing.T) {
@@ -157,67 +162,6 @@ func TestMigrateNarInfo_DryRun(t *testing.T) {
 
 	// Verify still in storage
 	assert.FileExists(t, narInfoPath)
-}
-
-func TestMigrateNarInfo_WithDelete(t *testing.T) {
-	t.Parallel()
-
-	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
-
-	// Setup
-	dir := t.TempDir()
-	dbFile := filepath.Join(dir, "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	store, err := local.New(ctx, dir)
-	require.NoError(t, err)
-
-	// Pre-populate storage with narinfos
-	narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
-	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o755))
-	require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
-
-	narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
-	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
-	require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
-
-	// Run migration with delete
-	// WalkNarInfos is implemented by local.Store
-
-	err = store.WalkNarInfos(ctx, func(hash string) error {
-		ni, err := store.GetNarInfo(ctx, hash)
-		if err != nil {
-			return err
-		}
-
-		// Migrate to database
-		if err := testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni); err != nil {
-			return err
-		}
-
-		// Delete from storage
-		if err := store.DeleteNarInfo(ctx, hash); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	require.NoError(t, err)
-
-	// Verify in database
-	var count int
-
-	err = db.DB().QueryRowContext(
-		ctx, "SELECT COUNT(*) FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash,
-	).Scan(&count)
-	require.NoError(t, err)
-	assert.Equal(t, 1, count)
-
-	// Verify NOT in storage (deleted)
-	assert.NoFileExists(t, narInfoPath)
 }
 
 func TestMigrateNarInfo_Idempotency(t *testing.T) {
