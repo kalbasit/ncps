@@ -22,6 +22,7 @@ ncps provides comprehensive observability through:
 **Command-line:**
 
 ```sh
+# For the server
 ncps serve --prometheus-enabled=true
 ```
 
@@ -152,7 +153,13 @@ See the [Monitoring Guide](../Operations/Monitoring.md) for dashboard examples.
 **Command-line:**
 
 ```sh
+# For the server
 ncps serve \
+  --otel-enabled=true \
+  --otel-grpc-url=http://otel-collector:4317
+
+# For narinfo migration
+ncps migrate-narinfo \
   --otel-enabled=true \
   --otel-grpc-url=http://otel-collector:4317
 ```

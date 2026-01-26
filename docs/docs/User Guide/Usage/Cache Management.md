@@ -186,7 +186,7 @@ ncps migrate-narinfo --dry-run \
 Monitor migration progress through:
 
 - **Console logs** - Progress updates every 5 seconds
-- **Prometheus metrics** - `ncps_migration_*` metrics
+- **OpenTelemetry** - Export traces and metrics (enable with `--otel-enabled`)
 - **Final summary** - Completion report with statistics
 
 **Example output:**
