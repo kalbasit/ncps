@@ -1878,6 +1878,12 @@ func (c *Cache) handleStorageFetchError(
 
 			return nil // Signal success to caller
 		}
+
+		// If the DB retry also fails with a non-NotFound error, it's a more serious issue.
+		// We should wrap this error to provide more context for debugging.
+		if !errors.Is(dbErr, storage.ErrNotFound) {
+			storageErr = fmt.Errorf("%w (db retry failed: %v)", storageErr, dbErr)
+		}
 		// Fall through to return storage error if database also fails
 	}
 
