@@ -22,7 +22,7 @@
             in
             if tag != "" then tag else rev;
 
-          vendorHash = "sha256-GggDyzUYIZSucahVSQoZbXk+H+uz1Kj+9hXBX+csguQ=";
+          vendorHash = "sha256-ZuIIRxskK/KDyi0RwhSV/kZEnTlFhf0vtyKRZdVC9lY=";
         in
         pkgs.buildGoModule {
           pname = "ncps";
