@@ -168,14 +168,6 @@ The project uses "Skills" to provide detailed instructions and best practices fo
 
 When working with these tools, you SHOULD read the corresponding `SKILL.md` to ensure compliance with project-specific rules.
 
-### Agent Workflow (Important)
-
-**PAGER Management**: To avoid stalls and empty output during CLI command execution, agents MUST ensure that interactive pagers are disabled.
-
-- Prefix commands with `PAGER=cat` (e.g., `PAGER=cat git status`).
-- Use command-specific flags to disable pagers (e.g., `git --no-pager diff`).
-- When creating or modifying scripts, include `export PAGER=""` at the top.
-
 ### CI/CD and GitHub Actions
 
 - **CI/CD**: GitHub Actions optimized for Graphite-style stacked PRs.

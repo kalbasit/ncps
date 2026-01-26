@@ -4,12 +4,9 @@ set -eo pipefail
 # get-unresolved-comments.sh: Fetches unresolved PR comments using GitHub GraphQL API.
 # Usage: ./get-unresolved-comments.sh <pr-number>
 
-# Ensure no pager interfers with any of the commands
-export PAGER=""
-
 PR_NUMBER=$1
 if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(PAGER= gh pr view --json number --jq '.number' || true)
+  PR_NUMBER=$(gh pr view --json number --jq '.number' || true)
   if [ -z "$PR_NUMBER" ]; then
     echo "Error: No PR number provided and could not find a PR for the current branch." >&2
     echo "Usage: $0 <pr-number>" >&2

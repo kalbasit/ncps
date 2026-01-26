@@ -87,29 +87,6 @@ Many Graphite commands (`gt modify`, `gt move`, `gt split`, `gt restack`) are in
 2.  **Automatic Restacking**: Descendant branches are automatically updated if you change a parent branch.
 3.  **Visual Clarity**: Graphite's CLI output stays accurate and helpful.
 
-### Pager Interference
-
-**The Problem**: Commands like `git diff`, `git status`, or `gt ls` may produce empty output or stall if the `PAGER` environment variable is set to an interactive tool like `less` or `more`.
-
-**The Solution**: Always ensure the environment variable `PAGER` is set to `cat` or empty, OR use the tool-specific flag to disable the pager.
-
-**Best Practices**:
-
-1. **Per-command**: Prefix commands with `PAGER=cat`:
-
-   ```bash
-   PAGER=cat git status
-   PAGER=cat gt ls
-   ```
-
-2. **Git Specific**: Use `--no-pager` before the sub-command:
-
-   ```bash
-   git --no-pager diff
-   ```
-
-3. **Scripting**: If writing or modifying helper scripts, include `export PAGER=""` at the top of the script to protect future runs.
-
 ### Misplaced Commits
 
 If you accidentally commit a change to the wrong branch in a stack:

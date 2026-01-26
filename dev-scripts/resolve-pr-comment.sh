@@ -4,9 +4,6 @@ set -eo pipefail
 # resolve-pr-comment.sh: Resolves a GitHub PR review thread.
 # Usage: ./resolve-pr-comment.sh <thread-id>
 
-# Ensure no pager interfers with any of the commands
-export PAGER=""
-
 THREAD_ID=$1
 if [ -z "$THREAD_ID" ]; then
   echo "Usage: $0 <thread-id>" >&2
