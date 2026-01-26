@@ -1632,6 +1632,15 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 			return fmt.Errorf("error storing in database: %w", err)
 		}
 
+		// Cleanup legacy narinfo from storage if it exists.
+		// This handles the race condition where PutNarInfo finishes before a background
+		// migration can trigger.
+		if c.narInfoStore.HasNarInfo(ctx, hash) {
+			if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
+				zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to delete legacy narinfo from storage after PutNarInfo")
+			}
+		}
+
 		return nil
 	})
 }

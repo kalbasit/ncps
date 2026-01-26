@@ -2212,10 +2212,11 @@ func TestNarStreaming(t *testing.T) {
 	assert.True(t, localStore.HasNar(context.Background(), nu), "NAR should exist in storage after streaming completes")
 }
 
-// storageWithHook wraps a local.Store and allows injecting behavior before GetNarInfo.
+// storageWithHook wraps a local.Store and allows injecting behavior.
 type storageWithHook struct {
 	*local.Store
 	beforeGetNarInfo func(hash string)
+	beforeHasNarInfo func(hash string)
 }
 
 func (s *storageWithHook) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
@@ -2224,6 +2225,19 @@ func (s *storageWithHook) GetNarInfo(ctx context.Context, hash string) (*narinfo
 	}
 
 	return s.Store.GetNarInfo(ctx, hash)
+}
+
+func (s *storageWithHook) HasNarInfo(ctx context.Context, hash string) bool {
+	if s.beforeHasNarInfo != nil {
+		s.beforeHasNarInfo(hash)
+
+		// For the deterministic race test, we want to return true
+		// even if the hook just deleted the file, to simulate
+		// that GetNarInfo already decided it's a hit.
+		return true
+	}
+
+	return s.Store.HasNarInfo(ctx, hash)
 }
 
 // TestGetNarInfo_RaceConditionDuringMigrationDeletion tests the race condition where:
@@ -2337,4 +2351,91 @@ func TestGetNarInfo_RaceConditionDuringMigrationDeletion(t *testing.T) { //nolin
 	// Verify the narinfo was deleted from storage (migration cleanup)
 	_, statErr := os.Stat(narInfoPath)
 	assert.True(t, os.IsNotExist(statErr), "narinfo should be deleted from storage after migration")
+}
+
+func TestGetNarInfo_RaceWithPutNarInfoDeterministic(t *testing.T) { //nolint:paralleltest
+	// This test determines if legacy narinfo is deleted even if PutNarInfo
+	// finishes before GetNarInfo can trigger migration.
+	ctx := newContext()
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "ncps.db")
+
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	defer db.DB().Close()
+
+	baseStore, err := local.New(ctx, tmpDir)
+	require.NoError(t, err)
+
+	hash := testdata.Nar2.NarInfoHash
+	entry := testdata.Nar2
+
+	// Put narinfo and nar files in storage (simulating legacy data)
+	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(entry.NarInfoText), 0o600))
+
+	narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
+
+	// Channel to coordinate the race
+	putFinished := make(chan struct{})
+
+	var putOnce sync.Once
+
+	// Wrap the store to inject PutNarInfo at the critical moment
+	storeWithHook := &storageWithHook{
+		Store: baseStore,
+		beforeHasNarInfo: func(h string) {
+			if h == hash {
+				putOnce.Do(func() {
+					// This is the critical race window:
+					// 1. GetNarInfo has checked the database and found nothing.
+					// 2. It is now checking if the file exists in storage.
+					// 3. We use this hook to trigger PutNarInfo which will:
+					//    - Insert the record into the database.
+					//    - (If fixed) Delete the file from storage.
+					// 4. Then GetNarInfo will continue.
+
+					// Create a separate cache instance for the concurrent PutNarInfo
+					// to avoid locking issues within the same instance.
+					c2, err := newTestCache(ctx, cacheName, db, baseStore, baseStore, baseStore, "")
+					require.NoError(t, err)
+
+					defer c2.Close()
+
+					narInfoReader := io.NopCloser(strings.NewReader(entry.NarInfoText))
+					err = c2.PutNarInfo(ctx, hash, narInfoReader)
+					require.NoError(t, err)
+
+					close(putFinished)
+				})
+			}
+		},
+	}
+
+	// Create cache with the hooked store
+	c, err := newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
+	require.NoError(t, err)
+
+	defer c.Close()
+
+	// Call GetNarInfo
+	_, err = c.GetNarInfo(ctx, hash)
+	require.NoError(t, err)
+
+	// Ensure PutNarInfo actually ran
+	select {
+	case <-putFinished:
+	default:
+		t.Fatal("PutNarInfo was not triggered")
+	}
+
+	// Verify the narinfo was deleted from storage
+	_, statErr := os.Stat(narInfoPath)
+	assert.True(t, os.IsNotExist(statErr), "legacy narinfo should be deleted from storage")
 }
