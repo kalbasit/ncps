@@ -2211,3 +2211,130 @@ func TestNarStreaming(t *testing.T) {
 	nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
 	assert.True(t, localStore.HasNar(context.Background(), nu), "NAR should exist in storage after streaming completes")
 }
+
+// storageWithHook wraps a local.Store and allows injecting behavior before GetNarInfo.
+type storageWithHook struct {
+	*local.Store
+	beforeGetNarInfo func(hash string)
+}
+
+func (s *storageWithHook) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+	if s.beforeGetNarInfo != nil {
+		s.beforeGetNarInfo(hash)
+	}
+
+	return s.Store.GetNarInfo(ctx, hash)
+}
+
+// TestGetNarInfo_RaceConditionDuringMigrationDeletion tests the race condition where:
+// 1. GetNarInfo checks database (not found or NULL URL)
+// 2. GetNarInfo checks HasNarInfo (returns true - file exists)
+// 3. Migration runs concurrently: writes to database AND deletes from storage
+// 4. GetNarInfo tries to read from storage (file now deleted!)
+// 5. Expected: Should retry database and succeed (migration completed)
+// 6. Current Bug: Returns error because storage read fails.
+func TestGetNarInfo_RaceConditionDuringMigrationDeletion(t *testing.T) { //nolint:paralleltest
+	ctx := newContext()
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "ncps.db")
+
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	defer db.DB().Close()
+
+	baseStore, err := local.New(ctx, tmpDir)
+	require.NoError(t, err)
+
+	hash := testdata.Nar1.NarInfoHash
+	entry := testdata.Nar1
+
+	// Create a partial database record (simulating what GetNarInfo creates as a placeholder)
+	// This has hash but NULL URL, which causes getNarInfoFromDatabase to return ErrNotFound
+	_, err = db.DB().ExecContext(ctx, `
+		INSERT INTO narinfos (hash, store_path, url, compression, file_hash, file_size, nar_hash, nar_size)
+		VALUES (?, '', NULL, '', '', 0, '', 0)
+	`, hash)
+	require.NoError(t, err)
+
+	// Put narinfo and nar files in storage (simulating legacy data)
+	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
+	narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte(entry.NarInfoText), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
+
+	// Channel to coordinate the race
+	migrationComplete := make(chan struct{})
+
+	var migrationErr error
+
+	// Wrap the store to inject migration at the critical moment
+	storeWithHook := &storageWithHook{
+		Store: baseStore,
+		beforeGetNarInfo: func(h string) {
+			if h == hash {
+				// This is the critical race window:
+				// GetNarInfo has checked HasNarInfo (returned true)
+				// Now it's about to call GetNarInfo on storage
+				// We trigger migration here which will delete the file
+
+				// Parse the narinfo for migration
+				ni, parseErr := baseStore.GetNarInfo(ctx, hash)
+				require.NoError(t, parseErr, "should be able to read narinfo before migration")
+
+				// Run migration (writes to DB and deletes from storage)
+				locker := locklocal.NewLocker()
+				migrationErr = cache.MigrateNarInfo(ctx, locker, db, baseStore, hash, ni)
+
+				close(migrationComplete)
+
+				// Now the file is deleted from storage!
+				// When GetNarInfo continues, it will try to read a file that no longer exists
+			}
+		},
+	}
+
+	// Create cache with the hooked store (same for all three store types)
+	c, err := newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
+	require.NoError(t, err)
+
+	defer c.Close()
+
+	// Call GetNarInfo - this will trigger the race condition
+	ni, err := c.GetNarInfo(ctx, hash)
+
+	// Wait for migration to complete
+	<-migrationComplete
+	require.NoError(t, migrationErr, "migration should succeed")
+
+	// This is where the bug manifests:
+	// Current behavior: err != nil (storage read failed, file was deleted)
+	// Expected behavior: err == nil (should retry database after storage failure)
+	//
+	// After the fix, GetNarInfo should:
+	// 1. Try database -> ErrNotFound (NULL URL)
+	// 2. Check HasNarInfo -> true
+	// 3. Try storage -> fails (migration deleted file)
+	// 4. Retry database -> SUCCESS (migration completed)
+	require.NoError(t, err, "GetNarInfo should succeed by retrying database after storage deletion")
+	require.NotNil(t, ni)
+	assert.NotEmpty(t, ni.StorePath)
+
+	// Verify the narinfo is now in the database with full data
+	var dbURL sql.NullString
+
+	err = db.DB().QueryRowContext(ctx,
+		"SELECT url FROM narinfos WHERE hash = ?", hash).Scan(&dbURL)
+	require.NoError(t, err)
+	assert.True(t, dbURL.Valid, "URL should be populated after migration")
+	assert.NotEmpty(t, dbURL.String)
+
+	// Verify the narinfo was deleted from storage (migration cleanup)
+	_, statErr := os.Stat(narInfoPath)
+	assert.True(t, os.IsNotExist(statErr), "narinfo should be deleted from storage after migration")
+}
