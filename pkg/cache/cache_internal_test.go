@@ -678,7 +678,7 @@ func TestPutNarInfoConcurrentSameHash(t *testing.T) {
 	}
 
 	// All PutNarInfo calls should succeed (PUT should be idempotent)
-	// Bug: without proper ErrAlreadyExists handling in PutNarInfo, some may return errors
+	// Bug: without proper duplicate detection in PutNarInfo, some may return errors
 	require.Equal(t, numGoroutines, successCount, "all PutNarInfo calls should succeed (PUT should be idempotent)")
 
 	// Verify the narinfo exists in database (narinfos are no longer stored in storage)

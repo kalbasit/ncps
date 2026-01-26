@@ -212,7 +212,7 @@ func TestMigrateNarInfo_Idempotency(t *testing.T) {
 		// This should handle duplicate key gracefully
 		err = testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni)
 
-		// Should either succeed or return ErrAlreadyExists
+		// Should either succeed or succeed if multiple concurrently handled the same hash
 		if err != nil && !database.IsDuplicateKeyError(err) {
 			return err
 		}

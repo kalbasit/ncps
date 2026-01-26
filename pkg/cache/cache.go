@@ -70,9 +70,6 @@ var (
 	// errNarInfoPurged is returned if the narinfo was purged.
 	errNarInfoPurged = errors.New("the narinfo was purged")
 
-	// ErrAlreadyExists is returned when attempting to store a narinfo/nar that already exists in the database.
-	ErrAlreadyExists = errors.New("narinfo or nar already exists")
-
 	// ErrInconsistentState is returned when the database is in an inconsistent state (e.g., nar exists without narinfo).
 	ErrInconsistentState = errors.New("inconsistent database state")
 
@@ -1573,21 +1570,14 @@ func (c *Cache) pullNarInfo(
 	ds.storedOnce.Do(func() { close(ds.stored) })
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
-		if errors.Is(err, ErrAlreadyExists) {
-			// Already exists is not an error - another request stored it first
-			zerolog.Ctx(ctx).
-				Debug().
-				Msg("narinfo already exists in database, skipping")
-		} else {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("error storing the narinfo in the database")
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error storing the narinfo in the database")
 
-			ds.setError(err)
+		ds.setError(err)
 
-			return
-		}
+		return
 	}
 
 	zerolog.Ctx(ctx).
@@ -1638,13 +1628,6 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		// The storage backend (S3/filesystem) is used only for NAR files.
 		// Legacy narinfos in storage are handled by background migration during GetNarInfo.
 		if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
-			if errors.Is(err, ErrAlreadyExists) {
-				// Already exists is not an error for PUT - return success
-				zerolog.Ctx(ctx).Debug().Msg("narinfo already exists in database, skipping")
-
-				return nil
-			}
-
 			return fmt.Errorf("error storing in database: %w", err)
 		}
 
@@ -2310,7 +2293,7 @@ func MigrateNarInfo(
 
 	// Store narinfo in database using the UPSERT logic from storeInDatabase
 	err = storeNarInfoInDatabase(ctx, db, hash, ni)
-	if err != nil && !errors.Is(err, ErrAlreadyExists) {
+	if err != nil {
 		log.Error().Err(err).Msg("failed to migrate narinfo to database")
 
 		backgroundMigrationNarInfosTotal.Add(ctx, 1,
