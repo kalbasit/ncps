@@ -2429,7 +2429,7 @@ func TestGetNarInfo_RaceWithPutNarInfoDeterministic(t *testing.T) { //nolint:par
 	require.NoError(t, err)
 
 	// Ensure PutNarInfo actually ran
-select {
+	select {
 	case <-putFinished:
 		// ok
 	case <-time.After(5 * time.Second):
