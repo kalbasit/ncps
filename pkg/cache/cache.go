@@ -1872,9 +1872,14 @@ func (c *Cache) handleStorageFetchError(
 		*narInfo, dbErr = c.getNarInfoFromDatabase(ctx, hash)
 		if dbErr == nil {
 			// Migration succeeded while we were checking storage!
-			*metricAttrs = append(*metricAttrs,
-				attribute.String("source", "database"),
-			)
+			// The source is now the database, not storage. We need to update the metric.
+			for i, attr := range *metricAttrs {
+				if attr.Key == "source" {
+					(*metricAttrs)[i] = attribute.String("source", "database")
+
+					break
+				}
+			}
 
 			return nil // Signal success to caller
 		}
@@ -1887,7 +1892,14 @@ func (c *Cache) handleStorageFetchError(
 		// Fall through to return storage error if database also fails
 	}
 
-	*metricAttrs = append(*metricAttrs, attribute.String("status", "error"))
+	// The fetch failed, so update the status metric from "success" to "error".
+	for i, attr := range *metricAttrs {
+		if attr.Key == "status" {
+			(*metricAttrs)[i] = attribute.String("status", "error")
+
+			break
+		}
+	}
 
 	return fmt.Errorf("error fetching the narinfo from the store: %w", storageErr)
 }
