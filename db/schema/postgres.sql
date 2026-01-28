@@ -55,10 +55,10 @@ CREATE TABLE public.nar_files (
     hash text NOT NULL,
     compression text DEFAULT ''::text NOT NULL,
     file_size bigint NOT NULL,
-    query text DEFAULT ''::text NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone,
     last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    query text DEFAULT ''::text NOT NULL,
     CONSTRAINT nar_files_file_size_check CHECK ((file_size >= 0))
 );
 
@@ -203,11 +203,11 @@ ALTER TABLE ONLY public.config
 
 
 --
--- Name: nar_files nar_files_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: nar_files nar_files_hash_compression_query_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.nar_files
-    ADD CONSTRAINT nar_files_hash_key UNIQUE (hash);
+    ADD CONSTRAINT nar_files_hash_compression_query_key UNIQUE (hash, compression, query);
 
 
 --
@@ -345,4 +345,5 @@ ALTER TABLE ONLY public.narinfo_signatures
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260101000000'),
-    ('20260117195000');
+    ('20260117195000'),
+    ('20260127223000');

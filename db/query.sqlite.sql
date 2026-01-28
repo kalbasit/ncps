@@ -19,17 +19,22 @@ FROM narinfos
 WHERE id = ?;
 
 -- name: GetNarFileByHash :one
-SELECT *
+SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, "query"
 FROM nar_files
 WHERE hash = ?;
 
+-- name: GetNarFileByHashAndCompressionAndQuery :one
+SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, "query"
+FROM nar_files
+WHERE hash = ? AND compression = ? AND "query" = ?;
+
 -- name: GetNarFileByID :one
-SELECT *
+SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, "query"
 FROM nar_files
 WHERE id = ?;
 
 -- name: GetNarFileByNarInfoID :one
-SELECT nf.*
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.query
 FROM nar_files nf
 INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 WHERE nnf.narinfo_id = ?;
@@ -110,9 +115,9 @@ INSERT INTO nar_files (
 ) VALUES (
     ?, ?, ?, ?
 )
-ON CONFLICT (hash) DO UPDATE SET
+ON CONFLICT (hash, compression, "query") DO UPDATE SET
     updated_at = excluded.updated_at
-RETURNING *;
+RETURNING id, hash, compression, file_size, created_at, updated_at, last_accessed_at, "query";
 
 -- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
@@ -134,7 +139,7 @@ UPDATE nar_files
 SET
     last_accessed_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
-WHERE hash = ?;
+WHERE hash = ? AND compression = ? AND "query" = ?;
 
 -- name: DeleteNarInfoByHash :execrows
 DELETE FROM narinfos
@@ -142,7 +147,7 @@ WHERE hash = ?;
 
 -- name: DeleteNarFileByHash :execrows
 DELETE FROM nar_files
-WHERE hash = ?;
+WHERE hash = ? AND compression = ? AND "query" = ?;
 
 -- name: DeleteNarInfoByID :execrows
 DELETE FROM narinfos
@@ -201,7 +206,7 @@ WHERE (
 -- NOTE: This query uses a correlated subquery which is not optimal for performance.
 -- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 -- does not properly support filtering on window function results in subqueries.
-SELECT n1.*
+SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at, n1."query"
 FROM nar_files n1
 WHERE (
     SELECT SUM(n2.file_size)
@@ -212,7 +217,7 @@ WHERE (
 
 -- name: GetOrphanedNarFiles :many
 -- Find files that have no relationship to any narinfo
-SELECT nf.*
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.created_at, nf.updated_at, nf.last_accessed_at, nf."query"
 FROM nar_files nf
 LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 WHERE ninf.narinfo_id IS NULL;

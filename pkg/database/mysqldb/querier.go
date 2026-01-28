@@ -69,8 +69,8 @@ type Querier interface {
 	//DeleteNarFileByHash
 	//
 	//  DELETE FROM nar_files
-	//  WHERE hash = ?
-	DeleteNarFileByHash(ctx context.Context, hash string) (int64, error)
+	//  WHERE hash = ? AND compression = ? AND `query` = ?
+	DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error)
 	//DeleteNarFileByID
 	//
 	//  DELETE FROM nar_files
@@ -118,7 +118,7 @@ type Querier interface {
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
 	//
-	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.query
 	//  FROM nar_files n1
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
@@ -162,19 +162,25 @@ type Querier interface {
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHash
 	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+	//  SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
 	//  FROM nar_files
 	//  WHERE hash = ?
 	GetNarFileByHash(ctx context.Context, hash string) (NarFile, error)
+	//GetNarFileByHashAndCompressionAndQuery
+	//
+	//  SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
+	//  FROM nar_files
+	//  WHERE hash = ? AND compression = ? AND `query` = ?
+	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
 	//GetNarFileByID
 	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+	//  SELECT id, hash, compression, file_size, created_at, updated_at, last_accessed_at, `query`
 	//  FROM nar_files
 	//  WHERE id = ?
 	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 	//GetNarFileByNarInfoID
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.query
 	//  FROM nar_files nf
 	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 	//  WHERE nnf.narinfo_id = ?
@@ -227,7 +233,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	// Find files that have no relationship to any narinfo
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.query
 	//  FROM nar_files nf
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
@@ -272,8 +278,8 @@ type Querier interface {
 	//  SET
 	//      last_accessed_at = CURRENT_TIMESTAMP,
 	//      updated_at = CURRENT_TIMESTAMP
-	//  WHERE hash = ?
-	TouchNarFile(ctx context.Context, hash string) (int64, error)
+	//  WHERE hash = ? AND compression = ? AND `query` = ?
+	TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error)
 	//TouchNarInfo
 	//
 	//  UPDATE narinfos

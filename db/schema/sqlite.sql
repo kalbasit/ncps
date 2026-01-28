@@ -14,17 +14,6 @@ CREATE TABLE IF NOT EXISTS "config" (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP
 );
-CREATE TABLE nar_files (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hash TEXT NOT NULL UNIQUE,
-    compression TEXT NOT NULL DEFAULT '',
-    file_size INTEGER NOT NULL,
-    query TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP,
-    last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
 CREATE TABLE narinfo_nar_files (
     narinfo_id INTEGER NOT NULL REFERENCES narinfos (id) ON DELETE CASCADE,
     nar_file_id INTEGER NOT NULL REFERENCES nar_files (id) ON DELETE CASCADE,
@@ -46,6 +35,18 @@ CREATE TABLE narinfo_signatures (
     FOREIGN KEY (narinfo_id) REFERENCES narinfos (id) ON DELETE CASCADE
 );
 CREATE INDEX idx_narinfo_signatures_signature ON narinfo_signatures (signature);
+CREATE TABLE IF NOT EXISTS "nar_files" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash TEXT NOT NULL,
+    compression TEXT NOT NULL DEFAULT '',
+    file_size INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP,
+    last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "query" TEXT NOT NULL DEFAULT '',
+    UNIQUE (hash, compression, "query")
+);
+CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20241210054814'),
@@ -55,4 +56,5 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20260101000000'),
   ('20260105025735'),
   ('20260105030513'),
-  ('20260117195000');
+  ('20260117195000'),
+  ('20260127223000');

@@ -385,25 +385,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetNarFileByHash", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("nar not existing", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			narInfoHash, err := helper.RandString(32, nil)
-			require.NoError(t, err)
-
-			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: narInfoHash})
-			require.NoError(t, err)
-
-			narHash, err := helper.RandString(32, nil)
-			require.NoError(t, err)
-
-			_, err = db.GetNarFileByHash(context.Background(), narHash)
-			assert.ErrorIs(t, err, database.ErrNotFound)
-		})
-
-		t.Run("nar existing", func(t *testing.T) {
+		t.Run("can store multiple representations of same hash", func(t *testing.T) {
 			t.Parallel()
 
 			db := factory(t)
@@ -419,12 +401,74 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			nf2, err := db.GetNarFileByHash(context.Background(), narHash)
+			nf2, err := db.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(),
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        narHash,
+					Compression: nar.CompressionTypeXz.String(),
+					Query:       "hash=123&key=value",
+				},
+			)
 			require.NoError(t, err)
 
 			assert.Equal(t, nf1.Hash, nf2.Hash)
 			assert.Equal(t, nf1.Compression, nf2.Compression)
-			assert.Equal(t, nf1.FileSize, nf2.FileSize)
+			assert.Equal(t, nf1.Query, nf2.Query)
+
+			// Store another one with different compression
+			nf3, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: nar.CompressionTypeNone.String(),
+				Query:       "hash=123&key=value",
+				FileSize:    456,
+			})
+			require.NoError(t, err)
+			assert.NotEqual(t, nf1.ID, nf3.ID)
+
+			// Store another one with different query
+			nf4, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: nar.CompressionTypeXz.String(),
+				Query:       "different=query",
+				FileSize:    789,
+			})
+			require.NoError(t, err)
+			assert.NotEqual(t, nf1.ID, nf4.ID)
+		})
+
+		t.Run("nar not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.GetNarFileByHash(context.Background(), narHash)
+			require.Error(t, err)
+			assert.True(t, database.IsNotFoundError(err))
+		})
+
+		t.Run("nar existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "zstd",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			nf2, err := db.GetNarFileByHash(context.Background(), narHash)
+			require.NoError(t, err)
+
+			assert.Equal(t, nf1.ID, nf2.ID)
+			assert.Equal(t, nf1.Hash, nf2.Hash)
 		})
 	})
 
@@ -539,7 +583,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			ra, err := db.TouchNarFile(context.Background(), hash)
+			ra, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
+				Hash: hash,
+			})
 			require.NoError(t, err)
 
 			assert.Zero(t, ra)
@@ -552,7 +598,8 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			t.Run("create the nar", func(t *testing.T) {
 				_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 					Hash:        hash,
-					Compression: "",
+					Compression: "zstd",
+					Query:       "foo=bar",
 					FileSize:    123,
 				})
 				require.NoError(t, err)
@@ -600,7 +647,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			t.Run("touch the nar", func(t *testing.T) {
 				time.Sleep(time.Second)
 
-				ra, err := db.TouchNarFile(context.Background(), hash)
+				ra, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
+					Hash:        hash,
+					Compression: "zstd",
+					Query:       "foo=bar",
+				})
 				require.NoError(t, err)
 
 				assert.EqualValues(t, 1, ra)
@@ -657,7 +708,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			ra, err := db.DeleteNarFileByHash(context.Background(), hash)
+			ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
+				Hash: hash,
+			})
 			require.NoError(t, err)
 
 			assert.Zero(t, ra)
@@ -670,7 +723,8 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			t.Run("create the nar", func(t *testing.T) {
 				_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 					Hash:        hash,
-					Compression: "",
+					Compression: "zstd",
+					Query:       "foo=bar",
 					FileSize:    123,
 				})
 				require.NoError(t, err)
@@ -679,7 +733,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			t.Run("delete the narinfo", func(t *testing.T) {
 				time.Sleep(time.Second)
 
-				ra, err := db.DeleteNarFileByHash(context.Background(), hash)
+				ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
+					Hash:        hash,
+					Compression: "zstd",
+					Query:       "foo=bar",
+				})
 				require.NoError(t, err)
 
 				assert.EqualValues(t, 1, ra)
@@ -719,6 +777,60 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				require.NoError(t, rows.Err())
 				assert.Empty(t, narFiles)
 			})
+		})
+
+		t.Run("independent variants", func(t *testing.T) {
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// Create two variants
+			_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash,
+				Compression: "xz",
+				Query:       "q1",
+				FileSize:    100,
+			})
+			require.NoError(t, err)
+
+			v2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash,
+				Compression: "zstd",
+				Query:       "q2",
+				FileSize:    200,
+			})
+			require.NoError(t, err)
+
+			// Delete only v1
+			ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
+				Hash:        hash,
+				Compression: "xz",
+				Query:       "q1",
+			})
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, ra)
+
+			// Confirm v1 is gone
+			_, err = db.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(),
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        hash,
+					Compression: "xz",
+					Query:       "q1",
+				},
+			)
+			assert.True(t, database.IsNotFoundError(err))
+
+			// Confirm v2 still exists
+			retV2, err := db.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(),
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        hash,
+					Compression: "zstd",
+					Query:       "q2",
+				},
+			)
+			require.NoError(t, err)
+			assert.Equal(t, v2.ID, retV2.ID)
 		})
 	})
 
@@ -776,7 +888,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		time.Sleep(time.Second)
 
 		for _, narEntry := range allEntries[:len(allEntries)-1] {
-			_, err := db.TouchNarFile(context.Background(), narEntry.NarHash)
+			_, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
+				Hash:        narEntry.NarHash,
+				Compression: nar.CompressionTypeXz.String(),
+				Query:       "",
+			})
 			require.NoError(t, err)
 		}
 
