@@ -148,8 +148,12 @@ func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPara
 	return NarInfo(res), nil
 }
 
-func (w *sqliteWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
+func (w *sqliteWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
+	res, err := w.adapter.DeleteNarFileByHash(ctx, sqlitedb.DeleteNarFileByHashParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
@@ -319,8 +323,12 @@ func (w *sqliteWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, a
 	return res, nil
 }
 
-func (w *sqliteWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	res, err := w.adapter.GetNarFileByHash(ctx, hash)
+func (w *sqliteWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
+	res, err := w.adapter.GetNarFileByHashAndCompressionAndQuery(ctx, sqlitedb.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarFile{}, ErrNotFound
@@ -543,8 +551,12 @@ func (w *sqliteWrapper) SetConfig(ctx context.Context, arg SetConfigParams) erro
 	return nil
 }
 
-func (w *sqliteWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.TouchNarFile(ctx, hash)
+func (w *sqliteWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {
+	res, err := w.adapter.TouchNarFile(ctx, sqlitedb.TouchNarFileParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound

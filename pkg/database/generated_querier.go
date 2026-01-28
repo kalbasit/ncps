@@ -53,7 +53,7 @@ type Querier interface {
 	//  ) VALUES (
 	//      $1, $2, $3, $4
 	//  )
-	//  ON CONFLICT (hash) DO UPDATE SET
+	//  ON CONFLICT (hash, compression, query) DO UPDATE SET
 	//      updated_at = EXCLUDED.updated_at
 	//  RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
 	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error)
@@ -82,8 +82,8 @@ type Querier interface {
 	//DeleteNarFileByHash
 	//
 	//  DELETE FROM nar_files
-	//  WHERE hash = $1
-	DeleteNarFileByHash(ctx context.Context, hash string) (int64, error)
+	//  WHERE hash = $1 AND compression = $2 AND query = $3
+	DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error)
 	//DeleteNarFileByID
 	//
 	//  DELETE FROM nar_files
@@ -173,12 +173,12 @@ type Querier interface {
 	//  ORDER BY hash
 	//  LIMIT $1 OFFSET $2
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
-	//GetNarFileByHash
+	//GetNarFileByHashAndCompressionAndQuery
 	//
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
 	//  FROM nar_files
-	//  WHERE hash = $1
-	GetNarFileByHash(ctx context.Context, hash string) (NarFile, error)
+	//  WHERE hash = $1 AND compression = $2 AND query = $3
+	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
 	//GetNarFileByID
 	//
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
@@ -286,8 +286,8 @@ type Querier interface {
 	//  SET
 	//      last_accessed_at = CURRENT_TIMESTAMP,
 	//      updated_at = CURRENT_TIMESTAMP
-	//  WHERE hash = $1
-	TouchNarFile(ctx context.Context, hash string) (int64, error)
+	//  WHERE hash = $1 AND compression = $2 AND query = $3
+	TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error)
 	//TouchNarInfo
 	//
 	//  UPDATE narinfos

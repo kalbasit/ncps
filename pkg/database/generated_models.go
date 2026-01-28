@@ -60,9 +60,21 @@ type CreateNarInfoParams struct {
 	Ca          sql.NullString
 }
 
+type DeleteNarFileByHashParams struct {
+	Hash        string
+	Compression string
+	Query       string
+}
+
 type GetMigratedNarInfoHashesPaginatedParams struct {
 	Limit  int32
 	Offset int32
+}
+
+type GetNarFileByHashAndCompressionAndQueryParams struct {
+	Hash        string
+	Compression string
+	Query       string
 }
 
 type LinkNarInfoToNarFileParams struct {
@@ -102,4 +114,10 @@ type NarInfo struct {
 type SetConfigParams struct {
 	Key   string
 	Value string
+}
+
+type TouchNarFileParams struct {
+	Hash        string
+	Compression string
+	Query       string
 }

@@ -197,7 +197,11 @@ func getOrCreateNarFile(
 	narSize uint64,
 ) (database.NarFile, error) {
 	// First, try to get the record.
-	existing, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
+	existing, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        narURL.Hash,
+		Compression: narURL.Compression.String(),
+		Query:       narURL.Query.Encode(),
+	})
 	if err == nil {
 		// Found it, return.
 		return existing, nil
@@ -219,7 +223,13 @@ func getOrCreateNarFile(
 		// If we get a duplicate key error, it means another worker created it.
 		if database.IsDuplicateKeyError(err) {
 			// Fetch the record again. This time it should exist.
-			existing, errGet := qtx.GetNarFileByHash(ctx, narURL.Hash)
+			existing, errGet := qtx.GetNarFileByHashAndCompressionAndQuery(
+				ctx,
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        narURL.Hash,
+					Compression: narURL.Compression.String(),
+					Query:       narURL.Query.Encode(),
+				})
 			if errGet != nil {
 				return database.NarFile{}, fmt.Errorf("failed to get existing nar file record after race: %w", errGet)
 			}

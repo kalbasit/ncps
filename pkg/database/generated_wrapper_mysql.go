@@ -154,8 +154,12 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParam
 	return w.GetNarInfoByID(ctx, id)
 }
 
-func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.DeleteNarFileByHash(ctx, hash)
+func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
+	res, err := w.adapter.DeleteNarFileByHash(ctx, mysqldb.DeleteNarFileByHashParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
@@ -325,8 +329,12 @@ func (w *mysqlWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, ar
 	return res, nil
 }
 
-func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	res, err := w.adapter.GetNarFileByHash(ctx, hash)
+func (w *mysqlWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
+	res, err := w.adapter.GetNarFileByHashAndCompressionAndQuery(ctx, mysqldb.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarFile{}, ErrNotFound
@@ -549,8 +557,12 @@ func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error
 	return nil
 }
 
-func (w *mysqlWrapper) TouchNarFile(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.TouchNarFile(ctx, hash)
+func (w *mysqlWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {
+	res, err := w.adapter.TouchNarFile(ctx, mysqldb.TouchNarFileParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound

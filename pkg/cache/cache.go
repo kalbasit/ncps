@@ -1209,7 +1209,11 @@ func (c *Cache) getNarFromStore(
 	}
 
 	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
-		nr, err := qtx.GetNarFileByHash(ctx, narURL.Hash)
+		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+		})
 		if err != nil {
 			// TODO: If record not found, record it instead!
 			if database.IsNotFoundError(err) {
@@ -1220,7 +1224,11 @@ func (c *Cache) getNarFromStore(
 		}
 
 		if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNarFile(ctx, narURL.Hash); err != nil {
+			if _, err := qtx.TouchNarFile(ctx, database.TouchNarFileParams{
+				Hash:        narURL.Hash,
+				Compression: narURL.Compression.String(),
+				Query:       narURL.Query.Encode(),
+			}); err != nil {
 				return fmt.Errorf("error touching the nar record: %w", err)
 			}
 		}
@@ -1320,7 +1328,11 @@ func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 		return storage.ErrNotFound
 	}
 
-	if _, err := c.db.DeleteNarFileByHash(ctx, narURL.Hash); err != nil {
+	if _, err := c.db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+		Hash:        narURL.Hash,
+		Compression: narURL.Compression.String(),
+		Query:       narURL.Query.Encode(),
+	}); err != nil {
 		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
@@ -2102,7 +2114,11 @@ func (c *Cache) purgeNarInfo(
 		}
 
 		if narURL.Hash != "" {
-			if _, err := qtx.DeleteNarFileByHash(ctx, narURL.Hash); err != nil {
+			if _, err := qtx.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+				Hash:        narURL.Hash,
+				Compression: narURL.Compression.String(),
+				Query:       narURL.Query.Encode(),
+			}); err != nil {
 				return fmt.Errorf("error deleting the nar record: %w", err)
 			}
 		}
@@ -2256,42 +2272,7 @@ func (c *Cache) ensureNarFile(
 		return 0, fmt.Errorf("error creating or updating nar_file record in the database: %w", err)
 	}
 
-	// Validate that the returned record (new or existing) matches our expectations.
-	if err := c.validateNarFile(ctx, newNarFile, narURL, fileSize); err != nil {
-		return 0, err
-	}
-
 	return newNarFile.ID, nil
-}
-
-func (c *Cache) validateNarFile(
-	ctx context.Context,
-	existingNarFile database.NarFile,
-	narURL nar.URL,
-	fileSize uint64,
-) error {
-	if existingNarFile.Compression != narURL.Compression.String() ||
-		existingNarFile.Query != narURL.Query.Encode() ||
-		existingNarFile.FileSize != fileSize {
-		zerolog.Ctx(ctx).
-			Warn().
-			Str("nar_hash", narURL.Hash).
-			Str("existing_compression", existingNarFile.Compression).
-			Str("new_compression", narURL.Compression.String()).
-			Str("existing_query", existingNarFile.Query).
-			Str("new_query", narURL.Query.Encode()).
-			Uint64("existing_file_size", existingNarFile.FileSize).
-			Uint64("new_file_size", fileSize).
-			Msg("nar_file already exists but properties don't match")
-
-		return fmt.Errorf(
-			"%w: nar_file for hash %s already exists with different properties",
-			ErrInconsistentState,
-			narURL.Hash,
-		)
-	}
-
-	return nil
 }
 
 // MigrateNarInfoToDatabase migrates a single narinfo from storage to the database.
@@ -2858,13 +2839,53 @@ func (c *Cache) coordinateDownload(
 // withTransaction executes fn within a database transaction.
 // It automatically handles transaction lifecycle: BeginTx, Rollback (on error or panic), and Commit.
 func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
-	tx, err := c.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		zerolog.Ctx(ctx).Error().
+	const (
+		maxAttempts  = 5
+		initialDelay = 50 * time.Millisecond
+	)
+
+	var (
+		err   error
+		delay = initialDelay
+	)
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err = c.executeTransaction(ctx, operation, fn)
+		if err == nil {
+			return nil
+		}
+
+		// Only retry on deadlock/busy errors
+		if !database.IsDeadlockError(err) {
+			return err
+		}
+
+		if attempt == maxAttempts {
+			break
+		}
+
+		zerolog.Ctx(ctx).
+			Warn().
 			Err(err).
 			Str("operation", operation).
-			Msg("error beginning a transaction")
+			Int("attempt", attempt).
+			Dur("delay", delay).
+			Msg("database deadlock/busy, retrying transaction")
 
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			delay *= 2
+		}
+	}
+
+	return fmt.Errorf("transaction for %s failed after %d attempts: %w", operation, maxAttempts, err)
+}
+
+func (c *Cache) executeTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
+	tx, err := c.db.DB().BeginTx(ctx, nil)
+	if err != nil {
 		return fmt.Errorf("error beginning a transaction for %s: %w", operation, err)
 	}
 
@@ -2885,11 +2906,6 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 	}
 
 	if err := tx.Commit(); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("operation", operation).
-			Msg("error committing the transaction")
-
 		return fmt.Errorf("error committing the transaction for %s: %w", operation, err)
 	}
 

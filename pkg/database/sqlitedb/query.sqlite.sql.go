@@ -101,7 +101,7 @@ INSERT INTO nar_files (
 ) VALUES (
     ?, ?, ?, ?
 )
-ON CONFLICT (hash) DO UPDATE SET
+ON CONFLICT (hash, compression, "query") DO UPDATE SET
     updated_at = excluded.updated_at
 RETURNING id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 `
@@ -120,7 +120,7 @@ type CreateNarFileParams struct {
 //	) VALUES (
 //	    ?, ?, ?, ?
 //	)
-//	ON CONFLICT (hash) DO UPDATE SET
+//	ON CONFLICT (hash, compression, "query") DO UPDATE SET
 //	    updated_at = excluded.updated_at
 //	RETURNING id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 func (q *Queries) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
@@ -238,15 +238,21 @@ func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (N
 
 const deleteNarFileByHash = `-- name: DeleteNarFileByHash :execrows
 DELETE FROM nar_files
-WHERE hash = ?
+WHERE hash = ? AND compression = ? AND "query" = ?
 `
+
+type DeleteNarFileByHashParams struct {
+	Hash        string
+	Compression string
+	Query       string
+}
 
 // DeleteNarFileByHash
 //
 //	DELETE FROM nar_files
-//	WHERE hash = ?
-func (q *Queries) DeleteNarFileByHash(ctx context.Context, hash string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteNarFileByHash, hash)
+//	WHERE hash = ? AND compression = ? AND "query" = ?
+func (q *Queries) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarFileByHash, arg.Hash, arg.Compression, arg.Query)
 	if err != nil {
 		return 0, err
 	}
@@ -603,19 +609,25 @@ func (q *Queries) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg Get
 	return items, nil
 }
 
-const getNarFileByHash = `-- name: GetNarFileByHash :one
+const getNarFileByHashAndCompressionAndQuery = `-- name: GetNarFileByHashAndCompressionAndQuery :one
 SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 FROM nar_files
-WHERE hash = ?
+WHERE hash = ? AND compression = ? AND "query" = ?
 `
 
-// GetNarFileByHash
+type GetNarFileByHashAndCompressionAndQueryParams struct {
+	Hash        string
+	Compression string
+	Query       string
+}
+
+// GetNarFileByHashAndCompressionAndQuery
 //
 //	SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 //	FROM nar_files
-//	WHERE hash = ?
-func (q *Queries) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	row := q.db.QueryRowContext(ctx, getNarFileByHash, hash)
+//	WHERE hash = ? AND compression = ? AND "query" = ?
+func (q *Queries) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
+	row := q.db.QueryRowContext(ctx, getNarFileByHashAndCompressionAndQuery, arg.Hash, arg.Compression, arg.Query)
 	var i NarFile
 	err := row.Scan(
 		&i.ID,
@@ -658,7 +670,7 @@ func (q *Queries) GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 }
 
 const getNarFileByNarInfoID = `-- name: GetNarFileByNarInfoID :one
-SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf."query", nf.created_at, nf.updated_at, nf.last_accessed_at
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
 FROM nar_files nf
 INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 WHERE nnf.narinfo_id = ?
@@ -666,7 +678,7 @@ WHERE nnf.narinfo_id = ?
 
 // GetNarFileByNarInfoID
 //
-//	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf."query", nf.created_at, nf.updated_at, nf.last_accessed_at
+//	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
 //	FROM nar_files nf
 //	INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 //	WHERE nnf.narinfo_id = ?
@@ -1072,8 +1084,14 @@ UPDATE nar_files
 SET
     last_accessed_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
-WHERE hash = ?
+WHERE hash = ? AND compression = ? AND "query" = ?
 `
+
+type TouchNarFileParams struct {
+	Hash        string
+	Compression string
+	Query       string
+}
 
 // TouchNarFile
 //
@@ -1081,9 +1099,9 @@ WHERE hash = ?
 //	SET
 //	    last_accessed_at = CURRENT_TIMESTAMP,
 //	    updated_at = CURRENT_TIMESTAMP
-//	WHERE hash = ?
-func (q *Queries) TouchNarFile(ctx context.Context, hash string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, touchNarFile, hash)
+//	WHERE hash = ? AND compression = ? AND "query" = ?
+func (q *Queries) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, touchNarFile, arg.Hash, arg.Compression, arg.Query)
 	if err != nil {
 		return 0, err
 	}

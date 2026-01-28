@@ -203,11 +203,11 @@ ALTER TABLE ONLY public.config
 
 
 --
--- Name: nar_files nar_files_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: nar_files nar_files_hash_compression_query_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.nar_files
-    ADD CONSTRAINT nar_files_hash_key UNIQUE (hash);
+    ADD CONSTRAINT nar_files_hash_compression_query_key UNIQUE (hash, compression, query);
 
 
 --
@@ -345,4 +345,5 @@ ALTER TABLE ONLY public.narinfo_signatures
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260101000000'),
-    ('20260117195000');
+    ('20260117195000'),
+    ('20260127223000');
