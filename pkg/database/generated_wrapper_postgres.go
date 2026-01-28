@@ -315,20 +315,6 @@ func (w *postgresWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context,
 	return res, nil
 }
 
-func (w *postgresWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	res, err := w.adapter.GetNarFileByHash(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return NarFile{}, ErrNotFound
-		}
-		return NarFile{}, err
-	}
-
-	// Convert Single Domain Struct
-
-	return NarFile(res), nil
-}
-
 func (w *postgresWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHashAndCompressionAndQuery(ctx, postgresdb.GetNarFileByHashAndCompressionAndQueryParams{
 		Hash:        arg.Hash,

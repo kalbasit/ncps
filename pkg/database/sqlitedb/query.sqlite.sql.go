@@ -609,33 +609,6 @@ func (q *Queries) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg Get
 	return items, nil
 }
 
-const getNarFileByHash = `-- name: GetNarFileByHash :one
-SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
-FROM nar_files
-WHERE hash = ?
-`
-
-// GetNarFileByHash
-//
-//	SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
-//	FROM nar_files
-//	WHERE hash = ?
-func (q *Queries) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	row := q.db.QueryRowContext(ctx, getNarFileByHash, hash)
-	var i NarFile
-	err := row.Scan(
-		&i.ID,
-		&i.Hash,
-		&i.Compression,
-		&i.FileSize,
-		&i.Query,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LastAccessedAt,
-	)
-	return i, err
-}
-
 const getNarFileByHashAndCompressionAndQuery = `-- name: GetNarFileByHashAndCompressionAndQuery :one
 SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
 FROM nar_files

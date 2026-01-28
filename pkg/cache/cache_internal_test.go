@@ -318,7 +318,11 @@ func TestRunLRU(t *testing.T) {
 
 	// all nar_file records are in the database
 	for _, narEntry := range allEntries {
-		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narEntry.NarHash,
+			Compression: narEntry.NarCompression.String(),
+			Query:       "",
+		})
 		require.NoError(t, err)
 	}
 
@@ -348,11 +352,19 @@ func TestRunLRU(t *testing.T) {
 	// all nar_file records except the last one are in the database
 
 	for _, narEntry := range entries {
-		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narEntry.NarHash,
+			Compression: narEntry.NarCompression.String(),
+			Query:       "",
+		})
 		require.NoError(t, err)
 	}
 
-	_, err = c.db.GetNarFileByHash(context.Background(), lastEntry.NarHash)
+	_, err = c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        lastEntry.NarHash,
+		Compression: lastEntry.NarCompression.String(),
+		Query:       "",
+	})
 	require.ErrorIs(t, err, database.ErrNotFound)
 }
 
@@ -487,7 +499,11 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 
 	// all nar_file records are in the database
 	for _, narEntry := range allEntries {
-		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narEntry.NarHash,
+			Compression: narEntry.NarCompression.String(),
+			Query:       "",
+		})
 		require.NoError(t, err)
 	}
 
@@ -516,7 +532,11 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 	// be deleted because it has another narinfo referring to it that was indeed
 	// pulled.
 	for _, narEntry := range allEntries {
-		_, err := c.db.GetNarFileByHash(context.Background(), narEntry.NarHash)
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narEntry.NarHash,
+			Compression: narEntry.NarCompression.String(),
+			Query:       "",
+		})
 		require.NoError(t, err)
 	}
 }
@@ -602,9 +622,17 @@ func TestRunLRUWithSharedNar(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrNotFound, "ni2 should have been deleted")
 
 	// Verify that all nar files were deleted as they are now orphaned.
-	_, err = c.db.GetNarFileByHash(ctx, "nar-file-a")
+	_, err = c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        "nar-file-a",
+		Compression: "xz",
+		Query:       "",
+	})
 	require.ErrorIs(t, err, database.ErrNotFound, "nar-file-a should have been deleted")
-	_, err = c.db.GetNarFileByHash(ctx, "nar-file-b")
+	_, err = c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        "nar-file-b",
+		Compression: "xz",
+		Query:       "",
+	})
 	require.ErrorIs(t, err, database.ErrNotFound, "nar-file-b should have been deleted")
 }
 

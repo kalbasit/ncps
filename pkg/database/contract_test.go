@@ -382,7 +382,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 	})
 
-	t.Run("GetNarFileByHash", func(t *testing.T) {
+	t.Run("GetNarFileByHashAndCompressionAndQuery", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("can store multiple representations of same hash", func(t *testing.T) {
@@ -444,7 +444,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			narHash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			_, err = db.GetNarFileByHash(context.Background(), narHash)
+			_, err = db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narHash,
+				Compression: "xz",
+				Query:       "",
+			})
 			require.Error(t, err)
 			assert.True(t, database.IsNotFoundError(err))
 		})
@@ -464,7 +468,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			nf2, err := db.GetNarFileByHash(context.Background(), narHash)
+			nf2, err := db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narHash,
+				Compression: "zstd",
+				Query:       "",
+			})
 			require.NoError(t, err)
 
 			assert.Equal(t, nf1.ID, nf2.ID)

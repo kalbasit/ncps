@@ -329,20 +329,6 @@ func (w *mysqlWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, ar
 	return res, nil
 }
 
-func (w *mysqlWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	res, err := w.adapter.GetNarFileByHash(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return NarFile{}, ErrNotFound
-		}
-		return NarFile{}, err
-	}
-
-	// Convert Single Domain Struct
-
-	return NarFile(res), nil
-}
-
 func (w *mysqlWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHashAndCompressionAndQuery(ctx, mysqldb.GetNarFileByHashAndCompressionAndQueryParams{
 		Hash:        arg.Hash,

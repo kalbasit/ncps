@@ -323,20 +323,6 @@ func (w *sqliteWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, a
 	return res, nil
 }
 
-func (w *sqliteWrapper) GetNarFileByHash(ctx context.Context, hash string) (NarFile, error) {
-	res, err := w.adapter.GetNarFileByHash(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return NarFile{}, ErrNotFound
-		}
-		return NarFile{}, err
-	}
-
-	// Convert Single Domain Struct
-
-	return NarFile(res), nil
-}
-
 func (w *sqliteWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
 	res, err := w.adapter.GetNarFileByHashAndCompressionAndQuery(ctx, sqlitedb.GetNarFileByHashAndCompressionAndQueryParams{
 		Hash:        arg.Hash,

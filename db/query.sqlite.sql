@@ -18,10 +18,6 @@ SELECT *
 FROM narinfos
 WHERE id = ?;
 
--- name: GetNarFileByHash :one
-SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
-FROM nar_files
-WHERE hash = ?;
 
 -- name: GetNarFileByHashAndCompressionAndQuery :one
 SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at

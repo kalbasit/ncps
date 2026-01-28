@@ -175,12 +175,6 @@ type Querier interface {
 	//  ORDER BY hash
 	//  LIMIT $1 OFFSET $2
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
-	//GetNarFileByHash
-	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
-	//  FROM nar_files
-	//  WHERE hash = $1
-	GetNarFileByHash(ctx context.Context, hash string) (NarFile, error)
 	//GetNarFileByHashAndCompressionAndQuery
 	//
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
