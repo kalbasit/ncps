@@ -2839,13 +2839,53 @@ func (c *Cache) coordinateDownload(
 // withTransaction executes fn within a database transaction.
 // It automatically handles transaction lifecycle: BeginTx, Rollback (on error or panic), and Commit.
 func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
-	tx, err := c.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		zerolog.Ctx(ctx).Error().
+	const (
+		maxAttempts  = 5
+		initialDelay = 50 * time.Millisecond
+	)
+
+	var (
+		err   error
+		delay = initialDelay
+	)
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err = c.executeTransaction(ctx, operation, fn)
+		if err == nil {
+			return nil
+		}
+
+		// Only retry on deadlock/busy errors
+		if !database.IsDeadlockError(err) {
+			return err
+		}
+
+		if attempt == maxAttempts {
+			break
+		}
+
+		zerolog.Ctx(ctx).
+			Warn().
 			Err(err).
 			Str("operation", operation).
-			Msg("error beginning a transaction")
+			Int("attempt", attempt).
+			Dur("delay", delay).
+			Msg("database deadlock/busy, retrying transaction")
 
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			delay *= 2
+		}
+	}
+
+	return fmt.Errorf("transaction for %s failed after %d attempts: %w", operation, maxAttempts, err)
+}
+
+func (c *Cache) executeTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
+	tx, err := c.db.DB().BeginTx(ctx, nil)
+	if err != nil {
 		return fmt.Errorf("error beginning a transaction for %s: %w", operation, err)
 	}
 
@@ -2866,11 +2906,6 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 	}
 
 	if err := tx.Commit(); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("operation", operation).
-			Msg("error committing the transaction")
-
 		return fmt.Errorf("error committing the transaction for %s: %w", operation, err)
 	}
 

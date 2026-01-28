@@ -444,11 +444,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			narHash, err := helper.RandString(32, nil)
 			require.NoError(t, err)
 
-			_, err = db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
-				Hash:        narHash,
-				Compression: "xz",
-				Query:       "",
-			})
+			_, err = db.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(),
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        narHash,
+					Compression: "xz",
+					Query:       "",
+				})
 			require.Error(t, err)
 			assert.True(t, database.IsNotFoundError(err))
 		})
@@ -468,11 +470,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			nf2, err := db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
-				Hash:        narHash,
-				Compression: "zstd",
-				Query:       "",
-			})
+			nf2, err := db.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(),
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        narHash,
+					Compression: "zstd",
+					Query:       "",
+				})
 			require.NoError(t, err)
 
 			assert.Equal(t, nf1.ID, nf2.ID)

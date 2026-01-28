@@ -318,11 +318,13 @@ func TestRunLRU(t *testing.T) {
 
 	// all nar_file records are in the database
 	for _, narEntry := range allEntries {
-		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narEntry.NarHash,
-			Compression: narEntry.NarCompression.String(),
-			Query:       "",
-		})
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
+			context.Background(),
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narEntry.NarHash,
+				Compression: narEntry.NarCompression.String(),
+				Query:       "",
+			})
 		require.NoError(t, err)
 	}
 
@@ -352,19 +354,23 @@ func TestRunLRU(t *testing.T) {
 	// all nar_file records except the last one are in the database
 
 	for _, narEntry := range entries {
-		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narEntry.NarHash,
-			Compression: narEntry.NarCompression.String(),
-			Query:       "",
-		})
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
+			context.Background(),
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narEntry.NarHash,
+				Compression: narEntry.NarCompression.String(),
+				Query:       "",
+			})
 		require.NoError(t, err)
 	}
 
-	_, err = c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        lastEntry.NarHash,
-		Compression: lastEntry.NarCompression.String(),
-		Query:       "",
-	})
+	_, err = c.db.GetNarFileByHashAndCompressionAndQuery(
+		context.Background(),
+		database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        lastEntry.NarHash,
+			Compression: lastEntry.NarCompression.String(),
+			Query:       "",
+		})
 	require.ErrorIs(t, err, database.ErrNotFound)
 }
 
@@ -499,11 +505,13 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 
 	// all nar_file records are in the database
 	for _, narEntry := range allEntries {
-		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narEntry.NarHash,
-			Compression: narEntry.NarCompression.String(),
-			Query:       "",
-		})
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
+			context.Background(),
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narEntry.NarHash,
+				Compression: narEntry.NarCompression.String(),
+				Query:       "",
+			})
 		require.NoError(t, err)
 	}
 
@@ -532,11 +540,13 @@ func TestRunLRUCleanupInconsistentNarInfoState(t *testing.T) {
 	// be deleted because it has another narinfo referring to it that was indeed
 	// pulled.
 	for _, narEntry := range allEntries {
-		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(context.Background(), database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narEntry.NarHash,
-			Compression: narEntry.NarCompression.String(),
-			Query:       "",
-		})
+		_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
+			context.Background(),
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narEntry.NarHash,
+				Compression: narEntry.NarCompression.String(),
+				Query:       "",
+			})
 		require.NoError(t, err)
 	}
 }

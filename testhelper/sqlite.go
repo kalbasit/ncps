@@ -223,11 +223,13 @@ func getOrCreateNarFile(
 		// If we get a duplicate key error, it means another worker created it.
 		if database.IsDuplicateKeyError(err) {
 			// Fetch the record again. This time it should exist.
-			existing, errGet := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-				Hash:        narURL.Hash,
-				Compression: narURL.Compression.String(),
-				Query:       narURL.Query.Encode(),
-			})
+			existing, errGet := qtx.GetNarFileByHashAndCompressionAndQuery(
+				ctx,
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        narURL.Hash,
+					Compression: narURL.Compression.String(),
+					Query:       narURL.Query.Encode(),
+				})
 			if errGet != nil {
 				return database.NarFile{}, fmt.Errorf("failed to get existing nar file record after race: %w", errGet)
 			}
