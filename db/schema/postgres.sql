@@ -55,10 +55,10 @@ CREATE TABLE public.nar_files (
     hash text NOT NULL,
     compression text DEFAULT ''::text NOT NULL,
     file_size bigint NOT NULL,
+    query text DEFAULT ''::text NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone,
     last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    query text DEFAULT ''::text NOT NULL,
     CONSTRAINT nar_files_file_size_check CHECK ((file_size >= 0))
 );
 

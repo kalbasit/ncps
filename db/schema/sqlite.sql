@@ -40,10 +40,10 @@ CREATE TABLE IF NOT EXISTS "nar_files" (
     hash TEXT NOT NULL,
     compression TEXT NOT NULL DEFAULT '',
     file_size INTEGER NOT NULL,
+    "query" TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP,
     last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "query" TEXT NOT NULL DEFAULT '',
     UNIQUE (hash, compression, "query")
 );
 CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);

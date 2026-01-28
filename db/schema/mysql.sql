@@ -44,10 +44,10 @@ CREATE TABLE `nar_files` (
   `hash` varchar(255) NOT NULL,
   `compression` varchar(50) NOT NULL,
   `file_size` bigint(20) unsigned NOT NULL,
+  `query` varchar(512) NOT NULL DEFAULT '',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT NULL,
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
-  `query` varchar(512) NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_nar_files_hash_compression_query` (`hash`,`compression`,`query`) USING HASH,
   KEY `idx_nar_files_last_accessed_at` (`last_accessed_at`)
