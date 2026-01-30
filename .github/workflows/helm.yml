@@ -1,0 +1,50 @@
+name: Build and release the Helm Chart
+permissions:
+  contents: read
+  packages: write
+on:
+  workflow_call:
+jobs:
+  helm:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+      - name: Package Helm chart
+        run: |
+          CHART_VER="${{ github.ref_name }}"
+          APP_VER="${{ github.ref_name }}"
+
+          # Use flags to inject versions, ignoring Chart.yaml content
+          helm package charts/ncps \
+            --destination .helm-releases \
+            --version "$CHART_VER" \
+            --app-version "$APP_VER"
+
+          echo "📦 Packaged Chart v$CHART_VER with App Version $APP_VER"
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Push chart to GHCR
+        run: |
+          CHART_VER="${{ github.ref_name }}"
+          CHART_PACKAGE="ncps-${CHART_VER}.tgz"
+
+          # Push to OCI registry
+          helm push .helm-releases/${CHART_PACKAGE} oci://ghcr.io/${{ github.repository_owner }}/helm
+
+          echo "✅ Chart published to: oci://ghcr.io/${{ github.repository_owner }}/helm/ncps:${CHART_VER}"
+      - name: Logout from GHCR
+        if: always()
+        run: |
+          helm registry logout ghcr.io

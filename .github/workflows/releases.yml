@@ -24,6 +24,9 @@ jobs:
       push_images: true
     secrets:
       password: ${{ secrets.DOCKERHUB_TOKEN }}
+  helm:
+    uses: ./.github/workflows/helm.yml
+    needs: docker
   release:
     runs-on: ubuntu-24.04
     needs: docker
@@ -39,8 +42,30 @@ jobs:
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           append_body: true
           body: |
-            ## Docker Images
+            ## Docker Images ${{ github.ref_name }}
             The following image tags were published to [Dockerhub](https://hub.docker.com/r/kalbasit/ncps):
             ```
             ${{ needs.docker.outputs.tags }}
             ```
+
+            ## Helm Chart Release ${{ github.ref_name }}
+
+            ### Installation
+
+            ```bash
+            helm install ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ github.ref_name }}
+            ```
+
+            ### Upgrade
+
+            ```bash
+            helm upgrade ncps oci://ghcr.io/${{ github.repository_owner }}/helm/ncps --version ${{ github.ref_name }}
+            ```
+
+            ### Values
+
+            See [values.yaml](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/charts/ncps/values.yaml) for all configuration options.
+
+            ### Documentation
+
+            See [Helm Chart README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/charts/ncps/README.md) for detailed documentation and examples.
