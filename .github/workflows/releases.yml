@@ -68,4 +68,4 @@ jobs:
 
             ### Documentation
 
-            See [Helm Chart README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/charts/ncps/README.md) for detailed documentation and examples.
+            See [Helm Chart Documentation](https://docs.ncps.dev/user-guide/installation/helm-chart) for detailed documentation and examples.
