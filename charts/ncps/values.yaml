@@ -127,6 +127,18 @@ config:
     # Mounted as emptyDir volume
     tempPath: "/tmp/ncps"
 
+  # CDC (Content-Defined Chunking) configuration
+  # Chunks are stored in the same backend as NAR files (different prefix/directory)
+  cdc:
+    # Enable CDC for deduplication (experimental)
+    enabled: false
+    # Minimum chunk size in bytes
+    min: 65536
+    # Average chunk size in bytes
+    avg: 262144
+    # Maximum chunk size in bytes
+    max: 1048576
+
   # Storage backend (choose ONE)
   storage:
     # Storage type: "local" or "s3"
