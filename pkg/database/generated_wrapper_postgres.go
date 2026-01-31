@@ -78,6 +78,23 @@ func (w *postgresWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarIn
 	return nil
 }
 
+func (w *postgresWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
+	res, err := w.adapter.CreateChunk(ctx, postgresdb.CreateChunkParams{
+		Hash: arg.Hash,
+		Size: arg.Size,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
 func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
 	res, err := w.adapter.CreateConfig(ctx, postgresdb.CreateConfigParams{
 		Key:   arg.Key,
@@ -138,6 +155,32 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPa
 	// Convert Single Domain Struct
 
 	return NarInfo(res), nil
+}
+
+func (w *postgresWrapper) DecrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
+	res, err := w.adapter.DecrementChunkRefCount(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
+func (w *postgresWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
+	err := w.adapter.DeleteChunkByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
@@ -220,6 +263,65 @@ func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, er
 
 	// Return Primitive / *sql.DB / etc
 	return res, nil
+}
+
+func (w *postgresWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
+	res, err := w.adapter.GetChunkByHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
+func (w *postgresWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
+	res, err := w.adapter.GetChunkByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
+func (w *postgresWrapper) GetChunkCount(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetChunkCount(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
+func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+	res, err := w.adapter.GetChunksByNarFileID(ctx, narFileID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]Chunk, len(res))
+	for i, v := range res {
+		items[i] = Chunk(v)
+	}
+
+	return items, nil
 }
 
 func (w *postgresWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
@@ -467,6 +569,24 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return res, nil
 }
 
+func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+	res, err := w.adapter.GetOrphanedChunks(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]Chunk, len(res))
+	for i, v := range res {
+		items[i] = Chunk(v)
+	}
+
+	return items, nil
+}
+
 func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
 	if err != nil {
@@ -485,6 +605,19 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 	return items, nil
 }
 
+func (w *postgresWrapper) GetTotalChunkSize(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetTotalChunkSize(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
 func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	res, err := w.adapter.GetUnmigratedNarInfoHashes(ctx)
 	if err != nil {
@@ -495,6 +628,19 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 	}
 
 	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *postgresWrapper) IncrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
+	res, err := w.adapter.IncrementChunkRefCount(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
 	return res, nil
 }
 
@@ -509,6 +655,23 @@ func (w *postgresWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (b
 
 	// Return Primitive / *sql.DB / etc
 	return res, nil
+}
+
+func (w *postgresWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error {
+	err := w.adapter.LinkNarFileToChunk(ctx, postgresdb.LinkNarFileToChunkParams{
+		NarFileID:  arg.NarFileID,
+		ChunkID:    arg.ChunkID,
+		ChunkIndex: arg.ChunkIndex,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {

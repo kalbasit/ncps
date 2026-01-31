@@ -242,3 +242,62 @@ FROM narinfos
 WHERE url IS NOT NULL
 ORDER BY hash
 LIMIT ? OFFSET ?;
+
+-- name: GetChunkByHash :one
+SELECT *
+FROM chunks
+WHERE hash = ?;
+
+-- name: GetChunkByID :one
+SELECT *
+FROM chunks
+WHERE id = ?;
+
+-- name: GetChunksByNarFileID :many
+SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+FROM chunks c
+INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.nar_file_id = ?
+ORDER BY nfc.chunk_index;
+
+-- name: CreateChunk :execresult
+INSERT INTO chunks (
+    hash, size
+) VALUES (
+    ?, ?
+)
+ON DUPLICATE KEY UPDATE
+    ref_count = ref_count + 1;
+
+-- name: LinkNarFileToChunk :exec
+INSERT IGNORE INTO nar_file_chunks (
+    nar_file_id, chunk_id, chunk_index
+) VALUES (
+    ?, ?, ?
+);
+
+-- name: IncrementChunkRefCount :execrows
+UPDATE chunks
+SET ref_count = ref_count + 1
+WHERE hash = ?;
+
+-- name: DecrementChunkRefCount :execrows
+UPDATE chunks
+SET ref_count = ref_count - 1
+WHERE hash = ?;
+
+-- name: GetTotalChunkSize :one
+SELECT CAST(COALESCE(SUM(size), 0) AS SIGNED) AS total_size
+FROM chunks;
+
+-- name: GetChunkCount :one
+SELECT CAST(COUNT(*) AS SIGNED) AS count
+FROM chunks;
+
+-- name: GetOrphanedChunks :many
+SELECT * FROM chunks
+WHERE id NOT IN (SELECT chunk_id FROM nar_file_chunks);
+
+-- name: DeleteChunkByID :exec
+DELETE FROM chunks
+WHERE id = ?;
