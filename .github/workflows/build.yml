@@ -15,6 +15,8 @@ jobs:
       contents: "read"
     with:
       systems: "['x86_64-linux', 'aarch64-linux']"
+    secrets:
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}
   docker:
     uses: ./.github/workflows/docker.yml
     needs: flake
