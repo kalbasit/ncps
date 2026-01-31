@@ -23,6 +23,13 @@ data:
         timezone: {{ .Values.config.cache.lruTimezone | quote }}
       {{- end }}
       temp-path: {{ .Values.config.cache.tempPath | quote }}
+      {{- if .Values.config.cdc.enabled }}
+      cdc:
+        enabled: true
+        min: {{ .Values.config.cdc.min }}
+        avg: {{ .Values.config.cdc.avg }}
+        max: {{ .Values.config.cdc.max }}
+      {{- end }}
 
       {{- if and (or (eq .Values.config.database.type "postgresql") (eq .Values.config.database.type "mysql")) (or .Values.config.database.pool.maxOpenConns .Values.config.database.pool.maxIdleConns) }}
       database:

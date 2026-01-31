@@ -58,6 +58,18 @@ cache:
     #   PostgreSQL: 5
     #   MySQL/MariaDB: 5
     # max-idle-conns: 5
+  # CDC (Content-Defined Chunking) configuration (EXPERIMENTAL)
+  # Enables deduplication of NAR files by splitting them into content-defined chunks.
+  # Chunks are stored in the same backend as NAR files (different prefix/directory).
+  cdc:
+    # Enable CDC chunking
+    enabled: false
+    # Minimum chunk size for CDC in bytes (default: 65536)
+    min: 65536
+    # Average chunk size for CDC in bytes (default: 262144)
+    avg: 262144
+    # Maximum chunk size for CDC in bytes (default: 1048576)
+    max: 1048576
   # The maximum size of the store. It can be given with units such as 5K, 10G
   # etc. Supported units: B, K, M, G, T
   max-size: 100G
