@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -101,5 +102,55 @@ func TestLocalStore(t *testing.T) {
 		// Verify parent directory is gone (since it should be empty)
 		_, err = os.Stat(parentDir)
 		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("PutChunk concurrent", func(t *testing.T) {
+		t.Parallel()
+
+		hash := "concurrent-hash"
+		content := "concurrent content"
+		numGoroutines := 10
+
+		var (
+			wg       sync.WaitGroup
+			createds = make(chan bool, numGoroutines)
+			errs     = make(chan error, numGoroutines)
+		)
+
+		wg.Add(numGoroutines)
+
+		for i := 0; i < numGoroutines; i++ {
+			go func() {
+				defer wg.Done()
+
+				created, err := store.PutChunk(ctx, hash, []byte(content))
+
+				createds <- created
+
+				errs <- err
+			}()
+		}
+
+		wg.Wait()
+		close(createds)
+		close(errs)
+
+		var totalCreated int
+
+		for err := range errs {
+			require.NoError(t, err)
+		}
+
+		for created := range createds {
+			if created {
+				totalCreated++
+			}
+		}
+
+		assert.Equal(t, 1, totalCreated, "Exactly one goroutine should have created the chunk")
+
+		has, err := store.HasChunk(ctx, hash)
+		require.NoError(t, err)
+		assert.True(t, has)
 	})
 }
