@@ -13,7 +13,7 @@ type Chunk struct {
 	ID        int64
 	Hash      string
 	Size      uint32
-	RefCount  uint32
+	RefCount  int32
 	CreatedAt time.Time
 }
 
