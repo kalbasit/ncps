@@ -6,13 +6,8 @@ import (
 	"io"
 )
 
-var (
-	// ErrNotFound is returned if the chunk was not found.
-	ErrNotFound = errors.New("chunk not found")
-
-	// ErrAlreadyExists is returned if the chunk already exists.
-	ErrAlreadyExists = errors.New("chunk already exists")
-)
+// ErrNotFound is returned if the chunk was not found.
+var ErrNotFound = errors.New("chunk not found")
 
 // Store represents a storage backend for chunks.
 type Store interface {
