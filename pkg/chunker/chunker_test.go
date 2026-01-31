@@ -95,14 +95,18 @@ func collectChunks(ctx context.Context, c chunker.Chunker, r io.Reader) ([]chunk
 		select {
 		case chunk, ok := <-chunksChan:
 			if !ok {
-				return chunks, nil
+				// Producer is done. Check if there's a pending error.
+				select {
+				case err := <-errChan:
+					return nil, err
+				default:
+					return chunks, nil
+				}
 			}
 
 			chunks = append(chunks, chunk)
 		case err := <-errChan:
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}

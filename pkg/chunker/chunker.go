@@ -58,7 +58,6 @@ func (c *CDCChunker) Chunk(ctx context.Context, r io.Reader) (<-chan Chunk, <-ch
 
 	go func() {
 		defer close(chunksChan)
-		defer close(errChan)
 
 		// Create a FastCDC chunker
 		fcdc, err := c.pool.Get(r)
