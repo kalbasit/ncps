@@ -1,5 +1,4 @@
 # Storage Comparison
-
 | Feature | Local Storage | S3 Storage |
 | --- | --- | --- |
 | **Setup Complexity** | Simple | Moderate |

@@ -1,5 +1,4 @@
 # NarInfo Migration
-
 ## Overview
 
 NarInfo migration moves NarInfo metadata from storage (filesystem or S3) into the database. This provides faster lookups, better querying capabilities, and prepares for advanced features.
@@ -8,16 +7,16 @@ NarInfo migration moves NarInfo metadata from storage (filesystem or S3) into th
 
 **Benefits:**
 
-- **Faster lookups** - Database queries vs. file I/O
-- **Better scalability** - Indexed queries on millions of entries
-- **Advanced features** - Enables future features requiring relational data
-- **Reduced storage I/O** - Less filesystem/S3 traffic
+*   **Faster lookups** - Database queries vs. file I/O
+*   **Better scalability** - Indexed queries on millions of entries
+*   **Advanced features** - Enables future features requiring relational data
+*   **Reduced storage I/O** - Less filesystem/S3 traffic
 
 **When to migrate:**
 
-- Upgrading from pre-database versions
-- Moving to high-availability deployments
-- Experiencing performance issues with large caches
+*   Upgrading from pre-database versions
+*   Moving to high-availability deployments
+*   Experiencing performance issues with large caches
 
 ## Migration Strategies
 
@@ -27,24 +26,24 @@ NarInfo metadata is automatically migrated during normal operation when accessed
 
 **Advantages:**
 
-- Zero downtime
-- No manual intervention
-- Gradual migration over time
-- Works alongside normal cache operation
+*   Zero downtime
+*   No manual intervention
+*   Gradual migration over time
+*   Works alongside normal cache operation
 
 **How it works:**
 
-1. Client requests a package
-1. NCPS checks database first
-1. If not in database, reads from storage
-1. Migrates to database transparently
-1. Subsequent requests use database
+1.  Client requests a package
+2.  NCPS checks database first
+3.  If not in database, reads from storage
+4.  Migrates to database transparently
+5.  Subsequent requests use database
 
 **Best for:**
 
-- Production systems
-- Caches with moderate traffic
-- When downtime is unacceptable
+*   Production systems
+*   Caches with moderate traffic
+*   When downtime is unacceptable
 
 ### Explicit CLI Migration
 
@@ -52,22 +51,22 @@ Bulk migration using the CLI command for faster results.
 
 **Advantages:**
 
-- Faster completion
-- Predictable timeline
-- Progress monitoring
-- Deletes from storage after migration
+*   Faster completion
+*   Predictable timeline
+*   Progress monitoring
+*   Deletes from storage after migration
 
 **Disadvantages:**
 
-- Requires downtime (if deleting)
-- More manual process
+*   Requires downtime (if deleting)
+*   More manual process
 
 **Best for:**
 
-- Large caches (millions of narinfos)
-- Maintenance windows
-- When migration speed is important
-- Storage space constraints (migration deletes files)
+*   Large caches (millions of narinfos)
+*   Maintenance windows
+*   When migration speed is important
+*   Storage space constraints (migration deletes files)
 
 ## CLI Migration Guide
 
@@ -98,29 +97,29 @@ ncps migrate-narinfo \
 
 **With Redis locking:**
 
-- Migration can run safely while ncps is serving requests
-- Multiple migration workers coordinate to avoid duplicate work
-- Uses distributed locks to prevent race conditions
-- Same Redis configuration as your running ncps instances
+*   Migration can run safely while ncps is serving requests
+*   Multiple migration workers coordinate to avoid duplicate work
+*   Uses distributed locks to prevent race conditions
+*   Same Redis configuration as your running ncps instances
 
 **Without Redis locking:**
 
-- Uses in-memory locking (no coordination with other instances)
-- Should only run when ncps instances are stopped
-- Still safe for single-instance deployments
+*   Uses in-memory locking (no coordination with other instances)
+*   Should only run when ncps instances are stopped
+*   Still safe for single-instance deployments
 
 **Redis flags:**
 
-- `--cache-redis-addrs` - Comma-separated Redis server addresses (enables distributed locking)
-- `--cache-redis-username` - Redis username (optional)
-- `--cache-redis-password` - Redis password (optional)
-- `--cache-redis-db` - Redis database number (default: 0)
-- `--cache-redis-use-tls` - Use TLS for Redis connections (optional)
-- `--cache-redis-pool-size` - Redis connection pool size (default: 10)
-- `--cache-lock-backend` - Lock backend to use: 'local', 'redis', or 'postgres' (default: 'local')
-- `--cache-lock-redis-key-prefix` - Prefix for Redis lock keys (default: 'ncps:lock:')
-- `--cache-lock-allow-degraded-mode` - Fallback to local locks if Redis is down
-- `--cache-lock-retry-max-attempts` - Max lock retry attempts (default: 3)
+*   `--cache-redis-addrs` - Comma-separated Redis server addresses (enables distributed locking)
+*   `--cache-redis-username` - Redis username (optional)
+*   `--cache-redis-password` - Redis password (optional)
+*   `--cache-redis-db` - Redis database number (default: 0)
+*   `--cache-redis-use-tls` - Use TLS for Redis connections (optional)
+*   `--cache-redis-pool-size` - Redis connection pool size (default: 10)
+*   `--cache-lock-backend` - Lock backend to use: 'local', 'redis', or 'postgres' (default: 'local')
+*   `--cache-lock-redis-key-prefix` - Prefix for Redis lock keys (default: 'ncps:lock:')
+*   `--cache-lock-allow-degraded-mode` - Fallback to local locks if Redis is down
+*   `--cache-lock-retry-max-attempts` - Max lock retry attempts (default: 3)
 
 ### Dry Run
 
@@ -182,10 +181,10 @@ Adjust worker count based on your database capacity:
 
 **Guidelines:**
 
-- **SQLite**: 5-10 workers (single-writer limitation)
-- **PostgreSQL**: 20-100 workers (depends on connection pool)
-- **MySQL/MariaDB**: 20-100 workers (depends on connection pool)
-- **S3 Storage**: Higher concurrency OK (parallel uploads)
+*   **SQLite**: 5-10 workers (single-writer limitation)
+*   **PostgreSQL**: 20-100 workers (depends on connection pool)
+*   **MySQL/MariaDB**: 20-100 workers (depends on connection pool)
+*   **S3 Storage**: Higher concurrency OK (parallel uploads)
 
 ## Progress Monitoring
 
@@ -202,11 +201,11 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 du
 
 **Metrics explained:**
 
-- **found**: Total narinfos discovered
-- **processed**: Entered worker pool
-- **succeeded**: Successfully migrated
-- **failed**: Errors during migration
-- **rate**: Narinfos processed per second
+*   **found**: Total narinfos discovered
+*   **processed**: Entered worker pool
+*   **succeeded**: Successfully migrated
+*   **failed**: Errors during migration
+*   **rate**: Narinfos processed per second
 
 ### OpenTelemetry
 
@@ -221,7 +220,7 @@ ncps migrate-narinfo \
 
 If OpenTelemetry is enabled, monitor via metrics:
 
-**ncps_migration_narinfos_total**
+**ncps\_migration\_narinfos\_total**
 
 ```
 # Total migrations
@@ -232,7 +231,7 @@ sum(rate(ncps_migration_narinfos_total{result="success"}[5m])) /
 sum(rate(ncps_migration_narinfos_total[5m]))
 ```
 
-**ncps_migration_duration_seconds**
+**ncps\_migration\_duration\_seconds**
 
 ```
 # Average migration time
@@ -242,7 +241,7 @@ histogram_quantile(0.5, ncps_migration_duration_seconds)
 histogram_quantile(0.99, ncps_migration_duration_seconds)
 ```
 
-**ncps_migration_batch_size**
+**ncps\_migration\_batch\_size**
 
 ```
 # Batch sizes
@@ -290,23 +289,19 @@ WHERE hash = 'n5glp21rsz314qssw9fbvfswgy3kc68f';
 
 **Solutions:**
 
-1. **Increase worker count** (if database can handle it)
+1.  **Increase worker count** (if database can handle it)
 
-   ```sh
-   --concurrency=50
-   ```
+    ```sh
+    --concurrency=50
+    ```
+2.  **Check database connection pool**
 
-1. **Check database connection pool**
-
-   ```sh
-   --cache-database-pool-max-open-conns=100
-   ```
-
-1. **Verify network latency** to database
-
-1. **Run during low-traffic period**
-
-1. **For SQLite**: Consider PostgreSQL/MySQL for better concurrency
+    ```sh
+    --cache-database-pool-max-open-conns=100
+    ```
+3.  **Verify network latency** to database
+4.  **Run during low-traffic period**
+5.  **For SQLite**: Consider PostgreSQL/MySQL for better concurrency
 
 ### Duplicate Key Errors in Logs
 
@@ -330,9 +325,9 @@ ncps migrate-narinfo \
 
 **How it works:**
 
-- Migration is idempotent
-- Already-migrated narinfos are deleted from storage
-- Database migration step is skipped
+*   Migration is idempotent
+*   Already-migrated narinfos are deleted from storage
+*   Database migration step is skipped
 
 ### Transaction Deadlocks
 
@@ -340,13 +335,12 @@ ncps migrate-narinfo \
 
 **Solutions:**
 
-1. **Reduce worker count**
+1.  **Reduce worker count**
 
-   ```sh
-   --concurrency=5
-   ```
-
-1. **Use PostgreSQL/MySQL** instead of SQLite (better concurrent writes)
+    ```sh
+    --concurrency=5
+    ```
+2.  **Use PostgreSQL/MySQL** instead of SQLite (better concurrent writes)
 
 ### Out of Memory
 
@@ -354,55 +348,51 @@ ncps migrate-narinfo \
 
 **Solutions:**
 
-1. **Migration loads all migrated hashes** into memory by default
+1.  **Migration loads all migrated hashes** into memory by default
 
-   - For very large caches (millions of narinfos), this can use significant RAM
-   - Solution: Ensure adequate memory or use background migration instead
+    *   For very large caches (millions of narinfos), this can use significant RAM
+    *   Solution: Ensure adequate memory or use background migration instead
+2.  **Reduce worker count** to lower memory pressure
 
-1. **Reduce worker count** to lower memory pressure
-
-   ```sh
-   --concurrency=10
-   ```
+    ```sh
+    --concurrency=10
+    ```
 
 ## Best Practices
 
 ### Before Migration
 
-1. **Backup database** before starting
+1.  **Backup database** before starting
 
-   ```sh
-   # SQLite
-   cp /var/lib/ncps/db.sqlite /var/lib/ncps/db.sqlite.backup
+    ```sh
+    # SQLite
+    cp /var/lib/ncps/db.sqlite /var/lib/ncps/db.sqlite.backup
 
-   # PostgreSQL
-   pg_dump ncps > ncps_backup.sql
-   ```
+    # PostgreSQL
+    pg_dump ncps > ncps_backup.sql
+    ```
+2.  **Test with dry run**
 
-1. **Test with dry run**
-
-   ```
-   ncps migrate-narinfo --dry-run ...
-   ```
-
-1. **Check available disk space** as the database will grow.
-
-1. **Plan for a maintenance window** since this is a destructive operation.
+    ```
+    ncps migrate-narinfo --dry-run ...
+    ```
+3.  **Check available disk space** as the database will grow.
+4.  **Plan for a maintenance window** since this is a destructive operation.
 
 ### During Migration
 
-1. **Monitor progress** via console or OpenTelemetry
-1. **Watch error count** - some failures OK, many failures = investigate
-1. **Check database performance** - watch for resource constraints
-1. **Keep backups available** for quick rollback if needed
+1.  **Monitor progress** via console or OpenTelemetry
+2.  **Watch error count** - some failures OK, many failures = investigate
+3.  **Check database performance** - watch for resource constraints
+4.  **Keep backups available** for quick rollback if needed
 
 ### After Migration
 
-1. **Verify migration count** matches expected
-1. **Spot check** several narinfos for data integrity
-1. **Test cache operation** - fetch a few packages
-1. **Keep storage files** for a few days before deleting (safety)
-1. **Monitor cache performance** - should improve after migration
+1.  **Verify migration count** matches expected
+2.  **Spot check** several narinfos for data integrity
+3.  **Test cache operation** - fetch a few packages
+4.  **Keep storage files** for a few days before deleting (safety)
+5.  **Monitor cache performance** - should improve after migration
 
 ## Common Workflows
 
@@ -443,10 +433,10 @@ ncps migrate-narinfo \
 
 **Benefits:**
 
-- No downtime required
-- Migration coordinates with running instances via distributed locks
-- Safe to run multiple migration processes simultaneously
-- Each narinfo is migrated exactly once (lock prevents duplicates)
+*   No downtime required
+*   Migration coordinates with running instances via distributed locks
+*   Safe to run multiple migration processes simultaneously
+*   Each narinfo is migrated exactly once (lock prevents duplicates)
 
 **Option 2: Maintenance window (without Redis)**
 
@@ -466,8 +456,8 @@ systemctl start ncps@*
 
 **When to use each approach:**
 
-- **With Redis**: Production systems where downtime is unacceptable, or when you want to parallelize migration across multiple machines
-- **Without Redis**: Maintenance windows, single-instance deployments, or when Redis is not available
+*   **With Redis**: Production systems where downtime is unacceptable, or when you want to parallelize migration across multiple machines
+*   **Without Redis**: Maintenance windows, single-instance deployments, or when Redis is not available
 
 ### Emergency Rollback
 
@@ -488,12 +478,12 @@ Storage files are still available (unless you used `--delete`).
 
 ## Next Steps
 
-- <a class="reference-link" href="Monitoring.md">Monitoring</a> - Track migration metrics
-- <a class="reference-link" href="Upgrading.md">Upgrading</a> - Upgrade procedures
-- <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database configuration
+*   <a class="reference-link" href="Monitoring.md">Monitoring</a> - Track migration metrics
+*   <a class="reference-link" href="Upgrading.md">Upgrading</a> - Upgrade procedures
+*   <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database configuration
 
 ## Related Documentation
 
-- <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backends
-- <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database setup
-- <a class="reference-link" href="Troubleshooting.md">Troubleshooting</a> - Common issues
+*   <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backends
+*   <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database setup
+*   <a class="reference-link" href="Troubleshooting.md">Troubleshooting</a> - Common issues

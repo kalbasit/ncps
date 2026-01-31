@@ -1,11 +1,10 @@
 # Local Filesystem Storage
-
 ### When to Use
 
-- **Single-instance deployments**: One ncps server
-- **Simple setup**: No external dependencies
-- **Low latency**: Direct disk I/O
-- **Testing and development**
+*   **Single-instance deployments**: One ncps server
+*   **Simple setup**: No external dependencies
+*   **Low latency**: Direct disk I/O
+*   **Testing and development**
 
 ### Configuration
 
@@ -42,9 +41,9 @@ Local storage creates the following structure:
 
 ### Requirements
 
-- **Writable directory**: ncps user must have read/write access
-- **Sufficient space**: Plan for cache growth (recommend 50GB-1TB)
-- **Fast disk**: SSD recommended for better performance
+*   **Writable directory**: ncps user must have read/write access
+*   **Sufficient space**: Plan for cache growth (recommend 50GB-1TB)
+*   **Fast disk**: SSD recommended for better performance
 
 ### Permissions
 
@@ -59,12 +58,12 @@ sudo chmod 0755 /var/lib/ncps
 
 **Pros:**
 
-- Fast (local disk I/O)
-- No network latency
-- Simple to manage
+*   Fast (local disk I/O)
+*   No network latency
+*   Simple to manage
 
 **Cons:**
 
-- Limited to single server's disk
-- No built-in redundancy
-- Not suitable for HA deployments
+*   Limited to single server's disk
+*   No built-in redundancy
+*   Not suitable for HA deployments

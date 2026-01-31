@@ -1,11 +1,10 @@
 # SQLite Configuration
-
 ### When to Use
 
-- **Single-instance deployments**: One ncps server only
-- **Simple setup**: No external database required
-- **Development and testing**
-- **Small to medium teams** (up to 100+ users)
+*   **Single-instance deployments**: One ncps server only
+*   **Simple setup**: No external database required
+*   **Development and testing**
+*   **Small to medium teams** (up to 100+ users)
 
 **Important:** SQLite does NOT support high-availability deployments with multiple instances.
 
@@ -61,16 +60,16 @@ SQLite enforces a maximum of 1 open connection:
 
 **Pros:**
 
-- Zero configuration
-- Fast for single-instance
-- No network overhead
-- Automatic backups (file copy)
+*   Zero configuration
+*   Fast for single-instance
+*   No network overhead
+*   Automatic backups (file copy)
 
 **Cons:**
 
-- Single writer at a time
-- Not suitable for HA
-- Limited scalability
+*   Single writer at a time
+*   Not suitable for HA
+*   Limited scalability
 
 ### Backup and Restore
 

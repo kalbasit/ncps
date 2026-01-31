@@ -1,5 +1,4 @@
 # High Availability
-
 ## High Availability Deployment
 
 Deploy multiple ncps instances for zero-downtime operation, load distribution, and redundancy.
@@ -8,11 +7,11 @@ Deploy multiple ncps instances for zero-downtime operation, load distribution, a
 
 Running multiple ncps instances provides:
 
-- ✅ **Zero Downtime** - Instance failures don't interrupt service
-- ✅ **Load Distribution** - Requests spread across multiple servers
-- ✅ **Horizontal Scaling** - Add instances to handle more traffic
-- ✅ **Geographic Distribution** - Deploy instances closer to clients
-- ✅ **Rolling Updates** - Update instances one at a time without downtime
+*   ✅ **Zero Downtime** - Instance failures don't interrupt service
+*   ✅ **Load Distribution** - Requests spread across multiple servers
+*   ✅ **Horizontal Scaling** - Add instances to handle more traffic
+*   ✅ **Geographic Distribution** - Deploy instances closer to clients
+*   ✅ **Rolling Updates** - Update instances one at a time without downtime
 
 ## Architecture
 
@@ -47,26 +46,26 @@ Running multiple ncps instances provides:
 
 ### Required Components
 
-1. **Multiple ncps instances** (2+, recommended 3+)
-1. **Distributed locking backend**
-   - **Redis server** (version 5.0+)
-   - **PostgreSQL advisory locks** (version 9.1+)
-1. **S3-compatible storage** (shared across all instances)
-   - AWS S3, MinIO, DigitalOcean Spaces, etc.
-1. **PostgreSQL or MySQL database** (shared across all instances)
-   - PostgreSQL 12+ or MySQL 8.0+
-   - **SQLite is NOT supported for HA**
-   - **NOTE: MySQL is only supported for data storage, NOT for distributed locking. If using MySQL, you must use Redis for locking.**
-1. **Load balancer** to distribute requests
-   - nginx, HAProxy, cloud load balancer, etc.
+1.  **Multiple ncps instances** (2+, recommended 3+)
+2.  **Distributed locking backend**
+    *   **Redis server** (version 5.0+)
+    *   **PostgreSQL advisory locks** (version 9.1+)
+3.  **S3-compatible storage** (shared across all instances)
+    *   AWS S3, MinIO, DigitalOcean Spaces, etc.
+4.  **PostgreSQL or MySQL database** (shared across all instances)
+    *   PostgreSQL 12+ or MySQL 8.0+
+    *   **SQLite is NOT supported for HA**
+    *   **NOTE: MySQL is only supported for data storage, NOT for distributed locking. If using MySQL, you must use Redis for locking.**
+5.  **Load balancer** to distribute requests
+    *   nginx, HAProxy, cloud load balancer, etc.
 
 ### Network Requirements
 
-- All instances must reach Redis
-- All instances must reach S3 storage
-- All instances must reach shared database
-- Load balancer must reach all instances
-- Clients reach load balancer
+*   All instances must reach Redis
+*   All instances must reach S3 storage
+*   All instances must reach shared database
+*   Load balancer must reach all instances
+*   Clients reach load balancer
 
 ## Quick Start
 
@@ -319,29 +318,29 @@ ncps uses Redis to coordinate multiple instances:
 
 When multiple instances request the same package:
 
-1. Instance A acquires download lock for hash `abc123`
-1. Instance B tries to download same package
-1. Instance B cannot acquire lock (Instance A holds it)
-1. Instance B retries with exponential backoff
-1. Instance A completes download and releases lock
-1. Instance B acquires lock, finds package in S3, serves it
-1. Result: Only one download from upstream
+1.  Instance A acquires download lock for hash `abc123`
+2.  Instance B tries to download same package
+3.  Instance B cannot acquire lock (Instance A holds it)
+4.  Instance B retries with exponential backoff
+5.  Instance A completes download and releases lock
+6.  Instance B acquires lock, finds package in S3, serves it
+7.  Result: Only one download from upstream
 
 ### LRU Coordination
 
 Only one instance runs cache cleanup at a time:
 
-1. Instances try to acquire global LRU lock
-1. First instance to acquire lock runs LRU
-1. Other instances skip LRU (lock held)
-1. After cleanup, lock is released
-1. Next scheduled LRU cycle, another instance may acquire lock
+1.  Instances try to acquire global LRU lock
+2.  First instance to acquire lock runs LRU
+3.  Other instances skip LRU (lock held)
+4.  After cleanup, lock is released
+5.  Next scheduled LRU cycle, another instance may acquire lock
 
 **Benefits:**
 
-- Prevents concurrent deletions
-- Avoids cache corruption
-- Distributes LRU load
+*   Prevents concurrent deletions
+*   Avoids cache corruption
+*   Distributes LRU load
 
 See <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> for technical details and database advisory lock configuration (PostgreSQL).
 
@@ -415,11 +414,11 @@ spec:
 
 ### Key Metrics
 
-- **Instance health**: Up/down status
-- **Lock acquisition rate**: Download and LRU locks
-- **Lock contention**: Retry attempts
-- **Redis connectivity**: Connection status
-- **Cache hit rate**: Per-instance and aggregate
+*   **Instance health**: Up/down status
+*   **Lock acquisition rate**: Download and LRU locks
+*   **Lock contention**: Retry attempts
+*   **Redis connectivity**: Connection status
+*   **Cache hit rate**: Per-instance and aggregate
 
 ### Example Prometheus Queries
 
@@ -462,9 +461,9 @@ grep "acquired download lock" /var/log/ncps.log
 
 **Solutions:**
 
-1. Increase retry settings
-1. Increase lock TTLs for long operations
-1. Scale down instances if too many
+1.  Increase retry settings
+2.  Increase lock TTLs for long operations
+3.  Scale down instances if too many
 
 See <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> for detailed troubleshooting.
 
@@ -472,21 +471,21 @@ See <a class="reference-link" href="Distributed%20Locking.md">Distributed Locki
 
 ### Prerequisites
 
-1. ✅ Set up PostgreSQL or MySQL database
-1. ✅ Migrate from SQLite (if applicable)
-1. ✅ Set up S3-compatible storage
-1. ✅ Deploy Redis server
+1.  ✅ Set up PostgreSQL or MySQL database
+2.  ✅ Migrate from SQLite (if applicable)
+3.  ✅ Set up S3-compatible storage
+4.  ✅ Deploy Redis server
 
 ### Migration Steps
 
-**1. Migrate to S3 Storage:**
+**1\. Migrate to S3 Storage:**
 
 ```
 # Sync local storage to S3
 aws s3 sync /var/lib/ncps s3://ncps-cache/
 ```
 
-**2. Migrate Database:**
+**2\. Migrate Database:**
 
 ```
 # Export SQLite data
@@ -497,45 +496,45 @@ pgloader sqlite:///var/lib/ncps/db/db.sqlite \
   postgresql://ncps:password@localhost:5432/ncps
 ```
 
-**3. Configure First Instance:**
+**3\. Configure First Instance:**
 
 ```yaml
 # Update config.yaml to use S3 and PostgreSQL
 # Add Redis configuration
 ```
 
-**4. Verify Functionality:**
+**4\. Verify Functionality:**
 
-- Test package downloads
-- Check Redis for lock keys
-- Verify cache hits
+*   Test package downloads
+*   Check Redis for lock keys
+*   Verify cache hits
 
-**5. Add Additional Instances:**
+**5\. Add Additional Instances:**
 
-- Use identical configuration
-- Point to same Redis, S3, and database
-- Add to load balancer
+*   Use identical configuration
+*   Point to same Redis, S3, and database
+*   Add to load balancer
 
 ## Best Practices
 
-1. **Start Redis First** - Ensure Redis is healthy before starting ncps instances
-1. **Use Health Checks** - Configure load balancer health checks
-1. **Monitor Lock Metrics** - Watch for contention and failures
-1. **Plan Capacity** - 3+ instances recommended for true HA
-1. **Test Failover** - Regularly test instance failures
-1. **Centralize Logs** - Use log aggregation for troubleshooting
-1. **Set Up Alerts** - Alert on high lock failures, Redis unavailability
+1.  **Start Redis First** - Ensure Redis is healthy before starting ncps instances
+2.  **Use Health Checks** - Configure load balancer health checks
+3.  **Monitor Lock Metrics** - Watch for contention and failures
+4.  **Plan Capacity** - 3+ instances recommended for true HA
+5.  **Test Failover** - Regularly test instance failures
+6.  **Centralize Logs** - Use log aggregation for troubleshooting
+7.  **Set Up Alerts** - Alert on high lock failures, Redis unavailability
 
 ## Next Steps
 
-1. <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients
-1. <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> - Understand locking in depth
-1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Configure observability
-1. <a class="reference-link" href="../Operations.md">Operations</a> - Learn about backups, upgrades
+1.  <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients
+2.  <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> - Understand locking in depth
+3.  <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Configure observability
+4.  <a class="reference-link" href="../Operations.md">Operations</a> - Learn about backups, upgrades
 
 ## Related Documentation
 
-- <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> - Deep dive into Redis locking
-- <a class="reference-link" href="../Installation/Helm%20Chart.md">Helm Chart</a> - Simplified HA deployment
-- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All HA options
-- <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - HA-specific monitoring
+*   <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> - Deep dive into Redis locking
+*   <a class="reference-link" href="../Installation/Helm%20Chart.md">Helm Chart</a> - Simplified HA deployment
+*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All HA options
+*   <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - HA-specific monitoring

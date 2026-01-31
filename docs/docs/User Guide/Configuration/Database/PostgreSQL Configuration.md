@@ -1,17 +1,16 @@
 # PostgreSQL Configuration
-
 ### When to Use
 
-- **High availability deployments**: Multiple ncps instances
-- **Production environments**: Scalability and reliability required
-- **Large teams**: High concurrent access
-- **Cloud-native deployments**
+*   **High availability deployments**: Multiple ncps instances
+*   **Production environments**: Scalability and reliability required
+*   **Large teams**: High concurrent access
+*   **Cloud-native deployments**
 
 ### Prerequisites
 
-- PostgreSQL 12+ server
-- Database and user created
-- Network connectivity from ncps to PostgreSQL
+*   PostgreSQL 12+ server
+*   Database and user created
+*   Network connectivity from ncps to PostgreSQL
 
 ### Setup PostgreSQL
 
@@ -57,10 +56,10 @@ postgresql://[username]:[password]@[host]:[port]/[database]?[options]
 
 **Common options:**
 
-- `host` - Hostname or path to the directory containing the Unix domain socket.
-- `sslmode=require` - Require TLS encryption.
-- `sslmode=disable` - Disable TLS (not recommended for production).
-- `connect_timeout=10` - Connection timeout in seconds.
+*   `host` - Hostname or path to the directory containing the Unix domain socket.
+*   `sslmode=require` - Require TLS encryption.
+*   `sslmode=disable` - Disable TLS (not recommended for production).
+*   `connect_timeout=10` - Connection timeout in seconds.
 
 **Examples:**
 
@@ -85,8 +84,8 @@ postgresql://ncps:password@localhost:5432/ncps?sslmode=require&connect_timeout=1
 
 **Defaults for PostgreSQL:**
 
-- Max open connections: 25
-- Max idle connections: 5
+*   Max open connections: 25
+*   Max idle connections: 5
 
 **Custom settings:**
 
