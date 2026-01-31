@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -69,5 +70,36 @@ func TestLocalStore(t *testing.T) {
 		hash := "non-existent"
 		_, err := store.GetChunk(ctx, hash)
 		require.ErrorIs(t, err, chunk.ErrNotFound)
+	})
+
+	t.Run("delete chunk cleans up directory", func(t *testing.T) {
+		t.Parallel()
+
+		hash := "abcdef123456"
+		content := "cleanup test"
+
+		_, err := store.PutChunk(ctx, hash, []byte(content))
+		require.NoError(t, err)
+
+		path := filepath.Join(dir, "chunks", hash[:2], hash)
+		parentDir := filepath.Dir(path)
+
+		// Verify chunk and parent directory exist
+		_, err = os.Stat(path)
+		require.NoError(t, err)
+		_, err = os.Stat(parentDir)
+		require.NoError(t, err)
+
+		// Delete chunk
+		err = store.DeleteChunk(ctx, hash)
+		require.NoError(t, err)
+
+		// Verify chunk is gone
+		_, err = os.Stat(path)
+		assert.True(t, os.IsNotExist(err))
+
+		// Verify parent directory is gone (since it should be empty)
+		_, err = os.Stat(parentDir)
+		assert.True(t, os.IsNotExist(err))
 	})
 }

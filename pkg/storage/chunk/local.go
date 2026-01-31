@@ -62,35 +62,21 @@ func (s *localStore) GetChunk(_ context.Context, hash string) (io.ReadCloser, er
 	return f, nil
 }
 
-func (s *localStore) PutChunk(ctx context.Context, hash string, data []byte) (bool, error) {
+func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool, error) {
 	path := s.chunkPath(hash)
 
-	// Check if exists
-	if exists, err := s.HasChunk(ctx, hash); err != nil {
-		return false, err
-	} else if exists {
-		return false, nil
-	}
-
 	// Create parent directory
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, err
 	}
 
 	// Write to temporary file first to ensure atomicity
-	tmpFile, err := os.CreateTemp(filepath.Dir(path), "chunk-*")
+	tmpFile, err := os.CreateTemp(dir, "chunk-*")
 	if err != nil {
 		return false, err
 	}
-
-	// Defer removal of the temp file on failure.
-	var successful bool
-
-	defer func() {
-		if !successful {
-			os.Remove(tmpFile.Name())
-		}
-	}()
+	defer os.Remove(tmpFile.Name()) // Ensure temp file is cleaned up
 
 	if _, err = tmpFile.Write(data); err == nil {
 		err = tmpFile.Sync()
@@ -104,20 +90,31 @@ func (s *localStore) PutChunk(ctx context.Context, hash string, data []byte) (bo
 		return false, err
 	}
 
-	// Rename to final path
-	if err := os.Rename(tmpFile.Name(), path); err != nil {
-		return false, err
-	}
+	if err := os.Link(tmpFile.Name(), path); err != nil {
+		if os.IsExist(err) {
+			// Chunk already exists, which is fine. We didn't create it.
+			return false, nil
+		}
 
-	successful = true
+		return false, err // Some other error
+	}
 
 	return true, nil
 }
 
 func (s *localStore) DeleteChunk(_ context.Context, hash string) error {
-	err := os.Remove(s.chunkPath(hash))
+	path := s.chunkPath(hash)
+
+	err := os.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
+	}
+
+	// Attempt to remove parent directory. This will fail if it's not empty,
+	// which is the desired behavior. We can ignore the error.
+	parentDir := filepath.Dir(path)
+	if parentDir != s.storeDir() {
+		_ = os.Remove(parentDir)
 	}
 
 	return nil
