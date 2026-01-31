@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+type Chunk struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	RefCount  uint32
+	CreatedAt time.Time
+}
+
 type Config struct {
 	ID        int64
 	Key       string
@@ -26,6 +34,12 @@ type NarFile struct {
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
 	Query          string
+}
+
+type NarFileChunk struct {
+	NarFileID  int64
+	ChunkID    int64
+	ChunkIndex int32
 }
 
 type NarInfo struct {

@@ -17,6 +17,23 @@
 /*M!100616 SET @OLD_NOTE_VERBOSITY=@@NOTE_VERBOSITY, NOTE_VERBOSITY=0 */;
 
 --
+-- Table structure for table `chunks`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `chunks` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `hash` varchar(64) NOT NULL,
+  `size` int(10) unsigned NOT NULL,
+  `ref_count` int(10) unsigned NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `hash` (`hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `config`
 --
 
@@ -30,6 +47,23 @@ CREATE TABLE `config` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_config_key` (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `nar_file_chunks`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `nar_file_chunks` (
+  `nar_file_id` bigint(20) NOT NULL,
+  `chunk_id` bigint(20) NOT NULL,
+  `chunk_index` int(11) NOT NULL,
+  PRIMARY KEY (`nar_file_id`,`chunk_index`),
+  KEY `idx_nar_file_chunks_chunk_id` (`chunk_id`),
+  CONSTRAINT `nar_file_chunks_ibfk_1` FOREIGN KEY (`nar_file_id`) REFERENCES `nar_files` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `nar_file_chunks_ibfk_2` FOREIGN KEY (`chunk_id`) REFERENCES `chunks` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -163,5 +197,6 @@ LOCK TABLES `schema_migrations` WRITE;
 INSERT INTO `schema_migrations` (version) VALUES
   ('20260101000000'),
   ('20260117195000'),
-  ('20260127223000');
+  ('20260127223000'),
+  ('20260131021850');
 UNLOCK TABLES;

@@ -15,6 +15,40 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: chunks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunks (
+    id bigint NOT NULL,
+    hash text NOT NULL,
+    size integer NOT NULL,
+    ref_count integer DEFAULT 1 NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT chunks_ref_count_check CHECK ((ref_count >= 0)),
+    CONSTRAINT chunks_size_check CHECK ((size >= 0))
+);
+
+
+--
+-- Name: chunks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.chunks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: chunks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.chunks_id_seq OWNED BY public.chunks.id;
+
+
+--
 -- Name: config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -44,6 +78,17 @@ CREATE SEQUENCE public.config_id_seq
 --
 
 ALTER SEQUENCE public.config_id_seq OWNED BY public.config.id;
+
+
+--
+-- Name: nar_file_chunks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nar_file_chunks (
+    nar_file_id bigint NOT NULL,
+    chunk_id bigint NOT NULL,
+    chunk_index integer NOT NULL
+);
 
 
 --
@@ -166,6 +211,13 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: chunks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunks ALTER COLUMN id SET DEFAULT nextval('public.chunks_id_seq'::regclass);
+
+
+--
 -- Name: config id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -187,6 +239,22 @@ ALTER TABLE ONLY public.narinfos ALTER COLUMN id SET DEFAULT nextval('public.nar
 
 
 --
+-- Name: chunks chunks_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunks
+    ADD CONSTRAINT chunks_hash_key UNIQUE (hash);
+
+
+--
+-- Name: chunks chunks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunks
+    ADD CONSTRAINT chunks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: config config_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -200,6 +268,14 @@ ALTER TABLE ONLY public.config
 
 ALTER TABLE ONLY public.config
     ADD CONSTRAINT config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nar_file_chunks nar_file_chunks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nar_file_chunks
+    ADD CONSTRAINT nar_file_chunks_pkey PRIMARY KEY (nar_file_id, chunk_index);
 
 
 --
@@ -267,6 +343,13 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: idx_nar_file_chunks_chunk_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nar_file_chunks_chunk_id ON public.nar_file_chunks USING btree (chunk_id);
+
+
+--
 -- Name: idx_nar_files_last_accessed_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -299,6 +382,22 @@ CREATE INDEX idx_narinfo_signatures_signature ON public.narinfo_signatures USING
 --
 
 CREATE INDEX idx_narinfos_last_accessed_at ON public.narinfos USING btree (last_accessed_at);
+
+
+--
+-- Name: nar_file_chunks nar_file_chunks_chunk_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nar_file_chunks
+    ADD CONSTRAINT nar_file_chunks_chunk_id_fkey FOREIGN KEY (chunk_id) REFERENCES public.chunks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nar_file_chunks nar_file_chunks_nar_file_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nar_file_chunks
+    ADD CONSTRAINT nar_file_chunks_nar_file_id_fkey FOREIGN KEY (nar_file_id) REFERENCES public.nar_files(id) ON DELETE CASCADE;
 
 
 --
@@ -346,4 +445,5 @@ ALTER TABLE ONLY public.narinfo_signatures
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260101000000'),
     ('20260117195000'),
-    ('20260127223000');
+    ('20260127223000'),
+    ('20260131021850');
