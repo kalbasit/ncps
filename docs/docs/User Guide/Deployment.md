@@ -1,5 +1,4 @@
 # Deployment
-
 ## Deployment Guide
 
 Choose the deployment strategy that best fits your requirements.
@@ -14,18 +13,18 @@ One ncps server handling all cache requests.
 
 **Best for:**
 
-- Development and testing
-- Small to medium teams (1-100+ users)
-- Single-location deployments
-- Simpler operations
+*   Development and testing
+*   Small to medium teams (1-100+ users)
+*   Single-location deployments
+*   Simpler operations
 
 **Characteristics:**
 
-- One server
-- Local locks (no Redis)
-- Local or S3 storage
-- SQLite, PostgreSQL, or MySQL database
-- Easier to set up and maintain
+*   One server
+*   Local locks (no Redis)
+*   Local or S3 storage
+*   SQLite, PostgreSQL, or MySQL database
+*   Easier to set up and maintain
 
 [Learn more →](Deployment/Single%20Instance.md)
 
@@ -35,20 +34,20 @@ Multiple ncps instances for redundancy and scalability.
 
 **Best for:**
 
-- Production environments
-- Large teams (100+ users)
-- Business-critical infrastructure
-- Geographic distribution
-- Zero-downtime requirements
+*   Production environments
+*   Large teams (100+ users)
+*   Business-critical infrastructure
+*   Geographic distribution
+*   Zero-downtime requirements
 
 **Characteristics:**
 
-- 2+ servers
-- Redis distributed locking
-- S3 storage (required)
-- PostgreSQL or MySQL database (required, NOT SQLite)
-- Load balancer
-- More complex setup
+*   2+ servers
+*   Redis distributed locking
+*   S3 storage (required)
+*   PostgreSQL or MySQL database (required, NOT SQLite)
+*   Load balancer
+*   More complex setup
 
 [Learn more →](Deployment/High%20Availability.md)
 
@@ -56,14 +55,14 @@ Multiple ncps instances for redundancy and scalability.
 
 | Aspect | Single-Instance | High Availability |
 | --- | --- | --- |
-| **Servers** | 1 | 2+ |
+| **Servers** | 1   | 2+  |
 | **Locking** | Local (in-process) | Redis distributed locks |
 | **Storage** | Local or S3 | S3 (required) |
 | **Database** | SQLite, PostgreSQL, or MySQL | PostgreSQL or MySQL (NOT SQLite) |
 | **Load Balancer** | Not needed | Required |
 | **Redundancy** | None | Full |
 | **Complexity** | Simple | Moderate |
-| **Zero Downtime** | No | Yes |
+| **Zero Downtime** | No  | Yes |
 | **Scalability** | Limited to one server | Horizontal scaling |
 | **Cost** | Lower | Higher |
 
@@ -82,9 +81,9 @@ Start
 
 ## Documentation
 
-- [Single-Instance Deployment](Deployment/Single%20Instance.md) - Deploy one ncps server
-- [High Availability Deployment](Deployment/High%20Availability.md) - Deploy multiple instances with HA
-- <a class="reference-link" href="Deployment/Distributed%20Locking.md">Distributed Locking</a> - Deep dive into Redis locking for HA
+*   [Single-Instance Deployment](Deployment/Single%20Instance.md) - Deploy one ncps server
+*   [High Availability Deployment](Deployment/High%20Availability.md) - Deploy multiple instances with HA
+*   <a class="reference-link" href="Deployment/Distributed%20Locking.md">Distributed Locking</a> - Deep dive into Redis locking for HA
 
 ## Prerequisites by Mode
 
@@ -92,45 +91,45 @@ Start
 
 **Minimum:**
 
-- Server or VM (2+ CPU cores, 4GB+ RAM recommended)
-- Storage (50GB-1TB depending on usage)
-- Network connectivity to upstream caches
+*   Server or VM (2+ CPU cores, 4GB+ RAM recommended)
+*   Storage (50GB-1TB depending on usage)
+*   Network connectivity to upstream caches
 
 **Optional:**
 
-- S3-compatible storage (for cloud-native or future HA)
-- PostgreSQL/MySQL (for better performance than SQLite)
+*   S3-compatible storage (for cloud-native or future HA)
+*   PostgreSQL/MySQL (for better performance than SQLite)
 
 ### High Availability Prerequisites
 
 **Required:**
 
-- 2+ servers (3+ recommended for better availability)
-- Redis server (single instance or cluster)
-- S3-compatible storage (AWS S3, MinIO, etc.)
-- PostgreSQL or MySQL database
-- Load balancer (nginx, HAProxy, cloud LB)
+*   2+ servers (3+ recommended for better availability)
+*   Redis server (single instance or cluster)
+*   S3-compatible storage (AWS S3, MinIO, etc.)
+*   PostgreSQL or MySQL database
+*   Load balancer (nginx, HAProxy, cloud LB)
 
 **Optional:**
 
-- Monitoring and alerting (Prometheus, Grafana)
-- Centralized logging (ELK, Loki)
+*   Monitoring and alerting (Prometheus, Grafana)
+*   Centralized logging (ELK, Loki)
 
 ## Getting Started
 
-1. **Choose deployment mode** based on your requirements
-1. **Review prerequisites** for your chosen mode
-1. **Follow installation guide**:
-   - <a class="reference-link" href="Installation/Docker.md">Docker</a>
-   - <a class="reference-link" href="Installation/Docker%20Compose.md">Docker Compose</a>
-   - <a class="reference-link" href="Installation/Kubernetes.md">Kubernetes</a>
-   - <a class="reference-link" href="Installation/Helm%20Chart.md">Helm Chart</a>
-   - <a class="reference-link" href="Installation/NixOS.md">NixOS</a>
-1. **Configure** according to your mode:
-   - <a class="reference-link" href="Deployment/Single%20Instance.md">Single Instance</a>
-   - <a class="reference-link" href="Deployment/High%20Availability.md">High Availability</a>
-1. **Verify deployment** and test
-1. **Set up monitoring** (recommended)
+1.  **Choose deployment mode** based on your requirements
+2.  **Review prerequisites** for your chosen mode
+3.  **Follow installation guide**:
+    *   <a class="reference-link" href="Installation/Docker.md">Docker</a>
+    *   <a class="reference-link" href="Installation/Docker%20Compose.md">Docker Compose</a>
+    *   <a class="reference-link" href="Installation/Kubernetes.md">Kubernetes</a>
+    *   <a class="reference-link" href="Installation/Helm%20Chart.md">Helm Chart</a>
+    *   <a class="reference-link" href="Installation/NixOS.md">NixOS</a>
+4.  **Configure** according to your mode:
+    *   <a class="reference-link" href="Deployment/Single%20Instance.md">Single Instance</a>
+    *   <a class="reference-link" href="Deployment/High%20Availability.md">High Availability</a>
+5.  **Verify deployment** and test
+6.  **Set up monitoring** (recommended)
 
 ## Migration Path
 
@@ -138,10 +137,10 @@ Start
 
 Common migration path as your needs grow:
 
-1. **Start**: Single instance with local storage and SQLite
-1. **Scale up**: Move to PostgreSQL for better performance
-1. **Cloud-ready**: Migrate to S3 storage
-1. **High Availability**: Add Redis and additional instances
+1.  **Start**: Single instance with local storage and SQLite
+2.  **Scale up**: Move to PostgreSQL for better performance
+3.  **Cloud-ready**: Migrate to S3 storage
+4.  **High Availability**: Add Redis and additional instances
 
 Each step is incremental and can be done independently.
 
@@ -190,13 +189,13 @@ Load Balancer
 
 ## Next Steps
 
-1. [Choose and follow deployment guide](Deployment/Single%20Instance.md)
-1. [Configure clients](Usage/Client%20Setup.md) to use your cache
-1. [Set up monitoring](Operations/Monitoring.md) for production
-1. [Review operations guides](Operations.md) for maintenance
+1.  [Choose and follow deployment guide](Deployment/Single%20Instance.md)
+2.  [Configure clients](Usage/Client%20Setup.md) to use your cache
+3.  [Set up monitoring](Operations/Monitoring.md) for production
+4.  [Review operations guides](Operations.md) for maintenance
 
 ## Related Documentation
 
-- [Installation Guides](Installation.md) - Installation methods
-- [Configuration Reference](Configuration/Reference.md) - All configuration options
-- [Operations Guides](Operations.md) - Monitoring, troubleshooting, backups
+*   [Installation Guides](Installation.md) - Installation methods
+*   [Configuration Reference](Configuration/Reference.md) - All configuration options
+*   [Operations Guides](Operations.md) - Monitoring, troubleshooting, backups

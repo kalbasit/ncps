@@ -1,5 +1,4 @@
 # Analytics
-
 ## Analytics Reporting
 
 Configure anonymous usage statistics reporting to help improve ncps.
@@ -10,16 +9,16 @@ ncps includes an optional analytics reporting system that collects anonymous usa
 
 **Key Points:**
 
-- **Enabled by default** - Can be disabled with `--analytics-reporting-enabled=false`
-- **Fully anonymous** - No personal data, IP addresses, or cache contents
-- **Minimal overhead** - Metrics sent once per hour, logs only on startup and errors
-- **Privacy-focused** - Only collects configuration metadata and aggregate statistics
+*   **Enabled by default** - Can be disabled with `--analytics-reporting-enabled=false`
+*   **Fully anonymous** - No personal data, IP addresses, or cache contents
+*   **Minimal overhead** - Metrics sent once per hour, logs only on startup and errors
+*   **Privacy-focused** - Only collects configuration metadata and aggregate statistics
 
 ## What Data is Collected?
 
 Analytics reporting collects three types of data:
 
-### 1. Resource Attributes (Metadata)
+### 1\. Resource Attributes (Metadata)
 
 These attributes are attached to all metrics and logs:
 
@@ -33,7 +32,7 @@ These attributes are attached to all metrics and logs:
 
 **Note:** The `cluster_uuid` is randomly generated and stored in your database. It helps identify unique installations but contains no identifying information about your organization or infrastructure.
 
-### 2. Metrics (Sent Hourly)
+### 2\. Metrics (Sent Hourly)
 
 Aggregate statistics about cache usage:
 
@@ -45,7 +44,7 @@ Aggregate statistics about cache usage:
 
 These metrics are sent every **1 hour** to minimize network overhead.
 
-### 3. Logs
+### 3\. Logs
 
 Event logs for application lifecycle:
 
@@ -60,14 +59,14 @@ Event logs for application lifecycle:
 
 Analytics reporting explicitly **does not** collect:
 
-- **Personal information** - No usernames, emails, or other PII
-- **Network information** - No IP addresses, hostnames, or network topology
-- **Host information** - No hostname or process owner user
-- **Cache contents** - No store paths, package names, or derivation data
-- **Configuration secrets** - No passwords, keys, or authentication tokens
-- **Request logs** - No HTTP requests, client information, or access patterns
-- **Storage paths** - No file paths, bucket names, or storage configuration
-- **Upstream URLs** - No upstream cache URLs or authentication details
+*   **Personal information** - No usernames, emails, or other PII
+*   **Network information** - No IP addresses, hostnames, or network topology
+*   **Host information** - No hostname or process owner user
+*   **Cache contents** - No store paths, package names, or derivation data
+*   **Configuration secrets** - No passwords, keys, or authentication tokens
+*   **Request logs** - No HTTP requests, client information, or access patterns
+*   **Storage paths** - No file paths, bucket names, or storage configuration
+*   **Upstream URLs** - No upstream cache URLs or authentication details
 
 ## Analytics Endpoint
 
@@ -79,9 +78,9 @@ otlp.ncps.dev:443
 
 This endpoint receives OpenTelemetry data over HTTPS using:
 
-- **OTLP/HTTP** protocol
-- **gzip compression** to minimize bandwidth
-- **TLS encryption** for secure transmission
+*   **OTLP/HTTP** protocol
+*   **gzip compression** to minimize bandwidth
+*   **TLS encryption** for secure transmission
 
 ## Privacy and Security
 
@@ -89,8 +88,8 @@ This endpoint receives OpenTelemetry data over HTTPS using:
 
 Analytics data is retained for:
 
-- **Metrics**: 90 days (for trend analysis)
-- **Logs**: 30 days (for bug identification)
+*   **Metrics**: 90 days (for trend analysis)
+*   **Logs**: 30 days (for bug identification)
 
 After this period, data is automatically deleted.
 
@@ -98,25 +97,25 @@ After this period, data is automatically deleted.
 
 Analytics data is used exclusively for:
 
-- Understanding deployment patterns (database types, HA vs single-instance)
-- Identifying common cache sizes to inform default configurations
-- Detecting bugs through panic logs
-- Measuring upstream health trends
-- Planning future development priorities
+*   Understanding deployment patterns (database types, HA vs single-instance)
+*   Identifying common cache sizes to inform default configurations
+*   Detecting bugs through panic logs
+*   Measuring upstream health trends
+*   Planning future development priorities
 
 Analytics data is **never**:
 
-- Sold to third parties
-- Used for advertising or tracking
-- Shared outside the ncps project maintainers
-- Used to identify individual users or organizations
+*   Sold to third parties
+*   Used for advertising or tracking
+*   Shared outside the ncps project maintainers
+*   Used to identify individual users or organizations
 
 ### Security
 
-- All data transmission uses TLS encryption
-- No authentication tokens or credentials are collected
-- Panic logs are sanitized to remove environment variables
-- The cluster UUID is randomly generated and cannot be traced back to your organization
+*   All data transmission uses TLS encryption
+*   No authentication tokens or credentials are collected
+*   Panic logs are sanitized to remove environment variables
+*   The cluster UUID is randomly generated and cannot be traced back to your organization
 
 ## Configuration
 
@@ -221,16 +220,16 @@ One of the key features of the analytics system is **panic recovery** for backgr
 
 ncps uses `analytics.SafeGo()` to wrap all background goroutines with panic recovery. When a panic occurs:
 
-1. **Panic is caught** - The goroutine doesn't crash the entire application
-1. **Stack trace is captured** - Full stack trace for debugging
-1. **Logged locally** - Panic is logged to application logs (always, regardless of analytics setting)
-1. **Reported to analytics** - If analytics is enabled, panic is sent to maintainers
+1.  **Panic is caught** - The goroutine doesn't crash the entire application
+2.  **Stack trace is captured** - Full stack trace for debugging
+3.  **Logged locally** - Panic is logged to application logs (always, regardless of analytics setting)
+4.  **Reported to analytics** - If analytics is enabled, panic is sent to maintainers
 
 This ensures that:
 
-- Your ncps instance stays running even if a background operation fails
-- Bugs are reported to maintainers automatically (if analytics enabled)
-- You have local logs for your own troubleshooting
+*   Your ncps instance stays running even if a background operation fails
+*   Bugs are reported to maintainers automatically (if analytics enabled)
+*   You have local logs for your own troubleshooting
 
 ### Example Panic Log
 
@@ -247,15 +246,15 @@ This ensures that:
 
 **Analytics log (if enabled):**
 
-Includes the same information plus resource attributes (service version, db_type, etc.) to help maintainers identify patterns.
+Includes the same information plus resource attributes (service version, db\_type, etc.) to help maintainers identify patterns.
 
 ### SafeGo Usage
 
 When analytics is enabled, the following operations use `SafeGo()` for panic protection:
 
-- **LRU cleanup** - Background cache eviction operations
-- **Health checks** - Upstream cache health monitoring
-- **Metrics collection** - Periodic statistics gathering
+*   **LRU cleanup** - Background cache eviction operations
+*   **Health checks** - Upstream cache health monitoring
+*   **Metrics collection** - Periodic statistics gathering
 
 ## Troubleshooting
 
@@ -263,37 +262,34 @@ When analytics is enabled, the following operations use `SafeGo()` for panic pro
 
 If you expect analytics to be enabled but don't see the startup message:
 
-1. **Check the flag value:**
+1.  **Check the flag value:**
 
-   ```
-   ncps serve --help | grep analytics
-   ```
+    ```
+    ncps serve --help | grep analytics
+    ```
+2.  **Verify environment variables:**
 
-1. **Verify environment variables:**
+    ```
+    echo $ANALYTICS_REPORTING_ENABLED
+    ```
+3.  **Check configuration file:**
 
-   ```
-   echo $ANALYTICS_REPORTING_ENABLED
-   ```
+    ```
+    cat config.yaml | grep -A 3 analytics
+    ```
+4.  **Check for errors in logs:**
 
-1. **Check configuration file:**
-
-   ```
-   cat config.yaml | grep -A 3 analytics
-   ```
-
-1. **Check for errors in logs:**
-
-   ```
-   journalctl -u ncps | grep -i analytics
-   ```
+    ```
+    journalctl -u ncps | grep -i analytics
+    ```
 
 ### Network Issues
 
 If analytics fails to connect to `otlp.ncps.dev:443`:
 
-- **Firewall** - Ensure outbound HTTPS (port 443) is allowed
-- **Proxy** - OpenTelemetry respects HTTP proxy environment variables
-- **DNS** - Verify `otlp.ncps.dev` resolves correctly
+*   **Firewall** - Ensure outbound HTTPS (port 443) is allowed
+*   **Proxy** - OpenTelemetry respects HTTP proxy environment variables
+*   **DNS** - Verify `otlp.ncps.dev` resolves correctly
 
 Analytics failures are **non-fatal** - if the analytics endpoint is unreachable, ncps will log a warning but continue operating normally.
 
@@ -349,10 +345,10 @@ See <a class="reference-link" href="Observability.md">Observability</a> for de
 
 Analytics is enabled by default because:
 
-1. **Low overhead** - Minimal network usage (1 request per hour)
-1. **Privacy-focused** - No sensitive data collection
-1. **Helpful to maintainers** - Informs development priorities
-1. **Easy opt-out** - Single flag to disable
+1.  **Low overhead** - Minimal network usage (1 request per hour)
+2.  **Privacy-focused** - No sensitive data collection
+3.  **Helpful to maintainers** - Informs development priorities
+4.  **Easy opt-out** - Single flag to disable
 
 This follows the model of other privacy-respecting open source projects like Homebrew, which collect anonymous statistics to understand usage patterns without compromising user privacy.
 
@@ -362,17 +358,17 @@ This follows the model of other privacy-respecting open source projects like Hom
 
 No. Analytics has negligible performance impact:
 
-- Metrics sent once per hour (not per request)
-- Uses background goroutines (non-blocking)
-- Compressed data (minimal bandwidth)
+*   Metrics sent once per hour (not per request)
+*   Uses background goroutines (non-blocking)
+*   Compressed data (minimal bandwidth)
 
 ### What if the analytics endpoint is down?
 
 If `otlp.ncps.dev` is unreachable:
 
-- ncps logs a warning but continues operating
-- No retries or queuing (to avoid memory buildup)
-- Analytics automatically resumes when endpoint is available
+*   ncps logs a warning but continues operating
+*   No retries or queuing (to avoid memory buildup)
+*   Analytics automatically resumes when endpoint is available
 
 ### Can I host my own analytics collector?
 
@@ -382,23 +378,23 @@ Not currently. The analytics endpoint is hardcoded to `otlp.ncps.dev:443`. If yo
 
 Unlike telemetry systems that collect invasive data, ncps analytics:
 
-- **Is transparent** - This documentation explains exactly what's collected
-- **Is minimal** - Only configuration metadata and aggregate statistics
-- **Is optional** - Easy one-flag opt-out
-- **Respects privacy** - No PII, IP addresses, or tracking
-- **Has retention limits** - Data automatically deleted after 30-90 days
-- **Is open source** - You can review the code in `pkg/analytics/`
+*   **Is transparent** - This documentation explains exactly what's collected
+*   **Is minimal** - Only configuration metadata and aggregate statistics
+*   **Is optional** - Easy one-flag opt-out
+*   **Respects privacy** - No PII, IP addresses, or tracking
+*   **Has retention limits** - Data automatically deleted after 30-90 days
+*   **Is open source** - You can review the code in `pkg/analytics/`
 
 ## Related Documentation
 
-- <a class="reference-link" href="Reference.md">Reference</a> - All configuration options
-- <a class="reference-link" href="Observability.md">Observability</a> - OpenTelemetry and Prometheus
+*   <a class="reference-link" href="Reference.md">Reference</a> - All configuration options
+*   <a class="reference-link" href="Observability.md">Observability</a> - OpenTelemetry and Prometheus
 
 ## Feedback
 
 Have questions or concerns about analytics? Please:
 
-- Open an issue: [github.com/kalbasit/ncps/issues](https://github.com/kalbasit/ncps/issues)
-- Start a discussion: [github.com/kalbasit/ncps/discussions](https://github.com/kalbasit/ncps/discussions)
+*   Open an issue: [github.com/kalbasit/ncps/issues](https://github.com/kalbasit/ncps/issues)
+*   Start a discussion: [github.com/kalbasit/ncps/discussions](https://github.com/kalbasit/ncps/discussions)
 
 Your feedback helps us balance transparency, privacy, and useful data collection.

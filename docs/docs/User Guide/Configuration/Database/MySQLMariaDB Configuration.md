@@ -1,16 +1,15 @@
 # MySQL/MariaDB Configuration
-
 ### When to Use
 
-- Same use cases as PostgreSQL
-- Existing MySQL infrastructure
-- Familiarity with MySQL ecosystem
+*   Same use cases as PostgreSQL
+*   Existing MySQL infrastructure
+*   Familiarity with MySQL ecosystem
 
 ### Prerequisites
 
-- MySQL 8.0+ or MariaDB 10.3+ server
-- Database and user created
-- Network connectivity from ncps to MySQL
+*   MySQL 8.0+ or MariaDB 10.3+ server
+*   Database and user created
+*   Network connectivity from ncps to MySQL
 
 ### Setup MySQL
 
@@ -49,9 +48,9 @@ mysql://[username]:[password]@[host]:[port]/[database]?[options]
 
 **Common options:**
 
-- `socket` - Path to the Unix domain socket.
-- `tls=true` - Enable TLS.
-- `charset=utf8mb4` - Set character encoding.
+*   `socket` - Path to the Unix domain socket.
+*   `tls=true` - Enable TLS.
+*   `charset=utf8mb4` - Set character encoding.
 
 **Examples:**
 

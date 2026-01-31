@@ -1,5 +1,4 @@
 # Backup Restore
-
 ## Backup & Restore Guide
 
 Backup strategies and recovery procedures.
@@ -87,29 +86,29 @@ aws s3api put-bucket-versioning \
 
 ### Development
 
-- Database: Daily backups
-- Storage: Optional (can rebuild)
+*   Database: Daily backups
+*   Storage: Optional (can rebuild)
 
 ### Production Single-Instance
 
-- Database: Daily automated backups
-- Storage: Weekly backups or S3 with versioning
+*   Database: Daily automated backups
+*   Storage: Weekly backups or S3 with versioning
 
 ### Production HA
 
-- Database: Automated backups with replication
-- Storage: S3 with versioning (built-in)
-- Redis: Optional (ephemeral locks)
+*   Database: Automated backups with replication
+*   Storage: S3 with versioning (built-in)
+*   Redis: Optional (ephemeral locks)
 
 ## Disaster Recovery
 
-1. Stop ncps instances
-1. Restore database from backup
-1. Restore storage from backup (if local)
-1. Start ncps instances
-1. Verify functionality
+1.  Stop ncps instances
+2.  Restore database from backup
+3.  Restore storage from backup (if local)
+4.  Start ncps instances
+5.  Verify functionality
 
 ## Related Documentation
 
-- <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database setup
-- <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage setup
+*   <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database setup
+*   <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage setup

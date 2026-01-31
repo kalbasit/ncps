@@ -1,5 +1,4 @@
 # Migration Between Databases
-
 ### From SQLite to PostgreSQL
 
 ```
@@ -27,6 +26,6 @@ pgloader sqlite:///var/lib/ncps/db/db.sqlite \
 
 Similar process using tools like:
 
-- `sqlite3mysql` utility
-- Manual export and conversion
-- Custom migration scripts
+*   `sqlite3mysql` utility
+*   Manual export and conversion
+*   Custom migration scripts

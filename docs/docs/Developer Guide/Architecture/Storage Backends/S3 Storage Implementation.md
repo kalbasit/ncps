@@ -1,16 +1,15 @@
 # S3 Storage Implementation
-
 ## S3 Storage Implementation
 
 This package provides an S3-compatible storage backend for ncps (Nix Cache Proxy Server). It implements the same interface as the local storage but uses S3 or S3-compatible services like MinIO for backend storage.
 
 ## Features
 
-- **S3 Compatibility**: Works with AWS S3 and any S3-compatible service (MinIO, Ceph, etc.)
-- **Drop-in Replacement**: Implements the same interface as local storage
-- **Configurable**: Supports custom endpoints, regions, and authentication
-- **MinIO Optimized**: Built using the MinIO Go SDK for optimal compatibility
-- **Telemetry**: Includes OpenTelemetry tracing for monitoring
+*   **S3 Compatibility**: Works with AWS S3 and any S3-compatible service (MinIO, Ceph, etc.)
+*   **Drop-in Replacement**: Implements the same interface as local storage
+*   **Configurable**: Supports custom endpoints, regions, and authentication
+*   **MinIO Optimized**: Built using the MinIO Go SDK for optimal compatibility
+*   **Telemetry**: Includes OpenTelemetry tracing for monitoring
 
 ## Configuration
 
@@ -29,9 +28,9 @@ type Config struct {
 
 ### Important Notes
 
-- **Endpoint Format**: The endpoint **must** include the URL scheme (e.g., `"http://localhost:9000"` or `"https://s3.us-west-2.amazonaws.com"`). The scheme determines whether SSL/TLS is used.
-- **Region**: Optional for MinIO, but typically required for AWS S3.
-- **ForcePathStyle**: Set to `true` for MinIO and other S3-compatible services that require path-style addressing. Set to `false` for AWS S3 (which uses virtual-hosted-style by default).
+*   **Endpoint Format**: The endpoint **must** include the URL scheme (e.g., `"http://localhost:9000"` or `"https://s3.us-west-2.amazonaws.com"`). The scheme determines whether SSL/TLS is used.
+*   **Region**: Optional for MinIO, but typically required for AWS S3.
+*   **ForcePathStyle**: Set to `true` for MinIO and other S3-compatible services that require path-style addressing. Set to `false` for AWS S3 (which uses virtual-hosted-style by default).
 
 ## Usage
 
@@ -105,18 +104,18 @@ Files are automatically sharded using the first 1-2 characters of their hash to 
 
 The implementation properly handles S3-specific errors:
 
-- `NoSuchKey` errors are converted to `storage.ErrNotFound`
-- Configuration validation ensures required fields are provided
-- Bucket existence is verified during initialization
-- Returns `storage.ErrAlreadyExists` when attempting to overwrite existing objects
+*   `NoSuchKey` errors are converted to `storage.ErrNotFound`
+*   Configuration validation ensures required fields are provided
+*   Bucket existence is verified during initialization
+*   Returns `storage.ErrAlreadyExists` when attempting to overwrite existing objects
 
 ### Telemetry
 
 All operations include OpenTelemetry tracing with relevant attributes:
 
-- Operation names (e.g., "s3.GetNarInfo", "s3.PutNar")
-- Object keys and paths
-- Hash values and NAR URLs
+*   Operation names (e.g., "s3.GetNarInfo", "s3.PutNar")
+*   Object keys and paths
+*   Hash values and NAR URLs
 
 ### Streaming Uploads
 
@@ -132,18 +131,18 @@ go test ./pkg/storage/s3/...
 
 ## Dependencies
 
-- `github.com/minio/minio-go/v7` - MinIO Go SDK for S3 operations
-- `github.com/nix-community/go-nix` - Nix-specific types and utilities
-- `go.opentelemetry.io/otel` - OpenTelemetry for tracing
+*   `github.com/minio/minio-go/v7` - MinIO Go SDK for S3 operations
+*   `github.com/nix-community/go-nix` - Nix-specific types and utilities
+*   `go.opentelemetry.io/otel` - OpenTelemetry for tracing
 
 ## Migration from Local Storage
 
 To migrate from local storage to S3 storage:
 
-1. Create an S3 bucket or MinIO instance
-1. Configure the S3 storage with appropriate credentials
-1. Replace the local storage initialization with S3 storage
-1. The rest of your application code remains unchanged
+1.  Create an S3 bucket or MinIO instance
+2.  Configure the S3 storage with appropriate credentials
+3.  Replace the local storage initialization with S3 storage
+4.  The rest of your application code remains unchanged
 
 ```go
 // Before (local storage)
@@ -161,9 +160,9 @@ s3Store, err := s3.New(ctx, s3.Config{
 
 ## Security Considerations
 
-- Store credentials securely (environment variables, IAM roles, etc.)
-- Use IAM policies to restrict bucket access (for AWS S3)
-- Consider using temporary credentials for production
-- Enable bucket versioning for data protection
-- Use appropriate bucket policies for access control
-- Always use HTTPS in production (e.g., `Endpoint: "https://s3.amazonaws.com"`)
+*   Store credentials securely (environment variables, IAM roles, etc.)
+*   Use IAM policies to restrict bucket access (for AWS S3)
+*   Consider using temporary credentials for production
+*   Enable bucket versioning for data protection
+*   Use appropriate bucket policies for access control
+*   Always use HTTPS in production (e.g., `Endpoint: "https://s3.amazonaws.com"`)

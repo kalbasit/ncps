@@ -1,5 +1,4 @@
 # Reference
-
 ## Configuration Reference
 
 Complete reference for all ncps configuration options.
@@ -13,7 +12,7 @@ Options that apply to the entire ncps process.
 | `--config` | Path to configuration file (json, toml, yaml) | `NCPS_CONFIG_FILE` | `$XDG_CONFIG_HOME/ncps/config.yaml` |
 | `--log-level` | Log level: debug, info, warn, error | `LOG_LEVEL` | `info` |
 | `--otel-enabled` | Enable OpenTelemetry (logs, metrics, tracing) | `OTEL_ENABLED` | `false` |
-| `--otel-grpc-url` | OpenTelemetry gRPC collector URL (omit for stdout) | `OTEL_GRPC_URL` | - |
+| `--otel-grpc-url` | OpenTelemetry gRPC collector URL (omit for stdout) | `OTEL_GRPC_URL` | \-  |
 | `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics | `PROMETHEUS_ENABLED` | `false` |
 
 **Example:**
@@ -84,13 +83,13 @@ Use these options for S3-compatible storage (AWS S3, MinIO, etc.).
 
 | Option | Description | Environment Variable | Required for S3 | Default |
 | --- | --- | --- | --- | --- |
-| `--cache-storage-s3-bucket` | S3 bucket name | `CACHE_STORAGE_S3_BUCKET` | ✅ | - |
-| `--cache-storage-s3-endpoint` | S3 endpoint URL with scheme (e.g., [https://s3.amazonaws.com](https://s3.amazonaws.com) or [http://minio:9000](http://minio:9000)) | `CACHE_STORAGE_S3_ENDPOINT` | ✅ | - |
-| `--cache-storage-s3-access-key-id` | S3 access key ID | `CACHE_STORAGE_S3_ACCESS_KEY_ID` | ✅ | - |
-| `--cache-storage-s3-secret-access-key` | S3 secret access key | `CACHE_STORAGE_S3_SECRET_ACCESS_KEY` | ✅ | - |
-| `--cache-storage-s3-region` | S3 region (optional for some providers) | `CACHE_STORAGE_S3_REGION` | - | - |
-| `--cache-storage-s3-force-path-style` | Use path-style URLs (required for MinIO) | `CACHE_STORAGE_S3_FORCE_PATH_STYLE` | - | `false` |
-| `--cache-storage-s3-use-ssl` | **DEPRECATED:** Specify scheme in endpoint instead | `CACHE_STORAGE_S3_USE_SSL` | - | - |
+| `--cache-storage-s3-bucket` | S3 bucket name | `CACHE_STORAGE_S3_BUCKET` | ✅   | \-  |
+| `--cache-storage-s3-endpoint` | S3 endpoint URL with scheme (e.g., [https://s3.amazonaws.com](https://s3.amazonaws.com) or [http://minio:9000](http://minio:9000)) | `CACHE_STORAGE_S3_ENDPOINT` | ✅   | \-  |
+| `--cache-storage-s3-access-key-id` | S3 access key ID | `CACHE_STORAGE_S3_ACCESS_KEY_ID` | ✅   | \-  |
+| `--cache-storage-s3-secret-access-key` | S3 secret access key | `CACHE_STORAGE_S3_SECRET_ACCESS_KEY` | ✅   | \-  |
+| `--cache-storage-s3-region` | S3 region (optional for some providers) | `CACHE_STORAGE_S3_REGION` | \-  | \-  |
+| `--cache-storage-s3-force-path-style` | Use path-style URLs (required for MinIO) | `CACHE_STORAGE_S3_FORCE_PATH_STYLE` | \-  | `false` |
+| `--cache-storage-s3-use-ssl` | **DEPRECATED:** Specify scheme in endpoint instead | `CACHE_STORAGE_S3_USE_SSL` | \-  | \-  |
 
 **Note:** The endpoint must include the scheme (`https://` or `http://`). The `--cache-storage-s3-use-ssl` flag is deprecated in favor of specifying the scheme directly in the endpoint URL.
 
@@ -128,7 +127,7 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 | `--cache-database-pool-max-open-conns` | Maximum open database connections | `CACHE_DATABASE_POOL_MAX_OPEN_CONNS` | 25 (PG/MySQL), 1 (SQLite) |
 | `--cache-database-pool-max-idle-conns` | Maximum idle database connections | `CACHE_DATABASE_POOL_MAX_IDLE_CONNS` | 5 (PG/MySQL), unset (SQLite) |
 | `--cache-max-size` | Maximum cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE` | unlimited |
-| `--cache-lru-schedule` | LRU cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
+| `--cache-lru-schedule` | LRU cleanup cron schedule | `CACHE_LRU_SCHEDULE` | \-  |
 | `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
 > [!IMPORTANT]
@@ -136,18 +135,18 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 
 **Database URL Formats:**
 
-- SQLite: `sqlite:/var/lib/ncps/db/db.sqlite`
-- PostgreSQL: `postgresql://user:pass@host:5432/database?sslmode=require`
-- PostgreSQL (Socket): `postgresql:///database?host=/var/run/postgresql`
-- MySQL: `mysql://user:pass@host:3306/database`
-- MySQL (Socket): `mysql://user:pass@/database?socket=/var/run/mysqld/mysqld.sock`
+*   SQLite: `sqlite:/var/lib/ncps/db/db.sqlite`
+*   PostgreSQL: `postgresql://user:pass@host:5432/database?sslmode=require`
+*   PostgreSQL (Socket): `postgresql:///database?host=/var/run/postgresql`
+*   MySQL: `mysql://user:pass@host:3306/database`
+*   MySQL (Socket): `mysql://user:pass@/database?socket=/var/run/mysqld/mysqld.sock`
 
 **Notes on Sockets:**
 
 For MySQL and PostgreSQL, you can use specialized schemes for Unix domain sockets:
 
-- `mysql+unix:///path/to/socket.sock/database`
-- `postgres+unix:///path/to/socket_dir/database`
+*   `mysql+unix:///path/to/socket.sock/database`
+*   `postgres+unix:///path/to/socket_dir/database`
 
 **Example:**
 
@@ -190,9 +189,9 @@ Configure timeout values for upstream cache connections. Increase these if exper
 
 **Common timeout values:**
 
-- `3s` - Default, works for most local/fast upstreams
-- `10s` - Recommended for slow networks or distant upstreams
-- `30s` - For very slow connections (satellite, slow VPN)
+*   `3s` - Default, works for most local/fast upstreams
+*   `10s` - Recommended for slow networks or distant upstreams
+*   `30s` - For very slow connections (satellite, slow VPN)
 
 **Example:**
 
@@ -211,11 +210,11 @@ Redis configuration for distributed locking in high-availability deployments.
 | Option | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
 | `--cache-redis-addrs` | Redis addresses (comma-separated for cluster) | `CACHE_REDIS_ADDRS` | (none - local mode) |
-| `--cache-redis-username` | Redis ACL username | `CACHE_REDIS_USERNAME` | "" |
-| `--cache-redis-password` | Redis password | `CACHE_REDIS_PASSWORD` | "" |
-| `--cache-redis-db` | Redis database number (0-15) | `CACHE_REDIS_DB` | 0 |
+| `--cache-redis-username` | Redis ACL username | `CACHE_REDIS_USERNAME` | ""  |
+| `--cache-redis-password` | Redis password | `CACHE_REDIS_PASSWORD` | ""  |
+| `--cache-redis-db` | Redis database number (0-15) | `CACHE_REDIS_DB` | 0   |
 | `--cache-redis-use-tls` | Enable TLS for Redis connections | `CACHE_REDIS_USE_TLS` | false |
-| `--cache-redis-pool-size` | Connection pool size | `CACHE_REDIS_POOL_SIZE` | 10 |
+| `--cache-redis-pool-size` | Connection pool size | `CACHE_REDIS_POOL_SIZE` | 10  |
 
 **Note:** If `--cache-redis-addrs` is not provided, ncps runs in single-instance mode using local locks.
 
@@ -267,7 +266,7 @@ Lock timing and retry configuration for distributed locking.
 
 | Option | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
-| `--cache-lock-retry-max-attempts` | Maximum lock retry attempts | `CACHE_LOCK_RETRY_MAX_ATTEMPTS` | 3 |
+| `--cache-lock-retry-max-attempts` | Maximum lock retry attempts | `CACHE_LOCK_RETRY_MAX_ATTEMPTS` | 3   |
 | `--cache-lock-retry-initial-delay` | Initial retry delay | `CACHE_LOCK_RETRY_INITIAL_DELAY` | `100ms` |
 | `--cache-lock-retry-max-delay` | Maximum retry delay (backoff cap) | `CACHE_LOCK_RETRY_MAX_DELAY` | `2s` |
 | `--cache-lock-retry-jitter` | Enable jitter in retry delays | `CACHE_LOCK_RETRY_JITTER` | `true` |
@@ -295,27 +294,27 @@ Configure anonymous usage statistics reporting to help improve ncps.
 
 **What is collected:**
 
-- **Resource attributes**:
-  - Database backend type: `sqlite`, `postgres`, or `mysql`
-  - Lock mechanism type: `local`, `redis`, or `postgres`
-  - Cluster UUID (randomly generated identifier)
-- **Metrics** (hourly): Total cache size, upstream count, upstream health
-- **Logs**: Startup events, panic/crash events with stack traces
+*   **Resource attributes**:
+    *   Database backend type: `sqlite`, `postgres`, or `mysql`
+    *   Lock mechanism type: `local`, `redis`, or `postgres`
+    *   Cluster UUID (randomly generated identifier)
+*   **Metrics** (hourly): Total cache size, upstream count, upstream health
+*   **Logs**: Startup events, panic/crash events with stack traces
 
 **What is NOT collected:**
 
-- No personal information (usernames, emails, PII)
-- No network information (IP addresses, hostnames)
-- No cache contents (store paths, packages)
-- No configuration secrets (passwords, keys)
-- No request logs (HTTP requests, clients)
+*   No personal information (usernames, emails, PII)
+*   No network information (IP addresses, hostnames)
+*   No cache contents (store paths, packages)
+*   No configuration secrets (passwords, keys)
+*   No request logs (HTTP requests, clients)
 
 **Privacy:**
 
-- Fully anonymous and privacy-focused
-- Data sent to `otlp.ncps.dev:443` via HTTPS
-- Helps maintainers understand usage patterns and prioritize development
-- Easy opt-out with `--analytics-reporting-enabled=false`
+*   Fully anonymous and privacy-focused
+*   Data sent to `otlp.ncps.dev:443` via HTTPS
+*   Helps maintainers understand usage patterns and prioritize development
+*   Easy opt-out with `--analytics-reporting-enabled=false`
 
 **Enable (default):**
 
@@ -360,7 +359,7 @@ Metrics available at `http://your-ncps:8501/metrics`.
 | Option | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
 | `--otel-enabled` | Enable OpenTelemetry (logs, metrics, tracing) | `OTEL_ENABLED` | `false` |
-| `--otel-grpc-url` | gRPC collector endpoint (omit for stdout) | `OTEL_GRPC_URL` | - |
+| `--otel-grpc-url` | gRPC collector endpoint (omit for stdout) | `OTEL_GRPC_URL` | \-  |
 
 **Example:**
 
@@ -446,15 +445,15 @@ otel:
 
 **Environment variable expansion:**
 
-- Use `${VAR_NAME}` syntax in configuration files
-- Variables are expanded when the config is loaded
+*   Use `${VAR_NAME}` syntax in configuration files
+*   Variables are expanded when the config is loaded
 
 See [config.example.yaml](https://github.com/kalbasit/ncps/blob/main/config.example.yaml) for a complete example.
 
 ## Related Documentation
 
-- <a class="reference-link" href="Storage.md">Storage</a> - Storage backend details
-- <a class="reference-link" href="Database.md">Database</a> - Database backend details
-- <a class="reference-link" href="Observability.md">Observability</a> - Monitoring and logging
-- <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA configuration
-- <a class="reference-link" href="../Deployment/Distributed%20Locking.md">Distributed Locking</a> - Lock tuning
+*   <a class="reference-link" href="Storage.md">Storage</a> - Storage backend details
+*   <a class="reference-link" href="Database.md">Database</a> - Database backend details
+*   <a class="reference-link" href="Observability.md">Observability</a> - Monitoring and logging
+*   <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA configuration
+*   <a class="reference-link" href="../Deployment/Distributed%20Locking.md">Distributed Locking</a> - Lock tuning

@@ -1,14 +1,13 @@
 # Docker Compose
-
 ## Docker Compose Installation
 
 Install ncps using Docker Compose for automated, reproducible deployments. This method is ideal for production single-instance deployments and development environments.
 
 ## Prerequisites
 
-- Docker and Docker Compose installed
-- Basic familiarity with Docker Compose
-- 2GB+ available disk space
+*   Docker and Docker Compose installed
+*   Basic familiarity with Docker Compose
+*   2GB+ available disk space
 
 ## Basic Setup (Local Storage)
 
@@ -78,9 +77,9 @@ docker compose up -d
 
 This will:
 
-1. Create directories with correct permissions
-1. Run database migrations
-1. Start ncps server
+1.  Create directories with correct permissions
+2.  Run database migrations
+3.  Start ncps server
 
 ### Step 3: Verify Installation
 
@@ -230,16 +229,16 @@ volumes:
 
 **This setup includes:**
 
-- PostgreSQL for shared database
-- Redis for distributed locking
-- MinIO for S3-compatible storage
-- Two ncps instances for high availability
+*   PostgreSQL for shared database
+*   Redis for distributed locking
+*   MinIO for S3-compatible storage
+*   Two ncps instances for high availability
 
 **Access points:**
 
-- ncps instance 1: [http://localhost:8501](http://localhost:8501)
-- ncps instance 2: [http://localhost:8502](http://localhost:8502)
-- MinIO console: [http://localhost:9001](http://localhost:9001)
+*   ncps instance 1: [http://localhost:8501](http://localhost:8501)
+*   ncps instance 2: [http://localhost:8502](http://localhost:8502)
+*   MinIO console: [http://localhost:9001](http://localhost:9001)
 
 ## Using Configuration File
 
@@ -405,14 +404,14 @@ See the <a class="reference-link" href="../Operations/Troubleshooting.md">Troub
 
 ## Next Steps
 
-1. <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients to use your cache
-1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up Prometheus and Grafana
-1. <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more options
-1. <a class="reference-link" href="../Deployment.md">Deployment</a> - Consider deployment strategies
+1.  <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients to use your cache
+2.  <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up Prometheus and Grafana
+3.  <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more options
+4.  <a class="reference-link" href="../Deployment.md">Deployment</a> - Consider deployment strategies
 
 ## Related Documentation
 
-- <a class="reference-link" href="Docker.md">Docker</a> - Manual Docker setup
-- <a class="reference-link" href="Kubernetes.md">Kubernetes</a> - For K8s environments
-- <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA setup guide
-- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
+*   <a class="reference-link" href="Docker.md">Docker</a> - Manual Docker setup
+*   <a class="reference-link" href="Kubernetes.md">Kubernetes</a> - For K8s environments
+*   <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA setup guide
+*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options

@@ -1,5 +1,4 @@
 # Monitoring
-
 ## Monitoring Guide
 
 Set up monitoring, metrics, and alerting for ncps.
@@ -19,35 +18,35 @@ Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/O
 
 **HTTP Metrics:**
 
-- `http_server_requests_total` - Total HTTP requests
-- `http_server_request_duration_seconds` - Request duration
-- `http_server_active_requests` - Active requests
+*   `http_server_requests_total` - Total HTTP requests
+*   `http_server_request_duration_seconds` - Request duration
+*   `http_server_active_requests` - Active requests
 
 **Cache Metrics:**
 
-- `ncps_nar_served_total` - NAR files served
-- `ncps_narinfo_served_total` - NarInfo files served
+*   `ncps_nar_served_total` - NAR files served
+*   `ncps_narinfo_served_total` - NarInfo files served
 
 **Lock Metrics (HA):**
 
-- `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisitions
-- `ncps_lock_hold_duration_seconds{type,mode}` - Lock hold time
-- `ncps_lock_failures_total{type,reason,mode}` - Lock failures
+*   `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisitions
+*   `ncps_lock_hold_duration_seconds{type,mode}` - Lock hold time
+*   `ncps_lock_failures_total{type,reason,mode}` - Lock failures
 
 **Migration Metrics:**
 
-- `ncps_migration_narinfos_total{operation,result}` - NarInfos migrated
-  - Labels: `operation` (migrate/delete), `result` (success/failure/skipped)
-- `ncps_migration_duration_seconds{operation}` - Migration operation duration
-  - Label: `operation` (migrate/delete)
-- `ncps_migration_batch_size` - Migration batch sizes
+*   `ncps_migration_narinfos_total{operation,result}` - NarInfos migrated
+    *   Labels: `operation` (migrate/delete), `result` (success/failure/skipped)
+*   `ncps_migration_duration_seconds{operation}` - Migration operation duration
+    *   Label: `operation` (migrate/delete)
+*   `ncps_migration_batch_size` - Migration batch sizes
 
 **Background Migration Metrics:**
 
-- `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfos migrated
-  - Labels: `operation` (migrate/delete), `result` (success/failure)
-- `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration
-  - Label: `operation` (migrate/delete)
+*   `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfos migrated
+    *   Labels: `operation` (migrate/delete), `result` (success/failure)
+*   `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration
+    *   Label: `operation` (migrate/delete)
 
 ## Prometheus Configuration
 
@@ -67,15 +66,15 @@ scrape_configs:
 
 **Cache Performance:**
 
-- Cache hit rate
-- NAR served rate
-- Request duration (p50, p95, p99)
+*   Cache hit rate
+*   NAR served rate
+*   Request duration (p50, p95, p99)
 
 **HA Lock Performance:**
 
-- Lock acquisition success rate
-- Lock retry attempts
-- Lock hold duration
+*   Lock acquisition success rate
+*   Lock retry attempts
+*   Lock hold duration
 
 ### Example PromQL Queries
 
@@ -150,5 +149,5 @@ curl -f http://localhost:8501/nix-cache-info || exit 1
 
 ## Related Documentation
 
-- <a class="reference-link" href="../Configuration/Observability.md">Observability</a> - Configure metrics
-- <a class="reference-link" href="Troubleshooting.md">Troubleshooting</a> - Debug issues
+*   <a class="reference-link" href="../Configuration/Observability.md">Observability</a> - Configure metrics
+*   <a class="reference-link" href="Troubleshooting.md">Troubleshooting</a> - Debug issues

@@ -1,5 +1,4 @@
 # Request Flow
-
 ## NarInfo Request Flow
 
 ```
@@ -98,6 +97,6 @@ Result: Only one download from upstream!
 
 ## Related Documentation
 
-- <a class="reference-link" href="Components.md">Components</a> - System components
-- <a class="reference-link" href="../../User%20Guide/Deployment/Distributed%20Locking.md">Distributed Locking</a> - Lock details
-- <a class="reference-link" href="../../User%20Guide/Deployment/High%20Availability.md">High Availability</a> - HA deployment
+*   <a class="reference-link" href="Components.md">Components</a> - System components
+*   <a class="reference-link" href="../../User%20Guide/Deployment/Distributed%20Locking.md">Distributed Locking</a> - Lock details
+*   <a class="reference-link" href="../../User%20Guide/Deployment/High%20Availability.md">High Availability</a> - HA deployment
