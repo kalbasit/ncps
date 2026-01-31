@@ -18,6 +18,8 @@ jobs:
       contents: "read"
     with:
       systems: "['x86_64-linux', 'aarch64-linux']"
+    secrets:
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}
   helm-tests:
     runs-on: ubuntu-24.04
     steps:

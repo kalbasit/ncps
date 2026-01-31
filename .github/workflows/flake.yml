@@ -6,6 +6,10 @@ on:
         description: "The systems for which to add support for. JSON-formatted string."
         required: true
         type: string
+    secrets:
+      codecov_token:
+        description: "Codecov token"
+        required: true
 jobs:
   check:
     strategy:
@@ -25,5 +29,5 @@ jobs:
         if: steps.build-coverage.outcome == 'success'
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.codecov_token }}
           files: result-coverage
