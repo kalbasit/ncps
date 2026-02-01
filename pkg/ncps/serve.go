@@ -874,7 +874,7 @@ func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.L
 		// Use {localDataPath}/store as base for chunks to match other stores
 		return chunk.NewLocalStore(filepath.Join(localDataPath, "store"))
 	case s3Bucket != "":
-		s3Cfg := s3.Config{
+		s3Cfg := s3config.Config{
 			Bucket:          s3Bucket,
 			Region:          cmd.String("cache-storage-s3-region"),
 			Endpoint:        cmd.String("cache-storage-s3-endpoint"),
