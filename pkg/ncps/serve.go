@@ -778,13 +778,9 @@ func getStorageConfig(ctx context.Context, cmd *cli.Command) (string, *s3config.
 		ForcePathStyle:  cmd.Bool("cache-storage-s3-force-path-style"),
 	}
 
-	if s3Cfg.Endpoint == "" || s3Cfg.AccessKeyID == "" || s3Cfg.SecretAccessKey == "" {
-		return "", nil, ErrS3ConfigIncomplete
-	}
-
-	if err := s3config.ValidateConfig(*s3Cfg); err != nil {
-		return "", nil, err
-	}
+    if err := s3config.ValidateConfig(*s3Cfg); err != nil {
+        return "", nil, err
+    }
 
 	return "", s3Cfg, nil
 }
