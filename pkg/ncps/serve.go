@@ -159,19 +159,19 @@ func serveCommand(
 				Usage:   "Enable Content-Defined Chunking (CDC) for deduplication (experimental)",
 				Sources: flagSources("cache.cdc.enabled", "CACHE_CDC_ENABLED"),
 			},
-			&cli.IntFlag{
+			&cli.Uint32Flag{
 				Name:    "cache-cdc-min",
 				Usage:   "Minimum chunk size for CDC in bytes",
 				Sources: flagSources("cache.cdc.min", "CACHE_CDC_MIN"),
 				Value:   65536, // 64KB
 			},
-			&cli.IntFlag{
+			&cli.Uint32Flag{
 				Name:    "cache-cdc-avg",
 				Usage:   "Average chunk size for CDC in bytes",
 				Sources: flagSources("cache.cdc.avg", "CACHE_CDC_AVG"),
 				Value:   262144, // 256KB
 			},
-			&cli.IntFlag{
+			&cli.Uint32Flag{
 				Name:    "cache-cdc-max",
 				Usage:   "Maximum chunk size for CDC in bytes",
 				Sources: flagSources("cache.cdc.max", "CACHE_CDC_MAX"),
@@ -778,9 +778,9 @@ func getStorageConfig(ctx context.Context, cmd *cli.Command) (string, *s3config.
 		ForcePathStyle:  cmd.Bool("cache-storage-s3-force-path-style"),
 	}
 
-    if err := s3config.ValidateConfig(*s3Cfg); err != nil {
-        return "", nil, err
-    }
+	if err := s3config.ValidateConfig(*s3Cfg); err != nil {
+		return "", nil, err
+	}
 
 	return "", s3Cfg, nil
 }
@@ -927,12 +927,9 @@ func createCache(
 	cdcEnabled := cmd.Bool("cache-cdc-enabled")
 	if err := c.SetCDCConfiguration(
 		cdcEnabled,
-		//nolint:gosec // G115: CLI flags for chunk sizes are positive
-		uint32(cmd.Int("cache-cdc-min")),
-		//nolint:gosec // G115: CLI flags for chunk sizes are positive
-		uint32(cmd.Int("cache-cdc-avg")),
-		//nolint:gosec // G115: CLI flags for chunk sizes are positive
-		uint32(cmd.Int("cache-cdc-max")),
+		cmd.Uint32("cache-cdc-min"),
+		cmd.Uint32("cache-cdc-avg"),
+		cmd.Uint32("cache-cdc-max"),
 	); err != nil {
 		return nil, fmt.Errorf("error configuring CDC: %w", err)
 	}
