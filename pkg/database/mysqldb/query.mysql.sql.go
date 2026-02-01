@@ -68,7 +68,7 @@ INSERT INTO chunks (
     ?, ?
 )
 ON DUPLICATE KEY UPDATE
-    ref_count = ref_count + 1
+    id = LAST_INSERT_ID(id)
 `
 
 type CreateChunkParams struct {
@@ -84,7 +84,7 @@ type CreateChunkParams struct {
 //	    ?, ?
 //	)
 //	ON DUPLICATE KEY UPDATE
-//	    ref_count = ref_count + 1
+//	    id = LAST_INSERT_ID(id)
 func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createChunk, arg.Hash, arg.Size)
 }
@@ -219,25 +219,6 @@ func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (s
 		arg.System,
 		arg.Ca,
 	)
-}
-
-const decrementChunkRefCount = `-- name: DecrementChunkRefCount :execrows
-UPDATE chunks
-SET ref_count = ref_count - 1
-WHERE hash = ?
-`
-
-// DecrementChunkRefCount
-//
-//	UPDATE chunks
-//	SET ref_count = ref_count - 1
-//	WHERE hash = ?
-func (q *Queries) DecrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, decrementChunkRefCount, hash)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const deleteChunkByID = `-- name: DeleteChunkByID :exec
@@ -375,14 +356,14 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 }
 
 const getChunkByHash = `-- name: GetChunkByHash :one
-SELECT id, hash, size, ref_count, created_at
+SELECT id, hash, size, created_at
 FROM chunks
 WHERE hash = ?
 `
 
 // GetChunkByHash
 //
-//	SELECT id, hash, size, ref_count, created_at
+//	SELECT id, hash, size, created_at
 //	FROM chunks
 //	WHERE hash = ?
 func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
@@ -392,21 +373,20 @@ func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error
 		&i.ID,
 		&i.Hash,
 		&i.Size,
-		&i.RefCount,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getChunkByID = `-- name: GetChunkByID :one
-SELECT id, hash, size, ref_count, created_at
+SELECT id, hash, size, created_at
 FROM chunks
 WHERE id = ?
 `
 
 // GetChunkByID
 //
-//	SELECT id, hash, size, ref_count, created_at
+//	SELECT id, hash, size, created_at
 //	FROM chunks
 //	WHERE id = ?
 func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
@@ -416,7 +396,6 @@ func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
 		&i.ID,
 		&i.Hash,
 		&i.Size,
-		&i.RefCount,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -439,7 +418,7 @@ func (q *Queries) GetChunkCount(ctx context.Context) (int64, error) {
 }
 
 const getChunksByNarFileID = `-- name: GetChunksByNarFileID :many
-SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+SELECT c.id, c.hash, c.size, c.created_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ?
@@ -448,7 +427,7 @@ ORDER BY nfc.chunk_index
 
 // GetChunksByNarFileID
 //
-//	SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+//	SELECT c.id, c.hash, c.size, c.created_at
 //	FROM chunks c
 //	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.nar_file_id = ?
@@ -466,7 +445,6 @@ func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]
 			&i.ID,
 			&i.Hash,
 			&i.Size,
-			&i.RefCount,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -1089,7 +1067,7 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 }
 
 const getOrphanedChunks = `-- name: GetOrphanedChunks :many
-SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+SELECT c.id, c.hash, c.size, c.created_at
 FROM chunks c
 LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.chunk_id IS NULL
@@ -1097,7 +1075,7 @@ WHERE nfc.chunk_id IS NULL
 
 // GetOrphanedChunks
 //
-//	SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+//	SELECT c.id, c.hash, c.size, c.created_at
 //	FROM chunks c
 //	LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.chunk_id IS NULL
@@ -1114,7 +1092,6 @@ func (q *Queries) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
 			&i.ID,
 			&i.Hash,
 			&i.Size,
-			&i.RefCount,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -1234,25 +1211,6 @@ func (q *Queries) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, err
 		return nil, err
 	}
 	return items, nil
-}
-
-const incrementChunkRefCount = `-- name: IncrementChunkRefCount :execrows
-UPDATE chunks
-SET ref_count = ref_count + 1
-WHERE hash = ?
-`
-
-// IncrementChunkRefCount
-//
-//	UPDATE chunks
-//	SET ref_count = ref_count + 1
-//	WHERE hash = ?
-func (q *Queries) IncrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, incrementChunkRefCount, hash)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const isNarInfoMigrated = `-- name: IsNarInfoMigrated :one

@@ -26,7 +26,6 @@ CREATE TABLE `chunks` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `hash` varchar(64) NOT NULL,
   `size` int(10) unsigned NOT NULL,
-  `ref_count` int(10) unsigned NOT NULL DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `hash` (`hash`)
@@ -198,5 +197,6 @@ INSERT INTO `schema_migrations` (version) VALUES
   ('20260101000000'),
   ('20260117195000'),
   ('20260127223000'),
-  ('20260131021850');
+  ('20260131021850'),
+  ('20260201043717');
 UNLOCK TABLES;

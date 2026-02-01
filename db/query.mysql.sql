@@ -254,7 +254,7 @@ FROM chunks
 WHERE id = ?;
 
 -- name: GetChunksByNarFileID :many
-SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+SELECT c.id, c.hash, c.size, c.created_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ?
@@ -267,7 +267,7 @@ INSERT INTO chunks (
     ?, ?
 )
 ON DUPLICATE KEY UPDATE
-    ref_count = ref_count + 1;
+    id = LAST_INSERT_ID(id);
 
 -- name: LinkNarFileToChunk :exec
 INSERT IGNORE INTO nar_file_chunks (
@@ -276,15 +276,7 @@ INSERT IGNORE INTO nar_file_chunks (
     ?, ?, ?
 );
 
--- name: IncrementChunkRefCount :execrows
-UPDATE chunks
-SET ref_count = ref_count + 1
-WHERE hash = ?;
 
--- name: DecrementChunkRefCount :execrows
-UPDATE chunks
-SET ref_count = ref_count - 1
-WHERE hash = ?;
 
 -- name: GetTotalChunkSize :one
 SELECT CAST(COALESCE(SUM(size), 0) AS SIGNED) AS total_size

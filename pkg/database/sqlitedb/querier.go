@@ -32,9 +32,8 @@ type Querier interface {
 	//  ) VALUES (
 	//      ?, ?
 	//  )
-	//  ON CONFLICT(hash) DO UPDATE SET
-	//      ref_count = chunks.ref_count + 1
-	//  RETURNING id, hash, size, ref_count, created_at
+	//  ON CONFLICT(hash) DO NOTHING
+	//  RETURNING id, hash, size, created_at
 	CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error)
 	//CreateConfig
 	//
@@ -78,12 +77,6 @@ type Querier interface {
 	//  WHERE narinfos.url IS NULL
 	//  RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error)
-	//DecrementChunkRefCount
-	//
-	//  UPDATE chunks
-	//  SET ref_count = ref_count - 1
-	//  WHERE hash = ?
-	DecrementChunkRefCount(ctx context.Context, hash string) (int64, error)
 	//DeleteChunkByID
 	//
 	//  DELETE FROM chunks
@@ -127,13 +120,13 @@ type Querier interface {
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	//GetChunkByHash
 	//
-	//  SELECT id, hash, size, ref_count, created_at
+	//  SELECT id, hash, size, created_at
 	//  FROM chunks
 	//  WHERE hash = ?
 	GetChunkByHash(ctx context.Context, hash string) (Chunk, error)
 	//GetChunkByID
 	//
-	//  SELECT id, hash, size, ref_count, created_at
+	//  SELECT id, hash, size, created_at
 	//  FROM chunks
 	//  WHERE id = ?
 	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
@@ -144,7 +137,7 @@ type Querier interface {
 	GetChunkCount(ctx context.Context) (int64, error)
 	//GetChunksByNarFileID
 	//
-	//  SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+	//  SELECT c.id, c.hash, c.size, c.created_at
 	//  FROM chunks c
 	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.nar_file_id = ?
@@ -275,7 +268,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	//GetOrphanedChunks
 	//
-	//  SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+	//  SELECT c.id, c.hash, c.size, c.created_at
 	//  FROM chunks c
 	//  LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.chunk_id IS NULL
@@ -298,12 +291,6 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url IS NULL
 	GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error)
-	//IncrementChunkRefCount
-	//
-	//  UPDATE chunks
-	//  SET ref_count = ref_count + 1
-	//  WHERE hash = ?
-	IncrementChunkRefCount(ctx context.Context, hash string) (int64, error)
 	// Check if a narinfo hash has been migrated (has a URL).
 	//
 	//  SELECT EXISTS(

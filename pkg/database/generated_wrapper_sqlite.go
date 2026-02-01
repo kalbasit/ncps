@@ -165,19 +165,6 @@ func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPara
 	return NarInfo(res), nil
 }
 
-func (w *sqliteWrapper) DecrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.DecrementChunkRefCount(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
-	return res, nil
-}
-
 func (w *sqliteWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
 	err := w.adapter.DeleteChunkByID(ctx, id)
 	if err != nil {
@@ -636,19 +623,6 @@ func (w *sqliteWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]strin
 	}
 
 	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
-func (w *sqliteWrapper) IncrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.IncrementChunkRefCount(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
 	return res, nil
 }
 

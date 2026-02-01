@@ -269,8 +269,7 @@ INSERT INTO chunks (
 ) VALUES (
     ?, ?
 )
-ON CONFLICT(hash) DO UPDATE SET
-    ref_count = chunks.ref_count + 1
+ON CONFLICT(hash) DO NOTHING
 RETURNING *;
 
 -- name: LinkNarFileToChunk :exec
@@ -281,15 +280,7 @@ INSERT INTO nar_file_chunks (
 )
 ON CONFLICT (nar_file_id, chunk_index) DO NOTHING;
 
--- name: IncrementChunkRefCount :execrows
-UPDATE chunks
-SET ref_count = ref_count + 1
-WHERE hash = ?;
 
--- name: DecrementChunkRefCount :execrows
-UPDATE chunks
-SET ref_count = ref_count - 1
-WHERE hash = ?;
 
 -- name: GetTotalChunkSize :one
 SELECT CAST(COALESCE(SUM(size), 0) AS INTEGER) AS total_size

@@ -157,19 +157,6 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPa
 	return NarInfo(res), nil
 }
 
-func (w *postgresWrapper) DecrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.DecrementChunkRefCount(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
-	return res, nil
-}
-
 func (w *postgresWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
 	err := w.adapter.DeleteChunkByID(ctx, id)
 	if err != nil {
@@ -628,19 +615,6 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 	}
 
 	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
-func (w *postgresWrapper) IncrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.IncrementChunkRefCount(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
 	return res, nil
 }
 

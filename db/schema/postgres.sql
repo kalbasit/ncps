@@ -22,9 +22,7 @@ CREATE TABLE public.chunks (
     id bigint NOT NULL,
     hash text NOT NULL,
     size integer NOT NULL,
-    ref_count integer DEFAULT 1 NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT chunks_ref_count_check CHECK ((ref_count >= 0)),
     CONSTRAINT chunks_size_check CHECK ((size >= 0))
 );
 
@@ -446,4 +444,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260101000000'),
     ('20260117195000'),
     ('20260127223000'),
-    ('20260131021850');
+    ('20260131021850'),
+    ('20260201043717');

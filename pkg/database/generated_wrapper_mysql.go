@@ -173,19 +173,6 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParam
 	return w.GetNarInfoByID(ctx, id)
 }
 
-func (w *mysqlWrapper) DecrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.DecrementChunkRefCount(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
-	return res, nil
-}
-
 func (w *mysqlWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
 	err := w.adapter.DeleteChunkByID(ctx, id)
 	if err != nil {
@@ -644,19 +631,6 @@ func (w *mysqlWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string
 	}
 
 	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
-func (w *mysqlWrapper) IncrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
-	res, err := w.adapter.IncrementChunkRefCount(ctx, hash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
 	return res, nil
 }
 

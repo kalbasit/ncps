@@ -34,7 +34,7 @@ type Querier interface {
 	//      ?, ?
 	//  )
 	//  ON DUPLICATE KEY UPDATE
-	//      ref_count = ref_count + 1
+	//      id = LAST_INSERT_ID(id)
 	CreateChunk(ctx context.Context, arg CreateChunkParams) (sql.Result, error)
 	//CreateConfig
 	//
@@ -76,12 +76,6 @@ type Querier interface {
 	//      ca = IF(url IS NULL, VALUES(ca), ca),
 	//      updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at)
 	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (sql.Result, error)
-	//DecrementChunkRefCount
-	//
-	//  UPDATE chunks
-	//  SET ref_count = ref_count - 1
-	//  WHERE hash = ?
-	DecrementChunkRefCount(ctx context.Context, hash string) (int64, error)
 	//DeleteChunkByID
 	//
 	//  DELETE FROM chunks
@@ -125,13 +119,13 @@ type Querier interface {
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	//GetChunkByHash
 	//
-	//  SELECT id, hash, size, ref_count, created_at
+	//  SELECT id, hash, size, created_at
 	//  FROM chunks
 	//  WHERE hash = ?
 	GetChunkByHash(ctx context.Context, hash string) (Chunk, error)
 	//GetChunkByID
 	//
-	//  SELECT id, hash, size, ref_count, created_at
+	//  SELECT id, hash, size, created_at
 	//  FROM chunks
 	//  WHERE id = ?
 	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
@@ -142,7 +136,7 @@ type Querier interface {
 	GetChunkCount(ctx context.Context) (int64, error)
 	//GetChunksByNarFileID
 	//
-	//  SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+	//  SELECT c.id, c.hash, c.size, c.created_at
 	//  FROM chunks c
 	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.nar_file_id = ?
@@ -273,7 +267,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	//GetOrphanedChunks
 	//
-	//  SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+	//  SELECT c.id, c.hash, c.size, c.created_at
 	//  FROM chunks c
 	//  LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.chunk_id IS NULL
@@ -296,12 +290,6 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url IS NULL
 	GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error)
-	//IncrementChunkRefCount
-	//
-	//  UPDATE chunks
-	//  SET ref_count = ref_count + 1
-	//  WHERE hash = ?
-	IncrementChunkRefCount(ctx context.Context, hash string) (int64, error)
 	// Check if a narinfo hash has been migrated (has a URL).
 	//
 	//  SELECT EXISTS(
