@@ -68,7 +68,8 @@ INSERT INTO chunks (
     ?, ?
 )
 ON DUPLICATE KEY UPDATE
-    id = LAST_INSERT_ID(id)
+    id = LAST_INSERT_ID(id),
+    updated_at = CURRENT_TIMESTAMP
 `
 
 type CreateChunkParams struct {
@@ -84,7 +85,8 @@ type CreateChunkParams struct {
 //	    ?, ?
 //	)
 //	ON DUPLICATE KEY UPDATE
-//	    id = LAST_INSERT_ID(id)
+//	    id = LAST_INSERT_ID(id),
+//	    updated_at = CURRENT_TIMESTAMP
 func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createChunk, arg.Hash, arg.Size)
 }
@@ -420,41 +422,35 @@ func (q *Queries) GetChunkCount(ctx context.Context) (int64, error) {
 }
 
 const getChunksByNarFileID = `-- name: GetChunksByNarFileID :many
-SELECT c.id, c.hash, c.size, c.created_at
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ?
 ORDER BY nfc.chunk_index
 `
 
-type GetChunksByNarFileIDRow struct {
-	ID        int64
-	Hash      string
-	Size      uint32
-	CreatedAt time.Time
-}
-
 // GetChunksByNarFileID
 //
-//	SELECT c.id, c.hash, c.size, c.created_at
+//	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 //	FROM chunks c
 //	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.nar_file_id = ?
 //	ORDER BY nfc.chunk_index
-func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error) {
+func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
 	rows, err := q.db.QueryContext(ctx, getChunksByNarFileID, narFileID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetChunksByNarFileIDRow
+	var items []Chunk
 	for rows.Next() {
-		var i GetChunksByNarFileIDRow
+		var i Chunk
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
 			&i.Size,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -67,7 +67,7 @@ INSERT INTO chunks (
     ?, ?
 )
 ON CONFLICT(hash) DO UPDATE SET
-    hash = EXCLUDED.hash
+    updated_at = CURRENT_TIMESTAMP
 RETURNING id, hash, size, created_at, updated_at
 `
 
@@ -84,7 +84,7 @@ type CreateChunkParams struct {
 //	    ?, ?
 //	)
 //	ON CONFLICT(hash) DO UPDATE SET
-//	    hash = EXCLUDED.hash
+//	    updated_at = CURRENT_TIMESTAMP
 //	RETURNING id, hash, size, created_at, updated_at
 func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
 	row := q.db.QueryRowContext(ctx, createChunk, arg.Hash, arg.Size)

@@ -34,7 +34,8 @@ type Querier interface {
 	//      ?, ?
 	//  )
 	//  ON DUPLICATE KEY UPDATE
-	//      id = LAST_INSERT_ID(id)
+	//      id = LAST_INSERT_ID(id),
+	//      updated_at = CURRENT_TIMESTAMP
 	CreateChunk(ctx context.Context, arg CreateChunkParams) (sql.Result, error)
 	//CreateConfig
 	//
@@ -136,12 +137,12 @@ type Querier interface {
 	GetChunkCount(ctx context.Context) (int64, error)
 	//GetChunksByNarFileID
 	//
-	//  SELECT c.id, c.hash, c.size, c.created_at
+	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 	//  FROM chunks c
 	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.nar_file_id = ?
 	//  ORDER BY nfc.chunk_index
-	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error)
+	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error)
 	//GetConfigByID
 	//
 	//  SELECT id, `key`, value, created_at, updated_at

@@ -284,7 +284,7 @@ INSERT INTO chunks (
     $1, $2
 )
 ON CONFLICT(hash) DO UPDATE SET
-    hash = EXCLUDED.hash
+    updated_at = CURRENT_TIMESTAMP
 RETURNING *;
 
 -- name: LinkNarFileToChunk :exec

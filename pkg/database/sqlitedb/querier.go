@@ -33,7 +33,7 @@ type Querier interface {
 	//      ?, ?
 	//  )
 	//  ON CONFLICT(hash) DO UPDATE SET
-	//      hash = EXCLUDED.hash
+	//      updated_at = CURRENT_TIMESTAMP
 	//  RETURNING id, hash, size, created_at, updated_at
 	CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error)
 	//CreateConfig

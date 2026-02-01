@@ -254,7 +254,7 @@ FROM chunks
 WHERE id = ?;
 
 -- name: GetChunksByNarFileID :many
-SELECT c.id, c.hash, c.size, c.created_at
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ?
@@ -267,7 +267,8 @@ INSERT INTO chunks (
     ?, ?
 )
 ON DUPLICATE KEY UPDATE
-    id = LAST_INSERT_ID(id);
+    id = LAST_INSERT_ID(id),
+    updated_at = CURRENT_TIMESTAMP;
 
 -- name: LinkNarFileToChunk :exec
 INSERT IGNORE INTO nar_file_chunks (
