@@ -1,4 +1,5 @@
 # Observability
+
 ## Observability Configuration
 
 Configure monitoring, metrics, logging, and tracing for ncps.
@@ -7,10 +8,10 @@ Configure monitoring, metrics, logging, and tracing for ncps.
 
 ncps provides comprehensive observability through:
 
-*   **Prometheus** - Metrics endpoint for monitoring your deployment
-*   **OpenTelemetry** - Distributed tracing and telemetry for your infrastructure
-*   **Structured Logging** - JSON-formatted logs with context
-*   **Analytics Reporting** - Anonymous usage statistics sent to project maintainers (separate from your monitoring)
+- **Prometheus** - Metrics endpoint for monitoring your deployment
+- **OpenTelemetry** - Distributed tracing and telemetry for your infrastructure
+- **Structured Logging** - JSON-formatted logs with context
+- **Analytics Reporting** - Anonymous usage statistics sent to project maintainers (separate from your monitoring)
 
 **Important:** This page covers observability for **your own deployment** (Prometheus, OpenTelemetry, logs). For information about anonymous usage statistics sent to project maintainers, see [Analytics Configuration](Analytics.md).
 
@@ -50,49 +51,49 @@ http://your-ncps:8501/metrics
 
 **HTTP Metrics** (via otelchi middleware):
 
-*   `http_server_requests_total` - Total HTTP requests
-*   `http_server_request_duration_seconds` - Request duration histogram
-*   `http_server_active_requests` - Currently active requests
+- `http_server_requests_total` - Total HTTP requests
+- `http_server_request_duration_seconds` - Request duration histogram
+- `http_server_active_requests` - Currently active requests
 
 **Cache Metrics:**
 
-*   `ncps_nar_served_total` - Total NAR files served
-*   `ncps_narinfo_served_total` - Total NarInfo files served
+- `ncps_nar_served_total` - Total NAR files served
+- `ncps_narinfo_served_total` - Total NarInfo files served
 
 **Upstream Health Metrics** (available when analytics reporting is enabled):
 
-*   `ncps_upstream_count_healthy` - Number of healthy upstream caches
-*   `ncps_upstream_count_total` - Total number of configured upstream caches
+- `ncps_upstream_count_healthy` - Number of healthy upstream caches
+- `ncps_upstream_count_total` - Total number of configured upstream caches
 
 Note: Upstream health metrics are collected as part of analytics reporting. See [Analytics Configuration](Analytics.md) for details.
 
 **Lock Metrics** (when using Redis for HA):
 
-*   `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisition attempts
-    *   `type`: "download" or "lru"
-    *   `result`: "success" or "failure"
-    *   `mode`: "local" or "distributed"
-*   `ncps_lock_hold_duration_seconds{type,mode}` - Lock hold time histogram
-*   `ncps_lock_failures_total{type,reason,mode}` - Lock failures
-    *   `reason`: "timeout", "redis\_error", "circuit\_breaker"
-*   `ncps_lock_retry_attempts_total{type}` - Retry attempts
+- `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisition attempts
+  - `type`: "download" or "lru"
+  - `result`: "success" or "failure"
+  - `mode`: "local" or "distributed"
+- `ncps_lock_hold_duration_seconds{type,mode}` - Lock hold time histogram
+- `ncps_lock_failures_total{type,reason,mode}` - Lock failures
+  - `reason`: "timeout", "redis_error", "circuit_breaker"
+- `ncps_lock_retry_attempts_total{type}` - Retry attempts
 
 **Migration Metrics** (during narinfo migration):
 
-*   `ncps_migration_narinfos_total{operation,result}` - NarInfo migration operations
-    *   `operation`: "migrate" or "delete"
-    *   `result`: "success", "failure", or "skipped"
-*   `ncps_migration_duration_seconds{operation}` - Migration operation duration histogram
-    *   `operation`: "migrate" or "delete"
-*   `ncps_migration_batch_size` - Migration batch size histogram
+- `ncps_migration_narinfos_total{operation,result}` - NarInfo migration operations
+  - `operation`: "migrate" or "delete"
+  - `result`: "success", "failure", or "skipped"
+- `ncps_migration_duration_seconds{operation}` - Migration operation duration histogram
+  - `operation`: "migrate" or "delete"
+- `ncps_migration_batch_size` - Migration batch size histogram
 
 **Background Migration Metrics** (during on-the-fly migration):
 
-*   `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfo migration operations
-    *   `operation`: "migrate" or "delete"
-    *   `result`: "success" or "failure"
-*   `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration histogram
-    *   `operation`: "migrate" or "delete"
+- `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfo migration operations
+  - `operation`: "migrate" or "delete"
+  - `result`: "success" or "failure"
+- `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration histogram
+  - `operation`: "migrate" or "delete"
 
 See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for migration documentation.
 
@@ -132,16 +133,16 @@ Create dashboards to visualize:
 
 **Cache Performance:**
 
-*   Cache hit rate
-*   NAR files served (rate)
-*   Request duration percentiles (p50, p95, p99)
+- Cache hit rate
+- NAR files served (rate)
+- Request duration percentiles (p50, p95, p99)
 
 **HA Lock Performance:**
 
-*   Lock acquisition success/failure rate
-*   Lock hold duration
-*   Retry attempt rate
-*   Lock contention
+- Lock acquisition success/failure rate
+- Lock hold duration
+- Retry attempt rate
+- Lock contention
 
 See the [Monitoring Guide](../Operations/Monitoring.md) for dashboard examples.
 
@@ -182,7 +183,7 @@ export OTEL_GRPC_URL=http://otel-collector:4317
 
 When enabled, OpenTelemetry provides:
 
-**1\. Logs** - Structured application logs **2\. Metrics** - Application and system metrics **3\. Traces** - Distributed request tracing
+**1. Logs** - Structured application logs **2. Metrics** - Application and system metrics **3. Traces** - Distributed request tracing
 
 ### OpenTelemetry Collector Setup
 
@@ -278,10 +279,10 @@ ncps serve --log-level=debug
 
 **Levels:**
 
-*   `debug` - Verbose logging, including debug information
-*   `info` - Standard informational messages (default)
-*   `warn` - Warning messages only
-*   `error` - Error messages only
+- `debug` - Verbose logging, including debug information
+- `info` - Standard informational messages (default)
+- `warn` - Warning messages only
+- `error` - Error messages only
 
 **Configuration file:**
 
@@ -309,21 +310,21 @@ Logs are output in JSON format with structured fields:
 
 **Cache Operations:**
 
-*   `serving nar from cache` - NAR file served from cache
-*   `downloading nar from upstream` - Fetching from upstream
-*   `nar cached successfully` - Download and cache complete
+- `serving nar from cache` - NAR file served from cache
+- `downloading nar from upstream` - Fetching from upstream
+- `nar cached successfully` - Download and cache complete
 
 **Lock Operations (HA):**
 
-*   `acquired download lock` - Download lock obtained
-*   `failed to acquire lock` - Lock acquisition failed after retries
-*   `another instance is running LRU` - LRU skipped (another instance running)
-*   `circuit breaker open: Redis is unavailable` - Redis connectivity issues
+- `acquired download lock` - Download lock obtained
+- `failed to acquire lock` - Lock acquisition failed after retries
+- `another instance is running LRU` - LRU skipped (another instance running)
+- `circuit breaker open: Redis is unavailable` - Redis connectivity issues
 
 **Server:**
 
-*   `server started` - ncps HTTP server started
-*   `server shutdown` - Graceful shutdown initiated
+- `server started` - ncps HTTP server started
+- `server shutdown` - Graceful shutdown initiated
 
 ### Log Aggregation
 
@@ -392,12 +393,12 @@ Access Jaeger UI at `http://localhost:16686` to view traces.
 
 Traces include:
 
-*   Request ID
-*   Upstream cache calls
-*   Lock acquisitions (HA mode)
-*   Database queries
-*   S3 operations
-*   Download and cache operations
+- Request ID
+- Upstream cache calls
+- Lock acquisitions (HA mode)
+- Database queries
+- S3 operations
+- Download and cache operations
 
 ## Health Checks
 
@@ -503,20 +504,20 @@ services:
 
 **Access:**
 
-*   ncps: `http://localhost:8501`
-*   Prometheus: `http://localhost:9090`
-*   Grafana: `http://localhost:3000` (admin/admin)
-*   Jaeger: `http://localhost:16686`
+- ncps: `http://localhost:8501`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (admin/admin)
+- Jaeger: `http://localhost:16686`
 
 ## Next Steps
 
-1.  <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up dashboards and alerts
-2.  <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Use logs and metrics to debug
-3.  <a class="reference-link" href="Reference.md">Reference</a> - All observability options
+1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up dashboards and alerts
+1. <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Use logs and metrics to debug
+1. <a class="reference-link" href="Reference.md">Reference</a> - All observability options
 
 ## Related Documentation
 
-*   <a class="reference-link" href="Analytics.md">Analytics</a> - Anonymous usage statistics reporting
-*   <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Detailed monitoring setup
-*   <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA observability
-*   <a class="reference-link" href="Reference.md">Reference</a> - All configuration options
+- <a class="reference-link" href="Analytics.md">Analytics</a> - Anonymous usage statistics reporting
+- <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Detailed monitoring setup
+- <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA observability
+- <a class="reference-link" href="Reference.md">Reference</a> - All configuration options

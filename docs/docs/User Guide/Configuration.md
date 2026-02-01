@@ -1,15 +1,16 @@
 # Configuration
+
 ## Configuration Guide
 
 Learn how to configure ncps for your specific needs.
 
 ## Configuration Files
 
-*   <a class="reference-link" href="Configuration/Reference.md">Reference</a> - Complete reference of all configuration options
-*   <a class="reference-link" href="Configuration/Storage.md">Storage</a> - Configure local or S3 storage backends
-*   <a class="reference-link" href="Configuration/Database.md">Database</a> - Configure SQLite, PostgreSQL, or MySQL
-*   <a class="reference-link" href="Configuration/Analytics.md">Analytics</a> - Configure anonymous usage statistics reporting
-*   <a class="reference-link" href="Configuration/Observability.md">Observability</a> - Set up metrics, logging, and tracing
+- <a class="reference-link" href="Configuration/Reference.md">Reference</a> - Complete reference of all configuration options
+- <a class="reference-link" href="Configuration/Storage.md">Storage</a> - Configure local or S3 storage backends
+- <a class="reference-link" href="Configuration/Database.md">Database</a> - Configure SQLite, PostgreSQL, or MySQL
+- <a class="reference-link" href="Configuration/Analytics.md">Analytics</a> - Configure anonymous usage statistics reporting
+- <a class="reference-link" href="Configuration/Observability.md">Observability</a> - Set up metrics, logging, and tracing
 
 ## Quick Links
 
@@ -17,39 +18,39 @@ Learn how to configure ncps for your specific needs.
 
 **Getting Started**
 
-*   [All configuration options](Configuration/Reference.md)
-*   [Example Configuration](https://github.com/kalbasit/ncps/blob/main/config.example.yaml)
+- [All configuration options](Configuration/Reference.md)
+- [Example Configuration](https://github.com/kalbasit/ncps/blob/main/config.example.yaml)
 
 **Storage**
 
-*   <a class="reference-link" href="Configuration/Storage/Local%20Filesystem%20Storage.md">Local Filesystem Storage</a>
-*   <a class="reference-link" href="Configuration/Storage/S3-Compatible%20Storage.md">S3-Compatible Storage</a>
-*   <a class="reference-link" href="Configuration/Storage/Storage%20Comparison.md">Storage Comparison</a>
+- <a class="reference-link" href="Configuration/Storage/Local%20Filesystem%20Storage.md">Local Filesystem Storage</a>
+- <a class="reference-link" href="Configuration/Storage/S3-Compatible%20Storage.md">S3-Compatible Storage</a>
+- <a class="reference-link" href="Configuration/Storage/Storage%20Comparison.md">Storage Comparison</a>
 
 **Database**
 
-*   <a class="reference-link" href="Configuration/Database/SQLite%20Configuration.md">SQLite Configuration</a>
-*   <a class="reference-link" href="Configuration/Database/PostgreSQL%20Configuration.md">PostgreSQL Configuration</a>
-*   <a class="reference-link" href="Configuration/Database/MySQLMariaDB%20Configuration.md">MySQL/MariaDB Configuration</a>
-*   [Database Migrations](Configuration/Database/Migration%20Between%20Databases.md)
+- <a class="reference-link" href="Configuration/Database/SQLite%20Configuration.md">SQLite Configuration</a>
+- <a class="reference-link" href="Configuration/Database/PostgreSQL%20Configuration.md">PostgreSQL Configuration</a>
+- <a class="reference-link" href="Configuration/Database/MySQLMariaDB%20Configuration.md">MySQL/MariaDB Configuration</a>
+- [Database Migrations](Configuration/Database/Migration%20Between%20Databases.md)
 
 **Observability**
 
-*   [Prometheus Metrics](Configuration/Observability.md)
-*   [Logging Setup](Configuration/Observability.md)
-*   [Tracing Setup](Configuration/Observability.md)
+- [Prometheus Metrics](Configuration/Observability.md)
+- [Logging Setup](Configuration/Observability.md)
+- [Tracing Setup](Configuration/Observability.md)
 
 **Privacy & Analytics**
 
-*   [Analytics Overview](Configuration/Analytics.md)
-*   [Data Collection](Configuration/Analytics.md)
-*   [Opt-out Guide](Configuration/Analytics.md)
+- [Analytics Overview](Configuration/Analytics.md)
+- [Data Collection](Configuration/Analytics.md)
+- [Opt-out Guide](Configuration/Analytics.md)
 
 ## Configuration Methods
 
 ncps supports multiple ways to configure the service:
 
-### 1\. Command-line Flags
+### 1. Command-line Flags
 
 ```sh
 ncps serve \
@@ -60,7 +61,7 @@ ncps serve \
   --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
-### 2\. Environment Variables
+### 2. Environment Variables
 
 ```sh
 export CACHE_HOSTNAME=cache.example.com
@@ -72,7 +73,7 @@ export CACHE_UPSTREAM_PUBLIC_KEYS=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ1
 ncps serve
 ```
 
-### 3\. Configuration File
+### 3. Configuration File
 
 Create `config.yaml`:
 
@@ -97,20 +98,20 @@ ncps serve --config=config.yaml
 
 **Supported formats:**
 
-*   YAML (`.yaml`, `.yml`)
-*   TOML (`.toml`)
-*   JSON (`.json`)
+- YAML (`.yaml`, `.yml`)
+- TOML (`.toml`)
+- JSON (`.json`)
 
 See [Example Configuration](https://github.com/kalbasit/ncps/blob/main/config.example.yaml) for a complete example.
 
-### 4\. Combination
+### 4. Combination
 
 Configuration methods can be combined. Priority (highest to lowest):
 
-1.  Command-line flags
-2.  Environment variables
-3.  Configuration file
-4.  Defaults
+1. Command-line flags
+1. Environment variables
+1. Configuration file
+1. Defaults
 
 ## Common Configuration Scenarios
 
@@ -190,19 +191,19 @@ cache:
 
 These must be set for ncps to start:
 
-*   `cache.hostname` - Hostname for key generation
-*   Storage backend (choose one):
-    *   `cache.storage.local` OR
-    *   `cache.storage.s3.*` (bucket, endpoint, credentials)
-*   `cache.upstream.urls` - At least one upstream cache
-*   `cache.upstream.public-keys` - Corresponding public keys
+- `cache.hostname` - Hostname for key generation
+- Storage backend (choose one):
+  - `cache.storage.local` OR
+  - `cache.storage.s3.*` (bucket, endpoint, credentials)
+- `cache.upstream.urls` - At least one upstream cache
+- `cache.upstream.public-keys` - Corresponding public keys
 
 ### Optional But Recommended
 
-*   `cache.max-size` - Prevent unbounded cache growth
-*   `cache.lru.schedule` - Automatic cleanup
-*   `prometheus.enabled` - Metrics for monitoring
-*   `cache.database-url` - For shared database (default: embedded SQLite)
+- `cache.max-size` - Prevent unbounded cache growth
+- `cache.lru.schedule` - Automatic cleanup
+- `prometheus.enabled` - Metrics for monitoring
+- `cache.database-url` - For shared database (default: embedded SQLite)
 
 ## Validation
 
@@ -218,13 +219,13 @@ ncps serve --config=config.yaml --log-level=debug
 
 ## Next Steps
 
-1.  <a class="reference-link" href="Configuration/Reference.md">Reference</a> - See all available options
-2.  <a class="reference-link" href="Configuration/Storage.md">Storage</a> - Choose and configure storage backend
-3.  <a class="reference-link" href="Configuration/Database.md">Database</a> - Choose and configure database
-4.  <a class="reference-link" href="Configuration/Observability.md">Observability</a> - Set up monitoring
+1. <a class="reference-link" href="Configuration/Reference.md">Reference</a> - See all available options
+1. <a class="reference-link" href="Configuration/Storage.md">Storage</a> - Choose and configure storage backend
+1. <a class="reference-link" href="Configuration/Database.md">Database</a> - Choose and configure database
+1. <a class="reference-link" href="Configuration/Observability.md">Observability</a> - Set up monitoring
 
 ## Related Documentation
 
-*   [Example configuration file](https://github.com/kalbasit/ncps/blob/main/config.example.yaml) - Complete configuration example
-*   [Installation Guides](Installation.md) - Installation-specific configuration
-*   [Observability Configuration](Configuration/Observability.md) - Observability-specific configuration
+- [Example configuration file](https://github.com/kalbasit/ncps/blob/main/config.example.yaml) - Complete configuration example
+- [Installation Guides](Installation.md) - Installation-specific configuration
+- [Observability Configuration](Configuration/Observability.md) - Observability-specific configuration

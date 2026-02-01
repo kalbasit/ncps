@@ -1,4 +1,5 @@
 # Single Instance
+
 ## Single-Instance Deployment
 
 Deploy ncps as a single server for simplified operations and maintenance.
@@ -7,11 +8,11 @@ Deploy ncps as a single server for simplified operations and maintenance.
 
 Single-instance deployment is ideal for:
 
-*   **Development and testing environments**
-*   **Small to medium teams** (1-100+ users)
-*   **Single-location deployments**
-*   **Simpler operational requirements**
-*   **Cost-conscious deployments**
+- **Development and testing environments**
+- **Small to medium teams** (1-100+ users)
+- **Single-location deployments**
+- **Simpler operational requirements**
+- **Cost-conscious deployments**
 
 ## Architecture
 
@@ -41,15 +42,15 @@ Single-instance deployment is ideal for:
 
 **Pros:**
 
-*   Simple setup
-*   Fast (local I/O)
-*   No external dependencies
+- Simple setup
+- Fast (local I/O)
+- No external dependencies
 
 **Cons:**
 
-*   Limited to server disk size
-*   No redundancy
-*   Cannot scale to HA
+- Limited to server disk size
+- No redundancy
+- Cannot scale to HA
 
 **Configuration:**
 
@@ -65,15 +66,15 @@ cache:
 
 **Pros:**
 
-*   Scalable storage
-*   Easy migration to HA later
-*   Built-in redundancy
+- Scalable storage
+- Easy migration to HA later
+- Built-in redundancy
 
 **Cons:**
 
-*   Requires S3 service
-*   Slight latency overhead
-*   Additional cost (if using cloud S3)
+- Requires S3 service
+- Slight latency overhead
+- Additional cost (if using cloud S3)
 
 **Configuration:**
 
@@ -97,14 +98,14 @@ cache:
 
 **Pros:**
 
-*   No external service required
-*   Zero configuration
-*   Perfect for single instance
+- No external service required
+- Zero configuration
+- Perfect for single instance
 
 **Cons:**
 
-*   Cannot be used for HA
-*   Single connection limit
+- Cannot be used for HA
+- Single connection limit
 
 **Configuration:**
 
@@ -117,14 +118,14 @@ cache:
 
 **Pros:**
 
-*   Better performance under load
-*   Easier migration to HA later
-*   Better concurrent access
+- Better performance under load
+- Easier migration to HA later
+- Better concurrent access
 
 **Cons:**
 
-*   Requires PostgreSQL service
-*   More complex setup
+- Requires PostgreSQL service
+- More complex setup
 
 **Configuration:**
 
@@ -204,27 +205,27 @@ prometheus:
 
 ### Minimum
 
-*   **CPU**: 2 cores
-*   **RAM**: 4GB
-*   **Disk**: 50GB (for local storage)
-*   **Network**: 100Mbps
+- **CPU**: 2 cores
+- **RAM**: 4GB
+- **Disk**: 50GB (for local storage)
+- **Network**: 100Mbps
 
 ### Recommended
 
-*   **CPU**: 4+ cores
-*   **RAM**: 8GB+
-*   **Disk**: 200GB-1TB (for local storage)
-*   **Network**: 1Gbps
+- **CPU**: 4+ cores
+- **RAM**: 8GB+
+- **Disk**: 200GB-1TB (for local storage)
+- **Network**: 1Gbps
 
 ## Installation Methods
 
 Choose your preferred installation method:
 
-*   <a class="reference-link" href="../Installation/Docker.md">Docker</a> - Quickest setup
-*   <a class="reference-link" href="../Installation/Docker%20Compose.md">Docker Compose</a> - Automated deployment
-*   <a class="reference-link" href="../Installation/NixOS.md">Nixos</a> - Native NixOS integration
-*   <a class="reference-link" href="../Installation/Kubernetes.md">Kubernetes</a> - For K8s environments
-*   <a class="reference-link" href="../Installation/Helm%20Chart.md">Helm</a> - Simplified K8s deployment
+- <a class="reference-link" href="../Installation/Docker.md">Docker</a> - Quickest setup
+- <a class="reference-link" href="../Installation/Docker%20Compose.md">Docker Compose</a> - Automated deployment
+- <a class="reference-link" href="../Installation/NixOS.md">Nixos</a> - Native NixOS integration
+- <a class="reference-link" href="../Installation/Kubernetes.md">Kubernetes</a> - For K8s environments
+- <a class="reference-link" href="../Installation/Helm%20Chart.md">Helm</a> - Simplified K8s deployment
 
 ## Deployment Checklist
 
@@ -269,10 +270,10 @@ See <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a>
 
 Single-instance deployments have these limitations:
 
-*   **No redundancy**: Server downtime = cache downtime
-*   **No load distribution**: One server handles all requests
-*   **No zero-downtime updates**: Updates require service restart
-*   **Limited scalability**: Cannot add more instances
+- **No redundancy**: Server downtime = cache downtime
+- **No load distribution**: One server handles all requests
+- **No zero-downtime updates**: Updates require service restart
+- **Limited scalability**: Cannot add more instances
 
 **When you outgrow single-instance:** See <a class="reference-link" href="High%20Availability.md">High Availability</a> for migration.
 
@@ -318,15 +319,15 @@ See the <a class="reference-link" href="../Operations/Troubleshooting.md">Troub
 
 ## Next Steps
 
-1.  <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients
-2.  <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up observability
-3.  <a class="reference-link" href="../Operations.md">Operations</a> - Learn about backups, upgrades, etc.
-4.  **Consider** <a class="reference-link" href="High%20Availability.md">High Availability</a> - When you need to scale
+1. <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients
+1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up observability
+1. <a class="reference-link" href="../Operations.md">Operations</a> - Learn about backups, upgrades, etc.
+1. **Consider** <a class="reference-link" href="High%20Availability.md">High Availability</a> - When you need to scale
 
 ## Related Documentation
 
-*   <a class="reference-link" href="../Installation.md">Installation</a> - Installation methods
-*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
-*   <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backend details
-*   <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database backend details
-*   <a class="reference-link" href="High%20Availability.md">High Availability</a> - Migrate to HA when needed
+- <a class="reference-link" href="../Installation.md">Installation</a> - Installation methods
+- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
+- <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backend details
+- <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database backend details
+- <a class="reference-link" href="High%20Availability.md">High Availability</a> - Migrate to HA when needed

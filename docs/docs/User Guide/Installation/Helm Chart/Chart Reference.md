@@ -1,4 +1,5 @@
 # Chart Reference
+
 ## Introduction
 
 This chart bootstraps a ncps deployment on a Kubernetes cluster using the Helm package manager. ncps is a local binary cache proxy for Nix that fetches store paths from upstream caches and caches them locally, reducing download times and bandwidth usage.
@@ -8,9 +9,9 @@ This chart bootstraps a ncps deployment on a Kubernetes cluster using the Helm p
 
 ## Prerequisites
 
-*   Kubernetes 1.19+
-*   Helm 3.8+
-*   PV provisioner support in the underlying infrastructure (for local storage with persistence)
+- Kubernetes 1.19+
+- Helm 3.8+
+- PV provisioner support in the underlying infrastructure (for local storage with persistence)
 
 ## Installation
 
@@ -570,9 +571,9 @@ helm test ncps
 
 When using `helm template` (manually or via tools like nixidy), Helm hook annotations are ignored and the test pod gets rendered as a regular resource, causing issues:
 
-*   The pod runs once and completes
-*   It appears as degraded/failed in your cluster
-*   Updates to the pod fail (can't update completed pods)
+- The pod runs once and completes
+- It appears as degraded/failed in your cluster
+- Updates to the pod fail (can't update completed pods)
 
 ```yaml
 # values.yaml when using helm template
@@ -582,8 +583,8 @@ tests:
 
 **Note for ArgoCD/Flux users**: These tools may use `helm template` internally. Check your configuration:
 
-*   ArgoCD: Depends on your Application's source configuration
-*   Flux: HelmRelease with `spec.install.disableHooks: true` has this issue
+- ArgoCD: Depends on your Application's source configuration
+- Flux: HelmRelease with `spec.install.disableHooks: true` has this issue
 
 To test your deployment when using templating, use the readiness/liveness probes or manually verify:
 
@@ -601,16 +602,16 @@ The chart includes validation to prevent incompatible configurations:
 
 **Error: "High availability mode requires Redis"**
 
-*   Enable Redis when using multiple replicas: `config.redis.enabled=true`
+- Enable Redis when using multiple replicas: `config.redis.enabled=true`
 
 **Error: "High availability mode is not compatible with SQLite"**
 
-*   Use PostgreSQL or MySQL: `config.database.type=postgresql`
+- Use PostgreSQL or MySQL: `config.database.type=postgresql`
 
 **Error: "High availability mode with Deployment requires S3 storage"**
 
-*   Either use S3: `config.storage.type=s3`
-*   Or switch to StatefulSet with NFS: `mode=statefulset`
+- Either use S3: `config.storage.type=s3`
+- Or switch to StatefulSet with NFS: `mode=statefulset`
 
 ### Pods Not Starting
 
@@ -671,8 +672,8 @@ kubectl get secret <release-name>-ncps -o jsonpath='{.data.redis-password}' | ba
 
 ## Further Information
 
-*   <a class="reference-link" href="../../../User%20Guide.md">User Guide</a>
-*   <a class="reference-link" href="../../Installation.md">Installation</a>
-*   <a class="reference-link" href="../Helm%20Chart.md">Helm Chart</a>
-*   [ncps GitHub Repository](https://github.com/kalbasit/ncps)
-*   [Helm Documentation](https://helm.sh/docs/)
+- <a class="reference-link" href="../../../User%20Guide.md">User Guide</a>
+- <a class="reference-link" href="../../Installation.md">Installation</a>
+- <a class="reference-link" href="../Helm%20Chart.md">Helm Chart</a>
+- [ncps GitHub Repository](https://github.com/kalbasit/ncps)
+- [Helm Documentation](https://helm.sh/docs/)

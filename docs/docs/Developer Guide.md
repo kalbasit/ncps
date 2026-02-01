@@ -1,4 +1,5 @@
 # Developer Guide
+
 ## Development Guide
 
 Information for contributing to ncps development.
@@ -25,9 +26,9 @@ nix develop
 
 **Available tools in dev shell:**
 
-*   go, golangci-lint, sqlc, sqlfluff
-*   dbmate, delve, watchexec
-*   Integration test helpers
+- go, golangci-lint, sqlc, sqlfluff
+- dbmate, delve, watchexec
+- Integration test helpers
 
 ## Development Workflow
 
@@ -55,10 +56,10 @@ nix run .#deps
 
 This starts:
 
-*   **MinIO** (port 9000) - S3-compatible storage
-*   **PostgreSQL** (port 5432) - Database
-*   **MySQL/MariaDB** (port 3306) - Database
-*   **Redis** (port 6379) - Distributed locks
+- **MinIO** (port 9000) - S3-compatible storage
+- **PostgreSQL** (port 5432) - Database
+- **MySQL/MariaDB** (port 3306) - Database
+- **Redis** (port 6379) - Distributed locks
 
 ### Code Quality
 
@@ -96,6 +97,6 @@ See <a class="reference-link" href="Developer%20Guide/Testing.md">Testing</a> 
 
 ## Related Documentation
 
-*   <a class="reference-link" href="Developer%20Guide/Contributing.md">Contributing</a> - Full contribution guide
-*   <a class="reference-link" href="Developer%20Guide/Architecture.md">Architecture</a> - Deep dive into design
-*   <a class="reference-link" href="Developer%20Guide/Testing.md">Testing</a> - Testing procedures
+- <a class="reference-link" href="Developer%20Guide/Contributing.md">Contributing</a> - Full contribution guide
+- <a class="reference-link" href="Developer%20Guide/Architecture.md">Architecture</a> - Deep dive into design
+- <a class="reference-link" href="Developer%20Guide/Testing.md">Testing</a> - Testing procedures

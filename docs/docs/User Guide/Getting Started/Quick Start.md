@@ -1,13 +1,14 @@
 # Quick Start
+
 ## Quick Start Guide
 
 Get ncps up and running in minutes. This guide shows you the fastest path from zero to a working ncps instance.
 
 ## Prerequisites
 
-*   Docker installed and running
-*   Basic understanding of Nix package manager
-*   Network access to upstream caches (cache.nixos.org)
+- Docker installed and running
+- Basic understanding of Nix package manager
+- Network access to upstream caches (cache.nixos.org)
 
 ## Option 1: Local Storage (Recommended for Getting Started)
 
@@ -118,9 +119,9 @@ docker run -d \
 
 **Replace:**
 
-*   `my-ncps-cache` with your S3 bucket name
-*   `YOUR_ACCESS_KEY` and `YOUR_SECRET_KEY` with your S3 credentials
-*   Adjust `endpoint` and `region` for your S3 provider
+- `my-ncps-cache` with your S3 bucket name
+- `YOUR_ACCESS_KEY` and `YOUR_SECRET_KEY` with your S3 credentials
+- Adjust `endpoint` and `region` for your S3 provider
 
 ### Step 5: Verify Installation
 
@@ -137,41 +138,41 @@ curl http://localhost:8501/pubkey
 
 Your ncps instance is now:
 
-*   Listening on port 8501
-*   Caching packages from cache.nixos.org
-*   Storing data in Docker volume (local) or S3 bucket
-*   Signing cached paths with its own private key
-*   Ready to serve Nix clients
+- Listening on port 8501
+- Caching packages from cache.nixos.org
+- Storing data in Docker volume (local) or S3 bucket
+- Signing cached paths with its own private key
+- Ready to serve Nix clients
 
 ## Next Steps
 
-1.  <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up your Nix clients to use ncps
-2.  <a class="reference-link" href="Concepts.md">Concepts</a> - Learn how ncps works under the hood
-3.  <a class="reference-link" href="../Installation.md">Installation</a> - Pick the best installation method for your needs
-4.  <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more configuration options
+1. <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up your Nix clients to use ncps
+1. <a class="reference-link" href="Concepts.md">Concepts</a> - Learn how ncps works under the hood
+1. <a class="reference-link" href="../Installation.md">Installation</a> - Pick the best installation method for your needs
+1. <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more configuration options
 
 ## Quick Troubleshooting
 
 **Container exits immediately:**
 
-*   Check you provided all required flags: `--cache-hostname`, storage, database, upstream
-*   Check logs: `docker logs ncps`
+- Check you provided all required flags: `--cache-hostname`, storage, database, upstream
+- Check logs: `docker logs ncps`
 
 **Can't access** [**http://localhost:8501**](http://localhost:8501)**:**
 
-*   Verify container is running: `docker ps | grep ncps`
-*   Check port mapping: `-p 8501:8501`
-*   Try from inside container: `docker exec ncps wget -O- http://localhost:8501/nix-cache-info`
+- Verify container is running: `docker ps | grep ncps`
+- Check port mapping: `-p 8501:8501`
+- Try from inside container: `docker exec ncps wget -O- http://localhost:8501/nix-cache-info`
 
 **Database errors:**
 
-*   Ensure you ran the database migration step
-*   Verify database path matches between migration and serve commands
+- Ensure you ran the database migration step
+- Verify database path matches between migration and serve commands
 
 See the <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> for more help.
 
 ## Related Documentation
 
-*   <a class="reference-link" href="../Installation/Docker.md">Docker</a> - Detailed Docker setup
-*   <a class="reference-link" href="../Installation/Docker%20Compose.md">Docker Compose</a> - Automated setup
-*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
+- <a class="reference-link" href="../Installation/Docker.md">Docker</a> - Detailed Docker setup
+- <a class="reference-link" href="../Installation/Docker%20Compose.md">Docker Compose</a> - Automated setup
+- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options

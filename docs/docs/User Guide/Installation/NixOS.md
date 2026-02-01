@@ -1,13 +1,14 @@
 # NixOS
+
 ## NixOS Installation
 
 Install ncps on NixOS using the built-in service module for native integration and simplified management.
 
 ## Prerequisites
 
-*   NixOS 25.05 or later (earlier versions don't include the ncps module)
-*   Sufficient disk space for cache storage
-*   Basic familiarity with NixOS configuration
+- NixOS 25.05 or later (earlier versions don't include the ncps module)
+- Sufficient disk space for cache storage
+- Basic familiarity with NixOS configuration
 
 ## Quick Start
 
@@ -42,10 +43,10 @@ sudo nixos-rebuild switch
 
 The service will:
 
-*   Create the ncps user and group automatically
-*   Set up directories with correct permissions
-*   Initialize the database
-*   Start the ncps service
+- Create the ncps user and group automatically
+- Set up directories with correct permissions
+- Initialize the database
+- Start the ncps service
 
 ### Verify Installation
 
@@ -174,8 +175,8 @@ curl http://localhost:8501/pubkey
 
 To use S3 storage with NixOS today:
 
-*   Install ncps via Docker/Podman on NixOS
-*   Use the <a class="reference-link" href="Docker.md">Docker</a>
+- Install ncps via Docker/Podman on NixOS
+- Use the <a class="reference-link" href="Docker.md">Docker</a>
 
 ## Observability Configuration
 
@@ -379,14 +380,14 @@ sudo nixos-rebuild switch
 
 ## Next Steps
 
-1.  <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up your Nix clients to use the cache
-2.  <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more configuration options
-3.  <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Configure observability
-4.  <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - Consider high availability (use Docker/K8s)
+1. <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up your Nix clients to use the cache
+1. <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more configuration options
+1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Configure observability
+1. <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - Consider high availability (use Docker/K8s)
 
 ## Related Documentation
 
-*   <a class="reference-link" href="https://search.nixos.org/options?query=services.ncps">NixOS Options Search</a> - All module options
-*   <a class="reference-link" href="Docker.md">Docker</a> - For S3 storage on NixOS
-*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
-*   <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Configure Nix clients
+- <a class="reference-link" href="https://search.nixos.org/options?query=services.ncps">NixOS Options Search</a> - All module options
+- <a class="reference-link" href="Docker.md">Docker</a> - For S3 storage on NixOS
+- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
+- <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Configure Nix clients

@@ -1,25 +1,26 @@
 # Distributed Locking
+
 This document provides comprehensive guidance on using distributed locking in ncps for high-availability deployments.
 
 ## Overview
 
 ncps supports running multiple instances in a high-availability configuration using **Redis** or **PostgreSQL advisory locks** for distributed locking. This enables:
 
-*   **Zero-downtime deployments** - Update instances one at a time
-*   **Horizontal scaling** - Add instances to handle more traffic
-*   **Load distribution** - Spread requests across multiple servers
-*   **Geographic distribution** - Deploy instances closer to clients
+- **Zero-downtime deployments** - Update instances one at a time
+- **Horizontal scaling** - Add instances to handle more traffic
+- **Load distribution** - Spread requests across multiple servers
+- **Geographic distribution** - Deploy instances closer to clients
 
 ### Key Concepts
 
-*   **Download Deduplication**: When multiple instances request the same package, only one downloads it while others wait for the result
-*   **LRU Coordination**: Only one instance runs cache cleanup at a time to prevent conflicts
-*   **Retry with Backoff**: Failed lock acquisitions retry automatically with exponential backoff and jitter
-*   **Lock Expiry**: All locks have TTLs to prevent deadlocks from instance failures
+- **Download Deduplication**: When multiple instances request the same package, only one downloads it while others wait for the result
+- **LRU Coordination**: Only one instance runs cache cleanup at a time to prevent conflicts
+- **Retry with Backoff**: Failed lock acquisitions retry automatically with exponential backoff and jitter
+- **Lock Expiry**: All locks have TTLs to prevent deadlocks from instance failures
 
-1.  **Local Locks** (default) - In-memory locks using Go's `sync.Mutex`, suitable for single-instance deployments
-2.  **Redis** - Distributed locks using the Redlock algorithm, ideal for HA deployments with existing Redis infrastructure
-3.  **PostgreSQL Advisory Locks** - Distributed locks using PostgreSQL's native advisory lock feature
+1. **Local Locks** (default) - In-memory locks using Go's `sync.Mutex`, suitable for single-instance deployments
+1. **Redis** - Distributed locks using the Redlock algorithm, ideal for HA deployments with existing Redis infrastructure
+1. **PostgreSQL Advisory Locks** - Distributed locks using PostgreSQL's native advisory lock feature
 
 ## Architecture
 
@@ -39,9 +40,9 @@ ncps supports running multiple instances in a high-availability configuration us
          └─> SQLite Database
 ```
 
-*   Uses Go's `sync.Mutex` and `sync.RWMutex` for coordination
-*   No external dependencies required
-*   Suitable for single-server deployments
+- Uses Go's `sync.Mutex` and `sync.RWMutex` for coordination
+- No external dependencies required
+- Suitable for single-server deployments
 
 ### High-Availability Mode
 
@@ -80,10 +81,10 @@ ncps supports running multiple instances in a high-availability configuration us
 └─────────┘  └───────────┘
 ```
 
-*   All instances share the same S3 storage and database
-*   Redis coordinates locks across instances
-*   Load balancer distributes traffic
-*   Instances can be added/removed dynamically
+- All instances share the same S3 storage and database
+- Redis coordinates locks across instances
+- Load balancer distributes traffic
+- Instances can be added/removed dynamically
 
 ### High-Availability Mode (Database Advisory Locks)
 
@@ -121,11 +122,11 @@ ncps supports running multiple instances in a high-availability configuration us
 └─────────┘
 ```
 
-*   The shared database serves both as the metadata store AND the distributed lock coordinator
-*   Reduces infrastructure complexity (no Redis needed)
-*   Uses PostgreSQL's native advisory lock feature (`pg_advisory_lock`)
-*   All instances share the same S3 storage and database
-*   Load balancer distributes traffic
+- The shared database serves both as the metadata store AND the distributed lock coordinator
+- Reduces infrastructure complexity (no Redis needed)
+- Uses PostgreSQL's native advisory lock feature (`pg_advisory_lock`)
+- All instances share the same S3 storage and database
+- Load balancer distributes traffic
 
 ## When to Use Distributed Locking
 
@@ -133,41 +134,41 @@ ncps supports running multiple instances in a high-availability configuration us
 
 ✅ **Running Multiple Instances**
 
-*   Deploying behind a load balancer
-*   Need zero-downtime updates
-*   Require failover capability
+- Deploying behind a load balancer
+- Need zero-downtime updates
+- Require failover capability
 
 ✅ **High Traffic Environments**
 
-*   Handling thousands of concurrent requests
-*   Need horizontal scaling
-*   Geographic distribution required
+- Handling thousands of concurrent requests
+- Need horizontal scaling
+- Geographic distribution required
 
 ✅ **Production Deployments**
 
-*   Business-critical caching infrastructure
-*   SLA requirements for availability
-*   Need redundancy and fault tolerance
+- Business-critical caching infrastructure
+- SLA requirements for availability
+- Need redundancy and fault tolerance
 
 ### Use Local Locking When:
 
 ✅ **Single Server Deployment**
 
-*   Running on a single machine
-*   No redundancy required
-*   Development/testing environments
+- Running on a single machine
+- No redundancy required
+- Development/testing environments
 
 ✅ **Low Traffic Environments**
 
-*   Small teams or personal use
-*   Limited concurrent requests
-*   Resource-constrained environments
+- Small teams or personal use
+- Limited concurrent requests
+- Resource-constrained environments
 
 ✅ **Simplified Operations**
 
-*   Want minimal infrastructure
-*   Distributed lock backend is not necessary
-*   Prefer embedded solutions (SQLite)
+- Want minimal infrastructure
+- Distributed lock backend is not necessary
+- Prefer embedded solutions (SQLite)
 
 ## Configuration Guide
 
@@ -175,16 +176,16 @@ ncps supports running multiple instances in a high-availability configuration us
 
 For high-availability mode, you need:
 
-1.  **Distributed Lock Backend** (one of the following):
-    *   **Redis** (version 5.0 or later)
-    *   **PostgreSQL** (version 9.1 or later)
-2.  **Shared Storage** (S3-compatible)
-    *   AWS S3, MinIO, DigitalOcean Spaces, etc.
-    *   All instances must access the same bucket
-3.  **Shared Database** (PostgreSQL or MySQL)
-    *   PostgreSQL 12+ or MySQL 8.0+ recommended
-    *   All instances must connect to the same database
-    *   SQLite is NOT supported in HA mode
+1. **Distributed Lock Backend** (one of the following):
+   - **Redis** (version 5.0 or later)
+   - **PostgreSQL** (version 9.1 or later)
+1. **Shared Storage** (S3-compatible)
+   - AWS S3, MinIO, DigitalOcean Spaces, etc.
+   - All instances must access the same bucket
+1. **Shared Database** (PostgreSQL or MySQL)
+   - PostgreSQL 12+ or MySQL 8.0+ recommended
+   - All instances must connect to the same database
+   - SQLite is NOT supported in HA mode
 
 ### Basic Configuration
 
@@ -225,9 +226,9 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 | --- | --- | --- |
 | `--cache-lock-backend` | Lock backend: `local`, `redis`, or `postgres` | `local` |
 
-*   **local**: Uses in-memory locks. Only suitable for single-instance deployments.
-*   **redis**: Uses Redis (Redlock algorithm). Best for high-traffic, multi-instance deployments.
-*   **postgres**: Uses PostgreSQL advisory locks. Good balance of simplicity and HA.
+- **local**: Uses in-memory locks. Only suitable for single-instance deployments.
+- **redis**: Uses Redis (Redlock algorithm). Best for high-traffic, multi-instance deployments.
+- **postgres**: Uses PostgreSQL advisory locks. Good balance of simplicity and HA.
 
 ### Redis Configuration Options
 
@@ -236,11 +237,11 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 | Option | Description | Default |
 | --- | --- | --- |
 | `--cache-redis-addrs` | Comma-separated Redis addresses | (none - local mode) |
-| `--cache-redis-username` | Username for Redis ACL | ""  |
-| `--cache-redis-password` | Password for authentication | ""  |
-| `--cache-redis-db` | Database number (0-15) | 0   |
+| `--cache-redis-username` | Username for Redis ACL | "" |
+| `--cache-redis-password` | Password for authentication | "" |
+| `--cache-redis-db` | Database number (0-15) | 0 |
 | `--cache-redis-use-tls` | Enable TLS connections | false |
-| `--cache-redis-pool-size` | Connection pool size | 10  |
+| `--cache-redis-pool-size` | Connection pool size | 10 |
 
 #### Redis Lock Settings
 
@@ -252,16 +253,16 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--cache-lock-download-ttl` | Download lock timeout | 5m  |
+| `--cache-lock-download-ttl` | Download lock timeout | 5m |
 | `--cache-lock-lru-ttl` | LRU lock timeout | 30m |
 
 #### Retry Configuration
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--cache-lock-retry-max-attempts` | Maximum retry attempts | 3   |
+| `--cache-lock-retry-max-attempts` | Maximum retry attempts | 3 |
 | `--cache-lock-retry-initial-delay` | Initial retry delay | 100ms |
-| `--cache-lock-retry-max-delay` | Maximum backoff delay | 2s  |
+| `--cache-lock-retry-max-delay` | Maximum backoff delay | 2s |
 | `--cache-lock-retry-jitter` | Enable jitter in retries | true |
 
 ### Advanced Configuration
@@ -294,23 +295,23 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 
 Advisory locks provide a distributed locking alternative for deployments that:
 
-*   Already use PostgreSQL as the primary database
-*   Want to minimize infrastructure dependencies (no Redis needed)
-*   Prefer a single database for both data and coordination
+- Already use PostgreSQL as the primary database
+- Want to minimize infrastructure dependencies (no Redis needed)
+- Prefer a single database for both data and coordination
 
 #### Advisory Lock Prerequisites
 
 > [!IMPORTANT]
 > Database advisory locks require PostgreSQL 9.1+. SQLite and MySQL do not support advisory locks in ncps. If you use MySQL as your database, you must use Redis for distributed locking.
 
-1.  **Shared Database** (PostgreSQL)
-    *   Version 9.1 or later (12+ recommended)
-    *   Uses native advisory lock functions
-    *   Must be shared across all ncps instances
-    *   Requires no special configuration or extensions
-2.  **Shared Storage** (S3-compatible)
-    *   Same requirement as Redis mode
-    *   All instances must access the same bucket
+1. **Shared Database** (PostgreSQL)
+   - Version 9.1 or later (12+ recommended)
+   - Uses native advisory lock functions
+   - Must be shared across all ncps instances
+   - Requires no special configuration or extensions
+1. **Shared Storage** (S3-compatible)
+   - Same requirement as Redis mode
+   - All instances must access the same bucket
 
 #### Advisory Lock Configuration (CLI)
 
@@ -359,11 +360,11 @@ These settings apply to both Redis and PostgreSQL backends:
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--cache-lock-download-ttl` | TTL for download locks | 5m  |
+| `--cache-lock-download-ttl` | TTL for download locks | 5m |
 | `--cache-lock-lru-ttl` | TTL for LRU cleanup lock | 30m |
-| `--cache-lock-retry-max-attempts` | Maximum retry attempts | 3   |
+| `--cache-lock-retry-max-attempts` | Maximum retry attempts | 3 |
 | `--cache-lock-retry-initial-delay` | Initial retry delay | 100ms |
-| `--cache-lock-retry-max-delay` | Maximum retry delay (exponential backoff cap) | 2s  |
+| `--cache-lock-retry-max-delay` | Maximum retry delay (exponential backoff cap) | 2s |
 | `--cache-lock-retry-jitter` | Enable random jitter in retries | `true` |
 
 #### How Advisory Locks Work
@@ -386,10 +387,10 @@ SELECT pg_advisory_unlock_shared(key_hash);    -- Release shared (read) lock
 
 **Key Features:**
 
-*   Locks are identified by 64-bit integers (ncps hashes string keys to int64)
-*   Automatically released when connection closes (prevents deadlocks)
-*   Native database feature - no configuration or extensions needed
-*   Same connection must be used for lock() and unlock()
+- Locks are identified by 64-bit integers (ncps hashes string keys to int64)
+- Automatically released when connection closes (prevents deadlocks)
+- Native database feature - no configuration or extensions needed
+- Same connection must be used for lock() and unlock()
 
 #### Connection Management & Scalability
 
@@ -398,26 +399,26 @@ SELECT pg_advisory_unlock_shared(key_hash);    -- Release shared (read) lock
 
 PostgreSQL advisory lock implementations in ncps use a **dedicated connection model**:
 
-1.  When `Lock(key)` is called, a dedicated connection is pulled from the pool (or created).
-2.  The lock is acquired on that connection.
-3.  The connection is **held open** and removed from the pool until `Unlock(key)` is called.
+1. When `Lock(key)` is called, a dedicated connection is pulled from the pool (or created).
+1. The lock is acquired on that connection.
+1. The connection is **held open** and removed from the pool until `Unlock(key)` is called.
 
 **Implication:** If your database has `max_connections = 100` and you try to acquire 101 concurrent locks across your cluster, the 101st attempt will fail (and eventually trigger the circuit breaker).
 
 **Recommendation:**
 
-*   Carefully monitor `pg_stat_activity` or equivalent.
-*   Ensure your database's `max_connections` is comfortably higher than `(num_instances * max_concurrent_downloads) + (num_instances * pool_size)`.
-*   If you need thousands of concurrent locks, **use Redis**.
+- Carefully monitor `pg_stat_activity` or equivalent.
+- Ensure your database's `max_connections` is comfortably higher than `(num_instances * max_concurrent_downloads) + (num_instances * pool_size)`.
+- If you need thousands of concurrent locks, **use Redis**.
 
 > [!CAUTION]
 > **Risk of Deadlock with Low Connection Pool Limits**
 >
 > When using PostgreSQL advisory locks, a single request that requires a download can consume up to **3 concurrent database connections**:
 >
-> 1.  One connection to hold the **shared cache lock** for the duration of the request.
-> 2.  One connection to hold the **exclusive download lock** while the asset is being pulled.
-> 3.  One connection for the **database transaction** to store the metadata once the download completes.
+> 1. One connection to hold the **shared cache lock** for the duration of the request.
+> 1. One connection to hold the **exclusive download lock** while the asset is being pulled.
+> 1. One connection for the **database transaction** to store the metadata once the download completes.
 >
 > If your connection pool (`--cache-database-pool-max-open-conns`) is too small (e.g., 10), as few as 4-5 concurrent requests can completely exhaust the pool, causing a deadlock where all requests are waiting for a connection to start a transaction while holding locks on other connections.
 
@@ -435,56 +436,56 @@ PostgreSQL advisory lock implementations in ncps use a **dedicated connection mo
 
 **Use Redis when:**
 
-*   ✅ You already have Redis infrastructure
-*   ✅ Need the highest performance (Redis is optimized for in-memory operations)
-*   ✅ Need true read-write lock semantics with high read concurrency
-*   ✅ Want to use Redis for other purposes (caching, pub/sub)
-*   ✅ High-traffic deployments with thousands of concurrent requests
+- ✅ You already have Redis infrastructure
+- ✅ Need the highest performance (Redis is optimized for in-memory operations)
+- ✅ Need true read-write lock semantics with high read concurrency
+- ✅ Want to use Redis for other purposes (caching, pub/sub)
+- ✅ High-traffic deployments with thousands of concurrent requests
 
 **Use PostgreSQL Advisory Locks when:**
 
-*   ✅ You already use PostgreSQL as the database
-*   ✅ Want to minimize infrastructure (one less service to manage)
-*   ✅ Prefer keeping everything in the database
-*   ✅ Need true shared read locks for concurrent cache access
-*   ✅ Lock contention is moderate (database locks are fast but not as fast as Redis)
-*   ✅ Want automatic cleanup when instances crash (connection closes)
+- ✅ You already use PostgreSQL as the database
+- ✅ Want to minimize infrastructure (one less service to manage)
+- ✅ Prefer keeping everything in the database
+- ✅ Need true shared read locks for concurrent cache access
+- ✅ Lock contention is moderate (database locks are fast but not as fast as Redis)
+- ✅ Want automatic cleanup when instances crash (connection closes)
 
 **Use Local Locks when:**
 
-*   ✅ Running single instance only
-*   ✅ Development/testing environment
-*   ✅ No HA requirements
+- ✅ Running single instance only
+- ✅ Development/testing environment
+- ✅ No HA requirements
 
 #### Performance Considerations
 
 PostgreSQL advisory locks are fast, but not as fast as Redis:
 
-*   **Redis** Lock acquisition: ~0.5-2ms
-*   **PostgreSQL** Lock acquisition: ~1-5ms (depends on database load)
+- **Redis** Lock acquisition: ~0.5-2ms
+- **PostgreSQL** Lock acquisition: ~1-5ms (depends on database load)
 
 For most deployments, PostgreSQL advisory locks provide excellent performance. Redis may be preferred for:
 
-*   Very high lock contention (hundreds of locks/second)
-*   Extremely latency-sensitive workloads
-*   Geographic distribution with distant database
+- Very high lock contention (hundreds of locks/second)
+- Extremely latency-sensitive workloads
+- Geographic distribution with distant database
 
 ### Recommended Stack
 
 For best performance, reliability, and scalability in production:
 
-1.  **Distributed Locking:** **Redis**
-    *   Why: Decouples locking load from your primary database. Handles thousands of concurrent locks with minimal connection overhead.
-2.  **Metadata Database:** **PostgreSQL**
-    *   Why: Robust, transactional reliability for cache metadata.
-3.  **Storage:** **S3 (AWS or MinIO)**
-    *   Why: Infinite scalability for binary artifacts.
+1. **Distributed Locking:** **Redis**
+   - Why: Decouples locking load from your primary database. Handles thousands of concurrent locks with minimal connection overhead.
+1. **Metadata Database:** **PostgreSQL**
+   - Why: Robust, transactional reliability for cache metadata.
+1. **Storage:** **S3 (AWS or MinIO)**
+   - Why: Infinite scalability for binary artifacts.
 
 **Use Database Advisory Locks only if:**
 
-*   You cannot maintain a functional Redis setup.
-*   Your concurrency is low (< 100 concurrent downloads cluster-wide).
-*   You want strict "single dependency" simplicity over scalability.
+- You cannot maintain a functional Redis setup.
+- Your concurrency is low (< 100 concurrent downloads cluster-wide).
+- You want strict "single dependency" simplicity over scalability.
 
 ## How It Works
 
@@ -492,7 +493,7 @@ For best performance, reliability, and scalability in production:
 
 ncps uses two types of distributed locks:
 
-#### 1\. Download Locks (Exclusive)
+#### 1. Download Locks (Exclusive)
 
 **Purpose:** Prevent duplicate downloads of the same package
 
@@ -503,14 +504,14 @@ ncps uses two types of distributed locks:
 
 **Behavior:**
 
-*   When instance A starts downloading a package, it acquires the lock
-*   Instance B requesting the same package will retry acquiring the lock
-*   Once instance A completes the download, it releases the lock
-*   Instance B then reads the package from shared storage (no download needed)
+- When instance A starts downloading a package, it acquires the lock
+- Instance B requesting the same package will retry acquiring the lock
+- Once instance A completes the download, it releases the lock
+- Instance B then reads the package from shared storage (no download needed)
 
 **TTL:** 5 minutes (configurable via `--cache-lock-download-ttl`)
 
-#### 2\. LRU Lock (Exclusive)
+#### 2. LRU Lock (Exclusive)
 
 **Purpose:** Coordinate cache cleanup across instances
 
@@ -518,10 +519,10 @@ ncps uses two types of distributed locks:
 
 **Behavior:**
 
-*   Uses `TryLock()` - non-blocking acquisition
-*   If locked, the instance skips LRU and tries again next cycle
-*   Only one instance runs LRU cleanup at a time
-*   Prevents concurrent deletions that could corrupt the cache
+- Uses `TryLock()` - non-blocking acquisition
+- If locked, the instance skips LRU and tries again next cycle
+- Only one instance runs LRU cleanup at a time
+- Prevents concurrent deletions that could corrupt the cache
 
 **TTL:** 30 minutes (configurable via `--cache-lock-lru-ttl`)
 
@@ -529,9 +530,9 @@ ncps uses two types of distributed locks:
 
 ncps uses the [Redlock algorithm](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/) via [go-redsync](https://github.com/go-redsync/redsync):
 
-1.  **Acquire**: Try to SET with NX (only if not exists) and PX (expiry time)
-2.  **Release**: Delete the key when operation completes
-3.  **Expire**: Lock auto-expires after TTL if instance crashes (important for long-running downloads)
+1. **Acquire**: Try to SET with NX (only if not exists) and PX (expiry time)
+1. **Release**: Delete the key when operation completes
+1. **Expire**: Lock auto-expires after TTL if instance crashes (important for long-running downloads)
 
 **Note**: Lock extension is not currently implemented. The TTL should be set long enough to accommodate the longest expected download operation.
 
@@ -555,9 +556,9 @@ actual_delay = delay + random(0, delay * jitter_factor)
 
 **Why Jitter?**
 
-*   Prevents thundering herd when lock is released
-*   Distributes retry attempts across time
-*   Improves fairness in lock acquisition
+- Prevents thundering herd when lock is released
+- Distributes retry attempts across time
+- Improves fairness in lock acquisition
 
 ### Cache Access Protection
 
@@ -591,19 +592,19 @@ Read operations (GetNar, GetNarInfo) acquire read locks to prevent the LRU from 
 
 The following OpenTelemetry metrics will be available for monitoring lock operations:
 
-*   `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisition attempts
-    *   `type`: "download" or "lru"
-    *   `result`: "success" or "failure"
-    *   `mode`: "local" or "distributed"
-*   `ncps_lock_hold_duration_seconds{type,mode}` - Time locks are held
-    *   Histogram of lock hold times
-    *   Helps identify slow operations
-*   `ncps_lock_failures_total{type,reason,mode}` - Lock failures
-    *   `reason`: "timeout", "redis\_error", "circuit\_breaker"
-    *   Indicates infrastructure issues
-*   `ncps_lock_retry_attempts_total{type}` - Retry attempts before success/failure
-    *   Shows lock contention levels
-    *   High values indicate scaling needs
+- `ncps_lock_acquisitions_total{type,result,mode}` - Lock acquisition attempts
+  - `type`: "download" or "lru"
+  - `result`: "success" or "failure"
+  - `mode`: "local" or "distributed"
+- `ncps_lock_hold_duration_seconds{type,mode}` - Time locks are held
+  - Histogram of lock hold times
+  - Helps identify slow operations
+- `ncps_lock_failures_total{type,reason,mode}` - Lock failures
+  - `reason`: "timeout", "redis_error", "circuit_breaker"
+  - Indicates infrastructure issues
+- `ncps_lock_retry_attempts_total{type}` - Retry attempts before success/failure
+  - Shows lock contention levels
+  - High values indicate scaling needs
 
 ### Logging
 
@@ -622,10 +623,10 @@ ncps logs lock operations with structured fields:
 
 **Important log messages:**
 
-*   `acquired download lock` - Successfully acquired lock for download
-*   `failed to acquire lock` - Lock acquisition failed after retries
-*   `another instance is running LRU` - LRU skipped (another instance running)
-*   `circuit breaker open: Redis is unavailable` - Redis connectivity issues
+- `acquired download lock` - Successfully acquired lock for download
+- `failed to acquire lock` - Lock acquisition failed after retries
+- `another instance is running LRU` - LRU skipped (another instance running)
+- `circuit breaker open: Redis is unavailable` - Redis connectivity issues
 
 ### Health Checks
 
@@ -667,10 +668,10 @@ grep "acquired download lock" /var/log/ncps.log | wc -l
 
 **Common Causes:**
 
-1.  **Redis not configured** - Verify `--cache-redis-addrs` is set
-2.  **Network issues** - Check firewall rules, DNS resolution
-3.  **Redis authentication** - Verify username/password if ACL is enabled
-4.  **Different key prefixes** - Ensure all instances use the same `--cache-lock-redis-key-prefix`
+1. **Redis not configured** - Verify `--cache-redis-addrs` is set
+1. **Network issues** - Check firewall rules, DNS resolution
+1. **Redis authentication** - Verify username/password if ACL is enabled
+1. **Different key prefixes** - Ensure all instances use the same `--cache-lock-redis-key-prefix`
 
 **Solution:**
 
@@ -702,18 +703,20 @@ redis-cli --scan --pattern "ncps:lock:download:*" | wc -l
 
 **Solutions:**
 
-1.  **Increase retry settings:**
+1. **Increase retry settings:**
 
-    ```
-    --cache-lock-retry-max-attempts=5 \
-    --cache-lock-retry-max-delay=5s
-    ```
-2.  **Scale down instances** (if too many instances competing)
-3.  **Increase lock TTL** for long-running operations:
+   ```
+   --cache-lock-retry-max-attempts=5 \
+   --cache-lock-retry-max-delay=5s
+   ```
 
-    ```
-    --cache-lock-download-ttl=10m
-    ```
+1. **Scale down instances** (if too many instances competing)
+
+1. **Increase lock TTL** for long-running operations:
+
+   ```
+   --cache-lock-download-ttl=10m
+   ```
 
 ### LRU Not Running
 
@@ -734,8 +737,8 @@ redis-cli GET "ncps:lock:lru"
 
 **Common Causes:**
 
-1.  **LRU lock stuck** - Lock held by crashed instance
-2.  **All instances skipping** - Each thinks another is running
+1. **LRU lock stuck** - Lock held by crashed instance
+1. **All instances skipping** - Each thinks another is running
 
 **Solution:**
 
@@ -766,21 +769,23 @@ nc -zv redis-host 6379
 
 **Solutions:**
 
-1.  **Verify Redis is running:**
+1. **Verify Redis is running:**
 
-    ```
-    systemctl start redis
-    ```
-2.  **Check firewall rules:**
+   ```
+   systemctl start redis
+   ```
 
-    ```
-    sudo iptables -L | grep 6379
-    ```
-3.  **Verify TLS configuration** if using `--cache-redis-use-tls`:
+1. **Check firewall rules:**
 
-    ```
-    openssl s_client -connect redis-host:6380
-    ```
+   ```
+   sudo iptables -L | grep 6379
+   ```
+
+1. **Verify TLS configuration** if using `--cache-redis-use-tls`:
+
+   ```
+   openssl s_client -connect redis-host:6380
+   ```
 
 ## Performance Tuning
 
@@ -788,43 +793,43 @@ nc -zv redis-host 6379
 
 **Download Lock TTL** (`--cache-lock-download-ttl`):
 
-*   **Default:** 5 minutes
-*   **Increase if:** Large packages take longer to download
-*   **Decrease if:** Most downloads complete quickly (reduces stuck lock impact)
+- **Default:** 5 minutes
+- **Increase if:** Large packages take longer to download
+- **Decrease if:** Most downloads complete quickly (reduces stuck lock impact)
 
 **LRU Lock TTL** (`--cache-lock-lru-ttl`):
 
-*   **Default:** 30 minutes
-*   **Increase if:** LRU cleanup takes longer (very large caches)
-*   **Decrease if:** Want faster failover if instance crashes during LRU
+- **Default:** 30 minutes
+- **Increase if:** LRU cleanup takes longer (very large caches)
+- **Decrease if:** Want faster failover if instance crashes during LRU
 
 ### Retry Configuration
 
 **Max Attempts** (`--cache-lock-retry-max-attempts`):
 
-*   **Default:** 3
-*   **Increase if:** High lock contention (many instances)
-*   **Decrease if:** Want faster failure feedback
+- **Default:** 3
+- **Increase if:** High lock contention (many instances)
+- **Decrease if:** Want faster failure feedback
 
 **Initial Delay** (`--cache-lock-retry-initial-delay`):
 
-*   **Default:** 100ms
-*   **Increase if:** Redis is slow or distant
-*   **Decrease if:** Redis is fast and local
+- **Default:** 100ms
+- **Increase if:** Redis is slow or distant
+- **Decrease if:** Redis is fast and local
 
 **Max Delay** (`--cache-lock-retry-max-delay`):
 
-*   **Default:** 2s
-*   **Increase if:** Locks are held for long periods
-*   **Decrease if:** Want faster failure
+- **Default:** 2s
+- **Increase if:** Locks are held for long periods
+- **Decrease if:** Want faster failure
 
 ### Redis Pool Size
 
 **Pool Size** (`--cache-redis-pool-size`):
 
-*   **Default:** 10 connections per instance
-*   **Increase if:** High concurrent download requests
-*   **Decrease if:** Running many instances (to reduce Redis load)
+- **Default:** 10 connections per instance
+- **Increase if:** High concurrent download requests
+- **Decrease if:** Running many instances (to reduce Redis load)
 
 **Formula:** `total_connections = instances * pool_size`
 
@@ -834,56 +839,56 @@ nc -zv redis-host 6379
 
 ### Deployment
 
-1.  **Start Redis First**
-    *   Ensure Redis is healthy before starting ncps instances
-    *   Use health checks in orchestration (Kubernetes, Docker Compose)
-2.  **Gradual Rollout**
-    *   Update instances one at a time
-    *   Verify each instance is healthy before updating the next
-    *   Monitor lock metrics during rollout
-3.  **Load Balancer Configuration**
-    *   Use health check endpoint: `GET /pubkey`
-    *   Configure session affinity if needed (not required)
-    *   Set reasonable timeouts (downloads can be large)
-4.  **Shared Storage**
-    *   Ensure all instances have identical S3 configuration
-    *   Use IAM roles or credentials with proper permissions
-    *   Enable S3 server-side encryption for security
-5.  **Database**
-    *   Use connection pooling in PostgreSQL
-    *   Configure appropriate timeouts
-    *   Monitor connection counts
+1. **Start Redis First**
+   - Ensure Redis is healthy before starting ncps instances
+   - Use health checks in orchestration (Kubernetes, Docker Compose)
+1. **Gradual Rollout**
+   - Update instances one at a time
+   - Verify each instance is healthy before updating the next
+   - Monitor lock metrics during rollout
+1. **Load Balancer Configuration**
+   - Use health check endpoint: `GET /pubkey`
+   - Configure session affinity if needed (not required)
+   - Set reasonable timeouts (downloads can be large)
+1. **Shared Storage**
+   - Ensure all instances have identical S3 configuration
+   - Use IAM roles or credentials with proper permissions
+   - Enable S3 server-side encryption for security
+1. **Database**
+   - Use connection pooling in PostgreSQL
+   - Configure appropriate timeouts
+   - Monitor connection counts
 
 ### Monitoring
 
-1.  **Key Metrics to Watch**
-    *   Lock acquisition latency
-    *   Retry attempt rates
-    *   Redis connectivity
-    *   Cache hit rates
-2.  **Alerting**
-    *   Alert on high lock failures
-    *   Alert on Redis unavailability
-    *   Alert on excessive retry attempts
-3.  **Logging**
-    *   Centralize logs (ELK, Loki, CloudWatch)
-    *   Include structured fields for filtering
-    *   Set appropriate log levels
+1. **Key Metrics to Watch**
+   - Lock acquisition latency
+   - Retry attempt rates
+   - Redis connectivity
+   - Cache hit rates
+1. **Alerting**
+   - Alert on high lock failures
+   - Alert on Redis unavailability
+   - Alert on excessive retry attempts
+1. **Logging**
+   - Centralize logs (ELK, Loki, CloudWatch)
+   - Include structured fields for filtering
+   - Set appropriate log levels
 
 ### Operations
 
-1.  **Backup Strategy**
-    *   Redis: Optional (locks are ephemeral)
-    *   Database: Regular backups (contains metadata)
-    *   S3: Enable versioning for disaster recovery
-2.  **Scaling**
-    *   Add instances during high traffic
-    *   Remove instances during maintenance
-    *   Monitor for lock contention when scaling
-3.  **Maintenance**
-    *   Update one instance at a time
-    *   Redis can be restarted (locks will regenerate)
-    *   Database migrations should be backward-compatible
+1. **Backup Strategy**
+   - Redis: Optional (locks are ephemeral)
+   - Database: Regular backups (contains metadata)
+   - S3: Enable versioning for disaster recovery
+1. **Scaling**
+   - Add instances during high traffic
+   - Remove instances during maintenance
+   - Monitor for lock contention when scaling
+1. **Maintenance**
+   - Update one instance at a time
+   - Redis can be restarted (locks will regenerate)
+   - Database migrations should be backward-compatible
 
 ## Migration Guide
 
@@ -891,59 +896,65 @@ nc -zv redis-host 6379
 
 **Prerequisites:**
 
-1.  ✅ Set up PostgreSQL database
-2.  ✅ Migrate from SQLite (if applicable)
-3.  ✅ Set up S3-compatible storage
-4.  ✅ Deploy Redis server
+1. ✅ Set up PostgreSQL database
+1. ✅ Migrate from SQLite (if applicable)
+1. ✅ Set up S3-compatible storage
+1. ✅ Deploy Redis server
 
 **Migration Steps:**
 
-1.  **Migrate to S3 Storage:**
+1. **Migrate to S3 Storage:**
 
-    ```
-    # Sync local storage to S3
-    aws s3 sync /var/lib/ncps/storage s3://ncps-cache/
-    ```
-2.  **Migrate Database:**
+   ```
+   # Sync local storage to S3
+   aws s3 sync /var/lib/ncps/storage s3://ncps-cache/
+   ```
 
-    ```
-    # Export SQLite data
-    sqlite3 ncps.db .dump > backup.sql
+1. **Migrate Database:**
 
-    # Import to PostgreSQL (after schema conversion)
-    psql ncps < converted.sql
-    ```
-3.  **Configure First Instance:**
+   ```
+   # Export SQLite data
+   sqlite3 ncps.db .dump > backup.sql
 
-    ```
-    ncps serve \
-      --cache-database-url=postgresql://... \
-      --cache-storage-s3-bucket=ncps-cache \
-      --cache-redis-addrs=redis:6379
-    ```
-4.  **Verify Functionality:**
+   # Import to PostgreSQL (after schema conversion)
+   psql ncps < converted.sql
+   ```
 
-    *   Test package downloads
-    *   Check Redis for lock keys
-    *   Verify cache hits
-5.  **Add Additional Instances:**
+1. **Configure First Instance:**
 
-    *   Use identical configuration
-    *   Point to same Redis, S3, and database
-    *   Add to load balancer
+   ```
+   ncps serve \
+     --cache-database-url=postgresql://... \
+     --cache-storage-s3-bucket=ncps-cache \
+     --cache-redis-addrs=redis:6379
+   ```
+
+1. **Verify Functionality:**
+
+   - Test package downloads
+   - Check Redis for lock keys
+   - Verify cache hits
+
+1. **Add Additional Instances:**
+
+   - Use identical configuration
+   - Point to same Redis, S3, and database
+   - Add to load balancer
 
 ### Rollback Plan
 
 If issues occur:
 
-1.  **Stop new instances** (keep first instance)
-2.  **Continue using first instance** with Redis
-3.  **Or temporarily disable Redis:**
+1. **Stop new instances** (keep first instance)
 
-    ```
-    # Remove --cache-redis-addrs flag
-    # Falls back to local locks
-    ```
+1. **Continue using first instance** with Redis
+
+1. **Or temporarily disable Redis:**
+
+   ```
+   # Remove --cache-redis-addrs flag
+   # Falls back to local locks
+   ```
 
 **Note:** Rollback from S3 to local storage requires data sync:
 
@@ -951,20 +962,20 @@ If issues occur:
 aws s3 sync s3://ncps-cache/ /var/lib/ncps/storage
 ```
 
----
+______________________________________________________________________
 
 ## Additional Resources
 
-*   **Redis Official Documentation:** [https://redis.io/docs/](https://redis.io/docs/)
-*   **Redlock Algorithm:** [https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/)
-*   **go-redsync Library:** [https://github.com/go-redsync/redsync](https://github.com/go-redsync/redsync)
-*   **ncps Configuration Reference:** See [`config.example.yaml`](https://github.com/kalbasit/ncps/blob/main/config.example.yaml)
-*   **High Availability Best Practices:** AWS Well-Architected Framework
+- **Redis Official Documentation:** [https://redis.io/docs/](https://redis.io/docs/)
+- **Redlock Algorithm:** [https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/)
+- **go-redsync Library:** [https://github.com/go-redsync/redsync](https://github.com/go-redsync/redsync)
+- **ncps Configuration Reference:** See [`config.example.yaml`](https://github.com/kalbasit/ncps/blob/main/config.example.yaml)
+- **High Availability Best Practices:** AWS Well-Architected Framework
 
 ## Support
 
 For issues or questions:
 
-*   **GitHub Issues:** [https://github.com/kalbasit/ncps/issues](https://github.com/kalbasit/ncps/issues)
-*   **Discussions:** [https://github.com/kalbasit/ncps/discussions](https://github.com/kalbasit/ncps/discussions)
-*   **CONTRIBUTING.md:** Development and testing guide
+- **GitHub Issues:** [https://github.com/kalbasit/ncps/issues](https://github.com/kalbasit/ncps/issues)
+- **Discussions:** [https://github.com/kalbasit/ncps/discussions](https://github.com/kalbasit/ncps/discussions)
+- **CONTRIBUTING.md:** Development and testing guide

@@ -1,4 +1,5 @@
 # Troubleshooting
+
 ## Troubleshooting Guide
 
 Common issues and solutions.
@@ -19,10 +20,10 @@ journalctl -u ncps -f
 
 **Common causes:**
 
-*   Missing required flags
-*   Database not initialized
-*   Permission errors
-*   Port already in use
+- Missing required flags
+- Database not initialized
+- Permission errors
+- Port already in use
 
 ### Can't Access Cache
 
@@ -34,10 +35,10 @@ curl http://your-ncps:8501/nix-cache-info
 
 **Check:**
 
-*   Service is running
-*   Port 8501 is open
-*   Firewall rules
-*   Network connectivity
+- Service is running
+- Port 8501 is open
+- Firewall rules
+- Network connectivity
 
 ## Database Issues
 
@@ -45,9 +46,9 @@ curl http://your-ncps:8501/nix-cache-info
 
 SQLite only allows one writer:
 
-*   Check no other processes are accessing the database
-*   Restart ncps
-*   Use PostgreSQL/MySQL for concurrent access
+- Check no other processes are accessing the database
+- Restart ncps
+- Use PostgreSQL/MySQL for concurrent access
 
 ### Migration Errors
 
@@ -82,17 +83,17 @@ sudo chown -R ncps:ncps /var/lib/ncps
 
 **Check:**
 
-*   Redis is configured and reachable
-*   All instances use same Redis
-*   Check logs for lock messages
+- Redis is configured and reachable
+- All instances use same Redis
+- Check logs for lock messages
 
 ### High Lock Contention
 
 **Solutions:**
 
-*   Increase retry settings
-*   Increase lock TTLs
-*   Scale down instances if too many
+- Increase retry settings
+- Increase lock TTLs
+- Scale down instances if too many
 
 See <a class="reference-link" href="../Deployment/Distributed%20Locking.md">Distributed Locking</a>.
 
@@ -114,5 +115,5 @@ ncps serve --log-level=debug
 
 ## Related Documentation
 
-*   <a class="reference-link" href="Monitoring.md">Monitoring</a> - Set up monitoring
-*   <a class="reference-link" href="../Operations.md">Operations</a> - All operational guides
+- <a class="reference-link" href="Monitoring.md">Monitoring</a> - Set up monitoring
+- <a class="reference-link" href="../Operations.md">Operations</a> - All operational guides

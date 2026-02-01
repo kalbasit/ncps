@@ -1,4 +1,5 @@
 # Cache Management
+
 ## Cache Management Guide
 
 Manage cache size, cleanup, and optimization.
@@ -22,10 +23,10 @@ cache:
 
 **Size formats:**
 
-*   `10K` - 10 kilobytes
-*   `100M` - 100 megabytes
-*   `50G` - 50 gigabytes
-*   `1T` - 1 terabyte
+- `10K` - 10 kilobytes
+- `100M` - 100 megabytes
+- `50G` - 50 gigabytes
+- `1T` - 1 terabyte
 
 ### Check Current Size
 
@@ -58,9 +59,9 @@ cache:
 
 **Cron schedule examples:**
 
-*   `0 2 * * *` - Daily at 2 AM
-*   `0 */6 * * *` - Every 6 hours
-*   `0 3 * * 0` - Weekly on Sunday at 3 AM
+- `0 2 * * *` - Daily at 2 AM
+- `0 */6 * * *` - Every 6 hours
+- `0 3 * * 0` - Weekly on Sunday at 3 AM
 
 ### Manual Cleanup
 
@@ -86,12 +87,12 @@ If Prometheus is enabled:
 
 **Cache size:**
 
-*   Custom script to export size metrics
+- Custom script to export size metrics
 
 **Cache hits/misses:**
 
-*   `ncps_nar_served_total` - Total NARs served
-*   `ncps_narinfo_served_total` - Total NarInfo served
+- `ncps_nar_served_total` - Total NARs served
+- `ncps_narinfo_served_total` - Total NarInfo served
 
 **Query cache hit rate:**
 
@@ -143,10 +144,10 @@ NarInfo metadata is automatically migrated during normal operation when accessed
 
 **How it works:**
 
-*   Client requests a package
-*   NCPS checks database first
-*   If not found, reads from storage and migrates
-*   Subsequent requests use faster database lookups
+- Client requests a package
+- NCPS checks database first
+- If not found, reads from storage and migrates
+- Subsequent requests use faster database lookups
 
 ### Explicit Migration (CLI)
 
@@ -184,9 +185,9 @@ ncps migrate-narinfo --dry-run \
 
 Monitor migration progress through:
 
-*   **Console logs** - Progress updates every 5 seconds
-*   **OpenTelemetry** - Export traces and metrics (enable with `--otel-enabled`)
-*   **Final summary** - Completion report with statistics
+- **Console logs** - Progress updates every 5 seconds
+- **OpenTelemetry** - Export traces and metrics (enable with `--otel-enabled`)
+- **Final summary** - Completion report with statistics
 
 **Example output:**
 
@@ -200,35 +201,35 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 du
 
 **Use background migration when:**
 
-*   Running in production with uptime requirements
-*   Cache has moderate traffic
-*   No rush to complete migration
+- Running in production with uptime requirements
+- Cache has moderate traffic
+- No rush to complete migration
 
 **Use CLI migration when:**
 
-*   Large cache (millions of narinfos)
-*   Need faster completion
-*   Storage space is limited (migration deletes narinfos)
-*   Upgrading from pre-database versions
+- Large cache (millions of narinfos)
+- Need faster completion
+- Storage space is limited (migration deletes narinfos)
+- Upgrading from pre-database versions
 
 See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for comprehensive documentation.
 
 ## Best Practices
 
-1.  **Set reasonable max-size** - Based on available disk space
-2.  **Enable LRU cleanup** - Automatic management
-3.  **Monitor cache usage** - Watch for growth trends
-4.  **Plan for growth** - Cache size increases over time
-5.  **Use S3 for large caches** - Better for 1TB+ caches
-6.  **Migrate narinfo to database** - Improves lookup performance
+1. **Set reasonable max-size** - Based on available disk space
+1. **Enable LRU cleanup** - Automatic management
+1. **Monitor cache usage** - Watch for growth trends
+1. **Plan for growth** - Cache size increases over time
+1. **Use S3 for large caches** - Better for 1TB+ caches
+1. **Migrate narinfo to database** - Improves lookup performance
 
 ## Next Steps
 
-*   <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Track cache performance
-*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All cache options
+- <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Track cache performance
+- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All cache options
 
 ## Related Documentation
 
-*   <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backends
-*   <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Monitor cache metrics
-*   <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Solve issues
+- <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backends
+- <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Monitor cache metrics
+- <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Solve issues
