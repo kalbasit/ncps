@@ -257,7 +257,7 @@ FROM chunks
 WHERE id = ?;
 
 -- name: GetChunksByNarFileID :many
-SELECT c.*
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ?
@@ -292,7 +292,7 @@ SELECT CAST(COUNT(*) AS INTEGER) AS count
 FROM chunks;
 
 -- name: GetOrphanedChunks :many
-SELECT c.*
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
 LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.chunk_id IS NULL;
