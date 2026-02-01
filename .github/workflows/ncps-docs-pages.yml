@@ -8,6 +8,9 @@ on:
       - "main"
     paths:
       - "docs/**"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}
+  cancel-in-progress: true
 jobs:
   deploy-docs-pages:
     runs-on: ubuntu-24.04
