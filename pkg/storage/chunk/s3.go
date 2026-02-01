@@ -23,6 +23,8 @@ var ErrBucketNotFound = errors.New("bucket not found")
 const (
 	// s3NoSuchKey is the S3 error code for objects that don't exist.
 	s3NoSuchKey = "NoSuchKey"
+	// chunkPutLockTTL is the TTL for the lock acquired when putting a chunk.
+	chunkPutLockTTL = 5 * time.Minute
 )
 
 // s3Store implements Store for S3 storage.
@@ -98,6 +100,10 @@ func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, err
 
 	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return nil, ErrNotFound
+		}
+
 		return nil, err
 	}
 
@@ -121,7 +127,7 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 	// Acquire a lock to prevent race conditions during check-then-act.
 	// We use a prefix to avoid collisions with other locks.
 	lockKey := fmt.Sprintf("chunk-put:%s", hash)
-	if err := s.locker.Lock(ctx, lockKey, 5*time.Minute); err != nil {
+	if err := s.locker.Lock(ctx, lockKey, chunkPutLockTTL); err != nil {
 		return false, fmt.Errorf("error acquiring lock for chunk put: %w", err)
 	}
 
