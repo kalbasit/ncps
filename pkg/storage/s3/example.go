@@ -6,6 +6,8 @@ import (
 	"log"
 
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+
+	"github.com/kalbasit/ncps/pkg/s3"
 )
 
 // Example demonstrates how to use the S3 storage implementation with AWS S3.
@@ -13,7 +15,7 @@ func Example() {
 	ctx := context.Background()
 
 	// Create S3 configuration for AWS S3
-	cfg := Config{
+	cfg := s3.Config{
 		Bucket:          "my-nix-cache",
 		Region:          "us-west-2",
 		Endpoint:        "https://s3.us-west-2.amazonaws.com", // Must include scheme
@@ -61,7 +63,7 @@ func ExampleMinIO() {
 	ctx := context.Background()
 
 	// Create MinIO configuration
-	cfg := Config{
+	cfg := s3.Config{
 		Bucket:          "my-nix-cache",
 		Endpoint:        "http://localhost:9000", // Must include scheme
 		AccessKeyID:     "minioadmin",

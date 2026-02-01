@@ -20,6 +20,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/s3"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
 
@@ -49,24 +50,6 @@ func init() {
 	tracer = otel.Tracer(otelPackageName)
 }
 
-// Config holds the configuration for S3 storage.
-type Config struct {
-	// Bucket is the S3 bucket name
-	Bucket string
-	// Region is the AWS region (optional)
-	Region string
-	// Endpoint is the S3-compatible endpoint URL with scheme (http:// or https://)
-	Endpoint string
-	// AccessKeyID is the access key for authentication
-	AccessKeyID string
-	// SecretAccessKey is the secret key for authentication
-	SecretAccessKey string
-	// ForcePathStyle forces path-style addressing (bucket.s3.com/key vs s3.com/bucket/key)
-	// Set to true for MinIO and other S3-compatible services
-	// Set to false for AWS S3 (default)
-	ForcePathStyle bool
-}
-
 // Store represents an S3 store and implements storage.Store.
 type Store struct {
 	client *minio.Client
@@ -74,14 +57,14 @@ type Store struct {
 }
 
 // New creates a new S3 store with the given configuration.
-func New(ctx context.Context, cfg Config) (*Store, error) {
-	if err := ValidateConfig(cfg); err != nil {
+func New(ctx context.Context, cfg s3.Config) (*Store, error) {
+	if err := s3.ValidateConfig(cfg); err != nil {
 		return nil, err
 	}
 
 	// Parse SSL from endpoint scheme
-	useSSL := IsHTTPS(cfg.Endpoint)
-	endpoint := GetEndpointWithoutScheme(cfg.Endpoint)
+	useSSL := s3.IsHTTPS(cfg.Endpoint)
+	endpoint := s3.GetEndpointWithoutScheme(cfg.Endpoint)
 
 	// Determine bucket lookup type based on ForcePathStyle
 	bucketLookup := minio.BucketLookupAuto
@@ -95,6 +78,7 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 		Secure:       useSSL,
 		Region:       cfg.Region,
 		BucketLookup: bucketLookup,
+		Transport:    cfg.Transport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating MinIO client: %w", err)
@@ -555,32 +539,6 @@ func (s *Store) narPath(narURL nar.URL) string {
 	return "store/nar/" + narURL.ToFilePath()
 }
 
-// ValidateConfig validates the S3 configuration.
-func ValidateConfig(cfg Config) error {
-	if cfg.Bucket == "" {
-		return fmt.Errorf("%w: bucket name is required", ErrInvalidConfig)
-	}
-
-	if cfg.Endpoint == "" {
-		return fmt.Errorf("%w: endpoint is required", ErrInvalidConfig)
-	}
-
-	// Ensure endpoint has a scheme
-	if !strings.HasPrefix(cfg.Endpoint, "http://") && !strings.HasPrefix(cfg.Endpoint, "https://") {
-		return fmt.Errorf("%w: %s", ErrS3EndpointMissingScheme, cfg.Endpoint)
-	}
-
-	if cfg.AccessKeyID == "" {
-		return fmt.Errorf("%w: access key ID is required", ErrInvalidConfig)
-	}
-
-	if cfg.SecretAccessKey == "" {
-		return fmt.Errorf("%w: secret access key is required", ErrInvalidConfig)
-	}
-
-	return nil
-}
-
 func testBucketAccess(ctx context.Context, client *minio.Client, bucket string) error {
 	log := zerolog.Ctx(ctx)
 
@@ -603,13 +561,10 @@ func testBucketAccess(ctx context.Context, client *minio.Client, bucket string) 
 // GetEndpointWithoutScheme returns the endpoint without the scheme prefix.
 // This is useful since MinIO SDK expects endpoint without scheme.
 func GetEndpointWithoutScheme(endpoint string) string {
-	endpoint = strings.TrimPrefix(endpoint, "https://")
-	endpoint = strings.TrimPrefix(endpoint, "http://")
-
-	return endpoint
+	return s3.GetEndpointWithoutScheme(endpoint)
 }
 
 // IsHTTPS returns true if the endpoint uses HTTPS.
 func IsHTTPS(endpoint string) bool {
-	return strings.HasPrefix(endpoint, "https://")
+	return s3.IsHTTPS(endpoint)
 }
