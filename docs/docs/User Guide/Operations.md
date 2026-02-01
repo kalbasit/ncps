@@ -11,6 +11,7 @@ Operational guides for running ncps in production.
 - [Backup & Restore](Operations/Backup%20Restore.md) - Backup strategies and recovery
 - <a class="reference-link" href="Operations/Upgrading.md">Upgrading</a> - Upgrade procedures and migration
 - <a class="reference-link" href="Operations/NarInfo%20Migration.md">NarInfo Migration</a> - Migrate narinfo metadata to database
+- <a class="reference-link" href="Operations/NAR%20to%20Chunks%20Migration.md">NAR to Chunks Migration</a> - Migrate NAR files to content-defined chunks
 
 ## Quick Links
 
@@ -44,6 +45,13 @@ Operational guides for running ncps in production.
 - [CLI Migration Guide](Operations/NarInfo%20Migration.md)
 - [Progress Monitoring](Operations/NarInfo%20Migration.md)
 - [Troubleshooting Migration](Operations/NarInfo%20Migration.md)
+
+### NAR to Chunks Migration
+
+- [Why Migrate?](Operations/NAR%20to%20Chunks%20Migration.md)
+- [CLI Migration Guide](Operations/NAR%20to%20Chunks%20Migration.md)
+- [Progress Monitoring](Operations/NAR%20to%20Chunks%20Migration.md)
+- [Troubleshooting](Operations/NAR%20to%20Chunks%20Migration.md)
 
 ## Related Documentation
 
