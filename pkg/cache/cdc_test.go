@@ -31,6 +31,7 @@ func TestCDC(t *testing.T) {
 	err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
 	require.NoError(t, err)
 
+	//nolint:paralleltest
 	t.Run("Put and Get with CDC", func(t *testing.T) {
 		content := "this is a test nar content that should be chunked by fastcdc algorithm"
 		nu := nar.URL{Hash: "testnar1", Compression: nar.CompressionTypeNone}
@@ -56,6 +57,7 @@ func TestCDC(t *testing.T) {
 		assert.Equal(t, int64(len(content)), size)
 	})
 
+	//nolint:paralleltest
 	t.Run("Deduplication", func(t *testing.T) {
 		content := "common content shared between two nars"
 
@@ -74,6 +76,7 @@ func TestCDC(t *testing.T) {
 		assert.Equal(t, count1, count2, "no new chunks should be created for duplicate content")
 	})
 
+	//nolint:paralleltest
 	t.Run("Mixed Mode", func(t *testing.T) {
 		// 1. Store a blob with CDC disabled
 		require.NoError(t, c.SetCDCConfiguration(false, 0, 0, 0))
