@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      deployments: write
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@v21
@@ -27,5 +26,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_NCPS_DEV_EDIT_WORKERS_TOKEN }}
           accountId: ${{ secrets.CF_NCPS_DEV_ACCOUNT_ID }}
+          environment: production
           command: pages deploy public/docs --project-name=ncps-docs
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
