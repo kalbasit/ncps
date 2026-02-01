@@ -23,6 +23,7 @@ import (
 
 	s3config "github.com/kalbasit/ncps/pkg/s3"
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
+	storageS3 "github.com/kalbasit/ncps/pkg/storage/s3"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
 	"github.com/kalbasit/ncps/pkg/analytics"
@@ -40,7 +41,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
-	"github.com/kalbasit/ncps/pkg/storage/s3"
 )
 
 var (
@@ -801,7 +801,7 @@ func createS3Storage(
 		ForcePathStyle:  s3ForcePathStyle,
 	}
 
-	s3Store, err := s3.New(ctx, s3Cfg)
+	s3Store, err := storageS3.New(ctx, s3Cfg)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("error creating a new S3 store: %w", err)
 	}
