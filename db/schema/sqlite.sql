@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS "nar_files" (
     UNIQUE (hash, compression, "query")
 );
 CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
+CREATE TABLE chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash TEXT NOT NULL UNIQUE,
+    size INTEGER NOT NULL CHECK (size >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
 CREATE TABLE nar_file_chunks (
     nar_file_id INTEGER NOT NULL REFERENCES nar_files (id) ON DELETE CASCADE,
     chunk_id INTEGER NOT NULL REFERENCES chunks (id) ON DELETE CASCADE,
@@ -54,12 +60,6 @@ CREATE TABLE nar_file_chunks (
     PRIMARY KEY (nar_file_id, chunk_index)
 );
 CREATE INDEX idx_nar_file_chunks_chunk_id ON nar_file_chunks (chunk_id);
-CREATE TABLE IF NOT EXISTS "chunks" (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hash TEXT NOT NULL UNIQUE,
-    size INTEGER NOT NULL CHECK (size >= 0),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20241210054814'),
@@ -71,5 +71,4 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20260105030513'),
   ('20260117195000'),
   ('20260127223000'),
-  ('20260131021850'),
-  ('20260201043715');
+  ('20260131021850');
