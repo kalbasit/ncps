@@ -54,24 +54,6 @@
         "type": "github"
       }
     },
-    "flake-utils_2": {
-      "inputs": {
-        "systems": "systems_2"
-      },
-      "locked": {
-        "lastModified": 1701680307,
-        "narHash": "sha256-kAuep2h5ajznlPMD9rnQyffWG8EM/C73lejGofXvdM8=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "4022d587cbbfd70fe950c1e2083a02621806a725",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "type": "github"
-      }
-    },
     "git-hooks-nix": {
       "inputs": {
         "flake-compat": "flake-compat",
@@ -133,7 +115,10 @@
     },
     "pnpm2nix": {
       "inputs": {
-        "flake-utils": "flake-utils_2",
+        "flake-utils": [
+          "trilium",
+          "flake-utils"
+        ],
         "nixpkgs": [
           "trilium",
           "nixpkgs"
@@ -193,21 +178,6 @@
         "type": "github"
       }
     },
-    "systems_2": {
-      "locked": {
-        "lastModified": 1681028828,
-        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
-        "owner": "nix-systems",
-        "repo": "default",
-        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-systems",
-        "repo": "default",
-        "type": "github"
-      }
-    },
     "treefmt-nix": {
       "inputs": {
         "nixpkgs": [
@@ -237,15 +207,16 @@
         "pnpm2nix": "pnpm2nix"
       },
       "locked": {
-        "lastModified": 1768369687,
-        "narHash": "sha256-OSuL9wtFKWg3ksXjKOTDeZTd97WooWx9LEeslGfaDH0=",
-        "owner": "TriliumNext",
+        "lastModified": 1769934845,
+        "narHash": "sha256-/jJII2uO+oEiUnbSgcYNtnKsBzjvKr0Z2pcRlEXMQZ4=",
+        "owner": "kalbasit",
         "repo": "Trilium",
-        "rev": "f466367c4da1a58805a56e618829f527ece8a98e",
+        "rev": "aaebef2363c92f6ca1888af003588598e5fcba9d",
         "type": "github"
       },
       "original": {
-        "owner": "TriliumNext",
+        "owner": "kalbasit",
+        "ref": "ncps-branch",
         "repo": "Trilium",
         "type": "github"
       }
