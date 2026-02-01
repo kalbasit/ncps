@@ -557,14 +557,3 @@ func testBucketAccess(ctx context.Context, client *minio.Client, bucket string) 
 
 	return nil
 }
-
-// GetEndpointWithoutScheme returns the endpoint without the scheme prefix.
-// This is useful since MinIO SDK expects endpoint without scheme.
-func GetEndpointWithoutScheme(endpoint string) string {
-	return s3.GetEndpointWithoutScheme(endpoint)
-}
-
-// IsHTTPS returns true if the endpoint uses HTTPS.
-func IsHTTPS(endpoint string) bool {
-	return s3.IsHTTPS(endpoint)
-}
