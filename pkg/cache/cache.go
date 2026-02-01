@@ -328,6 +328,7 @@ type Cache struct {
 	chunkStore   chunk.Store
 
 	// CDC configuration
+	cdcMu      sync.RWMutex
 	cdcEnabled bool
 	chunker    chunker.Chunker
 
@@ -496,6 +497,9 @@ func New(
 
 // SetCDCConfiguration enables and configures CDC.
 func (c *Cache) SetCDCConfiguration(enabled bool, minSize, avgSize, maxSize uint32) error {
+	c.cdcMu.Lock()
+	defer c.cdcMu.Unlock()
+
 	c.cdcEnabled = enabled
 	if enabled {
 		var err error
@@ -979,7 +983,11 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			r.Close()
 		}()
 
-		if c.cdcEnabled {
+		c.cdcMu.RLock()
+		cdcEnabled := c.cdcEnabled
+		c.cdcMu.RUnlock()
+
+		if cdcEnabled {
 			// Stream to temp file first
 			pattern := narURL.Hash + "-*.nar"
 			if cext := narURL.Compression.String(); cext != "" {
@@ -1110,7 +1118,11 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 
 // storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
 func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
-	if c.cdcEnabled {
+	c.cdcMu.RLock()
+	cdcEnabled := c.cdcEnabled
+	c.cdcMu.RUnlock()
+
+	if cdcEnabled {
 		return c.storeNarWithCDC(ctx, tempPath, narURL)
 	}
 
@@ -3337,7 +3349,12 @@ func (c *Cache) deleteLRURecordsFromDB(
 
 	// 3. CHUNK PHASE
 	// Now that files are gone, some chunks might have zero references.
-	if !c.cdcEnabled || c.chunkStore == nil {
+	c.cdcMu.RLock()
+	cdcEnabled := c.cdcEnabled
+	chunkStore := c.chunkStore
+	c.cdcMu.RUnlock()
+
+	if !cdcEnabled || chunkStore == nil {
 		return narInfoHashesToRemove, narURLsToRemove, nil, nil
 	}
 
@@ -3849,7 +3866,12 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 
 // MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
 func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
-	if !c.cdcEnabled || c.chunkStore == nil {
+	c.cdcMu.RLock()
+	cdcEnabled := c.cdcEnabled
+	chunkStore := c.chunkStore
+	c.cdcMu.RUnlock()
+
+	if !cdcEnabled || chunkStore == nil {
 		return ErrCDCDisabled
 	}
 

@@ -32,8 +32,6 @@ func TestCDC(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("Put and Get with CDC", func(t *testing.T) {
-		t.Parallel()
-
 		content := "this is a test nar content that should be chunked by fastcdc algorithm"
 		nu := nar.URL{Hash: "testnar1", Compression: nar.CompressionTypeNone}
 
@@ -59,8 +57,6 @@ func TestCDC(t *testing.T) {
 	})
 
 	t.Run("Deduplication", func(t *testing.T) {
-		t.Parallel()
-
 		content := "common content shared between two nars"
 
 		nu1 := nar.URL{Hash: "dedup1", Compression: nar.CompressionTypeNone}
@@ -79,7 +75,6 @@ func TestCDC(t *testing.T) {
 	})
 
 	t.Run("Mixed Mode", func(t *testing.T) {
-		t.Parallel()
 		// 1. Store a blob with CDC disabled
 		require.NoError(t, c.SetCDCConfiguration(false, 0, 0, 0))
 

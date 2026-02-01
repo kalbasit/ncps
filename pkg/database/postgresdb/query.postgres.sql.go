@@ -114,7 +114,8 @@ INSERT INTO chunks (
 ) VALUES (
     $1, $2
 )
-ON CONFLICT(hash) DO NOTHING
+ON CONFLICT(hash) DO UPDATE SET
+    hash = EXCLUDED.hash
 RETURNING id, hash, size, created_at
 `
 
@@ -130,7 +131,8 @@ type CreateChunkParams struct {
 //	) VALUES (
 //	    $1, $2
 //	)
-//	ON CONFLICT(hash) DO NOTHING
+//	ON CONFLICT(hash) DO UPDATE SET
+//	    hash = EXCLUDED.hash
 //	RETURNING id, hash, size, created_at
 func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
 	row := q.db.QueryRowContext(ctx, createChunk, arg.Hash, arg.Size)

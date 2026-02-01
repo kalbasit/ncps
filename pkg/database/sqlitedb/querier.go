@@ -32,7 +32,8 @@ type Querier interface {
 	//  ) VALUES (
 	//      ?, ?
 	//  )
-	//  ON CONFLICT(hash) DO NOTHING
+	//  ON CONFLICT(hash) DO UPDATE SET
+	//      hash = EXCLUDED.hash
 	//  RETURNING id, hash, size, created_at
 	CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error)
 	//CreateConfig

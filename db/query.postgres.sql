@@ -283,7 +283,8 @@ INSERT INTO chunks (
 ) VALUES (
     $1, $2
 )
-ON CONFLICT(hash) DO NOTHING
+ON CONFLICT(hash) DO UPDATE SET
+    hash = EXCLUDED.hash
 RETURNING *;
 
 -- name: LinkNarFileToChunk :exec
