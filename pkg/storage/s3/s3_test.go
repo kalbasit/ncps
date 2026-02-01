@@ -62,21 +62,7 @@ func getTestStore(t *testing.T) *storage_s3.Store {
 }
 
 func getTestConfig(t *testing.T) *s3config.Config {
-	t.Helper()
-
-	cfg := testhelper.S3TestConfig(t)
-	if cfg == nil {
-		return nil
-	}
-
-	return &s3config.Config{
-		Bucket:          cfg.Bucket,
-		Region:          cfg.Region,
-		Endpoint:        cfg.Endpoint,
-		AccessKeyID:     cfg.AccessKeyID,
-		SecretAccessKey: cfg.SecretAccessKey,
-		ForcePathStyle:  cfg.ForcePathStyle,
-	}
+	return testhelper.S3TestConfig(t)
 }
 
 func TestNew(t *testing.T) {
