@@ -1,0 +1,173 @@
+package chunk
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"path"
+	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"github.com/kalbasit/ncps/pkg/lock"
+	"github.com/kalbasit/ncps/pkg/s3"
+)
+
+// ErrBucketNotFound is returned when the bucket is not found.
+var ErrBucketNotFound = errors.New("bucket not found")
+
+const (
+	// s3NoSuchKey is the S3 error code for objects that don't exist.
+	s3NoSuchKey = "NoSuchKey"
+)
+
+// s3Store implements Store for S3 storage.
+type s3Store struct {
+	client *minio.Client
+	locker lock.Locker
+	bucket string
+}
+
+// NewS3Store returns a new S3 chunk store.
+func NewS3Store(ctx context.Context, cfg s3.Config, locker lock.Locker) (Store, error) {
+	if err := s3.ValidateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid S3 endpoint: %w", err)
+	}
+
+	useSSL := u.Scheme == "https"
+	endpoint := u.Host
+
+	bucketLookup := minio.BucketLookupAuto
+	if cfg.ForcePathStyle {
+		bucketLookup = minio.BucketLookupPath
+	}
+
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:        credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure:       useSSL,
+		Region:       cfg.Region,
+		BucketLookup: bucketLookup,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating MinIO client: %w", err)
+	}
+
+	// Verify bucket exists
+	exists, err := client.BucketExists(ctx, cfg.Bucket)
+	if err != nil {
+		return nil, fmt.Errorf("error checking bucket existence: %w", err)
+	}
+
+	if !exists {
+		return nil, fmt.Errorf("%w: %s", ErrBucketNotFound, cfg.Bucket)
+	}
+
+	return &s3Store{
+		client: client,
+		locker: locker,
+		bucket: cfg.Bucket,
+	}, nil
+}
+
+func (s *s3Store) HasChunk(ctx context.Context, hash string) (bool, error) {
+	key := s.chunkPath(hash)
+
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, error) {
+	key := s.chunkPath(hash)
+
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = obj.Stat()
+	if err != nil {
+		obj.Close()
+
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return nil, ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	return obj, nil
+}
+
+func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool, error) {
+	key := s.chunkPath(hash)
+
+	// Acquire a lock to prevent race conditions during check-then-act.
+	// We use a prefix to avoid collisions with other locks.
+	lockKey := fmt.Sprintf("chunk-put:%s", hash)
+	if err := s.locker.Lock(ctx, lockKey, 5*time.Minute); err != nil {
+		return false, fmt.Errorf("error acquiring lock for chunk put: %w", err)
+	}
+
+	defer func() {
+		_ = s.locker.Unlock(ctx, lockKey)
+	}()
+
+	// Check if exists.
+	exists, err := s.HasChunk(ctx, hash)
+	if err != nil {
+		return false, err
+	}
+
+	if exists {
+		return false, nil
+	}
+
+	_, err = s.client.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
+		ContentType: "application/octet-stream",
+	})
+	if err != nil {
+		return false, fmt.Errorf("error putting chunk to S3: %w", err)
+	}
+
+	return true, nil
+}
+
+func (s *s3Store) DeleteChunk(ctx context.Context, hash string) error {
+	key := s.chunkPath(hash)
+
+	err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return nil
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func (s *s3Store) chunkPath(hash string) string {
+	if len(hash) < 2 {
+		return path.Join("store", "chunks", hash)
+	}
+
+	return path.Join("store", "chunks", hash[0:2], hash)
+}
