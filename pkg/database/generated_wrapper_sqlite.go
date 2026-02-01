@@ -86,6 +86,23 @@ func (w *sqliteWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfo
 	return nil
 }
 
+func (w *sqliteWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
+	res, err := w.adapter.CreateChunk(ctx, sqlitedb.CreateChunkParams{
+		Hash: arg.Hash,
+		Size: arg.Size,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
 func (w *sqliteWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
 	res, err := w.adapter.CreateConfig(ctx, sqlitedb.CreateConfigParams{
 		Key:   arg.Key,
@@ -146,6 +163,32 @@ func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPara
 	// Convert Single Domain Struct
 
 	return NarInfo(res), nil
+}
+
+func (w *sqliteWrapper) DecrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
+	res, err := w.adapter.DecrementChunkRefCount(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
+func (w *sqliteWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
+	err := w.adapter.DeleteChunkByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *sqliteWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
@@ -228,6 +271,65 @@ func (w *sqliteWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, erro
 
 	// Return Primitive / *sql.DB / etc
 	return res, nil
+}
+
+func (w *sqliteWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
+	res, err := w.adapter.GetChunkByHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
+func (w *sqliteWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
+	res, err := w.adapter.GetChunkByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
+func (w *sqliteWrapper) GetChunkCount(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetChunkCount(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
+func (w *sqliteWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+	res, err := w.adapter.GetChunksByNarFileID(ctx, narFileID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]Chunk, len(res))
+	for i, v := range res {
+		items[i] = Chunk(v)
+	}
+
+	return items, nil
 }
 
 func (w *sqliteWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
@@ -475,6 +577,24 @@ func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return res, nil
 }
 
+func (w *sqliteWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+	res, err := w.adapter.GetOrphanedChunks(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]Chunk, len(res))
+	for i, v := range res {
+		items[i] = Chunk(v)
+	}
+
+	return items, nil
+}
+
 func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
 	if err != nil {
@@ -493,6 +613,19 @@ func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, err
 	return items, nil
 }
 
+func (w *sqliteWrapper) GetTotalChunkSize(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetTotalChunkSize(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
 func (w *sqliteWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	res, err := w.adapter.GetUnmigratedNarInfoHashes(ctx)
 	if err != nil {
@@ -503,6 +636,19 @@ func (w *sqliteWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]strin
 	}
 
 	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
+func (w *sqliteWrapper) IncrementChunkRefCount(ctx context.Context, hash string) (int64, error) {
+	res, err := w.adapter.IncrementChunkRefCount(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
 	return res, nil
 }
 
@@ -517,6 +663,23 @@ func (w *sqliteWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (boo
 
 	// Return Primitive / *sql.DB / etc
 	return res != 0, nil
+}
+
+func (w *sqliteWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error {
+	err := w.adapter.LinkNarFileToChunk(ctx, sqlitedb.LinkNarFileToChunkParams{
+		NarFileID:  arg.NarFileID,
+		ChunkID:    arg.ChunkID,
+		ChunkIndex: arg.ChunkIndex,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {

@@ -13,7 +13,7 @@ type Chunk struct {
 	ID        int64
 	Hash      string
 	Size      uint32
-	RefCount  int64
+	RefCount  int32
 	CreatedAt time.Time
 }
 
@@ -39,7 +39,7 @@ type NarFile struct {
 type NarFileChunk struct {
 	NarFileID  int64
 	ChunkID    int64
-	ChunkIndex int64
+	ChunkIndex int32
 }
 
 type NarInfo struct {
