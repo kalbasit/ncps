@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	s3config "github.com/kalbasit/ncps/pkg/s3"
+
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/s3"
@@ -20,142 +22,6 @@ import (
 )
 
 const cacheName = "cache.example.com"
-
-func TestValidateConfig(t *testing.T) {
-	t.Parallel()
-
-	t.Run("bucket is required", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := s3.Config{
-			Endpoint:        "localhost:9000",
-			AccessKeyID:     "minioadmin",
-			SecretAccessKey: "minioadmin",
-		}
-
-		err := s3.ValidateConfig(cfg)
-		require.ErrorIs(t, err, s3.ErrInvalidConfig)
-		assert.Contains(t, err.Error(), "bucket name is required")
-	})
-
-	t.Run("endpoint is required", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := s3.Config{
-			Bucket:          "test-bucket",
-			AccessKeyID:     "minioadmin",
-			SecretAccessKey: "minioadmin",
-		}
-
-		err := s3.ValidateConfig(cfg)
-		require.ErrorIs(t, err, s3.ErrInvalidConfig)
-		assert.Contains(t, err.Error(), "endpoint is required")
-	})
-
-	t.Run("endpoint should include scheme", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := s3.Config{
-			Bucket:          "test-bucket",
-			Endpoint:        "localhost:9000",
-			AccessKeyID:     "minioadmin",
-			SecretAccessKey: "minioadmin",
-		}
-
-		err := s3.ValidateConfig(cfg)
-		assert.ErrorIs(t, err, s3.ErrS3EndpointMissingScheme)
-	})
-
-	t.Run("access key ID is required", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := s3.Config{
-			Bucket:          "test-bucket",
-			Endpoint:        "http://localhost:9000",
-			SecretAccessKey: "minioadmin",
-		}
-
-		err := s3.ValidateConfig(cfg)
-		require.ErrorIs(t, err, s3.ErrInvalidConfig)
-		assert.Contains(t, err.Error(), "access key ID is required")
-	})
-
-	t.Run("secret access key is required", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := s3.Config{
-			Bucket:      "test-bucket",
-			Endpoint:    "http://localhost:9000",
-			AccessKeyID: "minioadmin",
-		}
-
-		err := s3.ValidateConfig(cfg)
-		require.ErrorIs(t, err, s3.ErrInvalidConfig)
-		assert.Contains(t, err.Error(), "secret access key is required")
-	})
-
-	t.Run("valid config should return no error", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := s3.Config{
-			Bucket:          "test-bucket",
-			Endpoint:        "http://localhost:9000",
-			AccessKeyID:     "minioadmin",
-			SecretAccessKey: "minioadmin",
-		}
-
-		err := s3.ValidateConfig(cfg)
-		assert.NoError(t, err)
-	})
-}
-
-func TestGetEndpointWithoutScheme(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"no scheme", "localhost:9000", "localhost:9000"},
-		{"http scheme", "http://localhost:9000", "localhost:9000"},
-		{"https scheme", "https://s3.amazonaws.com", "s3.amazonaws.com"},
-		{"empty string", "", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			result := s3.GetEndpointWithoutScheme(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestIsHTTPS(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    string
-		expected bool
-	}{
-		{"https scheme", "https://s3.amazonaws.com", true},
-		{"http scheme", "http://localhost:9000", false},
-		{"no scheme", "localhost:9000", false},
-		{"empty string", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			result := s3.IsHTTPS(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
 
 // Integration tests that require a running MinIO server
 // These tests are skipped unless NCPS_TEST_S3_ENDPOINT is set
@@ -176,7 +42,7 @@ func getTestStore(t *testing.T) *s3.Store {
 	return store
 }
 
-func getTestConfig(t *testing.T) *s3.Config {
+func getTestConfig(t *testing.T) *s3config.Config {
 	t.Helper()
 
 	// Skip if S3 test endpoint is not configured
@@ -192,7 +58,7 @@ func getTestConfig(t *testing.T) *s3.Config {
 		return nil
 	}
 
-	return &s3.Config{
+	return &s3config.Config{
 		Bucket:          bucket,
 		Region:          region,
 		Endpoint:        endpoint,
@@ -208,27 +74,27 @@ func TestNew(t *testing.T) {
 	t.Run("missing bucket returns error", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := s3.Config{
-			Endpoint:        "localhost:9000",
+		cfg := s3config.Config{
+			Endpoint:        "http://localhost:9000",
 			AccessKeyID:     "minioadmin",
 			SecretAccessKey: "minioadmin",
 		}
 
 		_, err := s3.New(newContext(), cfg)
-		assert.ErrorIs(t, err, s3.ErrInvalidConfig)
+		assert.ErrorIs(t, err, s3config.ErrBucketRequired)
 	})
 
 	t.Run("missing endpoint returns error", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := s3.Config{
+		cfg := s3config.Config{
 			Bucket:          "test-bucket",
 			AccessKeyID:     "minioadmin",
 			SecretAccessKey: "minioadmin",
 		}
 
 		_, err := s3.New(newContext(), cfg)
-		assert.ErrorIs(t, err, s3.ErrInvalidConfig)
+		assert.ErrorIs(t, err, s3config.ErrEndpointRequired)
 	})
 }
 
