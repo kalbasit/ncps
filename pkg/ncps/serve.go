@@ -41,6 +41,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
+	"github.com/kalbasit/ncps/pkg/storage/chunk"
 )
 
 var (
@@ -151,6 +152,30 @@ func serveCommand(
 				Name:    "cache-storage-s3-force-path-style",
 				Usage:   "Force path-style S3 addressing (bucket/key vs key.bucket) - required for MinIO, optional for AWS S3",
 				Sources: flagSources("cache.storage.s3.force-path-style", "CACHE_STORAGE_S3_FORCE_PATH_STYLE"),
+			},
+			// CDC Flags
+			&cli.BoolFlag{
+				Name:    "cache-cdc-enabled",
+				Usage:   "Enable Content-Defined Chunking (CDC) for deduplication (experimental)",
+				Sources: flagSources("cache.cdc.enabled", "CACHE_CDC_ENABLED"),
+			},
+			&cli.Uint32Flag{
+				Name:    "cache-cdc-min",
+				Usage:   "Minimum chunk size for CDC in bytes",
+				Sources: flagSources("cache.cdc.min", "CACHE_CDC_MIN"),
+				Value:   65536, // 64KB
+			},
+			&cli.Uint32Flag{
+				Name:    "cache-cdc-avg",
+				Usage:   "Average chunk size for CDC in bytes",
+				Sources: flagSources("cache.cdc.avg", "CACHE_CDC_AVG"),
+				Value:   262144, // 256KB
+			},
+			&cli.Uint32Flag{
+				Name:    "cache-cdc-max",
+				Usage:   "Maximum chunk size for CDC in bytes",
+				Sources: flagSources("cache.cdc.max", "CACHE_CDC_MAX"),
+				Value:   1048576, // 1MB
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
@@ -713,12 +738,7 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 	return ucs, nil
 }
 
-//nolint:staticcheck // deprecated: migration support
-func getStorageBackend(
-	ctx context.Context,
-	cmd *cli.Command,
-) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
-	// Handle backward compatibility for cache-data-path (deprecated)
+func getStorageConfig(ctx context.Context, cmd *cli.Command) (string, *s3config.Config, error) {
 	deprecatedDataPath := cmd.String("cache-data-path")
 	localDataPath := cmd.String("cache-storage-local")
 	s3Bucket := cmd.String("cache-storage-s3-bucket")
@@ -737,17 +757,53 @@ func getStorageBackend(
 		}
 	}
 
-	switch {
-	case localDataPath != "" && s3Bucket != "":
-		return nil, nil, nil, ErrStorageConflict
+	if localDataPath != "" && s3Bucket != "" {
+		return "", nil, ErrStorageConflict
+	}
 
+	if localDataPath == "" && s3Bucket == "" {
+		return "", nil, ErrStorageConfigRequired
+	}
+
+	if localDataPath != "" {
+		return localDataPath, nil, nil
+	}
+
+	s3Cfg := &s3config.Config{
+		Bucket:          s3Bucket,
+		Region:          cmd.String("cache-storage-s3-region"),
+		Endpoint:        cmd.String("cache-storage-s3-endpoint"),
+		AccessKeyID:     cmd.String("cache-storage-s3-access-key-id"),
+		SecretAccessKey: cmd.String("cache-storage-s3-secret-access-key"),
+		ForcePathStyle:  cmd.Bool("cache-storage-s3-force-path-style"),
+	}
+
+	if err := s3config.ValidateConfig(*s3Cfg); err != nil {
+		return "", nil, err
+	}
+
+	return "", s3Cfg, nil
+}
+
+//nolint:staticcheck // deprecated: migration support
+func getStorageBackend(
+	ctx context.Context,
+	cmd *cli.Command,
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+	localDataPath, s3Cfg, err := getStorageConfig(ctx, cmd)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	switch {
 	case localDataPath != "":
 		return createLocalStorage(ctx, localDataPath)
 
-	case s3Bucket != "":
-		return createS3Storage(ctx, cmd)
+	case s3Cfg != nil:
+		return createS3Storage(ctx, *s3Cfg)
 
 	default:
+		// This should never happen because getStorageConfig returns an error if neither is set
 		return nil, nil, nil, ErrStorageConfigRequired
 	}
 }
@@ -770,36 +826,17 @@ func createLocalStorage(
 //nolint:staticcheck // deprecated: migration support
 func createS3Storage(
 	ctx context.Context,
-	cmd *cli.Command,
+	s3Cfg s3config.Config,
 ) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
-	s3Bucket := cmd.String("cache-storage-s3-bucket")
-	s3Endpoint := cmd.String("cache-storage-s3-endpoint")
-	s3AccessKeyID := cmd.String("cache-storage-s3-access-key-id")
-	s3SecretAccessKey := cmd.String("cache-storage-s3-secret-access-key")
-	s3ForcePathStyle := cmd.Bool("cache-storage-s3-force-path-style")
-
-	if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
-		return nil, nil, nil, ErrS3ConfigIncomplete
-	}
-
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("bucket", s3Bucket).
-		Str("endpoint", s3Endpoint).
-		Bool("force_path_style", s3ForcePathStyle).
+		Str("bucket", s3Cfg.Bucket).
+		Str("endpoint", s3Cfg.Endpoint).
+		Bool("force_path_style", s3Cfg.ForcePathStyle).
 		Logger().
 		WithContext(ctx)
 
 	zerolog.Ctx(ctx).Debug().Msg("creating S3 storage")
-
-	s3Cfg := s3config.Config{
-		Bucket:          s3Bucket,
-		Region:          cmd.String("cache-storage-s3-region"),
-		Endpoint:        s3Endpoint,
-		AccessKeyID:     s3AccessKeyID,
-		SecretAccessKey: s3SecretAccessKey,
-		ForcePathStyle:  s3ForcePathStyle,
-	}
 
 	s3Store, err := storageS3.New(ctx, s3Cfg)
 	if err != nil {
@@ -835,6 +872,24 @@ func createDatabaseQuerier(cmd *cli.Command) (database.Querier, error) {
 	return db, nil
 }
 
+func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.Locker) (chunk.Store, error) {
+	localDataPath, s3Cfg, err := getStorageConfig(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case localDataPath != "":
+		// Use {localDataPath}/store as base for chunks to match other stores
+		return chunk.NewLocalStore(filepath.Join(localDataPath, "store"))
+	case s3Cfg != nil:
+		return chunk.NewS3Store(ctx, *s3Cfg, locker)
+	default:
+		// This should never happen because getStorageConfig returns an error if neither is set
+		return nil, ErrStorageConfigRequired
+	}
+}
+
 func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
@@ -867,6 +922,28 @@ func createCache(
 
 	c.SetTempDir(cmd.String("cache-temp-path"))
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
+
+	// Configure CDC
+	cdcEnabled := cmd.Bool("cache-cdc-enabled")
+	if err := c.SetCDCConfiguration(
+		cdcEnabled,
+		cmd.Uint32("cache-cdc-min"),
+		cmd.Uint32("cache-cdc-avg"),
+		cmd.Uint32("cache-cdc-max"),
+	); err != nil {
+		return nil, fmt.Errorf("error configuring CDC: %w", err)
+	}
+
+	// Configure Chunk Store
+	if cdcEnabled {
+		chunkStore, err := getChunkStorageBackend(ctx, cmd, locker)
+		if err != nil {
+			return nil, fmt.Errorf("error creating chunk storage backend: %w", err)
+		}
+
+		c.SetChunkStore(chunkStore)
+	}
+
 	c.AddUpstreamCaches(ctx, ucs...)
 
 	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.
