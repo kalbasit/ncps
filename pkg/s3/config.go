@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
+	"net/url"
 )
 
 var (
@@ -55,7 +55,12 @@ func ValidateConfig(cfg Config) error {
 	}
 
 	// Ensure endpoint has a scheme
-	if !IsHTTPS(cfg.Endpoint) && !strings.HasPrefix(cfg.Endpoint, "http://") {
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("%w: %s", ErrInvalidEndpointScheme, cfg.Endpoint)
 	}
 
@@ -73,13 +78,16 @@ func ValidateConfig(cfg Config) error {
 // GetEndpointWithoutScheme returns the endpoint without the scheme prefix.
 // This is useful since MinIO SDK expects endpoint without scheme.
 func GetEndpointWithoutScheme(endpoint string) string {
-	endpoint = strings.TrimPrefix(endpoint, "https://")
-	endpoint = strings.TrimPrefix(endpoint, "http://")
+	// This function assumes a valid URL with a scheme, as validated by ValidateConfig.
+	// We can ignore the error from url.Parse.
+	u, _ := url.Parse(endpoint)
 
-	return endpoint
+	return u.Host
 }
 
 // IsHTTPS returns true if the endpoint uses HTTPS.
 func IsHTTPS(endpoint string) bool {
-	return strings.HasPrefix(endpoint, "https://")
+	u, _ := url.Parse(endpoint)
+
+	return u.Scheme == "https"
 }

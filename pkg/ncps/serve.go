@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"golang.org/x/sync/errgroup"
 
+	s3config "github.com/kalbasit/ncps/pkg/s3"
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
@@ -791,7 +792,7 @@ func createS3Storage(
 
 	zerolog.Ctx(ctx).Debug().Msg("creating S3 storage")
 
-	s3Cfg := s3.Config{
+	s3Cfg := s3config.Config{
 		Bucket:          s3Bucket,
 		Region:          cmd.String("cache-storage-s3-region"),
 		Endpoint:        s3Endpoint,
