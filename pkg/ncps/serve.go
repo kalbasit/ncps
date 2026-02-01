@@ -39,7 +39,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/maxprocs"
 	"github.com/kalbasit/ncps/pkg/otel"
 	"github.com/kalbasit/ncps/pkg/prometheus"
-	"github.com/kalbasit/ncps/pkg/s3"
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
 )

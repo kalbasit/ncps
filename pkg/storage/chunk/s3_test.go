@@ -120,8 +120,8 @@ func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
 		return
 	}
 
-	// For now, we pass nil for locker to reproduce the race condition.
-	// We will update it to pass a locker once we update the signature.
+	// We pass a local locker to ensure thread safety during the test.
+
 	store, err := chunk.NewS3Store(ctx, *cfg, local.NewLocker())
 	require.NoError(t, err)
 
