@@ -314,8 +314,10 @@ SELECT CAST(COUNT(*) AS BIGINT) AS count
 FROM chunks;
 
 -- name: GetOrphanedChunks :many
-SELECT * FROM chunks
-WHERE id NOT IN (SELECT chunk_id FROM nar_file_chunks);
+SELECT c.*
+FROM chunks c
+LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.chunk_id IS NULL;
 
 -- name: DeleteChunkByID :exec
 DELETE FROM chunks

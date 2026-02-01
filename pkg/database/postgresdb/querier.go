@@ -289,8 +289,10 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	//GetOrphanedChunks
 	//
-	//  SELECT id, hash, size, ref_count, created_at FROM chunks
-	//  WHERE id NOT IN (SELECT chunk_id FROM nar_file_chunks)
+	//  SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+	//  FROM chunks c
+	//  LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+	//  WHERE nfc.chunk_id IS NULL
 	GetOrphanedChunks(ctx context.Context) ([]Chunk, error)
 	// Find files that have no relationship to any narinfo
 	//
