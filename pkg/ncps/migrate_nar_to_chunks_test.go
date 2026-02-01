@@ -51,7 +51,6 @@ func TestMigrateNarToChunks_Success(t *testing.T) {
 		"--cache-database-url", "sqlite:" + dbFile,
 		"--cache-storage-local", dir,
 		"--cache-cdc-enabled",
-		"--cache-hostname", "cache.example.com",
 	}
 
 	app, err := ncps.New()
@@ -104,7 +103,6 @@ func TestMigrateNarToChunks_DryRun(t *testing.T) {
 		"--cache-database-url", "sqlite:" + dbFile,
 		"--cache-storage-local", dir,
 		"--cache-cdc-enabled",
-		"--cache-hostname", "cache.example.com",
 		"--dry-run",
 	}
 
@@ -154,7 +152,6 @@ func TestMigrateNarToChunks_Idempotency(t *testing.T) {
 		"--cache-database-url", "sqlite:" + dbFile,
 		"--cache-storage-local", dir,
 		"--cache-cdc-enabled",
-		"--cache-hostname", "cache.example.com",
 	}
 
 	app, err := ncps.New()
@@ -219,7 +216,6 @@ func TestMigrateNarToChunks_MultipleNARs(t *testing.T) {
 		"--cache-database-url", "sqlite:" + dbFile,
 		"--cache-storage-local", dir,
 		"--cache-cdc-enabled",
-		"--cache-hostname", "cache.example.com",
 	}
 
 	app, err := ncps.New()

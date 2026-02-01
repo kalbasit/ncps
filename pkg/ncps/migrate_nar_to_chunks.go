@@ -36,18 +36,6 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			},
 
 			&cli.StringFlag{
-				Name:     "cache-hostname",
-				Usage:    "The hostname of the cache server",
-				Sources:  flagSources("cache.hostname", "CACHE_HOSTNAME"),
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name: "cache-secret-key-path",
-				Usage: "The path to the secret key used for signing cached paths. " +
-					"If set, it will be stored in the database if different.",
-				Sources: flagSources("cache.secret-key-path", "CACHE_SECRET_KEY_PATH"),
-			},
-			&cli.StringFlag{
 				Name:    "cache-temp-path",
 				Usage:   "The path to the temporary directory that is used by the cache to download NAR files",
 				Sources: flagSources("cache.temp-path", "CACHE_TEMP_PATH"),
