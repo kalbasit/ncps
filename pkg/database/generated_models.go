@@ -26,12 +26,25 @@ type AddNarInfoSignaturesParams struct {
 	Signature []string
 }
 
+type Chunk struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
 type Config struct {
 	ID        int64
 	Key       string
 	Value     string
 	CreatedAt time.Time
 	UpdatedAt sql.NullTime
+}
+
+type CreateChunkParams struct {
+	Hash string
+	Size uint32
 }
 
 type CreateConfigParams struct {
@@ -75,6 +88,12 @@ type GetNarFileByHashAndCompressionAndQueryParams struct {
 	Hash        string
 	Compression string
 	Query       string
+}
+
+type LinkNarFileToChunkParams struct {
+	NarFileID  int64
+	ChunkID    int64
+	ChunkIndex int32
 }
 
 type LinkNarInfoToNarFileParams struct {

@@ -15,6 +15,8 @@ sql:
             go_type: uint64
           - column: chunks.size
             go_type: uint32
+          - column: nar_file_chunks.chunk_index
+            go_type: int32
         rename:
           narinfo_id: NarInfoID
           url: URL
@@ -33,6 +35,8 @@ sql:
             go_type: uint64
           - column: chunks.size
             go_type: uint32
+          - column: nar_file_chunks.chunk_index
+            go_type: int32
         rename:
           narinfo_id: NarInfoID
           url: URL
@@ -49,6 +53,10 @@ sql:
         overrides:
           - column: nar_files.file_size
             go_type: uint64
+          - column: chunks.size
+            go_type: uint32
+          - column: nar_file_chunks.chunk_index
+            go_type: int32
         rename:
           narinfo_id: NarInfoID
           url: URL

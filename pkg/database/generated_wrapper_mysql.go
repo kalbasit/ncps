@@ -86,6 +86,25 @@ func (w *mysqlWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoS
 	return nil
 }
 
+func (w *mysqlWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
+	// MySQL does not support RETURNING for INSERTs.
+	// We insert, get LastInsertId, and then fetch the object.
+	res, err := w.adapter.CreateChunk(ctx, mysqldb.CreateChunkParams{
+		Hash: arg.Hash,
+		Size: arg.Size,
+	})
+	if err != nil {
+		return Chunk{}, err
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Chunk{}, err
+	}
+
+	return w.GetChunkByID(ctx, id)
+}
+
 func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
 	// MySQL does not support RETURNING for INSERTs.
 	// We insert, get LastInsertId, and then fetch the object.
@@ -152,6 +171,19 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParam
 	}
 
 	return w.GetNarInfoByID(ctx, id)
+}
+
+func (w *mysqlWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
+	err := w.adapter.DeleteChunkByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
@@ -234,6 +266,65 @@ func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error
 
 	// Return Primitive / *sql.DB / etc
 	return res, nil
+}
+
+func (w *mysqlWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
+	res, err := w.adapter.GetChunkByHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
+func (w *mysqlWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
+	res, err := w.adapter.GetChunkByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chunk{}, ErrNotFound
+		}
+		return Chunk{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return Chunk(res), nil
+}
+
+func (w *mysqlWrapper) GetChunkCount(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetChunkCount(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
+func (w *mysqlWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+	res, err := w.adapter.GetChunksByNarFileID(ctx, narFileID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]Chunk, len(res))
+	for i, v := range res {
+		items[i] = Chunk(v)
+	}
+
+	return items, nil
 }
 
 func (w *mysqlWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
@@ -481,6 +572,24 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return res, nil
 }
 
+func (w *mysqlWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+	res, err := w.adapter.GetOrphanedChunks(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]Chunk, len(res))
+	for i, v := range res {
+		items[i] = Chunk(v)
+	}
+
+	return items, nil
+}
+
 func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
 	if err != nil {
@@ -497,6 +606,19 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, erro
 	}
 
 	return items, nil
+}
+
+func (w *mysqlWrapper) GetTotalChunkSize(ctx context.Context) (int64, error) {
+	res, err := w.adapter.GetTotalChunkSize(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
 }
 
 func (w *mysqlWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
@@ -523,6 +645,23 @@ func (w *mysqlWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool
 
 	// Return Primitive / *sql.DB / etc
 	return res, nil
+}
+
+func (w *mysqlWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error {
+	err := w.adapter.LinkNarFileToChunk(ctx, mysqldb.LinkNarFileToChunkParams{
+		NarFileID:  arg.NarFileID,
+		ChunkID:    arg.ChunkID,
+		ChunkIndex: arg.ChunkIndex,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {

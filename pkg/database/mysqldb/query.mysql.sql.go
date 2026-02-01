@@ -61,6 +61,36 @@ func (q *Queries) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatu
 	return err
 }
 
+const createChunk = `-- name: CreateChunk :execresult
+INSERT INTO chunks (
+    hash, size
+) VALUES (
+    ?, ?
+)
+ON DUPLICATE KEY UPDATE
+    id = LAST_INSERT_ID(id),
+    updated_at = CURRENT_TIMESTAMP
+`
+
+type CreateChunkParams struct {
+	Hash string
+	Size uint32
+}
+
+// CreateChunk
+//
+//	INSERT INTO chunks (
+//	    hash, size
+//	) VALUES (
+//	    ?, ?
+//	)
+//	ON DUPLICATE KEY UPDATE
+//	    id = LAST_INSERT_ID(id),
+//	    updated_at = CURRENT_TIMESTAMP
+func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createChunk, arg.Hash, arg.Size)
+}
+
 const createConfig = `-- name: CreateConfig :execresult
 INSERT INTO config (
     ` + "`" + `key` + "`" + `, value
@@ -193,6 +223,20 @@ func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (s
 	)
 }
 
+const deleteChunkByID = `-- name: DeleteChunkByID :exec
+DELETE FROM chunks
+WHERE id = ?
+`
+
+// DeleteChunkByID
+//
+//	DELETE FROM chunks
+//	WHERE id = ?
+func (q *Queries) DeleteChunkByID(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteChunkByID, id)
+	return err
+}
+
 const deleteNarFileByHash = `-- name: DeleteNarFileByHash :execrows
 DELETE FROM nar_files
 WHERE hash = ? AND compression = ? AND ` + "`" + `query` + "`" + ` = ?
@@ -311,6 +355,114 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const getChunkByHash = `-- name: GetChunkByHash :one
+SELECT id, hash, size, created_at, updated_at
+FROM chunks
+WHERE hash = ?
+`
+
+// GetChunkByHash
+//
+//	SELECT id, hash, size, created_at, updated_at
+//	FROM chunks
+//	WHERE hash = ?
+func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
+	row := q.db.QueryRowContext(ctx, getChunkByHash, hash)
+	var i Chunk
+	err := row.Scan(
+		&i.ID,
+		&i.Hash,
+		&i.Size,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getChunkByID = `-- name: GetChunkByID :one
+SELECT id, hash, size, created_at, updated_at
+FROM chunks
+WHERE id = ?
+`
+
+// GetChunkByID
+//
+//	SELECT id, hash, size, created_at, updated_at
+//	FROM chunks
+//	WHERE id = ?
+func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
+	row := q.db.QueryRowContext(ctx, getChunkByID, id)
+	var i Chunk
+	err := row.Scan(
+		&i.ID,
+		&i.Hash,
+		&i.Size,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getChunkCount = `-- name: GetChunkCount :one
+SELECT CAST(COUNT(*) AS SIGNED) AS count
+FROM chunks
+`
+
+// GetChunkCount
+//
+//	SELECT CAST(COUNT(*) AS SIGNED) AS count
+//	FROM chunks
+func (q *Queries) GetChunkCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getChunkCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getChunksByNarFileID = `-- name: GetChunksByNarFileID :many
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+FROM chunks c
+INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.nar_file_id = ?
+ORDER BY nfc.chunk_index
+`
+
+// GetChunksByNarFileID
+//
+//	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+//	FROM chunks c
+//	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+//	WHERE nfc.nar_file_id = ?
+//	ORDER BY nfc.chunk_index
+func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+	rows, err := q.db.QueryContext(ctx, getChunksByNarFileID, narFileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Chunk
+	for rows.Next() {
+		var i Chunk
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Size,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getConfigByID = `-- name: GetConfigByID :one
@@ -919,6 +1071,48 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return total_size, err
 }
 
+const getOrphanedChunks = `-- name: GetOrphanedChunks :many
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+FROM chunks c
+LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.chunk_id IS NULL
+`
+
+// GetOrphanedChunks
+//
+//	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+//	FROM chunks c
+//	LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+//	WHERE nfc.chunk_id IS NULL
+func (q *Queries) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+	rows, err := q.db.QueryContext(ctx, getOrphanedChunks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Chunk
+	for rows.Next() {
+		var i Chunk
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Size,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOrphanedNarFiles = `-- name: GetOrphanedNarFiles :many
 SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
 FROM nar_files nf
@@ -975,6 +1169,22 @@ func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFile
 	return items, nil
 }
 
+const getTotalChunkSize = `-- name: GetTotalChunkSize :one
+SELECT CAST(COALESCE(SUM(size), 0) AS SIGNED) AS total_size
+FROM chunks
+`
+
+// GetTotalChunkSize
+//
+//	SELECT CAST(COALESCE(SUM(size), 0) AS SIGNED) AS total_size
+//	FROM chunks
+func (q *Queries) GetTotalChunkSize(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getTotalChunkSize)
+	var total_size int64
+	err := row.Scan(&total_size)
+	return total_size, err
+}
+
 const getUnmigratedNarInfoHashes = `-- name: GetUnmigratedNarInfoHashes :many
 SELECT hash
 FROM narinfos
@@ -1029,6 +1239,32 @@ func (q *Queries) IsNarInfoMigrated(ctx context.Context, hash string) (bool, err
 	var is_migrated bool
 	err := row.Scan(&is_migrated)
 	return is_migrated, err
+}
+
+const linkNarFileToChunk = `-- name: LinkNarFileToChunk :exec
+INSERT IGNORE INTO nar_file_chunks (
+    nar_file_id, chunk_id, chunk_index
+) VALUES (
+    ?, ?, ?
+)
+`
+
+type LinkNarFileToChunkParams struct {
+	NarFileID  int64
+	ChunkID    int64
+	ChunkIndex int32
+}
+
+// LinkNarFileToChunk
+//
+//	INSERT IGNORE INTO nar_file_chunks (
+//	    nar_file_id, chunk_id, chunk_index
+//	) VALUES (
+//	    ?, ?, ?
+//	)
+func (q *Queries) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error {
+	_, err := q.db.ExecContext(ctx, linkNarFileToChunk, arg.NarFileID, arg.ChunkID, arg.ChunkIndex)
+	return err
 }
 
 const linkNarInfoToNarFile = `-- name: LinkNarInfoToNarFile :exec

@@ -13,8 +13,8 @@ type Chunk struct {
 	ID        int64
 	Hash      string
 	Size      uint32
-	RefCount  int64
 	CreatedAt time.Time
+	UpdatedAt sql.NullTime
 }
 
 type Config struct {
@@ -39,7 +39,7 @@ type NarFile struct {
 type NarFileChunk struct {
 	NarFileID  int64
 	ChunkID    int64
-	ChunkIndex int64
+	ChunkIndex int32
 }
 
 type NarInfo struct {

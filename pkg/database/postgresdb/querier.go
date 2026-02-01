@@ -39,6 +39,17 @@ type Querier interface {
 	//  )
 	//  SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, signature) DO NOTHING
 	AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error
+	//CreateChunk
+	//
+	//  INSERT INTO chunks (
+	//      hash, size
+	//  ) VALUES (
+	//      $1, $2
+	//  )
+	//  ON CONFLICT(hash) DO UPDATE SET
+	//      updated_at = CURRENT_TIMESTAMP
+	//  RETURNING id, hash, size, created_at, updated_at
+	CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error)
 	//CreateConfig
 	//
 	//  INSERT INTO config (
@@ -81,6 +92,11 @@ type Querier interface {
 	//  WHERE narinfos.url IS NULL
 	//  RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error)
+	//DeleteChunkByID
+	//
+	//  DELETE FROM chunks
+	//  WHERE id = $1
+	DeleteChunkByID(ctx context.Context, id int64) error
 	//DeleteNarFileByHash
 	//
 	//  DELETE FROM nar_files
@@ -117,6 +133,31 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
+	//GetChunkByHash
+	//
+	//  SELECT id, hash, size, created_at, updated_at
+	//  FROM chunks
+	//  WHERE hash = $1
+	GetChunkByHash(ctx context.Context, hash string) (Chunk, error)
+	//GetChunkByID
+	//
+	//  SELECT id, hash, size, created_at, updated_at
+	//  FROM chunks
+	//  WHERE id = $1
+	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
+	//GetChunkCount
+	//
+	//  SELECT CAST(COUNT(*) AS BIGINT) AS count
+	//  FROM chunks
+	GetChunkCount(ctx context.Context) (int64, error)
+	//GetChunksByNarFileID
+	//
+	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+	//  FROM chunks c
+	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+	//  WHERE nfc.nar_file_id = $1
+	//  ORDER BY nfc.chunk_index
+	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error)
 	//GetConfigByID
 	//
 	//  SELECT id, key, value, created_at, updated_at
@@ -240,6 +281,13 @@ type Querier interface {
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size
 	//  FROM nar_files
 	GetNarTotalSize(ctx context.Context) (int64, error)
+	//GetOrphanedChunks
+	//
+	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+	//  FROM chunks c
+	//  LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+	//  WHERE nfc.chunk_id IS NULL
+	GetOrphanedChunks(ctx context.Context) ([]Chunk, error)
 	// Find files that have no relationship to any narinfo
 	//
 	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
@@ -247,6 +295,11 @@ type Querier interface {
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
 	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
+	//GetTotalChunkSize
+	//
+	//  SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) AS total_size
+	//  FROM chunks
+	GetTotalChunkSize(ctx context.Context) (int64, error)
 	// Get all narinfo hashes that have no URL (unmigrated).
 	//
 	//  SELECT hash
@@ -261,6 +314,15 @@ type Querier interface {
 	//      WHERE hash = $1 AND url IS NOT NULL
 	//  ) AS is_migrated
 	IsNarInfoMigrated(ctx context.Context, hash string) (bool, error)
+	//LinkNarFileToChunk
+	//
+	//  INSERT INTO nar_file_chunks (
+	//      nar_file_id, chunk_id, chunk_index
+	//  ) VALUES (
+	//      $1, $2, $3
+	//  )
+	//  ON CONFLICT (nar_file_id, chunk_index) DO NOTHING
+	LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error
 	//LinkNarInfoToNarFile
 	//
 	//  INSERT INTO narinfo_nar_files (

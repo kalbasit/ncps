@@ -22,9 +22,8 @@ CREATE TABLE public.chunks (
     id bigint NOT NULL,
     hash text NOT NULL,
     size integer NOT NULL,
-    ref_count integer DEFAULT 1 NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT chunks_ref_count_check CHECK ((ref_count >= 0)),
+    updated_at timestamp with time zone,
     CONSTRAINT chunks_size_check CHECK ((size >= 0))
 );
 

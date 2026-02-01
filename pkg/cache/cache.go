@@ -27,11 +27,13 @@ import (
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache/healthcheck"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/chunker"
 	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
+	"github.com/kalbasit/ncps/pkg/storage/chunk"
 )
 
 const (
@@ -73,6 +75,9 @@ var (
 	// ErrInconsistentState is returned when the database is in an inconsistent state (e.g., nar exists without narinfo).
 	ErrInconsistentState = errors.New("inconsistent database state")
 
+	// ErrCDCDisabled is returned when CDC is required but not enabled.
+	ErrCDCDisabled = errors.New("CDC must be enabled and chunk store configured for migration")
+
 	//nolint:gochecknoglobals
 	meter metric.Meter
 
@@ -104,6 +109,9 @@ var (
 
 	//nolint:gochecknoglobals
 	lruNarFilesEvictedTotal metric.Int64Counter
+
+	//nolint:gochecknoglobals
+	lruChunksEvictedTotal metric.Int64Counter
 
 	//nolint:gochecknoglobals
 	lruBytesFreedTotal metric.Int64Counter
@@ -214,6 +222,15 @@ func init() {
 		panic(err)
 	}
 
+	lruChunksEvictedTotal, err = meter.Int64Counter(
+		"ncps_lru_chunks_evicted_total",
+		metric.WithDescription("Total number of chunks evicted by LRU."),
+		metric.WithUnit("{object}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
 	lruBytesFreedTotal, err = meter.Int64Counter(
 		"ncps_lru_bytes_freed_total",
 		metric.WithDescription("Total bytes freed by LRU eviction."),
@@ -308,6 +325,12 @@ type Cache struct {
 	configStore  storage.ConfigStore
 	narInfoStore storage.NarInfoStore
 	narStore     storage.NarStore
+	chunkStore   chunk.Store
+
+	// CDC configuration
+	cdcMu      sync.RWMutex
+	cdcEnabled bool
+	chunker    chunker.Chunker
 
 	// Should the cache sign the narinfos?
 	shouldSignNarinfo bool
@@ -470,6 +493,29 @@ func New(
 	})
 
 	return c, nil
+}
+
+// SetCDCConfiguration enables and configures CDC.
+func (c *Cache) SetCDCConfiguration(enabled bool, minSize, avgSize, maxSize uint32) error {
+	c.cdcMu.Lock()
+	defer c.cdcMu.Unlock()
+
+	c.cdcEnabled = enabled
+	if enabled {
+		var err error
+
+		c.chunker, err = chunker.NewCDCChunker(minSize, avgSize, maxSize)
+		if err != nil {
+			return fmt.Errorf("failed to create CDC chunker: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// SetChunkStore sets the chunk store.
+func (c *Cache) SetChunkStore(cs chunk.Store) {
+	c.chunkStore = cs
 }
 
 func (c *Cache) setupMetricCallbacks() error {
@@ -697,14 +743,22 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
 
-		if c.narStore.HasNar(ctx, narURL) {
+		hasNarInStore := c.narStore.HasNar(ctx, narURL)
+		hasNarInChunks, _ := c.hasNarInChunks(ctx, narURL)
+
+		if hasNarInStore || hasNarInChunks {
 			metricAttrs = append(metricAttrs,
 				attribute.String("result", "hit"),
 			)
 
 			var err error
 
-			size, reader, err = c.getNarFromStore(ctx, &narURL)
+			if hasNarInStore {
+				size, reader, err = c.getNarFromStore(ctx, &narURL)
+			} else {
+				size, reader, err = c.getNarFromChunks(ctx, &narURL)
+			}
+
 			if err != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			} else {
@@ -739,8 +793,11 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 		ds.mu.Unlock()
 
+		hasNarInStore = c.narStore.HasNar(ctx, narURL)
+		hasNarInChunks, _ = c.hasNarInChunks(ctx, narURL)
+
 		// If download is complete or NAR is in store, get from storage
-		if !canStream || c.narStore.HasNar(ctx, narURL) {
+		if !canStream || hasNarInStore || hasNarInChunks {
 			if canStream {
 				ds.wg.Done()
 			}
@@ -752,7 +809,12 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 			var err error
 
-			size, reader, err = c.getNarFromStore(ctx, &narURL)
+			if hasNarInStore {
+				size, reader, err = c.getNarFromStore(ctx, &narURL)
+			} else {
+				size, reader, err = c.getNarFromChunks(ctx, &narURL)
+			}
+
 			if err != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			}
@@ -921,6 +983,37 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			r.Close()
 		}()
 
+		c.cdcMu.RLock()
+		cdcEnabled := c.cdcEnabled
+		c.cdcMu.RUnlock()
+
+		if cdcEnabled {
+			// Stream to temp file first
+			pattern := narURL.Hash + "-*.nar"
+			if cext := narURL.Compression.String(); cext != "" {
+				pattern += "." + cext
+			}
+
+			f, err := os.CreateTemp(c.tempDir, pattern)
+			if err != nil {
+				return err
+			}
+
+			tempPath := f.Name()
+			defer os.Remove(tempPath)
+
+			_, err = io.Copy(f, r)
+			f.Close()
+
+			if err != nil {
+				return err
+			}
+
+			_, err = c.storeNarWithCDC(ctx, tempPath, &narURL)
+
+			return err
+		}
+
 		_, err := c.narStore.PutNar(ctx, narURL, r)
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			// Already exists is not an error for PUT - return success
@@ -1025,6 +1118,14 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 
 // storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
 func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
+	c.cdcMu.RLock()
+	cdcEnabled := c.cdcEnabled
+	c.cdcMu.RUnlock()
+
+	if cdcEnabled {
+		return c.storeNarWithCDC(ctx, tempPath, narURL)
+	}
+
 	f, err := os.Open(tempPath)
 	if err != nil {
 		zerolog.Ctx(ctx).
@@ -1055,6 +1156,139 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 	}
 
 	return written, nil
+}
+
+// storeNarWithCDC stores the NAR from a temporary file using CDC.
+func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.storeNarWithCDC",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+			attribute.String("temp_path", tempPath),
+		),
+	)
+	defer span.End()
+
+	f, err := os.Open(tempPath)
+	if err != nil {
+		return 0, fmt.Errorf("error opening temp file: %w", err)
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("error stating temp file: %w", err)
+	}
+
+	//nolint:gosec // G115: File size from Stat is non-negative
+	fileSize := uint64(fi.Size())
+
+	// 1. Create or get NarFile record
+	var narFileID int64
+
+	err = c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
+		nr, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+			FileSize:    fileSize,
+		})
+		if err != nil {
+			return err
+		}
+
+		narFileID = nr.ID
+
+		// If this NAR already has chunks, we skip storage
+		chunks, err := qtx.GetChunksByNarFileID(ctx, narFileID)
+		if err == nil && len(chunks) > 0 {
+			return storage.ErrAlreadyExists
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			zerolog.Ctx(ctx).Debug().Msg("nar already exists in chunk storage, skipping")
+
+			return 0, nil
+		}
+
+		return 0, err
+	}
+
+	// 2. Start chunking
+	chunksChan, errChan := c.chunker.Chunk(ctx, f)
+
+	var (
+		totalSize  int64
+		chunkCount int
+	)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case err := <-errChan:
+			if err != nil {
+				return 0, fmt.Errorf("chunking error: %w", err)
+			}
+		case chunkMetadata, ok := <-chunksChan:
+			if !ok {
+				// All chunks processed.
+				return totalSize, nil
+			}
+
+			// Process chunk
+			data := make([]byte, chunkMetadata.Size)
+
+			_, err := f.ReadAt(data, chunkMetadata.Offset)
+			if err != nil {
+				return 0, fmt.Errorf("error reading chunk data: %w", err)
+			}
+
+			// Store in chunkStore if new
+			_, err = c.chunkStore.PutChunk(ctx, chunkMetadata.Hash, data)
+			if err != nil {
+				return 0, fmt.Errorf("error storing chunk: %w", err)
+			}
+
+			// Record in database
+			err = c.withTransaction(ctx, "storeNarWithCDC.RecordChunk", func(qtx database.Querier) error {
+				// Create or increment ref count.
+				// For MySQL, CreateChunk doesn't return the ID, so we use a different approach.
+				// But our generated wrapper handles the DB type differences.
+				ch, err := qtx.CreateChunk(ctx, database.CreateChunkParams{
+					Hash: chunkMetadata.Hash,
+					Size: chunkMetadata.Size,
+				})
+				if err != nil {
+					return fmt.Errorf("error creating chunk record: %w", err)
+				}
+
+				// Link to NAR file
+				err = qtx.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
+					NarFileID: narFileID,
+					ChunkID:   ch.ID,
+					//nolint:gosec // G115: Chunk count is bounded by file size
+					ChunkIndex: int32(chunkCount),
+				})
+				if err != nil {
+					return fmt.Errorf("error linking chunk: %w", err)
+				}
+
+				return nil
+			})
+			if err != nil {
+				return 0, err
+			}
+
+			totalSize += int64(chunkMetadata.Size)
+			chunkCount++
+		}
+	}
 }
 
 func (c *Cache) pullNarIntoStore(
@@ -3038,7 +3272,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 	qtx database.Querier,
 	log zerolog.Logger,
 	cleanupSize uint64,
-) ([]string, []nar.URL, error) {
+) ([]string, []nar.URL, []string, error) {
 	// 1. METADATA PHASE
 	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
 	// We use the query you provided in the first prompt.
@@ -3046,13 +3280,13 @@ func (c *Cache) deleteLRURecordsFromDB(
 	if err != nil {
 		log.Error().Err(err).Msg("error getting least used narinfos")
 
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if len(narInfosToDelete) == 0 {
 		log.Warn().Msg("cleanup required but no reclaimable narinfos found")
 
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	log.Info().Int("count", len(narInfosToDelete)).Msg("found narinfos to expire")
@@ -3072,7 +3306,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 				Str("hash", info.Hash).
 				Msg("error deleting narinfo record")
 
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -3083,7 +3317,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 	if err != nil {
 		log.Error().Err(err).Msg("error identifying orphaned nar files")
 
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	narURLsToRemove := make([]nar.URL, 0, len(orphanedNarFiles))
@@ -3106,14 +3340,54 @@ func (c *Cache) deleteLRURecordsFromDB(
 					Str("nar_hash", nf.Hash).
 					Msg("error deleting orphaned nar file record")
 
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 		}
 	} else {
 		log.Info().Msg("no orphaned nar files found (files may be shared with active narinfos)")
 	}
 
-	return narInfoHashesToRemove, narURLsToRemove, nil
+	// 3. CHUNK PHASE
+	// Now that files are gone, some chunks might have zero references.
+	c.cdcMu.RLock()
+	cdcEnabled := c.cdcEnabled
+	chunkStore := c.chunkStore
+	c.cdcMu.RUnlock()
+
+	if !cdcEnabled || chunkStore == nil {
+		return narInfoHashesToRemove, narURLsToRemove, nil, nil
+	}
+
+	orphanedChunks, err := qtx.GetOrphanedChunks(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("error identifying orphaned chunks")
+
+		return nil, nil, nil, err
+	}
+
+	if len(orphanedChunks) == 0 {
+		log.Debug().Msg("no orphaned chunks found")
+
+		return narInfoHashesToRemove, narURLsToRemove, nil, nil
+	}
+
+	log.Info().Int("count", len(orphanedChunks)).Msg("found orphaned chunks to delete")
+
+	chunkHashesToRemove := make([]string, 0, len(orphanedChunks))
+	for _, chk := range orphanedChunks {
+		chunkHashesToRemove = append(chunkHashesToRemove, chk.Hash)
+
+		if err := qtx.DeleteChunkByID(ctx, chk.ID); err != nil {
+			log.Error().
+				Err(err).
+				Str("chunk_hash", chk.Hash).
+				Msg("error deleting orphaned chunk record")
+
+			return nil, nil, nil, err
+		}
+	}
+
+	return narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove, nil
 }
 
 // parallelDeleteFromStores deletes narinfos and nars from stores in parallel.
@@ -3122,6 +3396,7 @@ func (c *Cache) parallelDeleteFromStores(
 	log zerolog.Logger,
 	narInfoHashesToRemove []string,
 	narURLsToRemove []nar.URL,
+	chunkHashesToRemove []string,
 ) {
 	var wg sync.WaitGroup
 
@@ -3157,6 +3432,28 @@ func (c *Cache) parallelDeleteFromStores(
 				log.Error().
 					Err(err).
 					Msg("error removing the nar from the store")
+			}
+		})
+	}
+
+	for _, hash := range chunkHashesToRemove {
+		wg.Add(1)
+
+		analytics.SafeGo(ctx, func() {
+			defer wg.Done()
+
+			if c.chunkStore == nil {
+				return
+			}
+
+			log := log.With().Str("chunk_hash", hash).Logger()
+
+			log.Info().Msg("deleting chunk from store")
+
+			if err := c.chunkStore.DeleteChunk(ctx, hash); err != nil {
+				log.Error().
+					Err(err).
+					Msg("error removing the chunk from the store")
 			}
 		})
 	}
@@ -3205,14 +3502,20 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 				return err
 			}
 
-			narInfoHashesToRemove, narURLsToRemove, err := c.deleteLRURecordsFromDB(ctx, qtx, log, cleanupSize)
-			if err != nil || len(narInfoHashesToRemove) == 0 {
+			narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove, err := c.deleteLRURecordsFromDB(
+				ctx,
+				qtx,
+				log,
+				cleanupSize,
+			)
+			if err != nil || (len(narInfoHashesToRemove) == 0 && len(chunkHashesToRemove) == 0) {
 				return err
 			}
 
 			// Track eviction counts
 			lruNarInfosEvictedTotal.Add(ctx, int64(len(narInfoHashesToRemove)))
 			lruNarFilesEvictedTotal.Add(ctx, int64(len(narURLsToRemove)))
+			lruChunksEvictedTotal.Add(ctx, int64(len(chunkHashesToRemove)))
 
 			// Track bytes freed (approximate as cleanupSize)
 			//nolint:gosec // G115: Cleanup size is bounded by cache max size, unlikely to exceed int64 max
@@ -3226,7 +3529,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			}
 
 			// Remove all the files from the store as fast as possible
-			c.parallelDeleteFromStores(ctx, log, narInfoHashesToRemove, narURLsToRemove)
+			c.parallelDeleteFromStores(ctx, log, narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove)
 
 			return nil
 		})
@@ -3438,4 +3741,204 @@ func parseValidHash(hash sql.NullString, fieldName string) (*nixhash.HashWithEnc
 	}
 
 	return h, nil
+}
+
+func (c *Cache) hasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error) {
+	var count int64
+
+	err := c.withTransaction(ctx, "hasNarInChunks", func(qtx database.Querier) error {
+		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+		})
+		if err != nil {
+			if database.IsNotFoundError(err) {
+				return nil
+			}
+
+			return err
+		}
+
+		// Check if this nar file has chunks
+		chunks, err := qtx.GetChunksByNarFileID(ctx, nr.ID)
+		if err != nil {
+			return err
+		}
+
+		count = int64(len(chunks))
+
+		return nil
+	})
+
+	return count > 0, err
+}
+
+func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, io.ReadCloser, error) {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.getNarFromChunks",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+		),
+	)
+	defer span.End()
+
+	var (
+		totalSize   int64
+		chunkHashes []string
+	)
+
+	err := c.withTransaction(ctx, "getNarFromChunks", func(qtx database.Querier) error {
+		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+		})
+		if err != nil {
+			return err
+		}
+
+		//nolint:gosec // G115: File size is non-negative
+		totalSize = int64(nr.FileSize)
+
+		chunks, err := qtx.GetChunksByNarFileID(ctx, nr.ID)
+		if err != nil {
+			return err
+		}
+
+		for _, ch := range chunks {
+			chunkHashes = append(chunkHashes, ch.Hash)
+		}
+
+		// Touch the NAR file
+		latValue, err := nr.LastAccessedAt.Value()
+		if err == nil {
+			if lat, ok := latValue.(time.Time); ok && time.Since(lat) > c.recordAgeIgnoreTouch {
+				if _, err := qtx.TouchNarFile(ctx, database.TouchNarFileParams{
+					Hash:        narURL.Hash,
+					Compression: narURL.Compression.String(),
+					Query:       narURL.Query.Encode(),
+				}); err != nil {
+					return fmt.Errorf("error touching the nar record: %w", err)
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if len(chunkHashes) == 0 {
+		return 0, nil, storage.ErrNotFound
+	}
+
+	// Create a pipe for reassembly
+	pr, pw := io.Pipe()
+
+	analytics.SafeGo(ctx, func() {
+		defer pw.Close()
+
+		for _, hash := range chunkHashes {
+			rc, err := c.chunkStore.GetChunk(ctx, hash)
+			if err != nil {
+				pw.CloseWithError(fmt.Errorf("error fetching chunk %s: %w", hash, err))
+
+				return
+			}
+
+			if _, err := io.Copy(pw, rc); err != nil {
+				rc.Close()
+				pw.CloseWithError(fmt.Errorf("error copying chunk %s: %w", hash, err))
+
+				return
+			}
+
+			rc.Close()
+		}
+	})
+
+	return totalSize, pr, nil
+}
+
+// MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
+func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
+	c.cdcMu.RLock()
+	cdcEnabled := c.cdcEnabled
+	chunkStore := c.chunkStore
+	c.cdcMu.RUnlock()
+
+	if !cdcEnabled || chunkStore == nil {
+		return ErrCDCDisabled
+	}
+
+	// 1. Check if already chunked
+	hasChunks, err := c.hasNarInChunks(ctx, narURL)
+	if err != nil {
+		return err
+	}
+
+	if hasChunks {
+		return nil // Already migrated
+	}
+
+	// 2. Fetch the NAR from the store
+	_, rc, err := c.narStore.GetNar(ctx, narURL)
+	if err != nil {
+		return fmt.Errorf("error fetching nar from store: %w", err)
+	}
+	defer rc.Close()
+
+	// 3. Create a temporary file to store the NAR (optional, but safer for large files)
+	// Actually, we can stream directly to CDC.
+	// But storeNarWithCDC expects a file path. Let's use a temp file.
+	f, err := os.CreateTemp(c.tempDir, "ncps-migrate-*.nar")
+	if err != nil {
+		return fmt.Errorf("error creating temp file: %w", err)
+	}
+
+	tempPath := f.Name()
+	defer os.Remove(tempPath)
+
+	if _, err := io.Copy(f, rc); err != nil {
+		_ = f.Close() // Best effort close on error path
+
+		return fmt.Errorf("error copying nar to temp file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing temp file: %w", err)
+	}
+
+	// 4. Store using CDC logic
+	// storeNarWithCDC handles chunking, storing chunks, and DB updates.
+	_, err = c.storeNarWithCDC(ctx, tempPath, &narURL)
+	if err != nil {
+		return fmt.Errorf("error storing nar with CDC: %w", err)
+	}
+
+	return nil
+}
+
+// BackgroundMigrateNarToChunks migrates a traditional NAR blob to content-defined chunks in the background.
+func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL) {
+	analytics.SafeGo(ctx, func() {
+		log := zerolog.Ctx(ctx).With().
+			Str("op", "BackgroundMigrateNarToChunks").
+			Str("nar_hash", narURL.Hash).
+			Logger()
+
+		log.Debug().Msg("starting background migration to chunks")
+
+		if err := c.MigrateNarToChunks(ctx, narURL); err != nil {
+			log.Error().Err(err).Msg("error migrating nar to chunks")
+
+			return
+		}
+
+		log.Info().Msg("successfully migrated nar to chunks")
+	})
 }
