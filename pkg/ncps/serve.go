@@ -738,12 +738,7 @@ func getUpstreamCaches(ctx context.Context, cmd *cli.Command, netrcData *netrc.N
 	return ucs, nil
 }
 
-//nolint:staticcheck // deprecated: migration support
-func getStorageBackend(
-	ctx context.Context,
-	cmd *cli.Command,
-) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
-	// Handle backward compatibility for cache-data-path (deprecated)
+func getStorageConfig(ctx context.Context, cmd *cli.Command) (string, *s3config.Config, error) {
 	deprecatedDataPath := cmd.String("cache-data-path")
 	localDataPath := cmd.String("cache-storage-local")
 	s3Bucket := cmd.String("cache-storage-s3-bucket")
@@ -762,17 +757,57 @@ func getStorageBackend(
 		}
 	}
 
-	switch {
-	case localDataPath != "" && s3Bucket != "":
-		return nil, nil, nil, ErrStorageConflict
+	if localDataPath != "" && s3Bucket != "" {
+		return "", nil, ErrStorageConflict
+	}
 
+	if localDataPath == "" && s3Bucket == "" {
+		return "", nil, ErrStorageConfigRequired
+	}
+
+	if localDataPath != "" {
+		return localDataPath, nil, nil
+	}
+
+	s3Cfg := &s3config.Config{
+		Bucket:          s3Bucket,
+		Region:          cmd.String("cache-storage-s3-region"),
+		Endpoint:        cmd.String("cache-storage-s3-endpoint"),
+		AccessKeyID:     cmd.String("cache-storage-s3-access-key-id"),
+		SecretAccessKey: cmd.String("cache-storage-s3-secret-access-key"),
+		ForcePathStyle:  cmd.Bool("cache-storage-s3-force-path-style"),
+	}
+
+	if s3Cfg.Endpoint == "" || s3Cfg.AccessKeyID == "" || s3Cfg.SecretAccessKey == "" {
+		return "", nil, ErrS3ConfigIncomplete
+	}
+
+	if err := s3config.ValidateConfig(*s3Cfg); err != nil {
+		return "", nil, err
+	}
+
+	return "", s3Cfg, nil
+}
+
+//nolint:staticcheck // deprecated: migration support
+func getStorageBackend(
+	ctx context.Context,
+	cmd *cli.Command,
+) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
+	localDataPath, s3Cfg, err := getStorageConfig(ctx, cmd)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	switch {
 	case localDataPath != "":
 		return createLocalStorage(ctx, localDataPath)
 
-	case s3Bucket != "":
-		return createS3Storage(ctx, cmd)
+	case s3Cfg != nil:
+		return createS3Storage(ctx, *s3Cfg)
 
 	default:
+		// This should never happen because getStorageConfig returns an error if neither is set
 		return nil, nil, nil, ErrStorageConfigRequired
 	}
 }
@@ -795,36 +830,17 @@ func createLocalStorage(
 //nolint:staticcheck // deprecated: migration support
 func createS3Storage(
 	ctx context.Context,
-	cmd *cli.Command,
+	s3Cfg s3config.Config,
 ) (storage.ConfigStore, storage.NarInfoStore, storage.NarStore, error) {
-	s3Bucket := cmd.String("cache-storage-s3-bucket")
-	s3Endpoint := cmd.String("cache-storage-s3-endpoint")
-	s3AccessKeyID := cmd.String("cache-storage-s3-access-key-id")
-	s3SecretAccessKey := cmd.String("cache-storage-s3-secret-access-key")
-	s3ForcePathStyle := cmd.Bool("cache-storage-s3-force-path-style")
-
-	if s3Endpoint == "" || s3AccessKeyID == "" || s3SecretAccessKey == "" {
-		return nil, nil, nil, ErrS3ConfigIncomplete
-	}
-
 	ctx = zerolog.Ctx(ctx).
 		With().
-		Str("bucket", s3Bucket).
-		Str("endpoint", s3Endpoint).
-		Bool("force_path_style", s3ForcePathStyle).
+		Str("bucket", s3Cfg.Bucket).
+		Str("endpoint", s3Cfg.Endpoint).
+		Bool("force_path_style", s3Cfg.ForcePathStyle).
 		Logger().
 		WithContext(ctx)
 
 	zerolog.Ctx(ctx).Debug().Msg("creating S3 storage")
-
-	s3Cfg := s3config.Config{
-		Bucket:          s3Bucket,
-		Region:          cmd.String("cache-storage-s3-region"),
-		Endpoint:        s3Endpoint,
-		AccessKeyID:     s3AccessKeyID,
-		SecretAccessKey: s3SecretAccessKey,
-		ForcePathStyle:  s3ForcePathStyle,
-	}
 
 	s3Store, err := storageS3.New(ctx, s3Cfg)
 	if err != nil {
@@ -861,30 +877,19 @@ func createDatabaseQuerier(cmd *cli.Command) (database.Querier, error) {
 }
 
 func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.Locker) (chunk.Store, error) {
-	localDataPath := cmd.String("cache-storage-local")
-	s3Bucket := cmd.String("cache-storage-s3-bucket")
-
-	// Show deprecation warning if old flag is used for local path
-	if deprecatedDataPath := cmd.String("cache-data-path"); deprecatedDataPath != "" && localDataPath == "" {
-		localDataPath = deprecatedDataPath
+	localDataPath, s3Cfg, err := getStorageConfig(ctx, cmd)
+	if err != nil {
+		return nil, err
 	}
 
 	switch {
 	case localDataPath != "":
 		// Use {localDataPath}/store as base for chunks to match other stores
 		return chunk.NewLocalStore(filepath.Join(localDataPath, "store"))
-	case s3Bucket != "":
-		s3Cfg := s3config.Config{
-			Bucket:          s3Bucket,
-			Region:          cmd.String("cache-storage-s3-region"),
-			Endpoint:        cmd.String("cache-storage-s3-endpoint"),
-			AccessKeyID:     cmd.String("cache-storage-s3-access-key-id"),
-			SecretAccessKey: cmd.String("cache-storage-s3-secret-access-key"),
-			ForcePathStyle:  cmd.Bool("cache-storage-s3-force-path-style"),
-		}
-
-		return chunk.NewS3Store(ctx, s3Cfg, locker)
+	case s3Cfg != nil:
+		return chunk.NewS3Store(ctx, *s3Cfg, locker)
 	default:
+		// This should never happen because getStorageConfig returns an error if neither is set
 		return nil, ErrStorageConfigRequired
 	}
 }
