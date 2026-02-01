@@ -1,0 +1,28 @@
+name: Deploy Docs Pages
+permissions:
+  contents: read
+  packages: write
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "docs/**"
+jobs:
+  deploy-docs-pages:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@v21
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - name: Build docs
+        run: |
+          nix develop --command bash -c trilium-build-docs
+      - name: Deploy docs
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_NCPS_DEV_EDIT_WORKERS_TOKEN }}
+          accountId: ${{ secrets.CF_NCPS_DEV_ACCOUNT_ID }}
+          command: pages deploy public/docs --project-name=ncps-docs --commit-dirty=true
