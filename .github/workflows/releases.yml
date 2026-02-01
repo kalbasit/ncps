@@ -7,31 +7,23 @@ on:
     tags:
       - "v*.*.*"
 jobs:
-  flake:
-    uses: ./.github/workflows/flake.yml
-    permissions:
-      id-token: "write"
-      contents: "read"
-    with:
-      systems: "['x86_64-linux', 'aarch64-linux']"
-    secrets:
-      codecov_token: ${{ secrets.CODECOV_TOKEN }}
-  docker:
-    uses: ./.github/workflows/docker.yml
-    needs: flake
+  build:
+    uses: ./.github/workflows/build.yml
     with:
       systems: "['x86_64-linux', 'aarch64-linux']"
       images: kalbasit/ncps
-      username: ${{ vars.DOCKERHUB_USERNAME }}
+      dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
       push_images: true
     secrets:
-      password: ${{ secrets.DOCKERHUB_TOKEN }}
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}
+      dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
   helm:
     uses: ./.github/workflows/helm.yml
-    needs: docker
+    needs: build
   release:
     runs-on: ubuntu-24.04
-    needs: docker
+    needs: build
     permissions:
       contents: write
     steps:
@@ -47,7 +39,7 @@ jobs:
             ## Docker Images ${{ github.ref_name }}
             The following image tags were published to [Dockerhub](https://hub.docker.com/r/kalbasit/ncps):
             ```
-            ${{ needs.docker.outputs.tags }}
+            ${{ needs.build.outputs.tags }}
             ```
 
             ## Helm Chart Release ${{ github.ref_name }}

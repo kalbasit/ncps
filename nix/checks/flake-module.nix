@@ -2,19 +2,14 @@
   perSystem =
     {
       self',
-      lib,
       pkgs,
       config,
       ...
     }:
     {
       checks =
-        let
-          packages = lib.mapAttrs' (n: lib.nameValuePair "package-${n}") self'.packages;
-          devShells = lib.mapAttrs' (n: lib.nameValuePair "devShell-${n}") self'.devShells;
-        in
-        packages
-        // devShells
+        self'.packages
+        // self'.devShells
         // {
           # TODO: Simplify this to not use buildGoModule as it seems to be a
           # waste of time. This could be a simple stdenvNoCC.mkDerviation.
