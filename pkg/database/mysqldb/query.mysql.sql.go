@@ -356,14 +356,14 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 }
 
 const getChunkByHash = `-- name: GetChunkByHash :one
-SELECT id, hash, size, created_at
+SELECT id, hash, size, created_at, updated_at
 FROM chunks
 WHERE hash = ?
 `
 
 // GetChunkByHash
 //
-//	SELECT id, hash, size, created_at
+//	SELECT id, hash, size, created_at, updated_at
 //	FROM chunks
 //	WHERE hash = ?
 func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
@@ -374,19 +374,20 @@ func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error
 		&i.Hash,
 		&i.Size,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getChunkByID = `-- name: GetChunkByID :one
-SELECT id, hash, size, created_at
+SELECT id, hash, size, created_at, updated_at
 FROM chunks
 WHERE id = ?
 `
 
 // GetChunkByID
 //
-//	SELECT id, hash, size, created_at
+//	SELECT id, hash, size, created_at, updated_at
 //	FROM chunks
 //	WHERE id = ?
 func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
@@ -397,6 +398,7 @@ func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
 		&i.Hash,
 		&i.Size,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -425,6 +427,13 @@ WHERE nfc.nar_file_id = ?
 ORDER BY nfc.chunk_index
 `
 
+type GetChunksByNarFileIDRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+}
+
 // GetChunksByNarFileID
 //
 //	SELECT c.id, c.hash, c.size, c.created_at
@@ -432,15 +441,15 @@ ORDER BY nfc.chunk_index
 //	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.nar_file_id = ?
 //	ORDER BY nfc.chunk_index
-func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, getChunksByNarFileID, narFileID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Chunk
+	var items []GetChunksByNarFileIDRow
 	for rows.Next() {
-		var i Chunk
+		var i GetChunksByNarFileIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
@@ -1067,7 +1076,7 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 }
 
 const getOrphanedChunks = `-- name: GetOrphanedChunks :many
-SELECT c.id, c.hash, c.size, c.created_at
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
 LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.chunk_id IS NULL
@@ -1075,7 +1084,7 @@ WHERE nfc.chunk_id IS NULL
 
 // GetOrphanedChunks
 //
-//	SELECT c.id, c.hash, c.size, c.created_at
+//	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 //	FROM chunks c
 //	LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.chunk_id IS NULL
@@ -1093,6 +1102,7 @@ func (q *Queries) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
 			&i.Hash,
 			&i.Size,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

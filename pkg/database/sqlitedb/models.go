@@ -14,6 +14,7 @@ type Chunk struct {
 	Hash      string
 	Size      uint32
 	CreatedAt time.Time
+	UpdatedAt sql.NullTime
 }
 
 type Config struct {

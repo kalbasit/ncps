@@ -23,6 +23,7 @@ CREATE TABLE public.chunks (
     hash text NOT NULL,
     size integer NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone,
     CONSTRAINT chunks_size_check CHECK ((size >= 0))
 );
 

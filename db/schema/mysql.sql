@@ -27,6 +27,7 @@ CREATE TABLE `chunks` (
   `hash` varchar(64) NOT NULL,
   `size` int(10) unsigned NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `hash` (`hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

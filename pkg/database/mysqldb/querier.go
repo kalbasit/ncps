@@ -119,13 +119,13 @@ type Querier interface {
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	//GetChunkByHash
 	//
-	//  SELECT id, hash, size, created_at
+	//  SELECT id, hash, size, created_at, updated_at
 	//  FROM chunks
 	//  WHERE hash = ?
 	GetChunkByHash(ctx context.Context, hash string) (Chunk, error)
 	//GetChunkByID
 	//
-	//  SELECT id, hash, size, created_at
+	//  SELECT id, hash, size, created_at, updated_at
 	//  FROM chunks
 	//  WHERE id = ?
 	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
@@ -141,7 +141,7 @@ type Querier interface {
 	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.nar_file_id = ?
 	//  ORDER BY nfc.chunk_index
-	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error)
+	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error)
 	//GetConfigByID
 	//
 	//  SELECT id, `key`, value, created_at, updated_at
@@ -267,7 +267,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	//GetOrphanedChunks
 	//
-	//  SELECT c.id, c.hash, c.size, c.created_at
+	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 	//  FROM chunks c
 	//  LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.chunk_id IS NULL
