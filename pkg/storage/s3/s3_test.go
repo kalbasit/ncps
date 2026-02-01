@@ -1031,11 +1031,6 @@ func TestNew_BucketAccessError(t *testing.T) {
 	t.Parallel()
 
 	cfg := getTestConfig(t)
-	if cfg == nil {
-		t.Skip("Skipping S3 integration test: S3 environment variables not set")
-
-		return
-	}
 
 	// Use mock transport to trigger error
 	expectedErr := errTestingBucketAccess
@@ -1052,9 +1047,6 @@ func TestNew_BucketNotFound(t *testing.T) {
 	t.Parallel()
 
 	cfg := getTestConfig(t)
-	if cfg == nil {
-		return
-	}
 
 	// Use a non-existent bucket
 	cfg.Bucket = "non-existent-bucket-name-ncps-test"
