@@ -158,7 +158,7 @@ ncps serve \
   --cache-lru-schedule="0 2 * * *"  # Daily at 2 AM
 ```
 
-See <a class="reference-link" href="Database.md">Database</a> for details.
+See <a class="reference-link" href="Database.md">Database</a> for details.
 
 ## CDC Options (Experimental)
 
@@ -179,7 +179,7 @@ ncps serve \
   --cache-cdc-avg=524288  # 512KB average chunks
 ```
 
-See <a class="reference-link" href="../Features/CDC.md">CDC Feature</a> for details.
+See <a class="reference-link" href="../Features/CDC.md">CDC</a> for details.
 
 ## Security & Signing
 
