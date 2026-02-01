@@ -43,6 +43,10 @@ Welcome to the comprehensive documentation for ncps (Nix Cache Proxy Server). Th
 - [Configure analytics reporting](User%20Guide/Configuration/Analytics.md)
 - [Set up observability](User%20Guide/Configuration/Observability.md)
 
+**Features**
+
+- [Content-Defined Chunking (CDC)](User%20Guide/Features/CDC.md)
+
 **Deploy for Production**
 
 - [Deploy a single instance](User%20Guide/Deployment/Single%20Instance.md)
