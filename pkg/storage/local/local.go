@@ -134,7 +134,14 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 		return storage.ErrNotFound
 	}
 
-	return os.Remove(skPath)
+	if err := os.Remove(skPath); err != nil {
+		return err
+	}
+
+	// Best-effort cleanup of empty parent directories
+	removeEmptyParentDirs(skPath, s.configPath())
+
+	return nil
 }
 
 // HasNarInfo returns true if the store has the narinfo.
@@ -286,6 +293,9 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 		return fmt.Errorf("error deleting narinfo %q from store: %w", narInfoPath, err)
 	}
 
+	// Best-effort cleanup of empty parent directories
+	removeEmptyParentDirs(narInfoPath, s.storeNarInfoPath())
+
 	return nil
 }
 
@@ -417,7 +427,45 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 		return fmt.Errorf("error deleting nar %q from store: %w", narPath, err)
 	}
 
+	// Best-effort cleanup of empty parent directories
+	removeEmptyParentDirs(narPath, s.storeNarPath())
+
 	return nil
+}
+
+// removeEmptyParentDirs removes empty parent directories up to and including categoryDir.
+// It starts from the parent of filePath and walks up the directory tree,
+// removing directories only if they are empty.
+// It stops when it reaches categoryDir (which is also removed if empty) or when
+// a directory is not empty.
+func removeEmptyParentDirs(filePath, categoryDir string) {
+	// Start from the parent directory of the file
+	currentDir := filepath.Dir(filePath)
+
+	for {
+		// Check if we've reached above the category directory
+		// If currentDir is not within categoryDir, we're done
+		rel, err := filepath.Rel(categoryDir, currentDir)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			// We've gone above categoryDir, stop
+			break
+		}
+
+		// Try to remove the current directory (only succeeds if empty)
+		if err := os.Remove(currentDir); err != nil {
+			// Directory is not empty or we don't have permissions, stop here
+			// This is expected behavior, not an error
+			break
+		}
+
+		// If we successfully removed the directory, move up to its parent
+		// But stop if we just removed the category directory itself
+		if currentDir == categoryDir {
+			break
+		}
+
+		currentDir = filepath.Dir(currentDir)
+	}
 }
 
 func (s *Store) configPath() string       { return filepath.Join(s.path, "config") }
