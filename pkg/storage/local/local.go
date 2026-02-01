@@ -139,7 +139,7 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 	}
 
 	// Best-effort cleanup of empty parent directories
-	removeEmptyParentDirs(skPath, s.configPath())
+	removeEmptyParentDirs(ctx, skPath, s.configPath())
 
 	return nil
 }
@@ -294,7 +294,7 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	}
 
 	// Best-effort cleanup of empty parent directories
-	removeEmptyParentDirs(narInfoPath, s.storeNarInfoPath())
+	removeEmptyParentDirs(ctx, narInfoPath, s.storeNarInfoPath())
 
 	return nil
 }
@@ -428,7 +428,7 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	}
 
 	// Best-effort cleanup of empty parent directories
-	removeEmptyParentDirs(narPath, s.storeNarPath())
+	removeEmptyParentDirs(ctx, narPath, s.storeNarPath())
 
 	return nil
 }
@@ -438,7 +438,7 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 // removing directories only if they are empty.
 // It stops when it reaches categoryDir (which is also removed if empty) or when
 // a directory is not empty.
-func removeEmptyParentDirs(filePath, categoryDir string) {
+func removeEmptyParentDirs(ctx context.Context, filePath, categoryDir string) {
 	// Start from the parent directory of the file
 	currentDir := filepath.Dir(filePath)
 
@@ -455,6 +455,13 @@ func removeEmptyParentDirs(filePath, categoryDir string) {
 		if err := os.Remove(currentDir); err != nil {
 			// Directory is not empty or we don't have permissions, stop here
 			// This is expected behavior, not an error
+			// Log the error for debugging purposes.
+			zerolog.Ctx(ctx).
+				Debug().
+				Err(err).
+				Str("dir", currentDir).
+				Msg("failed to remove parent directory, stopping cleanup")
+
 			break
 		}
 
