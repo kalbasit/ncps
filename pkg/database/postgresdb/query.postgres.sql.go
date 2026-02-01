@@ -1147,14 +1147,18 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 }
 
 const getOrphanedChunks = `-- name: GetOrphanedChunks :many
-SELECT id, hash, size, ref_count, created_at FROM chunks
-WHERE id NOT IN (SELECT chunk_id FROM nar_file_chunks)
+SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+FROM chunks c
+LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.chunk_id IS NULL
 `
 
 // GetOrphanedChunks
 //
-//	SELECT id, hash, size, ref_count, created_at FROM chunks
-//	WHERE id NOT IN (SELECT chunk_id FROM nar_file_chunks)
+//	SELECT c.id, c.hash, c.size, c.ref_count, c.created_at
+//	FROM chunks c
+//	LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+//	WHERE nfc.chunk_id IS NULL
 func (q *Queries) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
 	rows, err := q.db.QueryContext(ctx, getOrphanedChunks)
 	if err != nil {
