@@ -1,5 +1,4 @@
 # Client Setup
-
 ## Client Setup Guide
 
 Configure your Nix clients to use your ncps cache.
@@ -118,8 +117,8 @@ nix-build '<nixpkgs>' -A hello
 
 Look for log messages like:
 
-- `serving nar from cache` - Cache hit!
-- `downloading nar from upstream` - Cache miss, fetching from upstream
+*   `serving nar from cache` - Cache hit!
+*   `downloading nar from upstream` - Cache miss, fetching from upstream
 
 ## Priority and Order
 
@@ -217,9 +216,9 @@ nix.settings.trusted-users = [ "root" "youruser" ];
 
 **Possible causes:**
 
-1. ncps doesn't have the package cached yet (first download)
-1. ncps cache listed after official cache (order matters)
-1. Public key not trusted
+1.  ncps doesn't have the package cached yet (first download)
+2.  ncps cache listed after official cache (order matters)
+3.  Public key not trusted
 
 **Check ncps logs** to see if requests are reaching it.
 
@@ -227,12 +226,12 @@ See the <a class="reference-link" href="../Operations/Troubleshooting.md">Troub
 
 ## Next Steps
 
-1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up monitoring
-1. <a class="reference-link" href="Cache%20Management.md">Cache Management</a> - Configure LRU cleanup
-1. <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more options
+1.  <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up monitoring
+2.  <a class="reference-link" href="Cache%20Management.md">Cache Management</a> - Configure LRU cleanup
+3.  <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more options
 
 ## Related Documentation
 
-- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
-- <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Monitor cache hits/misses
-- <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Solve issues
+*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
+*   <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Monitor cache hits/misses
+*   <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Solve issues

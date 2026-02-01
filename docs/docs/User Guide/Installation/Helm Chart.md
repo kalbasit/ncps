@@ -1,13 +1,12 @@
 # Helm Chart
-
 Install ncps on Kubernetes using Helm for simplified configuration and management. This is the recommended method for production Kubernetes deployments.
 
 ## Prerequisites
 
-- Kubernetes 1.19+
-- Helm 3.8+
-- kubectl configured and connected to your cluster
-- PV provisioner support in the underlying infrastructure (for local storage with persistence)
+*   Kubernetes 1.19+
+*   Helm 3.8+
+*   kubectl configured and connected to your cluster
+*   PV provisioner support in the underlying infrastructure (for local storage with persistence)
 
 ## Quick Start
 
@@ -34,10 +33,10 @@ helm install ncps . -f values.yaml --namespace ncps
 
 This installs ncps with:
 
-- Single replica (StatefulSet mode)
-- Local storage (PersistentVolumeClaim, 20Gi)
-- SQLite database
-- Default upstream: cache.nixos.org
+*   Single replica (StatefulSet mode)
+*   Local storage (PersistentVolumeClaim, 20Gi)
+*   SQLite database
+*   Default upstream: cache.nixos.org
 
 ### Verify Installation
 
@@ -61,9 +60,9 @@ The chart supports two deployment modes:
 
 Best for:
 
-- Single instance deployments
-- Local persistent storage
-- SQLite database
+*   Single instance deployments
+*   Local persistent storage
+*   SQLite database
 
 ```yaml
 mode: statefulset
@@ -83,9 +82,9 @@ config:
 
 Best for:
 
-- High availability (multiple replicas)
-- S3 storage
-- PostgreSQL/MySQL database
+*   High availability (multiple replicas)
+*   S3 storage
+*   PostgreSQL/MySQL database
 
 ```yaml
 mode: deployment
@@ -599,10 +598,10 @@ ingress:
 
 ### From Single Instance to HA
 
-1. Migrate from SQLite to PostgreSQL/MySQL
-1. Switch from local storage to S3
-1. Enable Redis
-1. Increase replica count
+1.  Migrate from SQLite to PostgreSQL/MySQL
+2.  Switch from local storage to S3
+3.  Enable Redis
+4.  Increase replica count
 
 ```
 # Step 1: Backup SQLite database
@@ -650,20 +649,20 @@ kubectl -n ncps logs job/ncps-migration
 
 **Pod fails to start with "database file not found":**
 
-- For SQLite + S3 deployments, ensure `storage.local.persistence.enabled: true` is set
-- SQLite requires persistent storage even when using S3 for NAR files
+*   For SQLite + S3 deployments, ensure `storage.local.persistence.enabled: true` is set
+*   SQLite requires persistent storage even when using S3 for NAR files
 
 **Migration job fails:**
 
-- Check migration job logs: `kubectl -n ncps logs job/ncps-migration`
-- Verify database credentials are correct
-- Ensure database is accessible from the cluster
+*   Check migration job logs: `kubectl -n ncps logs job/ncps-migration`
+*   Verify database credentials are correct
+*   Ensure database is accessible from the cluster
 
 **S3 connection errors:**
 
-- Verify S3 credentials and endpoint
-- For MinIO, ensure `config.storage.s3.forcePathStyle: true` is set
-- Check endpoint includes proper scheme (http:// or https://)
+*   Verify S3 credentials and endpoint
+*   For MinIO, ensure `config.storage.s3.forcePathStyle: true` is set
+*   Check endpoint includes proper scheme (http:// or https://)
 
 ## Complete Values Reference
 
@@ -671,6 +670,6 @@ See the <a class="reference-link" href="Helm%20Chart/Chart%20Reference.md">Char
 
 ## Next Steps
 
-- <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a>
-- <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a>
-- <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a>
+*   <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a>
+*   <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a>
+*   <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a>

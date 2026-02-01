@@ -1,5 +1,4 @@
 # Storage Backends
-
 Implementation details of local and S3 storage backends.
 
 ## Storage Interface
@@ -31,9 +30,9 @@ type NarStore interface {
 
 **Implementation:**
 
-- Files stored directly on filesystem
-- Simple directory structure
-- Atomic writes using temp files
+*   Files stored directly on filesystem
+*   Simple directory structure
+*   Atomic writes using temp files
 
 **Directory Structure:**
 
@@ -49,14 +48,14 @@ type NarStore interface {
 
 **Pros:**
 
-- Fast (local I/O)
-- Simple implementation
-- No external dependencies
+*   Fast (local I/O)
+*   Simple implementation
+*   No external dependencies
 
 **Cons:**
 
-- Not suitable for HA
-- Limited to single server
+*   Not suitable for HA
+*   Limited to single server
 
 ## S3-Compatible Backend
 
@@ -64,9 +63,9 @@ type NarStore interface {
 
 **Implementation:**
 
-- Uses MinIO Go SDK
-- Supports all S3-compatible services
-- Concurrent-safe
+*   Uses MinIO Go SDK
+*   Supports all S3-compatible services
+*   Concurrent-safe
 
 **Object Structure:**
 
@@ -79,17 +78,17 @@ s3://bucket/
 
 **Pros:**
 
-- Scalable
-- Redundant See <a class="reference-link" href="Storage%20Backends/S3%20Storage%20Implementation.md">S3 Storage Implementation</a> for detailed implementation.
+*   Scalable
+*   Redundant See <a class="reference-link" href="Storage%20Backends/S3%20Storage%20Implementation.md">S3 Storage Implementation</a> for detailed implementation.
 
 **Cons:**
 
-- Network latency
-- Requires S3 service
+*   Network latency
+*   Requires S3 service
 
 **Implementation Details:** See <a class="reference-link" href="Storage%20Backends/S3%20Storage%20Implementation.md">S3 Storage Implementation</a> for detailed implementation.
 
 ## Related Documentation
 
-- [Storage Configuration](../../User%20Guide/Configuration/Storage.md) - Configure storage
-- <a class="reference-link" href="Components.md">Components</a> - All components
+*   [Storage Configuration](../../User%20Guide/Configuration/Storage.md) - Configure storage
+*   <a class="reference-link" href="Components.md">Components</a> - All components

@@ -1,15 +1,14 @@
 # Docker
-
 ## Docker Installation
 
 Install and run ncps using Docker. This is the simplest installation method, perfect for testing and single-instance deployments.
 
 ## Prerequisites
 
-- Docker installed (version 20.10 or later)
-- Basic familiarity with Docker commands
-- 2GB+ available disk space
-- Network access to upstream caches
+*   Docker installed (version 20.10 or later)
+*   Basic familiarity with Docker commands
+*   2GB+ available disk space
+*   Network access to upstream caches
 
 ## Step 1: Pull the Image
 
@@ -22,9 +21,9 @@ docker pull ghcr.io/kalbasit/ncps
 
 **Available tags:**
 
-- `latest` - Latest stable release
-- `vX.Y.Z` - Specific version (recommended for production)
-- See [Docker Hub](https://hub.docker.com/r/kalbasit/ncps) or [GitHub packages](https://github.com/kalbasit/ncps/pkgs/container/ncps) for all tags
+*   `latest` - Latest stable release
+*   `vX.Y.Z` - Specific version (recommended for production)
+*   See [Docker Hub](https://hub.docker.com/r/kalbasit/ncps) or [GitHub packages](https://github.com/kalbasit/ncps/pkgs/container/ncps) for all tags
 
 ### Step 2: Initialize Storage and Database
 
@@ -47,10 +46,10 @@ docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
 
 **What this does:**
 
-- Creates a Docker volume for persistent storage
-- Sets up the directory structure
-- **Sets ownership to UID 1000** (ncps user in the container)
-- Runs database migrations to create required tables
+*   Creates a Docker volume for persistent storage
+*   Sets up the directory structure
+*   **Sets ownership to UID 1000** (ncps user in the container)
+*   Runs database migrations to create required tables
 
 **Important:** The ncps Docker container runs as a non-root user (`ncps`, UID 1000, GID 1000) for security. All storage directories must be owned by UID 1000 for the container to access them.
 
@@ -77,11 +76,11 @@ docker run -d \
 
 **Flags explained:**
 
-- `-d` - Run in detached mode (background)
-- `--name ncps` - Container name for easy reference
-- `-p 8501:8501` - Expose port 8501
-- `-v ncps-storage:/storage` - Mount persistent volume
-- `--restart unless-stopped` - Auto-restart on failures
+*   `-d` - Run in detached mode (background)
+*   `--name ncps` - Container name for easy reference
+*   `-p 8501:8501` - Expose port 8501
+*   `-v ncps-storage:/storage` - Mount persistent volume
+*   `--restart unless-stopped` - Auto-restart on failures
 
 ### Step 4: Verify Installation
 
@@ -101,9 +100,9 @@ curl http://localhost:8501/pubkey
 
 **Expected output:**
 
-- Container status: "Up"
-- Cache info: JSON with StoreDir, Priority, etc.
-- Public key: `your-ncps-hostname:base64encodedkey`
+*   Container status: "Up"
+*   Cache info: JSON with StoreDir, Priority, etc.
+*   Public key: `your-ncps-hostname:base64encodedkey`
 
 ## Using S3 Storage
 
@@ -241,9 +240,9 @@ docker logs ncps
 
 **Common causes:**
 
-- Missing required flags (--cache-hostname, storage, database, upstream)
-- Database not initialized (missing migration step)
-- Invalid configuration
+*   Missing required flags (--cache-hostname, storage, database, upstream)
+*   Database not initialized (missing migration step)
+*   Invalid configuration
 
 ### Can't Access [http://localhost:8501](http://localhost:8501)
 
@@ -290,14 +289,14 @@ See the <a class="reference-link" href="../Operations/Troubleshooting.md">Troub
 
 ## Next Steps
 
-1. <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients to use your cache
-1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Enable Prometheus metrics
-1. <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more options
-1. **Consider** <a class="reference-link" href="Docker%20Compose.md">Docker Compose</a> - For easier management
+1.  <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients to use your cache
+2.  <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Enable Prometheus metrics
+3.  <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more options
+4.  **Consider** <a class="reference-link" href="Docker%20Compose.md">Docker Compose</a> - For easier management
 
 ## Related Documentation
 
-- <a class="reference-link" href="Docker%20Compose.md">Docker Compose</a> - Automated Docker setup
-- <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
-- <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Local vs S3 storage
-- <a class="reference-link" href="../Operations.md">Operations</a> - Monitoring, backup, and maintenance
+*   <a class="reference-link" href="Docker%20Compose.md">Docker Compose</a> - Automated Docker setup
+*   <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
+*   <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Local vs S3 storage
+*   <a class="reference-link" href="../Operations.md">Operations</a> - Monitoring, backup, and maintenance

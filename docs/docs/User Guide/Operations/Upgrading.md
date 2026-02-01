@@ -1,5 +1,4 @@
 # Upgrading
-
 ## Upgrading Guide
 
 Upgrade ncps to newer versions.
@@ -73,9 +72,9 @@ spec:
 
 Database schema migrations run automatically on startup. Ensure:
 
-1. Backup database before upgrading
-1. Migrations complete successfully (check logs)
-1. All instances use same database schema version
+1.  Backup database before upgrading
+2.  Migrations complete successfully (check logs)
+3.  All instances use same database schema version
 
 ### NarInfo Migration
 
@@ -83,18 +82,18 @@ When upgrading from versions before database-backed narinfo metadata, you have t
 
 **Option 1: Background Migration (Recommended)**
 
-- Continue normal operation
-- NarInfo migrated automatically on access
-- Zero downtime
-- Gradual migration over time
-- No manual intervention required
+*   Continue normal operation
+*   NarInfo migrated automatically on access
+*   Zero downtime
+*   Gradual migration over time
+*   No manual intervention required
 
 **Option 2: Explicit CLI Migration**
 
-- Faster bulk migration
-- Use during maintenance window
-- Deletion from storage (saves space)
-- Progress monitoring and metrics with OpenTelemetry
+*   Faster bulk migration
+*   Use during maintenance window
+*   Deletion from storage (saves space)
+*   Progress monitoring and metrics with OpenTelemetry
 
 **Example CLI migration:**
 
@@ -144,5 +143,5 @@ helm rollback ncps -n ncps
 
 ## Related Documentation
 
-- <a class="reference-link" href="../Installation.md">Installation</a> - Installation methods
-- <a class="reference-link" href="../Deployment.md">Deployment</a> - Deployment strategies
+*   <a class="reference-link" href="../Installation.md">Installation</a> - Installation methods
+*   <a class="reference-link" href="../Deployment.md">Deployment</a> - Deployment strategies

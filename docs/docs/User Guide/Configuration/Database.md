@@ -1,5 +1,4 @@
 # Database
-
 ## Database Configuration
 
 Configure ncps database backends: SQLite, PostgreSQL, or MySQL/MariaDB.
@@ -8,9 +7,9 @@ Configure ncps database backends: SQLite, PostgreSQL, or MySQL/MariaDB.
 
 ncps supports three database backends for storing metadata (NarInfo, cache statistics, etc.):
 
-- **SQLite**: Embedded database, no external dependencies
-- **PostgreSQL**: Production-ready, concurrent access support
-- **MySQL/MariaDB**: Production-ready, concurrent access support
+*   **SQLite**: Embedded database, no external dependencies
+*   **PostgreSQL**: Production-ready, concurrent access support
+*   **MySQL/MariaDB**: Production-ready, concurrent access support
 
 ## Quick Comparison
 
@@ -25,13 +24,13 @@ ncps supports three database backends for storing metadata (NarInfo, cache stati
 
 ## Next Steps
 
-1. [Storage Configuration](Storage.md) - Configure storage backend
-1. [Configuration Reference](Reference.md) - All database options
-1. <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - PostgreSQL/MySQL for HA
-1. [Operations Guide](../Operations/Backup%20Restore.md) - Backup strategies
+1.  [Storage Configuration](Storage.md) - Configure storage backend
+2.  [Configuration Reference](Reference.md) - All database options
+3.  <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - PostgreSQL/MySQL for HA
+4.  [Operations Guide](../Operations/Backup%20Restore.md) - Backup strategies
 
 ## Related Documentation
 
-- [Configuration Reference](Reference.md) - All configuration options
-- [High Availability Guide](../Deployment/High%20Availability.md) - HA database setup
-- [Backup and Restore Guide](../Operations/Backup%20Restore.md) - Backup strategies
+*   [Configuration Reference](Reference.md) - All configuration options
+*   [High Availability Guide](../Deployment/High%20Availability.md) - HA database setup
+*   [Backup and Restore Guide](../Operations/Backup%20Restore.md) - Backup strategies

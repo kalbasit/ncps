@@ -1,5 +1,4 @@
 # Testing
-
 ## Testing Guide
 
 Testing procedures and integration test setup.
@@ -39,12 +38,12 @@ eval "$(disable-integration-tests)"
 
 **Available helpers:**
 
-- `enable-s3-tests` - S3/MinIO tests
-- `enable-postgres-tests` - PostgreSQL tests
-- `enable-mysql-tests` - MySQL tests
-- `enable-redis-tests` - Redis lock tests
-- `enable-integration-tests` - All integration tests
-- `disable-integration-tests` - Disable all
+*   `enable-s3-tests` - S3/MinIO tests
+*   `enable-postgres-tests` - PostgreSQL tests
+*   `enable-mysql-tests` - MySQL tests
+*   `enable-redis-tests` - Redis lock tests
+*   `enable-integration-tests` - All integration tests
+*   `disable-integration-tests` - Disable all
 
 ### CI/CD Testing
 
@@ -56,9 +55,9 @@ nix flake check
 
 This automatically:
 
-1. Starts all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
-1. Runs all tests including integration tests
-1. Stops all services
+1.  Starts all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
+2.  Runs all tests including integration tests
+3.  Stops all services
 
 ## Test Structure
 
@@ -116,11 +115,11 @@ golangci-lint run path/to/file.go
 
 **Key linters:**
 
-- err113 - Error handling
-- exhaustive - Switch exhaustiveness
-- gosec - Security
-- paralleltest - Parallel testing
-- testpackage - Test package naming
+*   err113 - Error handling
+*   exhaustive - Switch exhaustiveness
+*   gosec - Security
+*   paralleltest - Parallel testing
+*   testpackage - Test package naming
 
 ## Code Formatting
 
@@ -153,5 +152,5 @@ go tool cover -html=coverage.out
 
 ## Related Documentation
 
-- <a class="reference-link" href="Contributing.md">Contributing</a> - Contribution guidelines
-- <a class="reference-link" href="../Developer%20Guide.md">Developer Guide</a> - Development environment guide
+*   <a class="reference-link" href="Contributing.md">Contributing</a> - Contribution guidelines
+*   <a class="reference-link" href="../Developer%20Guide.md">Developer Guide</a> - Development environment guide

@@ -1,19 +1,18 @@
 # S3-Compatible Storage
-
 ### When to Use
 
-- **High availability deployments**: Multiple ncps instances
-- **Cloud-native setups**: Leveraging cloud infrastructure
-- **Scalability**: Need storage independent of server resources
-- **Redundancy**: Built-in durability and replication
+*   **High availability deployments**: Multiple ncps instances
+*   **Cloud-native setups**: Leveraging cloud infrastructure
+*   **Scalability**: Need storage independent of server resources
+*   **Redundancy**: Built-in durability and replication
 
 ### Supported Providers
 
-- AWS S3
-- MinIO (self-hosted)
-- DigitalOcean Spaces
-- Backblaze B2
-- Any S3-compatible service
+*   AWS S3
+*   MinIO (self-hosted)
+*   DigitalOcean Spaces
+*   Backblaze B2
+*   Any S3-compatible service
 
 ### Configuration
 
@@ -80,18 +79,18 @@ cache:
 
 | Option | Required | Description | Default |
 | --- | --- | --- | --- |
-| `bucket` | Yes | S3 bucket name | - |
-| `endpoint` | Yes | S3 endpoint URL with scheme (e.g., `https://s3.amazonaws.com`) | - |
+| `bucket` | Yes | S3 bucket name | \-  |
+| `endpoint` | Yes | S3 endpoint URL with scheme (e.g., `https://s3.amazonaws.com`) | \-  |
 | `region` | Yes | AWS region or any value for MinIO | `us-east-1` |
-| `access-key-id` | Yes | S3 access key ID | - |
-| `secret-access-key` | Yes | S3 secret access key | - |
-| `force-path-style` | No | Use path-style URLs (required for MinIO) | `false` |
+| `access-key-id` | Yes | S3 access key ID | \-  |
+| `secret-access-key` | Yes | S3 secret access key | \-  |
+| `force-path-style` | No  | Use path-style URLs (required for MinIO) | `false` |
 
 **Endpoint Scheme Requirement:**
 
-- The endpoint **must** include a scheme (`https://` or `http://`)
-- Examples: `https://s3.amazonaws.com`, `http://minio:9000`
-- The scheme determines whether SSL/TLS is used
+*   The endpoint **must** include a scheme (`https://` or `http://`)
+*   Examples: `https://s3.amazonaws.com`, `http://minio:9000`
+*   The scheme determines whether SSL/TLS is used
 
 ### S3 Bucket Setup
 
@@ -163,17 +162,17 @@ s3://ncps-cache/
 
 **Pros:**
 
-- Scalable (independent of server resources)
-- Durable (built-in redundancy)
-- Multi-instance support (required for HA)
-- Geographic replication options
+*   Scalable (independent of server resources)
+*   Durable (built-in redundancy)
+*   Multi-instance support (required for HA)
+*   Geographic replication options
 
 **Cons:**
 
-- Network latency overhead
-- Potential costs (AWS S3)
-- Requires S3 service setup
-- More complex configuration
+*   Network latency overhead
+*   Potential costs (AWS S3)
+*   Requires S3 service setup
+*   More complex configuration
 
 ### Security Best Practices
 
@@ -202,11 +201,11 @@ s3://ncps-cache/
 
 **Encryption:**
 
-- Enable server-side encryption (SSE-S3 or SSE-KMS)
-- Use TLS for data in transit (`--cache-storage-s3-use-ssl=true`)
+*   Enable server-side encryption (SSE-S3 or SSE-KMS)
+*   Use TLS for data in transit (`--cache-storage-s3-use-ssl=true`)
 
 **Access Control:**
 
-- Use least-privilege IAM policies
-- Enable bucket versioning for recovery
-- Consider bucket lifecycle policies for cost optimization
+*   Use least-privilege IAM policies
+*   Enable bucket versioning for recovery
+*   Consider bucket lifecycle policies for cost optimization

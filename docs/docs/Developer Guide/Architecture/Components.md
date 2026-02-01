@@ -1,5 +1,4 @@
 # Components
-
 Detailed breakdown of ncps system components.
 
 ## HTTP Server (pkg/server/)
@@ -8,33 +7,33 @@ Detailed breakdown of ncps system components.
 
 **Responsibilities:**
 
-- Handle HTTP requests
-- Route requests to handlers
-- Serve static files (pubkey, nix-cache-info)
-- Middleware (logging, metrics, tracing)
+*   Handle HTTP requests
+*   Route requests to handlers
+*   Serve static files (pubkey, nix-cache-info)
+*   Middleware (logging, metrics, tracing)
 
 **Key Endpoints:**
 
-- `GET /pubkey` - Public key
-- `GET /nix-cache-info` - Cache metadata
-- `GET /<hash>.narinfo` - Package metadata
-- `GET /nar/<path>` - Package archive
-- `GET /metrics` - Prometheus metrics (if enabled)
+*   `GET /pubkey` - Public key
+*   `GET /nix-cache-info` - Cache metadata
+*   `GET /<hash>.narinfo` - Package metadata
+*   `GET /nar/<path>` - Package archive
+*   `GET /metrics` - Prometheus metrics (if enabled)
 
 ## Cache Layer (pkg/cache/)
 
 **Responsibilities:**
 
-- Check if package exists in cache
-- Fetch from upstream if not cached
-- Sign NarInfo files
-- Coordinate downloads (HA mode)
+*   Check if package exists in cache
+*   Fetch from upstream if not cached
+*   Sign NarInfo files
+*   Coordinate downloads (HA mode)
 
 **Key Functions:**
 
-- `GetNarInfo()` - Get package metadata
-- `GetNar()` - Get package archive
-- `DownloadAndCache()` - Fetch from upstream
+*   `GetNarInfo()` - Get package metadata
+*   `GetNar()` - Get package archive
+*   `DownloadAndCache()` - Fetch from upstream
 
 ## Storage Backends (pkg/storage/)
 
@@ -42,14 +41,14 @@ Detailed breakdown of ncps system components.
 
 **Implementations:**
 
-- **Local** (`storage/local/`) - Filesystem storage
-- **S3** (`storage/s3/`) - S3-compatible storage
+*   **Local** (`storage/local/`) - Filesystem storage
+*   **S3** (`storage/s3/`) - S3-compatible storage
 
 **Responsibilities:**
 
-- Store and retrieve NAR files
-- Store and retrieve NarInfo files
-- Store secret keys
+*   Store and retrieve NAR files
+*   Store and retrieve NarInfo files
+*   Store secret keys
 
 ## Database Backends (pkg/database/)
 
@@ -57,47 +56,47 @@ Detailed breakdown of ncps system components.
 
 **Implementations:**
 
-- **SQLite** (`database/sqlitedb/`)
-- **PostgreSQL** (`database/postgresdb/`)
-- **MySQL** (`database/mysqldb/`)
+*   **SQLite** (`database/sqlitedb/`)
+*   **PostgreSQL** (`database/postgresdb/`)
+*   **MySQL** (`database/mysqldb/`)
 
 **Schema:** `db/schema.sql` **Queries:** `db/query.*.sql`
 
 **Responsibilities:**
 
-- Store NarInfo metadata
-- Track cache size
-- Store download state
+*   Store NarInfo metadata
+*   Track cache size
+*   Store download state
 
 ## Lock Manager (pkg/lock/)
 
 **Implementations:**
 
-- **Local** (`lock/local/`) - In-process locks (sync.Mutex, sync.RWMutex)
-- **Redis** (`lock/redis/`) - Distributed locks (Redlock algorithm)
-- **PostgreSQL** (`lock/postgres/`) - Distributed locks (PostgreSQL advisory locks)
+*   **Local** (`lock/local/`) - In-process locks (sync.Mutex, sync.RWMutex)
+*   **Redis** (`lock/redis/`) - Distributed locks (Redlock algorithm)
+*   **PostgreSQL** (`lock/postgres/`) - Distributed locks (PostgreSQL advisory locks)
 
 **Responsibilities:**
 
-- Coordinate downloads (prevent duplicates)
-- Coordinate LRU cleanup
-- Handle lock retries
-- Provide both exclusive and shared (read-write) locking
+*   Coordinate downloads (prevent duplicates)
+*   Coordinate LRU cleanup
+*   Handle lock retries
+*   Provide both exclusive and shared (read-write) locking
 
 **Lock Types:**
 
-- `Locker` - Exclusive locks only (Lock/Unlock/TryLock)
-- `RWLocker` - Read-write locks (Lock/Unlock/RLock/RUnlock)
-  - PostgreSQL: True shared read locks via `pg_advisory_lock_shared()`
-  - Redis: True shared read locks via Redis hash sets
+*   `Locker` - Exclusive locks only (Lock/Unlock/TryLock)
+*   `RWLocker` - Read-write locks (Lock/Unlock/RLock/RUnlock)
+    *   PostgreSQL: True shared read locks via `pg_advisory_lock_shared()`
+    *   Redis: True shared read locks via Redis hash sets
 
 ## NAR Handler (pkg/nar/)
 
 **Responsibilities:**
 
-- Parse NAR format
-- Handle compression (xz, zstd)
-- Extract metadata
+*   Parse NAR format
+*   Handle compression (xz, zstd)
+*   Extract metadata
 
 ## Component Interaction
 
@@ -115,6 +114,6 @@ Response
 
 ## Related Documentation
 
-- <a class="reference-link" href="Storage%20Backends.md">Storage Backends</a> - Storage details
-- <a class="reference-link" href="Request%20Flow.md">Request Flow</a> - Request processing
-- <a class="reference-link" href="../../Developer%20Guide.md">Developer Guide</a> - Code structure
+*   <a class="reference-link" href="Storage%20Backends.md">Storage Backends</a> - Storage details
+*   <a class="reference-link" href="Request%20Flow.md">Request Flow</a> - Request processing
+*   <a class="reference-link" href="../../Developer%20Guide.md">Developer Guide</a> - Code structure
