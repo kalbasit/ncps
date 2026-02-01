@@ -45,12 +45,12 @@ cache:
 
 ### Parameters
 
-| Flag | Environment Variable | Default | Description |
-| --- | --- | --- | --- |
-| `--cache-cdc-enabled` | `CACHE_CDC_ENABLED` | `false` | Enable CDC for deduplication. |
-| `--cache-cdc-min` | `CACHE_CDC_MIN` | `65536` | Minimum chunk size in bytes. |
-| `--cache-cdc-avg` | `CACHE_CDC_AVG` | `262144` | Average (target) chunk size in bytes. |
-| `--cache-cdc-max` | `CACHE_CDC_MAX` | `1048576` | Maximum chunk size in bytes. |
+| Flag                | Description                           | Environment Variable  | Default          |
+| ------------------- | ------------------------------------- | --------------------- | ---------------- |
+| `--cache-cdc-enabled` | Enable CDC for deduplication          | `CACHE_CDC_ENABLED`   | `false`          |
+| `--cache-cdc-min`     | Minimum chunk size in bytes           | `CACHE_CDC_MIN`       | `65536` (64KB)   |
+| `--cache-cdc-avg`     | Average (target) chunk size in bytes  | `CACHE_CDC_AVG`       | `262144` (256KB) |
+| `--cache-cdc-max`     | Maximum chunk size in bytes           | `CACHE_CDC_MAX`       | `1048576` (1MB)  |
 
 ## Storage Considerations
 
