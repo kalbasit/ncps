@@ -98,6 +98,37 @@ INFO migration completed found=10000 processed=10000 succeeded=9880 failed=13 du
 - **skipped**: NARs already present in the chunk store.
 - **rate**: NARs processed per second.
 
+## Monitoring and Metrics
+
+When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports metrics that can be used for monitoring and dashboarding.
+
+### Available Metrics
+
+- `ncps_migration_narinfos_total{migration_type="nar-to-chunks",operation,result}` - Total NARs processed.
+- `ncps_migration_duration_seconds{migration_type="nar-to-chunks",operation}` - Duration of chunking operations.
+- `ncps_migration_batch_size{migration_type="nar-to-chunks"}` - Total number of NARs found for migration.
+
+### Example PromQL Queries
+
+**Migration throughput:**
+
+```
+rate(ncps_migration_narinfos_total{migration_type="nar-to-chunks"}[5m])
+```
+
+**Migration success rate:**
+
+```
+sum(rate(ncps_migration_narinfos_total{migration_type="nar-to-chunks",result="success"}[5m]))
+/ sum(rate(ncps_migration_narinfos_total{migration_type="nar-to-chunks"}[5m]))
+```
+
+**Migration duration (p99):**
+
+```
+histogram_quantile(0.99, ncps_migration_duration_seconds{migration_type="nar-to-chunks"})
+```
+
 ## Verification
 
 ### Check Storage Usage
@@ -108,7 +139,7 @@ You should see a decrease in total storage usage (sum of `nar/` and `chunks/` di
 
 You can check the `nar_chunks` table to see the mapping:
 
-```
+```mariadb
 SELECT count(DISTINCT nar_id) FROM nar_chunks;
 ```
 

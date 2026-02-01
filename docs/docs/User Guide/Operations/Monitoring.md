@@ -36,15 +36,12 @@ Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/O
 
 **Migration Metrics:**
 
-- `ncps_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during migration.
-  - `migration_type`: "narinfo-to-db"
-  - `operation`: "migrate" or "delete"
-  - `result`: "success", "failure", or "skipped"
-- `ncps_migration_duration_seconds{migration_type,operation}` - Migration operation duration histogram
-  - `migration_type`: "narinfo-to-db"
-  - `operation`: "migrate" or "delete"
-- `ncps_migration_batch_size{migration_type}` - Migration batch size histogram
-  - `migration_type`: "narinfo-to-db"
+- `ncps_migration_objects_total{migration_type,operation,result}` - Objects migrated
+  - Labels: `migration_type` (narinfo-to-db/nar-to-chunks), `operation` (migrate/delete), `result` (success/failure/skipped)
+- `ncps_migration_duration_seconds{migration_type,operation}` - Migration operation duration
+  - Labels: `migration_type` (narinfo-to-db/nar-to-chunks), `operation` (migrate/delete)
+- `ncps_migration_batch_size{migration_type}` - Migration batch sizes
+  - Label: `migration_type` (narinfo-to-db/nar-to-chunks)
 
 **Background Migration Metrics:**
 
@@ -102,24 +99,24 @@ rate(ncps_lock_acquisitions_total{result="success"}[5m])
 **Migration throughput:**
 
 ```
-rate(ncps_migration_narinfos_total[5m])
+rate(ncps_migration_objects_total{migration_type="narinfo-to-db"}[5m])
 ```
 
 **Migration success rate:**
 
 ```
-sum(rate(ncps_migration_narinfos_total{result="success"}[5m]))
-/ sum(rate(ncps_migration_narinfos_total[5m]))
+sum(rate(ncps_migration_objects_total{migration_type="narinfo-to-db",result="success"}[5m]))
+/ sum(rate(ncps_migration_objects_total{migration_type="narinfo-to-db"}[5m]))
 ```
 
 **Migration duration (p50, p99):**
 
 ```
 # Median
-histogram_quantile(0.5, ncps_migration_duration_seconds)
+histogram_quantile(0.5, ncps_migration_duration_seconds{migration_type="narinfo-to-db"})
 
 # 99th percentile
-histogram_quantile(0.99, ncps_migration_duration_seconds)
+histogram_quantile(0.99, ncps_migration_duration_seconds{migration_type="narinfo-to-db"})
 ```
 
 ## Alerting

@@ -208,45 +208,35 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 du
 - **failed**: Errors during migration
 - **rate**: Narinfos processed per second
 
-### OpenTelemetry
+## Monitoring and Metrics
 
-Migration metrics can be exported to an OpenTelemetry collector:
+When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports metrics that can be used for monitoring and dashboarding.
 
-```sh
-ncps migrate-narinfo \
-  --otel-enabled \
-  --otel-grpc-url="http://otel-collector:4317" \
-  ...
-```
+### Available Metrics
 
-If OpenTelemetry is enabled, monitor via metrics:
+- `ncps_migration_objects_total{migration_type="narinfo-to-db",operation,result}` - Total NarInfos processed.
+- `ncps_migration_duration_seconds{migration_type="narinfo-to-db",operation}` - Duration of database migration operations.
+- `ncps_migration_batch_size{migration_type="narinfo-to-db"}` - Total number of NarInfos found for migration.
 
-**ncps_migration_objects_total**
+### Example PromQL Queries
 
-```
-# Total migrations
-sum(ncps_migration_objects_total{migration_type="narinfo-to-db"})
-
-# Success rate
-sum(rate(ncps_migration_objects_total{migration_type="narinfo-to-db", result="success"}[5m])) /
-sum(rate(ncps_migration_objects_total{migration_type="narinfo-to-db"}[5m]))
-```
-
-**ncps_migration_duration_seconds**
+**Migration throughput:**
 
 ```
-# Average migration time
-histogram_quantile(0.5, ncps_migration_duration_seconds)
-
-# 99th percentile
-histogram_quantile(0.99, ncps_migration_duration_seconds)
+rate(ncps_migration_objects_total{migration_type="narinfo-to-db"}[5m])
 ```
 
-**ncps_migration_batch_size**
+**Migration success rate:**
 
 ```
-# Batch sizes
-histogram_quantile(0.5, ncps_migration_batch_size)
+sum(rate(ncps_migration_objects_total{migration_type="narinfo-to-db",result="success"}[5m]))
+/ sum(rate(ncps_migration_objects_total{migration_type="narinfo-to-db"}[5m]))
+```
+
+**Migration duration (p99):**
+
+```
+histogram_quantile(0.99, ncps_migration_duration_seconds{migration_type="narinfo-to-db"})
 ```
 
 ## Verification
@@ -268,7 +258,7 @@ mysql -u ncps -p ncps -e "SELECT COUNT(*) FROM narinfos WHERE url IS NOT NULL;"
 
 **Query unmigrated count:**
 
-```
+```mariadb
 SELECT COUNT(*) FROM narinfos WHERE url IS NULL;
 ```
 
