@@ -3882,12 +3882,14 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 	defer os.Remove(tempPath)
 
 	if _, err := io.Copy(f, rc); err != nil {
-		f.Close()
+		_ = f.Close() // Best effort close on error path
 
 		return fmt.Errorf("error copying nar to temp file: %w", err)
 	}
 
-	f.Close()
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing temp file: %w", err)
+	}
 
 	// 4. Store using CDC logic
 	// storeNarWithCDC handles chunking, storing chunks, and DB updates.
