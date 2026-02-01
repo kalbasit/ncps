@@ -14,7 +14,6 @@ sql:
           - column: nar_files.file_size
             go_type: uint64
           - column: chunks.size
-          - column: chunks.size
             go_type: uint32
           - column: chunks.ref_count
             go_type: int32
@@ -36,7 +35,6 @@ sql:
         overrides:
           - column: nar_files.file_size
             go_type: uint64
-          - column: chunks.size
           - column: chunks.size
             go_type: uint32
           - column: chunks.ref_count
