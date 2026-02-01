@@ -744,7 +744,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			WithContext(ctx)
 
 		hasNarInStore := c.narStore.HasNar(ctx, narURL)
-		hasNarInChunks, _ := c.hasNarInChunks(ctx, narURL)
+		hasNarInChunks, _ := c.HasNarInChunks(ctx, narURL)
 
 		if hasNarInStore || hasNarInChunks {
 			metricAttrs = append(metricAttrs,
@@ -794,7 +794,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		ds.mu.Unlock()
 
 		hasNarInStore = c.narStore.HasNar(ctx, narURL)
-		hasNarInChunks, _ = c.hasNarInChunks(ctx, narURL)
+		hasNarInChunks, _ = c.HasNarInChunks(ctx, narURL)
 
 		// If download is complete or NAR is in store, get from storage
 		if !canStream || hasNarInStore || hasNarInChunks {
@@ -3743,7 +3743,8 @@ func parseValidHash(hash sql.NullString, fieldName string) (*nixhash.HashWithEnc
 	return h, nil
 }
 
-func (c *Cache) hasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error) {
+// HasNarInChunks returns true if the NAR is already in chunks.
+func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error) {
 	var count int64
 
 	err := c.withTransaction(ctx, "hasNarInChunks", func(qtx database.Querier) error {
@@ -3876,7 +3877,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 	}
 
 	// 1. Check if already chunked
-	hasChunks, err := c.hasNarInChunks(ctx, narURL)
+	hasChunks, err := c.HasNarInChunks(ctx, narURL)
 	if err != nil {
 		return err
 	}

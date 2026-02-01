@@ -903,9 +903,14 @@ func createCache(
 		return nil, err
 	}
 
+	hostName := cmd.String("cache-hostname")
+	if hostName == "" {
+		hostName = "localhost"
+	}
+
 	c, err := cache.New(
 		ctx,
-		cmd.String("cache-hostname"),
+		hostName,
 		db,
 		configStore,
 		narInfoStore,
