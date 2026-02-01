@@ -127,6 +127,9 @@ config:
 
   database:
     type: sqlite
+
+  cdc:
+    enabled: true
 ```
 
 ### Single Instance with S3 Storage
@@ -433,6 +436,20 @@ config:
       maxDelay: "2s"
       jitter: true
     allowDegradedMode: false  # Continue without Redis if connection fails
+```
+
+## CDC Configuration (Experimental)
+
+Content-Defined Chunking (CDC) for deduplication:
+
+```yaml
+config:
+  cdc:
+    enabled: true
+    # Optional: Tune chunk sizes
+    min: 65536
+    avg: 262144
+    max: 1048576
 ```
 
 ## Upstream Cache Configuration

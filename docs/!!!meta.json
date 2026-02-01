@@ -669,6 +669,13 @@
                             "value": "user-guide",
                             "isInheritable": false,
                             "position": 370
+                        },
+                        {
+                            "type": "relation",
+                            "name": "internalLink",
+                            "value": "3KmyOKL2lhmq",
+                            "isInheritable": false,
+                            "position": 380
                         }
                     ],
                     "format": "markdown",
@@ -1182,6 +1189,13 @@
                                             "value": "reference",
                                             "isInheritable": false,
                                             "position": 70
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "3KmyOKL2lhmq",
+                                            "isInheritable": false,
+                                            "position": 80
                                         }
                                     ],
                                     "format": "markdown",
@@ -3035,6 +3049,47 @@
                                     ],
                                     "format": "markdown",
                                     "dataFileName": "Client Setup.md",
+                                    "attachments": []
+                                }
+                            ]
+                        },
+                        {
+                            "isClone": false,
+                            "noteId": "MOpVLDkI8rwp",
+                            "notePath": [
+                                "C3Wj5rq7ksjn",
+                                "0RC0xXheV6Ng",
+                                "MOpVLDkI8rwp"
+                            ],
+                            "title": "Features",
+                            "notePosition": 80,
+                            "prefix": null,
+                            "isExpanded": false,
+                            "type": "text",
+                            "mime": "text/html",
+                            "attributes": [],
+                            "format": "markdown",
+                            "attachments": [],
+                            "dirFileName": "Features",
+                            "children": [
+                                {
+                                    "isClone": false,
+                                    "noteId": "3KmyOKL2lhmq",
+                                    "notePath": [
+                                        "C3Wj5rq7ksjn",
+                                        "0RC0xXheV6Ng",
+                                        "MOpVLDkI8rwp",
+                                        "3KmyOKL2lhmq"
+                                    ],
+                                    "title": "CDC",
+                                    "notePosition": 10,
+                                    "prefix": null,
+                                    "isExpanded": false,
+                                    "type": "text",
+                                    "mime": "text/html",
+                                    "attributes": [],
+                                    "format": "markdown",
+                                    "dataFileName": "CDC.md",
                                     "attachments": []
                                 }
                             ]
