@@ -1,8 +1,9 @@
-# Content-Defined Chunking (CDC)
+# CDC
+
+## Content-Defined Chunking (CDC)
 
 > [!CAUTION]
-> **EXPERIMENTAL FEATURE**
-> Content-Defined Chunking is currently an experimental feature and may undergo significant changes in future releases. Use with caution in production environments.
+> **EXPERIMENTAL FEATURE** Content-Defined Chunking is currently an experimental feature and may undergo significant changes in future releases. Use with caution in production environments.
 
 ## Overview
 
@@ -45,12 +46,12 @@ cache:
 
 ### Parameters
 
-| Flag                | Description                           | Environment Variable  | Default          |
-| ------------------- | ------------------------------------- | --------------------- | ---------------- |
-| `--cache-cdc-enabled` | Enable CDC for deduplication          | `CACHE_CDC_ENABLED`   | `false`          |
-| `--cache-cdc-min`     | Minimum chunk size in bytes           | `CACHE_CDC_MIN`       | `65536` (64KB)   |
-| `--cache-cdc-avg`     | Average (target) chunk size in bytes  | `CACHE_CDC_AVG`       | `262144` (256KB) |
-| `--cache-cdc-max`     | Maximum chunk size in bytes           | `CACHE_CDC_MAX`       | `1048576` (1MB)  |
+| Flag | Description | Environment Variable | Default |
+| --- | --- | --- | --- |
+| `--cache-cdc-enabled` | Enable CDC for deduplication | `CACHE_CDC_ENABLED` | `false` |
+| `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | `65536` (64KB) |
+| `--cache-cdc-avg` | Average (target) chunk size in bytes | `CACHE_CDC_AVG` | `262144` (256KB) |
+| `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | `1048576` (1MB) |
 
 ## Storage Considerations
 
