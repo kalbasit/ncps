@@ -36,17 +36,25 @@ Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/O
 
 **Migration Metrics:**
 
-- `ncps_migration_objects_total{operation,result}` - Total number of objects processed during migration.
-- `ncps_migration_duration_seconds{operation}` - Migration operation duration
-  - Label: `operation` (migrate/delete)
-- `ncps_migration_batch_size` - Migration batch sizes
+- `ncps_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during migration.
+  - `migration_type`: "narinfo-to-db"
+  - `operation`: "migrate" or "delete"
+  - `result`: "success", "failure", or "skipped"
+- `ncps_migration_duration_seconds{migration_type,operation}` - Migration operation duration histogram
+  - `migration_type`: "narinfo-to-db"
+  - `operation`: "migrate" or "delete"
+- `ncps_migration_batch_size{migration_type}` - Migration batch size histogram
+  - `migration_type`: "narinfo-to-db"
 
 **Background Migration Metrics:**
 
-- `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfos migrated
-  - Labels: `operation` (migrate/delete), `result` (success/failure)
-- `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration
-  - Label: `operation` (migrate/delete)
+- `ncps_background_migration_objects_total{migration_type,operation,result}` - Background object migration operations
+  - `migration_type`: "narinfo-to-db"
+  - `operation`: "migrate" or "delete"
+  - `result`: "success" or "failure"
+- `ncps_background_migration_duration_seconds{migration_type,operation}` - Background migration operation duration histogram
+  - `migration_type`: "narinfo-to-db"
+  - `operation`: "migrate" or "delete"
 
 ## Prometheus Configuration
 
