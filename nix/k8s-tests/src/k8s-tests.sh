@@ -38,6 +38,7 @@ COMMANDS:
 
     generate [OPTIONS]      Generate test values files
         --push              Build and push image to local registry
+        --last              Reuse the most recently built/used image tag
         <tag> [reg] [repo]  Use external image (tag required, registry and repo optional)
 
     install [name]          Install test deployments (all or specific)
@@ -98,6 +99,7 @@ cmd_cluster() {
 # Generate test values files
 cmd_generate() {
   local build_and_push=false
+  local use_last=false
   local image_tag=""
   local image_registry="127.0.0.1:30000"
   local image_repository="ncps"
@@ -107,6 +109,10 @@ cmd_generate() {
     case "$1" in
       --push)
         build_and_push=true
+        shift
+        ;;
+      --last)
+        use_last=true
         shift
         ;;
       *)
@@ -125,6 +131,17 @@ cmd_generate() {
     esac
   done
 
+  # Handle --last flag
+  if [ "$use_last" = true ]; then
+    if [ -f "$TEST_VALUES_DIR/.last_tag" ]; then
+      image_tag=$(cat "$TEST_VALUES_DIR/.last_tag")
+      echo "⏮️  Reusing last image tag: ${image_tag}"
+    else
+      echo "❌ Error: no last tag found (run with --push or provide tag first)" >&2
+      exit 1
+    fi
+  fi
+
   # Build and push image if requested
   if [ "$build_and_push" = true ]; then
     echo "🔨 Building Docker image with Nix..."
@@ -135,12 +152,24 @@ cmd_generate() {
     fi
 
     echo "📦 Loading image into Docker..."
-    docker load < "$build_output"
+    # Capture output to find the loaded image name/tag
+    local load_output
+    if ! load_output=$(docker load < "$build_output"); then
+      echo "❌ Error: failed to load Docker image" >&2
+      exit 1
+    fi
+    echo "$load_output"
 
-    # Extract image name and tag from Nix build
-    # The image will be tagged as 127.0.0.1:30000/ncps:<sha>-<platform>
+    # Extract image name and tag from "Loaded image: ..." line
+    # The image will be tagged as 127.0.0.1:30000/ncps:<sha>-<platform> or similar
     local nix_image
-    nix_image=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "ncps" | head -1)
+    nix_image=$(echo "$load_output" | grep "Loaded image:" | sed 's/Loaded image: //')
+
+    if [ -z "$nix_image" ]; then
+      echo "❌ Error: could not determine loaded image name" >&2
+      exit 1
+    fi
+
     echo "Nix built image: $nix_image"
 
     # Extract tag from nix image
@@ -150,6 +179,8 @@ cmd_generate() {
 
     echo "📤 Pushing image to local registry..."
     local full_image="${image_registry}/${image_repository}:${image_tag}"
+
+    # Use docker-daemon source since we just loaded it there
     if ! skopeo --insecure-policy copy --dest-tls-verify=false "docker-daemon:${nix_image}" "docker://${full_image}"; then
       echo "❌ Error: failed to push image to registry" >&2
       exit 1
@@ -160,9 +191,13 @@ cmd_generate() {
 
   # Validate image tag
   if [ -z "$image_tag" ]; then
-    echo "❌ Error: image tag required (use --push or provide tag)" >&2
+    echo "❌ Error: image tag required (use --push, --last, or provide tag)" >&2
     exit 1
   fi
+
+  # Save tag for --last
+  mkdir -p "$TEST_VALUES_DIR"
+  echo "$image_tag" > "$TEST_VALUES_DIR/.last_tag"
 
   # Get cluster credentials
   echo "🔍 Querying cluster credentials..."
