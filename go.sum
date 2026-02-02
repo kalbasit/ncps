@@ -71,6 +71,8 @@ github.com/kalbasit/fastcdc v0.0.0-20260131190350-f0cfa58cffb3 h1:wjZX1b7jvLYVqj
 github.com/kalbasit/fastcdc v0.0.0-20260131190350-f0cfa58cffb3/go.mod h1:bbJjMstqw68vd0OVfKdw9xwiaAwAfOOHuHJoA9lKy0g=
 github.com/kalbasit/fastcdc v0.0.0-20260201003606-a4400537806f h1:zbjivqwpMD2gwEjJIhv5ntSwa//CB/KkbNZWVpnd134=
 github.com/kalbasit/fastcdc v0.0.0-20260201003606-a4400537806f/go.mod h1:bbJjMstqw68vd0OVfKdw9xwiaAwAfOOHuHJoA9lKy0g=
+github.com/kalbasit/fastcdc v0.0.0-20260201062559-b91691b7c180 h1:aexLvpx+pSh4EmA6IZ46TpERPQpu/9VKMBpPEa5Z0tk=
+github.com/kalbasit/fastcdc v0.0.0-20260201062559-b91691b7c180/go.mod h1:bbJjMstqw68vd0OVfKdw9xwiaAwAfOOHuHJoA9lKy0g=
 github.com/klauspost/compress v1.18.3 h1:9PJRvfbmTabkOX8moIpXPbMMbYN60bWImDDU7L+/6zw=
 github.com/klauspost/compress v1.18.3/go.mod h1:R0h/fSBs8DE4ENlcrlib3PsXS61voFxhIs2DeRhCvJ4=
 github.com/klauspost/cpuid/v2 v2.0.1/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
