@@ -19,6 +19,9 @@ const (
 	// Migration operation constants for metrics.
 	MigrationOperationMigrate = "migrate"
 	MigrationOperationDelete  = "delete"
+
+	// Migration type constants for metrics.
+	MigrationTypeNarInfoToDB = "narinfo-to-db"
 )
 
 var (
@@ -46,8 +49,8 @@ func init() {
 
 	migrationNarInfosTotal, err = meterMigration.Int64Counter(
 		"ncps_migration_narinfos_total",
-		metric.WithDescription("Total number of narinfos processed during migration"),
-		metric.WithUnit("{narinfo}"),
+		metric.WithDescription("Total number of objects processed during migration"),
+		metric.WithUnit("{object}"),
 	)
 	if err != nil {
 		panic(err)
@@ -64,8 +67,8 @@ func init() {
 
 	migrationBatchSize, err = meterMigration.Int64Histogram(
 		"ncps_migration_batch_size",
-		metric.WithDescription("Number of narinfos in each migration batch"),
-		metric.WithUnit("{narinfo}"),
+		metric.WithDescription("Number of objects in each migration batch"),
+		metric.WithUnit("{object}"),
 	)
 	if err != nil {
 		panic(err)

@@ -135,7 +135,7 @@ var (
 
 	// Background migration metrics
 	//nolint:gochecknoglobals
-	backgroundMigrationNarInfosTotal metric.Int64Counter
+	backgroundMigrationObjectsTotal metric.Int64Counter
 
 	//nolint:gochecknoglobals
 	backgroundMigrationDuration metric.Float64Histogram
@@ -287,10 +287,10 @@ func init() {
 		panic(err)
 	}
 
-	backgroundMigrationNarInfosTotal, err = meter.Int64Counter(
-		"ncps_background_migration_narinfos_total",
-		metric.WithDescription("Total number of narinfos processed during background migration"),
-		metric.WithUnit("{narinfo}"),
+	backgroundMigrationObjectsTotal, err = meter.Int64Counter(
+		"ncps_background_migration_objects_total",
+		metric.WithDescription("Total number of objects processed during background migration"),
+		metric.WithUnit("{object}"),
 	)
 	if err != nil {
 		panic(err)
@@ -298,7 +298,7 @@ func init() {
 
 	backgroundMigrationDuration, err = meter.Float64Histogram(
 		"ncps_background_migration_duration_seconds",
-		metric.WithDescription("Duration of background narinfo migration operations"),
+		metric.WithDescription("Duration of background object migration operations"),
 		metric.WithUnit("s"),
 	)
 	if err != nil {
@@ -2581,14 +2581,16 @@ func MigrateNarInfo(
 	if err != nil {
 		log.Error().Err(err).Msg("failed to migrate narinfo to database")
 
-		backgroundMigrationNarInfosTotal.Add(ctx, 1,
+		backgroundMigrationObjectsTotal.Add(ctx, 1,
 			metric.WithAttributes(
+				attribute.String("migration_type", "narinfo-to-db"),
 				attribute.String("operation", migrationOperationMigrate),
 				attribute.String("result", migrationResultFailure),
 			),
 		)
 		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(
+				attribute.String("migration_type", "narinfo-to-db"),
 				attribute.String("operation", migrationOperationMigrate),
 			),
 		)
@@ -2598,14 +2600,16 @@ func MigrateNarInfo(
 
 	log.Debug().Dur("duration", time.Since(opStartTime)).Msg("successfully migrated narinfo to database")
 
-	backgroundMigrationNarInfosTotal.Add(ctx, 1,
+	backgroundMigrationObjectsTotal.Add(ctx, 1,
 		metric.WithAttributes(
+			attribute.String("migration_type", "narinfo-to-db"),
 			attribute.String("operation", migrationOperationMigrate),
 			attribute.String("result", migrationResultSuccess),
 		),
 	)
 	backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 		metric.WithAttributes(
+			attribute.String("migration_type", "narinfo-to-db"),
 			attribute.String("operation", migrationOperationMigrate),
 		),
 	)
@@ -2616,8 +2620,9 @@ func MigrateNarInfo(
 
 		if err := narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
 			log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
-			backgroundMigrationNarInfosTotal.Add(ctx, 1,
+			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
+					attribute.String("migration_type", "narinfo-to-db"),
 					attribute.String("operation", migrationOperationDelete),
 					attribute.String("result", migrationResultFailure),
 				),
@@ -2625,8 +2630,9 @@ func MigrateNarInfo(
 			// Don't return error - migration succeeded, only cleanup failed
 		} else {
 			log.Debug().Msg("deleted narinfo from storage after successful migration")
-			backgroundMigrationNarInfosTotal.Add(ctx, 1,
+			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
+					attribute.String("migration_type", "narinfo-to-db"),
 					attribute.String("operation", migrationOperationDelete),
 					attribute.String("result", migrationResultSuccess),
 				),
@@ -2635,6 +2641,7 @@ func MigrateNarInfo(
 
 		backgroundMigrationDuration.Record(ctx, time.Since(deleteStartTime).Seconds(),
 			metric.WithAttributes(
+				attribute.String("migration_type", "narinfo-to-db"),
 				attribute.String("operation", migrationOperationDelete),
 			),
 		)
