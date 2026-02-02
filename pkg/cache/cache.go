@@ -48,6 +48,9 @@ const (
 	// Migration result constants for metrics.
 	migrationResultSuccess = "success"
 	migrationResultFailure = "failure"
+
+	// Migration type constants for metrics.
+	migrationTypeNarInfoToDB = "narinfo-to-db"
 )
 
 // narInfoJobKey returns the key used for tracking narinfo download jobs.
@@ -2583,14 +2586,14 @@ func MigrateNarInfo(
 
 		backgroundMigrationObjectsTotal.Add(ctx, 1,
 			metric.WithAttributes(
-				attribute.String("migration_type", "narinfo-to-db"),
+				attribute.String("migration_type", migrationTypeNarInfoToDB),
 				attribute.String("operation", migrationOperationMigrate),
 				attribute.String("result", migrationResultFailure),
 			),
 		)
 		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(
-				attribute.String("migration_type", "narinfo-to-db"),
+				attribute.String("migration_type", migrationTypeNarInfoToDB),
 				attribute.String("operation", migrationOperationMigrate),
 			),
 		)
@@ -2602,14 +2605,14 @@ func MigrateNarInfo(
 
 	backgroundMigrationObjectsTotal.Add(ctx, 1,
 		metric.WithAttributes(
-			attribute.String("migration_type", "narinfo-to-db"),
+			attribute.String("migration_type", migrationTypeNarInfoToDB),
 			attribute.String("operation", migrationOperationMigrate),
 			attribute.String("result", migrationResultSuccess),
 		),
 	)
 	backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 		metric.WithAttributes(
-			attribute.String("migration_type", "narinfo-to-db"),
+			attribute.String("migration_type", migrationTypeNarInfoToDB),
 			attribute.String("operation", migrationOperationMigrate),
 		),
 	)
@@ -2622,7 +2625,7 @@ func MigrateNarInfo(
 			log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
 			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
-					attribute.String("migration_type", "narinfo-to-db"),
+					attribute.String("migration_type", migrationTypeNarInfoToDB),
 					attribute.String("operation", migrationOperationDelete),
 					attribute.String("result", migrationResultFailure),
 				),
@@ -2632,7 +2635,7 @@ func MigrateNarInfo(
 			log.Debug().Msg("deleted narinfo from storage after successful migration")
 			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
-					attribute.String("migration_type", "narinfo-to-db"),
+					attribute.String("migration_type", migrationTypeNarInfoToDB),
 					attribute.String("operation", migrationOperationDelete),
 					attribute.String("result", migrationResultSuccess),
 				),
@@ -2641,7 +2644,7 @@ func MigrateNarInfo(
 
 		backgroundMigrationDuration.Record(ctx, time.Since(deleteStartTime).Seconds(),
 			metric.WithAttributes(
-				attribute.String("migration_type", "narinfo-to-db"),
+				attribute.String("migration_type", migrationTypeNarInfoToDB),
 				attribute.String("operation", migrationOperationDelete),
 			),
 		)
