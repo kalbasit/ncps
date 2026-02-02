@@ -9,18 +9,6 @@
     {
       devShells.default = pkgs.mkShell {
         buildInputs = [
-          # python environment for dev-scripts/test-deployments.py
-          (pkgs.python3.withPackages (
-            ps: with ps; [
-              boto3
-              kubernetes
-              psycopg2-binary
-              pymysql
-              pyyaml
-              requests
-            ]
-          ))
-
           # the postgres dump contains \restrict and \unrestrict commands that
           # contain a randomly generated string that are noisy to git commands;
           # Strip them.

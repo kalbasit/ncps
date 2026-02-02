@@ -479,9 +479,9 @@ generate_test_script() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Delegate to test-deployments.py
-python3 "$(git rev-parse --show-toplevel)/dev-scripts/test-deployments.py" \
-  "$SCRIPT_DIR/test-config.yaml" "$@"
+  # Delegate to test-deployments executable
+  "${TEST_DEPLOYMENTS_EXE}" \
+    "$SCRIPT_DIR/test-config.yaml" "$@"
 TEST_EOF
 
   chmod +x "$TEST_VALUES_DIR/TEST.sh"
