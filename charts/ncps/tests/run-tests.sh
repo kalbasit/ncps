@@ -98,6 +98,17 @@ echo "Negative Tests (should fail):"
 run_negative_tests
 
 echo ""
+echo "Custom Tests:"
+if OUTPUT=$("${SCRIPT_DIR}/verify-cdc-formatting.sh" 2>&1); then
+    echo "  ✓ verify-cdc-formatting.sh"
+    PASSED=$((PASSED+1))
+else
+    echo "  ✗ verify-cdc-formatting.sh"
+    echo "${OUTPUT}" | sed 's/^/    /'
+    FAILED=$((FAILED+1))
+fi
+
+echo ""
 echo "=== Test Summary ==="
 echo "Passed: ${PASSED}"
 echo "Failed: ${FAILED}"
