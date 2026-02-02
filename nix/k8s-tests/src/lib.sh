@@ -354,45 +354,28 @@ parse_cluster_info() {
   # Parse the cluster info into a JSON structure
   # The cluster.sh info command outputs key=value pairs
 
-  # Extract values using grep and awk
-  local s3_bucket=$(echo "$cluster_output" | grep "S3_BUCKET=" | cut -d'=' -f2)
-  local s3_endpoint=$(echo "$cluster_output" | grep "S3_ENDPOINT=" | cut -d'=' -f2)
-  local s3_access_key=$(echo "$cluster_output" | grep "S3_ACCESS_KEY=" | cut -d'=' -f2)
-  local s3_secret_key=$(echo "$cluster_output" | grep "S3_SECRET_KEY=" | cut -d'=' -f2)
-
-  local pg_host=$(echo "$cluster_output" | grep "POSTGRESQL_HOST=" | cut -d'=' -f2)
-  local pg_port=$(echo "$cluster_output" | grep "POSTGRESQL_PORT=" | cut -d'=' -f2)
-  local pg_db=$(echo "$cluster_output" | grep "POSTGRESQL_DB=" | cut -d'=' -f2)
-  local pg_user=$(echo "$cluster_output" | grep "POSTGRESQL_USER=" | cut -d'=' -f2)
-  local pg_pass=$(echo "$cluster_output" | grep "POSTGRESQL_PASS=" | cut -d'=' -f2)
-
-  local maria_host=$(echo "$cluster_output" | grep "MARIADB_HOST=" | cut -d'=' -f2)
-  local maria_port=$(echo "$cluster_output" | grep "MARIADB_PORT=" | cut -d'=' -f2)
-  local maria_db=$(echo "$cluster_output" | grep "MARIADB_DB=" | cut -d'=' -f2)
-  local maria_user=$(echo "$cluster_output" | grep "MARIADB_USER=" | cut -d'=' -f2)
-  local maria_pass=$(echo "$cluster_output" | grep "MARIADB_PASS=" | cut -d'=' -f2)
-
-  local redis_host=$(echo "$cluster_output" | grep "REDIS_HOST=" | cut -d'=' -f2)
-  local redis_port=$(echo "$cluster_output" | grep "REDIS_PORT=" | cut -d'=' -f2)
+  # Extract values by evaluating the output
+  # The input is expected to be in KEY=VALUE format
+  eval "$cluster_output"
 
   # Output as JSON
   jq -n \
-    --arg s3_bucket "$s3_bucket" \
-    --arg s3_endpoint "$s3_endpoint" \
-    --arg s3_access_key "$s3_access_key" \
-    --arg s3_secret_key "$s3_secret_key" \
-    --arg pg_host "$pg_host" \
-    --arg pg_port "$pg_port" \
-    --arg pg_db "$pg_db" \
-    --arg pg_user "$pg_user" \
-    --arg pg_pass "$pg_pass" \
-    --arg maria_host "$maria_host" \
-    --arg maria_port "$maria_port" \
-    --arg maria_db "$maria_db" \
-    --arg maria_user "$maria_user" \
-    --arg maria_pass "$maria_pass" \
-    --arg redis_host "$redis_host" \
-    --arg redis_port "$redis_port" \
+    --arg s3_bucket "${S3_BUCKET:-}" \
+    --arg s3_endpoint "${S3_ENDPOINT:-}" \
+    --arg s3_access_key "${S3_ACCESS_KEY:-}" \
+    --arg s3_secret_key "${S3_SECRET_KEY:-}" \
+    --arg pg_host "${POSTGRESQL_HOST:-}" \
+    --arg pg_port "${POSTGRESQL_PORT:-}" \
+    --arg pg_db "${POSTGRESQL_DB:-}" \
+    --arg pg_user "${POSTGRESQL_USER:-}" \
+    --arg pg_pass "${POSTGRESQL_PASS:-}" \
+    --arg maria_host "${MARIADB_HOST:-}" \
+    --arg maria_port "${MARIADB_PORT:-}" \
+    --arg maria_db "${MARIADB_DB:-}" \
+    --arg maria_user "${MARIADB_USER:-}" \
+    --arg maria_pass "${MARIADB_PASS:-}" \
+    --arg redis_host "${REDIS_HOST:-}" \
+    --arg redis_port "${REDIS_PORT:-}" \
     '{
       s3: {
         bucket: $s3_bucket,

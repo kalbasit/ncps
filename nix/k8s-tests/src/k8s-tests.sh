@@ -167,7 +167,7 @@ cmd_generate() {
   # Get cluster credentials
   echo "🔍 Querying cluster credentials..."
   local cluster_output
-  if ! cluster_output=$("$CLUSTER_SCRIPT" info); then
+  if ! cluster_output=$("$CLUSTER_SCRIPT" env); then
     echo "❌ Error: failed to get cluster info (is cluster running?)" >&2
     exit 1
   fi
@@ -202,7 +202,7 @@ cmd_generate() {
     render_values_file "$perm_json" "$cluster_json" "$image_registry" "$image_repository" "$image_tag" \
       > "$TEST_VALUES_DIR/${name}.yaml"
 
-    ((count++))
+    count=$((count + 1))
   done < <(echo "$permutations_json" | jq -c '.[]')
 
   echo "✅ Generated $count values files"

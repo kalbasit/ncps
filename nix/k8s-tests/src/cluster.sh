@@ -58,8 +58,8 @@ wait_for_pods() {
     fi
 }
 
-# Extract and display connection information
-show_info() {
+# Fetch cluster credentials and set variables
+get_credentials() {
     if ! kind get clusters 2>/dev/null | grep -q "^$CLUSTER_NAME$"; then
         echo "❌ Error: Cluster '$CLUSTER_NAME' does not exist." >&2
         echo "Run './dev-scripts/k8s-cluster.sh create' first." >&2
@@ -69,22 +69,47 @@ show_info() {
     # Switch to cluster context
     kubectl config use-context "kind-$CLUSTER_NAME" >/dev/null
 
-    # Extract credentials
-    local MINIO_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
+    # S3 Credentials
+    S3_ENDPOINT="http://minio.minio.svc.cluster.local:9000"
+    S3_BUCKET="ncps-bucket"
+    S3_ACCESS_KEY="ncps-access-key"
+    S3_SECRET_KEY="ncps-secret-key"
 
-    local PG_PASS=""
+    # PostgreSQL Credentials
+    POSTGRESQL_HOST="pg17-ncps-rw.data.svc.cluster.local"
+    POSTGRESQL_PORT="5432"
+    POSTGRESQL_DB="ncps"
+    POSTGRESQL_USER="ncps"
+    POSTGRESQL_PASS=""
     if kubectl get secret -n data pg17-ncps-app >/dev/null 2>&1; then
-        PG_PASS=$(kubectl get secret -n data pg17-ncps-app -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
+        POSTGRESQL_PASS=$(kubectl get secret -n data pg17-ncps-app -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
     fi
 
-    local MARIA_PASS=""
+    # MariaDB Credentials
+    MARIADB_HOST="mariadb-ncps.data.svc.cluster.local"
+    MARIADB_PORT="3306"
+    MARIADB_DB="ncps"
+    MARIADB_USER="ncps"
+    MARIADB_PASS=""
     if kubectl get secret -n data mariadb-ncps-password >/dev/null 2>&1; then
-        MARIA_PASS=$(kubectl get secret -n data mariadb-ncps-password -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
+        MARIADB_PASS=$(kubectl get secret -n data mariadb-ncps-password -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
     fi
+
+    # Redis Credentials
+    REDIS_HOST="redis-ncps.data.svc.cluster.local"
+    REDIS_PORT="6379"
+    REDIS_PASS=""
+    if kubectl get secret -n data redis-ncps >/dev/null 2>&1; then
+        REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
+    fi
+}
+
+# Extract and display connection information
+show_info() {
+    get_credentials
 
     local REDIS_AUTH_MSG="Password: <none> (No Auth)"
-    if kubectl get secret -n data redis-ncps >/dev/null 2>&1; then
-        local REDIS_PASS=$(kubectl get secret -n data redis-ncps -o jsonpath="{.data.password}" 2>/dev/null | base64 -d)
+    if [ -n "$REDIS_PASS" ]; then
         REDIS_AUTH_MSG="Password: $REDIS_PASS"
     fi
 
@@ -102,32 +127,57 @@ show_info() {
     echo "  Pull: docker pull 127.0.0.1:30000/ncps:tag"
     echo ""
     echo "--- 🪣 S3 (MinIO) ---"
-    echo "  Endpoint: $MINIO_ENDPOINT"
-    echo "  Bucket:   ncps-bucket"
-    echo "  Access:   ncps-access-key"
-    echo "  Secret:   ncps-secret-key"
+    echo "  Endpoint: $S3_ENDPOINT"
+    echo "  Bucket:   $S3_BUCKET"
+    echo "  Access:   $S3_ACCESS_KEY"
+    echo "  Secret:   $S3_SECRET_KEY"
     echo "  Port forward: kubectl port-forward -n minio svc/minio 9000:9000"
     echo ""
     echo "--- 🐘 PostgreSQL 17 ---"
-    echo "  Host: pg17-ncps-rw.data.svc.cluster.local"
-    echo "  Port: 5432"
-    echo "  User: ncps"
-    echo "  Pass: $PG_PASS"
-    echo "  DB:   ncps"
+    echo "  Host: $POSTGRESQL_HOST"
+    echo "  Port: $POSTGRESQL_PORT"
+    echo "  User: $POSTGRESQL_USER"
+    echo "  Pass: $POSTGRESQL_PASS"
+    echo "  DB:   $POSTGRESQL_DB"
     echo ""
     echo "--- 🐬 MariaDB ---"
-    echo "  Host: mariadb-ncps.data.svc.cluster.local"
-    echo "  Port: 3306"
-    echo "  User: ncps"
-    echo "  Pass: $MARIA_PASS"
-    echo "  DB:   ncps"
+    echo "  Host: $MARIADB_HOST"
+    echo "  Port: $MARIADB_PORT"
+    echo "  User: $MARIADB_USER"
+    echo "  Pass: $MARIADB_PASS"
+    echo "  DB:   $MARIADB_DB"
     echo ""
     echo "--- 🔺 Redis ---"
-    echo "  Host: redis-ncps.data.svc.cluster.local"
-    echo "  Port: 6379"
+    echo "  Host: $REDIS_HOST"
+    echo "  Port: $REDIS_PORT"
     echo "  $REDIS_AUTH_MSG"
     echo "========================================================"
     echo ""
+}
+
+# Output environment variables for automation
+show_env() {
+    get_credentials
+
+    cat <<EOF
+S3_ENDPOINT=$S3_ENDPOINT
+S3_BUCKET=$S3_BUCKET
+S3_ACCESS_KEY=$S3_ACCESS_KEY
+S3_SECRET_KEY=$S3_SECRET_KEY
+POSTGRESQL_HOST=$POSTGRESQL_HOST
+POSTGRESQL_PORT=$POSTGRESQL_PORT
+POSTGRESQL_DB=$POSTGRESQL_DB
+POSTGRESQL_USER=$POSTGRESQL_USER
+POSTGRESQL_PASS=$POSTGRESQL_PASS
+MARIADB_HOST=$MARIADB_HOST
+MARIADB_PORT=$MARIADB_PORT
+MARIADB_DB=$MARIADB_DB
+MARIADB_USER=$MARIADB_USER
+MARIADB_PASS=$MARIADB_PASS
+REDIS_HOST=$REDIS_HOST
+REDIS_PORT=$REDIS_PORT
+REDIS_PASS=$REDIS_PASS
+EOF
 }
 
 # Destroy the cluster
@@ -153,6 +203,7 @@ Commands:
   create   - Create and configure the Kind cluster with all dependencies
   destroy  - Destroy the Kind cluster and all resources
   info     - Display connection information for the cluster
+  env      - Output environment variables for automation
   help     - Show this help message
 
 Examples:
@@ -484,6 +535,9 @@ case "${1:-}" in
         ;;
     info)
         show_info
+        ;;
+    env)
+        show_env
         ;;
     help|--help|-h|"")
         show_help
