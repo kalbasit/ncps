@@ -110,21 +110,21 @@ parse_cluster_info() {
       },
       postgresql: {
         host: $pg_host,
-        port: $pg_port,
+        port: ($pg_port | tonumber),
         database: $pg_db,
         username: $pg_user,
         password: $pg_pass
       },
       mariadb: {
         host: $maria_host,
-        port: $maria_port,
+        port: ($maria_port | tonumber),
         database: $maria_db,
         username: $maria_user,
         password: $maria_pass
       },
       redis: {
         host: $redis_host,
-        port: $redis_port
+        port: ($redis_port | tonumber)
       }
     }'
 }
