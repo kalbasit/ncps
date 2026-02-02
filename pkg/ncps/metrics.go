@@ -75,7 +75,7 @@ func init() {
 	}
 }
 
-// RecordMigrationObject records a object migration operation.
+// RecordMigrationObject records an object migration operation.
 // operation should be one of MigrationOperation* constants.
 // result should be one of MigrationResult* constants.
 func RecordMigrationObject(ctx context.Context, operation, result string) {
