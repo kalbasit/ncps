@@ -89,7 +89,7 @@ Note: Upstream health metrics are collected as part of analytics reporting. See 
 
 **Background Migration Metrics** (during on-the-fly migration):
 
-- `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfo migration operations
+- `ncps_background_migration_objects_total{operation,result}` - Background NarInfo migration operations
   - `operation`: "migrate" or "delete"
   - `result`: "success" or "failure"
 - `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration histogram
