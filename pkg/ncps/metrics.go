@@ -19,15 +19,18 @@ const (
 	// Migration operation constants for metrics.
 	MigrationOperationMigrate = "migrate"
 	MigrationOperationDelete  = "delete"
+
+	// Migration type constants for metrics.
+	MigrationTypeNarInfoToDB = "narinfo-to-db"
 )
 
 var (
 	//nolint:gochecknoglobals
 	meterMigration metric.Meter
 
-	// migrationNarInfosTotal tracks total narinfos processed during migration.
+	// migrationObjectsTotal tracks total objects processed during migration.
 	//nolint:gochecknoglobals
-	migrationNarInfosTotal metric.Int64Counter
+	migrationObjectsTotal metric.Int64Counter
 
 	// migrationDuration tracks the duration of migration operations.
 	//nolint:gochecknoglobals
@@ -44,10 +47,10 @@ func init() {
 
 	var err error
 
-	migrationNarInfosTotal, err = meterMigration.Int64Counter(
-		"ncps_migration_narinfos_total",
-		metric.WithDescription("Total number of narinfos processed during migration"),
-		metric.WithUnit("{narinfo}"),
+	migrationObjectsTotal, err = meterMigration.Int64Counter(
+		"ncps_migration_objects_total",
+		metric.WithDescription("Total number of objects processed during migration"),
+		metric.WithUnit("{object}"),
 	)
 	if err != nil {
 		panic(err)
@@ -64,24 +67,25 @@ func init() {
 
 	migrationBatchSize, err = meterMigration.Int64Histogram(
 		"ncps_migration_batch_size",
-		metric.WithDescription("Number of narinfos in each migration batch"),
-		metric.WithUnit("{narinfo}"),
+		metric.WithDescription("Number of objects in each migration batch"),
+		metric.WithUnit("{object}"),
 	)
 	if err != nil {
 		panic(err)
 	}
 }
 
-// RecordMigrationNarInfo records a narinfo migration operation.
+// RecordMigrationObject records an object migration operation.
 // operation should be one of MigrationOperation* constants.
 // result should be one of MigrationResult* constants.
-func RecordMigrationNarInfo(ctx context.Context, operation, result string) {
-	if migrationNarInfosTotal == nil {
+func RecordMigrationObject(ctx context.Context, operation, result string) {
+	if migrationObjectsTotal == nil {
 		return
 	}
 
-	migrationNarInfosTotal.Add(ctx, 1,
+	migrationObjectsTotal.Add(ctx, 1,
 		metric.WithAttributes(
+			attribute.String("migration_type", MigrationTypeNarInfoToDB),
 			attribute.String("operation", operation),
 			attribute.String("result", result),
 		),
@@ -98,6 +102,7 @@ func RecordMigrationDuration(ctx context.Context, operation string, duration flo
 
 	migrationDuration.Record(ctx, duration,
 		metric.WithAttributes(
+			attribute.String("migration_type", MigrationTypeNarInfoToDB),
 			attribute.String("operation", operation),
 		),
 	)
@@ -109,5 +114,6 @@ func RecordMigrationBatchSize(ctx context.Context, size int64) {
 		return
 	}
 
-	migrationBatchSize.Record(ctx, size)
+	migrationBatchSize.Record(ctx, size,
+		metric.WithAttributes(attribute.String("migration_type", MigrationTypeNarInfoToDB)))
 }
