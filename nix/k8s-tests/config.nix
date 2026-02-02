@@ -378,10 +378,10 @@
     narinfo_hashes = [
       "n5glp21rsz314qssw9fbvfswgy3kc68f"
       "3acqrvb06vw0w3s9fa3wci433snbi2bg"
-      "wkagr4l8nfpd6wvmfhk5d2rg0xfl9djz"
-      "9yxkwfg6p7md4vnsbhj3d1qg8xlb6ckz"
-      "7wkjhg4p9fd2wmvsbhk5d3rg0xlb7djz"
-      "5xkmhf9p6gd3wnvsbhj4d2qg9xlb8ekz"
+      "1q8w6gl1ll0mwfkqc3c2yx005s6wwfrl"
+      "jiwdym6f9w6v5jcbqf5wn7fmg11v5q0j"
+      "1gxz5nfzfnhyxjdyzi04r86sh61y4i00"
+      "6lwdzpbig6zz8678blcqr5f5q1caxjw2"
     ];
   };
 }
