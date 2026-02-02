@@ -562,25 +562,29 @@ class NCPSTester:
             )
             tables = [row[0] for row in cursor.fetchall()]
 
-            if "nar_files" not in tables:
+            cdc_enabled = deployment_config.get("cdc", False)
+            target_table = "chunks" if cdc_enabled else "nar_files"
+
+            if target_table not in tables:
                 conn.close()
                 return TestResult(
                     "Database",
                     False,
-                    "Expected tables not found",
+                    f"Expected table '{target_table}' not found",
                     details=f"Found tables: {tables}",
                 )
 
             # Count rows
-            cursor.execute("SELECT COUNT(*) FROM nar_files")
+            cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
             count = cursor.fetchone()[0]
 
             conn.close()
 
+            entry_type = "chunks" if cdc_enabled else "NAR entries"
             return TestResult(
                 "Database",
                 True,
-                f"PostgreSQL database accessible ({count} NAR entries)",
+                f"PostgreSQL database accessible ({count} {entry_type})",
             )
 
         except Exception as e:
@@ -636,23 +640,27 @@ class NCPSTester:
             cursor.execute("SHOW TABLES")
             tables = [row[0] for row in cursor.fetchall()]
 
-            if "nar_files" not in tables:
+            cdc_enabled = deployment_config.get("cdc", False)
+            target_table = "chunks" if cdc_enabled else "nar_files"
+
+            if target_table not in tables:
                 conn.close()
                 return TestResult(
                     "Database",
                     False,
-                    "Expected tables not found",
+                    f"Expected table '{target_table}' not found",
                     details=f"Found tables: {tables}",
                 )
 
             # Count rows
-            cursor.execute("SELECT COUNT(*) FROM nar_files")
+            cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
             count = cursor.fetchone()[0]
 
             conn.close()
 
+            entry_type = "chunks" if cdc_enabled else "NAR entries"
             return TestResult(
-                "Database", True, f"MySQL database accessible ({count} NAR entries)"
+                "Database", True, f"MySQL database accessible ({count} {entry_type})"
             )
 
         except Exception as e:
@@ -827,19 +835,49 @@ class NCPSTester:
             )
 
             bucket = s3_config["bucket"]
+            cdc_enabled = deployment_config.get("cdc", False)
 
-            # List objects with prefix
-            nar_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="nar/")
-            nar_count = nar_objects.get("KeyCount", 0)
+            if cdc_enabled:
+                # List chunks
+                # Chunks are stored in store/chunks/
+                chunk_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/chunks/")
+                chunk_count = chunk_objects.get("KeyCount", 0)
 
-            config_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="config/")
-            config_count = config_objects.get("KeyCount", 0)
+                if chunk_count == 0:
+                    return TestResult(
+                        "Storage",
+                        False,
+                        "No chunks found in S3 (prefix: store/chunks/)",
+                    )
 
-            return TestResult(
-                "Storage",
-                True,
-                f"S3 storage accessible ({nar_count} NAR objects, {config_count} config objects)",
-            )
+                return TestResult(
+                    "Storage",
+                    True,
+                    f"S3 storage accessible ({chunk_count} chunks found)",
+                )
+            else:
+                # List objects with prefix
+                # NARs are stored in store/nar/
+                nar_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/nar/")
+                nar_count = nar_objects.get("KeyCount", 0)
+
+                if nar_count == 0:
+                    return TestResult(
+                        "Storage",
+                        False,
+                        "No NAR objects found in S3 (prefix: store/nar/)",
+                    )
+
+                config_objects = s3_client.list_objects_v2(
+                    Bucket=bucket, Prefix="config/"
+                )
+                config_count = config_objects.get("KeyCount", 0)
+
+                return TestResult(
+                    "Storage",
+                    True,
+                    f"S3 storage accessible ({nar_count} NAR objects, {config_count} config objects)",
+                )
 
         except Exception as e:
             return TestResult("Storage", False, f"Error accessing S3: {e}")

@@ -498,6 +498,7 @@ EOF
       "  service_name: ncps-" + .name,
       "  replicas: " + (.replicas|tostring),
       "  mode: " + (if .replicas > 1 then "ha" else "single" end),
+      "  cdc: " + (if (.features | index("cdc")) then "true" else "false" end),
       "  database:",
       "    type: " + .database.type,
       (if .database.type == "sqlite" then "    path: " + .database.sqlite.path else empty end),
