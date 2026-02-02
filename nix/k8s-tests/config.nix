@@ -222,6 +222,7 @@
       name = "ha-s3-postgres";
       description = "High availability with S3 storage, PostgreSQL, and Redis locks";
       replicas = 2;
+      cdc.iLoveTimeouts = true;
       mode = "deployment";
       migration.mode = "job";
       storage = {
@@ -248,6 +249,7 @@
       name = "ha-s3-mariadb";
       description = "High availability with S3 storage, MariaDB, and Redis locks";
       replicas = 2;
+      cdc.iLoveTimeouts = true;
       mode = "deployment";
       migration.mode = "job";
       storage = {
@@ -274,6 +276,7 @@
       name = "ha-s3-postgres-lock";
       description = "High availability with S3 storage and PostgreSQL (using PostgreSQL advisory locks instead of Redis)";
       replicas = 2;
+      cdc.iLoveTimeouts = true;
       mode = "deployment";
       migration.mode = "job";
       storage = {
