@@ -499,7 +499,15 @@ class NCPSTester:
                     details=f"stderr: {result.stderr}\nstdout: {result.stdout}",
                 )
 
-            row_count = result.stdout.strip()
+            row_count = int(result.stdout.strip())
+
+            if row_count == 0:
+                return TestResult(
+                    "Database",
+                    False,
+                    f"SQLite database is empty (0 NAR entries)",
+                    details=f"stdout: {result.stdout}",
+                )
 
             return TestResult(
                 "Database",
@@ -581,6 +589,15 @@ class NCPSTester:
             conn.close()
 
             entry_type = "chunks" if cdc_enabled else "NAR entries"
+
+            if count == 0:
+                conn.close()
+                return TestResult(
+                    "Database",
+                    False,
+                    f"PostgreSQL database is empty (0 {entry_type})",
+                )
+
             return TestResult(
                 "Database",
                 True,
@@ -659,6 +676,15 @@ class NCPSTester:
             conn.close()
 
             entry_type = "chunks" if cdc_enabled else "NAR entries"
+
+            if count == 0:
+                conn.close()
+                return TestResult(
+                    "Database",
+                    False,
+                    f"MySQL database is empty (0 {entry_type})",
+                )
+
             return TestResult(
                 "Database", True, f"MySQL database accessible ({count} {entry_type})"
             )
@@ -703,7 +729,7 @@ class NCPSTester:
             target_storage_path = f"/proc/1/root{storage_path}"
 
             # Check storage directory structure using debug container
-            for subdir in ["config", "nar"]:
+            for subdir in ["store/nar", "store/narinfo"]:
                 result = subprocess.run(
                     [
                         "kubectl",
@@ -748,7 +774,7 @@ class NCPSTester:
                     "--",
                     "sh",
                     "-c",
-                    f"find {target_storage_path}/nar -type f 2>/dev/null | wc -l",
+                    f"find {target_storage_path}/store/nar -type f 2>/dev/null | wc -l",
                 ],
                 capture_output=True,
                 text=True,
@@ -763,7 +789,14 @@ class NCPSTester:
                     details=f"stderr: {result.stderr}",
                 )
 
-            file_count = result.stdout.strip()
+            file_count = int(result.stdout.strip())
+
+            if file_count == 0:
+                return TestResult(
+                    "Storage",
+                    False,
+                    f"Local storage is empty (0 NAR files in {storage_path})",
+                )
 
             return TestResult(
                 "Storage",
