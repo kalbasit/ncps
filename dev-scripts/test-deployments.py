@@ -279,7 +279,7 @@ class NCPSTester:
     def _test_http_endpoints(self, deployment_config: dict) -> TestResult:
         """Test HTTP endpoints via port-forward"""
         namespace = deployment_config["namespace"]
-        service_name = deployment_config["name"]
+        service_name = deployment_config.get("service_name", deployment_config["name"])
 
         # Start port-forward
         port_forward = None

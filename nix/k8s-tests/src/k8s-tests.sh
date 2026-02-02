@@ -495,6 +495,7 @@ EOF
       .[] |
       "- name: " + .name,
       "  namespace: ncps-" + .name,
+      "  service_name: ncps-" + .name,
       "  replicas: " + (.replicas|tostring),
       "  mode: " + (if .replicas > 1 then "ha" else "single" end),
       "  database:",
