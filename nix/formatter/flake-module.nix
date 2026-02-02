@@ -14,6 +14,7 @@
       ];
 
       programs = {
+        actionlint.enable = true;
         deadnix.enable = true;
         gofumpt.enable = true;
         mdformat.enable = true;

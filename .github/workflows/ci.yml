@@ -7,19 +7,132 @@ on:
     branches:
       - main
       - "release-*"
+  push:
+    branches:
+      - "main"
+      - "release-*"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 jobs:
-  flake:
-    uses: ./.github/workflows/flake.yml
+  filter:
+    runs-on: ubuntu-24.04
+    outputs:
+      database: ${{ steps.filter.outputs.database }}
+      docs: ${{ steps.filter.outputs.docs }}
+      go_deps: ${{ steps.filter.outputs.go_deps }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            database:
+              - "db/migrations/**"
+              - "db/query.*.sql"
+              - "sqlc.yml"
+              - "pkg/database/**"
+            go_deps:
+              - "go.mod"
+              - "go.sum"
+            docs:
+              - "docs/**"
+  generate:
+    needs: filter
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GHA_PAT_TOKEN }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v16
+        with:
+          name: ncps
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Update vendor hash
+        if: needs.filter.outputs.go_deps == 'true'
+        run: |
+          if nix build --print-build-logs .#ncps.goModules 2> /tmp/log; then
+            exit 0
+          fi
+
+          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
+          echo "hash=$hash"
+
+          if [[ -z "$hash" ]]; then
+            echo >@2 hash is empty
+            exit 1
+          fi
+
+          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps/default.nix
+
+          git diff
+      - uses: stefanzweifel/git-auto-commit-action@v7
+        if: needs.filter.outputs.go_deps == 'true'
+        with:
+          commit_message: "Auto Update Vendor Hash"
+      - name: Generate Database Code
+        if: needs.filter.outputs.database == 'true'
+        run: nix develop --command sqlc generate
+      - name: Generate Go Code
+        if: needs.filter.outputs.database == 'true'
+        run: nix develop --command go generate ./pkg/database
+      - name: Format Code
+        if: needs.filter.outputs.database == 'true'
+        run: nix fmt
+      - uses: stefanzweifel/git-auto-commit-action@v7
+        if: needs.filter.outputs.database == 'true'
+        with:
+          commit_message: "Auto Generate Database Code"
+  deploy-docs-pages:
     permissions:
-      id-token: "write"
-      contents: "read"
+      contents: read
+      pull-requests: write
+    needs: filter
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && needs.filter.outputs.docs == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v16
+        with:
+          name: ncps
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build docs
+        run: |
+          nix develop --command bash -c trilium-build-docs
+      - name: Deploy docs
+        id: deploy-docs-pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_NCPS_DEV_EDIT_WORKERS_TOKEN }}
+          accountId: ${{ secrets.CF_NCPS_DEV_ACCOUNT_ID }}
+          command: pages deploy public/docs --project-name=ncps-docs --commit-dirty=true
+      - name: Post Pages Deployment URL on the Pull Request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Pages deployed to ${{ steps.deploy-docs-pages.outputs.deployment-url }}`
+            })
+  build:
+    uses: ./.github/workflows/build.yml
     with:
       systems: "['x86_64-linux', 'aarch64-linux']"
+      images: kalbasit/ncps
+      dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
+      push_images: ${{ github.event.pull_request.head.repo.fork == false }}
     secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
+      dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
   helm-tests:
     runs-on: ubuntu-24.04
     steps:
@@ -30,12 +143,12 @@ jobs:
           version: "v3.16.3"
       - name: Run Helm validation tests
         run: ./charts/ncps/tests/run-tests.sh
-  docker:
-    uses: ./.github/workflows/docker.yml
-    with:
-      systems: "['x86_64-linux', 'aarch64-linux']"
-      images: kalbasit/ncps
-      username: ${{ vars.DOCKERHUB_USERNAME }}
-      push_images: ${{ github.event.pull_request.head.repo.fork == false }}
-    secrets:
-      password: ${{ secrets.DOCKERHUB_TOKEN }}
+  ci:
+    runs-on: ubuntu-24.04
+    needs:
+      - build
+      - deploy-docs-pages
+      - generate
+      - helm-tests
+    steps:
+      - run: echo "CI passed"
