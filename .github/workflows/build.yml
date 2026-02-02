@@ -1,29 +1,162 @@
-name: Docker images
+name: Run flake check then build and push Docker images
 permissions:
   contents: read
   packages: write
 on:
-  push:
-    branches:
-      - "main"
-      - "release-*"
+  workflow_call:
+    inputs:
+      systems:
+        description: "The systems for which to add support for. JSON-formatted string."
+        required: true
+        type: string
+      images:
+        description: "List of Docker images to use as base name for tags"
+        required: false
+        type: string
+      dockerhub_username:
+        description: "Username used to log against the Docker registry"
+        required: true
+        type: string
+      push_images:
+        description: "Should the job push the image to Dockerhub?"
+        required: true
+        type: boolean
+    secrets:
+      cachix_auth_token:
+        description: "Cachix auth token"
+        required: true
+      codecov_token:
+        description: "Codecov token"
+        required: true
+      dockerhub_token:
+        description: "Password or personal access token used to log against the Docker registry"
+        required: true
+    outputs:
+      tags:
+        description: "The generated Docker tags"
+        value: ${{ jobs.flake_check_and_build_docker_images.outputs.tags }}
+      labels:
+        description: "The generated Docker labels"
+        value: ${{ jobs.flake_check_and_build_docker_images.outputs.labels }}
 jobs:
-  flake:
-    uses: ./.github/workflows/flake.yml
-    permissions:
-      id-token: "write"
-      contents: "read"
-    with:
-      systems: "['x86_64-linux', 'aarch64-linux']"
-    secrets:
-      codecov_token: ${{ secrets.CODECOV_TOKEN }}
-  docker:
-    uses: ./.github/workflows/docker.yml
-    needs: flake
-    with:
-      systems: "['x86_64-linux', 'aarch64-linux']"
-      images: kalbasit/ncps
-      username: ${{ vars.DOCKERHUB_USERNAME }}
-      push_images: true
-    secrets:
-      password: ${{ secrets.DOCKERHUB_TOKEN }}
+  flake_check_and_build_docker_images:
+    strategy:
+      matrix:
+        system: ${{ fromJson(inputs.systems) }}
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/flake-checker-action@main
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v16
+        with:
+          name: ncps
+          authToken: ${{ secrets.cachix_auth_token }}
+      - name: Create version file
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "${{ github.ref_name }}" > nix/packages/ncps/version.txt
+          fi
+      - name: Flake check
+        id: flake-check
+        run: nix flake check -L
+      - name: Build coverage
+        id: build-coverage
+        if: github.event.pull_request.head.repo.fork == false
+        run: nix build .#ncps.coverage -L
+      - name: Upload coverage reports to Codecov
+        if: github.event.pull_request.head.repo.fork == false
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.codecov_token }}
+          files: result-coverage
+      - name: Build the docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix build -L .#packages.${{ matrix.system }}.docker
+      - name: Build the docker image pusher
+        if: inputs.push_images
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix build -L .#packages.${{ matrix.system }}.push-docker-image
+      - name: Login to Docker Hub
+        if: inputs.push_images
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.dockerhub_username }}
+          password: ${{ secrets.dockerhub_token }}
+      - name: Login to GitHub Container Registry
+        if: inputs.push_images
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker meta
+        if: inputs.push_images
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ inputs.images }}
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{raw}}
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=semver,pattern=v{{major}}
+            type=sha
+      - name: Push the docker image
+        if: inputs.push_images
+        env:
+          DOCKER_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./result/bin/push-docker-image
+    outputs:
+      labels: ${{ steps.meta.outputs.labels }}
+      tags: ${{ steps.meta.outputs.tags }}
+  docker-manifest:
+    if: inputs.push_images
+    runs-on: ubuntu-24.04
+    needs: flake_check_and_build_docker_images
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.dockerhub_username }}
+          password: ${{ secrets.dockerhub_token }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create a multi-architecture manifest
+        env:
+          DOCKER_IMAGE_TAGS: ${{ needs.flake_check_and_build_docker_images.outputs.tags }}
+          SYSTEMS: ${{ join(fromJson(inputs.systems), ',') }}
+        shell: bash
+        run: |
+          for tag in $DOCKER_IMAGE_TAGS; do
+            imgs=()
+            for system in $( echo "$SYSTEMS" | tr ',' ' ' ); do
+              imgs+=("$tag-$system")
+            done
+
+            docker manifest create "$tag" "${imgs[@]}"
+          done
+      - name: Push the docker image
+        env:
+          DOCKER_IMAGE_TAGS: ${{ needs.flake_check_and_build_docker_images.outputs.tags }}
+        shell: bash
+        run: |
+          for tag in $DOCKER_IMAGE_TAGS; do
+            docker manifest push "$tag"
+          done

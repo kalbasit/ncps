@@ -12,7 +12,7 @@
           version =
             let
               rev = self.rev or self.dirtyRev;
-              tag = builtins.getEnv "RELEASE_VERSION";
+              tag = lib.trim (builtins.readFile ./version.txt);
             in
             if tag != "" then tag else rev;
 
