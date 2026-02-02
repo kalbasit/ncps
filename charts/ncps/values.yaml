@@ -144,7 +144,7 @@ config:
     max: 1048576
 
     # Bypass flag for HA validation without CDC
-    # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
+    # Use with EXTREME CAUTION. Doing so may result in data corruption and inconsistency.
     # See https://github.com/kalbasit/ncps/issues/660 for more details.
     iLoveTimeouts: false
 
