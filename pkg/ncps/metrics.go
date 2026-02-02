@@ -85,6 +85,7 @@ func RecordMigrationObject(ctx context.Context, operation, result string) {
 
 	migrationObjectsTotal.Add(ctx, 1,
 		metric.WithAttributes(
+			attribute.String("migration_type", "narinfo-to-db"),
 			attribute.String("operation", operation),
 			attribute.String("result", result),
 		),
@@ -101,6 +102,7 @@ func RecordMigrationDuration(ctx context.Context, operation string, duration flo
 
 	migrationDuration.Record(ctx, duration,
 		metric.WithAttributes(
+			attribute.String("migration_type", "narinfo-to-db"),
 			attribute.String("operation", operation),
 		),
 	)
@@ -112,5 +114,6 @@ func RecordMigrationBatchSize(ctx context.Context, size int64) {
 		return
 	}
 
-	migrationBatchSize.Record(ctx, size)
+	migrationBatchSize.Record(ctx, size,
+		metric.WithAttributes(attribute.String("migration_type", "narinfo-to-db")))
 }
