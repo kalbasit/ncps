@@ -76,7 +76,7 @@ Your cache will be available at `http://localhost:8501`. See the [Quick Start Gu
 ## Deployment Modes
 
 - **Single-instance**: Simple deployment with local or S3 storage, SQLite or shared database
-- **High Availability**: Multiple instances with S3 storage, PostgreSQL/MySQL, and Redis for zero-downtime operation
+- **High Availability**: Multiple instances with S3 storage, PostgreSQL/MySQL, and Redis for zero-downtime operation. **Note: Must enable CDC.**
 
 See the [Deployment Guide](https://docs.ncps.dev/user-guide/deployment.html) for detailed setup instructions.
 

@@ -186,9 +186,15 @@ This function will fail the template rendering if invalid configurations are det
     {{- end -}}
   {{- end -}}
 
+
   {{- /* HA with initContainer migrations risks database corruption */ -}}
   {{- if and .Values.migration .Values.migration.enabled (eq .Values.migration.mode "initContainer") (gt (int .Values.replicaCount) 1) (not .Values.migration.iLoveCorruptedDatabases) -}}
     {{- fail "You should not enable migrations with mode 'initContainer' when running multiple replicas, you risk corrupting your database. Set migration.mode to 'job' or 'argocd' instead, or set migration.iLoveCorruptedDatabases to true if you know what you are doing." -}}
+  {{- end -}}
+
+  {{- /* CDC validation for HA */ -}}
+  {{- if and (gt (int .Values.replicaCount) 1) (not .Values.config.cdc.enabled) (not .Values.config.cdc.iLoveTimeouts) -}}
+    {{- fail "High availability mode (replicaCount > 1) requires CDC to be enabled (config.cdc.enabled=true) to prevent timeouts and instability. See https://github.com/kalbasit/ncps/issues/660. Set config.cdc.iLoveTimeouts to true if you accept this risk." -}}
   {{- end -}}
 {{- end -}}
 

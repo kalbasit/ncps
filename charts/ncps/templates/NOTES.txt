@@ -51,6 +51,16 @@ Useful endpoints:
   /metrics        - Prometheus metrics
   {{- end }}
 
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.config.cdc.enabled) }}
+
+WARNING: Multiple replicas configured but CDC is not enabled!
+This requires CDC to be enabled to prevent data corruption/issues.
+Enable CDC with:
+  config.cdc.enabled=true
+See https://github.com/kalbasit/ncps/issues/660 for more details.
+
+{{- end }}
+
 {{- if and (gt (int .Values.replicaCount) 1) (not .Values.config.redis.enabled) }}
 
 WARNING: Multiple replicas configured but Redis is not enabled!
