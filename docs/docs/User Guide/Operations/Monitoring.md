@@ -48,7 +48,7 @@ Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/O
 
 **Background Migration Metrics:**
 
-- `ncps_background_migration_objects_total{migration_type,operation,result}` - Background object migration operations
+- `ncps_background_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during background migration.
   - `migration_type`: "narinfo-to-db"
   - `operation`: "migrate" or "delete"
   - `result`: "success" or "failure"

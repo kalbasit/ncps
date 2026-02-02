@@ -2579,6 +2579,11 @@ func MigrateNarInfo(
 
 	opStartTime := time.Now()
 
+	migrateAttrs := []attribute.KeyValue{
+		attribute.String("migration_type", migrationTypeNarInfoToDB),
+		attribute.String("operation", migrationOperationMigrate),
+	}
+
 	// Store narinfo in database using the UPSERT logic from storeInDatabase
 	err = storeNarInfoInDatabase(ctx, db, hash, ni)
 	if err != nil {
@@ -2586,16 +2591,11 @@ func MigrateNarInfo(
 
 		backgroundMigrationObjectsTotal.Add(ctx, 1,
 			metric.WithAttributes(
-				attribute.String("migration_type", migrationTypeNarInfoToDB),
-				attribute.String("operation", migrationOperationMigrate),
-				attribute.String("result", migrationResultFailure),
+				append(migrateAttrs, attribute.String("result", migrationResultFailure))...,
 			),
 		)
 		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
-			metric.WithAttributes(
-				attribute.String("migration_type", migrationTypeNarInfoToDB),
-				attribute.String("operation", migrationOperationMigrate),
-			),
+			metric.WithAttributes(migrateAttrs...),
 		)
 
 		return fmt.Errorf("failed to store narinfo in database: %w", err)
@@ -2605,29 +2605,26 @@ func MigrateNarInfo(
 
 	backgroundMigrationObjectsTotal.Add(ctx, 1,
 		metric.WithAttributes(
-			attribute.String("migration_type", migrationTypeNarInfoToDB),
-			attribute.String("operation", migrationOperationMigrate),
-			attribute.String("result", migrationResultSuccess),
+			append(migrateAttrs, attribute.String("result", migrationResultSuccess))...,
 		),
 	)
 	backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
-		metric.WithAttributes(
-			attribute.String("migration_type", migrationTypeNarInfoToDB),
-			attribute.String("operation", migrationOperationMigrate),
-		),
+		metric.WithAttributes(migrateAttrs...),
 	)
 
 	// Only delete from storage if narInfoStore is provided
 	if narInfoStore != nil {
 		deleteStartTime := time.Now()
+		deleteAttrs := []attribute.KeyValue{
+			attribute.String("migration_type", migrationTypeNarInfoToDB),
+			attribute.String("operation", migrationOperationDelete),
+		}
 
 		if err := narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
 			log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
 			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
-					attribute.String("migration_type", migrationTypeNarInfoToDB),
-					attribute.String("operation", migrationOperationDelete),
-					attribute.String("result", migrationResultFailure),
+					append(deleteAttrs, attribute.String("result", migrationResultFailure))...,
 				),
 			)
 			// Don't return error - migration succeeded, only cleanup failed
@@ -2635,18 +2632,13 @@ func MigrateNarInfo(
 			log.Debug().Msg("deleted narinfo from storage after successful migration")
 			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
-					attribute.String("migration_type", migrationTypeNarInfoToDB),
-					attribute.String("operation", migrationOperationDelete),
-					attribute.String("result", migrationResultSuccess),
+					append(deleteAttrs, attribute.String("result", migrationResultSuccess))...,
 				),
 			)
 		}
 
 		backgroundMigrationDuration.Record(ctx, time.Since(deleteStartTime).Seconds(),
-			metric.WithAttributes(
-				attribute.String("migration_type", migrationTypeNarInfoToDB),
-				attribute.String("operation", migrationOperationDelete),
-			),
+			metric.WithAttributes(deleteAttrs...),
 		)
 	}
 
