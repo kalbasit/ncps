@@ -8,7 +8,7 @@ echo "Verifying CDC config formatting..."
 
 # Render the chart with CDC enabled and large values
 # We specifically use values that are powers of 2 (like 1048576) which are susceptible to this if not handled
-if ! OUTPUT=$(helm template ncps "${CHART_DIR}" \
+if ! OUTPUT=$(helm template ncps "${CHART_DIR}" --show-only templates/configmap.yaml \
   --set config.cdc.enabled=true \
   --set config.cdc.min=65536 \
   --set config.cdc.avg=262144 \
@@ -25,9 +25,9 @@ if ! OUTPUT=$(helm template ncps "${CHART_DIR}" \
 fi
 
 # Check for exponential notation (e.g., 1.048576e+06)
-if echo "$OUTPUT" | grep -E "[0-9]\.[0-9]+e\+[0-9]+"; then
+if MATCHES=$(echo "$OUTPUT" | grep -E -C 3 "[0-9]\.[0-9]+e\+[0-9]+"); then
   echo "❌ Found exponential notation in output!"
-  echo "$OUTPUT" | grep -E -C 3 "[0-9]\.[0-9]+e\+[0-9]+"
+  echo "$MATCHES"
   exit 1
 fi
 
