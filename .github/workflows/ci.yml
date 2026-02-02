@@ -102,11 +102,23 @@ jobs:
         run: |
           nix develop --command bash -c trilium-build-docs
       - name: Deploy docs
+        id: deploy-docs-pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_NCPS_DEV_EDIT_WORKERS_TOKEN }}
           accountId: ${{ secrets.CF_NCPS_DEV_ACCOUNT_ID }}
           command: pages deploy public/docs --project-name=ncps-docs --commit-dirty=true
+      - name: Post Pages Deployment URL on the Pull Request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Pages deployed to ${{ steps.deploy-docs-pages.outputs.deployment-url }}`
+            })
   build:
     uses: ./.github/workflows/build.yml
     with:
