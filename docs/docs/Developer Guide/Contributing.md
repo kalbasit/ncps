@@ -491,8 +491,6 @@ Then regenerate: `k8s-tests generate --push`
 
 **For more details:** See `nix/k8s-tests/README.md`
 
-**Note:** The old scripts (`./dev-scripts/k8s-cluster.sh`, `./dev-scripts/generate-test-values.sh`) still work but the new `k8s-tests` CLI is recommended for a better experience.
-
 ## Pull Request Process
 
 ### Before Submitting
