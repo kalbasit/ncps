@@ -162,8 +162,6 @@ ncps migrate-narinfo \
   --concurrency=50
 ```
 
-some change to rever
-
 ### Concurrency Tuning
 
 Adjust worker count based on your database capacity:
