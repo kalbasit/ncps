@@ -149,7 +149,7 @@ cmd_generate() {
 
     echo "📤 Pushing image to local registry..."
     local full_image="${image_registry}/${image_repository}:${image_tag}"
-    if ! skopeo copy "docker-daemon:${nix_image}" "docker://${full_image}"; then
+    if ! skopeo --insecure-policy copy --dest-tls-verify=false "docker-daemon:${nix_image}" "docker://${full_image}"; then
       echo "❌ Error: failed to push image to registry" >&2
       exit 1
     fi
