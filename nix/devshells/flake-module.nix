@@ -114,6 +114,7 @@
           '')
 
           config.packages.gen-db-wrappers
+          config.packages.k8s-tests
 
           pkgs.delve
           pkgs.go
