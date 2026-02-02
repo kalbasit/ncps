@@ -80,19 +80,24 @@ Note: Upstream health metrics are collected as part of analytics reporting. See 
 
 **Migration Metrics** (during narinfo migration):
 
-- `ncps_migration_narinfos_total{operation,result}` - NarInfo migration operations
+- `ncps_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during migration.
+  - `migration_type`: "narinfo-to-db"
   - `operation`: "migrate" or "delete"
   - `result`: "success", "failure", or "skipped"
-- `ncps_migration_duration_seconds{operation}` - Migration operation duration histogram
+- `ncps_migration_duration_seconds{migration_type,operation}` - Migration operation duration histogram
+  - `migration_type`: "narinfo-to-db"
   - `operation`: "migrate" or "delete"
-- `ncps_migration_batch_size` - Migration batch size histogram
+- `ncps_migration_batch_size{migration_type}` - Migration batch size histogram
+  - `migration_type`: "narinfo-to-db"
 
 **Background Migration Metrics** (during on-the-fly migration):
 
-- `ncps_background_migration_narinfos_total{operation,result}` - Background NarInfo migration operations
+- `ncps_background_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during background migration
+  - `migration_type`: "narinfo-to-db"
   - `operation`: "migrate" or "delete"
   - `result`: "success" or "failure"
-- `ncps_background_migration_duration_seconds{operation}` - Background migration operation duration histogram
+- `ncps_background_migration_duration_seconds{migration_type,operation}` - Background migration operation duration histogram
+  - `migration_type`: "narinfo-to-db"
   - `operation`: "migrate" or "delete"
 
 See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for migration documentation.
