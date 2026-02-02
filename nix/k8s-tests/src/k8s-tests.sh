@@ -99,7 +99,7 @@ cmd_cluster() {
 cmd_generate() {
   local build_and_push=false
   local image_tag=""
-  local image_registry="localhost:5001"
+  local image_registry="127.0.0.1:30000"
   local image_repository="ncps"
 
   # Parse arguments
@@ -112,7 +112,7 @@ cmd_generate() {
       *)
         if [ -z "$image_tag" ]; then
           image_tag="$1"
-        elif [ -z "$image_registry" ] || [ "$image_registry" = "localhost:5001" ]; then
+        elif [ -z "$image_registry" ] || [ "$image_registry" = "127.0.0.1:30000" ]; then
           image_registry="$1"
         elif [ -z "$image_repository" ] || [ "$image_repository" = "ncps" ]; then
           image_repository="$1"
@@ -128,23 +128,24 @@ cmd_generate() {
   # Build and push image if requested
   if [ "$build_and_push" = true ]; then
     echo "🔨 Building Docker image with Nix..."
-    if ! nix build "$REPO_ROOT#docker"; then
+    local build_output
+    if ! build_output=$(nix build "$REPO_ROOT#docker" --print-out-paths --no-link); then
       echo "❌ Error: failed to build Docker image" >&2
       exit 1
     fi
 
     echo "📦 Loading image into Docker..."
-    docker load < result
+    docker load < "$build_output"
 
     # Extract image name and tag from Nix build
-    # The image will be tagged as localhost:5001/ncps:<sha>-<platform>
+    # The image will be tagged as 127.0.0.1:30000/ncps:<sha>-<platform>
     local nix_image
     nix_image=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "ncps" | head -1)
     echo "Nix built image: $nix_image"
 
     # Extract tag from nix image
     image_tag=$(echo "$nix_image" | cut -d':' -f2)
-    image_registry="localhost:5001"
+    image_registry="127.0.0.1:30000"
     image_repository="ncps"
 
     echo "📤 Pushing image to local registry..."

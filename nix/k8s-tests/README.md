@@ -275,7 +275,7 @@ nix build .#docker
 docker images | grep ncps
 
 # Push manually if needed
-skopeo copy docker-daemon:ncps:latest docker://localhost:5001/ncps:test
+skopeo copy docker-daemon:ncps:latest docker://127.0.0.1:30000/ncps:test
 ```
 
 ## Implementation Details
