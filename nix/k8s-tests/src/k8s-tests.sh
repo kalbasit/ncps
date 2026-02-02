@@ -10,14 +10,8 @@ set -euo pipefail
 
 # Paths to config and library (substituted by Nix at build time)
 CONFIG_FILE="${CONFIG_FILE:-}"
-LIB_FILE="${LIB_FILE:-}"
 CLUSTER_SCRIPT="${CLUSTER_SCRIPT:-}"
 
-# Source library functions
-if [ -n "$LIB_FILE" ] && [ -f "$LIB_FILE" ]; then
-  # shellcheck source=/dev/null
-  source "$LIB_FILE"
-fi
 
 # Constants
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
@@ -76,6 +70,63 @@ EXAMPLES:
 
 See nix/k8s-tests/README.md for details.
 EOF
+}
+
+# Parse cluster info from cluster.sh info output
+parse_cluster_info() {
+  local cluster_output="$1"
+
+  # Parse the cluster info into a JSON structure
+  # The cluster.sh info command outputs key=value pairs
+
+  # Extract values by evaluating the output
+  # The input is expected to be in KEY=VALUE format
+  eval "$cluster_output"
+
+  # Output as JSON
+  jq -n \
+    --arg s3_bucket "${S3_BUCKET:-}" \
+    --arg s3_endpoint "${S3_ENDPOINT:-}" \
+    --arg s3_access_key "${S3_ACCESS_KEY:-}" \
+    --arg s3_secret_key "${S3_SECRET_KEY:-}" \
+    --arg pg_host "${POSTGRESQL_HOST:-}" \
+    --arg pg_port "${POSTGRESQL_PORT:-}" \
+    --arg pg_db "${POSTGRESQL_DB:-}" \
+    --arg pg_user "${POSTGRESQL_USER:-}" \
+    --arg pg_pass "${POSTGRESQL_PASS:-}" \
+    --arg maria_host "${MARIADB_HOST:-}" \
+    --arg maria_port "${MARIADB_PORT:-}" \
+    --arg maria_db "${MARIADB_DB:-}" \
+    --arg maria_user "${MARIADB_USER:-}" \
+    --arg maria_pass "${MARIADB_PASS:-}" \
+    --arg redis_host "${REDIS_HOST:-}" \
+    --arg redis_port "${REDIS_PORT:-}" \
+    '{
+      s3: {
+        bucket: $s3_bucket,
+        endpoint: $s3_endpoint,
+        access_key: $s3_access_key,
+        secret_key: $s3_secret_key
+      },
+      postgresql: {
+        host: $pg_host,
+        port: $pg_port,
+        database: $pg_db,
+        username: $pg_user,
+        password: $pg_pass
+      },
+      mariadb: {
+        host: $maria_host,
+        port: $maria_port,
+        database: $maria_db,
+        username: $maria_user,
+        password: $maria_pass
+      },
+      redis: {
+        host: $redis_host,
+        port: $redis_port
+      }
+    }'
 }
 
 # Cluster management commands
@@ -227,18 +278,45 @@ cmd_generate() {
   mkdir -p "$TEST_VALUES_DIR"
 
   # Generate values files
-  echo "📝 Generating values files..."
-  local count=0
-  while IFS= read -r perm_json; do
-    local name
-    name=$(echo "$perm_json" | jq -r '.name')
+  # Generate values files using Nix
+  echo "📝 Generating values files with Nix..."
+  local values_json_file
+  values_json_file=$(mktemp)
 
+  # Construct arguments JSON for Nix function
+  local args_json
+  args_json=$(jq -n \
+    --arg reg "$image_registry" \
+    --arg repo "$image_repository" \
+    --arg tag "$image_tag" \
+    --arg cluster "$cluster_json" \
+    '{image_registry: $reg, image_repository: $repo, image_tag: $tag, cluster: $cluster}')
+
+  # Passing arguments to Nix via apply wrapper
+  # We pass all arguments as a single parsed JSON object
+  if ! nix eval --json --file "$CONFIG_FILE" generateValues \
+      --apply "f: f (builtins.fromJSON ''$args_json'')" \
+      > "$values_json_file"; then
+      echo "❌ Error: failed to generate values with Nix" >&2
+      rm -f "$values_json_file"
+      exit 1
+  fi
+
+  local count=0
+  # Iterate over the generated values (map of filename -> content)
+  while IFS=$'\t' read -r name content; do
     echo "  Generating ${name}.yaml..."
-    render_values_file "$perm_json" "$cluster_json" "$image_registry" "$image_repository" "$image_tag" \
-      > "$TEST_VALUES_DIR/${name}.yaml"
+
+    # Write header
+    echo "# Auto-generated from config.nix" > "$TEST_VALUES_DIR/${name}.yaml"
+
+    # Convert JSON content to YAML and append
+    echo "$content" | yq -P >> "$TEST_VALUES_DIR/${name}.yaml"
 
     count=$((count + 1))
-  done < <(echo "$permutations_json" | jq -c '.[]')
+  done < <(jq -r 'to_entries | .[] | .key + "\t" + (.value | tojson)' "$values_json_file")
+
+  rm -f "$values_json_file"
 
   echo "✅ Generated $count values files"
 

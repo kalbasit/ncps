@@ -23,7 +23,7 @@ _: {
         text = ''
           # Substitute paths at build time
           export CONFIG_FILE="${./config.nix}"
-          export LIB_FILE="${./src/lib.sh}"
+
           export CLUSTER_SCRIPT="${./src/cluster.sh}"
 
           # Source and run main script
