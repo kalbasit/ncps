@@ -537,7 +537,55 @@ config:
     enabled: false
 EOF
 
-# 9. HA - S3 storage + PostgreSQL + Redis
+# 9. Single instance - S3 storage + PostgreSQL + CDC
+cat > "$TEST_VALUES_DIR/single-s3-postgres-cdc.yaml" <<EOF
+# Single instance with S3 storage and PostgreSQL + CDC enabled
+image:
+  registry: $IMAGE_REGISTRY
+  repository: $IMAGE_REPOSITORY
+  tag: "$IMAGE_TAG"
+
+replicaCount: 1
+mode: deployment
+
+migration:
+  enabled: true
+  mode: initContainer
+
+config:
+  analytics:
+    reporting:
+      enabled: false
+
+  hostname: "ncps-single-s3-postgres-cdc.local"
+
+  storage:
+    type: s3
+    s3:
+      bucket: $S3_BUCKET
+      endpoint: $S3_ENDPOINT
+      region: us-east-1
+      accessKeyId: $S3_ACCESS_KEY
+      secretAccessKey: $S3_SECRET_KEY
+
+  database:
+    type: postgresql
+    postgresql:
+      host: $PG_HOST
+      port: $PG_PORT
+      database: $PG_DB
+      username: $PG_USER
+      password: "$PG_PASS"
+      sslMode: disable
+
+  cdc:
+    enabled: true
+
+  redis:
+    enabled: false
+EOF
+
+# 10. HA - S3 storage + PostgreSQL + Redis
 cat > "$TEST_VALUES_DIR/ha-s3-postgres.yaml" <<EOF
 # High availability with S3 storage and PostgreSQL
 image:
@@ -603,7 +651,7 @@ affinity:
           topologyKey: kubernetes.io/hostname
 EOF
 
-# 10. HA - S3 storage + MariaDB + Redis
+# 11. HA - S3 storage + MariaDB + Redis
 cat > "$TEST_VALUES_DIR/ha-s3-mariadb.yaml" <<EOF
 # High availability with S3 storage and MariaDB
 image:
@@ -668,7 +716,7 @@ affinity:
           topologyKey: kubernetes.io/hostname
 EOF
 
-# 11. HA - S3 storage + PostgreSQL + PostgreSQL Advisory Locks
+# 12. HA - S3 storage + PostgreSQL + PostgreSQL Advisory Locks
 cat > "$TEST_VALUES_DIR/ha-s3-postgres-lock.yaml" <<EOFCONFIG
 # High availability with S3 storage and PostgreSQL (using PostgreSQL advisory locks instead of Redis)
 image:
@@ -733,7 +781,76 @@ affinity:
           topologyKey: kubernetes.io/hostname
 EOFCONFIG
 
-echo "✅ Generated 11 values files"
+# 13. HA - S3 storage + PostgreSQL + Redis + CDC
+cat > "$TEST_VALUES_DIR/ha-s3-postgres-cdc.yaml" <<EOF
+# High availability with S3 storage, PostgreSQL, Redis, and CDC enabled
+image:
+  registry: $IMAGE_REGISTRY
+  repository: $IMAGE_REPOSITORY
+  tag: "$IMAGE_TAG"
+
+replicaCount: 2
+mode: deployment
+
+migration:
+  enabled: true
+  mode: job
+
+config:
+  analytics:
+    reporting:
+      enabled: false
+
+  hostname: "ncps-ha-s3-postgres-cdc.local"
+
+  storage:
+    type: s3
+    s3:
+      bucket: $S3_BUCKET
+      endpoint: $S3_ENDPOINT
+      region: us-east-1
+      accessKeyId: $S3_ACCESS_KEY
+      secretAccessKey: $S3_SECRET_KEY
+
+  database:
+    type: postgresql
+    postgresql:
+      host: $PG_HOST
+      port: $PG_PORT
+      database: $PG_DB
+      username: $PG_USER
+      password: "$PG_PASS"
+      sslMode: disable
+
+  cdc:
+    enabled: true
+
+  redis:
+    enabled: true
+    addresses:
+      - $REDIS_HOST:$REDIS_PORT
+    db: 0
+    useTLS: false
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - ncps
+          topologyKey: kubernetes.io/hostname
+EOF
+
+echo "✅ Generated 13 values files"
 
 # Generate QUICK-INSTALL.sh
 cat > "$TEST_VALUES_DIR/QUICK-INSTALL.sh" <<'INSTALL_EOF'
@@ -796,15 +913,21 @@ helm upgrade --install ncps-single-s3-mariadb . \
   --create-namespace \
   --namespace ncps-single-s3-mariadb
 
+echo "7️⃣  Installing ncps-single-s3-postgres-cdc..."
+helm upgrade --install ncps-single-s3-postgres-cdc . \
+  -f test-values/single-s3-postgres-cdc.yaml \
+  --create-namespace \
+  --namespace ncps-single-s3-postgres-cdc
+
 # Single Instance with Existing Secrets
 echo ""
 echo "🔐 Installing Single Instance Deployments with Existing Secrets..."
 echo ""
 
-echo "7️⃣  Installing ncps-single-s3-postgres-existing-secret..."
+echo "8️⃣  Installing ncps-single-s3-postgres-existing-secret..."
 "$SCRIPT_DIR/install-single-s3-postgres-existing-secret.sh"
 
-echo "8️⃣  Installing ncps-single-s3-mariadb-existing-secret..."
+echo "9️⃣  Installing ncps-single-s3-mariadb-existing-secret..."
 "$SCRIPT_DIR/install-single-s3-mariadb-existing-secret.sh"
 
 # HA Deployments
@@ -812,23 +935,29 @@ echo ""
 echo "🔺 Installing High Availability Deployments..."
 echo ""
 
-echo "9️⃣  Installing ncps-ha-s3-postgres..."
+echo "🔟  Installing ncps-ha-s3-postgres..."
 helm upgrade --install ncps-ha-s3-postgres . \
   -f test-values/ha-s3-postgres.yaml \
   --create-namespace \
   --namespace ncps-ha-s3-postgres
 
-echo "🔟  Installing ncps-ha-s3-mariadb..."
+echo "1️⃣1️⃣  Installing ncps-ha-s3-mariadb..."
 helm upgrade --install ncps-ha-s3-mariadb . \
   -f test-values/ha-s3-mariadb.yaml \
   --create-namespace \
   --namespace ncps-ha-s3-mariadb
 
-echo "1️⃣1️⃣  Installing ncps-ha-s3-postgres-lock..."
+echo "1️⃣2️⃣  Installing ncps-ha-s3-postgres-lock..."
 helm upgrade --install ncps-ha-s3-postgres-lock . \
   -f test-values/ha-s3-postgres-lock.yaml \
   --create-namespace \
   --namespace ncps-ha-s3-postgres-lock
+
+echo "1️⃣3️⃣  Installing ncps-ha-s3-postgres-cdc..."
+helm upgrade --install ncps-ha-s3-postgres-cdc . \
+  -f test-values/ha-s3-postgres-cdc.yaml \
+  --create-namespace \
+  --namespace ncps-ha-s3-postgres-cdc
 
 echo ""
 echo "========================================="
@@ -866,11 +995,13 @@ namespaces=(
   "ncps-single-s3-sqlite"
   "ncps-single-s3-postgres"
   "ncps-single-s3-mariadb"
+  "ncps-single-s3-postgres-cdc"
   "ncps-single-s3-postgres-existing-secret"
   "ncps-single-s3-mariadb-existing-secret"
   "ncps-ha-s3-postgres"
   "ncps-ha-s3-mariadb"
   "ncps-ha-s3-postgres-lock"
+  "ncps-ha-s3-postgres-cdc"
 )
 
 for ns in "${namespaces[@]}"; do
@@ -1245,6 +1376,15 @@ deployments:
     database:
       type: "mysql"
 
+  - name: "ncps-single-s3-postgres-cdc"
+    namespace: "ncps-single-s3-postgres-cdc"
+    mode: "deployment"
+    replicas: 1
+    storage:
+      type: "s3"
+    database:
+      type: "postgresql"
+
   - name: "ncps-ha-s3-postgres"
     namespace: "ncps-ha-s3-postgres"
     mode: "deployment"
@@ -1271,6 +1411,15 @@ deployments:
       type: "s3"
     database:
       type: "postgresql"
+
+  - name: "ncps-ha-s3-postgres-cdc"
+    namespace: "ncps-ha-s3-postgres-cdc"
+    mode: "deployment"
+    replicas: 2
+    storage:
+      type: "s3"
+    database:
+      type: "postgresql"
 TEST_CONFIG_EOF
 
 echo "✅ Generated test-config.yaml"
@@ -1290,6 +1439,7 @@ This directory contains test values files for various NCPS deployment scenarios 
 - **single-s3-sqlite.yaml** - S3 storage + SQLite
 - **single-s3-postgres.yaml** - S3 storage + PostgreSQL
 - **single-s3-mariadb.yaml** - S3 storage + MariaDB
+- **single-s3-postgres-cdc.yaml** - S3 storage + PostgreSQL + CDC
 
 ### Single Instance with Existing Secrets (Testing External Secret Management)
 - **single-s3-postgres-existing-secret.yaml** - S3 storage + PostgreSQL + Existing Secret
@@ -1299,6 +1449,7 @@ This directory contains test values files for various NCPS deployment scenarios 
 - **ha-s3-postgres.yaml** - 2 replicas + S3 storage + PostgreSQL + Redis locks
 - **ha-s3-mariadb.yaml** - 2 replicas + S3 storage + MariaDB + Redis locks
 - **ha-s3-postgres-lock.yaml** - 2 replicas + S3 storage + PostgreSQL + PostgreSQL advisory locks
+- **ha-s3-postgres-cdc.yaml** - 2 replicas + S3 storage + PostgreSQL + Redis + CDC
 
 ## Quick Start
 
@@ -1366,13 +1517,13 @@ With `--push`, this will:
 1. Build the Docker image using Nix
 2. Push to the local Kind registry (127.0.0.1:30000)
 3. Query the Kind cluster for current credentials
-4. Generate all 11 values files with updated image and credentials
+4. Generate all 13 values files with updated image and credentials
 5. Generate test-config.yaml with cluster credentials and test data
 6. Regenerate install/cleanup/test scripts
 
 Otherwise, it will:
 1. Query the Kind cluster for current credentials
-2. Generate all 11 values files with updated image and credentials
+2. Generate all 13 values files with updated image and credentials
 3. Generate test-config.yaml with cluster credentials and test data
 4. Regenerate install/cleanup/test scripts
 
@@ -1388,19 +1539,21 @@ Cluster credentials are automatically discovered from the running Kind cluster.
 
 ## Testing Matrix
 
-| Scenario | Storage | Database | Redis | Replicas | Mode | Existing Secret |
-|----------|---------|----------|-------|----------|------|-----------------|
-| single-local-sqlite | Local | SQLite | No | 1 | StatefulSet | No |
-| single-local-postgres | Local | PostgreSQL | No | 1 | StatefulSet | No |
-| single-local-mariadb | Local | MariaDB | No | 1 | StatefulSet | No |
-| single-s3-sqlite | S3 | SQLite | No | 1 | Deployment | No |
-| single-s3-postgres | S3 | PostgreSQL | No | 1 | Deployment | No |
-| single-s3-mariadb | S3 | MariaDB | No | 1 | Deployment | No |
-| single-s3-postgres-existing-secret | S3 | PostgreSQL | No | 1 | Deployment | Yes |
-| single-s3-mariadb-existing-secret | S3 | MariaDB | No | 1 | Deployment | Yes |
-| ha-s3-postgres | S3 | PostgreSQL | Yes | 2 | Deployment | No |
-| ha-s3-mariadb | S3 | MariaDB | Yes | 2 | Deployment | No |
-| ha-s3-postgres-lock | S3 | PostgreSQL | No | 2 | Deployment | No |
+| Scenario | Storage | Database | Redis | Replicas | Mode | Existing Secret | CDC |
+|----------|---------|----------|-------|----------|------|-----------------|-----|
+| single-local-sqlite | Local | SQLite | No | 1 | StatefulSet | No | No |
+| single-local-postgres | Local | PostgreSQL | No | 1 | StatefulSet | No | No |
+| single-local-mariadb | Local | MariaDB | No | 1 | StatefulSet | No | No |
+| single-s3-sqlite | S3 | SQLite | No | 1 | Deployment | No | No |
+| single-s3-postgres | S3 | PostgreSQL | No | 1 | Deployment | No | No |
+| single-s3-mariadb | S3 | MariaDB | No | 1 | Deployment | No | No |
+| single-s3-postgres-cdc | S3 | PostgreSQL | No | 1 | Deployment | No | Yes |
+| single-s3-postgres-existing-secret | S3 | PostgreSQL | No | 1 | Deployment | Yes | No |
+| single-s3-mariadb-existing-secret | S3 | MariaDB | No | 1 | Deployment | Yes | No |
+| ha-s3-postgres | S3 | PostgreSQL | Yes | 2 | Deployment | No | No |
+| ha-s3-mariadb | S3 | MariaDB | Yes | 2 | Deployment | No | No |
+| ha-s3-postgres-lock | S3 | PostgreSQL | No | 2 | Deployment | No | No |
+| ha-s3-postgres-cdc | S3 | PostgreSQL | Yes | 2 | Deployment | No | Yes |
 
 ## Verification
 
@@ -1496,9 +1649,17 @@ helm upgrade --install ncps-single-s3-mariadb . \
   --namespace ncps-single-s3-mariadb
 ```
 
+### 7. Single Instance - S3 Storage + PostgreSQL + CDC
+```bash
+helm upgrade --install ncps-single-s3-postgres-cdc . \
+  -f test-values/single-s3-postgres-cdc.yaml \
+  --create-namespace \
+  --namespace ncps-single-s3-postgres-cdc
+```
+
 ## High Availability Deployments
 
-### 7. HA - S3 Storage + PostgreSQL + Redis
+### 8. HA - S3 Storage + PostgreSQL + Redis
 ```bash
 helm upgrade --install ncps-ha-s3-postgres . \
   -f test-values/ha-s3-postgres.yaml \
@@ -1506,7 +1667,7 @@ helm upgrade --install ncps-ha-s3-postgres . \
   --namespace ncps-ha-s3-postgres
 ```
 
-### 8. HA - S3 Storage + MariaDB + Redis
+### 9. HA - S3 Storage + MariaDB + Redis
 ```bash
 helm upgrade --install ncps-ha-s3-mariadb . \
   -f test-values/ha-s3-mariadb.yaml \
@@ -1514,12 +1675,20 @@ helm upgrade --install ncps-ha-s3-mariadb . \
   --namespace ncps-ha-s3-mariadb
 ```
 
-### 9. HA - S3 Storage + PostgreSQL + PostgreSQL Advisory Locks
+### 10. HA - S3 Storage + PostgreSQL + PostgreSQL Advisory Locks
 ```bash
 helm upgrade --install ncps-ha-s3-postgres-lock . \
   -f test-values/ha-s3-postgres-lock.yaml \
   --create-namespace \
   --namespace ncps-ha-s3-postgres-lock
+```
+
+### 11. HA - S3 Storage + PostgreSQL + Redis + CDC
+```bash
+helm upgrade --install ncps-ha-s3-postgres-cdc . \
+  -f test-values/ha-s3-postgres-cdc.yaml \
+  --create-namespace \
+  --namespace ncps-ha-s3-postgres-cdc
 ```
 
 
