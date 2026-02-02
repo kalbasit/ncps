@@ -246,7 +246,7 @@ cmd_generate() {
   generate_quick_install
   generate_test_script
   generate_cleanup_script
-  generate_test_config "$cluster_json"
+  generate_test_config "$cluster_json" "$permutations_json"
   generate_existing_secret_scripts "$cluster_json" "$permutations_json"
 
   echo "✅ All test files generated in: $TEST_VALUES_DIR"
@@ -445,6 +445,7 @@ CLEANUP_EOF
 # Generate test-config.yaml
 generate_test_config() {
   local cluster_json="$1"
+  local permutations_json="$2"
 
   # Load test data from config
   local narinfo_hashes
@@ -486,6 +487,24 @@ EOF
   while IFS= read -r hash; do
     echo "    - \"$hash\"" >> "$TEST_VALUES_DIR/test-config.yaml"
   done <<< "$narinfo_hashes"
+
+  {
+    echo ""
+    echo "deployments:"
+    echo "$permutations_json" | jq -r '
+      .[] |
+      "- name: " + .name,
+      "  namespace: ncps-" + .name,
+      "  replicas: " + (.replicas|tostring),
+      "  mode: " + (if .replicas > 1 then "ha" else "single" end),
+      "  database:",
+      "    type: " + .database.type,
+      (if .database.type == "sqlite" then "    path: " + .database.sqlite.path else empty end),
+      "  storage:",
+      "    type: " + .storage.type,
+      (if .storage.type == "local" then "    path: " + .storage.local.path else empty end)
+    '
+  } >> "$TEST_VALUES_DIR/test-config.yaml"
 
   echo "✅ Generated test-config.yaml"
 }
