@@ -168,6 +168,79 @@ The project uses "Skills" to provide detailed instructions and best practices fo
 
 When working with these tools, you SHOULD read the corresponding `SKILL.md` to ensure compliance with project-specific rules.
 
+### Kind Integration Tests
+
+The project includes comprehensive Kubernetes integration testing using a local Kind cluster. A unified CLI tool (`k8s-tests`) tests 13 different deployment permutations across multiple storage backends, database engines, and high-availability configurations.
+
+**Quick Start:**
+
+```bash
+# Complete workflow (all 5 steps in one command)
+k8s-tests all
+
+# Or run individual steps:
+k8s-tests cluster create     # 1. Create Kind cluster with dependencies
+k8s-tests generate --push    # 2. Build & push image, generate values
+k8s-tests install            # 3. Deploy all 13 test scenarios
+k8s-tests test               # 4. Run comprehensive tests
+k8s-tests cleanup            # 5. Remove test deployments
+```
+
+**Test Permutations (13 scenarios):**
+
+- **Single Instance (7)**: Local/S3 storage × SQLite/PostgreSQL/MariaDB, plus CDC variant
+- **External Secrets (2)**: S3 + PostgreSQL/MariaDB with existing Kubernetes secrets
+- **High Availability (4)**: 2 replicas with S3, databases, and Redis/PostgreSQL locks, plus CDC variant
+
+**Working with Specific Deployments:**
+
+```bash
+# Install and test a single scenario
+k8s-tests install single-local-sqlite
+k8s-tests test single-local-sqlite -v
+k8s-tests cleanup single-local-sqlite
+
+# Use external image (instead of building)
+k8s-tests generate sha-cf09394
+k8s-tests generate 0.5.1 docker.io kalbasit/ncps
+
+# Cluster management
+k8s-tests cluster info       # Show connection credentials
+k8s-tests cluster destroy    # Remove Kind cluster
+```
+
+**Architecture:**
+
+- **Configuration**: Declarative Nix attribute sets in `nix/k8s-tests/config.nix`
+- **Generation**: Shell functions + heredocs for template rendering
+- **Packaging**: Nix `writeShellApplication` with managed dependencies
+- **Integration**: Automatically available in dev shell PATH
+
+**Adding New Permutations:**
+
+Edit `nix/k8s-tests/config.nix` to add a new test scenario:
+
+```nix
+{
+  permutations = [
+    # ... existing permutations
+    {
+      name = "my-new-scenario";
+      description = "My custom test scenario";
+      replicas = 1;
+      storage = { type = "s3"; };
+      database = { type = "postgresql"; };
+      redis.enabled = false;
+      features = [];  # Optional: ["cdc", "ha", "pod-disruption-budget"]
+    }
+  ];
+}
+```
+
+Then regenerate: `k8s-tests generate --push`
+
+**For more details:** See `nix/k8s-tests/README.md`
+
 ### CI/CD and GitHub Actions
 
 - **CI/CD**: GitHub Actions optimized for Graphite-style stacked PRs.

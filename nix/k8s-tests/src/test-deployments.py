@@ -279,7 +279,7 @@ class NCPSTester:
     def _test_http_endpoints(self, deployment_config: dict) -> TestResult:
         """Test HTTP endpoints via port-forward"""
         namespace = deployment_config["namespace"]
-        service_name = deployment_config["name"]
+        service_name = deployment_config.get("service_name", deployment_config["name"])
 
         # Start port-forward
         port_forward = None
@@ -499,7 +499,15 @@ class NCPSTester:
                     details=f"stderr: {result.stderr}\nstdout: {result.stdout}",
                 )
 
-            row_count = result.stdout.strip()
+            row_count = int(result.stdout.strip())
+
+            if row_count == 0:
+                return TestResult(
+                    "Database",
+                    False,
+                    f"SQLite database is empty (0 NAR entries)",
+                    details=f"stdout: {result.stdout}",
+                )
 
             return TestResult(
                 "Database",
@@ -562,25 +570,38 @@ class NCPSTester:
             )
             tables = [row[0] for row in cursor.fetchall()]
 
-            if "nar_files" not in tables:
+            cdc_enabled = deployment_config.get("cdc", False)
+            target_table = "chunks" if cdc_enabled else "nar_files"
+
+            if target_table not in tables:
                 conn.close()
                 return TestResult(
                     "Database",
                     False,
-                    "Expected tables not found",
+                    f"Expected table '{target_table}' not found",
                     details=f"Found tables: {tables}",
                 )
 
             # Count rows
-            cursor.execute("SELECT COUNT(*) FROM nar_files")
+            cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
             count = cursor.fetchone()[0]
 
             conn.close()
 
+            entry_type = "chunks" if cdc_enabled else "NAR entries"
+
+            if count == 0:
+                conn.close()
+                return TestResult(
+                    "Database",
+                    False,
+                    f"PostgreSQL database is empty (0 {entry_type})",
+                )
+
             return TestResult(
                 "Database",
                 True,
-                f"PostgreSQL database accessible ({count} NAR entries)",
+                f"PostgreSQL database accessible ({count} {entry_type})",
             )
 
         except Exception as e:
@@ -636,23 +657,36 @@ class NCPSTester:
             cursor.execute("SHOW TABLES")
             tables = [row[0] for row in cursor.fetchall()]
 
-            if "nar_files" not in tables:
+            cdc_enabled = deployment_config.get("cdc", False)
+            target_table = "chunks" if cdc_enabled else "nar_files"
+
+            if target_table not in tables:
                 conn.close()
                 return TestResult(
                     "Database",
                     False,
-                    "Expected tables not found",
+                    f"Expected table '{target_table}' not found",
                     details=f"Found tables: {tables}",
                 )
 
             # Count rows
-            cursor.execute("SELECT COUNT(*) FROM nar_files")
+            cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
             count = cursor.fetchone()[0]
 
             conn.close()
 
+            entry_type = "chunks" if cdc_enabled else "NAR entries"
+
+            if count == 0:
+                conn.close()
+                return TestResult(
+                    "Database",
+                    False,
+                    f"MySQL database is empty (0 {entry_type})",
+                )
+
             return TestResult(
-                "Database", True, f"MySQL database accessible ({count} NAR entries)"
+                "Database", True, f"MySQL database accessible ({count} {entry_type})"
             )
 
         except Exception as e:
@@ -695,7 +729,7 @@ class NCPSTester:
             target_storage_path = f"/proc/1/root{storage_path}"
 
             # Check storage directory structure using debug container
-            for subdir in ["config", "nar"]:
+            for subdir in ["store/nar", "store/narinfo"]:
                 result = subprocess.run(
                     [
                         "kubectl",
@@ -740,7 +774,7 @@ class NCPSTester:
                     "--",
                     "sh",
                     "-c",
-                    f"find {target_storage_path}/nar -type f 2>/dev/null | wc -l",
+                    f"find {target_storage_path}/store/nar -type f 2>/dev/null | wc -l",
                 ],
                 capture_output=True,
                 text=True,
@@ -755,7 +789,14 @@ class NCPSTester:
                     details=f"stderr: {result.stderr}",
                 )
 
-            file_count = result.stdout.strip()
+            file_count = int(result.stdout.strip())
+
+            if file_count == 0:
+                return TestResult(
+                    "Storage",
+                    False,
+                    f"Local storage is empty (0 NAR files in {storage_path})",
+                )
 
             return TestResult(
                 "Storage",
@@ -827,19 +868,49 @@ class NCPSTester:
             )
 
             bucket = s3_config["bucket"]
+            cdc_enabled = deployment_config.get("cdc", False)
 
-            # List objects with prefix
-            nar_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="nar/")
-            nar_count = nar_objects.get("KeyCount", 0)
+            if cdc_enabled:
+                # List chunks
+                # Chunks are stored in store/chunks/
+                chunk_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/chunks/")
+                chunk_count = chunk_objects.get("KeyCount", 0)
 
-            config_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="config/")
-            config_count = config_objects.get("KeyCount", 0)
+                if chunk_count == 0:
+                    return TestResult(
+                        "Storage",
+                        False,
+                        "No chunks found in S3 (prefix: store/chunks/)",
+                    )
 
-            return TestResult(
-                "Storage",
-                True,
-                f"S3 storage accessible ({nar_count} NAR objects, {config_count} config objects)",
-            )
+                return TestResult(
+                    "Storage",
+                    True,
+                    f"S3 storage accessible ({chunk_count} chunks found)",
+                )
+            else:
+                # List objects with prefix
+                # NARs are stored in store/nar/
+                nar_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/nar/")
+                nar_count = nar_objects.get("KeyCount", 0)
+
+                if nar_count == 0:
+                    return TestResult(
+                        "Storage",
+                        False,
+                        "No NAR objects found in S3 (prefix: store/nar/)",
+                    )
+
+                config_objects = s3_client.list_objects_v2(
+                    Bucket=bucket, Prefix="config/"
+                )
+                config_count = config_objects.get("KeyCount", 0)
+
+                return TestResult(
+                    "Storage",
+                    True,
+                    f"S3 storage accessible ({nar_count} NAR objects, {config_count} config objects)",
+                )
 
         except Exception as e:
             return TestResult("Storage", False, f"Error accessing S3: {e}")

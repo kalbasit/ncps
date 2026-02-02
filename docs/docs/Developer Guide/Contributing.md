@@ -349,104 +349,147 @@ The Nix build automatically:
 
 ### Helm Chart Testing
 
-The project includes comprehensive Helm chart testing using a local Kind cluster with MinIO, PostgreSQL, MariaDB, and Redis.
+The project includes comprehensive Helm chart testing using a local Kind cluster with MinIO, PostgreSQL, MariaDB, and Redis. A unified CLI tool (`k8s-tests`) manages the complete testing workflow.
 
 **Prerequisites:**
 
-- Docker
-- kubectl
-- helm
-- kind
+All tools are provided by the Nix development environment:
 
-**Setup (one-time):**
+- Docker (for Kind)
+- kubectl, helm, kind (via Nix)
+- k8s-tests CLI (automatically available in `nix develop`)
 
-```
-# Create Kind cluster with all dependencies
-./dev-scripts/k8s-cluster.sh create
-```
+**Quick Start (Complete Workflow):**
 
-The cluster can be reused across test runs. Use `./dev-scripts/k8s-cluster.sh destroy` to clean up when done.
-
-**Testing Workflow:**
-
-```
-# 1. Build, push Docker image to local Kind registry, and generate test values
-./dev-scripts/generate-test-values.sh --push
-
-# 2. Quick install all test deployments (can be run from anywhere)
-./charts/ncps/test-values/QUICK-INSTALL.sh
-
-# 3. Run tests (can be run from anywhere)
-./charts/ncps/test-values/TEST.sh
-
-# 4. Cleanup when done (can be run from anywhere)
-./charts/ncps/test-values/CLEANUP.sh
+```bash
+# Run all 5 steps in one command
+k8s-tests all
 ```
 
-**Alternative: Use External Registry**
+This command:
 
-If you prefer to push to an external registry (e.g., Docker Hub, your own Zot instance):
+1. Creates Kind cluster with all dependencies
+1. Builds and pushes Docker image
+1. Generates 13 test values files
+1. Installs all test deployments
+1. Runs comprehensive tests
 
+**Individual Steps:**
+
+```bash
+# 1. Create Kind cluster with all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
+k8s-tests cluster create
+
+# 2. Build Docker image, push to local registry, and generate test values
+k8s-tests generate --push
+
+# 3. Install all test deployments
+k8s-tests install
+
+# 4. Run tests across all deployments
+k8s-tests test
+
+# 5. Cleanup when done
+k8s-tests cleanup
 ```
-# 1. Build and push Docker image to external registry
+
+The cluster can be reused across test runs. Use `k8s-tests cluster destroy` to clean up when done.
+
+**Alternative: Use External Image**
+
+If you've already built and pushed an image:
+
+```bash
+# Use a specific tag
+k8s-tests generate sha-cf09394
+
+# Use custom registry and repository
+k8s-tests generate 0.5.1 docker.io kalbasit/ncps
+
+# Or build externally and use the tag
 DOCKER_IMAGE_TAGS="yourregistry.com/ncps:sha$(git rev-parse --short HEAD)" nix run .#push-docker-image
-
-# 2. Generate test values files (use the image tag from step 1)
-# The tag format is: sha<commit>-<platform> (e.g., sha4954654-x86_64-linux)
-./dev-scripts/generate-test-values.sh sha$(git rev-parse --short HEAD)-x86_64-linux yourregistry.com ncps
-
-# 3. Continue with steps 2-4 from the main workflow above
+k8s-tests generate sha$(git rev-parse --short HEAD)-x86_64-linux yourregistry.com ncps
 ```
 
-**Test Deployments:**
+**Test Permutations:**
 
-The generate-test-values.sh script creates 10 different test configurations:
+The tool generates 13 different test configurations:
 
-- **Single Instance with Local Storage:**
-  - SQLite, PostgreSQL, or MariaDB database
-- **Single Instance with S3 Storage:**
-  - SQLite, PostgreSQL, or MariaDB database
-  - Tests S3 configuration and MinIO compatibility
-- **High Availability:**
+- **Single Instance (7 scenarios):**
+  - Local storage: SQLite, PostgreSQL, MariaDB
+  - S3 storage: SQLite, PostgreSQL, MariaDB
+  - S3 + PostgreSQL + CDC enabled
+- **External Secrets (2 scenarios):**
+  - S3 + PostgreSQL/MariaDB with existing Kubernetes secrets
+- **High Availability (4 scenarios):**
   - 2 replicas with S3 storage
   - PostgreSQL or MariaDB database
-  - Redis for distributed locking
+  - Redis locks or PostgreSQL advisory locks
+  - With/without CDC enabled
 
 **Testing Individual Deployments:**
 
-```
-# Test with verbose output
-./test-values/TEST.sh -v
+```bash
+# Install a single deployment
+k8s-tests install single-local-sqlite
 
-# Test specific deployment
-./test-values/TEST.sh -d ncps-single-local-sqlite
+# Test specific deployment (verbose)
+k8s-tests test single-local-sqlite -v
 
-# Test specific deployment with verbose output
-./test-values/TEST.sh -d ncps-single-s3-postgres -v
+# Test specific deployment (non-verbose)
+k8s-tests test single-s3-postgres
+
+# Cleanup specific deployment
+k8s-tests cleanup single-local-sqlite
 ```
 
 **Manual Installation:**
 
-```
-# Install individual deployment manually
-helm upgrade --install ncps-single-local-postgres . \
-  -f test-values/single-local-postgres.yaml \
+```bash
+# Install individual deployment manually using generated values
+helm upgrade --install ncps-single-local-postgres charts/ncps \
+  -f charts/ncps/test-values/single-local-postgres.yaml \
   --create-namespace \
   --namespace ncps-single-local-postgres
 ```
 
 **Cluster Management:**
 
-```
+```bash
 # Show cluster connection information
-./dev-scripts/k8s-cluster.sh info
+k8s-tests cluster info
 
 # Destroy cluster
-./dev-scripts/k8s-cluster.sh destroy
+k8s-tests cluster destroy
 
 # Help
-./dev-scripts/k8s-cluster.sh help
+k8s-tests --help
 ```
+
+**Adding New Test Scenarios:**
+
+To add a custom test permutation, edit `nix/k8s-tests/config.nix`:
+
+```nix
+{
+  permutations = [
+    # ... existing permutations
+    {
+      name = "my-new-scenario";
+      description = "My custom test scenario";
+      replicas = 1;
+      storage = { type = "s3"; };
+      database = { type = "postgresql"; };
+      redis.enabled = false;
+      features = [];  # Optional: ["cdc", "ha", "pod-disruption-budget"]
+    }
+  ];
+}
+```
+
+Then regenerate: `k8s-tests generate --push`
+
+**For more details:** See `nix/k8s-tests/README.md`
 
 ## Pull Request Process
 
