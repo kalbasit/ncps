@@ -80,7 +80,7 @@ Note: Upstream health metrics are collected as part of analytics reporting. See 
 
 **Migration Metrics** (during narinfo migration):
 
-- `ncps_migration_objects_total` | Counter | `operation`, `result` | Total number of objects processed during migration. |operations
+- `ncps_migration_objects_total{operation,result}` - Total number of objects processed during migration.
   - `operation`: "migrate" or "delete"
   - `result`: "success", "failure", or "skipped"
 - `ncps_migration_duration_seconds{operation}` - Migration operation duration histogram
