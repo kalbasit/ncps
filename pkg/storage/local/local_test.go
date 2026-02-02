@@ -20,7 +20,15 @@ import (
 	"github.com/kalbasit/ncps/testdata"
 )
 
-const cacheName = "cache.example.com"
+const (
+	cacheName      = "cache.example.com"
+	testHashABC    = "abc123"
+	testHashABC456 = "abc456"
+	testHashACD    = "acd456"
+	testHashXYZ    = "xyz789"
+	testHashXYZ123 = "xyz123"
+	testHashXYZ456 = "xyz456"
+)
 
 func TestNew(t *testing.T) {
 	t.Parallel()
@@ -790,6 +798,311 @@ func TestDeleteNar(t *testing.T) {
 
 		assert.NoFileExists(t, narPath)
 	})
+}
+
+func TestDeleteSecretKey_RemovesEmptyConfigDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctx := newContext()
+
+	s, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	sk, _, err := signature.GenerateKeypair(cacheName, nil)
+	require.NoError(t, err)
+
+	skPath := filepath.Join(dir, "config", "cache.key")
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(skPath), 0o700))
+	require.NoError(t, os.WriteFile(skPath, []byte(sk.String()), 0o400))
+
+	// Delete the secret key
+	require.NoError(t, s.DeleteSecretKey(ctx))
+
+	// Verify file is deleted
+	assert.NoFileExists(t, skPath)
+
+	// Verify config directory is removed
+	assert.NoDirExists(t, filepath.Join(dir, "config"))
+}
+
+func TestDeleteNarInfo_RemovesEmptyParentDirectories(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctx := newContext()
+
+	s, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	// Use a hash that will create a unique directory structure: abc123
+	// This creates: store/narinfo/a/ab/abc123.narinfo
+	hash := testHashABC
+	narInfoPath := filepath.Join(
+		dir,
+		"store",
+		"narinfo",
+		"a",
+		"ab",
+		hash+".narinfo",
+	)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath, []byte("test"), 0o400))
+
+	// Delete the narinfo
+	require.NoError(t, s.DeleteNarInfo(ctx, hash))
+
+	// Verify file is deleted
+	assert.NoFileExists(t, narInfoPath)
+
+	// Verify ab/ directory is removed
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ab"))
+
+	// Verify a/ directory is removed
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", "a"))
+
+	// Verify narinfo/ directory is removed
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo"))
+}
+
+func TestDeleteNarInfo_PreservesNonEmptyDirectories(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctx := newContext()
+
+	s, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	// Create two narinfo files in the same level-2 directory
+	// abc123 and abc456 both go into a/ab/
+	hash1 := testHashABC
+	hash2 := testHashABC456
+
+	narInfoPath1 := filepath.Join(
+		dir,
+		"store",
+		"narinfo",
+		"a",
+		"ab",
+		hash1+".narinfo",
+	)
+	narInfoPath2 := filepath.Join(
+		dir,
+		"store",
+		"narinfo",
+		"a",
+		"ab",
+		hash2+".narinfo",
+	)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath1), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPath1, []byte("test1"), 0o400))
+	require.NoError(t, os.WriteFile(narInfoPath2, []byte("test2"), 0o400))
+
+	// Delete one narinfo
+	require.NoError(t, s.DeleteNarInfo(ctx, hash1))
+
+	// Verify deleted file is gone
+	assert.NoFileExists(t, narInfoPath1)
+
+	// Verify the other file still exists
+	assert.FileExists(t, narInfoPath2)
+
+	// Verify ab/ directory still exists (contains abc456.narinfo)
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ab"))
+
+	// Verify a/ directory still exists
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a"))
+
+	// Verify narinfo/ directory still exists
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo"))
+}
+
+func TestDeleteNarInfo_PartialCleanup(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctx := newContext()
+
+	s, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	// Create narinfo files in multiple level-2 dirs under same level-1
+	// abc goes into a/ab/
+	// acd goes into a/ac/
+	hashAB := testHashABC
+	hashAC := testHashACD
+
+	narInfoPathAB := filepath.Join(
+		dir,
+		"store",
+		"narinfo",
+		"a",
+		"ab",
+		hashAB+".narinfo",
+	)
+	narInfoPathAC := filepath.Join(
+		dir,
+		"store",
+		"narinfo",
+		"a",
+		"ac",
+		hashAC+".narinfo",
+	)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPathAB), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPathAC), 0o700))
+	require.NoError(t, os.WriteFile(narInfoPathAB, []byte("test1"), 0o400))
+	require.NoError(t, os.WriteFile(narInfoPathAC, []byte("test2"), 0o400))
+
+	// Delete abc123
+	require.NoError(t, s.DeleteNarInfo(ctx, hashAB))
+
+	// Verify deleted file is gone
+	assert.NoFileExists(t, narInfoPathAB)
+
+	// Verify ab/ is removed (was empty)
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ab"))
+
+	// Verify ac/ still exists
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ac"))
+
+	// Verify a/ still exists (contains ac/)
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a"))
+
+	// Verify narinfo/ still exists
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo"))
+}
+
+func TestDeleteNar_RemovesEmptyParentDirectories(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctx := newContext()
+
+	s, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	// Use a hash that will create a unique directory structure: xyz789
+	// This creates: store/nar/x/xy/xyz789.nar.xz
+	hash := testHashXYZ
+	narPath := filepath.Join(
+		dir,
+		"store",
+		"nar",
+		"x",
+		"xy",
+		hash+".nar.xz",
+	)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+	require.NoError(t, os.WriteFile(narPath, []byte("test"), 0o400))
+
+	narURL := nar.URL{
+		Hash:        hash,
+		Compression: nar.CompressionTypeXz,
+	}
+
+	// Delete the nar
+	require.NoError(t, s.DeleteNar(ctx, narURL))
+
+	// Verify file is deleted
+	assert.NoFileExists(t, narPath)
+
+	// Verify xy/ directory is removed
+	assert.NoDirExists(t, filepath.Join(dir, "store", "nar", "x", "xy"))
+
+	// Verify x/ directory is removed
+	assert.NoDirExists(t, filepath.Join(dir, "store", "nar", "x"))
+
+	// Verify nar/ directory is removed
+	assert.NoDirExists(t, filepath.Join(dir, "store", "nar"))
+}
+
+func TestDeleteNar_PreservesNonEmptyDirectories(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctx := newContext()
+
+	s, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	// Create two nar files in the same level-2 directory
+	// xyz123 and xyz456 both go into x/xy/
+	hash1 := testHashXYZ123
+	hash2 := testHashXYZ456
+
+	narPath1 := filepath.Join(
+		dir,
+		"store",
+		"nar",
+		"x",
+		"xy",
+		hash1+".nar.xz",
+	)
+	narPath2 := filepath.Join(
+		dir,
+		"store",
+		"nar",
+		"x",
+		"xy",
+		hash2+".nar.zst",
+	)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath1), 0o700))
+	require.NoError(t, os.WriteFile(narPath1, []byte("test1"), 0o400))
+	require.NoError(t, os.WriteFile(narPath2, []byte("test2"), 0o400))
+
+	narURL1 := nar.URL{
+		Hash:        hash1,
+		Compression: nar.CompressionTypeXz,
+	}
+
+	// Delete one nar
+	require.NoError(t, s.DeleteNar(ctx, narURL1))
+
+	// Verify deleted file is gone
+	assert.NoFileExists(t, narPath1)
+
+	// Verify the other file still exists
+	assert.FileExists(t, narPath2)
+
+	// Verify xy/ directory still exists (contains xyz456.nar.zst)
+	assert.DirExists(t, filepath.Join(dir, "store", "nar", "x", "xy"))
+
+	// Verify x/ directory still exists
+	assert.DirExists(t, filepath.Join(dir, "store", "nar", "x"))
+
+	// Verify nar/ directory still exists
+	assert.DirExists(t, filepath.Join(dir, "store", "nar"))
 }
 
 func newContext() context.Context {
