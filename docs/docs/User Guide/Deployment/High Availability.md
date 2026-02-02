@@ -60,7 +60,7 @@ Running multiple ncps instances provides:
 1. **Load balancer** to distribute requests
    - nginx, HAProxy, cloud load balancer, etc.
 1. **CDC (Content-Defined Chunking) feature**
-   - **CRITICAL:** You must enable CDC when running multiple replicas. Failure to do so will result in data inconsistency and potential corruption, as documented in [issue #660](https://github.com/kalbasit/ncps/issues/660).
+   - **CRITICAL:** You must enable CDC when running multiple replicas. Failure to do so will result in timeouts and instability, as documented in [issue #660](https://github.com/kalbasit/ncps/issues/660).
    - Enable by setting `config.cdc.enabled=true`.
 
 ### Network Requirements

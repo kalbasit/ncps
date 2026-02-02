@@ -194,7 +194,7 @@ This function will fail the template rendering if invalid configurations are det
 
   {{- /* CDC validation for HA */ -}}
   {{- if and (gt (int .Values.replicaCount) 1) (not .Values.config.cdc.enabled) (not .Values.config.cdc.iLoveTimeouts) -}}
-    {{- fail "High availability mode (replicaCount > 1) requires CDC to be enabled (config.cdc.enabled=true) to prevent data corruption and inconsistency. See https://github.com/kalbasit/ncps/issues/660. Set config.cdc.iLoveTimeouts to true if you accept this risk." -}}
+    {{- fail "High availability mode (replicaCount > 1) requires CDC to be enabled (config.cdc.enabled=true) to prevent timeouts and instability. See https://github.com/kalbasit/ncps/issues/660. Set config.cdc.iLoveTimeouts to true if you accept this risk." -}}
   {{- end -}}
 {{- end -}}
 

@@ -133,7 +133,7 @@ config:
   # Chunks are stored in the same backend as NAR files (different prefix/directory)
   cdc:
     # Enable CDC for deduplication (experimental)
-    # REQUIRED for HA deployments (replicaCount > 1) to prevent data corruption
+    # REQUIRED for HA deployments (replicaCount > 1) to prevent timeouts and instability.
     # See https://github.com/kalbasit/ncps/issues/660
     enabled: false
     # Minimum chunk size in bytes
@@ -144,7 +144,7 @@ config:
     max: 1048576
 
     # Bypass flag for HA validation without CDC
-    # Use with EXTREME CAUTION. Doing so may result in data corruption and inconsistency.
+    # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
     # See https://github.com/kalbasit/ncps/issues/660 for more details.
     iLoveTimeouts: false
 
