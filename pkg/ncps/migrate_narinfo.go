@@ -360,7 +360,7 @@ to enable safe concurrent migration.`,
 						if dryRun {
 							log.Info().Msg("[DRY-RUN] would delete from storage")
 							atomic.AddInt32(&totalSucceeded, 1)
-							RecordMigrationNarInfo(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
+							RecordMigrationObject(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
 
 							return nil
 						}
@@ -368,10 +368,10 @@ to enable safe concurrent migration.`,
 						if err := narInfoStore.DeleteNarInfo(ctxWithLog, hash); err != nil {
 							log.Error().Err(err).Msg("failed to delete from store")
 							atomic.AddInt32(&totalFailed, 1)
-							RecordMigrationNarInfo(ctxWithLog, MigrationOperationDelete, MigrationResultFailure)
+							RecordMigrationObject(ctxWithLog, MigrationOperationDelete, MigrationResultFailure)
 						} else {
 							atomic.AddInt32(&totalSucceeded, 1)
-							RecordMigrationNarInfo(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
+							RecordMigrationObject(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
 						}
 
 						return nil
@@ -399,7 +399,7 @@ to enable safe concurrent migration.`,
 					if err != nil {
 						log.Error().Err(err).Msg("failed to get narinfo from store")
 						atomic.AddInt32(&totalFailed, 1)
-						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
+						RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
@@ -407,7 +407,7 @@ to enable safe concurrent migration.`,
 					if dryRun {
 						log.Info().Msg("[DRY-RUN] would migrate and delete")
 						atomic.AddInt32(&totalSucceeded, 1)
-						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
+						RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
 
 						return nil
 					}
@@ -417,13 +417,13 @@ to enable safe concurrent migration.`,
 					if err := cache.MigrateNarInfo(ctxWithLog, locker, db, narInfoStore, hash, ni); err != nil {
 						log.Error().Err(err).Msg("failed to migrate narinfo")
 						atomic.AddInt32(&totalFailed, 1)
-						RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
+						RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
 
 					atomic.AddInt32(&totalSucceeded, 1)
-					RecordMigrationNarInfo(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
+					RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
 
 					return nil
 				})
