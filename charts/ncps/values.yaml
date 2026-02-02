@@ -10,6 +10,8 @@ global:
 # Number of replicas
 # For HA mode, set to 2 or more
 # For single instance, set to 1
+# WARNING: If setting replicaCount > 1, you MUST also enable CDC (config.cdc.enabled: true)
+# to prevent data corruption. See https://github.com/kalbasit/ncps/issues/660
 replicaCount: 1
 
 # Deployment mode: "deployment" or "statefulset"
@@ -131,6 +133,8 @@ config:
   # Chunks are stored in the same backend as NAR files (different prefix/directory)
   cdc:
     # Enable CDC for deduplication (experimental)
+    # REQUIRED for HA deployments (replicaCount > 1) to prevent data corruption
+    # See https://github.com/kalbasit/ncps/issues/660
     enabled: false
     # Minimum chunk size in bytes
     min: 65536
@@ -138,6 +142,11 @@ config:
     avg: 262144
     # Maximum chunk size in bytes
     max: 1048576
+
+    # Bypass flag for HA validation without CDC
+    # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
+    # See https://github.com/kalbasit/ncps/issues/660 for more details.
+    iLoveTimeouts: false
 
   # Storage backend (choose ONE)
   storage:
