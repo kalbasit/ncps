@@ -6,6 +6,9 @@ replicaCount: 3
 config:
   hostname: "test.example.com"
 
+  cdc:
+    enabled: true
+
   storage:
     type: s3
     s3:

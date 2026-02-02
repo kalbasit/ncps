@@ -1,5 +1,5 @@
-# Negative test: HA + SQLite database
-# This should FAIL validation (SQLite not compatible with HA)
+# Negative test: HA without CDC
+# This should FAIL validation (HA requires CDC)
 mode: deployment
 replicaCount: 3
 
@@ -7,7 +7,7 @@ config:
   hostname: "test.example.com"
 
   cdc:
-    enabled: true
+    enabled: false
 
   storage:
     type: s3
@@ -19,7 +19,10 @@ config:
       secretAccessKey: test-secret
 
   database:
-    type: sqlite # Not allowed for HA
+    type: postgresql
+    postgresql:
+      host: postgres.default.svc
+      password: test123
 
   redis:
     enabled: true
