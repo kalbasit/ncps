@@ -16,7 +16,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   filter:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-24.04
     outputs:
       database: ${{ steps.filter.outputs.database }}
@@ -40,7 +39,7 @@ jobs:
               - "docs/**"
   generate:
     needs: filter
-    if: needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true'
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -90,7 +89,7 @@ jobs:
           commit_message: "Auto Generate Database Code"
   deploy-docs-pages:
     needs: filter
-    if: needs.filter.outputs.docs == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && needs.filter.outputs.docs == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
