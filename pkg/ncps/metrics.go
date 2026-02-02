@@ -28,9 +28,9 @@ var (
 	//nolint:gochecknoglobals
 	meterMigration metric.Meter
 
-	// migrationNarInfosTotal tracks total narinfos processed during migration.
+	// migrationObjectsTotal tracks total objects processed during migration.
 	//nolint:gochecknoglobals
-	migrationNarInfosTotal metric.Int64Counter
+	migrationObjectsTotal metric.Int64Counter
 
 	// migrationDuration tracks the duration of migration operations.
 	//nolint:gochecknoglobals
@@ -47,8 +47,8 @@ func init() {
 
 	var err error
 
-	migrationNarInfosTotal, err = meterMigration.Int64Counter(
-		"ncps_migration_narinfos_total",
+	migrationObjectsTotal, err = meterMigration.Int64Counter(
+		"ncps_migration_objects_total",
 		metric.WithDescription("Total number of objects processed during migration"),
 		metric.WithUnit("{object}"),
 	)
@@ -75,15 +75,15 @@ func init() {
 	}
 }
 
-// RecordMigrationNarInfo records a narinfo migration operation.
+// RecordMigrationObject records a object migration operation.
 // operation should be one of MigrationOperation* constants.
 // result should be one of MigrationResult* constants.
-func RecordMigrationNarInfo(ctx context.Context, operation, result string) {
-	if migrationNarInfosTotal == nil {
+func RecordMigrationObject(ctx context.Context, operation, result string) {
+	if migrationObjectsTotal == nil {
 		return
 	}
 
-	migrationNarInfosTotal.Add(ctx, 1,
+	migrationObjectsTotal.Add(ctx, 1,
 		metric.WithAttributes(
 			attribute.String("operation", operation),
 			attribute.String("result", result),

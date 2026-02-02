@@ -36,8 +36,7 @@ Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/O
 
 **Migration Metrics:**
 
-- `ncps_migration_narinfos_total{operation,result}` - NarInfos migrated
-  - Labels: `operation` (migrate/delete), `result` (success/failure/skipped)
+- `ncps_migration_objects_total` | Counter | `operation`, `result` | Total number of objects processed during migration. Labels: `operation` (migrate/delete), `result` (success/failure/skipped)
 - `ncps_migration_duration_seconds{operation}` - Migration operation duration
   - Label: `operation` (migrate/delete)
 - `ncps_migration_batch_size` - Migration batch sizes

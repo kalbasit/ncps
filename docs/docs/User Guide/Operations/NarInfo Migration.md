@@ -221,15 +221,15 @@ ncps migrate-narinfo \
 
 If OpenTelemetry is enabled, monitor via metrics:
 
-**ncps_migration_narinfos_total**
+**ncps_migration_objects_total**
 
 ```
 # Total migrations
-sum(ncps_migration_narinfos_total)
+sum(ncps_migration_objects_total)
 
 # Success rate
-sum(rate(ncps_migration_narinfos_total{result="success"}[5m])) /
-sum(rate(ncps_migration_narinfos_total[5m]))
+sum(rate(ncps_migration_objects_total{result="success"}[5m])) /
+sum(rate(ncps_migration_objects_total[5m]))
 ```
 
 **ncps_migration_duration_seconds**
