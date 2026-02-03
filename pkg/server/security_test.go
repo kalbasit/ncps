@@ -22,9 +22,8 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
+//nolint:paralleltest
 func TestSecurity(t *testing.T) {
-	t.Parallel()
-
 	// Setup a dummy upstream server that records the paths it receives
 	receivedPaths := make(chan string, 100)
 
@@ -143,9 +142,8 @@ L:
 	}
 
 	for _, tt := range tests {
+		//nolint:paralleltest
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			// Clear channel
 		L2:
 			for {
