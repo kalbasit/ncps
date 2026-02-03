@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,45 +15,141 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-const cacheName = "cache.example.com"
+const (
+	cacheName       = "cache.example.com"
+	downloadLockTTL = 5 * time.Minute
+	cacheLockTTL    = 30 * time.Minute
+)
 
-func TestHealthCheck(t *testing.T) {
-	t.Parallel()
+// cacheFactory is a function that returns a clean, ready-to-use Cache instance
+// and takes care of cleaning up once the test is done.
+type cacheFactory func(t *testing.T) (*cache.Cache, func())
 
-	ts := testdata.NewTestServer(t, 40)
-	t.Cleanup(ts.Close)
+func setupSQLiteCache(t *testing.T) (*cache.Cache, func()) {
+	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	db, dbCleanup := testhelper.SetupSQLite(t)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	downloadLocker := locklocal.NewLocker()
+	cacheLocker := locklocal.NewRWLocker()
+
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		c.Close()
+		dbCleanup()
+		os.RemoveAll(dir)
+	}
+
+	return c, cleanup
+}
+
+func setupPostgresCache(t *testing.T) (*cache.Cache, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	downloadLocker := locklocal.NewLocker()
+	cacheLocker := locklocal.NewRWLocker()
+
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		c.Close()
+		dbCleanup()
+		os.RemoveAll(dir)
+	}
+
+	return c, cleanup
+}
+
+func setupMySQLCache(t *testing.T) (*cache.Cache, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	downloadLocker := locklocal.NewLocker()
+	cacheLocker := locklocal.NewRWLocker()
+
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		c.Close()
+		dbCleanup()
+		os.RemoveAll(dir)
+	}
+
+	return c, cleanup
+}
+
+func TestHealthCheckBackends(t *testing.T) {
+	t.Parallel()
+
+	backends := []struct {
+		name   string
+		envVar string
+		setup  cacheFactory
+	}{
+		{name: "SQLite", setup: setupSQLiteCache},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", setup: setupPostgresCache},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", setup: setupMySQLCache},
+	}
+
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			testHealthCheck(t, b.setup)
+		})
+	}
+}
+
+func testHealthCheck(t *testing.T, factory cacheFactory) {
+	t.Helper()
+
+	ts := testdata.NewTestServer(t, 40)
+	t.Cleanup(ts.Close)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
 	})
 	require.NoError(t, err)
 
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	localStore, err := local.New(newContext(), dir)
-	require.NoError(t, err)
-
-	// Use local locks for tests
-	downloadLocker := locklocal.NewLocker()
-	cacheLocker := locklocal.NewRWLocker()
-
-	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
-	require.NoError(t, err)
+	c, cleanup := factory(t)
+	t.Cleanup(cleanup)
 
 	c.AddUpstreamCaches(newContext(), uc)
 

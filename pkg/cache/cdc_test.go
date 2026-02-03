@@ -3,6 +3,7 @@ package cache_test
 import (
 	"context"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,30 +15,63 @@ import (
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
 )
 
-func TestCDC(t *testing.T) {
+func TestCDCBackends(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	backends := []struct {
+		name   string
+		envVar string
+		setup  cacheFactory
+	}{
+		{name: "SQLite", setup: setupSQLiteFactory},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", setup: setupPostgresFactory},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", setup: setupMySQLFactory},
+	}
 
-	c, db, _, dir, cleanup := setupTestCache(t)
-	t.Cleanup(cleanup)
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Initialize chunk store
-	chunkStoreDir := filepath.Join(dir, "chunks-store")
-	chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
-	require.NoError(t, err)
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
 
-	c.SetChunkStore(chunkStore)
-	err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
-	require.NoError(t, err)
+			runCDCTestSuite(t, b.setup)
+		})
+	}
+}
 
-	//nolint:paralleltest
-	t.Run("Put and Get with CDC", func(t *testing.T) {
+func runCDCTestSuite(t *testing.T, factory cacheFactory) {
+	t.Helper()
+
+	t.Run("Put and Get with CDC", testCDCPutAndGet(factory))
+	t.Run("Deduplication", testCDCDeduplication(factory))
+	t.Run("Mixed Mode", testCDCMixedMode(factory))
+}
+
+func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
+		require.NoError(t, err)
+
 		content := "this is a test nar content that should be chunked by fastcdc algorithm"
 		nu := nar.URL{Hash: "testnar1", Compression: nar.CompressionTypeNone}
 
 		r := io.NopCloser(strings.NewReader(content))
-		err := c.PutNar(ctx, nu, r)
+		err = c.PutNar(ctx, nu, r)
 		require.NoError(t, err)
 
 		// Verify chunks exist in DB
@@ -55,14 +89,31 @@ func TestCDC(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, content, string(data))
 		assert.Equal(t, int64(len(content)), size)
-	})
+	}
+}
 
-	//nolint:paralleltest
-	t.Run("Deduplication", func(t *testing.T) {
+func testCDCDeduplication(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
+		require.NoError(t, err)
+
 		content := "common content shared between two nars"
 
 		nu1 := nar.URL{Hash: "dedup1", Compression: nar.CompressionTypeNone}
-		err := c.PutNar(ctx, nu1, io.NopCloser(strings.NewReader(content)))
+		err = c.PutNar(ctx, nu1, io.NopCloser(strings.NewReader(content)))
 		require.NoError(t, err)
 
 		count1, _ := db.GetChunkCount(ctx)
@@ -74,10 +125,25 @@ func TestCDC(t *testing.T) {
 		count2, _ := db.GetChunkCount(ctx)
 
 		assert.Equal(t, count1, count2, "no new chunks should be created for duplicate content")
-	})
+	}
+}
 
-	//nolint:paralleltest
-	t.Run("Mixed Mode", func(t *testing.T) {
+func testCDCMixedMode(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+
 		// 1. Store a blob with CDC disabled
 		require.NoError(t, c.SetCDCConfiguration(false, 0, 0, 0))
 
@@ -106,5 +172,5 @@ func TestCDC(t *testing.T) {
 		d2, _ := io.ReadAll(rc2)
 		rc2.Close()
 		assert.Equal(t, chunkContent, string(d2))
-	})
+	}
 }

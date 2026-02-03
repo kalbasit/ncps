@@ -44,247 +44,297 @@ func skipIfRedisNotAvailable(t *testing.T) {
 	}
 }
 
-// TestDistributedDownloadDeduplication verifies that when multiple cache instances
-// request the same package, only one instance downloads it from the upstream source.
-func TestDistributedDownloadDeduplication(t *testing.T) {
-	t.Parallel()
-	skipIfRedisNotAvailable(t)
+// distributedDBFactory creates a shared database for distributed testing.
+// Unlike other factories, this returns a SHARED database that multiple cache instances will use.
+type distributedDBFactory func(t *testing.T) (database.Querier, string, func())
 
-	ctx := newContext()
+// setupDistributedSQLite creates a shared SQLite database for distributed testing.
+func setupDistributedSQLite(t *testing.T) (database.Querier, string, func()) {
+	t.Helper()
 
-	// Start test server
-	ts := testdata.NewTestServer(t, 40)
-	t.Cleanup(ts.Close)
-
-	// Track actual upstream downloads by instrumenting the test server
-	var upstreamDownloads atomic.Int32
-
-	narEntry := testdata.Entries[0]
-	narPath := "/nar/" + narEntry.NarHash + ".nar." + narEntry.NarCompression.ToFileExtension()
-
-	// Add a handler to count NAR downloads from upstream
-	// Only count GET requests (actual downloads), not HEAD requests
-	handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
-		if r.URL.Path == narPath && r.Method == http.MethodGet {
-			upstreamDownloads.Add(1)
-		}
-
-		return false // Let the default handler process the request
-	})
-
-	t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
-
-	// Create shared directory for all instances
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
 
-	t.Cleanup(func() { os.RemoveAll(sharedDir) })
-
-	// Create shared database
 	dbFile := filepath.Join(sharedDir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
-	// Create shared storage
-	sharedStore, err := local.New(ctx, sharedDir)
+	cleanup := func() {
+		db.DB().Close()
+		os.RemoveAll(sharedDir)
+	}
+
+	return db, sharedDir, cleanup
+}
+
+// setupDistributedPostgres creates a shared PostgreSQL database for distributed testing.
+func setupDistributedPostgres(t *testing.T) (database.Querier, string, func()) {
+	t.Helper()
+
+	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
 
-	// Create Redis locks with unique prefix for this test
-	// Default to localhost:6379 for local development
-	redisAddrs := []string{"localhost:6379"}
-	// Use environment variable if set (for CI with dynamic ports)
-	if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
-		redisAddrs = []string{envAddrs}
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
+
+	cleanup := func() {
+		dbCleanup()
+		os.RemoveAll(sharedDir)
 	}
 
-	redisCfg := redis.Config{
-		Addrs:     redisAddrs,
-		KeyPrefix: "ncps:test:dedup:",
+	return db, sharedDir, cleanup
+}
+
+// setupDistributedMySQL creates a shared MySQL database for distributed testing.
+func setupDistributedMySQL(t *testing.T) (database.Querier, string, func()) {
+	t.Helper()
+
+	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
+	require.NoError(t, err)
+
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
+
+	cleanup := func() {
+		dbCleanup()
+		os.RemoveAll(sharedDir)
 	}
 
-	retryCfg := lock.RetryConfig{
-		MaxAttempts:  3,
-		InitialDelay: 100 * time.Millisecond,
-		MaxDelay:     2 * time.Second,
-		Jitter:       true,
+	return db, sharedDir, cleanup
+}
+
+// TestDistributedBackends runs the distributed test suite across multiple database backends.
+func TestDistributedBackends(t *testing.T) {
+	t.Parallel()
+	skipIfRedisNotAvailable(t)
+
+	backends := []struct {
+		name   string
+		envVar string
+		setup  distributedDBFactory
+	}{
+		{
+			name:  "SQLite",
+			setup: setupDistributedSQLite,
+		},
+		{
+			name:   "PostgreSQL",
+			envVar: "NCPS_TEST_ADMIN_POSTGRES_URL",
+			setup:  setupDistributedPostgres,
+		},
+		{
+			name:   "MySQL",
+			envVar: "NCPS_TEST_ADMIN_MYSQL_URL",
+			setup:  setupDistributedMySQL,
+		},
 	}
 
-	// Create multiple cache instances
-	var caches []*cache.Cache
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
 
-	for i := 0; i < numInstances; i++ {
-		downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			runDistributedTestSuite(t, b.setup)
+		})
+	}
+}
+
+func runDistributedTestSuite(t *testing.T, factory distributedDBFactory) {
+	t.Helper()
+
+	t.Run("DownloadDeduplication", testDistributedDownloadDeduplication(factory))
+	t.Run("ConcurrentReads", testDistributedConcurrentReads(factory))
+	t.Run("LockFailover", testDistributedLockFailover(factory))
+	t.Run("PutNarInfoConcurrentSharedNar", testPutNarInfoConcurrentSharedNar(factory))
+}
+
+// testDistributedDownloadDeduplication verifies that when multiple cache instances
+// request the same package, only one instance downloads it from the upstream source.
+func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := newContext()
+
+		// Get shared database and directory from factory
+		db, sharedDir, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Start test server
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		// Track actual upstream downloads by instrumenting the test server
+		var upstreamDownloads atomic.Int32
+
+		narEntry := testdata.Entries[0]
+		narPath := "/nar/" + narEntry.NarHash + ".nar." + narEntry.NarCompression.ToFileExtension()
+
+		// Add a handler to count NAR downloads from upstream
+		// Only count GET requests (actual downloads), not HEAD requests
+		handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path == narPath && r.Method == http.MethodGet {
+				upstreamDownloads.Add(1)
+			}
+
+			return false // Let the default handler process the request
+		})
+
+		t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
+
+		// Create shared storage
+		sharedStore, err := local.New(ctx, sharedDir)
 		require.NoError(t, err)
 
-		cacheLocker, err := redis.NewRWLocker(ctx, redisCfg, retryCfg, false)
-		require.NoError(t, err)
+		// Create Redis locks with unique prefix for this test
+		// Default to localhost:6379 for local development
+		redisAddrs := []string{"localhost:6379"}
+		// Use environment variable if set (for CI with dynamic ports)
+		if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+			redisAddrs = []string{envAddrs}
+		}
 
-		// Create separate upstream cache for each instance to avoid data races
+		redisCfg := redis.Config{
+			Addrs:     redisAddrs,
+			KeyPrefix: "ncps:test:dedup:",
+		}
+
+		retryCfg := lock.RetryConfig{
+			MaxAttempts:  3,
+			InitialDelay: 100 * time.Millisecond,
+			MaxDelay:     2 * time.Second,
+			Jitter:       true,
+		}
+
+		// Create multiple cache instances
+		var caches []*cache.Cache
+
+		for i := 0; i < numInstances; i++ {
+			downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
+			require.NoError(t, err)
+
+			cacheLocker, err := redis.NewRWLocker(ctx, redisCfg, retryCfg, false)
+			require.NoError(t, err)
+
+			// Create separate upstream cache for each instance to avoid data races
+			uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			})
+			require.NoError(t, err)
+
+			c, err := cache.New(
+				ctx,
+				cacheName,
+				db,
+				sharedStore,
+				sharedStore,
+				sharedStore,
+				"",
+				downloadLocker,
+				cacheLocker,
+				5*time.Minute,
+				30*time.Minute,
+			)
+			require.NoError(t, err)
+
+			c.AddUpstreamCaches(ctx, uc)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// Wait for this instance's upstream to become healthy
+			<-c.GetHealthChecker().Trigger()
+
+			caches = append(caches, c)
+		}
+
+		// Track GetNar attempts from all instances
+		var getNarAttempts atomic.Int32
+
+		// Simulate concurrent requests from all instances for the same NAR
+		var wg sync.WaitGroup
+
+		for i, c := range caches {
+			wg.Add(1)
+
+			go func(instanceNum int, cacheInstance *cache.Cache) {
+				defer wg.Done()
+
+				getNarAttempts.Add(1)
+
+				// All instances request the same NAR
+				narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+				_, reader, err := cacheInstance.GetNar(ctx, narURL)
+				assert.NoError(t, err, "instance %d read failed", instanceNum)
+
+				if reader != nil {
+					_, err := io.Copy(io.Discard, reader)
+					assert.NoError(t, err, "instance %d discarding body failed", instanceNum)
+				}
+			}(i, c)
+		}
+
+		wg.Wait()
+
+		// All instances should have attempted the GetNar operation
+		attempts := getNarAttempts.Load()
+		assert.Equal(t, int32(numInstances), attempts,
+			"all instances should attempt GetNar")
+
+		// Verify deduplication: only ONE instance should have downloaded from upstream
+		upstreamCount := upstreamDownloads.Load()
+		assert.Equal(t, int32(1), upstreamCount,
+			"only one instance should download from upstream (deduplication)")
+
+		// Verify all instances can now read the cached file
+		for i, c := range caches {
+			narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+			size, reader, err := c.GetNar(ctx, narURL)
+			require.NoError(t, err, "instance %d should read cached NAR", i)
+			assert.Positive(t, size, "instance %d should have positive size", i)
+
+			data, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			assert.Len(t, data, len(narEntry.NarText),
+				"instance %d should read complete NAR", i)
+		}
+	}
+}
+
+// testDistributedConcurrentReads verifies that multiple instances can
+// concurrently read the same cached files.
+func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := newContext()
+
+		// Get shared database and directory from factory
+		db, sharedDir, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Start test server
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		// Create upstream cache
 		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 			PublicKeys: testdata.PublicKeys(),
 		})
 		require.NoError(t, err)
 
-		c, err := cache.New(
-			ctx,
-			cacheName,
-			db,
-			sharedStore,
-			sharedStore,
-			sharedStore,
-			"",
-			downloadLocker,
-			cacheLocker,
-			5*time.Minute,
-			30*time.Minute,
-		)
+		// Create shared storage
+		sharedStore, err := local.New(ctx, sharedDir)
 		require.NoError(t, err)
 
-		c.AddUpstreamCaches(ctx, uc)
-		c.SetRecordAgeIgnoreTouch(0)
-
-		// Wait for this instance's upstream to become healthy
-		<-c.GetHealthChecker().Trigger()
-
-		caches = append(caches, c)
-	}
-
-	// Track GetNar attempts from all instances
-	var getNarAttempts atomic.Int32
-
-	// Simulate concurrent requests from all instances for the same NAR
-	var wg sync.WaitGroup
-
-	for i, c := range caches {
-		wg.Add(1)
-
-		go func(instanceNum int, cacheInstance *cache.Cache) {
-			defer wg.Done()
-
-			getNarAttempts.Add(1)
-
-			// All instances request the same NAR
-			narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-			_, reader, err := cacheInstance.GetNar(ctx, narURL)
-			assert.NoError(t, err, "instance %d read failed", instanceNum)
-
-			if reader != nil {
-				_, err := io.Copy(io.Discard, reader)
-				assert.NoError(t, err, "instance %d discarding body failed", instanceNum)
-			}
-		}(i, c)
-	}
-
-	wg.Wait()
-
-	// All instances should have attempted the GetNar operation
-	attempts := getNarAttempts.Load()
-	assert.Equal(t, int32(numInstances), attempts,
-		"all instances should attempt GetNar")
-
-	// Verify deduplication: only ONE instance should have downloaded from upstream
-	upstreamCount := upstreamDownloads.Load()
-	assert.Equal(t, int32(1), upstreamCount,
-		"only one instance should download from upstream (deduplication)")
-
-	// Verify all instances can now read the cached file
-	for i, c := range caches {
-		narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-		size, reader, err := c.GetNar(ctx, narURL)
-		require.NoError(t, err, "instance %d should read cached NAR", i)
-		assert.Positive(t, size, "instance %d should have positive size", i)
-
-		data, err := io.ReadAll(reader)
-		require.NoError(t, err)
-		assert.Len(t, data, len(narEntry.NarText),
-			"instance %d should read complete NAR", i)
-	}
-}
-
-// TestDistributedConcurrentReads verifies that multiple instances can
-// concurrently read the same cached files.
-func TestDistributedConcurrentReads(t *testing.T) {
-	t.Parallel()
-	skipIfRedisNotAvailable(t)
-
-	ctx := newContext()
-
-	// Start test server
-	ts := testdata.NewTestServer(t, 40)
-	t.Cleanup(ts.Close)
-
-	// Create upstream cache
-	uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-		PublicKeys: testdata.PublicKeys(),
-	})
-	require.NoError(t, err)
-
-	// Create shared directory for all instances
-	sharedDir, err := os.MkdirTemp("", "shared-path-")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(sharedDir) })
-
-	// Create shared database
-	dbFile := filepath.Join(sharedDir, "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	// Create shared storage
-	sharedStore, err := local.New(ctx, sharedDir)
-	require.NoError(t, err)
-
-	// For this test, use local locks since we're testing read concurrency,
-	// not distributed locking coordination
-	downloadLocker := locklocal.NewLocker()
-	cacheLocker := locklocal.NewRWLocker()
-
-	// Create first instance to populate the cache
-	c1, err := cache.New(
-		ctx,
-		cacheName,
-		db,
-		sharedStore,
-		sharedStore,
-		sharedStore,
-		"",
-		downloadLocker,
-		cacheLocker,
-		5*time.Minute,
-		30*time.Minute,
-	)
-	require.NoError(t, err)
-
-	c1.AddUpstreamCaches(ctx, uc)
-	c1.SetRecordAgeIgnoreTouch(0)
-
-	// Wait for upstream caches to become available
-	<-c1.GetHealthChecker().Trigger()
-
-	// Pre-populate cache with a NAR
-	narEntry := testdata.Entries[0]
-	narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-
-	_, reader, err := c1.GetNar(ctx, narURL)
-	require.NoError(t, err)
-	_, err = io.Copy(io.Discard, reader)
-	require.NoError(t, err)
-
-	// Give it a moment to fully cache
-	time.Sleep(500 * time.Millisecond)
-
-	// Now create multiple instances that will read concurrently
-	var caches []*cache.Cache
-
-	for i := 0; i < numInstances; i++ {
+		// For this test, use local locks since we're testing read concurrency,
+		// not distributed locking coordination
 		downloadLocker := locklocal.NewLocker()
 		cacheLocker := locklocal.NewRWLocker()
 
-		// Don't create upstream cache for read-only instances
-		c, err := cache.New(
+		// Create first instance to populate the cache
+		c1, err := cache.New(
 			ctx,
 			cacheName,
 			db,
@@ -299,117 +349,162 @@ func TestDistributedConcurrentReads(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		caches = append(caches, c)
+		c1.AddUpstreamCaches(ctx, uc)
+		c1.SetRecordAgeIgnoreTouch(0)
+
+		// Wait for upstream caches to become available
+		<-c1.GetHealthChecker().Trigger()
+
+		// Pre-populate cache with a NAR
+		narEntry := testdata.Entries[0]
+		narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+
+		_, reader, err := c1.GetNar(ctx, narURL)
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, reader)
+		require.NoError(t, err)
+
+		// Give it a moment to fully cache
+		time.Sleep(500 * time.Millisecond)
+
+		// Now create multiple instances that will read concurrently
+		var caches []*cache.Cache
+
+		for i := 0; i < numInstances; i++ {
+			downloadLocker := locklocal.NewLocker()
+			cacheLocker := locklocal.NewRWLocker()
+
+			// Don't create upstream cache for read-only instances
+			c, err := cache.New(
+				ctx,
+				cacheName,
+				db,
+				sharedStore,
+				sharedStore,
+				sharedStore,
+				"",
+				downloadLocker,
+				cacheLocker,
+				5*time.Minute,
+				30*time.Minute,
+			)
+			require.NoError(t, err)
+
+			caches = append(caches, c)
+		}
+
+		// All instances read the same NAR concurrently
+		var (
+			wg        sync.WaitGroup
+			readCount atomic.Int32
+		)
+
+		for i, c := range caches {
+			wg.Add(1)
+
+			go func(instanceNum int, cacheInstance *cache.Cache) {
+				defer wg.Done()
+
+				size, reader, err := cacheInstance.GetNar(ctx, narURL)
+				assert.NoError(t, err, "instance %d read failed", instanceNum)
+				assert.Positive(t, size, "instance %d got zero size", instanceNum)
+
+				if reader != nil {
+					data, err := io.ReadAll(reader)
+					assert.NoError(t, err, "instance %d read body failed", instanceNum)
+					assert.Len(t, data, len(narEntry.NarText),
+						"instance %d read wrong size", instanceNum)
+				}
+
+				readCount.Add(1)
+			}(i, c)
+		}
+
+		wg.Wait()
+
+		// Verify all instances successfully read
+		assert.Equal(t, int32(numInstances), readCount.Load(),
+			"all instances should successfully read")
 	}
-
-	// All instances read the same NAR concurrently
-	var (
-		wg        sync.WaitGroup
-		readCount atomic.Int32
-	)
-
-	for i, c := range caches {
-		wg.Add(1)
-
-		go func(instanceNum int, cacheInstance *cache.Cache) {
-			defer wg.Done()
-
-			size, reader, err := cacheInstance.GetNar(ctx, narURL)
-			assert.NoError(t, err, "instance %d read failed", instanceNum)
-			assert.Positive(t, size, "instance %d got zero size", instanceNum)
-
-			if reader != nil {
-				data, err := io.ReadAll(reader)
-				assert.NoError(t, err, "instance %d read body failed", instanceNum)
-				assert.Len(t, data, len(narEntry.NarText),
-					"instance %d read wrong size", instanceNum)
-			}
-
-			readCount.Add(1)
-		}(i, c)
-	}
-
-	wg.Wait()
-
-	// Verify all instances successfully read
-	assert.Equal(t, int32(numInstances), readCount.Load(),
-		"all instances should successfully read")
 }
 
-// TestDistributedLockFailover tests that if one instance fails while holding
+// testDistributedLockFailover tests that if one instance fails while holding
 // a lock, other instances can still acquire it after TTL expires.
-func TestDistributedLockFailover(t *testing.T) {
-	t.Parallel()
-	skipIfRedisNotAvailable(t)
+func testDistributedLockFailover(_ distributedDBFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
 
-	ctx := newContext()
+		ctx := newContext()
 
-	// Create Redis locks with short TTL for faster test
-	// Default to localhost:6379 for local development
-	redisAddrs := []string{"localhost:6379"}
-	// Use environment variable if set (for CI with dynamic ports)
-	if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
-		redisAddrs = []string{envAddrs}
+		// Create Redis locks with short TTL for faster test
+		// Default to localhost:6379 for local development
+		redisAddrs := []string{"localhost:6379"}
+		// Use environment variable if set (for CI with dynamic ports)
+		if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+			redisAddrs = []string{envAddrs}
+		}
+
+		redisCfg := redis.Config{
+			Addrs:     redisAddrs,
+			KeyPrefix: "ncps:test:failover:",
+		}
+
+		retryCfg := lock.RetryConfig{
+			MaxAttempts:  5,
+			InitialDelay: 100 * time.Millisecond,
+			MaxDelay:     1 * time.Second,
+			Jitter:       true,
+		}
+
+		// Create first locker and acquire lock
+		locker1, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
+		require.NoError(t, err)
+
+		testKey := "test-failover-key"
+		shortTTL := 2 * time.Second
+
+		// Locker 1 acquires the lock
+		err = locker1.Lock(ctx, testKey, shortTTL)
+		require.NoError(t, err)
+
+		// Create second locker
+		locker2, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
+		require.NoError(t, err)
+
+		// Locker 2 should initially fail to acquire (lock held by locker1)
+		ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+
+		err = locker2.Lock(ctx2, testKey, shortTTL)
+		require.Error(t, err, "locker2 should fail to acquire lock held by locker1")
+
+		// Simulate locker1 failure (don't unlock, let it expire)
+		// Wait for TTL to expire
+		time.Sleep(shortTTL + 2*time.Second)
+
+		// Now locker2 should be able to acquire the lock
+		err = locker2.Lock(ctx, testKey, shortTTL)
+		require.NoError(t, err, "locker2 should acquire lock after TTL expiry")
+
+		// Clean up
+		err = locker2.Unlock(ctx, testKey)
+		assert.NoError(t, err)
 	}
-
-	redisCfg := redis.Config{
-		Addrs:     redisAddrs,
-		KeyPrefix: "ncps:test:failover:",
-	}
-
-	retryCfg := lock.RetryConfig{
-		MaxAttempts:  5,
-		InitialDelay: 100 * time.Millisecond,
-		MaxDelay:     1 * time.Second,
-		Jitter:       true,
-	}
-
-	// Create first locker and acquire lock
-	locker1, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
-	require.NoError(t, err)
-
-	testKey := "test-failover-key"
-	shortTTL := 2 * time.Second
-
-	// Locker 1 acquires the lock
-	err = locker1.Lock(ctx, testKey, shortTTL)
-	require.NoError(t, err)
-
-	// Create second locker
-	locker2, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
-	require.NoError(t, err)
-
-	// Locker 2 should initially fail to acquire (lock held by locker1)
-	ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-
-	err = locker2.Lock(ctx2, testKey, shortTTL)
-	require.Error(t, err, "locker2 should fail to acquire lock held by locker1")
-
-	// Simulate locker1 failure (don't unlock, let it expire)
-	// Wait for TTL to expire
-	time.Sleep(shortTTL + 500*time.Millisecond)
-
-	// Now locker2 should be able to acquire the lock
-	err = locker2.Lock(ctx, testKey, shortTTL)
-	require.NoError(t, err, "locker2 should acquire lock after TTL expiry")
-
-	// Clean up
-	err = locker2.Unlock(ctx, testKey)
-	assert.NoError(t, err)
 }
 
-func TestPutNarInfoConcurrentSharedNar(t *testing.T) {
-	t.Parallel()
-	skipIfRedisNotAvailable(t)
+// testPutNarInfoConcurrentSharedNar tests concurrent writes of two different narinfos
+// that reference the same NAR file, to ensure proper handling of shared NAR files.
+func testPutNarInfoConcurrentSharedNar(factory distributedDBFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
 
-	runTest := func(t *testing.T, setupDB func(*testing.T) (database.Querier, func())) {
 		// We run this loop to increase chance of hitting the race condition.
 		for run := 0; run < 50; run++ {
 			func() {
 				ctx := newContext()
 
-				db, cleanup := setupDB(t)
+				// Get shared database and directory from factory
+				db, sharedDir, cleanup := factory(t)
 				defer cleanup()
 
 				// Redis setup
@@ -432,11 +527,7 @@ func TestPutNarInfoConcurrentSharedNar(t *testing.T) {
 
 				cacheLocker := locklocal.NewRWLocker() // Local cache lock is fine for single-process test
 
-				// Shared storage
-				sharedDir, err := os.MkdirTemp("", "shared-path-")
-				require.NoError(t, err)
-				t.Cleanup(func() { os.RemoveAll(sharedDir) })
-
+				// Create shared storage
 				sharedStore, err := local.New(ctx, sharedDir)
 				require.NoError(t, err)
 
@@ -520,14 +611,4 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 			}()
 		}
 	}
-
-	t.Run("PostgreSQL", func(t *testing.T) {
-		t.Parallel()
-		runTest(t, testhelper.SetupPostgres)
-	})
-
-	t.Run("MySQL", func(t *testing.T) {
-		t.Parallel()
-		runTest(t, testhelper.SetupMySQL)
-	})
 }
