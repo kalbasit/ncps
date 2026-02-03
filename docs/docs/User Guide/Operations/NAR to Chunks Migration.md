@@ -82,7 +82,7 @@ ncps migrate-nar-to-chunks \
 
 The migration command reports progress every 5 seconds:
 
-```
+```text
 INFO starting migration of NARs to chunks
 INFO migration progress found=1523 processed=1523 succeeded=1520 failed=3 skipped=0 elapsed=15s rate=101.53
 INFO migration progress found=3042 processed=3042 succeeded=3035 failed=7 skipped=120 elapsed=30s rate=101.40
@@ -104,7 +104,7 @@ When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports 
 
 ### Available Metrics
 
-- `ncps_migration_narinfos_total{migration_type="nar-to-chunks",operation,result}` - Total NARs processed.
+- `ncps_migration_objects_total{migration_type="nar-to-chunks",operation,result}` - Total NARs processed.
 - `ncps_migration_duration_seconds{migration_type="nar-to-chunks",operation}` - Duration of chunking operations.
 - `ncps_migration_batch_size{migration_type="nar-to-chunks"}` - Total number of NARs found for migration.
 
@@ -112,20 +112,20 @@ When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports 
 
 **Migration throughput:**
 
-```
-rate(ncps_migration_narinfos_total{migration_type="nar-to-chunks"}[5m])
+```promql
+rate(ncps_migration_objects_total{migration_type="nar-to-chunks"}[5m])
 ```
 
 **Migration success rate:**
 
-```
-sum(rate(ncps_migration_narinfos_total{migration_type="nar-to-chunks",result="success"}[5m]))
-/ sum(rate(ncps_migration_narinfos_total{migration_type="nar-to-chunks"}[5m]))
+```promql
+sum(rate(ncps_migration_objects_total{migration_type="nar-to-chunks",result="success"}[5m]))
+/ sum(rate(ncps_migration_objects_total{migration_type="nar-to-chunks"}[5m]))
 ```
 
 **Migration duration (p99):**
 
-```
+```promql
 histogram_quantile(0.99, ncps_migration_duration_seconds{migration_type="nar-to-chunks"})
 ```
 

@@ -51,6 +51,7 @@ const (
 
 	// Migration type constants for metrics.
 	migrationTypeNarInfoToDB = "narinfo-to-db"
+	migrationTypeNarToChunks = "nar-to-chunks"
 )
 
 // narInfoJobKey returns the key used for tracking narinfo download jobs.
@@ -3940,6 +3941,7 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 		err := c.MigrateNarToChunks(ctx, narURL)
 		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(
+				attribute.String("migration_type", migrationTypeNarToChunks),
 				attribute.String("operation", migrationOperationMigrate),
 			),
 		)
@@ -3948,6 +3950,7 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 			log.Error().Err(err).Msg("error migrating nar to chunks")
 			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
+					attribute.String("migration_type", migrationTypeNarToChunks),
 					attribute.String("operation", migrationOperationMigrate),
 					attribute.String("result", migrationResultFailure),
 				),
@@ -3958,6 +3961,7 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 
 		backgroundMigrationObjectsTotal.Add(ctx, 1,
 			metric.WithAttributes(
+				attribute.String("migration_type", migrationTypeNarToChunks),
 				attribute.String("operation", migrationOperationMigrate),
 				attribute.String("result", migrationResultSuccess),
 			),
