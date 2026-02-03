@@ -1,6 +1,7 @@
 package database
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -133,6 +134,49 @@ func TestParseMySQLConfig(t *testing.T) {
 			assert.Equal(t, tt.expectedNet, cfg.Net)
 			assert.Equal(t, tt.expectedAddr, cfg.Addr)
 			assert.Equal(t, tt.expectedDBName, cfg.DBName)
+		})
+	}
+}
+
+func TestReconstructSQLitePath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		dbURL    string
+		expected string
+	}{
+		{
+			name:     "Path populated (sqlite:///path/to/db)",
+			dbURL:    "sqlite:///path/to/db",
+			expected: "/path/to/db",
+		},
+		{
+			name:     "Opaque populated (sqlite:/path/to/db)",
+			dbURL:    "sqlite:/path/to/db",
+			expected: "/path/to/db",
+		},
+		{
+			name:     "Path and Fragment (sqlite:///path/to/db#fragment)",
+			dbURL:    "sqlite:///path/to/db#fragment",
+			expected: "/path/to/db#fragment",
+		},
+		{
+			name:     "Opaque and Fragment (sqlite:/path/to/db#fragment)",
+			dbURL:    "sqlite:/path/to/db#fragment",
+			expected: "/path/to/db#fragment",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := url.Parse(tt.dbURL)
+			require.NoError(t, err)
+
+			got := reconstructSQLitePath(u)
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }

@@ -123,12 +123,7 @@ func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	// For SQLite URLs, we need to handle the fragment (anything after #) as part of the file path.
 	// This is necessary because Go's url.Parse treats '#' as the start of a URL fragment,
 	// but in SQLite database file paths, '#' is a valid character (e.g., from test names).
-	dbPath := u.Path
-	if u.Fragment != "" {
-		// If there's a fragment, it was part of the original path (e.g., /path/to/db#01/file.db)
-		// We need to append it back with the # character
-		dbPath = u.Path + "#" + u.Fragment
-	}
+	dbPath := reconstructSQLitePath(u)
 
 	sdb, err := otelsql.Open("sqlite3", dbPath, otelsql.WithAttributes(
 		semconv.DBSystemSqlite,
@@ -318,4 +313,17 @@ func parseMySQLUnixPath(cfg *mysql.Config, u *url.URL, dbURL string) error {
 	cfg.DBName = dbName
 
 	return nil
+}
+
+func reconstructSQLitePath(u *url.URL) string {
+	dbPath := u.Path
+	if u.Opaque != "" {
+		dbPath = u.Opaque
+	}
+
+	if u.Fragment != "" {
+		dbPath += "#" + u.Fragment
+	}
+
+	return dbPath
 }
