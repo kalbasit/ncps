@@ -6,33 +6,6 @@
       pkgs,
       ...
     }:
-    let
-
-      package-ncps = config.packages.ncps.overrideAttrs (oa: {
-        checkFlags = lib.subtractLists [
-          # Remove coverage since it's not going to test everything (see preCheck disabling below).
-          "-coverprofile=coverage.txt"
-
-          # Remove race-condition testing as it does not work on all platforms.
-          "-race"
-        ] (oa.checkFlags or [ ]);
-
-        # Since we are not running the coverage tests, disable coverage output
-        outputs = lib.remove "coverage" (oa.outputs or [ ]);
-
-        # No need to run integration tests for the docker image, they are
-        # covered by the other tests. Additionally, there seems to be a
-        # incompatibility issue between Redis and GitHub actions that is
-        # blocking the image build:
-        # WARNING Your kernel has a bug that could lead to data corruption
-        # during background save. Please upgrade to the latest stable kernel.
-        # Redis will now exit to prevent data corruption. Note that it is
-        # possible to suppress this warning by setting the following config:
-        # ignore-warnings ARM64-COW-BUG
-        preCheck = "";
-        postCheck = "";
-      });
-    in
     {
       packages.docker = pkgs.dockerTools.buildLayeredImage {
         name = "kalbasit/ncps";
@@ -79,7 +52,15 @@
             '')
 
             # the ncps package
-            package-ncps
+            (config.packages.ncps.overrideAttrs (oa: {
+              # Disable tests for the docker image build. Also remove the
+              # coverage output that's only generated when tests run.
+              # This is because the tests takes a while to start databases and
+              # run and they provide no value in this package since the default
+              # package (ncps) of the flake already runs the tests.
+              doCheck = false;
+              outputs = lib.remove "coverage" (oa.outputs or [ ]);
+            }))
           ];
 
         config = {
