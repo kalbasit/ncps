@@ -960,47 +960,4 @@ class NCPSTester:
         return failed_deployments == 0
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Test NCPS Kubernetes deployments",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    parser.add_argument(
-        "config",
-        help="Path to test-config.yaml",
-    )
-
-    parser.add_argument(
-        "-d",
-        "--deployment",
-        help="Test only this deployment (by name)",
-    )
-
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose output",
-    )
-
-    args = parser.parse_args()
-
-    # Check config exists
-    if not os.path.exists(args.config):
-        print(f"❌ Config file not found: {args.config}")
-        sys.exit(1)
-
-    tester = NCPSTester(args.config, verbose=args.verbose)
-    results = tester.test_all_deployments(deployment_filter=args.deployment)
-
-    if not results:
-        print("❌ No deployments tested")
-        sys.exit(1)
-
-    success = tester.print_summary(results)
-    sys.exit(0 if success else 1)
-
-
-if __name__ == "__main__":
-    main()
+# NCPSTester class and main functionality remain above
