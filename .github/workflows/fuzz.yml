@@ -67,32 +67,30 @@ jobs:
         if: failure()
         run: |
           set -euo pipefail
-          # This regex replaces any character that is NOT a letter, number, dot, or dash
           RAW_PATH="${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}"
-          CLEAN_NAME=$(echo "$RAW_PATH" | sed 's/[^a-zA-Z0-9.-]/_/g')
-
-          echo "ARTIFACT_NAME=$CLEAN_NAME" >> $GITHUB_ENV
+          CLEAN_NAME="${RAW_PATH//[^a-zA-Z0-9.-]/_}"
+          echo "ARTIFACT_NAME=$CLEAN_NAME" >> "$GITHUB_ENV"
       - name: Upload crash file(s)
+        id: upload-step
         if: failure()
         uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
       - name: Create Issue for the crash
-        if: failure()
+        if: failure() && steps.upload-step.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TITLE="Fuzzing Crash: ${{ matrix.func }} in ${{ matrix.pkg }}"
 
-          # Check for existing issue
           EXISTING_ISSUE=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number')
           if [ -n "$EXISTING_ISSUE" ]; then
             echo "Issue already exists: #$EXISTING_ISSUE"
             exit 0
           fi
 
-          BODY=$(cat <<EOF
+          BODY="$(cat <<EOF
           Fuzzing test '${{ matrix.func }}' in '${{ matrix.pkg }}' crashed.
 
           **Commit:** ${{ github.sha }}
@@ -100,7 +98,7 @@ jobs:
 
           See artifacts in the link above for reproduction.
           EOF
-          )
+          )"
 
           gh issue create \
             --title "$TITLE" \
