@@ -24,7 +24,7 @@ require (
 	github.com/sysbot/go-netrc v0.0.0-20231214061310-8bb3fde9e2d4
 	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.6.2
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.16.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.16.0
