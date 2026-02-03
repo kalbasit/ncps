@@ -41,6 +41,14 @@ jobs:
             func: FuzzDecodeBig
             fuzz_pattern: ^FuzzDecodeBig$
             time: 1h
+          - pkg: pkg/golomb
+            func: FuzzEncode
+            fuzz_pattern: ^FuzzEncode$
+            time: 1h
+          - pkg: pkg/golomb
+            func: FuzzEncodeBig
+            fuzz_pattern: ^FuzzEncodeBig$
+            time: 1h
           - pkg: pkg/cache
             func: FuzzParseNarInfo
             fuzz_pattern: FuzzParseNarInfo
