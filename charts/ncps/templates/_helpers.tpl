@@ -123,7 +123,7 @@ Returns the CACHE_DATABASE_URL env var config - either from value or secretKeyRe
       {{- $dbConfig := index .Values.config.database $dbType -}}
       {{- if $dbConfig.existingSecret }}
       name: {{ $dbConfig.existingSecret }}
-      {{- else if $dbConfig.password }}
+      {{- else }}
       name: {{ include "ncps.fullname" . }}
       {{- end }}
       key: database-url
@@ -145,7 +145,7 @@ Returns the DATABASE_URL env var config - either from value or secretKeyRef
       {{- $dbConfig := index .Values.config.database $dbType -}}
       {{- if $dbConfig.existingSecret }}
       name: {{ $dbConfig.existingSecret }}
-      {{- else if $dbConfig.password }}
+      {{- else }}
       name: {{ include "ncps.fullname" . }}
       {{- end }}
       key: database-url
