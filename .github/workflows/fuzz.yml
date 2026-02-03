@@ -63,13 +63,13 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Fuzz ${{ matrix.func }}
         run: nix develop --command go test -fuzz=${{ matrix.fuzz_pattern }} -fuzztime=${{ matrix.time }} ./${{ matrix.pkg }}
-      - name: Archive crash file
+      - name: Upload crash file(s)
         if: failure()
         uses: actions/upload-artifact@v6
         with:
           name: "${{ matrix.pkg }}_testdata_fuzz_${{ matrix.func }}"
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
-      - name: Create Issue on Crash
+      - name: Create Issue for the crash
         if: failure()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
