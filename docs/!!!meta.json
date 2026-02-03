@@ -2868,6 +2868,13 @@
                                             "value": "btAHOppSLATG",
                                             "isInheritable": false,
                                             "position": 50
+                                        },
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "narinfo-migration",
+                                            "isInheritable": false,
+                                            "position": 60
                                         }
                                     ],
                                     "format": "markdown",
@@ -2910,6 +2917,13 @@
                                             "value": "BWy0GQ2M438N",
                                             "isInheritable": false,
                                             "position": 50
+                                        },
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "nar-to-chunks-migration",
+                                            "isInheritable": false,
+                                            "position": 60
                                         }
                                     ],
                                     "format": "markdown",
@@ -3116,7 +3130,15 @@
                             "isExpanded": false,
                             "type": "text",
                             "mime": "text/html",
-                            "attributes": [],
+                            "attributes": [
+                                {
+                                    "type": "label",
+                                    "name": "shareAlias",
+                                    "value": "features",
+                                    "isInheritable": false,
+                                    "position": 30
+                                }
+                            ],
                             "format": "markdown",
                             "attachments": [],
                             "dirFileName": "Features",
@@ -3157,6 +3179,13 @@
                                             "value": "3PqatYARSWot",
                                             "isInheritable": false,
                                             "position": 30
+                                        },
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "cdc",
+                                            "isInheritable": false,
+                                            "position": 40
                                         }
                                     ],
                                     "format": "markdown",

@@ -299,7 +299,7 @@ log-level: info
 
 Logs are output in JSON format with structured fields:
 
-```json
+```
 {
   "level": "info",
   "ts": "2024-01-15T10:30:00Z",
