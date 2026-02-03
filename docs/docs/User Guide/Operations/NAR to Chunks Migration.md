@@ -82,7 +82,7 @@ ncps migrate-nar-to-chunks \
 
 The migration command reports progress every 5 seconds:
 
-```text
+```
 INFO starting migration of NARs to chunks
 INFO migration progress found=1523 processed=1523 succeeded=1520 failed=3 skipped=0 elapsed=15s rate=101.53
 INFO migration progress found=3042 processed=3042 succeeded=3035 failed=7 skipped=120 elapsed=30s rate=101.40
@@ -112,20 +112,20 @@ When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports 
 
 **Migration throughput:**
 
-```promql
+```
 rate(ncps_migration_objects_total{migration_type="nar-to-chunks"}[5m])
 ```
 
 **Migration success rate:**
 
-```promql
+```
 sum(rate(ncps_migration_objects_total{migration_type="nar-to-chunks",result="success"}[5m]))
 / sum(rate(ncps_migration_objects_total{migration_type="nar-to-chunks"}[5m]))
 ```
 
 **Migration duration (p99):**
 
-```promql
+```
 histogram_quantile(0.99, ncps_migration_duration_seconds{migration_type="nar-to-chunks"})
 ```
 
@@ -139,7 +139,7 @@ You should see a decrease in total storage usage (sum of `nar/` and `chunks/` di
 
 You can check the `nar_chunks` table to see the mapping:
 
-```mariadb
+```
 SELECT count(DISTINCT nar_id) FROM nar_chunks;
 ```
 

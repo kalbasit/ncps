@@ -93,11 +93,11 @@ Note: Upstream health metrics are collected as part of analytics reporting. See 
 **Background Migration Metrics** (during on-the-fly migration):
 
 - `ncps_background_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during background migration
-  - `migration_type`: "narinfo-to-db"
+  - `migration_type`: "narinfo-to-db" or "nar-to-chunks"
   - `operation`: "migrate" or "delete"
   - `result`: "success" or "failure"
 - `ncps_background_migration_duration_seconds{migration_type,operation}` - Background migration operation duration histogram
-  - `migration_type`: "narinfo-to-db"
+  - `migration_type`: "narinfo-to-db" or "nar-to-chunks"
   - `operation`: "migrate" or "delete"
 
 See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for migration documentation.
@@ -299,7 +299,7 @@ log-level: info
 
 Logs are output in JSON format with structured fields:
 
-```
+```json
 {
   "level": "info",
   "ts": "2024-01-15T10:30:00Z",
@@ -516,13 +516,13 @@ services:
 
 ## Next Steps
 
-1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up dashboards and alerts
-1. <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Use logs and metrics to debug
-1. <a class="reference-link" href="Reference.md">Reference</a> - All observability options
+1. [Monitoring](../Operations/Monitoring.md) - Set up dashboards and alerts
+1. [Troubleshooting](../Operations/Troubleshooting.md) - Use logs and metrics to debug
+1. [Reference](Reference.md) - All observability options
 
 ## Related Documentation
 
-- <a class="reference-link" href="Analytics.md">Analytics</a> - Anonymous usage statistics reporting
-- <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Detailed monitoring setup
-- <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA observability
-- <a class="reference-link" href="Reference.md">Reference</a> - All configuration options
+- [Analytics](Analytics.md) - Anonymous usage statistics reporting
+- [Monitoring](../Operations/Monitoring.md) - Detailed monitoring setup
+- [High Availability](../Deployment/High%20Availability.md) - HA observability
+- [Reference](Reference.md) - All configuration options

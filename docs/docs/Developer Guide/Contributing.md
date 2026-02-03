@@ -361,7 +361,7 @@ All tools are provided by the Nix development environment:
 
 **Quick Start (Complete Workflow):**
 
-```bash
+```
 # Run all 5 steps in one command
 k8s-tests all
 ```
@@ -376,7 +376,7 @@ This command:
 
 **Individual Steps:**
 
-```bash
+```
 # 1. Create Kind cluster with all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
 k8s-tests cluster create
 
@@ -399,7 +399,7 @@ The cluster can be reused across test runs. Use `k8s-tests cluster destroy` to c
 
 If you've already built and pushed an image:
 
-```bash
+```
 # Use a specific tag
 k8s-tests generate sha-cf09394
 
@@ -429,7 +429,7 @@ The tool generates 13 different test configurations:
 
 **Testing Individual Deployments:**
 
-```bash
+```
 # Install a single deployment
 k8s-tests install single-local-sqlite
 
@@ -445,7 +445,7 @@ k8s-tests cleanup single-local-sqlite
 
 **Manual Installation:**
 
-```bash
+```
 # Install individual deployment manually using generated values
 helm upgrade --install ncps-single-local-postgres charts/ncps \
   -f charts/ncps/test-values/single-local-postgres.yaml \
@@ -455,7 +455,7 @@ helm upgrade --install ncps-single-local-postgres charts/ncps \
 
 **Cluster Management:**
 
-```bash
+```
 # Show cluster connection information
 k8s-tests cluster info
 

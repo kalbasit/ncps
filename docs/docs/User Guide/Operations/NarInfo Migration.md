@@ -258,7 +258,7 @@ mysql -u ncps -p ncps -e "SELECT COUNT(*) FROM narinfos WHERE url IS NOT NULL;"
 
 **Query unmigrated count:**
 
-```mariadb
+```
 SELECT COUNT(*) FROM narinfos WHERE url IS NULL;
 ```
 

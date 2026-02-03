@@ -45,13 +45,10 @@ Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/O
 
 **Background Migration Metrics:**
 
-- `ncps_background_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during background migration.
-  - `migration_type`: "narinfo-to-db"
-  - `operation`: "migrate" or "delete"
-  - `result`: "success" or "failure"
+- `ncps_background_migration_objects_total{migration_type,operation,result}` - Total number of objects processed during background migration
+  - Labels: `migration_type` (narinfo-to-db/nar-to-chunks), `operation` (migrate/delete), `result` (success/failure)
 - `ncps_background_migration_duration_seconds{migration_type,operation}` - Background migration operation duration histogram
-  - `migration_type`: "narinfo-to-db"
-  - `operation`: "migrate" or "delete"
+  - Labels: `migration_type` (narinfo-to-db/nar-to-chunks), `operation` (migrate/delete)
 
 ## Prometheus Configuration
 
