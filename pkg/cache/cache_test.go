@@ -1139,16 +1139,16 @@ func testDeadlockNarInfoTriggersNarRefetch(factory cacheFactory) func(*testing.T
 			NarHash:        collisionHash,
 			NarCompression: "none",
 			NarInfoText: `StorePath: /nix/store/11111111111111111111111111111111-test-1.0
-	URL: nar/11111111111111111111111111111111.nar
-	Compression: none
-	FileHash: sha256:1111111111111111111111111111111111111111111111111111
-	FileSize: 123
-	NarHash: sha256:1111111111111111111111111111111111111111111111111111
-	NarSize: 123
-	References: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dummy
-	Deriver: dddddddddddddddddddddddddddddddd-test-1.0.drv
-	Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
-	`,
+URL: nar/11111111111111111111111111111111.nar
+Compression: none
+FileHash: sha256:1111111111111111111111111111111111111111111111111111
+FileSize: 123
+NarHash: sha256:1111111111111111111111111111111111111111111111111111
+NarSize: 123
+References: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dummy
+Deriver: dddddddddddddddddddddddddddddddd-test-1.0.drv
+Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
+`,
 			NarText: "content-of-the-nar",
 		}
 		ts.AddEntry(entry)
