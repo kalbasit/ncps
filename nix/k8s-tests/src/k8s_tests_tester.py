@@ -955,7 +955,8 @@ class NCPSTester:
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
+            # Bind only to the loopback interface to avoid exposing a listening socket on all interfaces
+            s.bind(("127.0.0.1", 0))
             s.listen(1)
             port = s.getsockname()[1]
         return port
