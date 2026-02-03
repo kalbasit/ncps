@@ -63,43 +63,20 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Fuzz ${{ matrix.func }}
         run: nix develop --command go test -fuzz=${{ matrix.fuzz_pattern }} -fuzztime=${{ matrix.time }} ./${{ matrix.pkg }}
-      - name: Encrypt Fuzz Crash
-        if: failure()
-        run: |
-          # Find the crash file
-          CRASH_FILE=$(find ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }} -name "crash-*" | head -n 1)
-          if [ -z "$CRASH_FILE" ]; then
-            echo "No crash file found despite failure."
-            exit 0
-          fi
-
-          # Calculate SHA256 of the crash file
-          SHA256=$(sha256sum "$CRASH_FILE" | awk '{print $1}')
-
-          # Report SHA256
-          echo "Crash file SHA256: $SHA256"
-          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
-          echo "CRASH_FILE=$CRASH_FILE" >> "$GITHUB_ENV"
       - name: Archive crash file
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: crash-${{ matrix.func }}-${{ env.SHA256 }}
-          path: ${{ env.CRASH_FILE }}
+          path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
       - name: Create Issue on Crash
         if: failure()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$SHA256" ]; then
-            echo "SHA256 not set, skipping issue creation."
-            exit 0
-          fi
-
-          TITLE="Fuzzing Crash: ${{ matrix.func }} $SHA256"
+          TITLE="Fuzzing Crash: ${{ matrix.func }} in ${{ matrix.pkg }}"
 
           # Check for existing issue
-          EXISTING_ISSUE=$(gh issue list --search "$SHA256 in:title" --json number --jq '.[0].number')
+          EXISTING_ISSUE=$(gh issue list --search "$TITLE in:title" --json number --jq '.[0].number')
           if [ -n "$EXISTING_ISSUE" ]; then
             echo "Issue already exists: #$EXISTING_ISSUE"
             exit 0
@@ -107,5 +84,5 @@ jobs:
 
           gh issue create \
             --title "$TITLE" \
-            --body "Fuzzing test '${{ matrix.func }}' crashed.\n\nCommit: ${{ github.sha }}\nInput SHA256: \`$SHA256\`\n\nSee artifact for reproduction." \
+            --body "Fuzzing test '${{ matrix.func }}' in '${{ matrix.pkg }}' crashed.\n\nCommit: ${{ github.sha }}\n\nSee artifact for reproduction." \
             --label "fuzz-crash"
