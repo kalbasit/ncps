@@ -355,6 +355,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					if err != nil {
 						log.Error().Err(err).Msg("failed to get narinfo from store")
 						atomic.AddInt32(&totalFailed, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
@@ -363,6 +364,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					if err != nil {
 						log.Error().Err(err).Str("url", ni.URL).Msg("failed to parse nar URL")
 						atomic.AddInt32(&totalFailed, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
@@ -372,6 +374,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					if err != nil {
 						log.Error().Err(err).Msg("failed to check if nar is already in chunks")
 						atomic.AddInt32(&totalFailed, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
@@ -379,6 +382,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					if hasChunks {
 						log.Debug().Msg("nar already in chunks, skipping")
 						atomic.AddInt32(&totalSkipped, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultSkipped)
 
 						// Try to delete original if it still exists (cleanup)
 						if !dryRun {
@@ -395,14 +399,24 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					if dryRun {
 						log.Info().Msg("[DRY-RUN] would migrate nar to chunks and delete original")
 						atomic.AddInt32(&totalSucceeded, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultSuccess)
 
 						return nil
 					}
 
+					opStartTime := time.Now()
 					err = c.MigrateNarToChunks(ctx, narURL)
+					RecordMigrationDuration(
+						ctx,
+						MigrationTypeNarToChunks,
+						MigrationOperationMigrate,
+						time.Since(opStartTime).Seconds(),
+					)
+
 					if err != nil {
 						log.Error().Err(err).Msg("failed to migrate nar to chunks")
 						atomic.AddInt32(&totalFailed, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
@@ -413,6 +427,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					}
 
 					atomic.AddInt32(&totalSucceeded, 1)
+					RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultSuccess)
 
 					return nil
 				})
@@ -437,6 +452,8 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				Int32("skipped", atomic.LoadInt32(&totalSkipped)).
 				Str("duration", duration.Round(time.Millisecond).String()).
 				Msg("migration completed")
+
+			RecordMigrationBatchSize(ctx, MigrationTypeNarToChunks, int64(atomic.LoadInt32(&totalFound)))
 
 			return nil
 		},

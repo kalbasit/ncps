@@ -29,7 +29,6 @@ Migrate all NAR files to chunks. Once a NAR is successfully migrated and verifie
 
 ```sh
 ncps migrate-nar-to-chunks \
-  --cache-hostname="cache.example.com" \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
 ```
@@ -42,7 +41,6 @@ Preview what would be migrated without making changes:
 
 ```sh
 ncps migrate-nar-to-chunks --dry-run \
-  --cache-hostname="cache.example.com" \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
 ```
@@ -68,7 +66,6 @@ For S3-compatible storage:
 
 ```sh
 ncps migrate-nar-to-chunks \
-  --cache-hostname="cache.example.com" \
   --cache-database-url="postgresql://user:pass@localhost/ncps" \
   --cache-storage-s3-bucket="ncps-cache" \
   --cache-storage-s3-endpoint="https://s3.amazonaws.com" \
@@ -97,6 +94,37 @@ INFO migration completed found=10000 processed=10000 succeeded=9880 failed=13 du
 - **failed**: Errors during chunking or verification.
 - **skipped**: NARs already present in the chunk store.
 - **rate**: NARs processed per second.
+
+## Monitoring and Metrics
+
+When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports metrics that can be used for monitoring and dashboarding.
+
+### Available Metrics
+
+- `ncps_migration_objects_total{migration_type="nar-to-chunks",operation,result}` - Total NARs processed.
+- `ncps_migration_duration_seconds{migration_type="nar-to-chunks",operation}` - Duration of chunking operations histogram.
+- `ncps_migration_batch_size{migration_type="nar-to-chunks"}` - Total number of NARs found for migration.
+
+### Example PromQL Queries
+
+**Migration throughput:**
+
+```
+rate(ncps_migration_objects_total{migration_type="nar-to-chunks"}[5m])
+```
+
+**Migration success rate:**
+
+```
+sum(rate(ncps_migration_objects_total{migration_type="nar-to-chunks",result="success"}[5m]))
+/ sum(rate(ncps_migration_objects_total{migration_type="nar-to-chunks"}[5m]))
+```
+
+**Migration duration (p99):**
+
+```
+histogram_quantile(0.99, ncps_migration_duration_seconds{migration_type="nar-to-chunks"})
+```
 
 ## Verification
 

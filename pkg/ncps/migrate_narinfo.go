@@ -360,7 +360,7 @@ to enable safe concurrent migration.`,
 						if dryRun {
 							log.Info().Msg("[DRY-RUN] would delete from storage")
 							atomic.AddInt32(&totalSucceeded, 1)
-							RecordMigrationObject(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
+							RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultSuccess)
 
 							return nil
 						}
@@ -368,10 +368,10 @@ to enable safe concurrent migration.`,
 						if err := narInfoStore.DeleteNarInfo(ctxWithLog, hash); err != nil {
 							log.Error().Err(err).Msg("failed to delete from store")
 							atomic.AddInt32(&totalFailed, 1)
-							RecordMigrationObject(ctxWithLog, MigrationOperationDelete, MigrationResultFailure)
+							RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultFailure)
 						} else {
 							atomic.AddInt32(&totalSucceeded, 1)
-							RecordMigrationObject(ctxWithLog, MigrationOperationDelete, MigrationResultSuccess)
+							RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultSuccess)
 						}
 
 						return nil
@@ -391,7 +391,12 @@ to enable safe concurrent migration.`,
 					opStartTime := time.Now()
 
 					defer func() {
-						RecordMigrationDuration(ctxWithLog, MigrationOperationMigrate, time.Since(opStartTime).Seconds())
+						RecordMigrationDuration(
+							ctxWithLog,
+							MigrationTypeNarInfoToDB,
+							MigrationOperationMigrate,
+							time.Since(opStartTime).Seconds(),
+						)
 					}()
 
 					// Fetch narinfo from storage
@@ -399,7 +404,7 @@ to enable safe concurrent migration.`,
 					if err != nil {
 						log.Error().Err(err).Msg("failed to get narinfo from store")
 						atomic.AddInt32(&totalFailed, 1)
-						RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
+						RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
@@ -407,7 +412,7 @@ to enable safe concurrent migration.`,
 					if dryRun {
 						log.Info().Msg("[DRY-RUN] would migrate and delete")
 						atomic.AddInt32(&totalSucceeded, 1)
-						RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
+						RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationMigrate, MigrationResultSuccess)
 
 						return nil
 					}
@@ -417,13 +422,13 @@ to enable safe concurrent migration.`,
 					if err := cache.MigrateNarInfo(ctxWithLog, locker, db, narInfoStore, hash, ni); err != nil {
 						log.Error().Err(err).Msg("failed to migrate narinfo")
 						atomic.AddInt32(&totalFailed, 1)
-						RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultFailure)
+						RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
 
 					atomic.AddInt32(&totalSucceeded, 1)
-					RecordMigrationObject(ctxWithLog, MigrationOperationMigrate, MigrationResultSuccess)
+					RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationMigrate, MigrationResultSuccess)
 
 					return nil
 				})
@@ -451,7 +456,7 @@ to enable safe concurrent migration.`,
 			}
 
 			// Record batch size metric
-			RecordMigrationBatchSize(ctx, int64(found))
+			RecordMigrationBatchSize(ctx, MigrationTypeNarInfoToDB, int64(found))
 
 			logger.Info().
 				Int32("found", found).

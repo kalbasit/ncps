@@ -22,6 +22,7 @@ const (
 
 	// Migration type constants for metrics.
 	MigrationTypeNarInfoToDB = "narinfo-to-db"
+	MigrationTypeNarToChunks = "nar-to-chunks"
 )
 
 var (
@@ -36,7 +37,7 @@ var (
 	//nolint:gochecknoglobals
 	migrationDuration metric.Float64Histogram
 
-	// migrationBatchSize tracks the number of narinfos in each migration batch.
+	// migrationBatchSize tracks the number of objects in each migration batch.
 	//nolint:gochecknoglobals
 	migrationBatchSize metric.Int64Histogram
 )
@@ -76,16 +77,17 @@ func init() {
 }
 
 // RecordMigrationObject records an object migration operation.
+// migrationType should be one of MigrationType* constants.
 // operation should be one of MigrationOperation* constants.
 // result should be one of MigrationResult* constants.
-func RecordMigrationObject(ctx context.Context, operation, result string) {
+func RecordMigrationObject(ctx context.Context, migrationType, operation, result string) {
 	if migrationObjectsTotal == nil {
 		return
 	}
 
 	migrationObjectsTotal.Add(ctx, 1,
 		metric.WithAttributes(
-			attribute.String("migration_type", MigrationTypeNarInfoToDB),
+			attribute.String("migration_type", migrationType),
 			attribute.String("operation", operation),
 			attribute.String("result", result),
 		),
@@ -93,27 +95,32 @@ func RecordMigrationObject(ctx context.Context, operation, result string) {
 }
 
 // RecordMigrationDuration records the duration of a migration operation.
+// migrationType should be one of MigrationType* constants.
 // operation should be one of MigrationOperation* constants.
 // duration should be in seconds.
-func RecordMigrationDuration(ctx context.Context, operation string, duration float64) {
+func RecordMigrationDuration(ctx context.Context, migrationType, operation string, duration float64) {
 	if migrationDuration == nil {
 		return
 	}
 
 	migrationDuration.Record(ctx, duration,
 		metric.WithAttributes(
-			attribute.String("migration_type", MigrationTypeNarInfoToDB),
+			attribute.String("migration_type", migrationType),
 			attribute.String("operation", operation),
 		),
 	)
 }
 
 // RecordMigrationBatchSize records the size of a migration batch.
-func RecordMigrationBatchSize(ctx context.Context, size int64) {
+// migrationType should be one of MigrationType* constants.
+func RecordMigrationBatchSize(ctx context.Context, migrationType string, size int64) {
 	if migrationBatchSize == nil {
 		return
 	}
 
 	migrationBatchSize.Record(ctx, size,
-		metric.WithAttributes(attribute.String("migration_type", MigrationTypeNarInfoToDB)))
+		metric.WithAttributes(
+			attribute.String("migration_type", migrationType),
+		),
+	)
 }
