@@ -119,7 +119,13 @@ func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 		return nil, err
 	}
 
-	sdb, err := otelsql.Open("sqlite3", u.Path, otelsql.WithAttributes(
+	// Extract the database file path.
+	// For SQLite URLs, we need to handle the fragment (anything after #) as part of the file path.
+	// This is necessary because Go's url.Parse treats '#' as the start of a URL fragment,
+	// but in SQLite database file paths, '#' is a valid character (e.g., from test names).
+	dbPath := reconstructSQLitePath(u)
+
+	sdb, err := otelsql.Open("sqlite3", dbPath, otelsql.WithAttributes(
 		semconv.DBSystemSqlite,
 	))
 	if err != nil {
@@ -307,4 +313,17 @@ func parseMySQLUnixPath(cfg *mysql.Config, u *url.URL, dbURL string) error {
 	cfg.DBName = dbName
 
 	return nil
+}
+
+func reconstructSQLitePath(u *url.URL) string {
+	dbPath := u.Path
+	if u.Opaque != "" {
+		dbPath = u.Opaque
+	}
+
+	if u.Fragment != "" {
+		dbPath += "#" + u.Fragment
+	}
+
+	return dbPath
 }
