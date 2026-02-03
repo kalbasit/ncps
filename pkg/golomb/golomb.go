@@ -129,9 +129,9 @@ type Encoder struct {
 
 // NewEncoder creates a new encoder.
 func NewEncoder(w io.Writer, k int) (*Encoder, error) {
-	if k < 0 || k >= 64 {
-		return nil, fmt.Errorf("%w: %d, must be in range [0, 63]", ErrInvalidGolombK, k)
-	}
+	// if k < 0 || k >= 64 {
+	// 	return nil, fmt.Errorf("%w: %d, must be in range [0, 63]", ErrInvalidGolombK, k)
+	// }
 
 	// Ensure w implements io.ByteWriter, wrap in bufio if not
 	var bw io.ByteWriter
