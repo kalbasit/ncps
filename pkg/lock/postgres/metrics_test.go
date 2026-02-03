@@ -29,7 +29,7 @@ func TestRWLocker_WriteMetrics(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := lock.RetryConfig{MaxAttempts: 1, InitialDelay: 10 * time.Millisecond, MaxDelay: 50 * time.Millisecond}
@@ -67,7 +67,7 @@ func TestRWLocker_ReadMetrics_NotRecorded(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := lock.RetryConfig{MaxAttempts: 1}

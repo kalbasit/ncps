@@ -24,7 +24,7 @@ func TestLocker_CircuitBreakerOpensAfterFailures(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Create a locker with a low circuit breaker threshold for testing
 	cfg := getTestConfig()
@@ -70,7 +70,7 @@ func TestLocker_DegradedModeFallback(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := lock.RetryConfig{
@@ -153,7 +153,7 @@ func TestRWLocker_DegradedMode(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := lock.RetryConfig{
@@ -236,7 +236,7 @@ func TestLocker_CircuitBreaker_HealthClassification(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	// Use low threshold for faster reproduction

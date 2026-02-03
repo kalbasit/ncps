@@ -27,7 +27,7 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	//nolint:paralleltest
 	t.Run("hostname must be valid with no scheme or path", func(t *testing.T) {
@@ -147,7 +147,7 @@ func TestGetNarInfo(t *testing.T) {
 			)
 
 			ts := testdata.NewTestServer(t, 40)
-			defer ts.Close()
+			t.Cleanup(ts.Close)
 
 			opts := &upstream.Options{}
 			if withKeys {
@@ -226,7 +226,7 @@ func TestGetNarInfo(t *testing.T) {
 			time.Sleep(5 * time.Second)
 			w.WriteHeader(http.StatusNoContent)
 		}))
-		defer slowServer.Close()
+		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -249,7 +249,7 @@ func TestHasNarInfo(t *testing.T) {
 		t.Parallel()
 
 		ts := testdata.NewTestServer(t, 40)
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -271,7 +271,7 @@ func TestHasNarInfo(t *testing.T) {
 			t.Parallel()
 
 			ts := testdata.NewTestServer(t, 40)
-			defer ts.Close()
+			t.Cleanup(ts.Close)
 
 			c, err := upstream.New(
 				newContext(),
@@ -296,7 +296,7 @@ func TestHasNarInfo(t *testing.T) {
 			time.Sleep(5 * time.Second)
 			w.WriteHeader(http.StatusNoContent)
 		}))
-		defer slowServer.Close()
+		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -317,7 +317,7 @@ func TestGetNar(t *testing.T) {
 	t.Parallel()
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	c, err := upstream.New(
 		newContext(),
@@ -357,7 +357,7 @@ func TestGetNar(t *testing.T) {
 			time.Sleep(5 * time.Second)
 			w.WriteHeader(http.StatusNoContent)
 		}))
-		defer slowServer.Close()
+		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -381,7 +381,7 @@ func TestHasNar(t *testing.T) {
 		t.Parallel()
 
 		ts := testdata.NewTestServer(t, 40)
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -404,7 +404,7 @@ func TestHasNar(t *testing.T) {
 			t.Parallel()
 
 			ts := testdata.NewTestServer(t, 40)
-			defer ts.Close()
+			t.Cleanup(ts.Close)
 
 			c, err := upstream.New(
 				newContext(),
@@ -430,7 +430,7 @@ func TestHasNar(t *testing.T) {
 			time.Sleep(5 * time.Second)
 			w.WriteHeader(http.StatusNoContent)
 		}))
-		defer slowServer.Close()
+		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -452,7 +452,7 @@ func TestGetNarCanMutate(t *testing.T) {
 	t.Parallel()
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	c, err := upstream.New(
 		newContext(),
@@ -509,7 +509,7 @@ func TestNetrcAuthentication(t *testing.T) {
 		t.Parallel()
 
 		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -532,7 +532,7 @@ func TestNetrcAuthentication(t *testing.T) {
 		t.Parallel()
 
 		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -550,7 +550,7 @@ func TestNetrcAuthentication(t *testing.T) {
 		t.Parallel()
 
 		ts := httptest.NewServer(basicAuth("testuser", "testpass", protectedHandler))
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		c, err := upstream.New(
 			newContext(),
@@ -574,7 +574,7 @@ func TestNewWithOptions(t *testing.T) {
 	t.Parallel()
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	testCases := []struct {
 		name string
@@ -623,8 +623,7 @@ func TestNewWithOptions(t *testing.T) {
 		//nolint:noctx // Using net.Listen is fine in tests
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
-
-		defer listener.Close()
+		t.Cleanup(func() { listener.Close() })
 
 		slowListener := &slowAcceptListener{
 			Listener: listener,
@@ -647,8 +646,7 @@ func TestNewWithOptions(t *testing.T) {
 
 		// Allow the server goroutine to start before making a connection.
 		time.Sleep(100 * time.Millisecond)
-
-		defer server.Close()
+		t.Cleanup(func() { server.Close() })
 
 		serverURL := fmt.Sprintf("http://%s", listener.Addr().String())
 
@@ -694,7 +692,7 @@ func TestNewWithOptions(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, "StorePath: /nix/store/test")
 		}))
-		defer slowServer.Close()
+		t.Cleanup(slowServer.Close)
 
 		// With default timeout (3s), this should fail
 		cDefault, err := upstream.New(

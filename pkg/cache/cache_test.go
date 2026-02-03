@@ -2038,8 +2038,8 @@ func TestGetNarInfo_MultipleConcurrentPutsDuringMigration(t *testing.T) { //noli
 	c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
 	require.NoError(t, err)
 
-	defer c.Close()
-	defer db.DB().Close()
+	t.Cleanup(c.Close)
+	t.Cleanup(func() { db.DB().Close() })
 
 	// Pre-populate storage
 	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
@@ -2257,7 +2257,7 @@ func TestGetNarInfo_RaceConditionDuringMigrationDeletion(t *testing.T) { //nolin
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
-	defer db.DB().Close()
+	t.Cleanup(func() { db.DB().Close() })
 
 	baseStore, err := local.New(ctx, tmpDir)
 	require.NoError(t, err)
@@ -2317,7 +2317,7 @@ func TestGetNarInfo_RaceConditionDuringMigrationDeletion(t *testing.T) { //nolin
 	c, err := newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
 	require.NoError(t, err)
 
-	defer c.Close()
+	t.Cleanup(c.Close)
 
 	// Call GetNarInfo - this will trigger the race condition
 	ni, err := c.GetNarInfo(ctx, hash)
@@ -2365,7 +2365,7 @@ func TestGetNarInfo_RaceWithPutNarInfoDeterministic(t *testing.T) { //nolint:par
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
-	defer db.DB().Close()
+	t.Cleanup(func() { db.DB().Close() })
 
 	baseStore, err := local.New(ctx, tmpDir)
 	require.NoError(t, err)
@@ -2422,7 +2422,7 @@ func TestGetNarInfo_RaceWithPutNarInfoDeterministic(t *testing.T) { //nolint:par
 	c, err := newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
 	require.NoError(t, err)
 
-	defer c.Close()
+	t.Cleanup(c.Close)
 
 	// Call GetNarInfo
 	_, err = c.GetNarInfo(ctx, hash)

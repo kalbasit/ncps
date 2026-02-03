@@ -28,12 +28,11 @@ func TestHealthCheck(t *testing.T) {
 	t.Parallel()
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
-
-	defer os.RemoveAll(dir) // clean up
+	t.Cleanup(func() { os.RemoveAll(dir) })
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),

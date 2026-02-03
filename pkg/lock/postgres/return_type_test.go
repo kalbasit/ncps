@@ -21,8 +21,7 @@ func TestNewLocker_ReturnType(t *testing.T) {
 	// Connect to a non-existent database to trigger degraded mode
 	db, err := sql.Open("pgx", "postgres://invalid:password@localhost:9999/invalid?sslmode=disable")
 	require.NoError(t, err)
-
-	defer db.Close()
+	t.Cleanup(func() { db.Close() })
 
 	querier := &mockQuerier{db: db}
 
