@@ -55,6 +55,19 @@ func CreateMigrateDatabase(t testing.TB, dbFile string) {
 	require.NoErrorf(t, err, "Running %q has failed", cmd.String())
 
 	t.Logf("%s: %s", cmd.String(), output)
+
+	// IMPORTANT: Checkpoint the WAL to ensure all changes are written to the main database file.
+	// While not strictly necessary for correctness (SQLite handles this automatically), it ensures
+	// that all migration changes are immediately visible to new connections without relying on
+	// WAL file reads. This can prevent subtle issues in test environments with rapid database
+	// create/destroy cycles. See: https://www.sqlite.org/wal.html#checkpointing
+	db, err := sql.Open("sqlite3", dbFile)
+	require.NoError(t, err)
+
+	defer db.Close()
+
+	_, err = db.ExecContext(context.Background(), "PRAGMA wal_checkpoint(TRUNCATE)")
+	require.NoError(t, err)
 }
 
 // MigrateNarInfoToDatabase migrates a single narinfo to the database.
