@@ -230,12 +230,16 @@ type Decoder struct {
 }
 
 // NewDecoder creates a new decoder.
-func NewDecoder(r io.ByteReader, k int) *Decoder {
+func NewDecoder(r io.ByteReader, k int) (*Decoder, error) {
+	if k < 0 || k >= 64 {
+		return nil, fmt.Errorf("%w: %d, must be in range [0, 63]", ErrInvalidGolombK, k)
+	}
+
 	return &Decoder{
 		br: NewBitReader(r),
 		k:  k,
 		m:  1 << k,
-	}
+	}, nil
 }
 
 // Decode decodes a value.
