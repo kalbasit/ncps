@@ -32,71 +32,18 @@ func TestMigrateNarToChunksBackends(t *testing.T) {
 		setup  narToChunksMigrationFactory
 	}{
 		{
-			name: "SQLite",
-			setup: func(t *testing.T) (database.Querier, *local.Store, string, string, func()) {
-				t.Helper()
-
-				ctx := context.Background()
-				dir := t.TempDir()
-				dbFile := filepath.Join(dir, "db.sqlite")
-				testhelper.CreateMigrateDatabase(t, dbFile)
-
-				db, err := database.Open("sqlite:"+dbFile, nil)
-				require.NoError(t, err)
-
-				store, err := local.New(ctx, dir)
-				require.NoError(t, err)
-
-				dbURL := "sqlite:" + dbFile
-
-				cleanup := func() {
-					db.DB().Close()
-				}
-
-				return db, store, dir, dbURL, cleanup
-			},
+			name:  "SQLite",
+			setup: setupNarToChunksMigrationSQLite,
 		},
 		{
 			name:   "PostgreSQL",
 			envVar: "NCPS_TEST_ADMIN_POSTGRES_URL",
-			setup: func(t *testing.T) (database.Querier, *local.Store, string, string, func()) {
-				t.Helper()
-
-				ctx := context.Background()
-				dir := t.TempDir()
-
-				db, dbURL, dbCleanup := testhelper.SetupPostgres(t)
-
-				store, err := local.New(ctx, dir)
-				require.NoError(t, err)
-
-				cleanup := func() {
-					dbCleanup()
-				}
-
-				return db, store, dir, dbURL, cleanup
-			},
+			setup:  setupNarToChunksMigrationPostgres,
 		},
 		{
 			name:   "MySQL",
 			envVar: "NCPS_TEST_ADMIN_MYSQL_URL",
-			setup: func(t *testing.T) (database.Querier, *local.Store, string, string, func()) {
-				t.Helper()
-
-				ctx := context.Background()
-				dir := t.TempDir()
-
-				db, dbURL, dbCleanup := testhelper.SetupMySQL(t)
-
-				store, err := local.New(ctx, dir)
-				require.NoError(t, err)
-
-				cleanup := func() {
-					dbCleanup()
-				}
-
-				return db, store, dir, dbURL, cleanup
-			},
+			setup:  setupNarToChunksMigrationMySQL,
 		},
 	}
 
@@ -312,4 +259,63 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 			assert.NoFileExists(t, narPath, "NAR %s should have been deleted", entry.NarPath)
 		}
 	}
+}
+
+func setupNarToChunksMigrationSQLite(t *testing.T) (database.Querier, *local.Store, string, string, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	store, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	dbURL := "sqlite:" + dbFile
+
+	cleanup := func() {
+		db.DB().Close()
+	}
+
+	return db, store, dir, dbURL, cleanup
+}
+
+func setupNarToChunksMigrationPostgres(t *testing.T) (database.Querier, *local.Store, string, string, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	db, dbURL, dbCleanup := testhelper.SetupPostgres(t)
+
+	store, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		dbCleanup()
+	}
+
+	return db, store, dir, dbURL, cleanup
+}
+
+func setupNarToChunksMigrationMySQL(t *testing.T) (database.Querier, *local.Store, string, string, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	db, dbURL, dbCleanup := testhelper.SetupMySQL(t)
+
+	store, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		dbCleanup()
+	}
+
+	return db, store, dir, dbURL, cleanup
 }

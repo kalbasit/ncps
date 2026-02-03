@@ -36,69 +36,18 @@ func TestMigrateNarInfoBackends(t *testing.T) {
 		setup  migrationFactory
 	}{
 		{
-			name: "SQLite",
-			setup: func(t *testing.T) (database.Querier, *local.Store, string, func()) {
-				t.Helper()
-
-				ctx := context.Background()
-				dir := t.TempDir()
-				dbFile := filepath.Join(dir, "db.sqlite")
-				testhelper.CreateMigrateDatabase(t, dbFile)
-
-				db, err := database.Open("sqlite:"+dbFile, nil)
-				require.NoError(t, err)
-
-				store, err := local.New(ctx, dir)
-				require.NoError(t, err)
-
-				cleanup := func() {
-					db.DB().Close()
-				}
-
-				return db, store, dir, cleanup
-			},
+			name:  "SQLite",
+			setup: setupNarInfoMigrationSQLite,
 		},
 		{
 			name:   "PostgreSQL",
 			envVar: "NCPS_TEST_ADMIN_POSTGRES_URL",
-			setup: func(t *testing.T) (database.Querier, *local.Store, string, func()) {
-				t.Helper()
-
-				ctx := context.Background()
-				dir := t.TempDir()
-
-				db, _, dbCleanup := testhelper.SetupPostgres(t)
-
-				store, err := local.New(ctx, dir)
-				require.NoError(t, err)
-
-				cleanup := func() {
-					dbCleanup()
-				}
-
-				return db, store, dir, cleanup
-			},
+			setup:  setupNarInfoMigrationPostgres,
 		},
 		{
 			name:   "MySQL",
 			envVar: "NCPS_TEST_ADMIN_MYSQL_URL",
-			setup: func(t *testing.T) (database.Querier, *local.Store, string, func()) {
-				t.Helper()
-
-				ctx := context.Background()
-				dir := t.TempDir()
-
-				db, _, dbCleanup := testhelper.SetupMySQL(t)
-
-				store, err := local.New(ctx, dir)
-				require.NoError(t, err)
-
-				cleanup := func() {
-					dbCleanup()
-				}
-
-				return db, store, dir, cleanup
-			},
+			setup:  setupNarInfoMigrationMySQL,
 		},
 	}
 
@@ -1060,4 +1009,61 @@ func BenchmarkMigrateNarInfo(b *testing.B) {
 		err = testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni)
 		require.NoError(b, err)
 	}
+}
+
+func setupNarInfoMigrationSQLite(t *testing.T) (database.Querier, *local.Store, string, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	store, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		db.DB().Close()
+	}
+
+	return db, store, dir, cleanup
+}
+
+func setupNarInfoMigrationPostgres(t *testing.T) (database.Querier, *local.Store, string, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
+
+	store, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		dbCleanup()
+	}
+
+	return db, store, dir, cleanup
+}
+
+func setupNarInfoMigrationMySQL(t *testing.T) (database.Querier, *local.Store, string, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
+
+	store, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	cleanup := func() {
+		dbCleanup()
+	}
+
+	return db, store, dir, cleanup
 }
