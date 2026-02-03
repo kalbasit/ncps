@@ -125,9 +125,9 @@ func FuzzCompressionTypeFromExtension(f *testing.F) {
 		} else {
 			assert.NotEmpty(t, ct)
 
-			// Special case: "none" maps to CompressionTypeNone, which maps back to ""
+			// Special case: "none" and "" map to CompressionTypeNone, which maps back to an empty extension.
 			expectedExt := ext
-			if ext == "none" {
+			if ct == nar.CompressionTypeNone {
 				expectedExt = ""
 			}
 
