@@ -29,6 +29,10 @@ jobs:
             func: FuzzJoinURL
             fuzz_pattern: FuzzJoinURL
             time: 1h
+          - pkg: pkg/nar
+            func: FuzzCompressionTypeFromExtension
+            fuzz_pattern: FuzzCompressionTypeFromExtension
+            time: 1h
           - pkg: pkg/golomb
             func: FuzzDecode
             fuzz_pattern: ^FuzzDecode$
@@ -36,6 +40,10 @@ jobs:
           - pkg: pkg/golomb
             func: FuzzDecodeBig
             fuzz_pattern: ^FuzzDecodeBig$
+            time: 1h
+          - pkg: pkg/cache
+            func: FuzzParseNarInfo
+            fuzz_pattern: FuzzParseNarInfo
             time: 1h
     steps:
       - uses: actions/checkout@v6
