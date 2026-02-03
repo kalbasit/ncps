@@ -133,22 +133,11 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
       dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-  helm-tests:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: "v3.16.3"
-      - name: Run Helm validation tests
-        run: ./charts/ncps/tests/run-tests.sh
   ci:
     runs-on: ubuntu-24.04
     needs:
       - build
       - deploy-docs-pages
       - generate
-      - helm-tests
     steps:
       - run: echo "CI passed"

@@ -1,0 +1,492 @@
+suite: test chart validation logic
+templates:
+  - configmap.yaml
+tests:
+  # HA mode validation tests
+  - it: should fail HA mode without distributed locking
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.cdc.enabled: true
+      config.lock.backend: local
+      config.redis.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "High availability mode (replicaCount > 1) requires a distributed lock backend: 'redis' or 'postgres'."
+
+  - it: should pass HA mode with Redis locking
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass HA mode with PostgreSQL locking
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.lock.backend: postgres
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should fail PostgreSQL lock with non-PostgreSQL database
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: mysql
+      config.database.mysql.host: mysql
+      config.database.mysql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.lock.backend: postgres
+      migration.mode: job
+    asserts:
+      - failedTemplate:
+          errorMessage: "PostgreSQL advisory locks (config.lock.backend='postgres') require the database type to be 'postgresql' (config.database.type)"
+
+  - it: should fail HA mode with SQLite database
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: sqlite
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - failedTemplate:
+          errorMessage: "High availability mode (replicaCount > 1) is not compatible with SQLite. Use PostgreSQL or MySQL instead (config.database.type)"
+
+  - it: should fail HA Deployment with local storage and RWO
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: local
+      config.storage.local.persistence.accessModes:
+        - ReadWriteOnce
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - failedTemplate:
+          errorMessage: "High availability mode with Deployment requires S3 storage (config.storage.type='s3'), existing shared PVC (config.storage.local.persistence.existingClaim), or ReadWriteMany access mode, or use StatefulSet mode"
+
+  - it: should pass HA Deployment with local storage and RWX
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: local
+      config.storage.local.persistence.accessModes:
+        - ReadWriteMany
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass HA Deployment with local storage and multiple access modes including RWX
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: local
+      config.storage.local.persistence.accessModes:
+        - ReadWriteOnce
+        - ReadWriteMany
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass HA Deployment with existingClaim
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: local
+      config.storage.local.persistence.existingClaim: my-pvc
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass HA Deployment with S3 storage
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should fail HA with initContainer migration mode
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.enabled: true
+      migration.mode: initContainer
+    asserts:
+      - failedTemplate:
+          errorMessage: "You should not enable migrations with mode 'initContainer' when running multiple replicas, you risk corrupting your database. Set migration.mode to 'job' or 'argocd' instead, or set migration.iLoveCorruptedDatabases to true if you know what you are doing."
+
+  - it: should pass HA with initContainer migration mode and override
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.enabled: true
+      migration.mode: initContainer
+      migration.iLoveCorruptedDatabases: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass HA with job migration mode
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass HA with argocd migration mode
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.enabled: true
+      migration.mode: argocd
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should fail HA without CDC enabled
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: false
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - failedTemplate:
+          errorMessage: "High availability mode (replicaCount > 1) requires CDC to be enabled (config.cdc.enabled=true) to prevent timeouts and instability. See https://github.com/kalbasit/ncps/issues/660. Set config.cdc.iLoveTimeouts to true if you accept this risk."
+
+  - it: should pass HA without CDC but with bypass flag
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: false
+      config.cdc.iLoveTimeouts: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # Single instance validation tests
+  - it: should pass single instance with local storage and RWO
+    set:
+      config.hostname: test.example.com
+      replicaCount: 1
+      mode: statefulset
+      config.database.type: sqlite
+      config.storage.type: local
+      config.storage.local.persistence.accessModes:
+        - ReadWriteOnce
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # Storage validation tests
+  - it: should fail S3 without bucket
+    set:
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - failedTemplate:
+          errorMessage: "S3 storage requires bucket name (config.storage.s3.bucket)"
+
+  - it: should fail S3 without endpoint
+    set:
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - failedTemplate:
+          errorMessage: "S3 storage requires endpoint (config.storage.s3.endpoint)"
+
+  - it: should fail S3 without credentials and no existingSecret
+    set:
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+    asserts:
+      - failedTemplate:
+          errorMessage: "S3 storage requires credentials (config.storage.s3.accessKeyId/secretAccessKey or config.storage.s3.existingSecret)"
+
+  - it: should pass S3 with existingSecret
+    set:
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.existingSecret: my-s3-secret
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # Database validation tests
+  - it: should fail PostgreSQL without host
+    set:
+      config.hostname: test.example.com
+      config.database.type: postgresql
+    asserts:
+      - failedTemplate:
+          errorMessage: "PostgreSQL requires host (config.database.postgresql.host)"
+
+  - it: should fail PostgreSQL with both password and existingSecret
+    set:
+      config.hostname: test.example.com
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.database.postgresql.existingSecret: my-secret
+    asserts:
+      - failedTemplate:
+          errorMessage: "PostgreSQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'database-url' key)"
+
+  - it: should fail MySQL without host
+    set:
+      config.hostname: test.example.com
+      config.database.type: mysql
+    asserts:
+      - failedTemplate:
+          errorMessage: "MySQL requires host (config.database.mysql.host)"
+
+  - it: should fail MySQL with both password and existingSecret
+    set:
+      config.hostname: test.example.com
+      config.database.type: mysql
+      config.database.mysql.host: mysql
+      config.database.mysql.password: test123
+      config.database.mysql.existingSecret: my-secret
+    asserts:
+      - failedTemplate:
+          errorMessage: "MySQL: cannot set both 'password' and 'existingSecret'. Use either password (stored in chart-managed secret) or existingSecret (your secret with 'database-url' key)"
+
+  # LRU validation tests
+  - it: should fail lruSchedule without maxSize
+    set:
+      config.hostname: test.example.com
+      config.cache.lruSchedule: "0 0 * * *"
+    asserts:
+      - failedTemplate:
+          errorMessage: "LRU schedule (config.cache.lruSchedule) requires max cache size (config.cache.maxSize)"
+
+  - it: should pass lruSchedule with maxSize
+    set:
+      config.hostname: test.example.com
+      config.cache.lruSchedule: "0 0 * * *"
+      config.cache.maxSize: 100G
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # Redis validation tests
+  - it: should fail Redis enabled without addresses
+    set:
+      config.hostname: test.example.com
+      config.redis.enabled: true
+      config.redis.addresses: []
+    asserts:
+      - failedTemplate:
+          errorMessage: "Redis enabled but no addresses provided (config.redis.addresses)"
+
+  - it: should pass Redis with addresses
+    set:
+      config.hostname: test.example.com
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # Mode validation tests
+  - it: should pass with deployment mode
+    set:
+      config.hostname: test.example.com
+      mode: deployment
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass with statefulset mode
+    set:
+      config.hostname: test.example.com
+      mode: statefulset
+    asserts:
+      - isKind:
+          of: ConfigMap

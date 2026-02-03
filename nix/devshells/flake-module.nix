@@ -117,6 +117,9 @@
           pkgs.sqlc
           pkgs.sqlfluff
           pkgs.watchexec
+
+          pkgs.kubernetes-helm
+          pkgs.kubernetes-helmPlugins.helm-unittest
         ]
         ++ (
           let

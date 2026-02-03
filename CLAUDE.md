@@ -168,6 +168,47 @@ The project uses "Skills" to provide detailed instructions and best practices fo
 
 When working with these tools, you SHOULD read the corresponding `SKILL.md` to ensure compliance with project-specific rules.
 
+### Helm Chart Testing
+
+The Helm chart includes comprehensive unit tests using [helm-unittest](https://github.com/helm-unittest/helm-unittest).
+
+**Run tests locally:**
+
+```bash
+# Install helm-unittest plugin (first time only)
+helm plugin install https://github.com/helm-unittest/helm-unittest
+
+# Run all tests
+helm unittest charts/ncps
+
+# Run specific test file
+helm unittest charts/ncps -f tests/validation_test.yaml
+
+# Run with verbose output
+helm unittest charts/ncps -3
+
+# Run tests in Nix (includes all checks)
+nix flake check
+```
+
+**Test coverage:**
+
+- ConfigMap rendering and CDC formatting (ensures integers, not exponential notation)
+- Secret generation and database URL construction (PostgreSQL/MySQL with/without passwords)
+- Chart validation logic (HA requirements, storage, database, etc.)
+- Deployment and StatefulSet rendering
+- All values from `values.yaml`
+
+**Add new tests:**
+
+Create or edit test files in `charts/ncps/tests/`. Test files must end with `_test.yaml`.
+
+See `charts/ncps/tests/README.md` for detailed instructions and best practices.
+
+**CI integration:**
+
+Helm tests are automatically run in CI via `nix flake check`, which includes the `helm-unittest-check` in the checks output. The `build` job in `.github/workflows/ci.yml` calls `nix flake check`, ensuring all Helm tests pass before merging.
+
 ### Kind Integration Tests
 
 The project includes comprehensive Kubernetes integration testing using a local Kind cluster. A unified CLI tool (`k8s-tests`) tests 13 different deployment permutations across multiple storage backends, database engines, and high-availability configurations.
