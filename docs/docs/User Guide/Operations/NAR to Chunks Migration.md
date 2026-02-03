@@ -29,7 +29,6 @@ Migrate all NAR files to chunks. Once a NAR is successfully migrated and verifie
 
 ```sh
 ncps migrate-nar-to-chunks \
-  --cache-hostname="cache.example.com" \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
 ```
@@ -42,7 +41,6 @@ Preview what would be migrated without making changes:
 
 ```sh
 ncps migrate-nar-to-chunks --dry-run \
-  --cache-hostname="cache.example.com" \
   --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
   --cache-storage-local="/var/lib/ncps"
 ```
@@ -68,7 +66,6 @@ For S3-compatible storage:
 
 ```sh
 ncps migrate-nar-to-chunks \
-  --cache-hostname="cache.example.com" \
   --cache-database-url="postgresql://user:pass@localhost/ncps" \
   --cache-storage-s3-bucket="ncps-cache" \
   --cache-storage-s3-endpoint="https://s3.amazonaws.com" \
