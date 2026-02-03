@@ -24,15 +24,16 @@ import (
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
 
 const (
 	routeIndex          = "/"
-	routeNar            = "/nar/{hash:[a-z0-9]+}.nar"
-	routeNarCompression = "/nar/{hash:[a-z0-9]+}.nar.{compression:*}"
-	routeNarInfo        = "/{hash:[a-z0-9]+}.narinfo"
+	routeNar            = "/nar/{hash:[a-z0-9]{32,52}}.nar"
+	routeNarCompression = "/nar/{hash:[a-z0-9]{32,52}}.nar.{compression:*}"
+	routeNarInfo        = "/{hash:[a-z0-9]{32,52}}.narinfo"
 	routeCacheInfo      = "/nix-cache-info"
 	routeCachePublicKey = "/pubkey"
 
@@ -290,6 +291,11 @@ func (s *Server) getNixCachePublicKey(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
+		if !helper.IsValidHash(hash) {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
+			return
+		}
 
 		ctx, span := tracer.Start(
 			r.Context(),
@@ -351,6 +357,11 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
+	if !helper.IsValidHash(hash) {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
+		return
+	}
 
 	ctx, span := tracer.Start(
 		r.Context(),
@@ -400,6 +411,11 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
+	if !helper.IsValidHash(hash) {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
+		return
+	}
 
 	ctx, span := tracer.Start(
 		r.Context(),
@@ -452,6 +468,11 @@ func (s *Server) withNarURL(
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
+		if !helper.IsValidHash(hash) {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
+			return
+		}
 
 		nu := nar.URL{Hash: hash, Query: r.URL.Query()}
 
