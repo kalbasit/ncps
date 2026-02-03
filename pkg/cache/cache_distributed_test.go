@@ -410,7 +410,7 @@ func TestPutNarInfoConcurrentSharedNar(t *testing.T) {
 				ctx := newContext()
 
 				db, cleanup := setupDB(t)
-				t.Cleanup(cleanup)
+				defer cleanup()
 
 				// Redis setup
 				redisAddrs := []string{"localhost:6379"}
