@@ -583,8 +583,24 @@ class NCPSTester:
                 )
 
             # Count rows
-            cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
-            count = cursor.fetchone()[0]
+            # For CDC deployments, background downloads happen asynchronously,
+            # so we need to retry with exponential backoff to wait for chunks to be created
+            max_retries = 10 if cdc_enabled else 1
+            retry_delay = 1  # Start with 1 second
+            count = 0
+
+            for attempt in range(max_retries):
+                cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
+                count = cursor.fetchone()[0]
+
+                if count > 0:
+                    break
+
+                if attempt < max_retries - 1:
+                    if cdc_enabled:
+                        self.log(f"   ⏳ Waiting for background downloads (attempt {attempt + 1}/{max_retries}, {count} chunks so far)...", verbose_only=True)
+                    time.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff, max 10s
 
             conn.close()
 
@@ -873,8 +889,23 @@ class NCPSTester:
             if cdc_enabled:
                 # List chunks
                 # Chunks are stored in store/chunks/
-                chunk_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/chunks/")
-                chunk_count = chunk_objects.get("KeyCount", 0)
+                # For CDC deployments, background downloads happen asynchronously,
+                # so we need to retry with exponential backoff to wait for chunks to be created
+                max_retries = 10
+                retry_delay = 1  # Start with 1 second
+                chunk_count = 0
+
+                for attempt in range(max_retries):
+                    chunk_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/chunks/")
+                    chunk_count = chunk_objects.get("KeyCount", 0)
+
+                    if chunk_count > 0:
+                        break
+
+                    if attempt < max_retries - 1:
+                        self.log(f"   ⏳ Waiting for background downloads to S3 (attempt {attempt + 1}/{max_retries}, {chunk_count} chunks so far)...", verbose_only=True)
+                        time.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff, max 10s
 
                 if chunk_count == 0:
                     return TestResult(
