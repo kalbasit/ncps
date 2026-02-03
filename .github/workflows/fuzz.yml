@@ -67,7 +67,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
+          name: "${{ matrix.pkg }}_testdata_fuzz_${{ matrix.func }}"
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
       - name: Create Issue on Crash
         if: failure()
