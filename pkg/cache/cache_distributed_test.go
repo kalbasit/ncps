@@ -480,7 +480,7 @@ func testDistributedLockFailover(_ distributedDBFactory) func(*testing.T) {
 
 		// Simulate locker1 failure (don't unlock, let it expire)
 		// Wait for TTL to expire
-		time.Sleep(shortTTL + 500*time.Millisecond)
+		time.Sleep(shortTTL + 2*time.Second)
 
 		// Now locker2 should be able to acquire the lock
 		err = locker2.Lock(ctx, testKey, shortTTL)

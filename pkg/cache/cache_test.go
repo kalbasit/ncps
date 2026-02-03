@@ -44,8 +44,8 @@ const (
 )
 
 // cacheFactory is a function that returns a clean, ready-to-use Cache instance,
-// database, local store, directory path, and takes care of cleaning up once the test is done.
-type cacheFactory func(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func())
+// database, local store, directory path, a rebind function, and takes care of cleaning up once the test is done.
+type cacheFactory func(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func(string) string, func())
 
 // newTestCache is a helper function that creates a cache with local locks for testing.
 func newTestCache(
@@ -88,7 +88,14 @@ func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, 
 	return db, localStore, dir, cleanup
 }
 
-func setupSQLiteFactory(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func()) {
+func setupSQLiteFactory(t *testing.T) (
+	*cache.Cache,
+	database.Querier,
+	*local.Store,
+	string,
+	func(string) string,
+	func(),
+) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -112,10 +119,17 @@ func setupSQLiteFactory(t *testing.T) (*cache.Cache, database.Querier, *local.St
 		os.RemoveAll(dir)
 	}
 
-	return c, db, localStore, dir, cleanup
+	return c, db, localStore, dir, func(s string) string { return s }, cleanup
 }
 
-func setupPostgresFactory(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func()) {
+func setupPostgresFactory(t *testing.T) (
+	*cache.Cache,
+	database.Querier,
+	*local.Store,
+	string,
+	func(string) string,
+	func(),
+) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -135,10 +149,17 @@ func setupPostgresFactory(t *testing.T) (*cache.Cache, database.Querier, *local.
 		os.RemoveAll(dir)
 	}
 
-	return c, db, localStore, dir, cleanup
+	return c, db, localStore, dir, func(s string) string { return s }, cleanup
 }
 
-func setupMySQLFactory(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func()) {
+func setupMySQLFactory(t *testing.T) (
+	*cache.Cache,
+	database.Querier,
+	*local.Store,
+	string,
+	func(string) string,
+	func(),
+) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -158,7 +179,7 @@ func setupMySQLFactory(t *testing.T) (*cache.Cache, database.Querier, *local.Sto
 		os.RemoveAll(dir)
 	}
 
-	return c, db, localStore, dir, cleanup
+	return c, db, localStore, dir, func(s string) string { return s }, cleanup
 }
 
 func testNew(factory cacheFactory) func(*testing.T) {
@@ -218,7 +239,7 @@ func testNew(factory cacheFactory) func(*testing.T) {
 			t.Run("generated", func(t *testing.T) {
 				t.Parallel()
 
-				c, db, localStore, _, cleanup := factory(t)
+				c, db, localStore, _, _, cleanup := factory(t)
 				t.Cleanup(cleanup)
 
 				// Verify key is NOT in local store
@@ -301,7 +322,7 @@ func testPublicKey(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		pubKey := c.PublicKey().String()
@@ -330,7 +351,7 @@ func testGetNarInfoWithoutSignature(factory cacheFactory) func(*testing.T) {
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -370,7 +391,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, db, _, dir, cleanup := factory(t)
+		c, db, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -426,7 +447,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 				var count int
 
 				err := db.DB().QueryRowContext(context.Background(),
-					"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
+					rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"),
 					testdata.Nar2.NarInfoHash).Scan(&count)
 				require.NoError(t, err)
 				assert.Equal(t, 1, count, "narinfo should exist in database")
@@ -479,7 +500,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 
 				// Remove narinfo from database (since it's no longer in storage)
 				_, err = db.DB().ExecContext(context.Background(),
-					"DELETE FROM narinfos WHERE hash = ?", testdata.Nar2.NarInfoHash)
+					rebind("DELETE FROM narinfos WHERE hash = ?"), testdata.Nar2.NarInfoHash)
 				require.NoError(t, err)
 
 				ni, err = c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
@@ -619,7 +640,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 
 func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, db, _, dir, cleanup := factory(t)
+		c, db, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -726,7 +747,7 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 
 func testDeleteNarInfo(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, _, _, dir, cleanup := factory(t)
+		c, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -775,7 +796,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, db, _, dir, cleanup := factory(t)
+		c, db, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -888,7 +909,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 
 func testPutNar(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, _, _, dir, cleanup := factory(t)
+		c, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -922,7 +943,7 @@ func testGetNarInfoMigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, db, localStore, _, cleanup := factory(t)
+		c, db, localStore, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -984,7 +1005,7 @@ func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testi
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, db, localStore, _, cleanup := factory(t)
+		c, db, localStore, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -1067,7 +1088,7 @@ func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testi
 
 func testDeleteNar(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, _, _, dir, cleanup := factory(t)
+		c, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -1118,7 +1139,7 @@ func testDeadlockNarInfoTriggersNarRefetch(factory cacheFactory) func(*testing.T
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// 1. Setup a test server
@@ -1226,7 +1247,7 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Setup a test server with a slow response to ensure we can cancel mid-download
@@ -1384,7 +1405,7 @@ func testBackgroundDownloadCompletionAfterCancellation(factory cacheFactory) fun
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, localStore, dir, cleanup := factory(t)
+		c, _, localStore, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Use an existing test entry (Nar3) for this test
@@ -1573,7 +1594,7 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, localStore, dir, cleanup := factory(t)
+		c, _, localStore, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Use an existing test entry (Nar5 to avoid conflict with other tests)
@@ -1787,7 +1808,7 @@ func waitForFile(t *testing.T, path string) {
 
 func testGetNarInfoBackgroundMigration(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, db, _, dir, cleanup := factory(t)
+		c, db, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		hash := testdata.Nar1.NarInfoHash
@@ -1804,12 +1825,12 @@ func testGetNarInfoBackgroundMigration(factory cacheFactory) func(*testing.T) {
 		var count int
 
 		err := db.DB().QueryRowContext(context.Background(),
-			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 
 		// Clear it from DB first
-		_, err = db.DB().ExecContext(context.Background(), "DELETE FROM narinfos WHERE hash = ?", hash)
+		_, err = db.DB().ExecContext(context.Background(), rebind("DELETE FROM narinfos WHERE hash = ?"), hash)
 		require.NoError(t, err)
 
 		// Ensure it's in storage
@@ -1826,7 +1847,7 @@ func testGetNarInfoBackgroundMigration(factory cacheFactory) func(*testing.T) {
 			var count int
 
 			err := db.DB().QueryRowContext(context.Background(),
-				"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+				rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 			if err != nil || count == 0 {
 				return false
 			}
@@ -1960,7 +1981,7 @@ func testBackgroundMigrateNarInfoAfterCancellation(factory cacheFactory) func(*t
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, db, _, dir, cleanup := factory(t)
+		c, db, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Use a unique hash for this test
@@ -1979,7 +2000,7 @@ func testBackgroundMigrateNarInfoAfterCancellation(factory cacheFactory) func(*t
 		var count int
 
 		err := db.DB().QueryRowContext(context.Background(),
-			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 
@@ -2009,14 +2030,14 @@ func testBackgroundMigrateNarInfoAfterCancellation(factory cacheFactory) func(*t
 			var count int
 
 			err := db.DB().QueryRowContext(context.Background(),
-				"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+				rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 
 			return err == nil && count > 0
 		}, 10*time.Second, 100*time.Millisecond, "background migration should complete even if request context is canceled")
 
 		// 5. Verify it's in the database
 		err = db.DB().QueryRowContext(context.Background(),
-			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
 	}
@@ -2203,7 +2224,7 @@ func testNarStreaming(factory cacheFactory) func(*testing.T) {
 		t.Parallel()
 
 		// Setup test components
-		c, _, localStore, _, cleanup := factory(t)
+		c, _, localStore, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ts := testdata.NewTestServer(t, 40)

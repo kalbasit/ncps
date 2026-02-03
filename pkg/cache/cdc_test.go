@@ -55,7 +55,7 @@ func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, dir, cleanup := factory(t)
+		c, db, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -98,7 +98,7 @@ func testCDCDeduplication(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, dir, cleanup := factory(t)
+		c, db, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -134,7 +134,7 @@ func testCDCMixedMode(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, _, _, dir, cleanup := factory(t)
+		c, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
