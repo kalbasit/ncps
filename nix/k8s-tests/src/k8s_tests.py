@@ -63,9 +63,14 @@ class K8sTestsCLI:
         try:
             return subprocess.run(cmd, capture_output=capture_output, text=text, check=check, cwd=cwd, input=input)
         except subprocess.CalledProcessError as e:
-            if not capture_output:
-                self.error(f"Command failed with exit code {e.returncode}: {' '.join(cmd)}")
-            raise
+            err_msg = f"Command failed with exit code {e.returncode}: {' '.join(cmd)}"
+            if e.stdout:
+                err_msg += f"\nSTDOUT: {e.stdout.strip()}"
+            if e.stderr:
+                err_msg += f"\nSTDERR: {e.stderr.strip()}"
+            self.error(err_msg)
+        except FileNotFoundError:
+            self.error(f"Command not found: {cmd[0]}")
 
     # --- Cluster Management ---
 
@@ -439,45 +444,46 @@ spec:
 
         # Generate setup scripts for existing-secret permutations
         permutations = json.loads(self.run_cmd(["nix", "eval", "--json", "--file", self.config_file, "permutations"], capture_output=True).stdout)
-        self._generate_existing_secret_scripts(creds, permutations)
+
 
         # Generate test-config.yaml
         self._generate_test_config(creds, permutations)
 
         self.log(f"✅ All test files generated in: {TEST_VALUES_DIR}")
 
-    def _generate_existing_secret_scripts(self, creds, permutations):
-        for perm in permutations:
-            setup_script = perm.get("setupScript")
-            if not setup_script: continue
+    def _create_external_secret(self, name: str, creds: Dict[str, Any], db_type: str):
+        """Create external secret for a deployment directly using kubectl."""
+        namespace = f"ncps-{name}"
 
-            name = perm["name"]
-            db_type = perm["database"]["type"]
-            db_url = ""
+        # Create namespace
+        self.run_cmd(["kubectl", "create", "namespace", namespace, "--dry-run=client", "-o", "yaml"],
+                     capture_output=True, check=False)
+        self.run_cmd(["kubectl", "apply", "-f", "-"],
+                     input=self.run_cmd(["kubectl", "create", "namespace", namespace, "--dry-run=client", "-o", "yaml"],
+                                        capture_output=True).stdout)
 
-            if db_type == "postgresql":
-                p = creds["postgresql"]
-                pass_enc = urllib.parse.quote(p['password'])
-                db_url = f"postgresql://{p['username']}:{pass_enc}@{p['host']}:{p['port']}/{p['database']}?sslmode=disable"
-            elif db_type == "mysql":
-                m = creds["mariadb"]
-                pass_enc = urllib.parse.quote(m['password'])
-                db_url = f"mysql://{m['username']}:{pass_enc}@{m['host']}:{m['port']}/{m['database']}"
+        # Build database URL
+        db_url = ""
+        if db_type == "postgresql":
+            p = creds["postgresql"]
+            pass_enc = urllib.parse.quote(p['password'])
+            db_url = f"postgresql://{p['username']}:{pass_enc}@{p['host']}:{p['port']}/{p['database']}?sslmode=disable"
+        elif db_type == "mysql":
+            m = creds["mariadb"]
+            pass_enc = urllib.parse.quote(m['password'])
+            db_url = f"mysql://{m['username']}:{pass_enc}@{m['host']}:{m['port']}/{m['database']}"
 
-            script_content = f"""#!/usr/bin/env bash
-set -e
-kubectl create namespace "ncps-{name}" --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret generic ncps-external-secrets \\
-  --namespace "ncps-{name}" \\
-  --from-literal=access-key-id="{creds['s3']['access_key']}" \\
-  --from-literal=secret-access-key="{creds['s3']['secret_key']}" \\
-  --from-literal=database-url="{db_url}" \\
-  --dry-run=client -o yaml | kubectl apply -f -
-"""
-            path = os.path.join(TEST_VALUES_DIR, setup_script)
-            with open(path, "w") as f:
-                f.write(script_content)
-            os.chmod(path, 0o755)
+        # Create secret
+        secret_yaml = self.run_cmd([
+            "kubectl", "create", "secret", "generic", "ncps-external-secrets",
+            "--namespace", namespace,
+            "--from-literal=access-key-id=" + creds['s3']['access_key'],
+            "--from-literal=secret-access-key=" + creds['s3']['secret_key'],
+            "--from-literal=database-url=" + db_url,
+            "--dry-run=client", "-o", "yaml"
+        ], capture_output=True).stdout
+
+        self.run_cmd(["kubectl", "apply", "-f", "-"], input=secret_yaml)
 
     def _generate_test_config(self, creds, permutations):
         test_data_hashes = json.loads(self.run_cmd(["nix", "eval", "--json", "--file", self.config_file, "testData.narinfo_hashes"], capture_output=True).stdout)
@@ -518,15 +524,20 @@ kubectl create secret generic ncps-external-secrets \\
         if not os.path.exists(TEST_VALUES_DIR):
             self.error("Test values not generated. Run 'k8s-tests generate' first.")
 
+        # Load permutations to check which deployments need external secrets
+        permutations = json.loads(self.run_cmd(["nix", "eval", "--json", "--file", self.config_file, "permutations"], capture_output=True).stdout)
+        perm_map = {p["name"]: p for p in permutations}
+        creds = self.get_cluster_creds()
+
         names = [name] if name else [f[:-5] for f in os.listdir(TEST_VALUES_DIR) if f.endswith(".yaml") and f not in ["test-config.yaml"]]
 
         for n in sorted(names):
             self.log(f"📦 Installing ncps-{n}...")
 
-            # Setup script if exists
-            setup_script = os.path.join(TEST_VALUES_DIR, f"install-{n}.sh")
-            if os.path.exists(setup_script):
-                self.run_cmd([setup_script])
+            # Create external secret if needed
+            if n in perm_map and perm_map[n].get("setupScript"):
+                db_type = perm_map[n]["database"]["type"]
+                self._create_external_secret(n, creds, db_type)
 
             values_file = os.path.join(TEST_VALUES_DIR, f"{n}.yaml")
             self.run_cmd(["helm", "upgrade", "--install", f"ncps-{n}", CHART_DIR,
