@@ -38,7 +38,7 @@ Access metrics at: `http://your-ncps:8501/metrics` (for `serve`) or via stdout/O
 
 - `ncps_migration_objects_total{migration_type,operation,result}` - Objects migrated
   - Labels: `migration_type` (narinfo-to-db/nar-to-chunks), `operation` (migrate/delete), `result` (success/failure/skipped)
-- `ncps_migration_duration_seconds{migration_type,operation}` - Migration operation duration
+- `ncps_migration_duration_seconds{migration_type,operation}` - Migration operation duration histogram
   - Labels: `migration_type` (narinfo-to-db/nar-to-chunks), `operation` (migrate/delete)
 - `ncps_migration_batch_size{migration_type}` - Migration batch sizes
   - Label: `migration_type` (narinfo-to-db/nar-to-chunks)

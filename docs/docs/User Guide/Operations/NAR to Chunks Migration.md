@@ -102,7 +102,7 @@ When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports 
 ### Available Metrics
 
 - `ncps_migration_objects_total{migration_type="nar-to-chunks",operation,result}` - Total NARs processed.
-- `ncps_migration_duration_seconds{migration_type="nar-to-chunks",operation}` - Duration of chunking operations.
+- `ncps_migration_duration_seconds{migration_type="nar-to-chunks",operation}` - Duration of chunking operations histogram.
 - `ncps_migration_batch_size{migration_type="nar-to-chunks"}` - Total number of NARs found for migration.
 
 ### Example PromQL Queries

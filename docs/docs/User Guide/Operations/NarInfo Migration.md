@@ -215,7 +215,7 @@ When OpenTelemetry is enabled (`--otel-enabled`), the migration process exports 
 ### Available Metrics
 
 - `ncps_migration_objects_total{migration_type="narinfo-to-db",operation,result}` - Total NarInfos processed.
-- `ncps_migration_duration_seconds{migration_type="narinfo-to-db",operation}` - Duration of database migration operations.
+- `ncps_migration_duration_seconds{migration_type="narinfo-to-db",operation}` - Duration of database migration operations histogram.
 - `ncps_migration_batch_size{migration_type="narinfo-to-db"}` - Total number of NarInfos found for migration.
 
 ### Example PromQL Queries
