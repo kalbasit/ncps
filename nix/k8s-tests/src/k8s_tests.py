@@ -459,11 +459,11 @@ spec:
             import urllib.parse
             if db_type == "postgresql":
                 p = creds["postgresql"]
-                pass_enc = urllib.parse.quote_plus(p['password'])
+                pass_enc = urllib.parse.quote(p['password'])
                 db_url = f"postgresql://{p['username']}:{pass_enc}@{p['host']}:{p['port']}/{p['database']}?sslmode=disable"
             elif db_type == "mysql":
                 m = creds["mariadb"]
-                pass_enc = urllib.parse.quote_plus(m['password'])
+                pass_enc = urllib.parse.quote(m['password'])
                 db_url = f"mysql://{m['username']}:{pass_enc}@{m['host']}:{m['port']}/{m['database']}"
 
             script_content = f"""#!/usr/bin/env bash
