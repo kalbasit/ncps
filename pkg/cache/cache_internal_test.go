@@ -38,7 +38,7 @@ var errTest = errors.New("test error")
 
 // cacheFactory is a function that returns a clean, ready-to-use Cache instance,
 // database, local store, directory path, and takes care of cleaning up once the test is done.
-type cacheFactory func(t *testing.T) (*Cache, database.Querier, *local.Store, string, func())
+type cacheFactory func(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func())
 
 // insertPartialNarInfo inserts a minimal narinfo record with only the hash field set.
 // All other fields are NULL, simulating an unmigrated state.
@@ -52,7 +52,7 @@ func insertPartialNarInfo(ctx context.Context, db database.Querier, hash string)
 	return err
 }
 
-func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func()) {
+func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -80,10 +80,10 @@ func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, s
 		os.RemoveAll(dir)
 	}
 
-	return c, db, localStore, dir, cleanup
+	return c, db, localStore, dir, func(s string) string { return s }, cleanup
 }
 
-func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func()) {
+func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -107,10 +107,28 @@ func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store,
 		os.RemoveAll(dir)
 	}
 
-	return c, db, localStore, dir, cleanup
+	rebind := func(query string) string {
+		parts := strings.Split(query, "?")
+		if len(parts) == 1 {
+			return query
+		}
+
+		var sb strings.Builder
+		for i, part := range parts {
+			sb.WriteString(part)
+
+			if i < len(parts)-1 {
+				sb.WriteString(fmt.Sprintf("$%d", i+1))
+			}
+		}
+
+		return sb.String()
+	}
+
+	return c, db, localStore, dir, rebind, cleanup
 }
 
-func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func()) {
+func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -134,7 +152,7 @@ func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, st
 		os.RemoveAll(dir)
 	}
 
-	return c, db, localStore, dir, cleanup
+	return c, db, localStore, dir, func(s string) string { return s }, cleanup
 }
 
 func testAddUpstreamCaches(factory cacheFactory) func(*testing.T) {
@@ -173,7 +191,7 @@ func testAddUpstreamCaches(factory cacheFactory) func(*testing.T) {
 				ucs = append(ucs, uc)
 			}
 
-			c, _, _, _, cleanup := factory(t)
+			c, _, _, _, _, cleanup := factory(t)
 			t.Cleanup(cleanup)
 
 			c.AddUpstreamCaches(newContext(), ucs...)
@@ -220,7 +238,7 @@ func testAddUpstreamCaches(factory cacheFactory) func(*testing.T) {
 				ucs = append(ucs, uc)
 			}
 
-			c, _, _, _, cleanup := factory(t)
+			c, _, _, _, _, cleanup := factory(t)
 			t.Cleanup(cleanup)
 
 			for _, uc := range ucs {
@@ -243,7 +261,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ts := testdata.NewTestServer(t, 40)
@@ -421,7 +439,7 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ts := testdata.NewTestServer(t, 40)
@@ -600,7 +618,7 @@ func testRunLRUWithSharedNar(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -651,13 +669,13 @@ func testRunLRUWithSharedNar(factory cacheFactory) func(*testing.T) {
 		// We set ni4 (oldest), then ni1, then ni2 (newest).
 		baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		_, err = c.db.DB().ExecContext(ctx,
-			"UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?", baseTime.Add(-3*time.Hour), "nar-info-4")
+			rebind("UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?"), baseTime.Add(-3*time.Hour), "nar-info-4")
 		require.NoError(t, err)
 		_, err = c.db.DB().ExecContext(ctx,
-			"UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?", baseTime.Add(-2*time.Hour), "nar-info-1")
+			rebind("UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?"), baseTime.Add(-2*time.Hour), "nar-info-1")
 		require.NoError(t, err)
 		_, err = c.db.DB().ExecContext(ctx,
-			"UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?", baseTime.Add(-1*time.Hour), "nar-info-2")
+			rebind("UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?"), baseTime.Add(-1*time.Hour), "nar-info-2")
 		require.NoError(t, err)
 
 		// Set MaxSize to 0 to trigger eviction of all reclaimable records.
@@ -697,7 +715,7 @@ func testStoreInDatabaseDuplicateDetection(factory cacheFactory) func(*testing.T
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Parse narinfo from testdata
@@ -729,7 +747,7 @@ func testPutNarInfoConcurrentSameHash(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Test concurrent PutNarInfo calls for the same hash
@@ -788,7 +806,7 @@ func testPutNarInfoWithSharedNar(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -848,7 +866,7 @@ func newContext() context.Context {
 // TestWithReadLock tests the withReadLock helper function.
 func testWithReadLock(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -882,7 +900,7 @@ func testWithReadLock(factory cacheFactory) func(*testing.T) {
 // TestWithWriteLock tests the withWriteLock helper function.
 func testWithWriteLock(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -951,7 +969,7 @@ func testWithWriteLock(factory cacheFactory) func(*testing.T) {
 // TestWithTryLock tests the withTryLock helper function.
 func testWithTryLock(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -1036,7 +1054,7 @@ func testMigrationDataIntegrity(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -1076,7 +1094,7 @@ func testMigrationSuccess(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -1113,7 +1131,7 @@ func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 		// With the ON CONFLICT DO UPDATE/NOTHING approach, duplicate inserts should not
 		// abort transactions or cause errors when attempting to store existing records.
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -1170,7 +1188,7 @@ func testMigrationPartialRecordWithExistingReferences(factory cacheFactory) func
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()
@@ -1219,7 +1237,7 @@ func testDeleteNarInfoWithNullURL(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, cleanup := factory(t)
+		c, _, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ctx := newContext()

@@ -149,7 +149,25 @@ func setupPostgresFactory(t *testing.T) (
 		os.RemoveAll(dir)
 	}
 
-	return c, db, localStore, dir, func(s string) string { return s }, cleanup
+	rebind := func(query string) string {
+		parts := strings.Split(query, "?")
+		if len(parts) == 1 {
+			return query
+		}
+
+		var sb strings.Builder
+		for i, part := range parts {
+			sb.WriteString(part)
+
+			if i < len(parts)-1 {
+				sb.WriteString(fmt.Sprintf("$%d", i+1))
+			}
+		}
+
+		return sb.String()
+	}
+
+	return c, db, localStore, dir, rebind, cleanup
 }
 
 func setupMySQLFactory(t *testing.T) (
@@ -640,7 +658,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 
 func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -682,8 +700,8 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 			var sigsStr []string
 
 			rows, err := db.DB().QueryContext(context.Background(),
-				`SELECT signature FROM narinfo_signatures
-				 WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`,
+				rebind(`SELECT signature FROM narinfo_signatures
+				 WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`),
 				testdata.Nar1.NarInfoHash)
 			require.NoError(t, err)
 
@@ -943,7 +961,7 @@ func testGetNarInfoMigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, db, localStore, _, _, cleanup := factory(t)
+		c, db, localStore, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -967,14 +985,15 @@ func testGetNarInfoMigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 		// 2. Insert a minimal record into the database
 		// This simulates a record created before the de-normalization migration (schema 20260117195000)
 		// or a record that was only partially created. The key aspect is that URL is NULL.
-		query := "INSERT INTO narinfos (hash, created_at) VALUES (?, ?)"
+		query := rebind("INSERT INTO narinfos (hash, created_at) VALUES (?, ?)")
 		_, err = db.DB().ExecContext(ctx, query, testdata.Nar1.NarInfoHash, time.Now())
 		require.NoError(t, err)
 
 		// Verify it is indeed NULL and correctly inserted
 		var url sql.NullString
 
-		err = db.DB().QueryRowContext(ctx, "SELECT url FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&url)
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT url FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash).Scan(&url)
 		require.NoError(t, err)
 		require.False(t, url.Valid, "URL should be NULL before the test")
 
@@ -1005,7 +1024,7 @@ func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testi
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, db, localStore, _, _, cleanup := factory(t)
+		c, db, localStore, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c.SetRecordAgeIgnoreTouch(0)
@@ -1025,7 +1044,7 @@ func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testi
 		_, err = localStore.PutNar(ctx, nu, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
 		require.NoError(t, err)
 
-		query := "INSERT INTO narinfos (hash, created_at) VALUES (?, ?)"
+		query := rebind("INSERT INTO narinfos (hash, created_at) VALUES (?, ?)")
 		_, err = db.DB().ExecContext(ctx, query, testdata.Nar1.NarInfoHash, time.Now())
 		require.NoError(t, err)
 
