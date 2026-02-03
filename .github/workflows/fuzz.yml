@@ -63,11 +63,20 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Fuzz ${{ matrix.func }}
         run: nix develop --command go test -fuzz=${{ matrix.fuzz_pattern }} -fuzztime=${{ matrix.time }} ./${{ matrix.pkg }}
+      - name: Format artifact name
+        if: failure()
+        run: |
+          set -euo pipefail
+          # This regex replaces any character that is NOT a letter, number, dot, or dash
+          RAW_PATH="${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}"
+          CLEAN_NAME=$(echo "$RAW_PATH" | sed 's/[^a-zA-Z0-9.-]/_/g')
+
+          echo "ARTIFACT_NAME=$CLEAN_NAME" >> $GITHUB_ENV
       - name: Upload crash file(s)
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: "${{ matrix.pkg }}_testdata_fuzz_${{ matrix.func }}"
+          name: ${{ env.ARTIFACT_NAME }}
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
       - name: Create Issue for the crash
         if: failure()
