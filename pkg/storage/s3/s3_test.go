@@ -30,6 +30,8 @@ const cacheName = "cache.example.com"
 const (
 	s3LocationResponseString = `<?xml version="1.0" encoding="UTF-8"?>` +
 		`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/">us-east-1</LocationConstraint>`
+
+	s3NoSuchKey = "NoSuchKey"
 )
 
 var (
@@ -42,8 +44,193 @@ var (
 	errCallbackFailed      = errors.New("callback error")
 )
 
-// Integration tests that require a running MinIO server
-// These tests are skipped unless NCPS_TEST_S3_ENDPOINT is set
+func TestSecretKey_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+	cfg := s3config.Config{
+		Bucket:          "test-bucket",
+		Endpoint:        "http://localhost:9000",
+		AccessKeyID:     "minioadmin",
+		SecretAccessKey: "minioadmin",
+	}
+
+	t.Run("GetSecretKey Read error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errGetFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "config/cache.key") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		_, err = store.GetSecretKey(ctx)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error reading secret key")
+	})
+
+	t.Run("GetSecretKey Stat error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errGetFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// First GET request succeeds but body is read later
+			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "config/cache.key") {
+				return s3OKResponse("some-key")
+			}
+
+			// HEAD request (Stat) fails
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		_, err = store.GetSecretKey(ctx)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error getting secret key stat from S3")
+	})
+
+	t.Run("PutSecretKey StatObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errConnectionFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) fails with unexpected error
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		sk, _, err := signature.GenerateKeypair(cacheName, nil)
+		require.NoError(t, err)
+
+		err = store.PutSecretKey(ctx, sk)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error checking if secret key exists")
+	})
+
+	t.Run("PutSecretKey PutObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errPutFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) returns 404 (Not Found), allowing Put to proceed
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
+				return s3NotFoundResponse(s3NoSuchKey, "The specified key does not exist.")
+			}
+
+			// PutObject fails
+			if req.Method == http.MethodPut && strings.Contains(req.URL.Path, "config/cache.key") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		sk, _, err := signature.GenerateKeypair(cacheName, nil)
+		require.NoError(t, err)
+
+		err = store.PutSecretKey(ctx, sk)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error putting secret key to S3")
+	})
+
+	t.Run("DeleteSecretKey StatObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errConnectionFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) fails with unexpected error
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		err = store.DeleteSecretKey(ctx)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error checking if secret key exists")
+	})
+
+	t.Run("DeleteSecretKey RemoveObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errDeleteFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) succeeds
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
+				return s3OKResponse("")
+			}
+
+			// RemoveObject fails
+			if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, "config/cache.key") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		err = store.DeleteSecretKey(ctx)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error deleting secret key from S3")
+	})
+}
 
 func getTestStore(t *testing.T) *storage_s3.Store {
 	t.Helper()
@@ -220,6 +407,112 @@ func TestWalkNarInfos_ErrorPaths(t *testing.T) {
 	})
 }
 
+func TestHasNarInfo_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+	cfg := s3config.Config{
+		Bucket:          "test-bucket",
+		Endpoint:        "http://localhost:9000",
+		AccessKeyID:     "minioadmin",
+		SecretAccessKey: "minioadmin",
+	}
+
+	t.Run("HasNarInfo StatObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errConnectionFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) fails with unexpected error
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, ".narinfo") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		exists := store.HasNarInfo(ctx, "hash")
+		assert.False(t, exists)
+	})
+}
+
+func TestDeleteNarInfo_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+	cfg := s3config.Config{
+		Bucket:          "test-bucket",
+		Endpoint:        "http://localhost:9000",
+		AccessKeyID:     "minioadmin",
+		SecretAccessKey: "minioadmin",
+	}
+
+	t.Run("DeleteNarInfo StatObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errConnectionFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) fails with unexpected error
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, ".narinfo") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		err = store.DeleteNarInfo(ctx, "hash")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error checking if narinfo exists")
+	})
+
+	t.Run("DeleteNarInfo RemoveObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errDeleteFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) succeeds
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, ".narinfo") {
+				return s3OKResponse("")
+			}
+
+			// RemoveObject fails
+			if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, ".narinfo") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		err = store.DeleteNarInfo(ctx, "hash")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error deleting narinfo from S3")
+	})
+}
+
 func TestNarInfo_ErrorPaths(t *testing.T) {
 	t.Parallel()
 
@@ -292,6 +585,115 @@ func TestNarInfo_ErrorPaths(t *testing.T) {
 	})
 }
 
+func TestHasNar_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+	cfg := s3config.Config{
+		Bucket:          "test-bucket",
+		Endpoint:        "http://localhost:9000",
+		AccessKeyID:     "minioadmin",
+		SecretAccessKey: "minioadmin",
+	}
+
+	t.Run("HasNar StatObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errConnectionFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) fails with unexpected error
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		exists := store.HasNar(ctx, narURL)
+		assert.False(t, exists)
+	})
+}
+
+func TestPutNar_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+	cfg := s3config.Config{
+		Bucket:          "test-bucket",
+		Endpoint:        "http://localhost:9000",
+		AccessKeyID:     "minioadmin",
+		SecretAccessKey: "minioadmin",
+	}
+
+	t.Run("PutNar StatObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errConnectionFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) fails with unexpected error
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error checking if nar exists")
+	})
+
+	t.Run("PutNar PutObject error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errPutFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) returns 404 (Not Found), allowing Put to proceed
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
+				return s3NotFoundResponse(s3NoSuchKey, "The specified key does not exist.")
+			}
+
+			// PutObject fails
+			if req.Method == http.MethodPut && strings.Contains(req.URL.Path, "store/nar") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error putting nar to S3")
+	})
+}
+
 func TestNar_ErrorPaths(t *testing.T) {
 	t.Parallel()
 
@@ -331,6 +733,33 @@ func TestNar_ErrorPaths(t *testing.T) {
 		_, _, err = store.GetNar(ctx, narURL)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get failed")
+	})
+
+	t.Run("DeleteNar StatObject returns error", func(t *testing.T) {
+		t.Parallel()
+
+		expectedErr := errConnectionFailed
+		cfgWithMock := cfg
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// StatObject (HEAD) fails with unexpected error
+			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		err = store.DeleteNar(ctx, narURL)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error checking if nar exists")
 	})
 
 	t.Run("DeleteNar returns error", func(t *testing.T) {
