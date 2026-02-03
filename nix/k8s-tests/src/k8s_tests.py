@@ -10,6 +10,7 @@ Provides unified interface for Kind cluster integration testing:
 """
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 
@@ -146,7 +148,7 @@ nodes:
         # Registry
         self.log("   - Installing Container Registry...")
         self.run_cmd(["kubectl", "create", "namespace", "registry"], check=False)
-        registry_manifest = f"""
+        registry_manifest = """
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -166,18 +168,18 @@ metadata:
 spec:
   replicas: 1
   selector:
-    matchLabels: {{ app: registry }}
+    matchLabels: { app: registry }
   template:
     metadata:
-      labels: {{ app: registry }}
+      labels: { app: registry }
     spec:
       containers:
       - name: registry
         image: registry:2
-        ports: [{{ containerPort: 5000 }}]
-        env: [{{ name: REGISTRY_STORAGE_DELETE_ENABLED, value: "true" }}]
-        volumeMounts: [{{ name: registry-storage, mountPath: /var/lib/registry }}]
-      volumes: [{{ name: registry-storage, persistentVolumeClaim: {{ claimName: registry-pvc }} }}]
+        ports: [{ containerPort: 5000 }]
+        env: [{ name: REGISTRY_STORAGE_DELETE_ENABLED, value: "true" }]
+        volumeMounts: [{ name: registry-storage, mountPath: /var/lib/registry }]
+      volumes: [{ name: registry-storage, persistentVolumeClaim: { claimName: registry-pvc } }]
 ---
 apiVersion: v1
 kind: Service
@@ -186,8 +188,8 @@ metadata:
   namespace: registry
 spec:
   type: NodePort
-  selector: {{ app: registry }}
-  ports: [{{ port: 5000, targetPort: 5000, nodePort: 30000, protocol: TCP }}]
+  selector: { app: registry }
+  ports: [{ port: 5000, targetPort: 5000, nodePort: 30000, protocol: TCP }]
 """
         self.run_cmd(["kubectl", "apply", "-f", "-"], input=registry_manifest)
         self.run_cmd(["kubectl", "wait", "--for=condition=Ready", "pod", "-l", "app=registry", "-n", "registry", "--timeout=180s"])
@@ -329,22 +331,19 @@ spec:
 
         # Fetch dynamic passwords
         try:
-            pg_pass = self.run_cmd(["kubectl", "get", "secret", "-n", "data", "pg17-ncps-app", "-o", "jsonpath={.data.password}"], capture_output=True).stdout
-            if pg_pass:
-                import base64
-                creds["postgresql"]["password"] = base64.b64decode(pg_pass).decode()
+            pg_pass_b64 = self.run_cmd(["kubectl", "get", "secret", "-n", "data", "pg17-ncps-app", "-o", "jsonpath={.data.password}"], capture_output=True).stdout
+            if pg_pass_b64:
+                creds["postgresql"]["password"] = base64.b64decode(pg_pass_b64).decode()
 
-            maria_pass = self.run_cmd(["kubectl", "get", "secret", "-n", "data", "mariadb-ncps-password", "-o", "jsonpath={.data.password}"], capture_output=True).stdout
-            if maria_pass:
-                import base64
-                creds["mariadb"]["password"] = base64.b64decode(maria_pass).decode()
+            maria_pass_b64 = self.run_cmd(["kubectl", "get", "secret", "-n", "data", "mariadb-ncps-password", "-o", "jsonpath={.data.password}"], capture_output=True).stdout
+            if maria_pass_b64:
+                creds["mariadb"]["password"] = base64.b64decode(maria_pass_b64).decode()
 
-            redis_pass = self.run_cmd(["kubectl", "get", "secret", "-n", "data", "redis-ncps", "-o", "jsonpath={.data.password}"], capture_output=True, check=False).stdout
-            if redis_pass:
-                import base64
-                creds["redis"]["password"] = base64.b64decode(redis_pass).decode()
-        except Exception:
-            pass
+            redis_pass_b64 = self.run_cmd(["kubectl", "get", "secret", "-n", "data", "redis-ncps", "-o", "jsonpath={.data.password}"], capture_output=True, check=False).stdout
+            if redis_pass_b64:
+                creds["redis"]["password"] = base64.b64decode(redis_pass_b64).decode()
+        except (subprocess.CalledProcessError, base64.binascii.Error, IndexError) as e:
+            self.log(f"   ⚠️  Could not fetch dynamic credentials, proceeding with defaults. Error: {e}")
 
         return creds
 
@@ -456,7 +455,6 @@ spec:
             db_type = perm["database"]["type"]
             db_url = ""
 
-            import urllib.parse
             if db_type == "postgresql":
                 p = creds["postgresql"]
                 pass_enc = urllib.parse.quote(p['password'])
