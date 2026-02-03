@@ -62,6 +62,7 @@ func FuzzEncodeBig(f *testing.F) {
 	f.Add(1, int64(5))
 	f.Add(0, int64(0))
 	f.Add(64, int64(10))
+	f.Add(1, int64(-5))
 
 	f.Fuzz(func(t *testing.T, k int, d int64) {
 		enc, err := golomb.NewEncoder(io.Discard, k)
