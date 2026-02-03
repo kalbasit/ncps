@@ -67,6 +67,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v6
         with:
+          name: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
       - name: Create Issue on Crash
         if: failure()
@@ -76,13 +77,23 @@ jobs:
           TITLE="Fuzzing Crash: ${{ matrix.func }} in ${{ matrix.pkg }}"
 
           # Check for existing issue
-          EXISTING_ISSUE=$(gh issue list --search "$TITLE in:title" --json number --jq '.[0].number')
+          EXISTING_ISSUE=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number')
           if [ -n "$EXISTING_ISSUE" ]; then
             echo "Issue already exists: #$EXISTING_ISSUE"
             exit 0
           fi
 
+          BODY=$(cat <<EOF
+          Fuzzing test '${{ matrix.func }}' in '${{ matrix.pkg }}' crashed.
+
+          **Commit:** ${{ github.sha }}
+          **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          See artifacts in the link above for reproduction.
+          EOF
+          )
+
           gh issue create \
             --title "$TITLE" \
-            --body "Fuzzing test '${{ matrix.func }}' in '${{ matrix.pkg }}' crashed.\n\nCommit: ${{ github.sha }}\n\nSee artifact for reproduction." \
+            --body "$BODY" \
             --label "fuzz-crash"
