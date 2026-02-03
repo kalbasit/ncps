@@ -65,7 +65,7 @@ func newTestCache(
 		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
 }
 
-func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, func()) {
+func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, func(string) string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -85,7 +85,7 @@ func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, 
 		os.RemoveAll(dir)
 	}
 
-	return db, localStore, dir, cleanup
+	return db, localStore, dir, func(s string) string { return s }, cleanup
 }
 
 func setupSQLiteFactory(t *testing.T) (
@@ -238,7 +238,9 @@ func testNew(factory cacheFactory) func(*testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					t.Parallel()
 
-					db, localStore, _, cleanup := setupTestComponents(t)
+					db, localStore, _, rebind, cleanup := setupTestComponents(t)
+					_ = rebind
+
 					t.Cleanup(cleanup)
 
 					_, err := newTestCache(newContext(), tt.hostname, db, localStore, localStore, localStore, "")
@@ -276,7 +278,9 @@ func testNew(factory cacheFactory) func(*testing.T) {
 			t.Run("given", func(t *testing.T) {
 				t.Parallel()
 
-				db, localStore, _, cleanup := setupTestComponents(t)
+				db, localStore, _, rebind, cleanup := setupTestComponents(t)
+				_ = rebind
+
 				t.Cleanup(cleanup)
 
 				sk, _, err := signature.GenerateKeypair(cacheName, nil)
@@ -309,7 +313,9 @@ func testNew(factory cacheFactory) func(*testing.T) {
 			t.Run("migrated", func(t *testing.T) {
 				t.Parallel()
 
-				db, localStore, _, cleanup := setupTestComponents(t)
+				db, localStore, _, rebind, cleanup := setupTestComponents(t)
+				_ = rebind
+
 				t.Cleanup(cleanup)
 
 				// Pre-populate key in local store
@@ -1008,7 +1014,9 @@ func testGetNarInfoMigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 		expectedURL := "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz"
 
 		assert.Eventually(t, func() bool {
-			err = db.DB().QueryRowContext(ctx, "SELECT url FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&url)
+			err = db.DB().QueryRowContext(ctx,
+				rebind("SELECT url FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&url)
 
 			return err == nil && url.Valid && url.String == expectedURL
 		}, 2*time.Second, 100*time.Millisecond, "URL should be populated in the database after GetNarInfo")
@@ -1093,7 +1101,9 @@ func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testi
 		var url sql.NullString
 
 		assert.Eventually(t, func() bool {
-			err = db.DB().QueryRowContext(ctx, "SELECT url FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&url)
+			err = db.DB().QueryRowContext(ctx,
+				rebind("SELECT url FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&url)
 
 			return err == nil && url.Valid && url.String == expectedURL
 		}, 2*time.Second, 100*time.Millisecond, "URL should be populated exactly once")
@@ -1922,7 +1932,7 @@ func testBackgroundMigrateNarInfoThunderingHerd(_ cacheFactory) func(*testing.T)
 		t.Parallel()
 
 		// Setup components
-		db, localStore, dir, cleanup := setupTestComponents(t)
+		db, localStore, dir, rebind, cleanup := setupTestComponents(t)
 		t.Cleanup(cleanup)
 
 		hash := testdata.Nar1.NarInfoHash
@@ -1977,7 +1987,7 @@ func testBackgroundMigrateNarInfoThunderingHerd(_ cacheFactory) func(*testing.T)
 			var count int
 
 			err := spy.DB().
-				QueryRowContext(context.Background(), "SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).
+				QueryRowContext(context.Background(), rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).
 				Scan(&count)
 
 			return err == nil && count > 0
@@ -2079,6 +2089,8 @@ func testGetNarInfoConcurrentPutNarInfoDuringMigration(_ cacheFactory) func(*tes
 		store, err := local.New(ctx, tmpDir)
 		require.NoError(t, err)
 
+		rebind := func(s string) string { return s }
+
 		hash := testdata.Nar1.NarInfoHash
 		entry := testdata.Nar1
 
@@ -2099,7 +2111,7 @@ func testGetNarInfoConcurrentPutNarInfoDuringMigration(_ cacheFactory) func(*tes
 		var count int
 
 		err = db.DB().QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 
@@ -2138,7 +2150,7 @@ func testGetNarInfoConcurrentPutNarInfoDuringMigration(_ cacheFactory) func(*tes
 
 		// 4. Verify final state: narinfo should be in database exactly once
 		err = db.DB().QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count, "narinfo should exist exactly once in database")
 
@@ -2163,6 +2175,8 @@ func testGetNarInfoMultipleConcurrentPutsDuringMigration(_ cacheFactory) func(*t
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+
+		rebind := func(s string) string { return s }
 
 		// Increase connection pool for concurrent operations
 		db.DB().SetMaxOpenConns(20)
@@ -2219,7 +2233,7 @@ func testGetNarInfoMultipleConcurrentPutsDuringMigration(_ cacheFactory) func(*t
 		var count int
 
 		err = db.DB().QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM narinfos WHERE hash = ?", hash).Scan(&count)
+			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count, "should have exactly one narinfo record despite concurrent operations")
 
@@ -2401,6 +2415,8 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*te
 
 		t.Cleanup(func() { db.DB().Close() })
 
+		rebind := func(s string) string { return s }
+
 		baseStore, err := local.New(ctx, tmpDir)
 		require.NoError(t, err)
 
@@ -2409,10 +2425,10 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*te
 
 		// Create a partial database record (simulating what GetNarInfo creates as a placeholder)
 		// This has hash but NULL URL, which causes getNarInfoFromDatabase to return ErrNotFound
-		_, err = db.DB().ExecContext(ctx, `
+		_, err = db.DB().ExecContext(ctx, rebind(`
 			INSERT INTO narinfos (hash, store_path, url, compression, file_hash, file_size, nar_hash, nar_size)
 			VALUES (?, '', NULL, '', '', 0, '', 0)
-		`, hash)
+		`), hash)
 		require.NoError(t, err)
 
 		// Put narinfo and nar files in storage (simulating legacy data)
@@ -2485,7 +2501,7 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*te
 		var dbURL sql.NullString
 
 		err = db.DB().QueryRowContext(ctx,
-			"SELECT url FROM narinfos WHERE hash = ?", hash).Scan(&dbURL)
+			rebind("SELECT url FROM narinfos WHERE hash = ?"), hash).Scan(&dbURL)
 		require.NoError(t, err)
 		assert.True(t, dbURL.Valid, "URL should be populated after migration")
 		assert.NotEmpty(t, dbURL.String)
