@@ -99,3 +99,39 @@ func FuzzJoinURL(f *testing.F) {
 		assert.Equal(t, u1.JoinPath("/nar/"+hash+".nar.xz").Path, u2.Path)
 	})
 }
+
+func FuzzCompressionTypeFromExtension(f *testing.F) {
+	tests := []string{
+		"",
+		"none",
+		"bz2",
+		"zst",
+		"lzip",
+		"lz4",
+		"br",
+		"xz",
+		"unknown",
+	}
+
+	for _, tc := range tests {
+		f.Add(tc)
+	}
+
+	f.Fuzz(func(t *testing.T, ext string) {
+		ct, err := nar.CompressionTypeFromExtension(ext)
+		if err != nil {
+			assert.Empty(t, ct)
+			assert.Equal(t, nar.ErrUnknownFileExtension, err)
+		} else {
+			assert.NotEmpty(t, ct)
+
+			// Special case: "none" maps to CompressionTypeNone, which maps back to ""
+			expectedExt := ext
+			if ext == "none" {
+				expectedExt = ""
+			}
+
+			assert.Equal(t, expectedExt, ct.ToFileExtension())
+		}
+	})
+}
