@@ -1052,9 +1052,16 @@ func newContext() context.Context {
 func getUniqueHash(t *testing.T, base string) string {
 	t.Helper()
 	// Use test name to create a unique hash prefix
-	// Replace slashes and spaces with underscores for valid hash format
-	testName := strings.ReplaceAll(t.Name(), "/", "_")
-	testName = strings.ReplaceAll(testName, " ", "_")
+	// Ensure we only use characters allowed in nix hashes (a-z0-9)
+	s := strings.ToLower(t.Name())
+	s = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+
+		return 'x'
+	}, s)
+
 	// Combine with base hash to create unique hash
-	return testName + "_" + base
+	return s + "x" + base
 }
