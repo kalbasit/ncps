@@ -26,13 +26,17 @@ func setupSQLiteDatabase(t *testing.T) (database.Querier, func()) {
 func setupPostgresDatabase(t *testing.T) (database.Querier, func()) {
 	t.Helper()
 
-	return testhelper.SetupPostgres(t)
+	db, _, cleanup := testhelper.SetupPostgres(t)
+
+	return db, cleanup
 }
 
 func setupMySQLDatabase(t *testing.T) (database.Querier, func()) {
 	t.Helper()
 
-	return testhelper.SetupMySQL(t)
+	db, _, cleanup := testhelper.SetupMySQL(t)
+
+	return db, cleanup
 }
 
 func TestGetClusterUUIDBackends(t *testing.T) {

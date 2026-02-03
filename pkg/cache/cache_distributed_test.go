@@ -76,7 +76,7 @@ func setupDistributedPostgres(t *testing.T) (database.Querier, string, func()) {
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupPostgres(t)
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	cleanup := func() {
 		dbCleanup()
@@ -93,7 +93,7 @@ func setupDistributedMySQL(t *testing.T) (database.Querier, string, func()) {
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupMySQL(t)
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	cleanup := func() {
 		dbCleanup()

@@ -48,7 +48,7 @@ func TestBackends(t *testing.T) {
 			setup: func(t *testing.T) database.Querier {
 				t.Helper()
 
-				db, cleanup := testhelper.SetupPostgres(t)
+				db, _, cleanup := testhelper.SetupPostgres(t)
 				t.Cleanup(cleanup)
 
 				return db
@@ -61,7 +61,7 @@ func TestBackends(t *testing.T) {
 			setup: func(t *testing.T) database.Querier {
 				t.Helper()
 
-				db, cleanup := testhelper.SetupMySQL(t)
+				db, _, cleanup := testhelper.SetupMySQL(t)
 				t.Cleanup(cleanup)
 
 				return db

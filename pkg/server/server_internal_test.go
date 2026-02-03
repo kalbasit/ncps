@@ -63,7 +63,7 @@ func setupPostgresServer(t *testing.T) (*Server, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupPostgres(t)
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -92,12 +92,13 @@ func setupMySQLServer(t *testing.T) (*Server, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupMySQL(t)
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
 	downloadLocker := locklocal.NewLocker()
+
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",

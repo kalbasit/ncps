@@ -57,7 +57,7 @@ func MigratePostgresDatabase(t *testing.T, dbURL string) {
 // SetupPostgres sets up a new temporary PostgreSQL database for testing.
 // It requires the NCPS_TEST_ADMIN_POSTGRES_URL environment variable to be set.
 // It returns a database connection and a cleanup function.
-func SetupPostgres(t *testing.T) (database.Querier, func()) {
+func SetupPostgres(t *testing.T) (database.Querier, string, func()) {
 	t.Helper()
 
 	adminDbURL := os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL")
@@ -105,5 +105,5 @@ func SetupPostgres(t *testing.T) (database.Querier, func()) {
 		_ = adminDb.DB().Close()
 	}
 
-	return db, cleanup
+	return db, dbURL, cleanup
 }

@@ -121,7 +121,7 @@ func setupPostgresFactory(t *testing.T) (*cache.Cache, database.Querier, *local.
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupPostgres(t)
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func setupMySQLFactory(t *testing.T) (*cache.Cache, database.Querier, *local.Sto
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupMySQL(t)
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -918,7 +918,7 @@ func testPutNar(factory cacheFactory) func(*testing.T) {
 	}
 }
 
-func testGetNarInfo_MigratesInvalidURL(factory cacheFactory) func(*testing.T) {
+func testGetNarInfoMigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -980,7 +980,7 @@ func testGetNarInfo_MigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 	}
 }
 
-func testGetNarInfo_ConcurrentMigrationAttempts(factory cacheFactory) func(*testing.T) {
+func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1114,7 +1114,7 @@ func testDeleteNar(factory cacheFactory) func(*testing.T) {
 // TestDeadlock_NarInfo_Triggers_Nar_Refetch reproduces a deadlock where pulling a NarInfo
 // triggers a Nar fetch (because compression is none), and both waiting on each other
 // if they share the same lock/job key.
-func testDeadlock_NarInfo_Triggers_Nar_Refetch(factory cacheFactory) func(*testing.T) {
+func testDeadlockNarInfoTriggersNarRefetch(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1222,7 +1222,7 @@ func testDeadlock_NarInfo_Triggers_Nar_Refetch(factory cacheFactory) func(*testi
 // 2. Cancel the context mid-download to trigger cleanup
 // 3. Without sync.Once protection, multiple goroutines may try to close the same channels
 // 4. This can cause a panic or deadlock depending on timing.
-func testDeadlock_ContextCancellation_DuringDownload(factory cacheFactory) func(*testing.T) {
+func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1380,7 +1380,7 @@ func testDeadlock_ContextCancellation_DuringDownload(factory cacheFactory) func(
 // 2. The download continues in the background using a detached context
 // 3. Caller B can successfully retrieve the asset once the background download completes
 // 4. The asset is properly stored in the cache and database.
-func testBackgroundDownloadCompletion_AfterCancellation(factory cacheFactory) func(*testing.T) {
+func testBackgroundDownloadCompletionAfterCancellation(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1569,7 +1569,7 @@ func testBackgroundDownloadCompletion_AfterCancellation(factory cacheFactory) fu
 // 3. Client A cancels its request mid-download
 // 4. Client B is unaffected and successfully receives the NAR once download completes
 // 5. The download continues in the background using the detached context.
-func testConcurrentDownload_CancelOneClient_OthersContinue(factory cacheFactory) func(*testing.T) {
+func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1785,7 +1785,7 @@ func waitForFile(t *testing.T, path string) {
 	require.NoError(t, err, "timeout waiting for file: %s", path)
 }
 
-func testGetNarInfo_BackgroundMigration(factory cacheFactory) func(*testing.T) {
+func testGetNarInfoBackgroundMigration(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		c, db, _, dir, cleanup := factory(t)
 		t.Cleanup(cleanup)
@@ -1877,7 +1877,7 @@ func (s *migrationSpy) DB() *sql.DB {
 	return s.Querier.DB()
 }
 
-func testBackgroundMigrateNarInfo_ThunderingHerd(factory cacheFactory) func(*testing.T) {
+func testBackgroundMigrateNarInfoThunderingHerd(_ cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1956,7 +1956,7 @@ func testBackgroundMigrateNarInfo_ThunderingHerd(factory cacheFactory) func(*tes
 	}
 }
 
-func testBackgroundMigrateNarInfo_AfterCancellation(factory cacheFactory) func(*testing.T) {
+func testBackgroundMigrateNarInfoAfterCancellation(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -2022,7 +2022,7 @@ func testBackgroundMigrateNarInfo_AfterCancellation(factory cacheFactory) func(*
 	}
 }
 
-func testGetNarInfo_ConcurrentPutNarInfoDuringMigration(factory cacheFactory) func(*testing.T) {
+func testGetNarInfoConcurrentPutNarInfoDuringMigration(_ cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		// This test verifies that if a PutNarInfo operation occurs while a background
 		// migration is happening for the same hash, both operations handle the duplicate
@@ -2110,7 +2110,7 @@ func testGetNarInfo_ConcurrentPutNarInfoDuringMigration(factory cacheFactory) fu
 	}
 }
 
-func testGetNarInfo_MultipleConcurrentPutsDuringMigration(factory cacheFactory) func(*testing.T) {
+func testGetNarInfoMultipleConcurrentPutsDuringMigration(_ cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		// This test simulates multiple concurrent PutNarInfo operations for the same
 		// hash while a background migration is happening. This is a more extreme version
@@ -2348,7 +2348,7 @@ func (s *storageWithHook) HasNarInfo(ctx context.Context, hash string) bool {
 // 4. GetNarInfo tries to read from storage (file now deleted!)
 // 5. Expected: Should retry database and succeed (migration completed)
 // 6. Current Bug: Returns error because storage read fails.
-func testGetNarInfo_RaceConditionDuringMigrationDeletion(factory cacheFactory) func(*testing.T) {
+func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		ctx := newContext()
 		tmpDir := t.TempDir()
@@ -2456,7 +2456,7 @@ func testGetNarInfo_RaceConditionDuringMigrationDeletion(factory cacheFactory) f
 	}
 }
 
-func testGetNarInfo_RaceWithPutNarInfoDeterministic(factory cacheFactory) func(*testing.T) {
+func testGetNarInfoRaceWithPutNarInfoDeterministic(_ cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		// This test determines if legacy narinfo is deleted even if PutNarInfo
 		// finishes before GetNarInfo can trigger migration.
@@ -2594,26 +2594,26 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("DeleteNarInfo", testDeleteNarInfo(factory))
 	t.Run("GetNar", testGetNar(factory))
 	t.Run("PutNar", testPutNar(factory))
-	t.Run("GetNarInfo_MigratesInvalidURL", testGetNarInfo_MigratesInvalidURL(factory))
-	t.Run("GetNarInfo_ConcurrentMigrationAttempts", testGetNarInfo_ConcurrentMigrationAttempts(factory))
+	t.Run("GetNarInfoMigratesInvalidURL", testGetNarInfoMigratesInvalidURL(factory))
+	t.Run("GetNarInfoConcurrentMigrationAttempts", testGetNarInfoConcurrentMigrationAttempts(factory))
 	t.Run("DeleteNar", testDeleteNar(factory))
-	t.Run("Deadlock_NarInfo_Triggers_Nar_Refetch", testDeadlock_NarInfo_Triggers_Nar_Refetch(factory))
-	t.Run("Deadlock_ContextCancellation_DuringDownload", testDeadlock_ContextCancellation_DuringDownload(factory))
-	t.Run("BackgroundDownloadCompletion_AfterCancellation",
-		testBackgroundDownloadCompletion_AfterCancellation(factory))
-	t.Run("ConcurrentDownload_CancelOneClient_OthersContinue",
-		testConcurrentDownload_CancelOneClient_OthersContinue(factory))
-	t.Run("GetNarInfo_BackgroundMigration",
-		testGetNarInfo_BackgroundMigration(factory))
-	t.Run("BackgroundMigrateNarInfo_ThunderingHerd",
-		testBackgroundMigrateNarInfo_ThunderingHerd(factory))
-	t.Run("BackgroundMigrateNarInfo_AfterCancellation",
-		testBackgroundMigrateNarInfo_AfterCancellation(factory))
-	t.Run("GetNarInfo_ConcurrentPutNarInfoDuringMigration",
-		testGetNarInfo_ConcurrentPutNarInfoDuringMigration(factory))
-	t.Run("GetNarInfo_MultipleConcurrentPutsDuringMigration",
-		testGetNarInfo_MultipleConcurrentPutsDuringMigration(factory))
+	t.Run("DeadlockNarInfoTriggersNarRefetch", testDeadlockNarInfoTriggersNarRefetch(factory))
+	t.Run("DeadlockContextCancellationDuringDownload", testDeadlockContextCancellationDuringDownload(factory))
+	t.Run("BackgroundDownloadCompletionAfterCancellation",
+		testBackgroundDownloadCompletionAfterCancellation(factory))
+	t.Run("ConcurrentDownloadCancelOneClientOthersContinue",
+		testConcurrentDownloadCancelOneClientOthersContinue(factory))
+	t.Run("GetNarInfoBackgroundMigration",
+		testGetNarInfoBackgroundMigration(factory))
+	t.Run("BackgroundMigrateNarInfoThunderingHerd",
+		testBackgroundMigrateNarInfoThunderingHerd(factory))
+	t.Run("BackgroundMigrateNarInfoAfterCancellation",
+		testBackgroundMigrateNarInfoAfterCancellation(factory))
+	t.Run("GetNarInfoConcurrentPutNarInfoDuringMigration",
+		testGetNarInfoConcurrentPutNarInfoDuringMigration(factory))
+	t.Run("GetNarInfoMultipleConcurrentPutsDuringMigration",
+		testGetNarInfoMultipleConcurrentPutsDuringMigration(factory))
 	t.Run("NarStreaming", testNarStreaming(factory))
-	t.Run("GetNarInfo_RaceConditionDuringMigrationDeletion", testGetNarInfo_RaceConditionDuringMigrationDeletion(factory))
-	t.Run("GetNarInfo_RaceWithPutNarInfoDeterministic", testGetNarInfo_RaceWithPutNarInfoDeterministic(factory))
+	t.Run("GetNarInfoRaceConditionDuringMigrationDeletion", testGetNarInfoRaceConditionDuringMigrationDeletion(factory))
+	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
 }

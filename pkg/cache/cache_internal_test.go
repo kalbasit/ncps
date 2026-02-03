@@ -89,7 +89,7 @@ func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store,
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupPostgres(t)
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -116,7 +116,7 @@ func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, st
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupMySQL(t)
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -1032,7 +1032,7 @@ func testWithTryLock(factory cacheFactory) func(*testing.T) {
 	}
 }
 
-func testMigration_DataIntegrity(factory cacheFactory) func(*testing.T) {
+func testMigrationDataIntegrity(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1072,7 +1072,7 @@ func testMigration_DataIntegrity(factory cacheFactory) func(*testing.T) {
 	}
 }
 
-func testMigration_Success(factory cacheFactory) func(*testing.T) {
+func testMigrationSuccess(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1105,7 +1105,7 @@ func testMigration_Success(factory cacheFactory) func(*testing.T) {
 	}
 }
 
-func testMigration_UpsertIdempotency(factory cacheFactory) func(*testing.T) {
+func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1166,7 +1166,7 @@ func testMigration_UpsertIdempotency(factory cacheFactory) func(*testing.T) {
 	}
 }
 
-func testMigration_PartialRecordWithExistingReferences(factory cacheFactory) func(*testing.T) {
+func testMigrationPartialRecordWithExistingReferences(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1215,7 +1215,7 @@ func testMigration_PartialRecordWithExistingReferences(factory cacheFactory) fun
 	}
 }
 
-func testDeleteNarInfo_WithNullURL(factory cacheFactory) func(*testing.T) {
+func testDeleteNarInfoWithNullURL(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -1321,11 +1321,11 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("WithReadLock", testWithReadLock(factory))
 	t.Run("WithWriteLock", testWithWriteLock(factory))
 	t.Run("WithTryLock", testWithTryLock(factory))
-	t.Run("Migration_DataIntegrity", testMigration_DataIntegrity(factory))
-	t.Run("Migration_Success", testMigration_Success(factory))
-	t.Run("Migration_UpsertIdempotency", testMigration_UpsertIdempotency(factory))
-	t.Run("Migration_PartialRecordWithExistingReferences", testMigration_PartialRecordWithExistingReferences(factory))
-	t.Run("DeleteNarInfo_WithNullURL", testDeleteNarInfo_WithNullURL(factory))
+	t.Run("MigrationDataIntegrity", testMigrationDataIntegrity(factory))
+	t.Run("MigrationSuccess", testMigrationSuccess(factory))
+	t.Run("MigrationUpsertIdempotency", testMigrationUpsertIdempotency(factory))
+	t.Run("MigrationPartialRecordWithExistingReferences", testMigrationPartialRecordWithExistingReferences(factory))
+	t.Run("DeleteNarInfoWithNullURL", testDeleteNarInfoWithNullURL(factory))
 }
 
 func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
@@ -1455,12 +1455,20 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 	// Test with PostgreSQL (only if enabled via environment variable)
 	t.Run("PostgreSQL", func(t *testing.T) {
 		t.Parallel()
-		runTestsWithDB(t, testhelper.SetupPostgres)
+		runTestsWithDB(t, func(t *testing.T) (database.Querier, func()) {
+			db, _, cleanup := testhelper.SetupPostgres(t)
+
+			return db, cleanup
+		})
 	})
 
 	// Test with MySQL (only if enabled via environment variable)
 	t.Run("MySQL", func(t *testing.T) {
 		t.Parallel()
-		runTestsWithDB(t, testhelper.SetupMySQL)
+		runTestsWithDB(t, func(t *testing.T) (database.Querier, func()) {
+			db, _, cleanup := testhelper.SetupMySQL(t)
+
+			return db, cleanup
+		})
 	})
 }

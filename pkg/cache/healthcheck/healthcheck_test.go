@@ -63,7 +63,7 @@ func setupPostgresCache(t *testing.T) (*cache.Cache, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupPostgres(t)
+	db, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -90,7 +90,7 @@ func setupMySQLCache(t *testing.T) (*cache.Cache, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbCleanup := testhelper.SetupMySQL(t)
+	db, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -139,7 +139,6 @@ func TestHealthCheckBackends(t *testing.T) {
 
 func testHealthCheck(t *testing.T, factory cacheFactory) {
 	t.Helper()
-	t.Parallel()
 
 	ts := testdata.NewTestServer(t, 40)
 	t.Cleanup(ts.Close)

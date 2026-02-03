@@ -65,20 +65,10 @@ func TestMigrateNarToChunksBackends(t *testing.T) {
 				ctx := context.Background()
 				dir := t.TempDir()
 
-				db, dbCleanup := testhelper.SetupPostgres(t)
+				db, dbURL, dbCleanup := testhelper.SetupPostgres(t)
 
 				store, err := local.New(ctx, dir)
 				require.NoError(t, err)
-
-				// Extract the database URL from the db connection
-				// We need to get this from the DB driver, but for now we can get it from the environment
-				// and construct a test database URL
-				adminURL := os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL")
-				// The testhelper creates a unique database, we need to extract its name
-				// For simplicity, we'll just use the database's underlying connection
-				dbURL := adminURL // This should be the test database URL, not admin URL
-				// Actually, testhelper.SetupPostgres should return the URL. Let's check the implementation.
-				// For now, let's assume we need to construct it from the connection string
 
 				cleanup := func() {
 					dbCleanup()
@@ -96,14 +86,10 @@ func TestMigrateNarToChunksBackends(t *testing.T) {
 				ctx := context.Background()
 				dir := t.TempDir()
 
-				db, dbCleanup := testhelper.SetupMySQL(t)
+				db, dbURL, dbCleanup := testhelper.SetupMySQL(t)
 
 				store, err := local.New(ctx, dir)
 				require.NoError(t, err)
-
-				// Extract the database URL from the db connection
-				adminURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
-				dbURL := adminURL // This should be the test database URL, not admin URL
 
 				cleanup := func() {
 					dbCleanup()

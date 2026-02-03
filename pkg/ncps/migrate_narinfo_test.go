@@ -67,7 +67,7 @@ func TestMigrateNarInfoBackends(t *testing.T) {
 				ctx := context.Background()
 				dir := t.TempDir()
 
-				db, dbCleanup := testhelper.SetupPostgres(t)
+				db, _, dbCleanup := testhelper.SetupPostgres(t)
 
 				store, err := local.New(ctx, dir)
 				require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestMigrateNarInfoBackends(t *testing.T) {
 				ctx := context.Background()
 				dir := t.TempDir()
 
-				db, dbCleanup := testhelper.SetupMySQL(t)
+				db, _, dbCleanup := testhelper.SetupMySQL(t)
 
 				store, err := local.New(ctx, dir)
 				require.NoError(t, err)
