@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
+	"github.com/kalbasit/ncps/testdata"
 )
 
 func FuzzParse(f *testing.F) {
@@ -18,6 +19,10 @@ Priority: 40`,
 
 	for _, tc := range tests {
 		f.Add(tc)
+	}
+
+	for _, narEntry := range testdata.Entries {
+		f.Add(narEntry.NarInfoText)
 	}
 
 	f.Fuzz(func(_ *testing.T, data string) {
