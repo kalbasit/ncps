@@ -68,9 +68,11 @@ func TestGolombRoundTrip(t *testing.T) {
 
 	require.NoError(t, enc.Flush())
 
-	dec := golomb.NewDecoder(&buf, k)
+	desc, err := golomb.NewDecoder(&buf, k)
+	require.NoError(t, err)
+
 	for i, want := range values {
-		got, err := dec.Decode()
+		got, err := desc.Decode()
 		require.NoError(t, err, "failed to decode value at index %d", i)
 		assert.Equal(t, want, got, "value mismatched at index %d", i)
 	}
@@ -126,7 +128,9 @@ func TestGolombBigIntRoundTrip(t *testing.T) {
 
 	require.NoError(t, enc.Flush())
 
-	dec := golomb.NewDecoder(&buf, k)
+	dec, err := golomb.NewDecoder(&buf, k)
+	require.NoError(t, err)
+
 	for i, want := range values {
 		got, err := dec.DecodeBig()
 		require.NoError(t, err, "failed to decode big.Int value at index %d", i)

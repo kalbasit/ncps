@@ -117,3 +117,170 @@ jobs:
             --title "$TITLE" \
             --body "Fuzzing test 'FuzzParseSize' crashed.\n\nCommit: ${{ github.sha }}\nInput SHA256: \`$SHA256\`\n\nSee artifact for reproduction." \
             --label "fuzz-crash"
+  fuzz-pkg-nar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+      - name: Fuzz ParseURL (nar)
+        run: go test -fuzz=FuzzParseURL -fuzztime=1h ./pkg/nar
+      - name: Encrypt Fuzz Crash
+        if: failure()
+        run: |
+          # Find the crash file
+          CRASH_FILE=$(find pkg/nar/testdata/fuzz/FuzzParseURL -name "crash-*" | head -n 1)
+          if [ -z "$CRASH_FILE" ]; then
+            echo "No crash file found despite failure."
+            exit 0
+          fi
+
+          # Calculate SHA256 of the crash file
+          SHA256=$(sha256sum "$CRASH_FILE" | awk '{print $1}')
+
+          # Report SHA256
+          echo "Crash file SHA256: $SHA256"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "CRASH_FILE=$CRASH_FILE" >> "$GITHUB_ENV"
+      - name: Archive crash file
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: crash-nar-${{ env.SHA256 }}
+          path: ${{ env.CRASH_FILE }}
+      - name: Create Issue on Crash
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$SHA256" ]; then
+            echo "SHA256 not set, skipping issue creation."
+            exit 0
+          fi
+
+          TITLE="Fuzzing Crash: FuzzParseURL $SHA256"
+
+          # Check for existing issue
+          EXISTING_ISSUE=$(gh issue list --search "$SHA256 in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Issue already exists: #$EXISTING_ISSUE"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "$TITLE" \
+            --body "Fuzzing test 'FuzzParseURL' crashed.\n\nCommit: ${{ github.sha }}\nInput SHA256: \`$SHA256\`\n\nSee artifact for reproduction." \
+            --label "fuzz-crash"
+  fuzz-pkg-nar-joinurl:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+      - name: Fuzz JoinURL (nar)
+        run: go test -fuzz=FuzzJoinURL -fuzztime=1h ./pkg/nar
+      - name: Encrypt Fuzz Crash
+        if: failure()
+        run: |
+          # Find the crash file
+          CRASH_FILE=$(find pkg/nar/testdata/fuzz/FuzzJoinURL -name "crash-*" | head -n 1)
+          if [ -z "$CRASH_FILE" ]; then
+            echo "No crash file found despite failure."
+            exit 0
+          fi
+
+          # Calculate SHA256 of the crash file
+          SHA256=$(sha256sum "$CRASH_FILE" | awk '{print $1}')
+
+          # Report SHA256
+          echo "Crash file SHA256: $SHA256"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "CRASH_FILE=$CRASH_FILE" >> "$GITHUB_ENV"
+      - name: Archive crash file
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: crash-nar-joinurl-${{ env.SHA256 }}
+          path: ${{ env.CRASH_FILE }}
+      - name: Create Issue on Crash
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$SHA256" ]; then
+            echo "SHA256 not set, skipping issue creation."
+            exit 0
+          fi
+
+          TITLE="Fuzzing Crash: FuzzJoinURL $SHA256"
+
+          # Check for existing issue
+          EXISTING_ISSUE=$(gh issue list --search "$SHA256 in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Issue already exists: #$EXISTING_ISSUE"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "$TITLE" \
+            --body "Fuzzing test 'FuzzJoinURL' crashed.\n\nCommit: ${{ github.sha }}\nInput SHA256: \`$SHA256\`\n\nSee artifact for reproduction." \
+            --label "fuzz-crash"
+  fuzz-pkg-golomb:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+      - name: Fuzz Decode (golomb)
+        run: go test -fuzz=^FuzzDecode$ -fuzztime=30m ./pkg/golomb
+      - name: Fuzz DecodeBig (golomb)
+        run: go test -fuzz=^FuzzDecodeBig$ -fuzztime=30m ./pkg/golomb
+      - name: Encrypt Fuzz Crash
+        if: failure()
+        run: |
+          # Find the crash file (checks both)
+          CRASH_FILE=$(find pkg/golomb/testdata/fuzz -name "crash-*" | head -n 1)
+          if [ -z "$CRASH_FILE" ]; then
+            echo "No crash file found despite failure."
+            exit 0
+          fi
+
+          # Calculate SHA256 of the crash file
+          SHA256=$(sha256sum "$CRASH_FILE" | awk '{print $1}')
+
+          # Report SHA256
+          echo "Crash file SHA256: $SHA256"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "CRASH_FILE=$CRASH_FILE" >> "$GITHUB_ENV"
+      - name: Archive crash file
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: crash-golomb-${{ env.SHA256 }}
+          path: ${{ env.CRASH_FILE }}
+      - name: Create Issue on Crash
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$SHA256" ]; then
+            echo "SHA256 not set, skipping issue creation."
+            exit 0
+          fi
+
+          TITLE="Fuzzing Crash: Golomb $SHA256"
+
+          # Check for existing issue
+          EXISTING_ISSUE=$(gh issue list --search "$SHA256 in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Issue already exists: #$EXISTING_ISSUE"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "$TITLE" \
+            --body "Fuzzing test crashed in pkg/golomb.\n\nCommit: ${{ github.sha }}\nInput SHA256: \`$SHA256\`\n\nSee artifact for reproduction." \
+            --label "fuzz-crash"
