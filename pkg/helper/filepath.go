@@ -2,6 +2,7 @@ package helper
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"regexp"
 )
@@ -12,6 +13,9 @@ var (
 
 	// hashRegexp is used to validate hashes.
 	hashRegexp = regexp.MustCompile(`^[a-z0-9]+$`)
+
+	// ErrInputTooShort is returned if the input is too short.
+	ErrInputTooShort = errors.New("input is less than 3 characters long")
 )
 
 // ValidateHash validates the given hash.
@@ -26,7 +30,7 @@ func ValidateHash(hash string) error {
 // NarInfoFilePath returns the path of the narinfo file given a hash.
 func NarInfoFilePath(hash string) (string, error) {
 	if len(hash) < 3 {
-		panic("hash=\"" + hash + "\" is less than 3 characters long")
+		return "", fmt.Errorf("hash=%q: %w", hash, ErrInputTooShort)
 	}
 
 	if err := ValidateHash(hash); err != nil {
@@ -39,7 +43,7 @@ func NarInfoFilePath(hash string) (string, error) {
 // NarFilePath returns the path of the nar file given a hash and an optional compression.
 func NarFilePath(hash, compression string) (string, error) {
 	if len(hash) < 3 {
-		panic("hash=\"" + hash + "\" is less than 3 characters long")
+		return "", fmt.Errorf("hash=%q: %w", hash, ErrInputTooShort)
 	}
 
 	if err := ValidateHash(hash); err != nil {
@@ -57,7 +61,7 @@ func NarFilePath(hash, compression string) (string, error) {
 // FilePathWithSharding returns the path to a file with sharding.
 func FilePathWithSharding(fn string) (string, error) {
 	if len(fn) < 3 {
-		panic("fn=\"" + fn + "\" is less than 3 characters long")
+		return "", fmt.Errorf("fn=%q: %w", fn, ErrInputTooShort)
 	}
 
 	lvl1 := fn[:1]

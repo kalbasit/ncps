@@ -22,10 +22,11 @@ func TestNarInfoFilePath(t *testing.T) {
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
-		t.Run(fmt.Sprintf("NarInfoFilePath(%q) should panic", test), func(t *testing.T) {
+		t.Run(fmt.Sprintf("NarInfoFilePath(%q) should return error", test), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Panics(t, func() { _, _ = helper.NarInfoFilePath(test) })
+			_, err := helper.NarInfoFilePath(test)
+			assert.ErrorContains(t, err, "is less than 3 characters long")
 		})
 	}
 
@@ -60,10 +61,11 @@ func TestNarFilePath(t *testing.T) {
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
-		t.Run(fmt.Sprintf("NarFilePath(%q) should panic", test), func(t *testing.T) {
+		t.Run(fmt.Sprintf("NarFilePath(%q) should return error", test), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Panics(t, func() { _, _ = helper.NarFilePath(test, "") })
+			_, err := helper.NarFilePath(test, "")
+			assert.ErrorContains(t, err, "is less than 3 characters long")
 		})
 	}
 
@@ -96,10 +98,11 @@ func TestFilePathWithSharding(t *testing.T) {
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
-		t.Run(fmt.Sprintf("FilePathWithSharding(%q) should panic", test), func(t *testing.T) {
+		t.Run(fmt.Sprintf("FilePathWithSharding(%q) should return error", test), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Panics(t, func() { _, _ = helper.FilePathWithSharding(test) })
+			_, err := helper.FilePathWithSharding(test)
+			assert.ErrorContains(t, err, "is less than 3 characters long")
 		})
 	}
 
