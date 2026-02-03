@@ -3,7 +3,6 @@ package config_test
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,45 +14,79 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-func setupDatabase(t *testing.T) (database.Querier, func()) {
+// databaseFactory is a function that returns a clean, ready-to-use database instance.
+type databaseFactory func(t *testing.T) (database.Querier, func())
+
+func setupSQLiteDatabase(t *testing.T) (database.Querier, func()) {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "database-path-")
-	require.NoError(t, err)
-
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	cleanup := func() {
-		db.DB().Close()
-		os.RemoveAll(dir)
-	}
-
-	return db, cleanup
+	return testhelper.SetupSQLite(t)
 }
 
-func TestGetClusterUUID(t *testing.T) {
+func setupPostgresDatabase(t *testing.T) (database.Querier, func()) {
+	t.Helper()
+
+	return testhelper.SetupPostgres(t)
+}
+
+func setupMySQLDatabase(t *testing.T) (database.Querier, func()) {
+	t.Helper()
+
+	return testhelper.SetupMySQL(t)
+}
+
+func TestGetClusterUUIDBackends(t *testing.T) {
 	t.Parallel()
 
-	t.Run("config not existing", func(t *testing.T) {
+	backends := []struct {
+		name   string
+		envVar string
+		setup  databaseFactory
+	}{
+		{name: "SQLite", setup: setupSQLiteDatabase},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", setup: setupPostgresDatabase},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", setup: setupMySQLDatabase},
+	}
+
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			runGetClusterUUIDTestSuite(t, b.setup)
+		})
+	}
+}
+
+func runGetClusterUUIDTestSuite(t *testing.T, factory databaseFactory) {
+	t.Helper()
+
+	t.Run("config not existing", testGetClusterUUIDNotExisting(factory))
+	t.Run("key existing", testGetClusterUUIDExisting(factory))
+}
+
+func testGetClusterUUIDNotExisting(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
 		t.Parallel()
 
-		db, cleanup := setupDatabase(t)
+		db, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
 
 		_, err := c.GetClusterUUID(context.Background())
 		assert.ErrorIs(t, err, config.ErrConfigNotFound)
-	})
+	}
+}
 
-	t.Run("key existing", func(t *testing.T) {
+func testGetClusterUUIDExisting(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
 		t.Parallel()
 
-		db, cleanup := setupDatabase(t)
+		db, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
@@ -69,16 +102,47 @@ func TestGetClusterUUID(t *testing.T) {
 		actualUUID, err := c.GetClusterUUID(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, expectedUUID, actualUUID)
-	})
+	}
 }
 
-func TestSetClusterUUID(t *testing.T) {
+func TestSetClusterUUIDBackends(t *testing.T) {
 	t.Parallel()
 
-	t.Run("config not existing", func(t *testing.T) {
+	backends := []struct {
+		name   string
+		envVar string
+		setup  databaseFactory
+	}{
+		{name: "SQLite", setup: setupSQLiteDatabase},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", setup: setupPostgresDatabase},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", setup: setupMySQLDatabase},
+	}
+
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			runSetClusterUUIDTestSuite(t, b.setup)
+		})
+	}
+}
+
+func runSetClusterUUIDTestSuite(t *testing.T, factory databaseFactory) {
+	t.Helper()
+
+	t.Run("config not existing", testSetClusterUUIDNotExisting(factory))
+	t.Run("key existing", testSetClusterUUIDExisting(factory))
+}
+
+func testSetClusterUUIDNotExisting(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
 		t.Parallel()
 
-		db, cleanup := setupDatabase(t)
+		db, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
@@ -91,12 +155,14 @@ func TestSetClusterUUID(t *testing.T) {
 
 		assert.Equal(t, config.KeyClusterUUID, conf.Key)
 		assert.Equal(t, "abc-123", conf.Value)
-	})
+	}
+}
 
-	t.Run("key existing", func(t *testing.T) {
+func testSetClusterUUIDExisting(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
 		t.Parallel()
 
-		db, cleanup := setupDatabase(t)
+		db, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
@@ -112,5 +178,5 @@ func TestSetClusterUUID(t *testing.T) {
 
 		assert.Equal(t, config.KeyClusterUUID, conf.Key)
 		assert.Equal(t, "def-456", conf.Value)
-	})
+	}
 }

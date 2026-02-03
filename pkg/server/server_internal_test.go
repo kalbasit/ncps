@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,52 +14,164 @@ import (
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
 	"github.com/kalbasit/ncps/pkg/cache"
-	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-const cacheName = "cache.example.com"
+const (
+	cacheName       = "cache.example.com"
+	downloadLockTTL = 5 * time.Minute
+	cacheLockTTL    = 30 * time.Minute
+)
 
-func TestSetDeletePermitted(t *testing.T) {
+// serverFactory is a function that returns a clean, ready-to-use Server instance
+// and takes care of cleaning up once the test is done.
+type serverFactory func(t *testing.T) (*Server, func())
+
+func setupSQLiteServer(t *testing.T) (*Server, func()) {
+	t.Helper()
+
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
-	testhelper.CreateMigrateDatabase(t, dbFile)
-
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
+	db, dbCleanup := testhelper.SetupSQLite(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	// Use local locks for tests
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
+		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
 	require.NoError(t, err)
 
-	t.Run("false", func(t *testing.T) {
+	s := New(c)
+
+	cleanup := func() {
+		c.Close()
+		dbCleanup()
+		os.RemoveAll(dir)
+	}
+
+	return s, cleanup
+}
+
+func setupPostgresServer(t *testing.T) (*Server, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	db, dbCleanup := testhelper.SetupPostgres(t)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	downloadLocker := locklocal.NewLocker()
+	cacheLocker := locklocal.NewRWLocker()
+
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+	require.NoError(t, err)
+
+	s := New(c)
+
+	cleanup := func() {
+		c.Close()
+		dbCleanup()
+		os.RemoveAll(dir)
+	}
+
+	return s, cleanup
+}
+
+func setupMySQLServer(t *testing.T) (*Server, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	db, dbCleanup := testhelper.SetupMySQL(t)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	downloadLocker := locklocal.NewLocker()
+	cacheLocker := locklocal.NewRWLocker()
+
+	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+	require.NoError(t, err)
+
+	s := New(c)
+
+	cleanup := func() {
+		c.Close()
+		dbCleanup()
+		os.RemoveAll(dir)
+	}
+
+	return s, cleanup
+}
+
+func TestSetDeletePermittedBackends(t *testing.T) {
+	t.Parallel()
+
+	backends := []struct {
+		name   string
+		envVar string
+		setup  serverFactory
+	}{
+		{name: "SQLite", setup: setupSQLiteServer},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", setup: setupPostgresServer},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", setup: setupMySQLServer},
+	}
+
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			runSetDeletePermittedTestSuite(t, b.setup)
+		})
+	}
+}
+
+func runSetDeletePermittedTestSuite(t *testing.T, factory serverFactory) {
+	t.Helper()
+
+	t.Run("false", testSetDeletePermittedFalse(factory))
+	t.Run("true", testSetDeletePermittedTrue(factory))
+}
+
+func testSetDeletePermittedFalse(factory serverFactory) func(*testing.T) {
+	return func(t *testing.T) {
 		t.Parallel()
 
-		s := New(c)
+		s, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
 		s.SetDeletePermitted(false)
 
 		assert.False(t, s.deletePermitted)
-	})
+	}
+}
 
-	t.Run("true", func(t *testing.T) {
+func testSetDeletePermittedTrue(factory serverFactory) func(*testing.T) {
+	return func(t *testing.T) {
 		t.Parallel()
 
-		s := New(c)
+		s, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
 		s.SetDeletePermitted(true)
 
 		assert.True(t, s.deletePermitted)
-	})
+	}
 }
 
 func newContext() context.Context {
