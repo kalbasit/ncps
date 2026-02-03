@@ -54,7 +54,7 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 
 	// Start test server
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	// Track actual upstream downloads by instrumenting the test server
 	var upstreamDownloads atomic.Int32
@@ -71,13 +71,14 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 
 		return false // Let the default handler process the request
 	})
-	defer ts.RemoveMaybeHandler(handlerID)
+
+	t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
 
 	// Create shared directory for all instances
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
 
-	defer os.RemoveAll(sharedDir)
+	t.Cleanup(func() { os.RemoveAll(sharedDir) })
 
 	// Create shared database
 	dbFile := filepath.Join(sharedDir, "db.sqlite")
@@ -212,7 +213,7 @@ func TestDistributedConcurrentReads(t *testing.T) {
 
 	// Start test server
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	// Create upstream cache
 	uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -221,10 +222,9 @@ func TestDistributedConcurrentReads(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create shared directory for all instances
-	sharedDir, err := os.MkdirTemp("", "cache-reads-")
+	sharedDir, err := os.MkdirTemp("", "shared-path-")
 	require.NoError(t, err)
-
-	defer os.RemoveAll(sharedDir)
+	t.Cleanup(func() { os.RemoveAll(sharedDir) })
 
 	// Create shared database
 	dbFile := filepath.Join(sharedDir, "db.sqlite")
@@ -433,10 +433,9 @@ func TestPutNarInfoConcurrentSharedNar(t *testing.T) {
 				cacheLocker := locklocal.NewRWLocker() // Local cache lock is fine for single-process test
 
 				// Shared storage
-				sharedDir, err := os.MkdirTemp("", "cache-race-")
+				sharedDir, err := os.MkdirTemp("", "shared-path-")
 				require.NoError(t, err)
-
-				defer os.RemoveAll(sharedDir)
+				t.Cleanup(func() { os.RemoveAll(sharedDir) })
 
 				sharedStore, err := local.New(ctx, sharedDir)
 				require.NoError(t, err)

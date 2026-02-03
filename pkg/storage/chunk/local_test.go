@@ -20,8 +20,7 @@ func TestLocalStore(t *testing.T) {
 	ctx := context.Background()
 	dir, err := os.MkdirTemp("", "ncps-chunk-test-*")
 	require.NoError(t, err)
-
-	defer os.RemoveAll(dir)
+	t.Cleanup(func() { os.RemoveAll(dir) })
 
 	store, err := chunk.NewLocalStore(dir)
 	require.NoError(t, err)

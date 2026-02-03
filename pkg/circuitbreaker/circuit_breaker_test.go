@@ -54,7 +54,7 @@ func TestCircuitBreaker_Flow(t *testing.T) {
 	cleanup := circuitbreaker.SetTimeNow(func() time.Time {
 		return currentTime
 	})
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cb := circuitbreaker.New(3, 1*time.Minute)
 
@@ -105,7 +105,7 @@ func TestCircuitBreaker_HalfOpen_Failure(t *testing.T) {
 	cleanup := circuitbreaker.SetTimeNow(func() time.Time {
 		return currentTime
 	})
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cb := circuitbreaker.New(3, 1*time.Minute)
 

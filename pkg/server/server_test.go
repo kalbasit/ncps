@@ -52,7 +52,7 @@ func newTestCache(
 //nolint:paralleltest
 func TestServeHTTP(t *testing.T) {
 	hts := testdata.NewTestServer(t, 40)
-	defer hts.Close()
+	t.Cleanup(hts.Close)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, hts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
@@ -63,7 +63,7 @@ func TestServeHTTP(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
 
-		defer os.RemoveAll(dir) // clean up
+		t.Cleanup(func() { os.RemoveAll(dir) })
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
@@ -86,7 +86,7 @@ func TestServeHTTP(t *testing.T) {
 		s := server.New(c)
 
 		ts := httptest.NewServer(s)
-		defer ts.Close()
+		t.Cleanup(ts.Close)
 
 		url := ts.URL + "/pubkey"
 
@@ -110,7 +110,7 @@ func TestServeHTTP(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
 
-		defer os.RemoveAll(dir) // clean up
+		t.Cleanup(func() { os.RemoveAll(dir) })
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
@@ -266,7 +266,7 @@ func TestServeHTTP(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
 
-		defer os.RemoveAll(dir) // clean up
+		t.Cleanup(func() { os.RemoveAll(dir) })
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
@@ -397,7 +397,7 @@ func TestServeHTTP(t *testing.T) {
 		dir, err := os.MkdirTemp("", "cache-path-")
 		require.NoError(t, err)
 
-		defer os.RemoveAll(dir) // clean up
+		t.Cleanup(func() { os.RemoveAll(dir) })
 
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)

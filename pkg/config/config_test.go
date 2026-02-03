@@ -42,7 +42,7 @@ func TestGetClusterUUID(t *testing.T) {
 		t.Parallel()
 
 		db, cleanup := setupDatabase(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
 
@@ -54,7 +54,7 @@ func TestGetClusterUUID(t *testing.T) {
 		t.Parallel()
 
 		db, cleanup := setupDatabase(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
 
@@ -79,7 +79,7 @@ func TestSetClusterUUID(t *testing.T) {
 		t.Parallel()
 
 		db, cleanup := setupDatabase(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
 
@@ -97,7 +97,7 @@ func TestSetClusterUUID(t *testing.T) {
 		t.Parallel()
 
 		db, cleanup := setupDatabase(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 
 		c := config.New(db, local.NewRWLocker())
 

@@ -134,7 +134,7 @@ func TestNew(t *testing.T) {
 				t.Parallel()
 
 				db, localStore, _, cleanup := setupTestComponents(t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				_, err := newTestCache(newContext(), tt.hostname, db, localStore, localStore, localStore, "")
 				if tt.wantErr != nil {
@@ -153,7 +153,7 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 
 			c, db, localStore, _, cleanup := setupTestCache(t)
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			// Verify key is NOT in local store
 			_, err := localStore.GetSecretKey(newContext())
@@ -172,15 +172,14 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 
 			db, localStore, _, cleanup := setupTestComponents(t)
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			sk, _, err := signature.GenerateKeypair(cacheName, nil)
 			require.NoError(t, err)
 
-			skFile, err := os.CreateTemp("", "secret-key")
+			skFile, err := os.CreateTemp("", "sk-")
 			require.NoError(t, err)
-
-			defer os.Remove(skFile.Name())
+			t.Cleanup(func() { os.Remove(skFile.Name()) })
 
 			_, err = skFile.WriteString(sk.String())
 			require.NoError(t, err)
@@ -206,7 +205,7 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 
 			db, localStore, _, cleanup := setupTestComponents(t)
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			// Pre-populate key in local store
 			sk, _, err := signature.GenerateKeypair(cacheName, nil)
@@ -235,7 +234,7 @@ func TestPublicKey(t *testing.T) {
 	t.Parallel()
 
 	c, _, _, _, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	pubKey := c.PublicKey().String()
 
@@ -259,10 +258,10 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 	t.Parallel()
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	c, _, _, _, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
@@ -298,10 +297,10 @@ func TestGetNarInfoWithoutSignature(t *testing.T) {
 //nolint:paralleltest
 func TestGetNarInfo(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	c, db, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
@@ -395,7 +394,7 @@ func TestGetNarInfo(t *testing.T) {
 
 			require.Len(t, sigs1, 1)
 
-			idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+			handlerID := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
 				if r.URL.Path == "/"+testdata.Nar2.NarInfoHash+".narinfo" {
 					_, _ = w.Write([]byte(ni.String()))
 
@@ -404,7 +403,8 @@ func TestGetNarInfo(t *testing.T) {
 
 				return false
 			})
-			defer ts.RemoveMaybeHandler(idx)
+
+			t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
 
 			// Remove narinfo from database (since it's no longer in storage)
 			_, err = db.DB().ExecContext(context.Background(),
@@ -548,7 +548,7 @@ func TestGetNarInfo(t *testing.T) {
 //nolint:paralleltest
 func TestPutNarInfo(t *testing.T) {
 	c, db, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -654,7 +654,7 @@ func TestPutNarInfo(t *testing.T) {
 //nolint:paralleltest
 func TestDeleteNarInfo(t *testing.T) {
 	c, _, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -699,10 +699,10 @@ func TestDeleteNarInfo(t *testing.T) {
 //nolint:paralleltest
 func TestGetNar(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	c, db, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 		PublicKeys: testdata.PublicKeys(),
@@ -814,7 +814,7 @@ func TestGetNar(t *testing.T) {
 //nolint:paralleltest
 func TestPutNar(t *testing.T) {
 	c, _, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -846,7 +846,7 @@ func TestGetNarInfo_MigratesInvalidURL(t *testing.T) {
 	t.Parallel()
 
 	c, db, localStore, _, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -906,7 +906,7 @@ func TestGetNarInfo_ConcurrentMigrationAttempts(t *testing.T) {
 	t.Parallel()
 
 	c, db, localStore, _, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -988,7 +988,7 @@ func TestGetNarInfo_ConcurrentMigrationAttempts(t *testing.T) {
 //nolint:paralleltest
 func TestDeleteNar(t *testing.T) {
 	c, _, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	c.SetRecordAgeIgnoreTouch(0)
 
@@ -1037,11 +1037,11 @@ func TestDeadlock_NarInfo_Triggers_Nar_Refetch(t *testing.T) {
 	t.Parallel()
 
 	c, _, _, _, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// 1. Setup a test server
 	ts := testdata.NewTestServer(t, 1)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	// CRITICAL: We must ensure NarInfoHash == NarHash to cause the collision in upstreamJobs map.
 	// The deadlock happens because pullNarInfo starts a job with key=hash, and then prePullNar
@@ -1143,11 +1143,11 @@ func TestDeadlock_ContextCancellation_DuringDownload(t *testing.T) {
 	t.Parallel()
 
 	c, _, _, _, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Setup a test server with a slow response to ensure we can cancel mid-download
 	ts := testdata.NewTestServer(t, 1)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	testHash := "deadlock-test-hash-123456789012"
 	entry := testdata.Entry{
@@ -1299,14 +1299,14 @@ func TestBackgroundDownloadCompletion_AfterCancellation(t *testing.T) {
 	t.Parallel()
 
 	c, _, localStore, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Use an existing test entry (Nar3) for this test
 	entry := testdata.Nar3
 
 	// Setup a test server with the entry
 	ts := testdata.NewTestServer(t, 1)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	// Add a handler that serves the NAR slowly to allow cancellation mid-download
 	slowNarServed := make(chan struct{})
@@ -1486,14 +1486,14 @@ func TestConcurrentDownload_CancelOneClient_OthersContinue(t *testing.T) {
 	t.Parallel()
 
 	c, _, localStore, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Use an existing test entry (Nar5 to avoid conflict with other tests)
 	entry := testdata.Nar5
 
 	// Setup a test server with the entry
 	ts := testdata.NewTestServer(t, 1)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	// Add a handler that serves the NAR slowly to allow cancellation mid-download
 	slowNarServed := make(chan struct{})
@@ -1698,7 +1698,7 @@ func waitForFile(t *testing.T, path string) {
 
 func TestGetNarInfo_BackgroundMigration(t *testing.T) { //nolint:paralleltest
 	c, db, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	hash := testdata.Nar1.NarInfoHash
 	narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
@@ -1791,7 +1791,7 @@ func TestBackgroundMigrateNarInfo_ThunderingHerd(t *testing.T) {
 
 	// Setup components
 	db, localStore, dir, cleanup := setupTestComponents(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	hash := testdata.Nar1.NarInfoHash
 	narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
@@ -1867,7 +1867,7 @@ func TestBackgroundMigrateNarInfo_AfterCancellation(t *testing.T) {
 	t.Parallel()
 
 	c, db, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Use a unique hash for this test
 	entry := testdata.Nar2
@@ -2038,8 +2038,8 @@ func TestGetNarInfo_MultipleConcurrentPutsDuringMigration(t *testing.T) { //noli
 	c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
 	require.NoError(t, err)
 
-	defer c.Close()
-	defer db.DB().Close()
+	t.Cleanup(c.Close)
+	t.Cleanup(func() { db.DB().Close() })
 
 	// Pre-populate storage
 	narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
@@ -2104,10 +2104,10 @@ func TestNarStreaming(t *testing.T) {
 
 	// Setup test components
 	c, _, localStore, _, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	ts := testdata.NewTestServer(t, 40)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	narEntry := testdata.Nar1
 	narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
@@ -2257,7 +2257,7 @@ func TestGetNarInfo_RaceConditionDuringMigrationDeletion(t *testing.T) { //nolin
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
-	defer db.DB().Close()
+	t.Cleanup(func() { db.DB().Close() })
 
 	baseStore, err := local.New(ctx, tmpDir)
 	require.NoError(t, err)
@@ -2317,7 +2317,7 @@ func TestGetNarInfo_RaceConditionDuringMigrationDeletion(t *testing.T) { //nolin
 	c, err := newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
 	require.NoError(t, err)
 
-	defer c.Close()
+	t.Cleanup(c.Close)
 
 	// Call GetNarInfo - this will trigger the race condition
 	ni, err := c.GetNarInfo(ctx, hash)
@@ -2365,7 +2365,7 @@ func TestGetNarInfo_RaceWithPutNarInfoDeterministic(t *testing.T) { //nolint:par
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
-	defer db.DB().Close()
+	t.Cleanup(func() { db.DB().Close() })
 
 	baseStore, err := local.New(ctx, tmpDir)
 	require.NoError(t, err)
@@ -2422,7 +2422,7 @@ func TestGetNarInfo_RaceWithPutNarInfoDeterministic(t *testing.T) { //nolint:par
 	c, err := newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
 	require.NoError(t, err)
 
-	defer c.Close()
+	t.Cleanup(c.Close)
 
 	// Call GetNarInfo
 	_, err = c.GetNarInfo(ctx, hash)

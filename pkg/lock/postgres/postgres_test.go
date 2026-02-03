@@ -112,7 +112,7 @@ func TestLocker_BasicLockUnlock(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()
@@ -138,7 +138,7 @@ func TestLocker_ConcurrentLockContention(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()
@@ -182,7 +182,7 @@ func TestLocker_TryLock(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()
@@ -226,7 +226,7 @@ func TestLocker_RetryWithBackoff(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := lock.RetryConfig{
@@ -275,7 +275,7 @@ func TestLocker_KeyHashing(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()
@@ -308,7 +308,7 @@ func TestRWLocker_BasicReadWriteLock(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()
@@ -342,7 +342,7 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()
@@ -408,7 +408,7 @@ func TestRWLocker_WriterBlocksReaders(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()
@@ -451,7 +451,7 @@ func TestRWLocker_TryLockWithReaders(t *testing.T) {
 	ctx := context.Background()
 
 	db, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := getTestRetryConfig()

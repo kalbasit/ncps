@@ -17,7 +17,7 @@ func TestCircuitBreaker_State(t *testing.T) {
 	cleanup := circuitbreaker.SetTimeNow(func() time.Time {
 		return currentTime
 	})
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cb := circuitbreaker.New(3, 1*time.Minute)
 

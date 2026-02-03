@@ -20,7 +20,7 @@ func TestCDC(t *testing.T) {
 	ctx := context.Background()
 
 	c, db, _, dir, cleanup := setupTestCache(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Initialize chunk store
 	chunkStoreDir := filepath.Join(dir, "chunks-store")

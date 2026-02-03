@@ -19,7 +19,7 @@ func TestNewTestServer(t *testing.T) {
 	priority := 40
 
 	ts := testdata.NewTestServer(t, priority)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
@@ -52,7 +52,7 @@ func TestNewTestServerWithZSTD(t *testing.T) {
 	priority := 40
 
 	ts := testdata.NewTestServer(t, priority)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
 
 	u := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
 

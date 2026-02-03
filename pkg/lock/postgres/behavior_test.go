@@ -20,7 +20,7 @@ func TestLocker_LockContentionTimeout(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	// Config with low retry count and small delays for fast test
 	cfg := getTestConfig()

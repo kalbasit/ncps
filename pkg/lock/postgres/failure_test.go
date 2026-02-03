@@ -21,7 +21,7 @@ func TestLocker_CircuitBreaker_DBFailure(t *testing.T) {
 	ctx := context.Background()
 
 	querier, cleanup := getTestDatabase(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	cfg := getTestConfig()
 	retryCfg := lock.RetryConfig{
