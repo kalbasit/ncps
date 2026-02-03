@@ -2,6 +2,8 @@ package golomb_test
 
 import (
 	"bytes"
+	"io"
+	"math/big"
 	"testing"
 
 	"github.com/kalbasit/ncps/pkg/golomb"
@@ -38,5 +40,36 @@ func FuzzDecodeBig(f *testing.F) {
 		}
 
 		_, _ = dec.DecodeBig()
+	})
+}
+
+func FuzzEncode(f *testing.F) {
+	f.Add(1, uint64(5))
+	f.Add(0, uint64(0))
+	f.Add(64, uint64(10))
+
+	f.Fuzz(func(t *testing.T, k int, d uint64) {
+		enc, err := golomb.NewEncoder(io.Discard, k)
+		if err != nil {
+			t.Skip()
+		}
+
+		_ = enc.Encode(d)
+	})
+}
+
+func FuzzEncodeBig(f *testing.F) {
+	f.Add(1, int64(5))
+	f.Add(0, int64(0))
+	f.Add(64, int64(10))
+	f.Add(1, int64(-5))
+
+	f.Fuzz(func(t *testing.T, k int, d int64) {
+		enc, err := golomb.NewEncoder(io.Discard, k)
+		if err != nil {
+			t.Skip()
+		}
+
+		_ = enc.EncodeBig(big.NewInt(d))
 	})
 }
