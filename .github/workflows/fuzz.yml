@@ -1,0 +1,119 @@
+name: Fuzzing
+on:
+  schedule:
+    - cron: "0 2 * * *" # Run daily at 2 AM UTC
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  fuzz-pkg-nixcacheinfo:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+      - name: Fuzz Parse (nixcacheinfo)
+        run: go test -fuzz=FuzzParse -fuzztime=1h ./pkg/nixcacheinfo
+      - name: Encrypt Fuzz Crash
+        if: failure()
+        run: |
+          # Find the crash file
+          CRASH_FILE=$(find pkg/nixcacheinfo/testdata/fuzz/FuzzParse -name "crash-*" | head -n 1)
+          if [ -z "$CRASH_FILE" ]; then
+            echo "No crash file found despite failure."
+            exit 0
+          fi
+
+          # Calculate SHA256 of the crash file
+          SHA256=$(sha256sum "$CRASH_FILE" | awk '{print $1}')
+
+          # Report SHA256
+          echo "Crash file SHA256: $SHA256"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "CRASH_FILE=$CRASH_FILE" >> "$GITHUB_ENV"
+      - name: Archive crash file
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: crash-nixcacheinfo-${{ env.SHA256 }}
+          path: ${{ env.CRASH_FILE }}
+      - name: Create Issue on Crash
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$SHA256" ]; then
+            echo "SHA256 not set, skipping issue creation."
+            exit 0
+          fi
+
+          TITLE="Fuzzing Crash: FuzzParse $SHA256"
+
+          # Check for existing issue
+          EXISTING_ISSUE=$(gh issue list --search "$SHA256 in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Issue already exists: #$EXISTING_ISSUE"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "$TITLE" \
+            --body "Fuzzing test 'FuzzParse' crashed.\n\nCommit: ${{ github.sha }}\nInput SHA256: \`$SHA256\`\n\nSee artifact for reproduction." \
+            --label "fuzz-crash"
+  fuzz-pkg-helper:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+      - name: Fuzz ParseSize (helper)
+        run: go test -fuzz=FuzzParseSize -fuzztime=1h ./pkg/helper
+      - name: Encrypt Fuzz Crash
+        if: failure()
+        run: |
+          # Find the crash file
+          CRASH_FILE=$(find pkg/helper/testdata/fuzz/FuzzParseSize -name "crash-*" | head -n 1)
+          if [ -z "$CRASH_FILE" ]; then
+            echo "No crash file found despite failure."
+            exit 0
+          fi
+
+          # Calculate SHA256 of the crash file
+          SHA256=$(sha256sum "$CRASH_FILE" | awk '{print $1}')
+
+          # Report SHA256
+          echo "Crash file SHA256: $SHA256"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+          echo "CRASH_FILE=$CRASH_FILE" >> "$GITHUB_ENV"
+      - name: Archive crash file
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: crash-helper-${{ env.SHA256 }}
+          path: ${{ env.CRASH_FILE }}
+      - name: Create Issue on Crash
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$SHA256" ]; then
+            echo "SHA256 not set, skipping issue creation."
+            exit 0
+          fi
+
+          TITLE="Fuzzing Crash: FuzzParseSize $SHA256"
+
+          # Check for existing issue
+          EXISTING_ISSUE=$(gh issue list --search "$SHA256 in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Issue already exists: #$EXISTING_ISSUE"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "$TITLE" \
+            --body "Fuzzing test 'FuzzParseSize' crashed.\n\nCommit: ${{ github.sha }}\nInput SHA256: \`$SHA256\`\n\nSee artifact for reproduction." \
+            --label "fuzz-crash"
