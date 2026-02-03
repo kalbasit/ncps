@@ -48,14 +48,16 @@ All test files are located in `charts/ncps/tests/` and must end with `_test.yaml
 ### Test Files
 
 - **`configmap_test.yaml`** - ConfigMap rendering and configuration tests
+
   - CDC value formatting (ensures integers, not exponential notation)
   - Analytics, logging, and observability settings
   - Storage backend configuration
   - Database pool settings
   - Lock backend configuration
-  - All config.* values
+  - All config.\* values
 
 - **`secret_test.yaml`** - Secret generation and database URL tests
+
   - PostgreSQL URL generation (with/without password, with special characters)
   - MySQL URL generation (with/without password, with special characters)
   - S3 credentials
@@ -64,6 +66,7 @@ All test files are located in `charts/ncps/tests/` and must end with `_test.yaml
   - ExistingSecret scenarios
 
 - **`validation_test.yaml`** - Chart validation logic tests
+
   - HA mode requirements (CDC, distributed locks, database compatibility)
   - Storage backend validation
   - Database configuration validation
@@ -72,6 +75,7 @@ All test files are located in `charts/ncps/tests/` and must end with `_test.yaml
   - All fail scenarios from `_helpers.tpl`
 
 - **`deployment_test.yaml`** - Deployment and StatefulSet rendering tests
+
   - Mode-based resource creation
   - Replica count configuration
   - Image configuration
@@ -156,25 +160,27 @@ Tests cover all validation rules:
 
 Tests are automatically run in CI via `nix flake check`, which includes the `helm-unittest-check` in the checks output.
 
-The CI workflow (``.github/workflows/ci.yml`) runs the `build` job, which internally calls `nix flake check`, ensuring all Helm tests pass before merging.
+The CI workflow (\`\`.github/workflows/ci.yml`) runs the `build`job, which internally calls`nix flake check\`, ensuring all Helm tests pass before merging.
 
 ## Best Practices
 
 1. **Use descriptive test names**: `it: should generate PostgreSQL database-url with password`
-2. **Test both positive and negative cases**: Verify expected failures with `failedTemplate`
-3. **Base64 encode secret values**: Use `equal` with base64-encoded expected values
-4. **Test special characters**: Ensure URL encoding works correctly
-5. **Keep tests focused**: One test per scenario
-6. **Document expected values**: Add comments showing decoded base64 or expected output
+1. **Test both positive and negative cases**: Verify expected failures with `failedTemplate`
+1. **Base64 encode secret values**: Use `equal` with base64-encoded expected values
+1. **Test special characters**: Ensure URL encoding works correctly
+1. **Keep tests focused**: One test per scenario
+1. **Document expected values**: Add comments showing decoded base64 or expected output
 
 ## Troubleshooting
 
 **Plugin not installed:**
+
 ```bash
 helm plugin install https://github.com/helm-unittest/helm-unittest
 ```
 
 **Tests failing:**
+
 ```bash
 # Run with verbose output
 helm unittest charts/ncps -3
@@ -184,6 +190,7 @@ helm unittest charts/ncps -f tests/validation_test.yaml
 ```
 
 **Nix checks failing:**
+
 ```bash
 # Run locally
 nix flake check
