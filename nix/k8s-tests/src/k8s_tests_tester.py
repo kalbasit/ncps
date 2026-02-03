@@ -583,8 +583,24 @@ class NCPSTester:
                 )
 
             # Count rows
-            cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
-            count = cursor.fetchone()[0]
+            # For CDC deployments, background downloads happen asynchronously,
+            # so we need to retry with exponential backoff to wait for chunks to be created
+            max_retries = 10 if cdc_enabled else 1
+            retry_delay = 1  # Start with 1 second
+            count = 0
+
+            for attempt in range(max_retries):
+                cursor.execute(f"SELECT COUNT(*) FROM {target_table}")
+                count = cursor.fetchone()[0]
+
+                if count > 0:
+                    break
+
+                if attempt < max_retries - 1:
+                    if cdc_enabled:
+                        self.log(f"   ⏳ Waiting for background downloads (attempt {attempt + 1}/{max_retries}, {count} chunks so far)...", verbose_only=True)
+                    time.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff, max 10s
 
             conn.close()
 
@@ -873,8 +889,23 @@ class NCPSTester:
             if cdc_enabled:
                 # List chunks
                 # Chunks are stored in store/chunks/
-                chunk_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/chunks/")
-                chunk_count = chunk_objects.get("KeyCount", 0)
+                # For CDC deployments, background downloads happen asynchronously,
+                # so we need to retry with exponential backoff to wait for chunks to be created
+                max_retries = 10
+                retry_delay = 1  # Start with 1 second
+                chunk_count = 0
+
+                for attempt in range(max_retries):
+                    chunk_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/chunks/")
+                    chunk_count = chunk_objects.get("KeyCount", 0)
+
+                    if chunk_count > 0:
+                        break
+
+                    if attempt < max_retries - 1:
+                        self.log(f"   ⏳ Waiting for background downloads to S3 (attempt {attempt + 1}/{max_retries}, {chunk_count} chunks so far)...", verbose_only=True)
+                        time.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff, max 10s
 
                 if chunk_count == 0:
                     return TestResult(
@@ -960,47 +991,4 @@ class NCPSTester:
         return failed_deployments == 0
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Test NCPS Kubernetes deployments",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    parser.add_argument(
-        "config",
-        help="Path to test-config.yaml",
-    )
-
-    parser.add_argument(
-        "-d",
-        "--deployment",
-        help="Test only this deployment (by name)",
-    )
-
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose output",
-    )
-
-    args = parser.parse_args()
-
-    # Check config exists
-    if not os.path.exists(args.config):
-        print(f"❌ Config file not found: {args.config}")
-        sys.exit(1)
-
-    tester = NCPSTester(args.config, verbose=args.verbose)
-    results = tester.test_all_deployments(deployment_filter=args.deployment)
-
-    if not results:
-        print("❌ No deployments tested")
-        sys.exit(1)
-
-    success = tester.print_summary(results)
-    sys.exit(0 if success else 1)
-
-
-if __name__ == "__main__":
-    main()
+# NCPSTester class and main functionality remain above
