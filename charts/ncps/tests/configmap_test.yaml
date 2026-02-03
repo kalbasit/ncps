@@ -1,0 +1,345 @@
+suite: test configmap
+templates:
+  - configmap.yaml
+tests:
+  - it: should create configmap with default values
+    set:
+      config.hostname: test.example.com
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-ncps
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'hostname: "test.example.com"'
+
+  - it: should format CDC values as integers not exponential notation
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+      config.cdc.min: 65536
+      config.cdc.avg: 262144
+      config.cdc.max: 1048576
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'min: 65536'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'avg: 262144'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max: 1048576'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: '[0-9]\.[0-9]+e\+[0-9]+'
+
+  - it: should format large CDC values as integers
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+      config.cdc.min: 1000000
+      config.cdc.avg: 10000000
+      config.cdc.max: 100000000
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'min: 1000000'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'avg: 10000000'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max: 100000000'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: '[0-9]\.[0-9]+e\+[0-9]+'
+
+  - it: should enable analytics reporting by default
+    set:
+      config.hostname: test.example.com
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'enabled: true'
+
+  - it: should disable analytics reporting when set to false
+    set:
+      config.hostname: test.example.com
+      config.analytics.reporting.enabled: false
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'enabled: false'
+
+  - it: should configure LRU settings
+    set:
+      config.hostname: test.example.com
+      config.cache.maxSize: 100G
+      config.cache.lruSchedule: "0 0 * * *"
+      config.cache.lruTimezone: "UTC"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-size: "100G"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'schedule: "0 0 \* \* \*"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'timezone: "UTC"'
+
+  - it: should configure local storage
+    set:
+      config.hostname: test.example.com
+      config.storage.type: local
+      config.storage.local.path: /storage
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'local: "/storage"'
+
+  - it: should configure S3 storage
+    set:
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.region: us-east-1
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'bucket: "my-bucket"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'endpoint: "https://s3.amazonaws.com"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'region: "us-east-1"'
+
+  - it: should configure S3 with force-path-style
+    set:
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: http://minio:9000
+      config.storage.s3.region: us-east-1
+      config.storage.s3.forcePathStyle: true
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'force-path-style: true'
+
+  - it: should configure database pool settings for PostgreSQL
+    set:
+      config.hostname: test.example.com
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.database.pool.maxOpenConns: 50
+      config.database.pool.maxIdleConns: 10
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-open-conns: 50'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-idle-conns: 10'
+
+  - it: should configure database pool settings for MySQL
+    set:
+      config.hostname: test.example.com
+      config.database.type: mysql
+      config.database.mysql.host: mysql
+      config.database.mysql.password: test123
+      config.database.pool.maxOpenConns: 50
+      config.database.pool.maxIdleConns: 10
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-open-conns: 50'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-idle-conns: 10'
+
+  - it: should not configure database pool settings for SQLite
+    set:
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      config.database.pool.maxOpenConns: 50
+      config.database.pool.maxIdleConns: 10
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-open-conns'
+
+  - it: should configure permissions
+    set:
+      config.hostname: test.example.com
+      config.permissions.allowPut: true
+      config.permissions.allowDelete: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'allow-put-verb: true'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'allow-delete-verb: true'
+
+  - it: should configure narinfo signing
+    set:
+      config.hostname: test.example.com
+      config.signing.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'sign-narinfo: true'
+
+  - it: should configure upstream caches
+    set:
+      config.hostname: test.example.com
+      config.upstream.caches:
+        - url: https://cache.nixos.org
+          publicKey: cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+        - url: https://cache.example.com
+          publicKey: cache.example.com-1:test123
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- "https://cache.nixos.org"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- "https://cache.example.com"'
+
+  - it: should configure Redis
+    set:
+      config.hostname: test.example.com
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      config.redis.username: test-user
+      config.redis.db: 5
+      config.redis.useTLS: true
+      config.redis.poolSize: 20
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- "redis:6379"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'username: "test-user"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'db: 5'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'use-tls: true'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'pool-size: 20'
+
+  - it: should configure lock backend
+    set:
+      config.hostname: test.example.com
+      config.lock.backend: local
+      config.lock.downloadTTL: 10m
+      config.lock.lruTTL: 60m
+      config.lock.retry.maxAttempts: 5
+      config.lock.retry.initialDelay: 200ms
+      config.lock.retry.maxDelay: 5s
+      config.lock.retry.jitter: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'backend: "local"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'download-lock-ttl: "10m"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'lru-lock-ttl: "60m"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-attempts: 5'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'initial-delay: "200ms"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'max-delay: "5s"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'jitter: true'
+
+  - it: should use redis lock backend when redis is enabled
+    set:
+      config.hostname: test.example.com
+      config.lock.backend: local
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'backend: "redis"'
+
+  - it: should configure OpenTelemetry
+    set:
+      config.hostname: test.example.com
+      config.observability.opentelemetry.enabled: true
+      config.observability.opentelemetry.grpcURL: http://otel-collector:4317
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'opentelemetry:'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'enabled: true'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'grpc-url: "http://otel-collector:4317"'
+
+  - it: should configure Prometheus
+    set:
+      config.hostname: test.example.com
+      config.observability.prometheus.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'prometheus:'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'enabled: true'
+
+  - it: should configure log level
+    set:
+      config.hostname: test.example.com
+      config.logLevel: debug
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'level: "debug"'
+
+  - it: should configure server address
+    set:
+      config.hostname: test.example.com
+      config.server.addr: ":9000"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'addr: ":9000"'
+
+  - it: should allow degraded mode when configured
+    set:
+      config.hostname: test.example.com
+      config.lock.allowDegradedMode: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'allow-degraded-mode: true'

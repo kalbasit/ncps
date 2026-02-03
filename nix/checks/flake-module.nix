@@ -28,6 +28,22 @@
             '';
             doCheck = false;
           });
+
+          helm-unittest-check = pkgs.stdenvNoCC.mkDerivation {
+            name = "ncps-helm-unittest";
+            src = ../../charts/ncps;
+            nativeBuildInputs = [
+              (pkgs.wrapHelm pkgs.kubernetes-helm {
+                plugins = [ pkgs.kubernetes-helmPlugins.helm-unittest ];
+              })
+            ];
+            buildPhase = ''
+              helm unittest .
+            '';
+            installPhase = ''
+              touch $out
+            '';
+          };
         };
     };
 }

@@ -1,113 +1,206 @@
 # Helm Chart Tests
 
-This directory contains tests for the ncps Helm chart.
+This directory contains comprehensive unit tests for the ncps Helm chart using [helm-unittest](https://github.com/helm-unittest/helm-unittest).
 
-## Validation Tests
+## Prerequisites
 
-The tests use `helm template` to verify that the chart's validation logic works correctly. All tests are located in the `validation/` directory.
+Install the helm-unittest plugin:
+
+```bash
+helm plugin install https://github.com/helm-unittest/helm-unittest
+```
+
+## Running Tests
 
 **Run all tests:**
 
 ```bash
-# From anywhere in the repository
-./charts/ncps/tests/run-tests.sh
+# From repository root
+helm unittest charts/ncps
+
+# From chart directory
+cd charts/ncps
+helm unittest .
 ```
 
-**Test cases:**
+**Run specific test file:**
 
-- **Positive tests** (should succeed):
+```bash
+helm unittest charts/ncps -f tests/validation_test.yaml
+```
 
-  - HA + Deployment + ReadWriteMany
-  - HA + Deployment + existingClaim
-  - HA + Deployment + S3
-  - HA + Deployment + multiple access modes with ReadWriteMany
-  - Single replica + ReadWriteOnce
+**Run tests with verbose output:**
 
-- **Negative tests** (should fail):
+```bash
+helm unittest charts/ncps -3
+```
 
-  - HA + Deployment + ReadWriteOnce (without existingClaim)
-  - HA + SQLite database
-  - HA without Redis
+**Run tests in Nix (recommended for CI):**
+
+```bash
+nix flake check
+```
+
+## Test Structure
+
+All test files are located in `charts/ncps/tests/` and must end with `_test.yaml`.
+
+### Test Files
+
+- **`configmap_test.yaml`** - ConfigMap rendering and configuration tests
+
+  - CDC value formatting (ensures integers, not exponential notation)
+  - Analytics, logging, and observability settings
+  - Storage backend configuration
+  - Database pool settings
+  - Lock backend configuration
+  - All config.\* values
+
+- **`secret_test.yaml`** - Secret generation and database URL tests
+
+  - PostgreSQL URL generation (with/without password, with special characters)
+  - MySQL URL generation (with/without password, with special characters)
+  - S3 credentials
+  - Redis credentials
+  - Netrc file handling
+  - ExistingSecret scenarios
+
+- **`validation_test.yaml`** - Chart validation logic tests
+
+  - HA mode requirements (CDC, distributed locks, database compatibility)
+  - Storage backend validation
+  - Database configuration validation
+  - LRU, Redis, and upstream cache validation
+  - Migration mode validation for HA
+  - All fail scenarios from `_helpers.tpl`
+
+- **`deployment_test.yaml`** - Deployment and StatefulSet rendering tests
+
+  - Mode-based resource creation
+  - Replica count configuration
+  - Image configuration
+  - Security contexts
+  - Resource limits and requests
+  - Probes configuration
+  - Service account, node selector, tolerations, affinity
+  - Extra environment variables, volumes, and init containers
 
 ## Adding New Tests
 
-Adding a new validation test is simple - just create a new YAML file! The test runner automatically discovers all tests based on file naming convention.
+Create or edit test files in `charts/ncps/tests/`. Test files must end with `_test.yaml`.
 
-**Steps:**
-
-1. Create a new YAML values file in the `validation/` directory:
-
-   - `*-positive.yaml` for tests that should **pass** validation
-   - `*-negative.yaml` for tests that should **fail** validation
-
-1. Add a descriptive comment as the **first line** of the file:
-
-   ```yaml
-   # Your test description here
-   mode: deployment
-   replicaCount: 3
-   # ... rest of your values
-   ```
-
-1. Run the tests to verify:
-
-   ```bash
-   # Test your specific case
-   helm template test ./charts/ncps -f charts/ncps/tests/validation/your-test-positive.yaml
-
-   # Run all tests
-   ./charts/ncps/tests/run-tests.sh
-   ```
-
-That's it! The test runner will automatically discover and run your new test.
-
-**Example:**
-
-Create `validation/ha-deployment-custom-positive.yaml`:
+**Example test:**
 
 ```yaml
-# Positive test: HA + Deployment + custom configuration
-mode: deployment
-replicaCount: 3
-config:
-  hostname: "test.example.com"
-  storage:
-    type: s3
-    s3:
-      bucket: custom-bucket
-      endpoint: https://custom.s3.endpoint.com
-  # ... rest of config
+suite: my test suite
+templates:
+  - configmap.yaml
+tests:
+  - it: should do something
+    set:
+      config.hostname: test.example.com
+      # ... other values
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-ncps
 ```
 
-The test will automatically appear in the test output with the description "Positive test: HA + Deployment + custom configuration".
+## Test Coverage
 
-## CI/CD Integration
+The test suite provides comprehensive coverage of:
 
-The tests are automatically run in CI via the `helm-tests` job in `.github/workflows/ci.yml`:
+✅ All values from `values.yaml`
+✅ All validation logic from `_helpers.tpl`
+✅ Database URL generation for all database types
+✅ Type validation (e.g., CDC values as integers, not exponential)
+✅ HA mode requirements and constraints
+✅ Storage backend configuration
+✅ Secret generation and credential handling
+✅ Migration modes and database safety
+✅ Security contexts and resource configuration
+
+## Key Test Scenarios
+
+### CDC Formatting
+
+Tests ensure CDC values (min, avg, max) are rendered as integers, not exponential notation:
 
 ```yaml
-helm-tests:
-  runs-on: ubuntu-24.04
-  steps:
-    - uses: actions/checkout@v6
-    - name: Install Helm
-      uses: azure/setup-helm@v4
-      with:
-        version: 'v3.16.3'
-    - name: Run Helm validation tests
-      run: ./charts/ncps/tests/run-tests.sh
+# Should render as: min: 65536
+# NOT as: min: 6.5536e+04
 ```
 
-The `run-tests.sh` script:
+### Database URL Generation
 
-- Runs all validation tests (positive and negative cases) using `helm template`
-- Exits with code 0 on success and 1 on failure
-- Can be run from anywhere in the repository
-- Provides comprehensive coverage of chart validation logic
+Tests verify correct URL format for all database types:
 
-**Running tests locally:**
+- **PostgreSQL with password**: `postgresql://user:pass@host:port/db?sslmode=disable`
+- **PostgreSQL without password**: `postgresql://user@host:port/db?sslmode=disable`
+- **MySQL with password**: `mysql://user:pass@host:port/db`
+- **MySQL without password**: `mysql://user@host:port/db`
+- **SQLite**: `sqlite:/path/to/db.sqlite` (no secret created)
+
+Special characters in passwords are URL-encoded (e.g., `p@ss!` → `p%40ss%21`).
+
+### Validation Tests
+
+Tests cover all validation rules:
+
+- ✗ HA without distributed locking → **fails**
+- ✗ HA with SQLite → **fails**
+- ✗ HA without CDC (no bypass) → **fails**
+- ✓ HA with Redis + CDC + PostgreSQL → **passes**
+- ✗ PostgreSQL with both password and existingSecret → **fails**
+- ✗ S3 without bucket/endpoint/credentials → **fails**
+
+## CI Integration
+
+Tests are automatically run in CI via `nix flake check`, which includes the `helm-unittest-check` in the checks output.
+
+The CI workflow (\`\`.github/workflows/ci.yml`) runs the `build`job, which internally calls`nix flake check\`, ensuring all Helm tests pass before merging.
+
+## Best Practices
+
+1. **Use descriptive test names**: `it: should generate PostgreSQL database-url with password`
+1. **Test both positive and negative cases**: Verify expected failures with `failedTemplate`
+1. **Base64 encode secret values**: Use `equal` with base64-encoded expected values
+1. **Test special characters**: Ensure URL encoding works correctly
+1. **Keep tests focused**: One test per scenario
+1. **Document expected values**: Add comments showing decoded base64 or expected output
+
+## Troubleshooting
+
+**Plugin not installed:**
 
 ```bash
-# Run all tests (same as CI)
-./charts/ncps/tests/run-tests.sh
+helm plugin install https://github.com/helm-unittest/helm-unittest
 ```
+
+**Tests failing:**
+
+```bash
+# Run with verbose output
+helm unittest charts/ncps -3
+
+# Run specific test file
+helm unittest charts/ncps -f tests/validation_test.yaml
+```
+
+**Nix checks failing:**
+
+```bash
+# Run locally
+nix flake check
+
+# Check specific output
+nix build .#checks.<your-system>.helm-unittest-check
+```
+
+## Documentation
+
+- [helm-unittest GitHub](https://github.com/helm-unittest/helm-unittest)
+- [helm-unittest Documentation](https://github.com/helm-unittest/helm-unittest/blob/main/DOCUMENT.md)
+- [Assertion Types](https://github.com/helm-unittest/helm-unittest/blob/main/DOCUMENT.md#assertion-types)
