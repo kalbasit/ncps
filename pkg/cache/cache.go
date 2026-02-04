@@ -1429,6 +1429,13 @@ func (c *Cache) pullNarIntoStore(
 	// This prevents the race condition where other instances check hasAsset() before storage completes
 	ds.storedOnce.Do(func() { close(ds.stored) })
 
+	if err := c.checkAndFixNarInfosForNar(ctx, *narURL); err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Msg("failed to fix narinfo file size after pullNarIntoStore")
+	}
+
 	if enableZSTD && written > 0 {
 		narInfo.FileSize = uint64(written)
 	}
@@ -2573,6 +2580,14 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 	}
 
 	reader.Close()
+
+	if size == -1 {
+		// A size of -1 indicates a streaming download is in progress.
+		// We can't verify the final size yet, so we'll skip the check.
+		zerolog.Ctx(ctx).Debug().Msg("cannot verify narinfo file size while nar is streaming")
+
+		return nil
+	}
 
 	if size != niRow.FileSize.Int64 {
 		zerolog.Ctx(ctx).
