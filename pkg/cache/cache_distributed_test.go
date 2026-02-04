@@ -446,7 +446,7 @@ func testDistributedLockFailover(_ distributedDBFactory) func(*testing.T) {
 
 		redisCfg := redis.Config{
 			Addrs:     redisAddrs,
-			KeyPrefix: "ncps:test:failover:",
+			KeyPrefix: fmt.Sprintf("ncps:test:failover:%s:", t.Name()),
 		}
 
 		retryCfg := lock.RetryConfig{
