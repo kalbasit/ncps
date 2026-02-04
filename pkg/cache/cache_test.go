@@ -2821,5 +2821,18 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be fixed immediately after PutNarInfo")
 		})
+
+		t.Run("checkAndFixNarInfo with missing NAR", func(t *testing.T) {
+			c, _, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			// 1. Put NarInfo
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// 2. Call CheckAndFixNarInfo - should NOT return error even though NAR is missing
+			err := c.CheckAndFixNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+			assert.NoError(t, err)
+		})
 	}
 }

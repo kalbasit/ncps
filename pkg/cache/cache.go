@@ -2573,9 +2573,14 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 	// Now get the actual NAR size
 	size, reader, err := c.GetNar(ctx, nu)
 	if err != nil {
-		// If we can't get the NAR, we can't verify size.
-		// It might be that the NAR is not uploaded yet or gone.
-		// We shouldn't fail hard here, treating it as distinct from DB error.
+		// If the NAR is not found, we can't verify the size. This is not an
+		// error in this context, as the NAR might be uploaded later.
+		if errors.Is(err, storage.ErrNotFound) {
+			zerolog.Ctx(ctx).Debug().Msg("NAR not found, skipping file size check for now")
+
+			return nil
+		}
+		// Other errors (e.g., storage connectivity) should be reported.
 		return fmt.Errorf("failed to get nar: %w", err)
 	}
 
