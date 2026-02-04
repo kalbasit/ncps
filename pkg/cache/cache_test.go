@@ -2732,11 +2732,6 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 			originalSize := ni.FileSize
 			ni.FileSize = originalSize + 100 // Intentional mismatch
 
-			// We need to re-sign it or the server might reject it (if configured to check,
-			// though typical PutNarInfo flow signs it itself)
-			// Actually PutNarInfo re-signs and overwrites signatures, so we just need to pass the reader.
-			// But we need to act as a client uploading a text file.
-
 			// Let's modify the text representation locally
 			lines := strings.Split(testdata.Nar1.NarInfoText, "\n")
 
@@ -2773,10 +2768,6 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 			nu, _ := nar.ParseURL(niValid.URL)
 
 			ctx := context.Background()
-
-			// We need to compress it to match "Compression: xz" in NarInfo?
-			// If we send uncompressed data to PutNar, but URL says .xz, it just stores it.
-			// But GetNar might try to decompress logic? No, GetNar returns the stream.
 
 			// Just upload some bytes.
 			someContent := []byte("some arbitrary content")
