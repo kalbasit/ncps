@@ -76,6 +76,7 @@ jobs:
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
+          if-no-files-found: error
       - name: Create Issue for the crash
         if: failure() && steps.upload-step.outcome == 'success'
         env:
