@@ -339,7 +339,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 		h.Set(contentLength, strconv.Itoa(len(narInfoBytes)))
 
 		if !withBody {
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusOK)
 
 			return
 		}
@@ -510,6 +510,21 @@ func (s *Server) withNarURL(
 
 func (s *Server) getNar(withBody bool) http.HandlerFunc {
 	return s.withNarURL("server.getNar", func(w http.ResponseWriter, r *http.Request, nu nar.URL) {
+		// optimization: if this is a HEAD request, we can check if we have the
+		// narinfo for this nar and if so, return the size from there.
+		if !withBody {
+			size, err := s.cache.GetNarFileSize(r.Context(), nu)
+			if err == nil && size > 0 {
+				h := w.Header()
+				h.Set(contentType, contentTypeNar)
+				h.Set(contentLength, strconv.FormatInt(size, 10))
+
+				w.WriteHeader(http.StatusOK)
+
+				return
+			}
+		}
+
 		size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, upstream.ErrNotFound) {
@@ -555,7 +570,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 				h.Set(contentLength, strconv.FormatInt(n, 10))
 			}
 
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusOK)
 
 			return
 		}

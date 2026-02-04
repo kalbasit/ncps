@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -583,4 +584,184 @@ func newContext() context.Context {
 	return zerolog.
 		New(io.Discard).
 		WithContext(context.Background())
+}
+
+func TestGetNar_HeadOptimization(t *testing.T) {
+	t.Parallel()
+
+	// create a temporary directory for the cache
+	dir, err := os.MkdirTemp("", "cache-path-opt-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	// create the server
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// create the test server
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// 1. Put a NarInfo into the cache. This will create a NarFile record in the database.
+	putURL := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
+	req, err := http.NewRequestWithContext(
+		newContext(),
+		http.MethodPut,
+		putURL,
+		strings.NewReader(testdata.Nar1.NarInfoText),
+	)
+	require.NoError(t, err)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	// 2. Verify the NAR itself is NOT in the store
+	storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+	assert.NoFileExists(t, storePath)
+
+	// 3. Make a HEAD request for the NAR. It should return 204 No Content and the correct size.
+	narURL := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+	req, err = http.NewRequestWithContext(newContext(), http.MethodHead, narURL, nil)
+	require.NoError(t, err)
+	resp, err = ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, strconv.Itoa(len(testdata.Nar1.NarText)), resp.Header.Get("Content-Length"))
+	resp.Body.Close()
+}
+
+func TestGetNarInfo_Head(t *testing.T) {
+	t.Parallel()
+
+	// create a temporary directory for the cache
+	dir, err := os.MkdirTemp("", "cache-path-ni-head-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	// create the server
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// 1. Put a Nar into the cache.
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/nar/"+testdata.Nar1.NarHash+".nar.xz",
+		strings.NewReader(testdata.Nar1.NarText),
+	)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// 2. Put a NarInfo into the cache.
+	req = httptest.NewRequest(
+		http.MethodPut,
+		"/"+testdata.Nar1.NarInfoHash+".narinfo",
+		strings.NewReader(testdata.Nar1.NarInfoText),
+	)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// Verify it's in the database
+	var count int
+
+	err = db.DB().
+		QueryRowContext(newContext(), "SELECT COUNT(*) FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).
+		Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "narinfo should be in the database after PUT")
+
+	// 3. Make a HEAD request for the NarInfo.
+	req = httptest.NewRequest(http.MethodHead, "/"+testdata.Nar1.NarInfoHash+".narinfo", nil)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	// Verify it returns 200 OK and Content-Length
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.NotEmpty(t, w.Header().Get("Content-Length"))
+}
+
+func TestGetNar_HeadFallback(t *testing.T) {
+	t.Parallel()
+
+	// create a temporary directory for the cache
+	dir, err := os.MkdirTemp("", "cache-path-nar-fallback-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	// create the server
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// create the test server
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// 1. Put a Nar into the cache directly (skipping NarInfo to avoid optimization)
+	// Wait, to put a Nar we usually need a NarInfo if we use the cache API.
+	// We can just use the server's PUT /nar
+	narURL := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+	req, err := http.NewRequestWithContext(
+		newContext(),
+		http.MethodPut,
+		narURL,
+		strings.NewReader(testdata.Nar1.NarText),
+	)
+	require.NoError(t, err)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	// 2. Make a HEAD request for the Nar.
+	// Since there is no NarInfo, the optimization will fail and it will fall back to GetNar.
+	req, err = http.NewRequestWithContext(newContext(), http.MethodHead, narURL, nil)
+	require.NoError(t, err)
+	resp, err = ts.Client().Do(req)
+	require.NoError(t, err)
+
+	// Verify it returns 200 OK and Content-Length
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, strconv.Itoa(len(testdata.Nar1.NarText)), resp.Header.Get("Content-Length"))
+	resp.Body.Close()
 }
