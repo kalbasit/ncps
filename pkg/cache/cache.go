@@ -1023,7 +1023,19 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			// Already exists is not an error for PUT - return success
 			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, skipping")
 
+			// Check if we need to update a corresponding narinfo (if it exists)
+			if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
+				zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfo file size after PutNar (already exists)")
+			}
+
 			return nil
+		}
+
+		if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to fix narinfo file size after PutNar")
 		}
 
 		return err
@@ -1882,6 +1894,13 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 			return fmt.Errorf("error storing in database: %w", err)
 		}
 
+		if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to fix narinfo file size after PutNarInfo")
+		}
+
 		// Cleanup legacy narinfo from storage if it exists.
 		// This handles the race condition where PutNarInfo finishes before a background
 		// migration can trigger.
@@ -2489,6 +2508,103 @@ func (c *Cache) storeInDatabase(
 
 		return nil
 	})
+}
+
+func (c *Cache) fixNarInfoFileSize(
+	ctx context.Context,
+	hash string,
+	correctSize int64,
+) error {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.fixNarInfoFileSize",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.Int64("correct_size", correctSize),
+		),
+	)
+	defer span.End()
+
+	zerolog.Ctx(ctx).
+		Info().
+		Int64("correct_size", correctSize).
+		Msg("updating narinfo file size in the database")
+
+	return c.withTransaction(ctx, "fixNarInfoFileSize", func(qtx database.Querier) error {
+		return qtx.UpdateNarInfoFileSize(ctx, database.UpdateNarInfoFileSizeParams{
+			Hash:     hash,
+			FileSize: sql.NullInt64{Int64: correctSize, Valid: true},
+		})
+	})
+}
+
+// checkAndFixNarInfo checks if a NarInfo exists for the given hash, and if so,
+// ensures its FileSize matches the actual NAR size.
+func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
+	// First check if we have the NarInfo in DB using direct DB access
+	// to avoid higher-level cache logic (like purging or storage checks)
+	niRow, err := c.db.GetNarInfoByHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get narinfo from db: %w", err)
+	}
+
+	if !niRow.URL.Valid {
+		// No URL means not migrated or partial, can't check
+		return nil
+	}
+
+	nu, err := nar.ParseURL(niRow.URL.String)
+	if err != nil {
+		return fmt.Errorf("failed to parse nar url from narinfo: %w", err)
+	}
+
+	// Now get the actual NAR size
+	size, reader, err := c.GetNar(ctx, nu)
+	if err != nil {
+		// If we can't get the NAR, we can't verify size.
+		// It might be that the NAR is not uploaded yet or gone.
+		// We shouldn't fail hard here, treating it as distinct from DB error.
+		return fmt.Errorf("failed to get nar: %w", err)
+	}
+
+	reader.Close()
+
+	if size != niRow.FileSize.Int64 {
+		zerolog.Ctx(ctx).
+			Info().
+			Int64("current_size", niRow.FileSize.Int64).
+			Int64("actual_size", size).
+			Msg("mismatch detected, fixing narinfo file size")
+
+		return c.fixNarInfoFileSize(ctx, hash, size)
+	}
+
+	return nil
+}
+
+// checkAndFixNarInfosForNar finds all NarInfos pointing to the given NAR URL
+// and fixes their file size if needed.
+func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) error {
+	// The NarInfo URL usually matches the NAR URL.
+	hashes, err := c.db.GetNarInfoHashesByURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
+	if err != nil {
+		return fmt.Errorf("failed to get narinfo hashes by url: %w", err)
+	}
+
+	var errs []error
+
+	for _, hash := range hashes {
+		if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func (c *Cache) ensureNarFile(

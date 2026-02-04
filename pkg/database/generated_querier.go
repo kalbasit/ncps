@@ -262,6 +262,12 @@ type Querier interface {
 	//  INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
 	//  WHERE nnf.nar_file_id = $1
 	GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error)
+	//GetNarInfoHashesByURL
+	//
+	//  SELECT hash
+	//  FROM narinfos
+	//  WHERE url = $1
+	GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error)
 	//GetNarInfoReferences
 	//
 	//  SELECT reference
@@ -358,6 +364,12 @@ type Querier interface {
 	//      updated_at = CURRENT_TIMESTAMP
 	//  WHERE hash = $1
 	TouchNarInfo(ctx context.Context, hash string) (int64, error)
+	//UpdateNarInfoFileSize
+	//
+	//  UPDATE narinfos
+	//  SET file_size = $2, updated_at = CURRENT_TIMESTAMP
+	//  WHERE hash = $1
+	UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error
 
 	WithTx(tx *sql.Tx) Querier
 	DB() *sql.DB

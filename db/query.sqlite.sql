@@ -81,6 +81,11 @@ ON CONFLICT(hash) DO UPDATE SET
 WHERE narinfos.url IS NULL
 RETURNING *;
 
+-- name: UpdateNarInfoFileSize :exec
+UPDATE narinfos
+SET file_size = ?, updated_at = CURRENT_TIMESTAMP
+WHERE hash = ?;
+
 -- name: AddNarInfoReference :exec
 INSERT INTO narinfo_references (
     narinfo_id, reference
@@ -104,6 +109,11 @@ WHERE narinfo_id = ?;
 SELECT signature
 FROM narinfo_signatures
 WHERE narinfo_id = ?;
+
+-- name: GetNarInfoHashesByURL :many
+SELECT hash
+FROM narinfos
+WHERE url = ?;
 
 -- name: CreateNarFile :one
 INSERT INTO nar_files (

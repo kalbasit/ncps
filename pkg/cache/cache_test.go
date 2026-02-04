@@ -1,6 +1,7 @@
 package cache_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -2672,4 +2673,153 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("NarStreaming", testNarStreaming(factory))
 	t.Run("GetNarInfoRaceConditionDuringMigrationDeletion", testGetNarInfoRaceConditionDuringMigrationDeletion(factory))
 	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
+	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
+}
+
+func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Run("PutNarInfo then PutNar with mismatch", func(t *testing.T) {
+			c, db, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// 1. Put NarInfo with WRONG size
+			ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, err)
+
+			originalSize := ni.FileSize
+			ni.FileSize = originalSize + 100 // Intentional mismatch
+
+			// We need to re-sign it or the server might reject it (if configured to check,
+			// though typical PutNarInfo flow signs it itself)
+			// Actually PutNarInfo re-signs and overwrites signatures, so we just need to pass the reader.
+			// But we need to act as a client uploading a text file.
+
+			// Let's modify the text representation locally
+			lines := strings.Split(testdata.Nar1.NarInfoText, "\n")
+
+			var newLines []string
+
+			for _, line := range lines {
+				if strings.HasPrefix(line, "FileSize:") {
+					newLines = append(newLines, fmt.Sprintf("FileSize: %d", ni.FileSize))
+				} else if strings.HasPrefix(line, "Sig:") {
+					continue // Strip old signature
+				} else {
+					newLines = append(newLines, line)
+				}
+			}
+
+			wrongNarInfoText := strings.Join(newLines, "\n")
+
+			r := io.NopCloser(strings.NewReader(wrongNarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// Verify it's wrong in DB
+			var dbSize int64
+
+			err = db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&dbSize)
+			require.NoError(t, err)
+			assert.Equal(t, int64(ni.FileSize), dbSize) //nolint:gosec
+
+			// 2. Put Nar with CORRECT size
+			// The testdata.Nar1.NarText is generic content. We need to match the compression
+			// expected by the NarInfo (which is in `testdata.Nar1.NarInfoText`).
+			// Nar1 is uncompressed (generic) but NarInfo might say otherwise?
+			// Checking testdata/nar1.go (implied): Nar1 seems to be xz compressed in store usually?
+			// Actually testdata.Nar1 has NarText. Let's assume we upload that as the body.
+			// Wait, PutNar expects the raw body that matches the compression in the URL.
+			// testdata.Nar1.NarInfoText says "Compression: xz".
+			// So we need to provide xz compressed data that matches the size if we want a "correct" upload?
+			// OR we can just use the provided NarPath which implies it's stored on disk with that name.
+
+			// Let's simplify: Use the existing tools to create a mismatch.
+			// We uploaded a NarInfo claiming size X+100.
+			// Now we upload the REAL Nar.
+
+			// We need to construct the valid xz body for Nar1.
+			// Since we don't have it easily here, we can use the one from testdata if accessible or just
+			// upload arbitrary bytes and claim it's the valid one for this test (since we don't
+			// validate content hash strictly in PutNar unless checked? No checkAndFix checks
+			// size from `GetNar`).
+			// `GetNar` reads from store. `PutNar` writes to store.
+
+			// Actually, let's use a simpler approach. Upload ANY content.
+			// The Cache doesn't validate that the content matches the Hash in the URL strictly during
+			// Put (unless CDC enabled maybe).
+			// But checkAndFixNarInfo calls GetNar -> returns size.
+
+			// Let's use `testdata.Nar1.NarText` (which is likely just the content).
+			// If we put it, its size will be `len(testdata.Nar1.NarText)`.
+			// The original NarInfo had size matching that. We changed NarInfo to be +100.
+			// So uploading the original NarText should trigger the fix.
+
+			// We need the correct URL.
+			niValid, _ := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+			nu, _ := nar.ParseURL(niValid.URL)
+
+			ctx := context.Background()
+
+			// We need to compress it to match "Compression: xz" in NarInfo?
+			// If we send uncompressed data to PutNar, but URL says .xz, it just stores it.
+			// But GetNar might try to decompress logic? No, GetNar returns the stream.
+
+			// Just upload some bytes.
+			someContent := []byte("some arbitrary content")
+			err = c.PutNar(ctx, nu, io.NopCloser(bytes.NewReader(someContent)))
+			require.NoError(t, err)
+
+			// 3. Verify DB is updated to match actual upload size
+			err = db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&dbSize)
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be updated to match actual NAR size")
+		})
+
+		t.Run("PutNar then PutNarInfo with mismatch", func(t *testing.T) {
+			c, db, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// 1. Put Nar first
+			niValid, _ := narinfo.Parse(strings.NewReader(testdata.Nar2.NarInfoText))
+			nu, _ := nar.ParseURL(niValid.URL)
+
+			someContent := []byte("some other content")
+			require.NoError(t, c.PutNar(context.Background(), nu, io.NopCloser(bytes.NewReader(someContent))))
+
+			// 2. Put NarInfo with WRONG size
+			// Claim size is 999999
+			lines := strings.Split(testdata.Nar2.NarInfoText, "\n")
+
+			var newLines []string
+
+			for _, line := range lines {
+				if strings.HasPrefix(line, "FileSize:") {
+					newLines = append(newLines, "FileSize: 999999")
+				} else if strings.HasPrefix(line, "Sig:") {
+					continue
+				} else {
+					newLines = append(newLines, line)
+				}
+			}
+
+			wrongNarInfoText := strings.Join(newLines, "\n")
+
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar2.NarInfoHash,
+				io.NopCloser(strings.NewReader(wrongNarInfoText))))
+
+			// 3. Verify DB is corrected immediately
+			var dbSize int64
+
+			err := db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar2.NarInfoHash).Scan(&dbSize)
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be fixed immediately after PutNarInfo")
+		})
+	}
 }

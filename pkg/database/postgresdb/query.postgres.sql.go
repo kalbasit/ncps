@@ -1043,6 +1043,40 @@ func (q *Queries) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int
 	return items, nil
 }
 
+const getNarInfoHashesByURL = `-- name: GetNarInfoHashesByURL :many
+SELECT hash
+FROM narinfos
+WHERE url = $1
+`
+
+// GetNarInfoHashesByURL
+//
+//	SELECT hash
+//	FROM narinfos
+//	WHERE url = $1
+func (q *Queries) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getNarInfoHashesByURL, url)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		items = append(items, hash)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNarInfoReferences = `-- name: GetNarInfoReferences :many
 SELECT reference
 FROM narinfo_references
@@ -1424,4 +1458,25 @@ func (q *Queries) TouchNarInfo(ctx context.Context, hash string) (int64, error) 
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const updateNarInfoFileSize = `-- name: UpdateNarInfoFileSize :exec
+UPDATE narinfos
+SET file_size = $2, updated_at = CURRENT_TIMESTAMP
+WHERE hash = $1
+`
+
+type UpdateNarInfoFileSizeParams struct {
+	Hash     string
+	FileSize sql.NullInt64
+}
+
+// UpdateNarInfoFileSize
+//
+//	UPDATE narinfos
+//	SET file_size = $2, updated_at = CURRENT_TIMESTAMP
+//	WHERE hash = $1
+func (q *Queries) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
+	_, err := q.db.ExecContext(ctx, updateNarInfoFileSize, arg.Hash, arg.FileSize)
+	return err
 }

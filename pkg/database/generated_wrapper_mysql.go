@@ -506,6 +506,19 @@ func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileI
 	return res, nil
 }
 
+func (w *mysqlWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
+	res, err := w.adapter.GetNarInfoHashesByURL(ctx, url)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *mysqlWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
 	if err != nil {
@@ -673,6 +686,22 @@ func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, er
 
 	// Return Primitive / *sql.DB / etc
 	return res, nil
+}
+
+func (w *mysqlWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
+	err := w.adapter.UpdateNarInfoFileSize(ctx, mysqldb.UpdateNarInfoFileSizeParams{
+		FileSize: arg.FileSize,
+		Hash:     arg.Hash,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *mysqlWrapper) WithTx(tx *sql.Tx) Querier {

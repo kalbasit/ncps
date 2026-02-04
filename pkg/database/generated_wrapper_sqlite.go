@@ -498,6 +498,19 @@ func (w *sqliteWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFile
 	return res, nil
 }
 
+func (w *sqliteWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
+	res, err := w.adapter.GetNarInfoHashesByURL(ctx, url)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Return Slice of Primitives (direct match)
+	return res, nil
+}
+
 func (w *sqliteWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
 	if err != nil {
@@ -665,6 +678,22 @@ func (w *sqliteWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, e
 
 	// Return Primitive / *sql.DB / etc
 	return res, nil
+}
+
+func (w *sqliteWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
+	err := w.adapter.UpdateNarInfoFileSize(ctx, sqlitedb.UpdateNarInfoFileSizeParams{
+		FileSize: arg.FileSize,
+		Hash:     arg.Hash,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	// No return value (void)
+	return nil
 }
 
 func (w *sqliteWrapper) WithTx(tx *sql.Tx) Querier {

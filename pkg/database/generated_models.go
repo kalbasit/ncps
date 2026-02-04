@@ -140,3 +140,8 @@ type TouchNarFileParams struct {
 	Compression string
 	Query       string
 }
+
+type UpdateNarInfoFileSizeParams struct {
+	Hash     string
+	FileSize sql.NullInt64
+}
