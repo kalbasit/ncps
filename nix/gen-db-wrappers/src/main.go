@@ -702,9 +702,11 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{/* 2. HANDLE ERROR */}}
 		{{- if .Method.ReturnsError}}
 		if err != nil {
+			{{- if and .Method.HasValue (not (isSlice $retType)) }}
 			if errors.Is(err, sql.ErrNoRows) {
 				{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "ErrNotFound") -}}
 			}
+			{{- end}}
 			{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "err") -}}
 		}
 		{{- end}}
