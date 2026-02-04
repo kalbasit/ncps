@@ -501,9 +501,6 @@ func (w *sqliteWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFile
 func (w *sqliteWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
 	res, err := w.adapter.GetNarInfoHashesByURL(ctx, url)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
 
@@ -686,9 +683,6 @@ func (w *sqliteWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNar
 		Hash:     arg.Hash,
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
 		return err
 	}
 

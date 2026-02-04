@@ -509,9 +509,6 @@ func (w *mysqlWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileI
 func (w *mysqlWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
 	res, err := w.adapter.GetNarInfoHashesByURL(ctx, url)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
 
@@ -694,9 +691,6 @@ func (w *mysqlWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarI
 		Hash:     arg.Hash,
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
 		return err
 	}
 

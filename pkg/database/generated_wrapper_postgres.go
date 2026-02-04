@@ -487,9 +487,6 @@ func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFi
 func (w *postgresWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
 	res, err := w.adapter.GetNarInfoHashesByURL(ctx, url)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
 
@@ -672,9 +669,6 @@ func (w *postgresWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateN
 		FileSize: arg.FileSize,
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
 		return err
 	}
 
