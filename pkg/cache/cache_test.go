@@ -777,8 +777,15 @@ func testPutNarInfoDeadlock(factory cacheFactory) func(*testing.T) {
 
 		c.SetRecordAgeIgnoreTouch(0)
 
-		// Hash '252' is known to collide with 'cache' shard (997)
-		// in the local sharded locker.
+		// Hash '252' is chosen specifically because 'narinfo:252' and 'cache' both
+		// hash to shard 997 when using the default 1024 shards in the local
+		// locker. This collision is necessary to trigger the deadlock for this
+		// test, as Go's sync.RWMutex does not allow recursive read-after-write
+		// locking on the same mutex.
+		//
+		// NOTE: If the number of shards (numShards) in pkg/lock/local changes,
+		// this test might no longer reproduce the deadlock (it will pass even
+		// if the bug is reintroduced).
 		hash := "252"
 
 		// Create a valid NarInfo
