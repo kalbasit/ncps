@@ -16,43 +16,43 @@ jobs:
           - pkg: pkg/nixcacheinfo
             func: FuzzParse
             fuzz_pattern: FuzzParse
-            time: 1h
+            time: 45m
           - pkg: pkg/helper
             func: FuzzParseSize
             fuzz_pattern: FuzzParseSize
-            time: 1h
+            time: 45m
           - pkg: pkg/nar
             func: FuzzParseURL
             fuzz_pattern: FuzzParseURL
-            time: 1h
+            time: 45m
           - pkg: pkg/nar
             func: FuzzJoinURL
             fuzz_pattern: FuzzJoinURL
-            time: 1h
+            time: 45m
           - pkg: pkg/nar
             func: FuzzCompressionTypeFromExtension
             fuzz_pattern: FuzzCompressionTypeFromExtension
-            time: 1h
+            time: 45m
           - pkg: pkg/golomb
             func: FuzzDecode
             fuzz_pattern: ^FuzzDecode$
-            time: 1h
+            time: 45m
           - pkg: pkg/golomb
             func: FuzzDecodeBig
             fuzz_pattern: ^FuzzDecodeBig$
-            time: 1h
+            time: 45m
           - pkg: pkg/golomb
             func: FuzzEncode
             fuzz_pattern: ^FuzzEncode$
-            time: 1h
+            time: 45m
           - pkg: pkg/golomb
             func: FuzzEncodeBig
             fuzz_pattern: ^FuzzEncodeBig$
-            time: 1h
+            time: 45m
           - pkg: pkg/cache
             func: FuzzParseNarInfo
             fuzz_pattern: FuzzParseNarInfo
-            time: 1h
+            time: 45m
     steps:
       - uses: actions/checkout@v6
       - uses: cachix/install-nix-action@v31
