@@ -2767,36 +2767,6 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 			assert.Equal(t, int64(ni.FileSize), dbSize) //nolint:gosec
 
 			// 2. Put Nar with CORRECT size
-			// The testdata.Nar1.NarText is generic content. We need to match the compression
-			// expected by the NarInfo (which is in `testdata.Nar1.NarInfoText`).
-			// Nar1 is uncompressed (generic) but NarInfo might say otherwise?
-			// Checking testdata/nar1.go (implied): Nar1 seems to be xz compressed in store usually?
-			// Actually testdata.Nar1 has NarText. Let's assume we upload that as the body.
-			// Wait, PutNar expects the raw body that matches the compression in the URL.
-			// testdata.Nar1.NarInfoText says "Compression: xz".
-			// So we need to provide xz compressed data that matches the size if we want a "correct" upload?
-			// OR we can just use the provided NarPath which implies it's stored on disk with that name.
-
-			// Let's simplify: Use the existing tools to create a mismatch.
-			// We uploaded a NarInfo claiming size X+100.
-			// Now we upload the REAL Nar.
-
-			// We need to construct the valid xz body for Nar1.
-			// Since we don't have it easily here, we can use the one from testdata if accessible or just
-			// upload arbitrary bytes and claim it's the valid one for this test (since we don't
-			// validate content hash strictly in PutNar unless checked? No checkAndFix checks
-			// size from `GetNar`).
-			// `GetNar` reads from store. `PutNar` writes to store.
-
-			// Actually, let's use a simpler approach. Upload ANY content.
-			// The Cache doesn't validate that the content matches the Hash in the URL strictly during
-			// Put (unless CDC enabled maybe).
-			// But checkAndFixNarInfo calls GetNar -> returns size.
-
-			// Let's use `testdata.Nar1.NarText` (which is likely just the content).
-			// If we put it, its size will be `len(testdata.Nar1.NarText)`.
-			// The original NarInfo had size matching that. We changed NarInfo to be +100.
-			// So uploading the original NarText should trigger the fix.
 
 			// We need the correct URL.
 			niValid, _ := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
