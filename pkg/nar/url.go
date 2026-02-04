@@ -89,7 +89,7 @@ func (u URL) String() string {
 }
 
 // ToFilePath returns the filepath in the store for a given nar URL.
-func (u URL) ToFilePath() string {
+func (u URL) ToFilePath() (string, error) {
 	// TODO: bring it out of the helper
 	return helper.NarFilePath(u.Hash, u.Compression.ToFileExtension())
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/helper"
 )
@@ -21,10 +22,11 @@ func TestNarInfoFilePath(t *testing.T) {
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
-		t.Run(fmt.Sprintf("NarInfoFilePath(%q) should panic", test), func(t *testing.T) {
+		t.Run(fmt.Sprintf("NarInfoFilePath(%q) should return error", test), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Panics(t, func() { helper.NarInfoFilePath(test) })
+			_, err := helper.NarInfoFilePath(test)
+			assert.ErrorContains(t, err, "is less than 3 characters long")
 		})
 	}
 
@@ -32,9 +34,18 @@ func TestNarInfoFilePath(t *testing.T) {
 		t.Run(fmt.Sprintf("NarInfoFilePath(%q) -> %q", test.hash, test.path), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.path, helper.NarInfoFilePath(test.hash))
+			path, err := helper.NarInfoFilePath(test.hash)
+			require.NoError(t, err)
+			assert.Equal(t, test.path, path)
 		})
 	}
+
+	t.Run("NarInfoFilePath with invalid hash", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := helper.NarInfoFilePath("abc!@#")
+		assert.ErrorIs(t, err, helper.ErrInvalidHash)
+	})
 }
 
 func TestNarFilePath(t *testing.T) {
@@ -50,10 +61,11 @@ func TestNarFilePath(t *testing.T) {
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
-		t.Run(fmt.Sprintf("NarFilePath(%q) should panic", test), func(t *testing.T) {
+		t.Run(fmt.Sprintf("NarFilePath(%q) should return error", test), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Panics(t, func() { helper.NarFilePath(test, "") })
+			_, err := helper.NarFilePath(test, "")
+			assert.ErrorContains(t, err, "is less than 3 characters long")
 		})
 	}
 
@@ -61,9 +73,18 @@ func TestNarFilePath(t *testing.T) {
 		t.Run(fmt.Sprintf("NarFilePath(%q, %q) -> %q", test.hash, test.compression, test.path), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.path, helper.NarFilePath(test.hash, test.compression))
+			path, err := helper.NarFilePath(test.hash, test.compression)
+			require.NoError(t, err)
+			assert.Equal(t, test.path, path)
 		})
 	}
+
+	t.Run("NarFilePath with invalid hash", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := helper.NarFilePath("abc!@#", "")
+		assert.ErrorIs(t, err, helper.ErrInvalidHash)
+	})
 }
 
 func TestFilePathWithSharding(t *testing.T) {
@@ -77,10 +98,11 @@ func TestFilePathWithSharding(t *testing.T) {
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
-		t.Run(fmt.Sprintf("FilePathWithSharding(%q) should panic", test), func(t *testing.T) {
+		t.Run(fmt.Sprintf("FilePathWithSharding(%q) should return error", test), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Panics(t, func() { helper.FilePathWithSharding(test) })
+			_, err := helper.FilePathWithSharding(test)
+			assert.ErrorContains(t, err, "is less than 3 characters long")
 		})
 	}
 
@@ -88,7 +110,9 @@ func TestFilePathWithSharding(t *testing.T) {
 		t.Run(fmt.Sprintf("FilePathWithSharding(%q) -> %q", test.fn, test.path), func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.path, helper.FilePathWithSharding(test.fn))
+			path, err := helper.FilePathWithSharding(test.fn)
+			require.NoError(t, err)
+			assert.Equal(t, test.path, path)
 		})
 	}
 }

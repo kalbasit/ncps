@@ -915,11 +915,17 @@ func TestMigrateNarInfo_LargeNarInfo(t *testing.T) {
 	narInfoText := narInfoBuilder.String()
 
 	// Write to storage
-	narInfoPath := filepath.Join(dir, "store", "narinfo", helper.NarInfoFilePath(hash))
+	nifP, err := helper.NarInfoFilePath(hash)
+	require.NoError(t, err)
+
+	narInfoPath := filepath.Join(dir, "store", "narinfo", nifP)
 	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o755))
 	require.NoError(t, os.WriteFile(narInfoPath, []byte(narInfoText), 0o600))
 
-	narPath := filepath.Join(dir, "store", "nar", helper.NarFilePath(narHash, "xz"))
+	nFP, err := helper.NarFilePath(narHash, "xz")
+	require.NoError(t, err)
+
+	narPath := filepath.Join(dir, "store", "nar", nFP)
 	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 	require.NoError(t, os.WriteFile(narPath, []byte(helper.MustRandString(999999, nil)), 0o600))
 

@@ -232,7 +232,10 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // HasNarInfo returns true if the store has the narinfo.
 func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
-	key := s.narInfoPath(hash)
+	key, err := s.narInfoPath(hash)
+	if err != nil {
+		return false
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -245,7 +248,7 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	)
 	defer span.End()
 
-	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 
 	return err == nil
 }
@@ -292,7 +295,10 @@ func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) er
 
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	key := s.narInfoPath(hash)
+	key, err := s.narInfoPath(hash)
+	if err != nil {
+		return nil, err
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -327,7 +333,10 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 // PutNarInfo puts the narinfo in the store.
 func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
-	key := s.narInfoPath(hash)
+	key, err := s.narInfoPath(hash)
+	if err != nil {
+		return err
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -341,7 +350,7 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err == nil {
 		return storage.ErrAlreadyExists
 	}
@@ -371,7 +380,10 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 
 // DeleteNarInfo deletes the narinfo from the store.
 func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
-	key := s.narInfoPath(hash)
+	key, err := s.narInfoPath(hash)
+	if err != nil {
+		return err
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -385,7 +397,7 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	defer span.End()
 
 	// Check if key exists
-	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
 		errResp := minio.ToErrorResponse(err)
 		if errResp.Code == s3NoSuchKey {
@@ -405,7 +417,10 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 
 // HasNar returns true if the store has the nar.
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
-	key := s.narPath(narURL)
+	key, err := s.narPath(narURL)
+	if err != nil {
+		return false
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -418,7 +433,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	)
 	defer span.End()
 
-	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 
 	return err == nil
 }
@@ -426,7 +441,10 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 // GetNar returns nar from the store.
 // NOTE: The caller must close the returned io.ReadCloser!
 func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
-	key := s.narPath(narURL)
+	key, err := s.narPath(narURL)
+	if err != nil {
+		return 0, nil, err
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -462,7 +480,10 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 // PutNar puts the nar in the store.
 func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
-	key := s.narPath(narURL)
+	key, err := s.narPath(narURL)
+	if err != nil {
+		return 0, err
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -476,7 +497,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 	defer span.End()
 
 	// Check if key already exists
-	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err == nil {
 		return 0, storage.ErrAlreadyExists
 	}
@@ -510,7 +531,10 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 
 // DeleteNar deletes the nar from the store.
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
-	key := s.narPath(narURL)
+	key, err := s.narPath(narURL)
+	if err != nil {
+		return err
+	}
 
 	_, span := tracer.Start(
 		ctx,
@@ -524,7 +548,7 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	defer span.End()
 
 	// Check if key exists
-	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
 		errResp := minio.ToErrorResponse(err)
 		if errResp.Code == s3NoSuchKey {
@@ -547,12 +571,22 @@ func (s *Store) secretKeyPath() string {
 	return "config/cache.key"
 }
 
-func (s *Store) narInfoPath(hash string) string {
-	return "store/narinfo/" + helper.NarInfoFilePath(hash)
+func (s *Store) narInfoPath(hash string) (string, error) {
+	nifP, err := helper.NarInfoFilePath(hash)
+	if err != nil {
+		return "", err
+	}
+
+	return "store/narinfo/" + nifP, nil
 }
 
-func (s *Store) narPath(narURL nar.URL) string {
-	return "store/nar/" + narURL.ToFilePath()
+func (s *Store) narPath(narURL nar.URL) (string, error) {
+	tfp, err := narURL.ToFilePath()
+	if err != nil {
+		return "", err
+	}
+
+	return "store/nar/" + tfp, nil
 }
 
 // ValidateConfig validates the S3 configuration.

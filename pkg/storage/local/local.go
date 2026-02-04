@@ -146,7 +146,12 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // HasNarInfo returns true if the store has the narinfo.
 func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
-	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+	nifP, err := helper.NarInfoFilePath(hash)
+	if err != nil {
+		return false
+	}
+
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), nifP)
 
 	_, span := tracer.Start(
 		ctx,
@@ -159,7 +164,7 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 	)
 	defer span.End()
 
-	_, err := os.Stat(narInfoPath)
+	_, err = os.Stat(narInfoPath)
 
 	return err == nil
 }
@@ -206,7 +211,12 @@ func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) er
 
 // GetNarInfo returns narinfo from the store.
 func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+	nifP, err := helper.NarInfoFilePath(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), nifP)
 
 	_, span := tracer.Start(
 		ctx,
@@ -235,7 +245,12 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 // PutNarInfo puts the narinfo in the store.
 func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
-	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+	nifP, err := helper.NarInfoFilePath(hash)
+	if err != nil {
+		return err
+	}
+
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), nifP)
 
 	_, span := tracer.Start(
 		ctx,
@@ -272,7 +287,12 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 
 // DeleteNarInfo deletes the narinfo from the store.
 func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
-	narInfoPath := filepath.Join(s.storeNarInfoPath(), helper.NarInfoFilePath(hash))
+	nifP, err := helper.NarInfoFilePath(hash)
+	if err != nil {
+		return err
+	}
+
+	narInfoPath := filepath.Join(s.storeNarInfoPath(), nifP)
 
 	_, span := tracer.Start(
 		ctx,
@@ -301,7 +321,12 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 
 // HasNar returns true if the store has the nar.
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
-	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+	tfp, err := narURL.ToFilePath()
+	if err != nil {
+		return false
+	}
+
+	narPath := filepath.Join(s.storeNarPath(), tfp)
 
 	_, span := tracer.Start(
 		ctx,
@@ -314,7 +339,7 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	)
 	defer span.End()
 
-	_, err := os.Stat(narPath)
+	_, err = os.Stat(narPath)
 
 	return err == nil
 }
@@ -322,7 +347,12 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 // GetNar returns nar from the store.
 // NOTE: The caller must close the returned io.ReadCloser!
 func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
-	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+	tfp, err := narURL.ToFilePath()
+	if err != nil {
+		return 0, nil, err
+	}
+
+	narPath := filepath.Join(s.storeNarPath(), tfp)
 
 	_, span := tracer.Start(
 		ctx,
@@ -354,7 +384,12 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 // PutNar puts the nar in the store.
 func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
-	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+	tfp, err := narURL.ToFilePath()
+	if err != nil {
+		return 0, err
+	}
+
+	narPath := filepath.Join(s.storeNarPath(), tfp)
 
 	_, span := tracer.Start(
 		ctx,
@@ -406,7 +441,12 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 
 // DeleteNar deletes the nar from the store.
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
-	narPath := filepath.Join(s.storeNarPath(), narURL.ToFilePath())
+	tfp, err := narURL.ToFilePath()
+	if err != nil {
+		return err
+	}
+
+	narPath := filepath.Join(s.storeNarPath(), tfp)
 
 	_, span := tracer.Start(
 		ctx,
