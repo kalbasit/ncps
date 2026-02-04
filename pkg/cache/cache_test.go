@@ -770,6 +770,40 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 	}
 }
 
+func testPutNarInfoDeadlock(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		c, _, _, _, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c.SetRecordAgeIgnoreTouch(0)
+
+		// Hash '252' is known to collide with 'cache' shard (997)
+		// in the local sharded locker.
+		hash := "252"
+
+		// Create a valid NarInfo
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		// Put the NAR in the store first so checkAndFixNarInfo calls GetNar
+		narURL, err := nar.ParseURL(ni.URL)
+		require.NoError(t, err)
+
+		narContent := []byte(testdata.Nar1.NarText)
+		require.NoError(t, c.PutNar(context.Background(), narURL, io.NopCloser(bytes.NewReader(narContent))))
+
+		// Now call PutNarInfo with a timeout. If it deadlocks, the timeout will trigger.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+		err = c.PutNarInfo(ctx, hash, r)
+
+		// It should NOT deadlock and NOT timeout
+		assert.NoError(t, err, "PutNarInfo should not deadlock or timeout")
+	}
+}
+
 func testDeleteNarInfo(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		c, _, _, dir, _, cleanup := factory(t)
@@ -2648,6 +2682,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoWithoutSignature", testGetNarInfoWithoutSignature(factory))
 	t.Run("GetNarInfo", testGetNarInfo(factory))
 	t.Run("PutNarInfo", testPutNarInfo(factory))
+	t.Run("PutNarInfoDeadlock", testPutNarInfoDeadlock(factory))
 	t.Run("DeleteNarInfo", testDeleteNarInfo(factory))
 	t.Run("GetNar", testGetNar(factory))
 	t.Run("PutNar", testPutNar(factory))

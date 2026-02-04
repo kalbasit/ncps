@@ -1884,7 +1884,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	// Use hash-specific lock to prevent concurrent writes of the same narinfo
 	lockKey := fmt.Sprintf("narinfo:%s", hash)
 
-	return c.withWriteLock(ctx, "PutNarInfo", lockKey, func() error {
+	err := c.withWriteLock(ctx, "PutNarInfo", lockKey, func() error {
 		narInfo, err := narinfo.Parse(r)
 		if err != nil {
 			return fmt.Errorf("error parsing narinfo: %w", err)
@@ -1901,13 +1901,6 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 			return fmt.Errorf("error storing in database: %w", err)
 		}
 
-		if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
-			zerolog.Ctx(ctx).
-				Warn().
-				Err(err).
-				Msg("failed to fix narinfo file size after PutNarInfo")
-		}
-
 		// Cleanup legacy narinfo from storage if it exists.
 		// This handles the race condition where PutNarInfo finishes before a background
 		// migration can trigger.
@@ -1922,6 +1915,18 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Msg("failed to fix narinfo file size after PutNarInfo")
+	}
+
+	return nil
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
