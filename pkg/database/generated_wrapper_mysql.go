@@ -534,6 +534,21 @@ func (w *mysqlWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullSt
 	return res, nil
 }
 
+func (w *mysqlWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error) {
+	res, err := w.adapter.GetNarInfoHashesToChunk(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetNarInfoHashesToChunkRow, len(res))
+	for i, v := range res {
+		items[i] = GetNarInfoHashesToChunkRow(v)
+	}
+
+	return items, nil
+}
+
 func (w *mysqlWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
 	if err != nil {

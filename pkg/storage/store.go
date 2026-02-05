@@ -55,6 +55,9 @@ type NarInfoStore interface {
 
 	// DeleteNarInfo deletes the narinfo from the store.
 	DeleteNarInfo(ctx context.Context, hash string) error
+
+	// WalkNarInfos walks all narinfos in the store and calls fn for each one.
+	WalkNarInfos(ctx context.Context, fn func(hash string) error) error
 }
 
 // NarStore represents a store capable of storing nars.

@@ -526,6 +526,21 @@ func (w *sqliteWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullS
 	return res, nil
 }
 
+func (w *sqliteWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error) {
+	res, err := w.adapter.GetNarInfoHashesToChunk(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetNarInfoHashesToChunkRow, len(res))
+	for i, v := range res {
+		items[i] = GetNarInfoHashesToChunkRow(v)
+	}
+
+	return items, nil
+}
+
 func (w *sqliteWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
 	if err != nil {

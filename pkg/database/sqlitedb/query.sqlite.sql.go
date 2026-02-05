@@ -1088,6 +1088,53 @@ func (q *Queries) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString)
 	return items, nil
 }
 
+const getNarInfoHashesToChunk = `-- name: GetNarInfoHashesToChunk :many
+SELECT ni.hash, ni.url
+FROM narinfos ni
+LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
+WHERE ni.url IS NOT NULL
+  AND (nf.id IS NULL OR nf.total_chunks = 0)
+ORDER BY ni.hash
+`
+
+type GetNarInfoHashesToChunkRow struct {
+	Hash string
+	URL  sql.NullString
+}
+
+// Get all narinfo hashes that have a URL (migrated) but whose NAR is not yet chunked.
+//
+//	SELECT ni.hash, ni.url
+//	FROM narinfos ni
+//	LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+//	LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
+//	WHERE ni.url IS NOT NULL
+//	  AND (nf.id IS NULL OR nf.total_chunks = 0)
+//	ORDER BY ni.hash
+func (q *Queries) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNarInfoHashesToChunk)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNarInfoHashesToChunkRow
+	for rows.Next() {
+		var i GetNarInfoHashesToChunkRow
+		if err := rows.Scan(&i.Hash, &i.URL); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNarInfoReferences = `-- name: GetNarInfoReferences :many
 SELECT reference
 FROM narinfo_references

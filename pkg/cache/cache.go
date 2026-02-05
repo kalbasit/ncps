@@ -752,10 +752,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 		hasNarInStore := c.narStore.HasNar(ctx, narURL)
 
+		var err error
+
 		hasNar := hasNarInStore
 		if !hasNar {
-			var err error
-
 			hasNar, err = c.HasNarInChunks(ctx, narURL)
 			if err != nil {
 				return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
@@ -763,11 +763,9 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		}
 
 		if hasNar {
-			metricAttrs = append(metricAttrs,
-				attribute.String("result", "hit"),
-			)
-
-			var err error
+			if hasNarInStore {
+				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
+			}
 
 			size, reader, err = c.serveNarFromStorageViaPipe(ctx, &narURL, hasNarInStore)
 			if err != nil {
@@ -843,7 +841,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			return ctx.Err()
 		}
 
-		err := ds.getError()
+		err = ds.getError()
 		if err != nil {
 			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
@@ -1756,6 +1754,17 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 				attribute.String("source", "database"),
 			)
 
+			c.cdcMu.RLock()
+			cdcEnabled := c.cdcEnabled
+			c.cdcMu.RUnlock()
+
+			if cdcEnabled {
+				narURL, err := nar.ParseURL(narInfo.URL)
+				if err == nil {
+					c.BackgroundMigrateNarToChunks(ctx, narURL)
+				}
+			}
+
 			return nil
 		} else if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
 			return fmt.Errorf("error fetching narinfo from database: %w", err)
@@ -2246,6 +2255,14 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		// Migrate narinfos from storage to the database.
 		if !nir.URL.Valid {
 			c.backgroundMigrateNarInfo(ctx, hash, ni)
+		}
+
+		c.cdcMu.RLock()
+		cdcEnabled := c.cdcEnabled
+		c.cdcMu.RUnlock()
+
+		if cdcEnabled {
+			c.BackgroundMigrateNarToChunks(ctx, narURL)
 		}
 
 		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
@@ -4415,6 +4432,17 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 	}
 
 	return nil
+}
+
+// maybeBackgroundMigrateNarToChunks checks if CDC is enabled and triggers background migration.
+func (c *Cache) maybeBackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL) {
+	c.cdcMu.RLock()
+	cdcEnabled := c.cdcEnabled
+	c.cdcMu.RUnlock()
+
+	if cdcEnabled {
+		c.BackgroundMigrateNarToChunks(ctx, narURL)
+	}
 }
 
 // BackgroundMigrateNarToChunks migrates a traditional NAR blob to content-defined chunks in the background.
