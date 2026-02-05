@@ -59,7 +59,7 @@ CREATE TABLE `config` (
 CREATE TABLE `nar_file_chunks` (
   `nar_file_id` bigint(20) NOT NULL,
   `chunk_id` bigint(20) NOT NULL,
-  `chunk_index` int(11) NOT NULL,
+  `chunk_index` bigint(20) NOT NULL,
   PRIMARY KEY (`nar_file_id`,`chunk_index`),
   KEY `idx_nar_file_chunks_chunk_id` (`chunk_id`),
   CONSTRAINT `nar_file_chunks_ibfk_1` FOREIGN KEY (`nar_file_id`) REFERENCES `nar_files` (`id`) ON DELETE CASCADE,
@@ -82,7 +82,7 @@ CREATE TABLE `nar_files` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT NULL,
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
-  `total_chunks` int(11) NOT NULL DEFAULT 0,
+  `total_chunks` bigint(20) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_nar_files_hash_compression_query` (`hash`,`compression`,`query`) USING HASH,
   KEY `idx_nar_files_last_accessed_at` (`last_accessed_at`)
