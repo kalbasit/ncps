@@ -210,39 +210,25 @@ func testCDCGetNarInfo(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 		assert.Positive(t, count, "chunks should exist in database")
 
-		// Verify NAR file record exists and has chunks
-		hasChunks, err := c.HasNarInChunks(ctx, nu)
+		// Store a narinfo that references this NAR
+		niText := `StorePath: /nix/store/test-path
+URL: nar/testnarinfo1.nar
+Compression: none
+FileHash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+FileSize: 52
+NarHash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+NarSize: 52
+`
+		err = c.PutNarInfo(ctx, "testnarinfohash", io.NopCloser(strings.NewReader(niText)))
 		require.NoError(t, err)
-		assert.True(t, hasChunks, "NAR should be marked as chunked")
 
-		// Now simulate what happens when GetNarInfo is called:
-		// The NAR metadata exists in the database, but the NAR does NOT exist
-		// as a whole file in storage (it's stored as chunks instead).
-		// GetNarInfo should check for chunks and NOT purge the metadata.
+		// Now call GetNarInfo. Since the NAR is stored as chunks and NOT as a whole file,
+		// the old version of getNarInfoFromDatabase would fail to find it and purge the narinfo.
+		_, err = c.GetNarInfo(ctx, "testnarinfohash")
+		require.NoError(t, err, "GetNarInfo should succeed even if NAR is only in chunks")
 
-		// First, store a narinfo that references this NAR
-		// (In a real scenario, this would come from upstream)
-		// For this test, we'll directly verify that the chunks exist
-
-		// Attempt to get the NAR - this should work without errors
-		size, rc, err := c.GetNar(ctx, nu)
-		require.NoError(t, err, "GetNar should succeed with CDC chunks")
-
-		defer rc.Close()
-
-		data, err := io.ReadAll(rc)
-		require.NoError(t, err)
-		assert.Equal(t, content, string(data), "content should match")
-		assert.Equal(t, int64(len(content)), size, "size should match")
-
-		// Verify that the chunks still exist (were not purged)
-		countAfter, err := db.GetChunkCount(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, count, countAfter, "chunk count should not have changed")
-
-		// Verify NAR is still marked as chunked
-		hasChunksAfter, err := c.HasNarInChunks(ctx, nu)
-		require.NoError(t, err)
-		assert.True(t, hasChunksAfter, "NAR should still be marked as chunked")
+		// Verify that the narinfo still exists in the database
+		_, err = c.GetNarInfo(ctx, "testnarinfohash")
+		require.NoError(t, err, "GetNarInfo should still succeed (not purged)")
 	}
 }
