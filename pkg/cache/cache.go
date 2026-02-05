@@ -2338,8 +2338,18 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 		return nil, err
 	}
 
-	// Verify Nar file exists in storage
-	if !c.narStore.HasNar(ctx, *narURL) && !c.hasUpstreamJob(narURL.Hash) {
+	// Verify Nar file exists in storage (either as whole file or chunks)
+	hasNar := c.narStore.HasNar(ctx, *narURL)
+	if !hasNar {
+		hasNarInChunks, err := c.HasNarInChunks(ctx, *narURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if nar exists in chunks: %w", err)
+		}
+
+		hasNar = hasNarInChunks
+	}
+
+	if !hasNar && !c.hasUpstreamJob(narURL.Hash) {
 		zerolog.Ctx(ctx).
 			Error().
 			Msg("narinfo was found in the database but no nar was found in storage, requesting a purge")
