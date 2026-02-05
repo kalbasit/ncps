@@ -294,17 +294,21 @@ def main():
             f"--server-addr=:{port}",
         ]
 
-        if args.cache_url:
-            for url in args.cache_url:
-                cmd.append(f"--cache-upstream-url={url}")
-        else:
-            cmd.append("--cache-upstream-url=https://cache.nixos.org")
+        if bool(args.cache_url) != bool(args.cache_public_key):
+            log(
+                "⚠️  WARNING: --cache-url and --cache-public-key should be provided together. Using defaults for the missing one may lead to errors.",
+                YELLOW,
+            )
 
-        if args.cache_public_key:
-            for key in args.cache_public_key:
-                cmd.append(f"--cache-upstream-public-key={key}")
-        else:
-            cmd.append("--cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=")
+        urls = args.cache_url or ["https://cache.nixos.org"]
+        for url in urls:
+            cmd.append(f"--cache-upstream-url={url}")
+
+        keys = args.cache_public_key or [
+            "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        ]
+        for key in keys:
+            cmd.append(f"--cache-upstream-public-key={key}")
 
         if args.analytics_reporting_samples:
             cmd.append("--analytics-reporting-samples")
