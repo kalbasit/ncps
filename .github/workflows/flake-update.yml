@@ -31,8 +31,17 @@ jobs:
           push: --set-upstream origin "update-flake-lock" --force
       - uses: thomaseizinger/create-pull-request@1.4.0
         if: ${{ steps.commit.outputs.pushed == 'true' }}
+        id: create_pr
         with:
           github_token: ${{ secrets.GHA_PAT_TOKEN }}
           head: "update-flake-lock"
           base: main
           title: "chore: update flake.lock"
+      - name: automerge
+        if: ${{ steps.create_pr.outputs.created }}
+        id: automerge
+        uses: "pascalgn/automerge-action@v0.16.4"
+        env:
+          GITHUB_TOKEN: "${{ secrets.GHA_PAT_TOKEN }}"
+          MERGE_METHOD: "squash"
+          PULL_REQUEST: "${{ steps.create_pr.outputs.number }}"
