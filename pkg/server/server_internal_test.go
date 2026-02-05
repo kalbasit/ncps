@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	cacheName       = "cache.example.com"
-	downloadLockTTL = 5 * time.Minute
-	cacheLockTTL    = 30 * time.Minute
+	cacheName           = "cache.example.com"
+	downloadLockTTL     = 5 * time.Minute
+	downloadPollTimeout = 30 * time.Second
+	cacheLockTTL        = 30 * time.Minute
 )
 
 // serverFactory is a function that returns a clean, ready-to-use Server instance
@@ -43,7 +44,7 @@ func setupSQLiteServer(t *testing.T) (*Server, func()) {
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
 	s := New(c)
@@ -72,7 +73,7 @@ func setupPostgresServer(t *testing.T) (*Server, func()) {
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
 	s := New(c)
@@ -102,7 +103,7 @@ func setupMySQLServer(t *testing.T) (*Server, func()) {
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := cache.New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
 	s := New(c)

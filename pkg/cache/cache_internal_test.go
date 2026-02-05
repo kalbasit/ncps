@@ -29,9 +29,10 @@ import (
 )
 
 const (
-	cacheName       = "cache.example.com"
-	downloadLockTTL = 5 * time.Minute
-	cacheLockTTL    = 30 * time.Minute
+	cacheName           = "cache.example.com"
+	downloadLockTTL     = 5 * time.Minute
+	downloadPollTimeout = 30 * time.Second
+	cacheLockTTL        = 30 * time.Minute
 )
 
 var errTest = errors.New("test error")
@@ -71,7 +72,7 @@ func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, s
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
 	cleanup := func() {
@@ -98,7 +99,7 @@ func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store,
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
 	cleanup := func() {
@@ -143,7 +144,7 @@ func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, st
 	cacheLocker := locklocal.NewRWLocker()
 
 	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
-		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
 	cleanup := func() {
@@ -1442,7 +1443,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 				cacheLocker := locklocal.NewRWLocker()
 
 				c, err := New(ctx, cacheName, db, localStore, localStore, localStore, "",
-					downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+					downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 				require.NoError(t, err)
 
 				// Parse test narinfo

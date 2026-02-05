@@ -56,7 +56,7 @@ func TestSecurity(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := cache.New(context.Background(), "localhost", db, ls, ls, ls, "",
-		locklocal.NewLocker(), locklocal.NewRWLocker(), time.Minute, time.Minute)
+		locklocal.NewLocker(), locklocal.NewRWLocker(), time.Minute, 30*time.Second, time.Minute)
 	require.NoError(t, err)
 
 	uc, err := upstream.New(context.Background(), testhelper.MustParseURL(t, upstreamServer.URL), nil)

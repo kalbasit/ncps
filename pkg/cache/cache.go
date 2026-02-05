@@ -346,10 +346,11 @@ type Cache struct {
 	recordAgeIgnoreTouch time.Duration
 
 	// Lock abstraction (can be local or distributed)
-	downloadLocker  lock.Locker
-	cacheLocker     lock.RWLocker
-	downloadLockTTL time.Duration
-	cacheLockTTL    time.Duration
+	downloadLocker      lock.Locker
+	cacheLocker         lock.RWLocker
+	downloadLockTTL     time.Duration
+	downloadPollTimeout time.Duration
+	cacheLockTTL        time.Duration
 
 	// upstreamJobs is used to store in-progress jobs for pulling nars from
 	// upstream cache so incoming requests for the same nar can find and wait
@@ -449,6 +450,7 @@ func New(
 	downloadLocker lock.Locker,
 	cacheLocker lock.RWLocker,
 	downloadLockTTL time.Duration,
+	downloadPollTimeout time.Duration,
 	cacheLockTTL time.Duration,
 ) (*Cache, error) {
 	c := &Cache{
@@ -462,6 +464,7 @@ func New(
 		downloadLocker:       downloadLocker,
 		cacheLocker:          cacheLocker,
 		downloadLockTTL:      downloadLockTTL,
+		downloadPollTimeout:  downloadPollTimeout,
 		cacheLockTTL:         cacheLockTTL,
 		upstreamJobs:         make(map[string]*downloadState),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
@@ -3221,10 +3224,9 @@ func (c *Cache) coordinateDownload(
 		// Lock acquisition failed, likely because another server is downloading.
 		// Poll storage periodically to check if the download completes.
 		// This handles distributed coordination where servers don't share the upstreamJobs map.
-		const (
-			pollInterval = 200 * time.Millisecond
-			pollTimeout  = 30 * time.Second
-		)
+		const pollInterval = 200 * time.Millisecond
+
+		pollTimeout := c.downloadPollTimeout
 
 		pollCtx, cancel := context.WithTimeout(coordCtx, pollTimeout)
 		defer cancel()

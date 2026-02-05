@@ -238,6 +238,7 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 				downloadLocker,
 				cacheLocker,
 				5*time.Minute,
+				30*time.Second,
 				30*time.Minute,
 			)
 			require.NoError(t, err)
@@ -347,6 +348,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 			downloadLocker,
 			cacheLocker,
 			5*time.Minute,
+			30*time.Second, // downloadPollTimeout
 			30*time.Minute,
 		)
 		require.NoError(t, err)
@@ -388,6 +390,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 				downloadLocker,
 				cacheLocker,
 				5*time.Minute,
+				30*time.Second, // downloadPollTimeout
 				30*time.Minute,
 			)
 			require.NoError(t, err)
@@ -544,6 +547,7 @@ func testPutNarInfoConcurrentSharedNar(factory distributedDBFactory) func(*testi
 					downloadLocker,
 					cacheLocker,
 					5*time.Minute,
+					30*time.Second, // downloadPollTimeout
 					30*time.Minute,
 				)
 				require.NoError(t, err)
@@ -754,6 +758,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 			downloadLocker,
 			cacheLocker,
 			5*time.Minute,
+			30*time.Second, // downloadPollTimeout
 			30*time.Minute,
 		)
 		require.NoError(t, err)
