@@ -899,13 +899,24 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 		db, sharedDir, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
-		// Use an existing entry from testdata (entry 0 is typically a large one)
-		// We'll use testdata entries which are already set up properly
+		// Generate a large NAR (12MB) to ensure CDC chunking takes time
+		// Using testdata.Entries[0] (50KB) is too small and causes flaky tests
+		const largeNARSize = 12 * 1024 * 1024
+
+		narData := make([]byte, largeNARSize)
+		_, err := rand.Read(narData)
+		require.NoError(t, err)
+
+		// Start test server
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		// Use first entry from testdata
-		largeNarEntry := testdata.Entries[0]
+		// Generate a custom entry for the large NAR
+		largeNarEntry, err := testdata.GenerateEntry(t, narData)
+		require.NoError(t, err)
+
+		// Add the entry to the server
+		ts.AddEntry(largeNarEntry)
 
 		narURL := nar.URL{
 			Hash:        largeNarEntry.NarHash,
