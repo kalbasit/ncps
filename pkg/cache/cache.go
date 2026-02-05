@@ -963,6 +963,31 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	return size, reader, nil
 }
 
+// GetNarFileSize returns the size of the NAR file from the database if it exists.
+func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.GetNarFileSize",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", nu.String()),
+		),
+	)
+	defer span.End()
+
+	nr, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        nu.Hash,
+		Compression: nu.Compression.String(),
+		Query:       nu.Query.Encode(),
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	//nolint:gosec // G115: File size is non-negative
+	return int64(nr.FileSize), nil
+}
+
 // PutNar records the NAR (given as an io.Reader) into the store.
 func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) error {
 	ctx, span := tracer.Start(

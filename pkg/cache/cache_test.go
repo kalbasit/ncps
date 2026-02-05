@@ -1005,6 +1005,49 @@ func testPutNar(factory cacheFactory) func(*testing.T) {
 	}
 }
 
+func testGetNarFileSize(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		c, db, _, _, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c.SetRecordAgeIgnoreTouch(0)
+
+		t.Run("nar file does not exist", func(t *testing.T) {
+			nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
+			_, err := c.GetNarFileSize(context.Background(), nu)
+			require.Error(t, err)
+			assert.True(t, database.IsNotFoundError(err))
+		})
+
+		t.Run("nar file exists in database", func(t *testing.T) {
+			// Put NarInfo first to create the database records
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// Put the NAR to update the file size
+			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: testdata.Nar1.NarCompression}
+			r2 := io.NopCloser(strings.NewReader(testdata.Nar1.NarText))
+			require.NoError(t, c.PutNar(context.Background(), nu, r2))
+
+			// Get the file size
+			size, err := c.GetNarFileSize(context.Background(), nu)
+			require.NoError(t, err)
+
+			// Verify it matches the expected size
+			assert.Equal(t, int64(len(testdata.Nar1.NarText)), size)
+
+			// Verify against database
+			var dbSize int64
+
+			err = db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM nar_files WHERE hash = ? AND compression = ? AND query = ?"),
+				nu.Hash, nu.Compression.String(), nu.Query.Encode()).Scan(&dbSize)
+			require.NoError(t, err)
+			assert.Equal(t, size, dbSize)
+		})
+	}
+}
+
 func testGetNarInfoMigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
@@ -2693,6 +2736,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("DeleteNarInfo", testDeleteNarInfo(factory))
 	t.Run("GetNar", testGetNar(factory))
 	t.Run("PutNar", testPutNar(factory))
+	t.Run("GetNarFileSize", testGetNarFileSize(factory))
 	t.Run("GetNarInfoMigratesInvalidURL", testGetNarInfoMigratesInvalidURL(factory))
 	t.Run("GetNarInfoConcurrentMigrationAttempts", testGetNarInfoConcurrentMigrationAttempts(factory))
 	t.Run("DeleteNar", testDeleteNar(factory))
