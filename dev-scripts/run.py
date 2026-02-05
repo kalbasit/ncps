@@ -161,6 +161,11 @@ def main():
         description="Run ncps instances with configurable backends."
     )
     parser.add_argument(
+        "--enable-cdc",
+        action="store_true",
+        help="Enable the CDC feature",
+    )
+    parser.add_argument(
         "--mode",
         choices=["single", "ha"],
         default="single",
@@ -191,6 +196,16 @@ def main():
         "--analytics-reporting-samples",
         action="store_true",
         help="Enable printing analytics samples to stdout",
+    )
+    parser.add_argument(
+        "--cache-url",
+        action="append",
+        help="URL for the cache backend (can be specified multiple times)",
+    )
+    parser.add_argument(
+        "--cache-public-key",
+        action="append",
+        help="Public key for cache validation (can be specified multiple times)",
     )
 
     args = parser.parse_args()
@@ -276,15 +291,31 @@ def main():
             "--cache-allow-put-verb",
             f"--cache-hostname=cache-{i}.example.com",
             f"--cache-database-url='{db_url}'",
-            "--cache-upstream-url=https://cache.nixos.org",
-            "--cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=",
             f"--server-addr=:{port}",
         ]
+
+        if bool(args.cache_url) != bool(args.cache_public_key):
+            log(
+                "⚠️  WARNING: --cache-url and --cache-public-key should be provided together. Using defaults for the missing one may lead to errors.",
+                YELLOW,
+            )
+
+        urls = args.cache_url or ["https://cache.nixos.org"]
+        for url in urls:
+            cmd.append(f"--cache-upstream-url={url}")
+
+        keys = args.cache_public_key or [
+            "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        ]
+        for key in keys:
+            cmd.append(f"--cache-upstream-public-key={key}")
 
         if args.analytics_reporting_samples:
             cmd.append("--analytics-reporting-samples")
 
         # Storage Args
+        if args.enable_cdc:
+            cmd.append("--cache-cdc-enabled")
         if args.storage == "local":
             cmd.extend(["--cache-storage-local", local_storage_path])
         else:
