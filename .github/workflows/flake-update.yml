@@ -38,6 +38,7 @@ jobs:
           base: main
           title: "chore: update flake.lock"
       - name: enable automerge
+        if: ${{ steps.create_pr.outputs.created }}
         run: gh pr merge --squash --auto "${{ steps.create_pr.outputs.number }}"
         env:
           GH_TOKEN: "${{ secrets.GHA_PAT_TOKEN }}"
