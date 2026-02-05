@@ -531,7 +531,6 @@ func (s *Store) setupDirs() error {
 	allPaths := []string{
 		s.configPath(),
 		s.storePath(),
-		s.storeNarInfoPath(),
 		s.storeNarPath(),
 		s.storeTMPPath(),
 	}

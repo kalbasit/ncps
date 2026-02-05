@@ -101,7 +101,6 @@ func TestNew(t *testing.T) {
 		dirs := []string{
 			"config",
 			"store",
-			filepath.Join("store", "narinfo"),
 			filepath.Join("store", "nar"),
 			filepath.Join("store", "tmp"),
 		}
