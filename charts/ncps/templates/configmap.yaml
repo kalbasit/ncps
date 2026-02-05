@@ -22,6 +22,8 @@ data:
         schedule: {{ .Values.config.cache.lruSchedule | quote }}
         timezone: {{ .Values.config.cache.lruTimezone | quote }}
       {{- end }}
+      download:
+        poll-timeout: {{ .Values.config.cache.downloadPollTimeout | quote }}
       temp-path: {{ .Values.config.cache.tempPath | quote }}
       {{- if .Values.config.cdc.enabled }}
       cdc:

@@ -132,6 +132,10 @@
             "lruTimezone": {
               "type": "string"
             },
+            "downloadPollTimeout": {
+              "type": "string",
+              "description": "Timeout for polling storage when waiting for download completion"
+            },
             "tempPath": {
               "type": "string"
             }

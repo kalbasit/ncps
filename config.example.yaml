@@ -34,6 +34,10 @@ cache:
   allow-put-verb: true
   # The hostname of the cache server
   hostname: "ncps.mycompany.tld"
+  # Download configuration
+  download:
+    # Timeout for polling storage when waiting for download completion by another server
+    poll-timeout: 30s
   # The URL of the database
   # Supports multiple database engines via URL scheme:
   #   SQLite:     sqlite:/var/lib/ncps/db/db.sqlite
