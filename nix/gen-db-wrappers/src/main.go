@@ -313,6 +313,59 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 			return dict, nil
 		},
 		"hasSuffix": strings.HasSuffix,
+		"convertReturn": func(targetType string, valVar string) string {
+			canonicalStruct, ok := structs[targetType]
+			if !ok {
+				return fmt.Sprintf("%s(%s)", targetType, valVar)
+			}
+			engineStruct, ok := engData.Structs[targetType]
+			if !ok {
+				return fmt.Sprintf("%s(%s)", targetType, valVar)
+			}
+
+			needsConversion := false
+			for _, cField := range canonicalStruct.Fields {
+				found := false
+				for _, ef := range engineStruct.Fields {
+					if ef.Name == cField.Name {
+						if cField.Type != ef.Type {
+							needsConversion = true
+						}
+						found = true
+						break
+					}
+				}
+				if !found || needsConversion {
+					needsConversion = true
+					break
+				}
+			}
+
+			if !needsConversion {
+				return fmt.Sprintf("%s(%s)", targetType, valVar)
+			}
+
+			var lines []string
+			lines = append(lines, fmt.Sprintf("%s{", targetType))
+			for _, cField := range canonicalStruct.Fields {
+				for _, eField := range engineStruct.Fields {
+					if eField.Name == cField.Name {
+						if cField.Type == eField.Type {
+							lines = append(lines, fmt.Sprintf("%s: %s.%s,", cField.Name, valVar, cField.Name))
+						} else if cField.Type == "sql.NullInt32" && eField.Type == "sql.NullInt64" {
+							lines = append(lines, fmt.Sprintf("%s: sql.NullInt32{Int32: int32(%s.%s.Int64), Valid: %s.%s.Valid},", cField.Name, valVar, cField.Name, valVar, cField.Name))
+						} else if cField.Type == "sql.NullInt64" && eField.Type == "sql.NullInt32" {
+							lines = append(lines, fmt.Sprintf("%s: sql.NullInt64{Int64: int64(%s.%s.Int32), Valid: %s.%s.Valid},", cField.Name, valVar, cField.Name, valVar, cField.Name))
+						} else {
+							lines = append(lines, fmt.Sprintf("%s: %s(%s.%s),", cField.Name, cField.Type, valVar, cField.Name))
+						}
+						break
+					}
+				}
+			}
+			lines = append(lines, "}")
+			return strings.Join(lines, "\n")
+		},
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
@@ -399,7 +452,13 @@ func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targ
 							// This applies when types are identical, or when they differ but the target is a non-castable
 							// struct. We perform a direct assignment and let the compiler catch any potential incompatibilities.
 							if sourceField.Type == targetField.Type || isStructType(targetField.Type) {
-								fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
+								if sourceField.Type == "sql.NullInt64" && targetField.Type == "sql.NullInt32" {
+									fields = append(fields, fmt.Sprintf("%s: sql.NullInt32{Int32: int32(%s.%s.Int64), Valid: %s.%s.Valid}", targetField.Name, param.Name, sourceField.Name, param.Name, sourceField.Name))
+								} else if sourceField.Type == "sql.NullInt32" && targetField.Type == "sql.NullInt64" {
+									fields = append(fields, fmt.Sprintf("%s: sql.NullInt64{Int64: int64(%s.%s.Int32), Valid: %s.%s.Valid}", targetField.Name, param.Name, sourceField.Name, param.Name, sourceField.Name))
+								} else {
+									fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
+								}
 							} else {
 								// Type cast if needed (for primitive types)
 								fields = append(fields, fmt.Sprintf("%s: %s(%s.%s)", targetField.Name, targetField.Type, param.Name, sourceField.Name))
@@ -735,7 +794,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 				// Convert Slice of Domain Structs
 				items := make([]{{.Method.ReturnElem}}, len(res))
 				for i, v := range res {
-					items[i] = {{.Method.ReturnElem}}(v)
+					items[i] = {{convertReturn .Method.ReturnElem "v"}}
 				}
 
 				return items{{if .Method.ReturnsError}}, nil{{end}}
@@ -747,7 +806,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- else if isDomainStruct .Method.ReturnElem}}
 			// Convert Single Domain Struct
 
-			return {{.Method.ReturnElem}}(res){{if .Method.ReturnsError}}, nil{{end}}
+			return {{convertReturn .Method.ReturnElem "res"}}{{if .Method.ReturnsError}}, nil{{end}}
 
 		{{- else if .Method.HasValue}}
 			// Return Primitive / *sql.DB / etc

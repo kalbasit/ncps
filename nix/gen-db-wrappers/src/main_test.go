@@ -282,6 +282,9 @@ func TestWrapperTemplate(t *testing.T) {
 			return joinParamsCall(params, engPkg, targetMethod, structs, structs)
 		},
 		"hasSuffix": strings.HasSuffix,
+		"convertReturn": func(targetType string, valVar string) string {
+			return fmt.Sprintf("%s(%s)", targetType, valVar)
+		},
 	}
 
 	tmpl, err := template.New("wrapper").Funcs(funcMap).Parse(wrapperTemplate)
