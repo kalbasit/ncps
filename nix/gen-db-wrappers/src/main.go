@@ -397,8 +397,13 @@ func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targ
 						if found {
 							if sourceField.Type == targetField.Type {
 								fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
+							} else if isStructType(targetField.Type) {
+								// For struct types (like sql.NullInt64), we can't use simple casting.
+								// If types don't match, we need to handle conversion explicitly.
+								// For now, just assign directly and let the compiler catch incompatibilities.
+								fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
 							} else {
-								// Type cast if needed
+								// Type cast if needed (for primitive types)
 								fields = append(fields, fmt.Sprintf("%s: %s(%s.%s)", targetField.Name, targetField.Type, param.Name, sourceField.Name))
 							}
 						}
@@ -493,6 +498,16 @@ func isNumeric(t string) bool {
 	case "byte", "rune":
 		return true
 	}
+	return false
+}
+
+func isStructType(t string) bool {
+	// Check if the type is a struct type that cannot be cast with simple function call syntax
+	// Common examples: sql.NullInt64, sql.NullString, sql.NullBool, sql.NullTime, etc.
+	if strings.HasPrefix(t, "sql.Null") {
+		return true
+	}
+	// Add other struct types as needed
 	return false
 }
 
