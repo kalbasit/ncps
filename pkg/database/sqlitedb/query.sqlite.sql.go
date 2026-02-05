@@ -151,7 +151,7 @@ type CreateNarFileParams struct {
 	Compression string
 	Query       string
 	FileSize    uint64
-	TotalChunks int32
+	TotalChunks int64
 }
 
 // CreateNarFile
@@ -470,7 +470,7 @@ WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?
 
 type GetChunkByNarFileIDAndIndexParams struct {
 	NarFileID  int64
-	ChunkIndex int32
+	ChunkIndex int64
 }
 
 // GetChunkByNarFileIDAndIndex
@@ -1354,7 +1354,7 @@ ON CONFLICT (nar_file_id, chunk_index) DO NOTHING
 type LinkNarFileToChunkParams struct {
 	NarFileID  int64
 	ChunkID    int64
-	ChunkIndex int32
+	ChunkIndex int64
 }
 
 // LinkNarFileToChunk
@@ -1489,7 +1489,7 @@ WHERE id = ?
 `
 
 type UpdateNarFileTotalChunksParams struct {
-	TotalChunks int32
+	TotalChunks int64
 	ID          int64
 }
 

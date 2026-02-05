@@ -86,7 +86,7 @@ ALTER SEQUENCE public.config_id_seq OWNED BY public.config.id;
 CREATE TABLE public.nar_file_chunks (
     nar_file_id bigint NOT NULL,
     chunk_id bigint NOT NULL,
-    chunk_index integer NOT NULL
+    chunk_index bigint NOT NULL
 );
 
 
@@ -103,7 +103,7 @@ CREATE TABLE public.nar_files (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone,
     last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    total_chunks integer DEFAULT 0 NOT NULL,
+    total_chunks bigint DEFAULT 0 NOT NULL,
     CONSTRAINT nar_files_file_size_check CHECK ((file_size >= 0))
 );
 

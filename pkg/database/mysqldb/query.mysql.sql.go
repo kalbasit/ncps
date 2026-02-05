@@ -131,7 +131,7 @@ type CreateNarFileParams struct {
 	Compression string
 	Query       string
 	FileSize    uint64
-	TotalChunks int32
+	TotalChunks int64
 }
 
 // CreateNarFile
@@ -416,7 +416,7 @@ WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?
 
 type GetChunkByNarFileIDAndIndexParams struct {
 	NarFileID  int64
-	ChunkIndex int32
+	ChunkIndex int64
 }
 
 // GetChunkByNarFileIDAndIndex
@@ -783,7 +783,7 @@ type GetNarFileByHashAndCompressionAndQueryRow struct {
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
-	TotalChunks    int32
+	TotalChunks    int64
 }
 
 // GetNarFileByHashAndCompressionAndQuery
@@ -823,7 +823,7 @@ type GetNarFileByIDRow struct {
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
-	TotalChunks    int32
+	TotalChunks    int64
 }
 
 // GetNarFileByID
@@ -1323,7 +1323,7 @@ INSERT IGNORE INTO nar_file_chunks (
 type LinkNarFileToChunkParams struct {
 	NarFileID  int64
 	ChunkID    int64
-	ChunkIndex int32
+	ChunkIndex int64
 }
 
 // LinkNarFileToChunk
@@ -1455,7 +1455,7 @@ WHERE id = ?
 `
 
 type UpdateNarFileTotalChunksParams struct {
-	TotalChunks int32
+	TotalChunks int64
 	ID          int64
 }
 

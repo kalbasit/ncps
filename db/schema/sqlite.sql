@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS "nar_files" (
     "query" TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP,
-    last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_chunks INTEGER NOT NULL DEFAULT 0,
+    last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_chunks BIGINT NOT NULL DEFAULT 0,
     UNIQUE (hash, compression, "query")
 );
 CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);

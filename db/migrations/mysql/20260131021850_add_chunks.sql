@@ -10,7 +10,7 @@ CREATE TABLE chunks (
 CREATE TABLE nar_file_chunks (
     nar_file_id BIGINT NOT NULL,
     chunk_id BIGINT NOT NULL,
-    chunk_index INT NOT NULL,
+    chunk_index BIGINT NOT NULL,
     PRIMARY KEY (nar_file_id, chunk_index),
     FOREIGN KEY (nar_file_id) REFERENCES nar_files (id) ON DELETE CASCADE,
     FOREIGN KEY (chunk_id) REFERENCES chunks (id) ON DELETE CASCADE

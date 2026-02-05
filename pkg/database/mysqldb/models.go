@@ -34,13 +34,13 @@ type NarFile struct {
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
 	Query          string
-	TotalChunks    int32
+	TotalChunks    int64
 }
 
 type NarFileChunk struct {
 	NarFileID  int64
 	ChunkID    int64
-	ChunkIndex int32
+	ChunkIndex int64
 }
 
 type NarInfo struct {

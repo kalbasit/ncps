@@ -1259,7 +1259,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 	var (
 		totalSize  int64
-		chunkCount int32
+		chunkCount int64
 	)
 
 	for {
@@ -4120,7 +4120,7 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 	var (
 		narFileID   int64
 		totalSize   int64
-		totalChunks int32
+		totalChunks int64
 	)
 
 	err := c.withTransaction(ctx, "getNarFromChunks.init", func(qtx database.Querier) error {
@@ -4183,7 +4183,7 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 
 // streamCompleteChunks streams all chunks for a NAR that has completed chunking.
 // This is the fast path where all chunks are available immediately.
-func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID int64, totalChunks int32) error {
+func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID int64, totalChunks int64) error {
 	// Get all chunks at once
 	chunkHashes := make([]string, 0, totalChunks)
 
@@ -4222,7 +4222,7 @@ func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID
 // streamProgressiveChunks streams chunks as they become available during an in-progress chunking operation.
 // This allows concurrent downloads while another instance is still chunking the NAR.
 func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64) error {
-	chunkIndex := int32(0)
+	chunkIndex := int64(0)
 	pollInterval := 200 * time.Millisecond
 	maxWaitPerChunk := 30 * time.Second
 
@@ -4230,7 +4230,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 		// Try to get chunk at current index
 		var chunkHash string
 
-		var totalChunks int32
+		var totalChunks int64
 
 		chunkWaitStart := time.Now()
 

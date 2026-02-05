@@ -10,7 +10,7 @@ CREATE TABLE chunks (
 CREATE TABLE nar_file_chunks (
     nar_file_id BIGINT NOT NULL REFERENCES nar_files (id) ON DELETE CASCADE,
     chunk_id BIGINT NOT NULL REFERENCES chunks (id) ON DELETE CASCADE,
-    chunk_index INTEGER NOT NULL,
+    chunk_index BIGINT NOT NULL,
     PRIMARY KEY (nar_file_id, chunk_index)
 );
 CREATE INDEX idx_nar_file_chunks_chunk_id ON nar_file_chunks (chunk_id);
