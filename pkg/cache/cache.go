@@ -1023,7 +1023,19 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			// Already exists is not an error for PUT - return success
 			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, skipping")
 
+			// Check if we need to update a corresponding narinfo (if it exists)
+			if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
+				zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfo file size after PutNar (already exists)")
+			}
+
 			return nil
+		}
+
+		if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to fix narinfo file size after PutNar")
 		}
 
 		return err
@@ -1416,6 +1428,13 @@ func (c *Cache) pullNarIntoStore(
 	// Signal that the asset is now in final storage and the distributed lock can be released
 	// This prevents the race condition where other instances check hasAsset() before storage completes
 	ds.storedOnce.Do(func() { close(ds.stored) })
+
+	if err := c.checkAndFixNarInfosForNar(ctx, *narURL); err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Msg("failed to fix narinfo file size after pullNarIntoStore")
+	}
 
 	if enableZSTD && written > 0 {
 		narInfo.FileSize = uint64(written)
@@ -1865,7 +1884,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	// Use hash-specific lock to prevent concurrent writes of the same narinfo
 	lockKey := fmt.Sprintf("narinfo:%s", hash)
 
-	return c.withWriteLock(ctx, "PutNarInfo", lockKey, func() error {
+	err := c.withWriteLock(ctx, "PutNarInfo", lockKey, func() error {
 		narInfo, err := narinfo.Parse(r)
 		if err != nil {
 			return fmt.Errorf("error parsing narinfo: %w", err)
@@ -1896,6 +1915,18 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Msg("failed to fix narinfo file size after PutNarInfo")
+	}
+
+	return nil
 }
 
 // DeleteNarInfo deletes the narInfo from the store.
@@ -2489,6 +2520,132 @@ func (c *Cache) storeInDatabase(
 
 		return nil
 	})
+}
+
+func (c *Cache) fixNarInfoFileSize(
+	ctx context.Context,
+	hash string,
+	correctSize int64,
+) error {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.fixNarInfoFileSize",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.Int64("correct_size", correctSize),
+		),
+	)
+	defer span.End()
+
+	zerolog.Ctx(ctx).
+		Info().
+		Int64("correct_size", correctSize).
+		Msg("updating narinfo file size in the database")
+
+	return c.withTransaction(ctx, "fixNarInfoFileSize", func(qtx database.Querier) error {
+		return qtx.UpdateNarInfoFileSize(ctx, database.UpdateNarInfoFileSizeParams{
+			Hash:     hash,
+			FileSize: sql.NullInt64{Int64: correctSize, Valid: true},
+		})
+	})
+}
+
+// checkAndFixNarInfo checks if a NarInfo exists for the given hash, and if so,
+// ensures its FileSize matches the actual NAR size.
+func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
+	// First check if we have the NarInfo in DB using direct DB access
+	// to avoid higher-level cache logic (like purging or storage checks)
+	niRow, err := c.db.GetNarInfoByHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get narinfo from db: %w", err)
+	}
+
+	if !niRow.URL.Valid {
+		// No URL means not migrated or partial, can't check
+		return nil
+	}
+
+	nu, err := nar.ParseURL(niRow.URL.String)
+	if err != nil {
+		return fmt.Errorf("failed to parse nar url from narinfo: %w", err)
+	}
+
+	// Now get the actual NAR size. We only want to check the size if we already
+	// have the NAR in our store or in chunks. We don't want to pull the NAR
+	// from upstream just to check its size.
+	hasNar := c.narStore.HasNar(ctx, nu)
+	if !hasNar {
+		hasNarInChunks, err := c.HasNarInChunks(ctx, nu)
+		if err != nil {
+			return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
+		}
+
+		hasNar = hasNarInChunks
+	}
+
+	if !hasNar {
+		return nil
+	}
+
+	size, reader, err := c.GetNar(ctx, nu)
+	if err != nil {
+		// If the NAR is not found, we can't verify the size. This is not an
+		// error in this context, as the NAR might be uploaded later.
+		if errors.Is(err, storage.ErrNotFound) {
+			zerolog.Ctx(ctx).Debug().Msg("NAR not found, skipping file size check for now")
+
+			return nil
+		}
+		// Other errors (e.g., storage connectivity) should be reported.
+		return fmt.Errorf("failed to get nar: %w", err)
+	}
+
+	reader.Close()
+
+	if size == -1 {
+		// A size of -1 indicates a streaming download is in progress.
+		// We can't verify the final size yet, so we'll skip the check.
+		zerolog.Ctx(ctx).Debug().Msg("cannot verify narinfo file size while nar is streaming")
+
+		return nil
+	}
+
+	if size != niRow.FileSize.Int64 {
+		zerolog.Ctx(ctx).
+			Info().
+			Int64("current_size", niRow.FileSize.Int64).
+			Int64("actual_size", size).
+			Msg("mismatch detected, fixing narinfo file size")
+
+		return c.fixNarInfoFileSize(ctx, hash, size)
+	}
+
+	return nil
+}
+
+// checkAndFixNarInfosForNar finds all NarInfos pointing to the given NAR URL
+// and fixes their file size if needed.
+func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) error {
+	// The NarInfo URL usually matches the NAR URL.
+	hashes, err := c.db.GetNarInfoHashesByURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
+	if err != nil {
+		return fmt.Errorf("failed to get narinfo hashes by url: %w", err)
+	}
+
+	var errs []error
+
+	for _, hash := range hashes {
+		if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func (c *Cache) ensureNarFile(

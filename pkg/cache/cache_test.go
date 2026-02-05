@@ -1,6 +1,7 @@
 package cache_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -766,6 +767,47 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, testdata.Nar1.NarHash, hash)
 		})
+	}
+}
+
+func testPutNarInfoDeadlock(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		c, _, _, _, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c.SetRecordAgeIgnoreTouch(0)
+
+		// Hash '252' is chosen specifically because 'narinfo:252' and 'cache' both
+		// hash to shard 997 when using the default 1024 shards in the local
+		// locker. This collision is necessary to trigger the deadlock for this
+		// test, as Go's sync.RWMutex does not allow recursive read-after-write
+		// locking on the same mutex.
+		//
+		// NOTE: If the number of shards (numShards) in pkg/lock/local changes,
+		// this test might no longer reproduce the deadlock (it will pass even
+		// if the bug is reintroduced).
+		hash := "252"
+
+		// Create a valid NarInfo
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		// Put the NAR in the store first so checkAndFixNarInfo calls GetNar
+		narURL, err := nar.ParseURL(ni.URL)
+		require.NoError(t, err)
+
+		narContent := []byte(testdata.Nar1.NarText)
+		require.NoError(t, c.PutNar(context.Background(), narURL, io.NopCloser(bytes.NewReader(narContent))))
+
+		// Now call PutNarInfo with a timeout. If it deadlocks, the timeout will trigger.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+		err = c.PutNarInfo(ctx, hash, r)
+
+		// It should NOT deadlock and NOT timeout
+		assert.NoError(t, err, "PutNarInfo should not deadlock or timeout")
 	}
 }
 
@@ -2647,6 +2689,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoWithoutSignature", testGetNarInfoWithoutSignature(factory))
 	t.Run("GetNarInfo", testGetNarInfo(factory))
 	t.Run("PutNarInfo", testPutNarInfo(factory))
+	t.Run("PutNarInfoDeadlock", testPutNarInfoDeadlock(factory))
 	t.Run("DeleteNarInfo", testDeleteNarInfo(factory))
 	t.Run("GetNar", testGetNar(factory))
 	t.Run("PutNar", testPutNar(factory))
@@ -2672,4 +2715,183 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("NarStreaming", testNarStreaming(factory))
 	t.Run("GetNarInfoRaceConditionDuringMigrationDeletion", testGetNarInfoRaceConditionDuringMigrationDeletion(factory))
 	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
+	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
+	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
+}
+
+func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Run("checkAndFixNarInfo with missing NAR and upstream", func(t *testing.T) {
+			ts := testdata.NewTestServer(t, 40)
+			t.Cleanup(ts.Close)
+
+			c, _, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			})
+			require.NoError(t, err)
+
+			c.AddUpstreamCaches(newContext(), uc)
+
+			// Track upstream requests
+			var requestCount int
+
+			mu := sync.Mutex{}
+			handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+				if strings.Contains(r.URL.Path, ".nar") {
+					mu.Lock()
+
+					requestCount++
+
+					mu.Unlock()
+				}
+
+				return false // Let it continue to normal handlers
+			})
+
+			t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
+
+			// Wait for upstream caches to become available
+			<-c.GetHealthChecker().Trigger()
+
+			// 1. Put NarInfo
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// 2. Call CheckAndFixNarInfo - should NOT trigger upstream fetch
+			err = c.CheckAndFixNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+			require.NoError(t, err)
+
+			mu.Lock()
+
+			count := requestCount
+
+			mu.Unlock()
+			assert.Equal(t, 0, count, "should not have made any upstream NAR requests")
+		})
+
+		t.Run("checkAndFixNarInfo with missing NAR", func(t *testing.T) {
+			c, _, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			// 1. Put NarInfo
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// 2. Call CheckAndFixNarInfo - should NOT return error even though NAR is missing
+			err := c.CheckAndFixNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Run("PutNarInfo then PutNar with mismatch", func(t *testing.T) {
+			c, db, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// 1. Put NarInfo with WRONG size
+			ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, err)
+
+			originalSize := ni.FileSize
+			ni.FileSize = originalSize + 100 // Intentional mismatch
+
+			// Let's modify the text representation locally
+			lines := strings.Split(testdata.Nar1.NarInfoText, "\n")
+
+			var newLines []string
+
+			for _, line := range lines {
+				if strings.HasPrefix(line, "FileSize:") {
+					newLines = append(newLines, fmt.Sprintf("FileSize: %d", ni.FileSize))
+				} else if strings.HasPrefix(line, "Sig:") {
+					continue // Strip old signature
+				} else {
+					newLines = append(newLines, line)
+				}
+			}
+
+			wrongNarInfoText := strings.Join(newLines, "\n")
+
+			r := io.NopCloser(strings.NewReader(wrongNarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// Verify it's wrong in DB
+			var dbSize int64
+
+			err = db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&dbSize)
+			require.NoError(t, err)
+			assert.Equal(t, int64(ni.FileSize), dbSize) //nolint:gosec
+
+			// 2. Put Nar with CORRECT size
+
+			// We need the correct URL.
+			niValid, _ := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+			nu, _ := nar.ParseURL(niValid.URL)
+
+			ctx := context.Background()
+
+			// Just upload some bytes.
+			someContent := []byte("some arbitrary content")
+			err = c.PutNar(ctx, nu, io.NopCloser(bytes.NewReader(someContent)))
+			require.NoError(t, err)
+
+			// 3. Verify DB is updated to match actual upload size
+			err = db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&dbSize)
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be updated to match actual NAR size")
+		})
+
+		t.Run("PutNar then PutNarInfo with mismatch", func(t *testing.T) {
+			c, db, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// 1. Put Nar first
+			niValid, _ := narinfo.Parse(strings.NewReader(testdata.Nar2.NarInfoText))
+			nu, _ := nar.ParseURL(niValid.URL)
+
+			someContent := []byte("some other content")
+			require.NoError(t, c.PutNar(context.Background(), nu, io.NopCloser(bytes.NewReader(someContent))))
+
+			// 2. Put NarInfo with WRONG size
+			// Claim size is 999999
+			lines := strings.Split(testdata.Nar2.NarInfoText, "\n")
+
+			var newLines []string
+
+			for _, line := range lines {
+				if strings.HasPrefix(line, "FileSize:") {
+					newLines = append(newLines, "FileSize: 999999")
+				} else if strings.HasPrefix(line, "Sig:") {
+					continue
+				} else {
+					newLines = append(newLines, line)
+				}
+			}
+
+			wrongNarInfoText := strings.Join(newLines, "\n")
+
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar2.NarInfoHash,
+				io.NopCloser(strings.NewReader(wrongNarInfoText))))
+
+			// 3. Verify DB is corrected immediately
+			var dbSize int64
+
+			err := db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar2.NarInfoHash).Scan(&dbSize)
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be fixed immediately after PutNarInfo")
+		})
+	}
 }
