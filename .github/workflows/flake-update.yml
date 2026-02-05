@@ -1,0 +1,30 @@
+name: "Flake.lock: update Nix dependencies"
+on:
+  pull_request:
+  workflow_dispatch: # allows manual triggering
+  schedule:
+    - cron: "0 0 * * 0" # runs weekly on Sunday at 00:00
+jobs:
+  nix-flake-update:
+    permissions:
+      contents: write
+      id-token: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GHA_PAT_TOKEN }}
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v16
+        with:
+          name: ncps
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: DeterminateSystems/update-flake-lock@v28
+        with:
+          token: ${{ secrets.GHA_PAT_TOKEN }}
+          pr-title: "chore: update flake.lock"
+          pr-labels: |
+            dependencies
+            automated
