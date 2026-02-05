@@ -37,11 +37,8 @@ jobs:
           head: "update-flake-lock"
           base: main
           title: "chore: update flake.lock"
-      - name: automerge
+      - name: enable automerge
         if: ${{ steps.create_pr.outputs.created }}
-        id: automerge
-        uses: "pascalgn/automerge-action@v0.16.4"
+        run: gh pr merge --squash --auto "${{ steps.create_pr.outputs.number }}"
         env:
-          GITHUB_TOKEN: "${{ secrets.GHA_PAT_TOKEN }}"
-          MERGE_METHOD: "squash"
-          PULL_REQUEST: "${{ steps.create_pr.outputs.number }}"
+          GH_TOKEN: "${{ secrets.GHA_PAT_TOKEN }}"
