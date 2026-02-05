@@ -34,6 +34,7 @@ type NarFile struct {
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
+	TotalChunks    int32
 }
 
 type NarFileChunk struct {

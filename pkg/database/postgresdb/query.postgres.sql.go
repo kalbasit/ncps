@@ -8,6 +8,7 @@ package postgresdb
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -184,13 +185,13 @@ func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (Con
 
 const createNarFile = `-- name: CreateNarFile :one
 INSERT INTO nar_files (
-    hash, compression, query, file_size
+    hash, compression, query, file_size, total_chunks
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 ON CONFLICT (hash, compression, query) DO UPDATE SET
     updated_at = EXCLUDED.updated_at
-RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 `
 
 type CreateNarFileParams struct {
@@ -198,24 +199,26 @@ type CreateNarFileParams struct {
 	Compression string
 	Query       string
 	FileSize    uint64
+	TotalChunks int32
 }
 
 // CreateNarFile
 //
 //	INSERT INTO nar_files (
-//	    hash, compression, query, file_size
+//	    hash, compression, query, file_size, total_chunks
 //	) VALUES (
-//	    $1, $2, $3, $4
+//	    $1, $2, $3, $4, $5
 //	)
 //	ON CONFLICT (hash, compression, query) DO UPDATE SET
 //	    updated_at = EXCLUDED.updated_at
-//	RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+//	RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 func (q *Queries) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
 	row := q.db.QueryRowContext(ctx, createNarFile,
 		arg.Hash,
 		arg.Compression,
 		arg.Query,
 		arg.FileSize,
+		arg.TotalChunks,
 	)
 	var i NarFile
 	err := row.Scan(
@@ -227,6 +230,7 @@ func (q *Queries) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (N
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
+		&i.TotalChunks,
 	)
 	return i, err
 }
@@ -505,6 +509,37 @@ func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
 	return i, err
 }
 
+const getChunkByNarFileIDAndIndex = `-- name: GetChunkByNarFileIDAndIndex :one
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+FROM chunks c
+INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.nar_file_id = $1 AND nfc.chunk_index = $2
+`
+
+type GetChunkByNarFileIDAndIndexParams struct {
+	NarFileID  int64
+	ChunkIndex int32
+}
+
+// GetChunkByNarFileIDAndIndex
+//
+//	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+//	FROM chunks c
+//	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+//	WHERE nfc.nar_file_id = $1 AND nfc.chunk_index = $2
+func (q *Queries) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error) {
+	row := q.db.QueryRowContext(ctx, getChunkByNarFileIDAndIndex, arg.NarFileID, arg.ChunkIndex)
+	var i Chunk
+	err := row.Scan(
+		&i.ID,
+		&i.Hash,
+		&i.Size,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getChunkCount = `-- name: GetChunkCount :one
 SELECT CAST(COUNT(*) AS BIGINT) AS count
 FROM chunks
@@ -624,6 +659,17 @@ WHERE (
 ) <= $1
 `
 
+type GetLeastUsedNarFilesRow struct {
+	ID             int64
+	Hash           string
+	Compression    string
+	FileSize       uint64
+	Query          string
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
+}
+
 // NOTE: This query uses a correlated subquery which is not optimal for performance.
 // The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 // does not properly support filtering on window function results in subqueries.
@@ -636,15 +682,15 @@ WHERE (
 //	    WHERE n2.last_accessed_at < n1.last_accessed_at
 //	       OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 //	) <= $1
-func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
+func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNarFiles, fileSize)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NarFile
+	var items []GetLeastUsedNarFilesRow
 	for rows.Next() {
-		var i NarFile
+		var i GetLeastUsedNarFilesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
@@ -819,7 +865,7 @@ func (q *Queries) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg Get
 }
 
 const getNarFileByHashAndCompressionAndQuery = `-- name: GetNarFileByHashAndCompressionAndQuery :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 FROM nar_files
 WHERE hash = $1 AND compression = $2 AND query = $3
 `
@@ -832,7 +878,7 @@ type GetNarFileByHashAndCompressionAndQueryParams struct {
 
 // GetNarFileByHashAndCompressionAndQuery
 //
-//	SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+//	SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 //	FROM nar_files
 //	WHERE hash = $1 AND compression = $2 AND query = $3
 func (q *Queries) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
@@ -847,19 +893,20 @@ func (q *Queries) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, ar
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
+		&i.TotalChunks,
 	)
 	return i, err
 }
 
 const getNarFileByID = `-- name: GetNarFileByID :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 FROM nar_files
 WHERE id = $1
 `
 
 // GetNarFileByID
 //
-//	SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+//	SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 //	FROM nar_files
 //	WHERE id = $1
 func (q *Queries) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
@@ -874,6 +921,7 @@ func (q *Queries) GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
+		&i.TotalChunks,
 	)
 	return i, err
 }
@@ -885,15 +933,26 @@ INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 WHERE nnf.narinfo_id = $1
 `
 
+type GetNarFileByNarInfoIDRow struct {
+	ID             int64
+	Hash           string
+	Compression    string
+	FileSize       uint64
+	Query          string
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
+}
+
 // GetNarFileByNarInfoID
 //
 //	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
 //	FROM nar_files nf
 //	INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 //	WHERE nnf.narinfo_id = $1
-func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
+func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getNarFileByNarInfoID, narinfoID)
-	var i NarFile
+	var i GetNarFileByNarInfoIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Hash,
@@ -1210,21 +1269,32 @@ LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 WHERE ninf.narinfo_id IS NULL
 `
 
+type GetOrphanedNarFilesRow struct {
+	ID             int64
+	Hash           string
+	Compression    string
+	FileSize       uint64
+	Query          string
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
+}
+
 // Find files that have no relationship to any narinfo
 //
 //	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
 //	FROM nar_files nf
 //	LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 //	WHERE ninf.narinfo_id IS NULL
-func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
+func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error) {
 	rows, err := q.db.QueryContext(ctx, getOrphanedNarFiles)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NarFile
+	var items []GetOrphanedNarFilesRow
 	for rows.Next() {
-		var i NarFile
+		var i GetOrphanedNarFilesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
@@ -1458,6 +1528,27 @@ func (q *Queries) TouchNarInfo(ctx context.Context, hash string) (int64, error) 
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const updateNarFileTotalChunks = `-- name: UpdateNarFileTotalChunks :exec
+UPDATE nar_files
+SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
+WHERE id = $2
+`
+
+type UpdateNarFileTotalChunksParams struct {
+	TotalChunks int32
+	ID          int64
+}
+
+// UpdateNarFileTotalChunks
+//
+//	UPDATE nar_files
+//	SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
+//	WHERE id = $2
+func (q *Queries) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error {
+	_, err := q.db.ExecContext(ctx, updateNarFileTotalChunks, arg.TotalChunks, arg.ID)
+	return err
 }
 
 const updateNarInfoFileSize = `-- name: UpdateNarInfoFileSize :exec

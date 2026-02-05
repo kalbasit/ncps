@@ -48,9 +48,9 @@ type Querier interface {
 	//CreateNarFile
 	//
 	//  INSERT INTO nar_files (
-	//      hash, compression, `query`, file_size
+	//      hash, compression, `query`, file_size, total_chunks
 	//  ) VALUES (
-	//      ?, ?, ?, ?
+	//      ?, ?, ?, ?, ?
 	//  )
 	//  ON DUPLICATE KEY UPDATE
 	//      id = LAST_INSERT_ID(id),
@@ -130,6 +130,13 @@ type Querier interface {
 	//  FROM chunks
 	//  WHERE id = ?
 	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
+	//GetChunkByNarFileIDAndIndex
+	//
+	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+	//  FROM chunks c
+	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+	//  WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?
+	GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error)
 	//GetChunkCount
 	//
 	//  SELECT CAST(COUNT(*) AS SIGNED) AS count
@@ -203,13 +210,13 @@ type Querier interface {
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHashAndCompressionAndQuery
 	//
-	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at
+	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
 	//  FROM nar_files
 	//  WHERE hash = ? AND compression = ? AND `query` = ?
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (GetNarFileByHashAndCompressionAndQueryRow, error)
 	//GetNarFileByID
 	//
-	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at
+	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
 	//  FROM nar_files
 	//  WHERE id = ?
 	GetNarFileByID(ctx context.Context, id int64) (GetNarFileByIDRow, error)
@@ -349,6 +356,12 @@ type Querier interface {
 	//      updated_at = CURRENT_TIMESTAMP
 	//  WHERE hash = ?
 	TouchNarInfo(ctx context.Context, hash string) (int64, error)
+	//UpdateNarFileTotalChunks
+	//
+	//  UPDATE nar_files
+	//  SET total_chunks = ?, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = ?
+	UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error
 	//UpdateNarInfoFileSize
 	//
 	//  UPDATE narinfos

@@ -2762,6 +2762,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
 	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
 	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
+	t.Run("HasNarFileRecord", testHasNarFileRecord(factory))
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
@@ -2938,5 +2939,68 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be fixed immediately after PutNarInfo")
 		})
+	}
+}
+
+func testHasNarFileRecord(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, _, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Create a test NAR URL
+		narURL := nar.URL{
+			Hash:        "testnar123",
+			Compression: nar.CompressionTypeNone,
+		}
+
+		// Test 1: No NAR file record exists
+		exists, err := c.HasNarFileRecord(ctx, narURL)
+		require.NoError(t, err)
+		assert.False(t, exists, "should not find NAR file record that doesn't exist")
+
+		// Also verify HasNarInChunks returns false
+		hasChunks, err := c.HasNarInChunks(ctx, narURL)
+		require.NoError(t, err)
+		assert.False(t, hasChunks, "HasNarInChunks should also return false")
+
+		// Test 2: Insert NAR file record with total_chunks = 0 (simulating chunking in progress)
+		narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+			FileSize:    0,
+			TotalChunks: 0,
+		})
+		require.NoError(t, err)
+
+		// HasNarFileRecord should return true (record exists, even though chunking in progress)
+		exists, err = c.HasNarFileRecord(ctx, narURL)
+		require.NoError(t, err)
+		assert.True(t, exists, "should find NAR file record even with total_chunks=0")
+
+		// HasNarInChunks should return false (chunking not complete)
+		hasChunks, err = c.HasNarInChunks(ctx, narURL)
+		require.NoError(t, err)
+		assert.False(t, hasChunks, "HasNarInChunks should return false when total_chunks=0")
+
+		// Test 3: Update record to set total_chunks = 10 (chunking complete)
+		err = db.UpdateNarFileTotalChunks(ctx, database.UpdateNarFileTotalChunksParams{
+			ID:          narFile.ID,
+			TotalChunks: 10,
+		})
+		require.NoError(t, err)
+
+		// Now both should return true
+		exists, err = c.HasNarFileRecord(ctx, narURL)
+		require.NoError(t, err)
+		assert.True(t, exists, "should still find NAR file record with total_chunks>0")
+
+		hasChunks, err = c.HasNarInChunks(ctx, narURL)
+		require.NoError(t, err)
+		assert.True(t, hasChunks, "HasNarInChunks should return true when total_chunks>0")
 	}
 }

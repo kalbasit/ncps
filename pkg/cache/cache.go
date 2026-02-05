@@ -796,7 +796,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		ds.mu.Unlock()
 
 		hasNarInStore = c.narStore.HasNar(ctx, narURL)
-		hasNarInChunks, _ = c.HasNarInChunks(ctx, narURL)
+		hasNarInChunks, _ = c.HasNarFileRecord(ctx, narURL)
 
 		// If download is complete or NAR is in store, get from storage
 		if !canStream || hasNarInStore || hasNarInChunks {
@@ -1228,6 +1228,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			Compression: narURL.Compression.String(),
 			Query:       narURL.Query.Encode(),
 			FileSize:    fileSize,
+			TotalChunks: 0, // Mark as "in progress"
 		})
 		if err != nil {
 			return err
@@ -1258,7 +1259,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 	var (
 		totalSize  int64
-		chunkCount int
+		chunkCount int32
 	)
 
 	for {
@@ -1271,7 +1272,17 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			}
 		case chunkMetadata, ok := <-chunksChan:
 			if !ok {
-				// All chunks processed.
+				// All chunks processed - mark as complete.
+				err := c.withTransaction(ctx, "storeNarWithCDC.MarkComplete", func(qtx database.Querier) error {
+					return qtx.UpdateNarFileTotalChunks(ctx, database.UpdateNarFileTotalChunksParams{
+						ID:          narFileID,
+						TotalChunks: chunkCount,
+					})
+				})
+				if err != nil {
+					return 0, fmt.Errorf("error marking chunking complete: %w", err)
+				}
+
 				return totalSize, nil
 			}
 
@@ -1306,8 +1317,8 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 				err = qtx.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
 					NarFileID: narFileID,
 					ChunkID:   ch.ID,
-					//nolint:gosec // G115: Chunk count is bounded by file size
-					ChunkIndex: int32(chunkCount),
+
+					ChunkIndex: chunkCount,
 				})
 				if err != nil {
 					return fmt.Errorf("error linking chunk: %w", err)
@@ -1520,12 +1531,25 @@ func (c *Cache) serveNarFromStorageViaPipe(
 		// Copy from storage to pipe
 		_, copyErr := io.Copy(pipeWriter, storageReader)
 		if copyErr != nil {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(copyErr).
-				Str("nar_url", narURL.String()).
-				Int64("storage_size", storageSize).
-				Msg("error copying NAR from storage to pipe")
+			// Check if this is a benign "pipe closed" error (client disconnected early)
+			// This commonly happens when the client receives all data and closes the connection
+			// before the background goroutine finishes writing.
+			if errors.Is(copyErr, io.ErrClosedPipe) || strings.Contains(copyErr.Error(), "closed pipe") {
+				zerolog.Ctx(ctx).
+					Debug().
+					Err(copyErr).
+					Str("nar_url", narURL.String()).
+					Int64("storage_size", storageSize).
+					Msg("pipe closed during NAR copy (client likely disconnected)")
+			} else {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(copyErr).
+					Str("nar_url", narURL.String()).
+					Int64("storage_size", storageSize).
+					Msg("error copying NAR from storage to pipe")
+			}
+
 			pipeWriter.CloseWithError(copyErr)
 		}
 	})
@@ -2096,9 +2120,15 @@ func (c *Cache) prePullNar(
 		false,
 		func(ctx context.Context) bool {
 			hasInStore := c.narStore.HasNar(ctx, *narURL)
-			hasInChunks, _ := c.HasNarInChunks(ctx, *narURL)
+			if hasInStore {
+				return true
+			}
 
-			return hasInStore || hasInChunks
+			// Check if NAR file record exists (even if chunking in progress)
+			// This allows progressive streaming to work
+			hasInChunks, _ := c.HasNarFileRecord(ctx, *narURL)
+
+			return hasInChunks
 		},
 		func(ds *downloadState) {
 			c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
@@ -4036,36 +4066,43 @@ func parseValidHash(hash sql.NullString, fieldName string) (*nixhash.HashWithEnc
 	return h, nil
 }
 
-// HasNarInChunks returns true if the NAR is already in chunks.
+// HasNarInChunks returns true if the NAR is already in chunks and chunking is complete.
 func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error) {
-	var count int64
+	nr, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        narURL.Hash,
+		Compression: narURL.Compression.String(),
+		Query:       narURL.Query.Encode(),
+	})
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return false, nil
+		}
 
-	err := c.withTransaction(ctx, "hasNarInChunks", func(qtx database.Querier) error {
-		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		return false, err
+	}
+
+	return nr.TotalChunks > 0, nil
+}
+
+// HasNarFileRecord checks if a NAR file record exists in the database,
+// regardless of chunking completion status. This is used for coordination
+// to allow progressive streaming while chunking is in progress.
+func (c *Cache) HasNarFileRecord(ctx context.Context, narURL nar.URL) (bool, error) {
+	_, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx,
+		database.GetNarFileByHashAndCompressionAndQueryParams{
 			Hash:        narURL.Hash,
 			Compression: narURL.Compression.String(),
 			Query:       narURL.Query.Encode(),
 		})
-		if err != nil {
-			if database.IsNotFoundError(err) {
-				return nil
-			}
-
-			return err
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return false, nil
 		}
 
-		// Check if this nar file has chunks
-		chunks, err := qtx.GetChunksByNarFileID(ctx, nr.ID)
-		if err != nil {
-			return err
-		}
+		return false, err
+	}
 
-		count = int64(len(chunks))
-
-		return nil
-	})
-
-	return count > 0, err
+	return true, nil
 }
 
 func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, io.ReadCloser, error) {
@@ -4079,12 +4116,14 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 	)
 	defer span.End()
 
+	// Query initial state
 	var (
+		narFileID   int64
 		totalSize   int64
-		chunkHashes []string
+		totalChunks int32
 	)
 
-	err := c.withTransaction(ctx, "getNarFromChunks", func(qtx database.Querier) error {
+	err := c.withTransaction(ctx, "getNarFromChunks.init", func(qtx database.Querier) error {
 		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
 			Hash:        narURL.Hash,
 			Compression: narURL.Compression.String(),
@@ -4094,17 +4133,10 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 			return err
 		}
 
+		narFileID = nr.ID
 		//nolint:gosec // G115: File size is non-negative
 		totalSize = int64(nr.FileSize)
-
-		chunks, err := qtx.GetChunksByNarFileID(ctx, nr.ID)
-		if err != nil {
-			return err
-		}
-
-		for _, ch := range chunks {
-			chunkHashes = append(chunkHashes, ch.Hash)
-		}
+		totalChunks = nr.TotalChunks
 
 		// Touch the NAR file
 		latValue, err := nr.LastAccessedAt.Value()
@@ -4126,36 +4158,149 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		return 0, nil, err
 	}
 
-	if len(chunkHashes) == 0 {
-		return 0, nil, storage.ErrNotFound
-	}
-
-	// Create a pipe for reassembly
 	pr, pw := io.Pipe()
 
 	analytics.SafeGo(ctx, func() {
 		defer pw.Close()
 
-		for _, hash := range chunkHashes {
-			rc, err := c.chunkStore.GetChunk(ctx, hash)
-			if err != nil {
-				pw.CloseWithError(fmt.Errorf("error fetching chunk %s: %w", hash, err))
+		var streamErr error
 
-				return
-			}
+		if totalChunks > 0 {
+			// Fast path: All chunks complete
+			streamErr = c.streamCompleteChunks(ctx, pw, narFileID, totalChunks)
+		} else {
+			// Progressive path: Stream as chunks appear
+			streamErr = c.streamProgressiveChunks(ctx, pw, narFileID)
+		}
 
-			if _, err := io.Copy(pw, rc); err != nil {
-				rc.Close()
-				pw.CloseWithError(fmt.Errorf("error copying chunk %s: %w", hash, err))
-
-				return
-			}
-
-			rc.Close()
+		if streamErr != nil {
+			pw.CloseWithError(streamErr)
 		}
 	})
 
 	return totalSize, pr, nil
+}
+
+// streamCompleteChunks streams all chunks for a NAR that has completed chunking.
+// This is the fast path where all chunks are available immediately.
+func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID int64, totalChunks int32) error {
+	// Get all chunks at once
+	chunkHashes := make([]string, 0, totalChunks)
+
+	chunks, err := c.db.GetChunksByNarFileID(ctx, narFileID)
+	if err != nil {
+		return fmt.Errorf("error getting chunks: %w", err)
+	}
+
+	for _, ch := range chunks {
+		chunkHashes = append(chunkHashes, ch.Hash)
+	}
+
+	if len(chunkHashes) != int(totalChunks) {
+		return fmt.Errorf("expected %d chunks but got %d: %w", totalChunks, len(chunkHashes), storage.ErrNotFound)
+	}
+
+	// Stream each chunk sequentially
+	for _, hash := range chunkHashes {
+		rc, err := c.chunkStore.GetChunk(ctx, hash)
+		if err != nil {
+			return fmt.Errorf("error fetching chunk %s: %w", hash, err)
+		}
+
+		if _, err := io.Copy(w, rc); err != nil {
+			rc.Close()
+
+			return fmt.Errorf("error copying chunk %s: %w", hash, err)
+		}
+
+		rc.Close()
+	}
+
+	return nil
+}
+
+// streamProgressiveChunks streams chunks as they become available during an in-progress chunking operation.
+// This allows concurrent downloads while another instance is still chunking the NAR.
+func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64) error {
+	chunkIndex := int32(0)
+	pollInterval := 200 * time.Millisecond
+	maxWaitPerChunk := 30 * time.Second
+
+	for {
+		// Try to get chunk at current index
+		var chunkHash string
+
+		var totalChunks int32
+
+		chunkWaitStart := time.Now()
+
+		for {
+			// Try to get chunk at current index first.
+			chunk, err := c.db.GetChunkByNarFileIDAndIndex(ctx, database.GetChunkByNarFileIDAndIndexParams{
+				NarFileID:  narFileID,
+				ChunkIndex: chunkIndex,
+			})
+			if err == nil {
+				chunkHash = chunk.Hash
+
+				break // Got the chunk, proceed to stream it.
+			} else if !database.IsNotFoundError(err) {
+				return fmt.Errorf("error querying chunk %d: %w", chunkIndex, err)
+			}
+
+			// Chunk not found, now check completion status.
+			// This avoids querying nar_files on every poll, only when a chunk is missing.
+			nr, err := c.db.GetNarFileByID(ctx, narFileID)
+			if err != nil {
+				return fmt.Errorf("error querying nar file: %w", err)
+			}
+
+			totalChunks = nr.TotalChunks
+
+			// Check if we're done.
+			if totalChunks > 0 && chunkIndex >= totalChunks {
+				return nil // All chunks streamed.
+			}
+
+			// Check timeout.
+			if time.Since(chunkWaitStart) > maxWaitPerChunk {
+				return fmt.Errorf(
+					"timeout waiting for chunk %d after %v: %w",
+					chunkIndex, maxWaitPerChunk, context.DeadlineExceeded,
+				)
+			}
+
+			// Wait and retry.
+			select {
+			case <-time.After(pollInterval):
+				// Continue polling.
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		// Stream this chunk
+		rc, err := c.chunkStore.GetChunk(ctx, chunkHash)
+		if err != nil {
+			return fmt.Errorf("error fetching chunk %s: %w", chunkHash, err)
+		}
+
+		if _, err := io.Copy(w, rc); err != nil {
+			_ = rc.Close()
+
+			return fmt.Errorf("error copying chunk %s: %w", chunkHash, err)
+		}
+
+		_ = rc.Close()
+
+		chunkIndex++
+
+		// After successfully streaming a chunk, we might already have totalChunks from the last query.
+		// If totalChunks was > 0, we can check if we're done.
+		if totalChunks > 0 && chunkIndex >= totalChunks {
+			return nil // All chunks streamed
+		}
+	}
 }
 
 // MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
