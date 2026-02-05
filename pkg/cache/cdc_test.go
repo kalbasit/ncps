@@ -47,6 +47,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("Put and Get with CDC", testCDCPutAndGet(factory))
 	t.Run("Deduplication", testCDCDeduplication(factory))
 	t.Run("Mixed Mode", testCDCMixedMode(factory))
+	t.Run("GetNarInfo with CDC chunks", testCDCGetNarInfo(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -172,5 +173,62 @@ func testCDCMixedMode(factory cacheFactory) func(*testing.T) {
 		d2, _ := io.ReadAll(rc2)
 		rc2.Close()
 		assert.Equal(t, chunkContent, string(d2))
+	}
+}
+
+// testCDCGetNarInfo verifies that GetNarInfo correctly checks for chunked NARs
+// when CDC is enabled, preventing false "NAR not found in storage" errors.
+// This is a regression test for the bug where GetNarInfo only checked for
+// whole NAR files and not for CDC chunks, causing unnecessary re-downloads.
+func testCDCGetNarInfo(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
+		require.NoError(t, err)
+
+		// Create and store a NAR with CDC enabled
+		content := "this is test content for GetNarInfo with CDC enabled"
+		nu := nar.URL{Hash: "testnarinfo1", Compression: nar.CompressionTypeNone}
+
+		err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+		require.NoError(t, err)
+
+		// Verify chunks exist in database
+		count, err := db.GetChunkCount(ctx)
+		require.NoError(t, err)
+		assert.Positive(t, count, "chunks should exist in database")
+
+		// Store a narinfo that references this NAR
+		niText := `StorePath: /nix/store/test-path
+URL: nar/testnarinfo1.nar
+Compression: none
+FileHash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+FileSize: 52
+NarHash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+NarSize: 52
+`
+		err = c.PutNarInfo(ctx, "testnarinfohash", io.NopCloser(strings.NewReader(niText)))
+		require.NoError(t, err)
+
+		// Now call GetNarInfo. Since the NAR is stored as chunks and NOT as a whole file,
+		// the old version of getNarInfoFromDatabase would fail to find it and purge the narinfo.
+		_, err = c.GetNarInfo(ctx, "testnarinfohash")
+		require.NoError(t, err, "GetNarInfo should succeed even if NAR is only in chunks")
+
+		// Verify that the narinfo still exists in the database
+		_, err = c.GetNarInfo(ctx, "testnarinfohash")
+		require.NoError(t, err, "GetNarInfo should still succeed (not purged)")
 	}
 }

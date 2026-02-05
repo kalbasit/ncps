@@ -751,9 +751,18 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			WithContext(ctx)
 
 		hasNarInStore := c.narStore.HasNar(ctx, narURL)
-		hasNarInChunks, _ := c.HasNarInChunks(ctx, narURL)
 
-		if hasNarInStore || hasNarInChunks {
+		hasNar := hasNarInStore
+		if !hasNar {
+			var err error
+
+			hasNar, err = c.HasNarInChunks(ctx, narURL)
+			if err != nil {
+				return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
+			}
+		}
+
+		if hasNar {
 			metricAttrs = append(metricAttrs,
 				attribute.String("result", "hit"),
 			)
@@ -796,7 +805,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		ds.mu.Unlock()
 
 		hasNarInStore = c.narStore.HasNar(ctx, narURL)
-		hasNarInChunks, _ = c.HasNarFileRecord(ctx, narURL)
+		hasNarInChunks, _ := c.HasNarFileRecord(ctx, narURL)
 
 		// If download is complete or NAR is in store, get from storage
 		if !canStream || hasNarInStore || hasNarInChunks {
@@ -2339,7 +2348,17 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 	}
 
 	// Verify Nar file exists in storage
-	if !c.narStore.HasNar(ctx, *narURL) && !c.hasUpstreamJob(narURL.Hash) {
+	hasNar := c.narStore.HasNar(ctx, *narURL)
+	if !hasNar {
+		var err error
+
+		hasNar, err = c.HasNarInChunks(ctx, *narURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if nar exists in chunks: %w", err)
+		}
+	}
+
+	if !hasNar && !c.hasUpstreamJob(narURL.Hash) {
 		zerolog.Ctx(ctx).
 			Error().
 			Msg("narinfo was found in the database but no nar was found in storage, requesting a purge")
@@ -2701,12 +2720,12 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 	// from upstream just to check its size.
 	hasNar := c.narStore.HasNar(ctx, nu)
 	if !hasNar {
-		hasNarInChunks, err := c.HasNarInChunks(ctx, nu)
+		var err error
+
+		hasNar, err = c.HasNarInChunks(ctx, nu)
 		if err != nil {
 			return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 		}
-
-		hasNar = hasNarInChunks
 	}
 
 	if !hasNar {
