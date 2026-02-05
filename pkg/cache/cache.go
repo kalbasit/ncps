@@ -4230,14 +4230,26 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 		// Try to get chunk at current index
 		var chunkHash string
 
-		var found bool
-
 		var totalChunks int32
 
 		chunkWaitStart := time.Now()
 
 		for {
-			// Check if chunking is complete
+			// Try to get chunk at current index first.
+			chunk, err := c.db.GetChunkByNarFileIDAndIndex(ctx, database.GetChunkByNarFileIDAndIndexParams{
+				NarFileID:  narFileID,
+				ChunkIndex: chunkIndex,
+			})
+			if err == nil {
+				chunkHash = chunk.Hash
+
+				break // Got the chunk, proceed to stream it.
+			} else if !database.IsNotFoundError(err) {
+				return fmt.Errorf("error querying chunk %d: %w", chunkIndex, err)
+			}
+
+			// Chunk not found, now check completion status.
+			// This avoids querying nar_files on every poll, only when a chunk is missing.
 			nr, err := c.db.GetNarFileByID(ctx, narFileID)
 			if err != nil {
 				return fmt.Errorf("error querying nar file: %w", err)
@@ -4245,30 +4257,12 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 			totalChunks = nr.TotalChunks
 
-			// Try to get chunk at current index
-			chunk, err := c.db.GetChunkByNarFileIDAndIndex(ctx, database.GetChunkByNarFileIDAndIndexParams{
-				NarFileID:  narFileID,
-				ChunkIndex: chunkIndex,
-			})
-			if err == nil {
-				chunkHash = chunk.Hash
-				found = true
-			} else if database.IsNotFoundError(err) {
-				found = false
-			} else {
-				return fmt.Errorf("error querying chunk %d: %w", chunkIndex, err)
-			}
-
-			if found {
-				break // Got the chunk, proceed to stream it
-			}
-
-			// Chunk not found - check if we're done
+			// Check if we're done.
 			if totalChunks > 0 && chunkIndex >= totalChunks {
-				return nil // All chunks streamed
+				return nil // All chunks streamed.
 			}
 
-			// Check timeout
+			// Check timeout.
 			if time.Since(chunkWaitStart) > maxWaitPerChunk {
 				return fmt.Errorf(
 					"timeout waiting for chunk %d after %v: %w",
@@ -4276,10 +4270,10 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				)
 			}
 
-			// Wait and retry
+			// Wait and retry.
 			select {
 			case <-time.After(pollInterval):
-				// Continue polling
+				// Continue polling.
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -4292,16 +4286,17 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 		}
 
 		if _, err := io.Copy(w, rc); err != nil {
-			rc.Close()
+			_ = rc.Close()
 
 			return fmt.Errorf("error copying chunk %s: %w", chunkHash, err)
 		}
 
-		rc.Close()
+		_ = rc.Close()
 
 		chunkIndex++
 
-		// After successfully streaming a chunk, check if we're done
+		// After successfully streaming a chunk, we might already have totalChunks from the last query.
+		// If totalChunks was > 0, we can check if we're done.
 		if totalChunks > 0 && chunkIndex >= totalChunks {
 			return nil // All chunks streamed
 		}
