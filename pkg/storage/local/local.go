@@ -97,6 +97,10 @@ func (s *Store) GetSecretKey(ctx context.Context) (signature.SecretKey, error) {
 
 // PutSecretKey stores the secret key in the store.
 func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error {
+	if err := os.MkdirAll(s.configPath(), dirMode); err != nil {
+		return fmt.Errorf("error creating the directory %q: %w", s.configPath(), err)
+	}
+
 	skPath := s.secretKeyPath()
 
 	_, span := tracer.Start(
@@ -248,6 +252,10 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 	nifP, err := helper.NarInfoFilePath(hash)
 	if err != nil {
 		return err
+	}
+
+	if err := os.MkdirAll(s.storeNarInfoPath(), dirMode); err != nil {
+		return fmt.Errorf("error creating the directories for %q: %w", s.storeNarInfoPath(), err)
 	}
 
 	narInfoPath := filepath.Join(s.storeNarInfoPath(), nifP)
@@ -529,7 +537,6 @@ func (s *Store) setupDirs() error {
 	}
 
 	allPaths := []string{
-		s.configPath(),
 		s.storePath(),
 		s.storeNarPath(),
 		s.storeTMPPath(),
