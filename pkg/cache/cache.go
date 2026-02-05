@@ -4344,7 +4344,8 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 		return ErrCDCDisabled
 	}
 
-	// Use a short-lived, non-blocking lock to coordinate migrations and prevent a "thundering herd".
+	// Use a non-blocking lock to coordinate migrations and prevent a "thundering herd".
+	// A long TTL is used because migrating a large NAR can be a long-running operation.
 	lockKey := "migration-to-chunks:" + narURL.Hash
 
 	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
