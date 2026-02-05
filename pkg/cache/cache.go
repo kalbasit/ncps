@@ -2871,6 +2871,17 @@ func MigrateNarInfo(
 		}
 	}()
 
+	// Double check if already migrated after acquiring the lock.
+	// This prevents multiple sequential migrations for the same narinfo.
+	nir, err := db.GetNarInfoByHash(ctx, hash)
+	if err == nil && nir.URL.Valid {
+		zerolog.Ctx(ctx).Debug().
+			Str("narinfo_hash", hash).
+			Msg("migration completed by another instance while waiting for lock")
+
+		return nil
+	}
+
 	log := zerolog.Ctx(ctx).With().Str("narinfo_hash", hash).Logger()
 
 	log.Info().Msg("migrating narinfo to database")
@@ -4333,7 +4344,31 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 		return ErrCDCDisabled
 	}
 
-	// 1. Check if already chunked
+	// Use a short-lived, non-blocking lock to coordinate migrations and prevent a "thundering herd".
+	lockKey := "migration-to-chunks:" + narURL.Hash
+
+	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to acquire migration lock: %w", err)
+	}
+
+	if !acquired {
+		// If lock is not acquired, another process is already handling it.
+		// This is not an error - the migration is being handled elsewhere.
+		zerolog.Ctx(ctx).Debug().
+			Str("nar_hash", narURL.Hash).
+			Msg("migration to chunks already in progress by another instance")
+
+		return nil
+	}
+
+	defer func() {
+		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Str("nar_hash", narURL.Hash).Msg("failed to release migration lock")
+		}
+	}()
+
+	// 1. Check if already chunked (Double-check after lock)
 	hasChunks, err := c.HasNarInChunks(ctx, narURL)
 	if err != nil {
 		return err
