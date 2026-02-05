@@ -97,7 +97,6 @@ func TestNew(t *testing.T) {
 		require.NoError(t, err)
 
 		dirs := []string{
-			"config",
 			"store",
 			filepath.Join("store", "nar"),
 			filepath.Join("store", "tmp"),
