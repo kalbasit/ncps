@@ -785,10 +785,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		// context but with the baseContext as parent; This context will not cancel
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
-		detachedCtx := trace.ContextWithSpan(
-			zerolog.Ctx(ctx).WithContext(c.baseContext),
-			trace.SpanFromContext(ctx),
-		)
+		detachedCtx := c.detachedContext(ctx)
 		ds := c.prePullNar(ctx, detachedCtx, &narURL, nil, nil, false)
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
@@ -1505,10 +1502,7 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	// Create a detached context that has the same span and logger as the main
 	// context but with the baseContext as parent. This context will not cancel
 	// when ctx is canceled, allowing storage reading to complete independently.
-	detachedCtx := trace.ContextWithSpan(
-		zerolog.Ctx(ctx).WithContext(c.baseContext),
-		trace.SpanFromContext(ctx),
-	)
+	detachedCtx := c.detachedContext(ctx)
 
 	// Get reader from storage using DETACHED context (synchronously to get size)
 	var (
@@ -1754,15 +1748,8 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 				attribute.String("source", "database"),
 			)
 
-			c.cdcMu.RLock()
-			cdcEnabled := c.cdcEnabled
-			c.cdcMu.RUnlock()
-
-			if cdcEnabled {
-				narURL, err := nar.ParseURL(narInfo.URL)
-				if err == nil {
-					c.BackgroundMigrateNarToChunks(ctx, narURL)
-				}
+			if narURL, err := nar.ParseURL(narInfo.URL); err == nil {
+				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
 			}
 
 			return nil
@@ -1922,10 +1909,7 @@ func (c *Cache) pullNarInfo(
 	// instead.
 	if enableZSTD {
 		// Use detached context to ensure NAR download completes even if narinfo context is canceled
-		detachedCtx := trace.ContextWithSpan(
-			zerolog.Ctx(ctx).WithContext(c.baseContext),
-			trace.SpanFromContext(ctx),
-		)
+		detachedCtx := c.detachedContext(ctx)
 		narDs := c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
 		<-narDs.done
 
@@ -1945,10 +1929,7 @@ func (c *Cache) pullNarInfo(
 		// context but with the baseContext as parent; This context will not cancel
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
-		detachedCtx := trace.ContextWithSpan(
-			zerolog.Ctx(ctx).WithContext(c.baseContext),
-			trace.SpanFromContext(ctx),
-		)
+		detachedCtx := c.detachedContext(ctx)
 		c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
 	}
 
@@ -3083,7 +3064,7 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) {
 	// We use a detached context because this is a background job.
 	// But we keep the trace from the request context.
-	detachedCtx := context.WithoutCancel(ctx)
+	detachedCtx := c.detachedContext(ctx)
 
 	c.backgroundWG.Add(1)
 	analytics.SafeGo(detachedCtx, func() {
@@ -4447,6 +4428,9 @@ func (c *Cache) maybeBackgroundMigrateNarToChunks(ctx context.Context, narURL na
 
 // BackgroundMigrateNarToChunks migrates a traditional NAR blob to content-defined chunks in the background.
 func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL) {
+	// create a detached context
+	ctx = c.detachedContext(ctx)
+
 	analytics.SafeGo(ctx, func() {
 		log := zerolog.Ctx(ctx).With().
 			Str("op", "BackgroundMigrateNarToChunks").
@@ -4486,4 +4470,11 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 		)
 		log.Info().Msg("successfully migrated nar to chunks")
 	})
+}
+
+func (c *Cache) detachedContext(ctx context.Context) context.Context {
+	return trace.ContextWithSpan(
+		zerolog.Ctx(ctx).WithContext(c.baseContext),
+		trace.SpanFromContext(ctx),
+	)
 }
