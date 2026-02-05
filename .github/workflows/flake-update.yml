@@ -30,7 +30,7 @@ jobs:
         id: commit
         with:
           default_author: github_actions
-          message: "chore: update flake.lock"
+          message: "chore: update flake.lock and run go mod tidy"
           fetch: false
           new_branch: "update-flake-lock"
           push: --set-upstream origin "update-flake-lock" --force
@@ -41,7 +41,7 @@ jobs:
           github_token: ${{ secrets.GHA_PAT_TOKEN }}
           head: "update-flake-lock"
           base: main
-          title: "chore: update flake.lock"
+          title: "chore: update flake.lock and run go mod tidy"
       - name: enable automerge
         if: ${{ steps.create_pr.outputs.created }}
         run: gh pr merge --squash --auto "${{ steps.create_pr.outputs.number }}"
