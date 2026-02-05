@@ -69,6 +69,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/kalbasit/fastcdc v0.0.0-20260204220928-2d0826dead66 h1:/18FGpGJI8qkjRPYlM0HsGLtHoIcco3pbaAlItKOHHM=
 github.com/kalbasit/fastcdc v0.0.0-20260204220928-2d0826dead66/go.mod h1:bbJjMstqw68vd0OVfKdw9xwiaAwAfOOHuHJoA9lKy0g=
+github.com/kalbasit/fastcdc v0.0.0-20260205024731-ac8af67f3997 h1:oe3LCixloPess1edyyOoQPB9DXq6HJkCg3kyPYA6k9w=
+github.com/kalbasit/fastcdc v0.0.0-20260205024731-ac8af67f3997/go.mod h1:bbJjMstqw68vd0OVfKdw9xwiaAwAfOOHuHJoA9lKy0g=
 github.com/klauspost/compress v1.18.3 h1:9PJRvfbmTabkOX8moIpXPbMMbYN60bWImDDU7L+/6zw=
 github.com/klauspost/compress v1.18.3/go.mod h1:R0h/fSBs8DE4ENlcrlib3PsXS61voFxhIs2DeRhCvJ4=
 github.com/klauspost/cpuid/v2 v2.0.1/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
