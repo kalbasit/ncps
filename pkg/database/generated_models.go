@@ -57,6 +57,7 @@ type CreateNarFileParams struct {
 	Compression string
 	Query       string
 	FileSize    uint64
+	TotalChunks int32
 }
 
 type CreateNarInfoParams struct {
@@ -79,6 +80,22 @@ type DeleteNarFileByHashParams struct {
 	Query       string
 }
 
+type GetChunkByNarFileIDAndIndexParams struct {
+	NarFileID  int64
+	ChunkIndex int32
+}
+
+type GetLeastUsedNarFilesRow struct {
+	ID             int64
+	Hash           string
+	Compression    string
+	FileSize       uint64
+	Query          string
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
+}
+
 type GetMigratedNarInfoHashesPaginatedParams struct {
 	Limit  int32
 	Offset int32
@@ -88,6 +105,28 @@ type GetNarFileByHashAndCompressionAndQueryParams struct {
 	Hash        string
 	Compression string
 	Query       string
+}
+
+type GetNarFileByNarInfoIDRow struct {
+	ID             int64
+	Hash           string
+	Compression    string
+	FileSize       uint64
+	Query          string
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
+}
+
+type GetOrphanedNarFilesRow struct {
+	ID             int64
+	Hash           string
+	Compression    string
+	FileSize       uint64
+	Query          string
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
 }
 
 type LinkNarFileToChunkParams struct {
@@ -110,6 +149,7 @@ type NarFile struct {
 	CreatedAt      time.Time
 	UpdatedAt      sql.NullTime
 	LastAccessedAt sql.NullTime
+	TotalChunks    int32
 }
 
 type NarInfo struct {
@@ -139,6 +179,11 @@ type TouchNarFileParams struct {
 	Hash        string
 	Compression string
 	Query       string
+}
+
+type UpdateNarFileTotalChunksParams struct {
+	TotalChunks int32
+	ID          int64
 }
 
 type UpdateNarInfoFileSizeParams struct {

@@ -20,12 +20,12 @@ WHERE id = $1;
 
 
 -- name: GetNarFileByHashAndCompressionAndQuery :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 FROM nar_files
 WHERE hash = $1 AND compression = $2 AND query = $3;
 
 -- name: GetNarFileByID :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
 FROM nar_files
 WHERE id = $1;
 
@@ -131,13 +131,13 @@ WHERE url = $1;
 
 -- name: CreateNarFile :one
 INSERT INTO nar_files (
-    hash, compression, query, file_size
+    hash, compression, query, file_size, total_chunks
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 ON CONFLICT (hash, compression, query) DO UPDATE SET
     updated_at = EXCLUDED.updated_at
-RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at;
+RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks;
 
 -- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
@@ -324,3 +324,14 @@ WHERE nfc.chunk_id IS NULL;
 -- name: DeleteChunkByID :exec
 DELETE FROM chunks
 WHERE id = $1;
+
+-- name: GetChunkByNarFileIDAndIndex :one
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+FROM chunks c
+INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.nar_file_id = $1 AND nfc.chunk_index = $2;
+
+-- name: UpdateNarFileTotalChunks :exec
+UPDATE nar_files
+SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
+WHERE id = $2;

@@ -49,13 +49,13 @@ type Querier interface {
 	//CreateNarFile
 	//
 	//  INSERT INTO nar_files (
-	//      hash, compression, "query", file_size
+	//      hash, compression, "query", file_size, total_chunks
 	//  ) VALUES (
-	//      ?, ?, ?, ?
+	//      ?, ?, ?, ?, ?
 	//  )
 	//  ON CONFLICT (hash, compression, "query") DO UPDATE SET
 	//      updated_at = excluded.updated_at
-	//  RETURNING id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
+	//  RETURNING id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
 	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error)
 	//CreateNarInfo
 	//
@@ -132,6 +132,13 @@ type Querier interface {
 	//  FROM chunks
 	//  WHERE id = ?
 	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
+	//GetChunkByNarFileIDAndIndex
+	//
+	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+	//  FROM chunks c
+	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+	//  WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?
+	GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error)
 	//GetChunkCount
 	//
 	//  SELECT CAST(COUNT(*) AS INTEGER) AS count
@@ -169,7 +176,7 @@ type Querier interface {
 	//      WHERE n2.last_accessed_at < n1.last_accessed_at
 	//          OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 	//  ) <= ?
-	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error)
+	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
@@ -205,13 +212,13 @@ type Querier interface {
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHashAndCompressionAndQuery
 	//
-	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
+	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
 	//  FROM nar_files
 	//  WHERE hash = ? AND compression = ? AND "query" = ?
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
 	//GetNarFileByID
 	//
-	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at
+	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
 	//  FROM nar_files
 	//  WHERE id = ?
 	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
@@ -221,7 +228,7 @@ type Querier interface {
 	//  FROM nar_files nf
 	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 	//  WHERE nnf.narinfo_id = ?
-	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error)
+	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error)
 	//GetNarFileCount
 	//
 	//  SELECT CAST(COUNT(*) AS INTEGER) AS count
@@ -287,7 +294,7 @@ type Querier interface {
 	//  FROM nar_files nf
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
-	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
+	GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error)
 	//GetTotalChunkSize
 	//
 	//  SELECT CAST(COALESCE(SUM(size), 0) AS INTEGER) AS total_size
@@ -353,6 +360,12 @@ type Querier interface {
 	//      updated_at = CURRENT_TIMESTAMP
 	//  WHERE hash = ?
 	TouchNarInfo(ctx context.Context, hash string) (int64, error)
+	//UpdateNarFileTotalChunks
+	//
+	//  UPDATE nar_files
+	//  SET total_chunks = ?, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = ?
+	UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error
 	//UpdateNarInfoFileSize
 	//
 	//  UPDATE narinfos

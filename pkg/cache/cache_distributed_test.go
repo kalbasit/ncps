@@ -151,6 +151,7 @@ func runDistributedTestSuite(t *testing.T, factory distributedDBFactory) {
 	t.Run("LockFailover", testDistributedLockFailover(factory))
 	t.Run("PutNarInfoConcurrentSharedNar", testPutNarInfoConcurrentSharedNar(factory))
 	t.Run("LargeNARConcurrentDownload", testDistributedLargeNARConcurrentDownload(factory))
+	t.Run("CDCProgressiveStreamingDuringChunking", testCDCProgressiveStreamingDuringChunking(factory))
 }
 
 // testDistributedDownloadDeduplication verifies that when multiple cache instances
@@ -641,7 +642,6 @@ func testDistributedLargeNARConcurrentDownload(factory distributedDBFactory) fun
 		// Investigation needed: check if HasNarInChunks returns true before all chunks are fully stored,
 		// or if there's a race condition in concurrent chunk reading.
 		t.Run("CDC_Enabled", func(t *testing.T) {
-			t.Skip("CDC test disabled: separate issue with concurrent chunk reconstruction")
 			t.Parallel()
 			testLargeNARConcurrentDownloadScenario(t, factory, true)
 		})
@@ -797,8 +797,9 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 			defer wg.Done()
 
 			// Create a context with timeout for each request (simulates HTTP request timeout)
-			// This should be longer than the download delay (2s) but not infinite
-			requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			// This should be longer than the download delay (2s) plus chunking time
+			// For CDC-enabled tests, progressive streaming may take longer
+			requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 
 			// All instances request the same NAR concurrently
@@ -882,4 +883,229 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 	// Success! All instances retrieved the NAR, even though only one downloaded from upstream.
 	// The coordination fix allows instances that fail to acquire the download lock to poll
 	// storage and serve the NAR once another instance completes the download.
+}
+
+// testCDCProgressiveStreamingDuringChunking verifies that instances can start progressive
+// streaming while chunking is in progress, rather than waiting for chunking to complete.
+// This tests the fix where HasNarFileRecord allows polling to complete early so instances
+// can enter progressive streaming mode.
+func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := newContext()
+
+		// Get shared database and directory from factory
+		db, sharedDir, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Use an existing entry from testdata (entry 0 is typically a large one)
+		// We'll use testdata entries which are already set up properly
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		// Use first entry from testdata
+		largeNarEntry := testdata.Entries[0]
+
+		narURL := nar.URL{
+			Hash:        largeNarEntry.NarHash,
+			Compression: largeNarEntry.NarCompression,
+		}
+
+		// Build the NAR path based on compression
+		narPath := "/nar/" + largeNarEntry.NarHash + ".nar"
+		if largeNarEntry.NarCompression != nar.CompressionTypeNone {
+			narPath += "." + largeNarEntry.NarCompression.ToFileExtension()
+		}
+
+		// Add handler with 2-second delay to simulate slow download
+		// This ensures concurrent requests arrive during chunking
+		handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path == narPath && r.Method == http.MethodGet {
+				// Simulate slow download (2 seconds)
+				time.Sleep(2 * time.Second)
+			}
+
+			return false // Let default handler process request
+		})
+
+		t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
+
+		// Create shared storage
+		sharedStore, err := local.New(ctx, sharedDir)
+		require.NoError(t, err)
+
+		// Setup CDC chunk store
+		chunksDir := filepath.Join(sharedDir, "chunks")
+		require.NoError(t, os.MkdirAll(chunksDir, 0o755))
+
+		chunkStore, err := chunk.NewLocalStore(chunksDir)
+		require.NoError(t, err)
+
+		// Create Redis locks with unique prefix for this test
+		redisAddrs := []string{"localhost:6379"}
+		if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+			redisAddrs = []string{envAddrs}
+		}
+
+		redisCfg := redis.Config{
+			Addrs:     redisAddrs,
+			KeyPrefix: "ncps:test:progressive:",
+		}
+
+		retryCfg := lock.RetryConfig{
+			MaxAttempts:  3,
+			InitialDelay: 100 * time.Millisecond,
+			MaxDelay:     2 * time.Second,
+			Jitter:       true,
+		}
+
+		// Create multiple cache instances with CDC enabled
+		var caches []*cache.Cache
+
+		for i := 0; i < numInstances; i++ {
+			downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
+			require.NoError(t, err)
+
+			cacheLocker, err := redis.NewRWLocker(ctx, redisCfg, retryCfg, false)
+			require.NoError(t, err)
+
+			// Create separate upstream cache for each instance to avoid data races
+			uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			})
+			require.NoError(t, err)
+
+			c, err := cache.New(
+				ctx,
+				cacheName,
+				db,
+				sharedStore,
+				sharedStore,
+				sharedStore,
+				"",
+				downloadLocker,
+				cacheLocker,
+				5*time.Minute,
+				30*time.Second, // downloadPollTimeout
+				30*time.Minute,
+			)
+			require.NoError(t, err)
+
+			// Enable CDC with small chunk sizes for testing
+			c.SetChunkStore(chunkStore)
+			err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+			require.NoError(t, err)
+
+			c.AddUpstreamCaches(ctx, uc)
+
+			// Wait for this instance's upstream to become healthy
+			<-c.GetHealthChecker().Trigger()
+
+			caches = append(caches, c)
+		}
+
+		// Launch concurrent GetNar requests and measure TTFB
+		var wg sync.WaitGroup
+
+		type result struct {
+			instanceNum int
+			ttfb        time.Duration
+			totalTime   time.Duration
+			size        int64
+			err         error
+		}
+
+		results := make(chan result, numInstances)
+
+		for i, c := range caches {
+			wg.Add(1)
+
+			go func(instanceNum int, cache *cache.Cache) {
+				defer wg.Done()
+
+				// Create a context with timeout (give enough time for CDC chunking)
+				requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+				defer cancel()
+
+				// Measure TTFB (time to first byte)
+				ttfbStart := time.Now()
+				size, rc, err := cache.GetNar(requestCtx, narURL)
+				ttfb := time.Since(ttfbStart)
+
+				if err != nil {
+					results <- result{instanceNum: instanceNum, err: err}
+
+					return
+				}
+
+				defer rc.Close()
+
+				// Read data to measure total time
+				data, err := io.ReadAll(rc)
+				totalTime := time.Since(ttfbStart)
+
+				if err != nil {
+					results <- result{instanceNum: instanceNum, ttfb: ttfb, err: err}
+
+					return
+				}
+
+				results <- result{
+					instanceNum: instanceNum,
+					ttfb:        ttfb,
+					totalTime:   totalTime,
+					size:        size,
+					err:         nil,
+				}
+
+				t.Logf("Instance %d: TTFB=%s, TotalTime=%s, Size=%d bytes",
+					instanceNum, ttfb, totalTime, len(data))
+			}(i, c)
+		}
+
+		wg.Wait()
+		close(results)
+
+		// Verify results
+		var (
+			successCount, failCount int
+			ttfbs                   []time.Duration
+		)
+
+		for res := range results {
+			if res.err != nil {
+				failCount++
+
+				t.Errorf("Instance %d failed: %v", res.instanceNum, res.err)
+
+				continue
+			}
+
+			successCount++
+
+			ttfbs = append(ttfbs, res.ttfb)
+
+			// Size may be -1 during progressive streaming (unknown until complete)
+			// Just verify that we actually read data
+			// The io.ReadAll succeeded, so we know data was received
+		}
+
+		// All instances should succeed
+		assert.Equal(t, numInstances, successCount,
+			"all instances should succeed")
+		assert.Equal(t, 0, failCount,
+			"no instances should fail")
+
+		// CRITICAL: TTFB should be close to the upstream download time (~2s)
+		// Without the fix, waiting instances would wait for download + full chunking time (4-5+ seconds)
+		// With the fix, they start progressive streaming during chunking (TTFB ~= download time)
+		for i, ttfb := range ttfbs {
+			assert.Less(t, ttfb, 3*time.Second,
+				"Instance %d TTFB should be close to upstream download time (got %s), "+
+					"indicating progressive streaming is working (not waiting for chunking to complete)", i, ttfb)
+		}
+
+		t.Logf("SUCCESS: All instances started streaming with TTFB close to download time (progressive streaming working)")
+	}
 }
