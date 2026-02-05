@@ -757,12 +757,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 			var err error
 
-			if hasNarInStore {
-				size, reader, err = c.getNarFromStore(ctx, &narURL)
-			} else {
-				size, reader, err = c.getNarFromChunks(ctx, &narURL)
-			}
-
+			size, reader, err = c.serveNarFromStorageViaPipe(ctx, &narURL, hasNarInStore)
 			if err != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			} else {
@@ -813,12 +808,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 			var err error
 
-			if hasNarInStore {
-				size, reader, err = c.getNarFromStore(ctx, &narURL)
-			} else {
-				size, reader, err = c.getNarFromChunks(ctx, &narURL)
-			}
-
+			size, reader, err = c.serveNarFromStorageViaPipe(ctx, &narURL, hasNarInStore)
 			if err != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			}
@@ -1471,6 +1461,76 @@ func (c *Cache) pullNarIntoStore(
 		Msg("download of nar complete")
 }
 
+// serveNarFromStorageViaPipe wraps storage reading with a pipe pattern to decouple
+// it from the HTTP request context. This prevents partial transfers when the request
+// context is cancelled (e.g., timeout, client disconnect) while data is still being
+// read from storage (especially S3).
+func (c *Cache) serveNarFromStorageViaPipe(
+	ctx context.Context,
+	narURL *nar.URL,
+	hasInStore bool,
+) (int64, io.ReadCloser, error) {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.serveNarFromStorageViaPipe",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+			attribute.Bool("has_in_store", hasInStore),
+		),
+	)
+	defer span.End()
+
+	// Create a detached context that has the same span and logger as the main
+	// context but with the baseContext as parent. This context will not cancel
+	// when ctx is canceled, allowing storage reading to complete independently.
+	detachedCtx := trace.ContextWithSpan(
+		zerolog.Ctx(ctx).WithContext(c.baseContext),
+		trace.SpanFromContext(ctx),
+	)
+
+	// Get reader from storage using DETACHED context (synchronously to get size)
+	var (
+		storageSize   int64
+		storageReader io.ReadCloser
+		err           error
+	)
+
+	if hasInStore {
+		storageSize, storageReader, err = c.getNarFromStore(detachedCtx, narURL)
+	} else {
+		storageSize, storageReader, err = c.getNarFromChunks(detachedCtx, narURL)
+	}
+
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Create pipe to decouple storage reading from HTTP request lifecycle
+	pipeReader, pipeWriter := io.Pipe()
+
+	// Launch background goroutine to copy from storage reader to pipe
+	analytics.SafeGo(ctx, func() {
+		defer pipeWriter.Close()
+		defer storageReader.Close()
+
+		// Copy from storage to pipe
+		_, copyErr := io.Copy(pipeWriter, storageReader)
+		if copyErr != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(copyErr).
+				Str("nar_url", narURL.String()).
+				Int64("storage_size", storageSize).
+				Msg("error copying NAR from storage to pipe")
+			pipeWriter.CloseWithError(copyErr)
+		}
+	})
+
+	// Return pipe reader (safe from request context cancellation) with known size
+	return storageSize, pipeReader, nil
+}
+
 func (c *Cache) getNarFromStore(
 	ctx context.Context,
 	narURL *nar.URL,
@@ -2032,7 +2092,10 @@ func (c *Cache) prePullNar(
 		narURL.Hash,
 		false,
 		func(ctx context.Context) bool {
-			return c.narStore.HasNar(ctx, *narURL)
+			hasInStore := c.narStore.HasNar(ctx, *narURL)
+			hasInChunks, _ := c.HasNarInChunks(ctx, *narURL)
+
+			return hasInStore || hasInChunks
 		},
 		func(ds *downloadState) {
 			c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
@@ -3149,16 +3212,59 @@ func (c *Cache) coordinateDownload(
 
 	// Acquire lock with retry (handled internally by Redis locker)
 	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
-		zerolog.Ctx(ctx).Error().
+		zerolog.Ctx(ctx).Warn().
 			Err(err).
 			Str("hash", hash).
 			Str("lock_key", lockKey).
-			Msg("failed to acquire download lock")
+			Msg("failed to acquire download lock, will poll storage for completion by another server")
 
-		ds := newDownloadState()
-		ds.downloadError = fmt.Errorf("failed to acquire download lock: %w", err)
+		// Lock acquisition failed, likely because another server is downloading.
+		// Poll storage periodically to check if the download completes.
+		// This handles distributed coordination where servers don't share the upstreamJobs map.
+		const (
+			pollInterval = 200 * time.Millisecond
+			pollTimeout  = 30 * time.Second
+		)
 
-		return ds
+		pollCtx, cancel := context.WithTimeout(coordCtx, pollTimeout)
+		defer cancel()
+
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if hasAsset(pollCtx) {
+					zerolog.Ctx(ctx).Debug().
+						Str("hash", hash).
+						Msg("asset appeared in storage while polling (downloaded by another server)")
+
+					// Return a completed downloadState
+					ds := newDownloadState()
+					ds.startOnce.Do(func() { close(ds.start) })
+					ds.storedOnce.Do(func() { close(ds.stored) })
+					ds.doneOnce.Do(func() { close(ds.done) })
+
+					return ds
+				}
+			case <-pollCtx.Done():
+				// Polling timeout or context canceled
+				zerolog.Ctx(ctx).Error().
+					Err(pollCtx.Err()).
+					Str("hash", hash).
+					Str("lock_key", lockKey).
+					Dur("poll_timeout", pollTimeout).
+					Msg("timeout waiting for download by another server")
+
+				ds := newDownloadState()
+				ds.downloadError = fmt.Errorf("failed to acquire download lock and timeout polling for completion: %w", err)
+				// Signal that the download is done (with error) to prevent deadlocks
+				ds.doneOnce.Do(func() { close(ds.done) })
+
+				return ds
+			}
+		}
 	}
 
 	// Double check local jobs and asset presence under lock
