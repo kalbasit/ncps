@@ -47,7 +47,7 @@ func newTestCache(
 	cacheLocker := locklocal.NewRWLocker()
 
 	return cache.New(ctx, cacheName, db, configStore, narInfoStore, narStore, "",
-		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Minute)
+		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Second, 30*time.Minute)
 }
 
 //nolint:paralleltest

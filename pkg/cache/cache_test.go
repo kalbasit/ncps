@@ -39,9 +39,10 @@ import (
 )
 
 const (
-	cacheName       = "cache.example.com"
-	downloadLockTTL = 5 * time.Minute
-	cacheLockTTL    = 30 * time.Minute
+	cacheName           = "cache.example.com"
+	downloadLockTTL     = 5 * time.Minute
+	downloadPollTimeout = 30 * time.Second
+	cacheLockTTL        = 30 * time.Minute
 )
 
 // cacheFactory is a function that returns a clean, ready-to-use Cache instance,
@@ -63,7 +64,7 @@ func newTestCache(
 	cacheLocker := locklocal.NewRWLocker()
 
 	return cache.New(ctx, hostName, db, configStore, narInfoStore, narStore, secretKeyPath,
-		downloadLocker, cacheLocker, downloadLockTTL, cacheLockTTL)
+		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 }
 
 func setupTestComponents(t *testing.T) (database.Querier, *local.Store, string, func(string) string, func()) {

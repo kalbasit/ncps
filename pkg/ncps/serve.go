@@ -343,6 +343,12 @@ func serveCommand(
 				Sources: flagSources("cache.lock.lru-lock-ttl", "CACHE_LOCK_LRU_TTL"),
 				Value:   30 * time.Minute,
 			},
+			&cli.DurationFlag{
+				Name:    "cache-download-poll-timeout",
+				Usage:   "Timeout for polling storage when waiting for download completion by another server",
+				Sources: flagSources("cache.download.poll-timeout", "CACHE_DOWNLOAD_POLL_TIMEOUT"),
+				Value:   30 * time.Second,
+			},
 			&cli.IntFlag{
 				Name:    "cache-lock-retry-max-attempts",
 				Usage:   "Maximum number of retry attempts for distributed locks",
@@ -919,6 +925,7 @@ func createCache(
 		locker,
 		rwLocker,
 		cmd.Duration("cache-lock-download-ttl"),
+		cmd.Duration("cache-download-poll-timeout"),
 		cmd.Duration("cache-lock-lru-ttl"),
 	)
 	if err != nil {
