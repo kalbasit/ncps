@@ -129,7 +129,7 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 | `--cache-database-pool-max-idle-conns` | Maximum idle database connections | `CACHE_DATABASE_POOL_MAX_IDLE_CONNS` | 5 (PG/MySQL), unset (SQLite) |
 | `--cache-max-size` | Maximum cache size (5K, 10G, etc.) | `CACHE_MAX_SIZE` | unlimited |
 | `--cache-lru-schedule` | LRU cleanup cron schedule | `CACHE_LRU_SCHEDULE` | - |
-| `--cache-download-poll-timeout` | Timeout for polling storage when waiting for download | `CACHE_DOWNLOAD_POLL_TIMEOUT` | `30s` |
+| `--cache-download-poll-timeout` | Timeout for polling storage when waiting for download completion | `CACHE_DOWNLOAD_POLL_TIMEOUT` | `30s` |
 | `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
 > [!IMPORTANT]
