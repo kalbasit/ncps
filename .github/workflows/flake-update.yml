@@ -20,8 +20,13 @@ jobs:
         with:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - run: nix flake update
+      - name: update flake.lock and run go mod tidy
+        id: update-flake-lock-and-go-mod-tidy
+        run: |
+          nix flake update
+          nix develop --command go mod tidy
       - uses: EndBug/add-and-commit@v9
+        if: ${{ steps.update-flake-lock-and-go-mod-tidy.outcome == 'success' }}
         id: commit
         with:
           default_author: github_actions
