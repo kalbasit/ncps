@@ -2716,6 +2716,75 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoRaceConditionDuringMigrationDeletion", testGetNarInfoRaceConditionDuringMigrationDeletion(factory))
 	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
 	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
+	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
+}
+
+func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Run("checkAndFixNarInfo with missing NAR and upstream", func(t *testing.T) {
+			ts := testdata.NewTestServer(t, 40)
+			t.Cleanup(ts.Close)
+
+			c, _, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			})
+			require.NoError(t, err)
+
+			c.AddUpstreamCaches(newContext(), uc)
+
+			// Track upstream requests
+			var requestCount int
+
+			mu := sync.Mutex{}
+			handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+				if strings.Contains(r.URL.Path, ".nar") {
+					mu.Lock()
+
+					requestCount++
+
+					mu.Unlock()
+				}
+
+				return false // Let it continue to normal handlers
+			})
+
+			t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
+
+			// Wait for upstream caches to become available
+			<-c.GetHealthChecker().Trigger()
+
+			// 1. Put NarInfo
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// 2. Call CheckAndFixNarInfo - should NOT trigger upstream fetch
+			err = c.CheckAndFixNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+			require.NoError(t, err)
+
+			mu.Lock()
+
+			count := requestCount
+
+			mu.Unlock()
+			assert.Equal(t, 0, count, "should not have made any upstream NAR requests")
+		})
+
+		t.Run("checkAndFixNarInfo with missing NAR", func(t *testing.T) {
+			c, _, _, _, _, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			// 1. Put NarInfo
+			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
+
+			// 2. Call CheckAndFixNarInfo - should NOT return error even though NAR is missing
+			err := c.CheckAndFixNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+			assert.NoError(t, err)
+		})
+	}
 }
 
 func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
@@ -2823,19 +2892,6 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 				testdata.Nar2.NarInfoHash).Scan(&dbSize)
 			require.NoError(t, err)
 			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be fixed immediately after PutNarInfo")
-		})
-
-		t.Run("checkAndFixNarInfo with missing NAR", func(t *testing.T) {
-			c, _, _, _, _, cleanup := factory(t)
-			t.Cleanup(cleanup)
-
-			// 1. Put NarInfo
-			r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
-			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar1.NarInfoHash, r))
-
-			// 2. Call CheckAndFixNarInfo - should NOT return error even though NAR is missing
-			err := c.CheckAndFixNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
-			assert.NoError(t, err)
 		})
 	}
 }

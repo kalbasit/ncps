@@ -2575,7 +2575,23 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 		return fmt.Errorf("failed to parse nar url from narinfo: %w", err)
 	}
 
-	// Now get the actual NAR size
+	// Now get the actual NAR size. We only want to check the size if we already
+	// have the NAR in our store or in chunks. We don't want to pull the NAR
+	// from upstream just to check its size.
+	hasNar := c.narStore.HasNar(ctx, nu)
+	if !hasNar {
+		hasNarInChunks, err := c.HasNarInChunks(ctx, nu)
+		if err != nil {
+			return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
+		}
+
+		hasNar = hasNarInChunks
+	}
+
+	if !hasNar {
+		return nil
+	}
+
 	size, reader, err := c.GetNar(ctx, nu)
 	if err != nil {
 		// If the NAR is not found, we can't verify the size. This is not an
