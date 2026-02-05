@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          # ref: main
           token: ${{ secrets.GHA_PAT_TOKEN }}
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v16
