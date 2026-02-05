@@ -161,6 +161,11 @@ def main():
         description="Run ncps instances with configurable backends."
     )
     parser.add_argument(
+        "--enable-cdc",
+        action="store_true",
+        help="Enable the CDC feature",
+    )
+    parser.add_argument(
         "--mode",
         choices=["single", "ha"],
         default="single",
@@ -191,6 +196,16 @@ def main():
         "--analytics-reporting-samples",
         action="store_true",
         help="Enable printing analytics samples to stdout",
+    )
+    parser.add_argument(
+        "--cache-url",
+        action="append",
+        help="URL for the cache backend (can be specified multiple times)",
+    )
+    parser.add_argument(
+        "--cache-public-key",
+        action="append",
+        help="Public key for cache validation (can be specified multiple times)",
     )
 
     args = parser.parse_args()
@@ -276,15 +291,27 @@ def main():
             "--cache-allow-put-verb",
             f"--cache-hostname=cache-{i}.example.com",
             f"--cache-database-url='{db_url}'",
-            "--cache-upstream-url=https://cache.nixos.org",
-            "--cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=",
             f"--server-addr=:{port}",
         ]
+
+        if args.cache_url:
+            for url in args.cache_url:
+                cmd.append(f"--cache-upstream-url={url}")
+        else:
+            cmd.append("--cache-upstream-url=https://cache.nixos.org")
+
+        if args.cache_public_key:
+            for key in args.cache_public_key:
+                cmd.append(f"--cache-upstream-public-key={key}")
+        else:
+            cmd.append("--cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=")
 
         if args.analytics_reporting_samples:
             cmd.append("--analytics-reporting-samples")
 
         # Storage Args
+        if args.enable_cdc:
+            cmd.append("--cache-cdc-enabled")
         if args.storage == "local":
             cmd.extend(["--cache-storage-local", local_storage_path])
         else:
