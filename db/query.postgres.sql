@@ -335,3 +335,13 @@ WHERE nfc.nar_file_id = $1 AND nfc.chunk_index = $2;
 UPDATE nar_files
 SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $2;
+
+-- name: GetNarInfoHashesToChunk :many
+-- Get all narinfo hashes that have a URL (migrated) but whose NAR is not yet chunked.
+SELECT ni.hash, ni.url
+FROM narinfos ni
+LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
+WHERE ni.url IS NOT NULL
+  AND (nf.id IS NULL OR nf.total_chunks = 0)
+ORDER BY ni.hash;

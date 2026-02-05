@@ -512,6 +512,21 @@ func (w *postgresWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.Nul
 	return res, nil
 }
 
+func (w *postgresWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error) {
+	res, err := w.adapter.GetNarInfoHashesToChunk(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetNarInfoHashesToChunkRow, len(res))
+	for i, v := range res {
+		items[i] = GetNarInfoHashesToChunkRow(v)
+	}
+
+	return items, nil
+}
+
 func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
 	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
 	if err != nil {

@@ -64,6 +64,7 @@ func runMigrateNarToChunksSuite(t *testing.T, factory narToChunksMigrationFactor
 	t.Helper()
 
 	t.Run("Success", testMigrateNarToChunksSuccess(factory))
+	t.Run("UnmigratedNarInfoFailure", testMigrateNarToChunksUnmigratedNarInfoFailure(factory))
 	t.Run("DryRun", testMigrateNarToChunksDryRun(factory))
 	t.Run("Idempotency", testMigrateNarToChunksIdempotency(factory))
 	t.Run("MultipleNARs", testMigrateNarToChunksMultipleNARs(factory))
@@ -78,7 +79,7 @@ func testMigrateNarToChunksSuccess(factory narToChunksMigrationFactory) func(*te
 		db, _, dir, dbURL, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
-		// Pre-populate storage with NarInfo and NAR (unmigrated in DB)
+		// Pre-populate storage with NarInfo and NAR
 		narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o755))
 		require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
@@ -87,16 +88,24 @@ func testMigrateNarToChunksSuccess(factory narToChunksMigrationFactory) func(*te
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
 
-		// Run the migration command
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// 1. Migrate NarInfo to DB first (now required)
+		migrateNarInfoArgs := []string{
+			"ncps", "migrate-narinfo",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
+
+		// 2. Run the migration command
 		args := []string{
 			"ncps", "migrate-nar-to-chunks",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
 			"--cache-cdc-enabled",
 		}
-
-		app, err := ncps.New()
-		require.NoError(t, err)
 
 		err = app.Run(ctx, args)
 		require.NoError(t, err)
@@ -111,6 +120,38 @@ func testMigrateNarToChunksSuccess(factory narToChunksMigrationFactory) func(*te
 
 		// The NAR should be deleted from traditional storage
 		assert.NoFileExists(t, narPath, "Original NAR should have been deleted")
+	}
+}
+
+func testMigrateNarToChunksUnmigratedNarInfoFailure(factory narToChunksMigrationFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		// Setup
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+		_, _, dir, dbURL, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Pre-populate storage with NarInfo (NOT migrated to DB)
+		narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o755))
+		require.NoError(t, os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o600))
+
+		// Run the migration command - should fail because of unmigrated NarInfo
+		args := []string{
+			"ncps", "migrate-nar-to-chunks",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--cache-cdc-enabled",
+		}
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		err = app.Run(ctx, args)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unmigrated narinfos")
+		assert.Contains(t, err.Error(), "run 'migrate-narinfo' first")
 	}
 }
 
@@ -132,6 +173,17 @@ func testMigrateNarToChunksDryRun(factory narToChunksMigrationFactory) func(*tes
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
 
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Migrate NarInfo to DB first
+		migrateNarInfoArgs := []string{
+			"ncps", "migrate-narinfo",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
+
 		// Run command with --dry-run
 		args := []string{
 			"ncps", "migrate-nar-to-chunks",
@@ -140,9 +192,6 @@ func testMigrateNarToChunksDryRun(factory narToChunksMigrationFactory) func(*tes
 			"--cache-cdc-enabled",
 			"--dry-run",
 		}
-
-		app, err := ncps.New()
-		require.NoError(t, err)
 
 		err = app.Run(ctx, args)
 		require.NoError(t, err)
@@ -176,15 +225,23 @@ func testMigrateNarToChunksIdempotency(factory narToChunksMigrationFactory) func
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
 
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Migrate NarInfo to DB first
+		migrateNarInfoArgs := []string{
+			"ncps", "migrate-narinfo",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
+
 		args := []string{
 			"ncps", "migrate-nar-to-chunks",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
 			"--cache-cdc-enabled",
 		}
-
-		app, err := ncps.New()
-		require.NoError(t, err)
 
 		// Run command first time
 		err = app.Run(ctx, args)
@@ -233,15 +290,23 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 			require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
 		}
 
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Migrate NarInfo to DB first
+		migrateNarInfoArgs := []string{
+			"ncps", "migrate-narinfo",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
+
 		args := []string{
 			"ncps", "migrate-nar-to-chunks",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
 			"--cache-cdc-enabled",
 		}
-
-		app, err := ncps.New()
-		require.NoError(t, err)
 
 		// Run command
 		err = app.Run(ctx, args)

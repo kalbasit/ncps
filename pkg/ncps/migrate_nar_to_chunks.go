@@ -14,10 +14,14 @@ import (
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/otel"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
+
+// ErrUnmigratedNarinfosFound is returned when there are unmigrated narinfos.
+var ErrUnmigratedNarinfosFound = errors.New("unmigrated narinfos found")
 
 func migrateNarToChunksCommand(
 	flagSources flagSourcesFn,
@@ -279,15 +283,39 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			}
 			defer c.Close()
 
-			// 5. Setup Storage and Walker
+			// 5. Setup Storage
 			_, narInfoStore, narStore, err := getStorageBackend(ctx, cmd)
 			if err != nil {
 				return fmt.Errorf("error creating storage backend: %w", err)
 			}
 
-			walker, ok := narInfoStore.(NarInfoWalker)
-			if !ok {
-				return ErrStorageIterationNotSupported
+			// 6. Safety Check: Ensure all narinfos are migrated
+			var unmigratedHashesCount int32
+
+			err = narInfoStore.WalkNarInfos(ctx, func(hash string) error {
+				ni, err := db.GetNarInfoByHash(ctx, hash)
+				if err != nil {
+					if database.IsNotFoundError(err) {
+						atomic.AddInt32(&unmigratedHashesCount, 1)
+
+						return nil
+					}
+
+					return fmt.Errorf("failed to fetch narinfo from database: %w", err)
+				}
+
+				if !ni.URL.Valid {
+					atomic.AddInt32(&unmigratedHashesCount, 1)
+				}
+
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("failed to check for unmigrated narinfos: %w", err)
+			}
+
+			if unmigratedHashesCount > 0 {
+				return fmt.Errorf("%w (%d); please run 'migrate-narinfo' first", ErrUnmigratedNarinfosFound, unmigratedHashesCount)
 			}
 
 			// 6. Migrate
@@ -344,32 +372,37 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				}
 			}()
 
-			err = walker.WalkNarInfos(ctx, func(hash string) error {
+			hashes, err := db.GetNarInfoHashesToChunk(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to fetch candidate hashes from database: %w", err)
+			}
+
+			for _, row := range hashes {
+				hash := row.Hash
+
 				atomic.AddInt32(&totalFound, 1)
 
 				g.Go(func() error {
 					log := logger.With().Str("narinfo_hash", hash).Logger()
 
-					// Fetch NarInfo to get NAR URL
-					ni, err := narInfoStore.GetNarInfo(ctx, hash)
-					if err != nil {
-						log.Error().Err(err).Msg("failed to get narinfo from store")
+					if !row.URL.Valid {
+						log.Error().Msg("narinfo record has no URL")
 						atomic.AddInt32(&totalFailed, 1)
 						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
 
-					narURL, err := nar.ParseURL(ni.URL)
+					narURL, err := nar.ParseURL(row.URL.String)
 					if err != nil {
-						log.Error().Err(err).Str("url", ni.URL).Msg("failed to parse nar URL")
+						log.Error().Err(err).Str("url", row.URL.String).Msg("failed to parse nar URL")
 						atomic.AddInt32(&totalFailed, 1)
 						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
 
 						return nil
 					}
 
-					// 1. Check if already chunked
+					// double check if already chunked (might have been migrated by background task)
 					hasChunks, err := c.HasNarInChunks(ctx, narURL)
 					if err != nil {
 						log.Error().Err(err).Msg("failed to check if nar is already in chunks")
@@ -431,11 +464,6 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 
 					return nil
 				})
-
-				return nil
-			})
-			if err != nil {
-				return err
 			}
 
 			if err := g.Wait(); err != nil {

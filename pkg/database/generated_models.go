@@ -118,6 +118,11 @@ type GetNarFileByNarInfoIDRow struct {
 	LastAccessedAt sql.NullTime
 }
 
+type GetNarInfoHashesToChunkRow struct {
+	Hash string
+	URL  sql.NullString
+}
+
 type GetOrphanedNarFilesRow struct {
 	ID             int64
 	Hash           string

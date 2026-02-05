@@ -275,6 +275,16 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url = $1
 	GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error)
+	// Get all narinfo hashes that have a URL (migrated) but whose NAR is not yet chunked.
+	//
+	//  SELECT ni.hash, ni.url
+	//  FROM narinfos ni
+	//  LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+	//  LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
+	//  WHERE ni.url IS NOT NULL
+	//    AND (nf.id IS NULL OR nf.total_chunks = 0)
+	//  ORDER BY ni.hash
+	GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error)
 	//GetNarInfoReferences
 	//
 	//  SELECT reference
