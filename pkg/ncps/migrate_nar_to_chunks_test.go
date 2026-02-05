@@ -177,10 +177,12 @@ func testMigrateNarToChunksDryRun(factory narToChunksMigrationFactory) func(*tes
 		require.NoError(t, err)
 
 		// Migrate NarInfo to DB first
+		// Use --concurrency=1 to avoid MySQL deadlocks when migrating multiple narinfos in parallel
 		migrateNarInfoArgs := []string{
 			"ncps", "migrate-narinfo",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
+			"--concurrency", "1",
 		}
 		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
 
@@ -229,10 +231,12 @@ func testMigrateNarToChunksIdempotency(factory narToChunksMigrationFactory) func
 		require.NoError(t, err)
 
 		// Migrate NarInfo to DB first
+		// Use --concurrency=1 to avoid MySQL deadlocks when migrating multiple narinfos in parallel
 		migrateNarInfoArgs := []string{
 			"ncps", "migrate-narinfo",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
+			"--concurrency", "1",
 		}
 		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
 
@@ -294,10 +298,12 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 		require.NoError(t, err)
 
 		// Migrate NarInfo to DB first
+		// Use --concurrency=1 to avoid MySQL deadlocks when migrating multiple narinfos in parallel
 		migrateNarInfoArgs := []string{
 			"ncps", "migrate-narinfo",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
+			"--concurrency", "1",
 		}
 		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
 
