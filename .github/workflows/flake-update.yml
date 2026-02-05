@@ -1,6 +1,5 @@
 name: "Flake.lock: update Nix dependencies"
 on:
-  pull_request:
   workflow_dispatch: # allows manual triggering
   schedule:
     - cron: "0 0 * * 0" # runs weekly on Sunday at 00:00
@@ -15,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # ref: main
+          ref: main
           token: ${{ secrets.GHA_PAT_TOKEN }}
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v16
@@ -23,7 +22,7 @@ jobs:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - run: nix flake update
-      # - run: nix develop --command "nix flake check -L"
+      - run: nix develop --command "nix flake check -L"
       - uses: EndBug/add-and-commit@v9
         id: commit
         with:
