@@ -4347,7 +4347,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 	// Use a short-lived, non-blocking lock to coordinate migrations and prevent a "thundering herd".
 	lockKey := "migration-to-chunks:" + narURL.Hash
 
-	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, 10*time.Second)
+acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
 	if err != nil {
 		return fmt.Errorf("failed to acquire migration lock: %w", err)
 	}
