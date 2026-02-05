@@ -975,25 +975,17 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 	)
 	defer span.End()
 
-	var fileSize int64
-
-	err := c.withTransaction(ctx, "GetNarFileSize", func(qtx database.Querier) error {
-		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        nu.Hash,
-			Compression: nu.Compression.String(),
-			Query:       nu.Query.Encode(),
-		})
-		if err != nil {
-			return err
-		}
-
-		//nolint:gosec // G115: File size is non-negative
-		fileSize = int64(nr.FileSize)
-
-		return nil
+	nr, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        nu.Hash,
+		Compression: nu.Compression.String(),
+		Query:       nu.Query.Encode(),
 	})
+	if err != nil {
+		return 0, err
+	}
 
-	return fileSize, err
+	//nolint:gosec // G115: File size is non-negative
+	return int64(nr.FileSize), nil
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
