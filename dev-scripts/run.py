@@ -358,7 +358,7 @@ def main():
         # Join the command into a string and add the sed pipe
         # 2>&1 redirects stderr to stdout so both are prefixed
         cmd_str = " ".join(quoted_cmd)
-        full_command = f"{cmd_str} 2>&1 | sed 's,^,{prefix.replace('\\', '\\\\')} ,/'"
+        full_command = f"{cmd_str} 2>&1 | sed 's,^,{prefix.replace('\\', '\\\\')} ,'"
 
         # Start Process
         log(f"Starting Instance {i} on port {port}...", GREEN)
