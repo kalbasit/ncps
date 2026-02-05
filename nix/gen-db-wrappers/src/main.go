@@ -395,12 +395,10 @@ func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targ
 						}
 
 						if found {
-							if sourceField.Type == targetField.Type {
-								fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
-							} else if isStructType(targetField.Type) {
-								// For struct types (like sql.NullInt64), we can't use simple casting.
-								// If types don't match, we need to handle conversion explicitly.
-								// For now, just assign directly and let the compiler catch incompatibilities.
+							// For struct types (like sql.NullInt64), we can't use simple function call casting.
+							// This applies when types are identical, or when they differ but the target is a non-castable
+							// struct. We perform a direct assignment and let the compiler catch any potential incompatibilities.
+							if sourceField.Type == targetField.Type || isStructType(targetField.Type) {
 								fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
 							} else {
 								// Type cast if needed (for primitive types)
