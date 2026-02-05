@@ -125,6 +125,9 @@ config:
     # Example: "America/Los_Angeles", "UTC"
     lruTimezone: "Local"
 
+    # Timeout for polling storage when waiting for download completion
+    downloadPollTimeout: "30s"
+
     # Temporary directory for downloads
     # Mounted as emptyDir volume
     tempPath: "/tmp/ncps"

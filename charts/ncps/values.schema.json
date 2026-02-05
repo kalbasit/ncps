@@ -132,6 +132,11 @@
             "lruTimezone": {
               "type": "string"
             },
+            "downloadPollTimeout": {
+              "type": "string",
+              "description": "Timeout for polling storage when waiting for download completion",
+              "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
+            },
             "tempPath": {
               "type": "string"
             }
@@ -332,10 +337,12 @@
               }
             },
             "dialerTimeout": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
             },
             "responseHeaderTimeout": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
             },
             "netrcFile": {
               "type": "string"
@@ -409,10 +416,12 @@
               }
             },
             "downloadTTL": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
             },
             "lruTTL": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
             },
             "retry": {
               "type": "object",
@@ -422,10 +431,12 @@
                   "minimum": 1
                 },
                 "initialDelay": {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
                 },
                 "maxDelay": {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
                 },
                 "jitter": {
                   "type": "boolean"
@@ -565,10 +576,12 @@
           "type": "object"
         },
         "interval": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
         },
         "scrapeTimeout": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^([0-9]+(ns|us|ms|s|m|h))+"
         }
       }
     },
