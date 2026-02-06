@@ -4044,8 +4044,8 @@ func (c *Cache) selectUpstream(
 		return ucs[0], nil
 	}
 
-	ch := make(chan *upstream.Cache)
-	errC := make(chan error)
+	ch := make(chan *upstream.Cache, len(ucs))
+	errC := make(chan error, len(ucs))
 
 	ctx, cancel := context.WithCancel(ctx)
 
