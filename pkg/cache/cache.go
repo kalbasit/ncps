@@ -41,6 +41,9 @@ const (
 	otelPackageName      = "github.com/kalbasit/ncps/pkg/cache"
 	cacheLockKey         = "cache"
 
+	// Buffer size of 2 allows one chunk to be copied while the next is being fetched.
+	prefetchBufferSize = 2
+
 	// Migration operation constants for metrics.
 	migrationOperationMigrate = "migrate"
 	migrationOperationDelete  = "delete"
@@ -4265,9 +4268,6 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 	if len(chunkHashes) == 0 {
 		return nil
 	}
-
-	// Buffer size of 2 allows one chunk to be copied while the next is being fetched
-	const prefetchBufferSize = 2
 
 	chunkChan := make(chan *prefetchedChunk, prefetchBufferSize)
 
