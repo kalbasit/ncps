@@ -8,10 +8,10 @@
     }:
     {
       checks =
-        (builtins.removeAttrs [ "ncps" ] self'.packages)
+        (builtins.removeAttrs self'.packages [ "ncps" ])
         // {
           ncps = self'.packages.ncps.overrideAttrs (oa: {
-            checkFlags = oa.checkFlags ++ [ "-count=5" ];
+            checkFlags = (oa.checkFlags or [ ]) ++ [ "-count=5" ];
           });
         }
         // self'.devShells
