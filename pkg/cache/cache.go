@@ -526,6 +526,9 @@ func (c *Cache) SetCDCConfiguration(enabled bool, minSize, avgSize, maxSize uint
 
 // SetChunkStore sets the chunk store.
 func (c *Cache) SetChunkStore(cs chunk.Store) {
+	c.cdcMu.Lock()
+	defer c.cdcMu.Unlock()
+
 	c.chunkStore = cs
 }
 
@@ -671,6 +674,27 @@ func (c *Cache) SetCacheSignNarinfo(shouldSignNarinfo bool) { c.shouldSignNarinf
 // cronjob to automatically clean-up the store.
 func (c *Cache) SetMaxSize(maxSize uint64) { c.maxSize = maxSize }
 
+func (c *Cache) isCDCEnabled() bool {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcEnabled && c.chunkStore != nil
+}
+
+func (c *Cache) getChunkStore() chunk.Store {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.chunkStore
+}
+
+func (c *Cache) getCDCInfo() (bool, chunk.Store, chunker.Chunker) {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcEnabled, c.chunkStore, c.chunker
+}
+
 // SetupCron creates a cron instance in the cache.
 func (c *Cache) SetupCron(ctx context.Context, timezone *time.Location) {
 	var opts []cron.Option
@@ -807,7 +831,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		hasNarInChunks, _ := c.HasNarFileRecord(ctx, narURL)
 
 		// If download is complete or NAR is in store, get from storage
-		if !canStream || hasNarInStore || hasNarInChunks {
+		if !canStream || hasNarInStore || (c.isCDCEnabled() && hasNarInChunks) {
 			if canStream {
 				ds.wg.Done()
 			}
@@ -1013,11 +1037,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			r.Close()
 		}()
 
-		c.cdcMu.RLock()
-		cdcEnabled := c.cdcEnabled
-		c.cdcMu.RUnlock()
-
-		if cdcEnabled {
+		if c.isCDCEnabled() {
 			// Stream to temp file first
 			pattern := narURL.Hash + "-*.nar"
 			if cext := narURL.Compression.String(); cext != "" {
@@ -1160,11 +1180,7 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 
 // storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
 func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
-	c.cdcMu.RLock()
-	cdcEnabled := c.cdcEnabled
-	c.cdcMu.RUnlock()
-
-	if cdcEnabled {
+	if c.isCDCEnabled() {
 		return c.storeNarWithCDC(ctx, tempPath, narURL)
 	}
 
@@ -1263,7 +1279,12 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	}
 
 	// 2. Start chunking
-	chunksChan, errChan := c.chunker.Chunk(ctx, f)
+	cdcEnabled, chunkStore, chunker := c.getCDCInfo()
+	if !cdcEnabled || chunkStore == nil || chunker == nil {
+		return 0, ErrCDCDisabled
+	}
+
+	chunksChan, errChan := chunker.Chunk(ctx, f)
 
 	var (
 		totalSize  int64
@@ -1303,7 +1324,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			}
 
 			// Store in chunkStore if new
-			_, err = c.chunkStore.PutChunk(ctx, chunkMetadata.Hash, data)
+			_, err = chunkStore.PutChunk(ctx, chunkMetadata.Hash, data)
 			if err != nil {
 				return 0, fmt.Errorf("error storing chunk: %w", err)
 			}
@@ -2128,10 +2149,14 @@ func (c *Cache) prePullNar(
 			}
 
 			// Check if NAR file record exists (even if chunking in progress)
-			// This allows progressive streaming to work
-			hasInChunks, _ := c.HasNarFileRecord(ctx, *narURL)
+			// This allows progressive streaming to work only if CDC is enabled
+			if c.isCDCEnabled() {
+				hasInChunks, _ := c.HasNarFileRecord(ctx, *narURL)
 
-			return hasInChunks
+				return hasInChunks
+			}
+
+			return false
 		},
 		func(ds *downloadState) {
 			c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
@@ -2242,11 +2267,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 			c.backgroundMigrateNarInfo(ctx, hash, ni)
 		}
 
-		c.cdcMu.RLock()
-		cdcEnabled := c.cdcEnabled
-		c.cdcMu.RUnlock()
-
-		if cdcEnabled {
+		if c.isCDCEnabled() {
 			c.BackgroundMigrateNarToChunks(ctx, narURL)
 		}
 
@@ -3704,11 +3725,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 
 	// 3. CHUNK PHASE
 	// Now that files are gone, some chunks might have zero references.
-	c.cdcMu.RLock()
-	cdcEnabled := c.cdcEnabled
-	chunkStore := c.chunkStore
-	c.cdcMu.RUnlock()
-
+	cdcEnabled, chunkStore, _ := c.getCDCInfo()
 	if !cdcEnabled || chunkStore == nil {
 		return narInfoHashesToRemove, narURLsToRemove, nil, nil
 	}
@@ -3797,7 +3814,8 @@ func (c *Cache) parallelDeleteFromStores(
 		analytics.SafeGo(ctx, func() {
 			defer wg.Done()
 
-			if c.chunkStore == nil {
+			chunkStore := c.getChunkStore()
+			if chunkStore == nil {
 				return
 			}
 
@@ -3805,7 +3823,7 @@ func (c *Cache) parallelDeleteFromStores(
 
 			log.Info().Msg("deleting chunk from store")
 
-			if err := c.chunkStore.DeleteChunk(ctx, hash); err != nil {
+			if err := chunkStore.DeleteChunk(ctx, hash); err != nil {
 				log.Error().
 					Err(err).
 					Msg("error removing the chunk from the store")
@@ -4234,7 +4252,7 @@ func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID
 
 	// Stream each chunk sequentially
 	for _, hash := range chunkHashes {
-		rc, err := c.chunkStore.GetChunk(ctx, hash)
+		rc, err := c.getChunkStore().GetChunk(ctx, hash)
 		if err != nil {
 			return fmt.Errorf("error fetching chunk %s: %w", hash, err)
 		}
@@ -4312,7 +4330,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 		}
 
 		// Stream this chunk
-		rc, err := c.chunkStore.GetChunk(ctx, chunkHash)
+		rc, err := c.getChunkStore().GetChunk(ctx, chunkHash)
 		if err != nil {
 			return fmt.Errorf("error fetching chunk %s: %w", chunkHash, err)
 		}
@@ -4337,11 +4355,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 // MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
 func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
-	c.cdcMu.RLock()
-	cdcEnabled := c.cdcEnabled
-	chunkStore := c.chunkStore
-	c.cdcMu.RUnlock()
-
+	cdcEnabled, chunkStore, _ := c.getCDCInfo()
 	if !cdcEnabled || chunkStore == nil {
 		return ErrCDCDisabled
 	}
@@ -4421,11 +4435,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 
 // maybeBackgroundMigrateNarToChunks checks if CDC is enabled and triggers background migration.
 func (c *Cache) maybeBackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL) {
-	c.cdcMu.RLock()
-	cdcEnabled := c.cdcEnabled
-	c.cdcMu.RUnlock()
-
-	if cdcEnabled {
+	if c.isCDCEnabled() {
 		c.BackgroundMigrateNarToChunks(ctx, narURL)
 	}
 }
