@@ -631,27 +631,37 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 	{{- end -}}
 
 	{{- if $isAutoLoop -}}
+		{{- $bulkParamType := (index .Params 1).Type -}}
+		{{- $bulkStructInfo := getStruct $bulkParamType -}}
 		{{- $singularParamType := printf "%sParams" $singularMethodName -}}
-		{{- $structInfo := getStruct $singularParamType -}}
 		{{- $targetSingularParamType := $singularParamType -}} {{/* Assume same name for now */}}
 		{{- $targetStructInfo := getTargetStruct $targetSingularParamType -}}
-		for _, v := range {{(index $methodParams 1).Name}}.{{$sliceField.Name}} {
+		for i, v := range {{(index $methodParams 1).Name}}.{{$sliceField.Name}} {
+			_ = i
 			err := w.adapter.{{$singularMethodName}}({{(index $methodParams 0).Name}}, {{$.Engine.Package}}.{{$targetSingularParamType}}{
-				{{- $sliceElemType := trimPrefix $sliceField.Type "[]" -}}
 				{{- range $targetStructField := $targetStructInfo.Fields }}
-					{{- /* Find matching field in source struct */ -}}
+					{{- /* Find matching field in bulk (source) struct */ -}}
 					{{- $sourceField := dict "Name" "" -}}
-					{{- range $structInfo.Fields }}
+					{{- range $bulkStructInfo.Fields }}
 						{{- if eq .Name $targetStructField.Name }}
+							{{- $sourceField = . }}
+						{{- end }}
+						{{- if and (eq $sourceField.Name "") (eq (toSingular .Name) $targetStructField.Name) }}
 							{{- $sourceField = . }}
 						{{- end }}
 					{{- end }}
 					{{- if ne $sourceField.Name "" }}
-						{{- if eq $sourceField.Type $sliceElemType }}
-							{{- if eq $sourceField.Type $targetStructField.Type }}
+						{{- if eq $sourceField.Name $sliceField.Name }}
+							{{- if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type }}
 								{{$targetStructField.Name}}: v,
 							{{- else }}
 								{{$targetStructField.Name}}: {{$targetStructField.Type}}(v),
+							{{- end }}
+						{{- else if isSlice $sourceField.Type }}
+							{{- if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type }}
+								{{$targetStructField.Name}}: {{(index $methodParams 1).Name}}.{{$sourceField.Name}}[i],
+							{{- else }}
+								{{$targetStructField.Name}}: {{$targetStructField.Type}}({{(index $methodParams 1).Name}}.{{$sourceField.Name}}[i]),
 							{{- end }}
 						{{- else }}
 							{{- if eq $sourceField.Type $targetStructField.Type }}
