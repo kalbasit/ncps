@@ -14,6 +14,7 @@ import (
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 
+	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/otel"
@@ -439,6 +440,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 
 					opStartTime := time.Now()
 					err = c.MigrateNarToChunks(ctx, narURL)
+
 					RecordMigrationDuration(
 						ctx,
 						MigrationTypeNarToChunks,
@@ -446,7 +448,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 						time.Since(opStartTime).Seconds(),
 					)
 
-					if err != nil {
+					if err != nil && !errors.Is(err, cache.ErrNarAlreadyChunked) {
 						log.Error().Err(err).Msg("failed to migrate nar to chunks")
 						atomic.AddInt32(&totalFailed, 1)
 						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
@@ -459,8 +461,13 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 						log.Warn().Err(err).Msg("failed to delete original nar after migration")
 					}
 
-					atomic.AddInt32(&totalSucceeded, 1)
-					RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultSuccess)
+					if errors.Is(err, cache.ErrNarAlreadyChunked) {
+						atomic.AddInt32(&totalSkipped, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultSkipped)
+					} else {
+						atomic.AddInt32(&totalSucceeded, 1)
+						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultSuccess)
+					}
 
 					return nil
 				})
