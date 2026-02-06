@@ -760,6 +760,26 @@ func (w *mysqlWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileTo
 	})
 }
 
+func (w *mysqlWrapper) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	for i, v := range arg.ChunkID {
+		_ = i
+		err := w.adapter.LinkNarFileToChunk(ctx, mysqldb.LinkNarFileToChunkParams{
+			NarFileID: arg.NarFileID,
+
+			ChunkID: v,
+
+			ChunkIndex: arg.ChunkIndex[i],
+		},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

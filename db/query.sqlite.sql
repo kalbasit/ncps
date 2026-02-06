@@ -293,6 +293,15 @@ INSERT INTO nar_file_chunks (
 )
 ON CONFLICT (nar_file_id, chunk_index) DO NOTHING;
 
+-- @bulk-for LinkNarFileToChunk
+-- name: LinkNarFileToChunks :exec
+INSERT INTO nar_file_chunks (
+    nar_file_id, chunk_id, chunk_index
+) VALUES (
+    ?, ?, ?
+)
+ON CONFLICT (nar_file_id, chunk_index) DO NOTHING;
+
 
 
 -- name: GetTotalChunkSize :one

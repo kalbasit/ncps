@@ -330,6 +330,14 @@ type Querier interface {
 	//      ?, ?, ?
 	//  )
 	LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error
+	// @bulk-for LinkNarFileToChunk
+	//
+	//  INSERT IGNORE INTO nar_file_chunks (
+	//      nar_file_id, chunk_id, chunk_index
+	//  ) VALUES (
+	//      ?, ?, ?
+	//  )
+	LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error
 	//LinkNarInfoToNarFile
 	//
 	//  INSERT INTO narinfo_nar_files (
