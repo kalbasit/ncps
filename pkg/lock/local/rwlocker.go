@@ -45,11 +45,9 @@ func (rw *RWLocker) getLock(key string) *keyRWLock {
 	return kl
 }
 
-// releaseLock decrements the reference count and removes the lock from the map if it reaches zero.
-func (rw *RWLocker) releaseLock(key string) {
-	rw.mu.Lock()
-	defer rw.mu.Unlock()
-
+// release decrements the reference count and removes the lock from the map if it reaches zero.
+// It assumes the caller holds rw.mu.
+func (rw *RWLocker) release(key string) {
 	if kl, ok := rw.lockers[key]; ok {
 		kl.refCount--
 		if kl.refCount == 0 {
@@ -91,10 +89,7 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 
 	kl.Unlock()
 
-	kl.refCount--
-	if kl.refCount == 0 {
-		delete(rw.lockers, key)
-	}
+	rw.release(key)
 
 	return nil
 }
@@ -111,7 +106,9 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultSuccess)
 	} else {
 		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultContention)
-		rw.releaseLock(key)
+		rw.mu.Lock()
+		rw.release(key)
+		rw.mu.Unlock()
 	}
 
 	return acquired, nil
@@ -140,10 +137,7 @@ func (rw *RWLocker) RUnlock(_ context.Context, key string) error {
 
 	kl.RUnlock()
 
-	kl.refCount--
-	if kl.refCount == 0 {
-		delete(rw.lockers, key)
-	}
+	rw.release(key)
 
 	return nil
 }
