@@ -50,11 +50,11 @@ func (rw *RWLocker) releaseLock(key string) {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 
-	kl := rw.lockers[key]
-
-	kl.refCount--
-	if kl.refCount == 0 {
-		delete(rw.lockers, key)
+	if kl, ok := rw.lockers[key]; ok {
+		kl.refCount--
+		if kl.refCount == 0 {
+			delete(rw.lockers, key)
+		}
 	}
 }
 
@@ -75,9 +75,9 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error
 // Unlock releases an exclusive lock for the given key.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 	rw.mu.Lock()
-	kl, ok := rw.lockers[key]
-	rw.mu.Unlock()
+	defer rw.mu.Unlock()
 
+	kl, ok := rw.lockers[key]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnlockUnknownKey, key)
 	}
@@ -90,7 +90,11 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 	}
 
 	kl.Unlock()
-	rw.releaseLock(key)
+
+	kl.refCount--
+	if kl.refCount == 0 {
+		delete(rw.lockers, key)
+	}
 
 	return nil
 }
@@ -127,15 +131,19 @@ func (rw *RWLocker) RLock(ctx context.Context, key string, _ time.Duration) erro
 // RUnlock releases a shared read lock for the given key.
 func (rw *RWLocker) RUnlock(_ context.Context, key string) error {
 	rw.mu.Lock()
-	kl, ok := rw.lockers[key]
-	rw.mu.Unlock()
+	defer rw.mu.Unlock()
 
+	kl, ok := rw.lockers[key]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrRUnlockUnknownKey, key)
 	}
 
 	kl.RUnlock()
-	rw.releaseLock(key)
+
+	kl.refCount--
+	if kl.refCount == 0 {
+		delete(rw.lockers, key)
+	}
 
 	return nil
 }

@@ -61,11 +61,11 @@ func (l *Locker) releaseLock(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	kl := l.lockers[key]
-
-	kl.refCount--
-	if kl.refCount == 0 {
-		delete(l.lockers, key)
+	if kl, ok := l.lockers[key]; ok {
+		kl.refCount--
+		if kl.refCount == 0 {
+			delete(l.lockers, key)
+		}
 	}
 }
 
@@ -86,9 +86,9 @@ func (l *Locker) Lock(ctx context.Context, key string, _ time.Duration) error {
 // Unlock releases an exclusive lock for the given key.
 func (l *Locker) Unlock(ctx context.Context, key string) error {
 	l.mu.Lock()
-	kl, ok := l.lockers[key]
-	l.mu.Unlock()
+	defer l.mu.Unlock()
 
+	kl, ok := l.lockers[key]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrUnlockUnknownKey, key)
 	}
@@ -101,7 +101,11 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 	}
 
 	kl.Unlock()
-	l.releaseLock(key)
+
+	kl.refCount--
+	if kl.refCount == 0 {
+		delete(l.lockers, key)
+	}
 
 	return nil
 }

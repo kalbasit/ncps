@@ -317,3 +317,111 @@ func TestLocker_DeadlockReproduction(t *testing.T) {
 
 	t.Log("Success!")
 }
+
+// TestLocker_ConcurrentUnlock tests the race condition where multiple goroutines
+// call Unlock concurrently on the same key. Without proper synchronization,
+// both can pass the !ok check and attempt to unlock, causing a panic.
+func TestLocker_ConcurrentUnlock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewLocker()
+
+	// Acquire lock
+	err := locker.Lock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	// Try to unlock from multiple goroutines simultaneously
+	// This should trigger the race condition where both goroutines
+	// can pass the !ok check before either completes the unlock
+	var wg sync.WaitGroup
+
+	numGoroutines := 10
+
+	// Use a channel to synchronize the start of all goroutines
+	start := make(chan struct{})
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			<-start // Wait for signal to start
+
+			_ = locker.Unlock(ctx, "test-key")
+		}()
+	}
+
+	// Release all goroutines at once to maximize race condition probability
+	close(start)
+	wg.Wait()
+
+	// If we get here without panic, the race condition is fixed
+}
+
+// TestRWLocker_ConcurrentUnlock tests the race condition in RWLocker.Unlock.
+func TestRWLocker_ConcurrentUnlock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewRWLocker()
+
+	// Acquire write lock
+	err := locker.Lock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	// Try to unlock from multiple goroutines simultaneously
+	var wg sync.WaitGroup
+
+	numGoroutines := 10
+	start := make(chan struct{})
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			_ = locker.Unlock(ctx, "test-key")
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+}
+
+// TestRWLocker_ConcurrentRUnlock tests the race condition in RWLocker.RUnlock.
+func TestRWLocker_ConcurrentRUnlock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewRWLocker()
+
+	// Acquire read lock
+	err := locker.RLock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	// Try to RUnlock from multiple goroutines simultaneously
+	var wg sync.WaitGroup
+
+	numGoroutines := 10
+	start := make(chan struct{})
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			_ = locker.RUnlock(ctx, "test-key")
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+}
