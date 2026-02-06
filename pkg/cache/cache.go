@@ -4278,7 +4278,10 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 			select {
 			case <-ctx.Done():
 				// Send context error and stop prefetching
-				chunkChan <- &prefetchedChunk{err: ctx.Err(), hash: hash}
+				select {
+				case chunkChan <- &prefetchedChunk{err: ctx.Err(), hash: hash}:
+				case <-ctx.Done():
+				}
 
 				return
 			default:

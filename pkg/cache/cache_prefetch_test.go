@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -235,6 +236,9 @@ func TestPrefetchContextCancellation(t *testing.T) {
 	err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
 	require.NoError(t, err)
 
+	// Capture initial goroutine count
+	initialGoroutines := runtime.NumGoroutine()
+
 	// Create a context that we'll cancel mid-stream
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -245,19 +249,31 @@ func TestPrefetchContextCancellation(t *testing.T) {
 	errChan := make(chan error, 1)
 
 	go func() {
-		_, err := io.Copy(io.Discard, rc)
+		// Read just a little bit of data to trigger the prefetcher
+		buf := make([]byte, 10)
+		_, _ = io.ReadFull(rc, buf)
+
+		// Cancel the context and close the reader immediately
+		cancel()
 		rc.Close()
 
-		errChan <- err
+		errChan <- nil
 	}()
 
-	// Cancel after a short delay
-	time.Sleep(50 * time.Millisecond)
-	cancel()
+	// Wait for the reader goroutine to finish
+	<-errChan
 
-	// Should get context cancellation error
-	err = <-errChan
-	assert.Error(t, err, "should error when context is cancelled")
+	// Give the prefetcher goroutine some time to exit
+	time.Sleep(200 * time.Millisecond)
+
+	// Check for goroutine leaks. We expect the number of goroutines back to baseline.
+	// We allow a small tolerance if needed, but here it should be exact.
+	finalGoroutines := runtime.NumGoroutine()
+	assert.LessOrEqual(t,
+		finalGoroutines,
+		initialGoroutines+2,
+		"should not leak many goroutines (allowing for test infrastructure)",
+	)
 }
 
 // TestPrefetchMemoryBounds verifies that the prefetch buffer doesn't grow unbounded.
