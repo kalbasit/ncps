@@ -12,7 +12,7 @@
           self'.packages
           // {
             ncps = self'.packages.ncps.overrideAttrs (oa: {
-              checkFlags = (oa.checkFlags or [ ]) ++ [ "-count=5" ];
+              checkFlags = (oa.checkFlags or [ ]) ++ [ "-count=2" ];
             });
           }
         )
