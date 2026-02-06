@@ -4428,7 +4428,7 @@ func (c *Cache) maybeBackgroundMigrateNarToChunks(ctx context.Context, narURL na
 
 // BackgroundMigrateNarToChunks migrates a traditional NAR blob to content-defined chunks in the background.
 func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL) {
-	// create a detached context
+	// Use a detached context to prevent the background migration from being aborted by the request context's cancellation.
 	ctx = c.detachedContext(ctx)
 
 	analytics.SafeGo(ctx, func() {
