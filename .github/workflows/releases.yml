@@ -36,6 +36,13 @@ jobs:
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           append_body: true
           body: |
+            > [!Important]
+            >
+            > If you are enjoying ncps, please consider showing a token of appreciation by:
+            >
+            > - Pressing the “Star” button on [GitHub](https://github.com/kalbasit/ncps) (top-right).
+            > - Considering a one-time or recurrent donation via [GitHub Sponsors](https://github.com/sponsors/kalbasit) or [PayPal](https://paypal.me/kalbasit).
+
             ## Docker Images ${{ github.ref_name }}
             The following image tags were published to [Dockerhub](https://hub.docker.com/r/kalbasit/ncps):
             ```
