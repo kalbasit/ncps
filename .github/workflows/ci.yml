@@ -135,9 +135,33 @@ jobs:
       dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
   ci:
     runs-on: ubuntu-24.04
+    # Run even if dependencies are skipped or fail, so we can check their status
+    if: always()
     needs:
+      - filter
       - build
       - deploy-docs-pages
       - generate
     steps:
-      - run: echo "CI passed"
+      - name: Check Workflow Status
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # Get the full JSON result of all dependencies
+          results='${{ toJSON(needs) }}'
+
+          # Check if any job resulted in "failure"
+          if echo "$results" | grep -q '"result": "failure"'; then
+            echo "::error::One or more dependent jobs failed."
+            exit 1
+          fi
+
+          # Check if any job resulted in "cancelled"
+          if echo "$results" | grep -q '"result": "cancelled"'; then
+            echo "::error::One or more dependent jobs were cancelled."
+            exit 1
+          fi
+
+          # If we get here, jobs were either "success" or "skipped" (which is valid)
+          echo "All jobs passed or were validly skipped."
