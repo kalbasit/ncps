@@ -47,7 +47,7 @@ func createDummyUpstreams(t *testing.T, n int) []*upstream.Cache {
 func TestSelectUpstream_NoGoroutineLeak(t *testing.T) {
 	t.Parallel()
 
-	t.Run("all upstreams succeed causes goroutine leak", func(t *testing.T) {
+	t.Run("all upstreams succeed should not leak goroutines", func(t *testing.T) {
 		t.Parallel()
 
 		const numUpstreams = 3
@@ -100,7 +100,7 @@ func TestSelectUpstream_NoGoroutineLeak(t *testing.T) {
 		)
 	})
 
-	t.Run("one succeeds while others error causes goroutine leak", func(t *testing.T) {
+	t.Run("one succeeds while others error should not leak goroutines", func(t *testing.T) {
 		t.Parallel()
 
 		const numUpstreams = 3
