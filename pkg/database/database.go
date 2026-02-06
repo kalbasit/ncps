@@ -26,6 +26,8 @@ const (
 	netTypeUnix      = "unix"
 	schemePostgres   = "postgres"
 	schemePostgresql = "postgresql"
+
+	sqliteBusyTimeout = 10000 // 10 seconds
 )
 
 // PoolConfig holds database connection pool settings.
@@ -144,8 +146,6 @@ func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	}
 
 	// Set a busy timeout to wait for the database lock if it's held by another connection
-	const sqliteBusyTimeout = 10000 // 10 seconds
-
 	query := fmt.Sprintf("PRAGMA busy_timeout = %d", sqliteBusyTimeout)
 	if _, err := sdb.ExecContext(context.Background(), query); err != nil {
 		return nil, fmt.Errorf("error setting busy timeout: %w", err)
