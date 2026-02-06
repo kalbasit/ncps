@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	os.Exit(realYaMain())
+	os.Exit(realMain())
 }
 
 func realMain() int {
