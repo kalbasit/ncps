@@ -138,6 +138,16 @@ func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 		return nil, fmt.Errorf("error enabling foreign keys: %w", err)
 	}
 
+	// Enable WAL mode to allow concurrent readers and one writer
+	if _, err := sdb.ExecContext(context.Background(), "PRAGMA journal_mode = WAL"); err != nil {
+		return nil, fmt.Errorf("error enabling WAL mode: %w", err)
+	}
+
+	// Set a busy timeout to wait for the database lock if it's held by another connection
+	if _, err := sdb.ExecContext(context.Background(), "PRAGMA busy_timeout = 10000"); err != nil {
+		return nil, fmt.Errorf("error setting busy timeout: %w", err)
+	}
+
 	// Getting an error `database is locked` when data is being inserted in the
 	// database at a fast rate. This will slow down read/write from the database
 	// but at least none of them will fail due to connection issues.
