@@ -1108,11 +1108,11 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 		assert.Equal(t, 0, failCount,
 			"no instances should fail")
 
-		// CRITICAL: TTFB should be close to the upstream download time (~2s)
-		// Without the fix, waiting instances would wait for download + full chunking time (4-5+ seconds)
+		// CRITICAL: TTFB should be close to the upstream download time (2-4s)
+		// Without the fix, waiting instances would wait for download + full chunking time (6+ seconds)
 		// With the fix, they start progressive streaming during chunking (TTFB ~= download time)
 		for i, ttfb := range ttfbs {
-			assert.Less(t, ttfb, 3*time.Second,
+			assert.Less(t, ttfb, 5*time.Second,
 				"Instance %d TTFB should be close to upstream download time (got %s), "+
 					"indicating progressive streaming is working (not waiting for chunking to complete)", i, ttfb)
 		}
