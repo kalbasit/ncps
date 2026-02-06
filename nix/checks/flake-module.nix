@@ -8,7 +8,12 @@
     }:
     {
       checks =
-        self'.packages
+        (builtins.removeAttrs [ "ncps" ] self'.packages)
+        // {
+          ncps = self'.packages.ncps.overrideAttrs (oa: {
+            checkFlags = oa.checkFlags ++ [ "-count=5" ];
+          });
+        }
         // self'.devShells
         // {
           # TODO: Simplify this to not use buildGoModule as it seems to be a
