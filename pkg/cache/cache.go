@@ -4365,86 +4365,132 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 
 // streamProgressiveChunks streams chunks as they become available during an in-progress chunking operation.
 // This allows concurrent downloads while another instance is still chunking the NAR.
+// It uses a prefetch pipeline to overlap chunk fetching with data copying for better performance.
 func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64) error {
-	chunkIndex := int64(0)
 	pollInterval := 200 * time.Millisecond
 	maxWaitPerChunk := 30 * time.Second
 
-	for {
-		// Try to get chunk at current index
-		var chunkHash string
+	// Buffer size of 2 allows one chunk to be copied while the next is being fetched
+	chunkChan := make(chan *prefetchedChunk, 2)
+
+	// Start prefetch goroutine that polls for chunks and fetches them
+	analytics.SafeGo(ctx, func() {
+		defer close(chunkChan)
+
+		chunkIndex := int64(0)
 
 		var totalChunks int64
 
-		chunkWaitStart := time.Now()
-
 		for {
-			// Try to get chunk at current index first.
-			chunk, err := c.db.GetChunkByNarFileIDAndIndex(ctx, database.GetChunkByNarFileIDAndIndexParams{
-				NarFileID:  narFileID,
-				ChunkIndex: chunkIndex,
-			})
-			if err == nil {
-				chunkHash = chunk.Hash
-
-				break // Got the chunk, proceed to stream it.
-			} else if !database.IsNotFoundError(err) {
-				return fmt.Errorf("error querying chunk %d: %w", chunkIndex, err)
-			}
-
-			// Chunk not found, now check completion status.
-			// This avoids querying nar_files on every poll, only when a chunk is missing.
-			nr, err := c.db.GetNarFileByID(ctx, narFileID)
-			if err != nil {
-				return fmt.Errorf("error querying nar file: %w", err)
-			}
-
-			totalChunks = nr.TotalChunks
-
-			// Check if we're done.
-			if totalChunks > 0 && chunkIndex >= totalChunks {
-				return nil // All chunks streamed.
-			}
-
-			// Check timeout.
-			if time.Since(chunkWaitStart) > maxWaitPerChunk {
-				return fmt.Errorf(
-					"timeout waiting for chunk %d after %v: %w",
-					chunkIndex, maxWaitPerChunk, context.DeadlineExceeded,
-				)
-			}
-
-			// Wait and retry.
+			// Check if context is cancelled before polling
 			select {
-			case <-time.After(pollInterval):
-				// Continue polling.
 			case <-ctx.Done():
-				return ctx.Err()
+				// Send context error and stop prefetching
+				chunkChan <- &prefetchedChunk{err: ctx.Err()}
+
+				return
+			default:
+			}
+
+			// Try to get chunk at current index
+			var chunkHash string
+
+			chunkWaitStart := time.Now()
+
+			// Poll for chunk availability
+			for {
+				chunk, err := c.db.GetChunkByNarFileIDAndIndex(ctx, database.GetChunkByNarFileIDAndIndexParams{
+					NarFileID:  narFileID,
+					ChunkIndex: chunkIndex,
+				})
+				if err == nil {
+					chunkHash = chunk.Hash
+
+					break // Got the chunk, proceed to fetch it
+				} else if !database.IsNotFoundError(err) {
+					// Database error
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunk %d: %w", chunkIndex, err)}
+
+					return
+				}
+
+				// Chunk not found, check completion status
+				nr, err := c.db.GetNarFileByID(ctx, narFileID)
+				if err != nil {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", err)}
+
+					return
+				}
+
+				totalChunks = nr.TotalChunks
+
+				// Check if we're done
+				if totalChunks > 0 && chunkIndex >= totalChunks {
+					return // All chunks processed
+				}
+
+				// Check timeout
+				if time.Since(chunkWaitStart) > maxWaitPerChunk {
+					chunkChan <- &prefetchedChunk{
+						err: fmt.Errorf("timeout waiting for chunk %d after %v: %w",
+							chunkIndex, maxWaitPerChunk, context.DeadlineExceeded),
+					}
+
+					return
+				}
+
+				// Wait and retry
+				select {
+				case <-time.After(pollInterval):
+					// Continue polling
+				case <-ctx.Done():
+					chunkChan <- &prefetchedChunk{err: ctx.Err()}
+
+					return
+				}
+			}
+
+			// Fetch the chunk
+			rc, err := c.getChunkStore().GetChunk(ctx, chunkHash)
+
+			// Send chunk or error to consumer
+			select {
+			case chunkChan <- &prefetchedChunk{reader: rc, hash: chunkHash, err: err}:
+			case <-ctx.Done():
+				// Context cancelled while sending, close the reader if we got one
+				if rc != nil {
+					rc.Close()
+				}
+
+				return
+			}
+
+			chunkIndex++
+
+			// After successfully fetching a chunk, check if we're done
+			if totalChunks > 0 && chunkIndex >= totalChunks {
+				return // All chunks fetched
 			}
 		}
+	})
 
-		// Stream this chunk
-		rc, err := c.getChunkStore().GetChunk(ctx, chunkHash)
-		if err != nil {
-			return fmt.Errorf("error fetching chunk %s: %w", chunkHash, err)
+	// Stream chunks as they arrive from the prefetch pipeline
+	for chunk := range chunkChan {
+		if chunk.err != nil {
+			return chunk.err
 		}
 
-		if _, err := io.Copy(w, rc); err != nil {
-			_ = rc.Close()
+		// Copy chunk data to writer
+		if _, err := io.Copy(w, chunk.reader); err != nil {
+			chunk.reader.Close()
 
-			return fmt.Errorf("error copying chunk %s: %w", chunkHash, err)
+			return fmt.Errorf("error copying chunk %s: %w", chunk.hash, err)
 		}
 
-		_ = rc.Close()
-
-		chunkIndex++
-
-		// After successfully streaming a chunk, we might already have totalChunks from the last query.
-		// If totalChunks was > 0, we can check if we're done.
-		if totalChunks > 0 && chunkIndex >= totalChunks {
-			return nil // All chunks streamed
-		}
+		chunk.reader.Close()
 	}
+
+	return nil
 }
 
 // MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
