@@ -120,6 +120,17 @@ func New() (*cli.Command, error) {
 				},
 			},
 			&cli.BoolFlag{
+				Name:  "log-console-writer-enabled",
+				Usage: "Enable console writer for zerolog. This is useful when running in terminal.",
+				Value: term.IsTerminal(int(os.Stdout.Fd())),
+			},
+			&cli.StringFlag{
+				Name: "log-console-writer-prefix",
+				//nolint:lll
+				Usage: "Prefix for console writer for zerolog. This is useful when running multiple ncps instances in the same terminal.",
+				Value: "",
+			},
+			&cli.BoolFlag{
 				Name:    "otel-enabled",
 				Usage:   "Enable Open-Telemetry logs, metrics and tracing.",
 				Sources: flagSources("opentelemetry.enabled", "OTEL_ENABLED"),
@@ -169,8 +180,15 @@ func getZeroLogger(ctx context.Context, cmd *cli.Command) (context.Context, erro
 
 	var output io.Writer = os.Stdout
 
-	if term.IsTerminal(int(os.Stdout.Fd())) {
-		output = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+	if cmd.Bool("log-console-writer-enabled") {
+		writer := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
+		if prefix := cmd.String("log-console-writer-prefix"); prefix != "" {
+			writer.FormatTimestamp = func(i interface{}) string {
+				return fmt.Sprintf("[%s] %s", prefix, i)
+			}
+		}
+
+		output = writer
 	}
 
 	// Internally this calls global.GetLoggerProvider() which returns the

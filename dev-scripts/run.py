@@ -2,7 +2,6 @@
 
 import argparse
 import os
-import shlex
 import signal
 import subprocess
 import sys
@@ -46,24 +45,15 @@ def cleanup(signum, frame):
     log("\nShutting down instances...", YELLOW)
     for p in processes:
         if p.poll() is None:
-            try:
-                # Kill the entire process group (watchexec, sed, etc.)
-                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
-            except ProcessLookupError:
-                # Process already exited
-                pass
+            p.terminate()
 
     # Wait for graceful exit
     time.sleep(1)
 
     for p in processes:
         if p.poll() is None:
-            log(f"Force killing process group {p.pid}", RED)
-            try:
-                os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                # Process already exited
-                pass
+            log(f"Force killing process {p.pid}", RED)
+            p.kill()
 
     log("All instances stopped.", GREEN)
     sys.exit(0)
@@ -285,7 +275,6 @@ def main():
 
     for i in range(1, num_instances + 1):
         port = BASE_PORT + (i - 1)
-        prefix = f"[localhost:{port}]"
 
         cmd = [
             "watchexec",
@@ -298,6 +287,8 @@ def main():
             "run",
             ".",
             "--analytics-reporting-enabled=false",
+            "--log-console-writer-enabled",
+            f"--log-console-writer-prefix=localhost:{port}",
             "serve",
             "--cache-allow-put-verb",
             f"--cache-hostname=cache-{i}.example.com",
@@ -352,14 +343,6 @@ def main():
                 ]
             )
 
-        # Quote each element so the shell treats them as literal strings
-        quoted_cmd = [shlex.quote(arg) for arg in cmd]
-
-        # Join the command into a string and add the sed pipe
-        # 2>&1 redirects stderr to stdout so both are prefixed
-        cmd_str = " ".join(quoted_cmd)
-        full_command = f"{cmd_str} 2>&1 | sed 's,^,{prefix.replace('\\', '\\\\')} ,'"
-
         # Start Process
         log(f"Starting Instance {i} on port {port}...", GREEN)
 
@@ -367,7 +350,7 @@ def main():
         # Note: We are not piping through sed in python to keep signal handling simple,
         # but you could add a pipe handler if strictly required.
         # Standard Popen here for reliability.
-        p = subprocess.Popen(full_command, shell=True, preexec_fn=os.setsid)
+        p = subprocess.Popen(cmd)
         processes.append(p)
 
         # Stagger start for HA
