@@ -30,6 +30,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
+	"github.com/kalbasit/ncps/pkg/storage/chunk"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -2763,6 +2764,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
 	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
 	t.Run("HasNarFileRecord", testHasNarFileRecord(factory))
+	t.Run("BackgroundMigrateNarToChunksAfterCancellation", testBackgroundMigrateNarToChunksAfterCancellation(factory))
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
@@ -3002,5 +3004,49 @@ func testHasNarFileRecord(factory cacheFactory) func(*testing.T) {
 		hasChunks, err = c.HasNarInChunks(ctx, narURL)
 		require.NoError(t, err)
 		assert.True(t, hasChunks, "HasNarInChunks should return true when total_chunks>0")
+	}
+}
+
+func testBackgroundMigrateNarToChunksAfterCancellation(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		// 1. Manually put the NAR into storage (CDC disabled)
+		require.NoError(t, c.PutNar(context.Background(), narURL, io.NopCloser(strings.NewReader(entry.NarText))))
+
+		// Setup chunk store and enable CDC
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+		c.SetChunkStore(cs)
+		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
+
+		// 2. Call BackgroundMigrateNarToChunks with a context that we'll cancel
+		ctx, cancel := context.WithCancel(newContext())
+
+		// Start migration
+		c.BackgroundMigrateNarToChunks(ctx, narURL)
+
+		// Cancel immediately
+		cancel()
+
+		// 3. Wait for migration to complete
+		// If it correctly uses a detached context, it should succeed.
+		// If not, it will fail because the context was canceled.
+		require.Eventually(t, func() bool {
+			hasChunks, err := c.HasNarInChunks(context.Background(), narURL)
+
+			return err == nil && hasChunks
+		}, 10*time.Second, 100*time.Millisecond, "migration should complete even if request context is canceled")
+
+		// 4. Verify it's in the database as chunked
+		hasChunks, err := c.HasNarInChunks(context.Background(), narURL)
+		require.NoError(t, err)
+		assert.True(t, hasChunks)
 	}
 }
