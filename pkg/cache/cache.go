@@ -1524,12 +1524,8 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	)
 	defer span.End()
 
-	// Create a detached context that has the same span and logger as the main
-	// context but with the baseContext as parent. This context will not cancel
-	// when ctx is canceled, allowing storage reading to complete independently.
-	detachedCtx := c.detachedContext(ctx)
-
-	// Get reader from storage using DETACHED context (synchronously to get size)
+	// Get reader from storage using the request context
+	// This allows proper cancellation propagation to prevent goroutine leaks
 	var (
 		storageSize   int64
 		storageReader io.ReadCloser
@@ -1537,9 +1533,9 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	)
 
 	if hasInStore {
-		storageSize, storageReader, err = c.getNarFromStore(detachedCtx, narURL)
+		storageSize, storageReader, err = c.getNarFromStore(ctx, narURL)
 	} else {
-		storageSize, storageReader, err = c.getNarFromChunks(detachedCtx, narURL)
+		storageSize, storageReader, err = c.getNarFromChunks(ctx, narURL)
 	}
 
 	if err != nil {
@@ -4233,6 +4229,7 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 
 // streamCompleteChunks streams all chunks for a NAR that has completed chunking.
 // This is the fast path where all chunks are available immediately.
+// It uses a prefetch pipeline to overlap chunk fetching with data copying for better performance.
 func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID int64, totalChunks int64) error {
 	// Get all chunks at once
 	chunkHashes := make([]string, 0, totalChunks)
@@ -4250,20 +4247,74 @@ func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID
 		return fmt.Errorf("expected %d chunks but got %d: %w", totalChunks, len(chunkHashes), storage.ErrNotFound)
 	}
 
-	// Stream each chunk sequentially
-	for _, hash := range chunkHashes {
-		rc, err := c.getChunkStore().GetChunk(ctx, hash)
-		if err != nil {
-			return fmt.Errorf("error fetching chunk %s: %w", hash, err)
+	// Use prefetch pipeline to overlap I/O operations
+	return c.streamChunksWithPrefetch(ctx, w, chunkHashes)
+}
+
+// prefetchedChunk holds a chunk reader and any error from fetching it.
+type prefetchedChunk struct {
+	reader io.ReadCloser
+	hash   string
+	err    error
+}
+
+// streamChunksWithPrefetch implements a prefetch pipeline that fetches the next chunk
+// while the current chunk is being copied to the writer. This overlaps network/disk I/O
+// with data copying, significantly improving throughput for remote storage.
+func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunkHashes []string) error {
+	if len(chunkHashes) == 0 {
+		return nil
+	}
+
+	// Buffer size of 2 allows one chunk to be copied while the next is being fetched
+	chunkChan := make(chan *prefetchedChunk, 2)
+
+	// Start prefetch goroutine
+	analytics.SafeGo(ctx, func() {
+		defer close(chunkChan)
+
+		for _, hash := range chunkHashes {
+			// Check if context is cancelled before fetching
+			select {
+			case <-ctx.Done():
+				// Send context error and stop prefetching
+				chunkChan <- &prefetchedChunk{err: ctx.Err(), hash: hash}
+
+				return
+			default:
+			}
+
+			// Fetch chunk
+			rc, err := c.getChunkStore().GetChunk(ctx, hash)
+
+			// Send chunk or error to consumer
+			select {
+			case chunkChan <- &prefetchedChunk{reader: rc, hash: hash, err: err}:
+			case <-ctx.Done():
+				// Context cancelled while sending, close the reader if we got one
+				if rc != nil {
+					rc.Close()
+				}
+
+				return
+			}
+		}
+	})
+
+	// Stream chunks as they arrive from the prefetch pipeline
+	for chunk := range chunkChan {
+		if chunk.err != nil {
+			return fmt.Errorf("error fetching chunk %s: %w", chunk.hash, chunk.err)
 		}
 
-		if _, err := io.Copy(w, rc); err != nil {
-			rc.Close()
+		// Copy chunk data to writer
+		if _, err := io.Copy(w, chunk.reader); err != nil {
+			chunk.reader.Close()
 
-			return fmt.Errorf("error copying chunk %s: %w", hash, err)
+			return fmt.Errorf("error copying chunk %s: %w", chunk.hash, err)
 		}
 
-		rc.Close()
+		chunk.reader.Close()
 	}
 
 	return nil

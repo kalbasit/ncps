@@ -5,8 +5,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,6 +50,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("Deduplication", testCDCDeduplication(factory))
 	t.Run("Mixed Mode", testCDCMixedMode(factory))
 	t.Run("GetNarInfo with CDC chunks", testCDCGetNarInfo(factory))
+	t.Run("Client Disconnect No Goroutine Leak", testCDCClientDisconnectNoGoroutineLeak(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -230,5 +233,81 @@ NarSize: 52
 		// Verify that the narinfo still exists in the database
 		_, err = c.GetNarInfo(ctx, "testnarinfohash")
 		require.NoError(t, err, "GetNarInfo should still succeed (not purged)")
+	}
+}
+
+// testCDCClientDisconnectNoGoroutineLeak verifies that when a client disconnects
+// during chunk streaming (by canceling the context), no goroutines are leaked.
+// This is a regression test for the bug where the prefetch goroutine would continue
+// running with a detached context and get blocked trying to send to a channel that
+// no one is reading from anymore.
+func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
+		require.NoError(t, err)
+
+		// Create a large enough content to ensure multiple chunks
+		content := strings.Repeat(
+			"this is test content that will be chunked into multiple pieces for testing goroutine cleanup ",
+			100,
+		)
+		nu := nar.URL{Hash: "leaktest1", Compression: nar.CompressionTypeNone}
+
+		// Store the NAR as chunks
+		err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+		require.NoError(t, err)
+
+		// Record baseline goroutine count
+		runtime.GC()
+		time.Sleep(100 * time.Millisecond)
+
+		baselineGoroutines := runtime.NumGoroutine()
+		t.Logf("Baseline goroutines: %d", baselineGoroutines)
+
+		// Create a cancellable context to simulate client disconnect
+		clientCtx, cancel := context.WithCancel(ctx)
+
+		// Start reading the NAR
+		_, rc, err := c.GetNar(clientCtx, nu)
+		require.NoError(t, err)
+
+		// Read a few bytes to start the streaming
+		buf := make([]byte, 100)
+		_, err = rc.Read(buf)
+		require.NoError(t, err)
+
+		// Simulate client disconnect by canceling the context
+		cancel()
+
+		// Close the reader
+		rc.Close()
+
+		// Give goroutines time to leak (if they're going to)
+		time.Sleep(1 * time.Second)
+		runtime.GC()
+		time.Sleep(100 * time.Millisecond)
+
+		// Check that no goroutines are leaked
+		finalGoroutines := runtime.NumGoroutine()
+		t.Logf("Final goroutines: %d (difference: %d)", finalGoroutines, finalGoroutines-baselineGoroutines)
+
+		// No tolerance - we should have exactly the same number of goroutines
+		if finalGoroutines > baselineGoroutines {
+			t.Errorf("Goroutine leak detected: baseline=%d, final=%d (leaked=%d)",
+				baselineGoroutines, finalGoroutines, finalGoroutines-baselineGoroutines)
+		}
 	}
 }
