@@ -53,6 +53,9 @@ const (
 	// Migration type constants for metrics.
 	migrationTypeNarInfoToDB = "narinfo-to-db"
 	migrationTypeNarToChunks = "nar-to-chunks"
+
+	// Chunk batch size for storing chunks in the database.
+	chunkBatchSize = 100
 )
 
 // narInfoJobKey returns the key used for tracking narinfo download jobs.
@@ -1244,30 +1247,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	fileSize := uint64(fi.Size())
 
 	// 1. Create or get NarFile record
-	var narFileID int64
-
-	err = c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
-		nr, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-			FileSize:    fileSize,
-			TotalChunks: 0, // Mark as "in progress"
-		})
-		if err != nil {
-			return err
-		}
-
-		narFileID = nr.ID
-
-		// If this NAR already has chunks, we skip storage
-		chunks, err := qtx.GetChunksByNarFileID(ctx, narFileID)
-		if err == nil && len(chunks) > 0 {
-			return storage.ErrAlreadyExists
-		}
-
-		return nil
-	})
+	narFileID, err := c.findOrCreateNarFileForCDC(ctx, narURL, fileSize)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			zerolog.Ctx(ctx).Debug().Msg("nar already exists in chunk storage, skipping")
@@ -1279,17 +1259,19 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	}
 
 	// 2. Start chunking
-	cdcEnabled, chunkStore, chunker := c.getCDCInfo()
-	if !cdcEnabled || chunkStore == nil || chunker == nil {
+	cdcEnabled, chunkStore, cdcChunker := c.getCDCInfo()
+	if !cdcEnabled || chunkStore == nil || cdcChunker == nil {
 		return 0, ErrCDCDisabled
 	}
 
-	chunksChan, errChan := chunker.Chunk(ctx, f)
+	chunksChan, errChan := cdcChunker.Chunk(ctx, f)
 
 	var (
 		totalSize  int64
 		chunkCount int64
 	)
+
+	var batch []chunker.Chunk
 
 	for {
 		select {
@@ -1301,6 +1283,13 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			}
 		case chunkMetadata, ok := <-chunksChan:
 			if !ok {
+				// Process remaining batch
+				if err := c.recordChunkBatch(ctx, narFileID, chunkCount, batch); err != nil {
+					return 0, err
+				}
+
+				chunkCount += int64(len(batch))
+
 				// All chunks processed - mark as complete.
 				err := c.withTransaction(ctx, "storeNarWithCDC.MarkComplete", func(qtx database.Querier) error {
 					return qtx.UpdateNarFileTotalChunks(ctx, database.UpdateNarFileTotalChunksParams{
@@ -1329,40 +1318,83 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 				return 0, fmt.Errorf("error storing chunk: %w", err)
 			}
 
-			// Record in database
-			err = c.withTransaction(ctx, "storeNarWithCDC.RecordChunk", func(qtx database.Querier) error {
-				// Create or increment ref count.
-				// For MySQL, CreateChunk doesn't return the ID, so we use a different approach.
-				// But our generated wrapper handles the DB type differences.
-				ch, err := qtx.CreateChunk(ctx, database.CreateChunkParams{
-					Hash: chunkMetadata.Hash,
-					Size: chunkMetadata.Size,
-				})
-				if err != nil {
-					return fmt.Errorf("error creating chunk record: %w", err)
-				}
-
-				// Link to NAR file
-				err = qtx.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
-					NarFileID: narFileID,
-					ChunkID:   ch.ID,
-
-					ChunkIndex: chunkCount,
-				})
-				if err != nil {
-					return fmt.Errorf("error linking chunk: %w", err)
-				}
-
-				return nil
-			})
-			if err != nil {
-				return 0, err
-			}
-
 			totalSize += int64(chunkMetadata.Size)
-			chunkCount++
+
+			batch = append(batch, chunkMetadata)
+
+			if len(batch) >= chunkBatchSize {
+				if err := c.recordChunkBatch(ctx, narFileID, chunkCount, batch); err != nil {
+					return 0, err
+				}
+
+				chunkCount += int64(len(batch))
+				batch = batch[:0]
+			}
 		}
 	}
+}
+
+func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, fileSize uint64) (int64, error) {
+	var narFileID int64
+
+	err := c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
+		nr, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+			FileSize:    fileSize,
+			TotalChunks: 0, // Mark as "in progress"
+		})
+		if err != nil {
+			return err
+		}
+
+		narFileID = nr.ID
+
+		// If this NAR already has chunks, we skip storage
+		chunks, err := qtx.GetChunksByNarFileID(ctx, narFileID)
+		if err == nil && len(chunks) > 0 {
+			return storage.ErrAlreadyExists
+		}
+
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return narFileID, nil
+}
+
+func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startIndex int64, batch []chunker.Chunk) error {
+	if len(batch) == 0 {
+		return nil
+	}
+
+	return c.withTransaction(ctx, "recordChunkBatch", func(qtx database.Querier) error {
+		for i, chunkMetadata := range batch {
+			// Create or increment ref count.
+			ch, err := qtx.CreateChunk(ctx, database.CreateChunkParams{
+				Hash: chunkMetadata.Hash,
+				Size: chunkMetadata.Size,
+			})
+			if err != nil {
+				return fmt.Errorf("error creating chunk record: %w", err)
+			}
+
+			// Link to NAR file
+			err = qtx.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
+				NarFileID:  narFileID,
+				ChunkID:    ch.ID,
+				ChunkIndex: startIndex + int64(i),
+			})
+			if err != nil {
+				return fmt.Errorf("error linking chunk: %w", err)
+			}
+		}
+
+		return nil
+	})
 }
 
 func (c *Cache) pullNarIntoStore(
