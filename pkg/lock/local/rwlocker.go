@@ -2,121 +2,140 @@ package local
 
 import (
 	"context"
-	"hash"
-	"hash/fnv"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/kalbasit/ncps/pkg/lock"
 )
 
-// RWLocker implements lock.RWLocker using sync.RWMutex.
+// RWLocker implements lock.RWLocker using per-key RWMutexes.
 type RWLocker struct {
-	hasherPool sync.Pool
+	mu      sync.Mutex
+	lockers map[string]*keyRWLock
+}
 
-	shards [numShards]sync.RWMutex
-
-	// Track lock acquisition times for duration metrics (write locks only)
-	// Note: Read lock duration tracking is not supported due to concurrent access
-	// Protected by a separate mu (write locks are exclusive), so no need for sync.Map
-	timesMu               sync.Mutex
-	writeAcquisitionTimes map[string]time.Time
+type keyRWLock struct {
+	sync.RWMutex
+	refCount  int
+	startTime time.Time
 }
 
 // NewRWLocker creates a new local read-write locker.
 func NewRWLocker() lock.RWLocker {
 	return &RWLocker{
-		hasherPool:            sync.Pool{New: func() interface{} { return fnv.New32a() }},
-		writeAcquisitionTimes: make(map[string]time.Time),
+		lockers: make(map[string]*keyRWLock),
 	}
 }
 
-// getShard returns the shard index for a given key.
-func (rw *RWLocker) getShard(key string) int {
-	h, ok := rw.hasherPool.Get().(hash.Hash32)
+// getLock returns the lock for the given key, creating it if it doesn't exist.
+// It also increments the reference count.
+func (rw *RWLocker) getLock(key string) *keyRWLock {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+
+	kl, ok := rw.lockers[key]
 	if !ok {
-		panic("local.RWLocker: unexpected type in hasher pool; expected hash.Hash32")
+		kl = &keyRWLock{}
+		rw.lockers[key] = kl
 	}
 
-	defer rw.hasherPool.Put(h)
+	kl.refCount++
 
-	h.Reset()
-	h.Write([]byte(key))
-
-	return int(h.Sum32() % numShards)
+	return kl
 }
 
-// Lock acquires an exclusive lock. The ttl parameter is ignored, but the key is used for sharding.
+// releaseLock decrements the reference count and removes the lock from the map if it reaches zero.
+func (rw *RWLocker) releaseLock(key string) {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+
+	kl := rw.lockers[key]
+
+	kl.refCount--
+	if kl.refCount == 0 {
+		delete(rw.lockers, key)
+	}
+}
+
+// Lock acquires an exclusive lock. The ttl parameter is ignored.
 func (rw *RWLocker) Lock(ctx context.Context, key string, _ time.Duration) error {
-	// Acquire the shard lock for this key
-	shard := rw.getShard(key)
-	rw.shards[shard].Lock()
+	kl := rw.getLock(key)
+
+	kl.Lock()
+
+	kl.startTime = time.Now()
 
 	// Record acquisition attempt
 	lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultSuccess)
-
-	rw.timesMu.Lock()
-	rw.writeAcquisitionTimes[key] = time.Now()
-	rw.timesMu.Unlock()
 
 	return nil
 }
 
 // Unlock releases an exclusive lock for the given key.
 func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
-	// Calculate and record lock hold duration
-	rw.timesMu.Lock()
+	rw.mu.Lock()
+	kl, ok := rw.lockers[key]
+	rw.mu.Unlock()
 
-	if startTime, ok := rw.writeAcquisitionTimes[key]; ok {
-		duration := time.Since(startTime).Seconds()
-		lock.RecordLockDuration(ctx, lock.LockTypeWrite, lock.LockModeLocal, duration)
-		delete(rw.writeAcquisitionTimes, key)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrUnlockUnknownKey, key)
 	}
 
-	rw.timesMu.Unlock()
+	if !kl.startTime.IsZero() {
+		duration := time.Since(kl.startTime).Seconds()
+		lock.RecordLockDuration(ctx, lock.LockTypeWrite, lock.LockModeLocal, duration)
 
-	// Unlock the shard for this key
-	shard := rw.getShard(key)
-	rw.shards[shard].Unlock()
+		kl.startTime = time.Time{}
+	}
+
+	kl.Unlock()
+	rw.releaseLock(key)
 
 	return nil
 }
 
 // TryLock attempts to acquire an exclusive lock without blocking.
 func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (bool, error) {
-	// Try to acquire the shard lock for this key
-	shard := rw.getShard(key)
-	acquired := rw.shards[shard].TryLock()
+	kl := rw.getLock(key)
+
+	acquired := kl.TryLock()
 
 	if acquired {
-		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultSuccess)
+		kl.startTime = time.Now()
 
-		rw.timesMu.Lock()
-		rw.writeAcquisitionTimes[key] = time.Now()
-		rw.timesMu.Unlock()
+		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultSuccess)
 	} else {
 		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeLocal, lock.LockResultContention)
+		rw.releaseLock(key)
 	}
 
 	return acquired, nil
 }
 
-// RLock acquires a shared read lock. The ttl parameter is ignored, but the key is used for sharding.
+// RLock acquires a shared read lock. The ttl parameter is ignored.
 func (rw *RWLocker) RLock(ctx context.Context, key string, _ time.Duration) error {
-	// Acquire the shard lock for this key
-	shard := rw.getShard(key)
-	rw.shards[shard].RLock()
+	kl := rw.getLock(key)
+
+	kl.RLock()
 
 	lock.RecordLockAcquisition(ctx, lock.LockTypeRead, lock.LockModeLocal, lock.LockResultSuccess)
 
 	return nil
 }
 
-// Unlock releases a shared read lock for the given key.
+// RUnlock releases a shared read lock for the given key.
 func (rw *RWLocker) RUnlock(_ context.Context, key string) error {
-	// Acquire the shard lock for this key
-	shard := rw.getShard(key)
-	rw.shards[shard].RUnlock()
+	rw.mu.Lock()
+	kl, ok := rw.lockers[key]
+	rw.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrRUnlockUnknownKey, key)
+	}
+
+	kl.RUnlock()
+	rw.releaseLock(key)
 
 	return nil
 }

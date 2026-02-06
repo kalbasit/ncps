@@ -281,3 +281,39 @@ func TestLocker_IgnoresKeyAndTTL(t *testing.T) {
 	err = locker.Unlock(ctx, "key3")
 	require.NoError(t, err)
 }
+
+func TestLocker_DeadlockReproduction(t *testing.T) {
+	t.Parallel()
+
+	// These keys were found to hash to the same shard (202) in the user's report.
+	// In the new implementation, they use separate mutexes, so there's no deadlock.
+	key1 := "download:narinfo:6wpnygxh29xzn5pkav0x66jxhfh9d6hj"
+	key2 := "download:nar:0rwy6f0xg45wxlcz4cd2qwb88xfvskvadpv0pc7k5c1b18qal4yh"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	locker := local.NewLocker()
+
+	t.Log("Acquiring first lock...")
+
+	err := locker.Lock(ctx, key1, time.Second)
+	require.NoError(t, err)
+
+	defer func() {
+		err := locker.Unlock(ctx, key1)
+		assert.NoError(t, err)
+	}()
+
+	t.Log("Acquiring second lock (should NO LONGER deadlock)...")
+
+	err = locker.Lock(ctx, key2, time.Second)
+	require.NoError(t, err)
+
+	defer func() {
+		err := locker.Unlock(ctx, key2)
+		assert.NoError(t, err)
+	}()
+
+	t.Log("Success!")
+}
