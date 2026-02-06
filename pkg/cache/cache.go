@@ -4267,7 +4267,9 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 	}
 
 	// Buffer size of 2 allows one chunk to be copied while the next is being fetched
-	chunkChan := make(chan *prefetchedChunk, 2)
+	const prefetchBufferSize = 2
+
+	chunkChan := make(chan *prefetchedChunk, prefetchBufferSize)
 
 	// Start prefetch goroutine
 	analytics.SafeGo(ctx, func() {

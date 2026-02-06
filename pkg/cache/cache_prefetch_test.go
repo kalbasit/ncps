@@ -40,9 +40,9 @@ func (m *mockLatencyChunkStore) GetChunk(ctx context.Context, hash string) (io.R
 	return m.Store.GetChunk(ctx, hash)
 }
 
-// BenchmarkStreamCompleteChunks_Sequential benchmarks the current sequential implementation.
-// This establishes the baseline performance before optimization.
-func BenchmarkStreamCompleteChunks_Sequential(b *testing.B) {
+// BenchmarkStreamCompleteChunks_WithPrefetch benchmarks the prefetch implementation.
+// It verifies the performance of streaming chunks with overlapping I/O.
+func BenchmarkStreamCompleteChunks_WithPrefetch(b *testing.B) {
 	ctx := context.Background()
 
 	// Manually create cache for benchmark
@@ -96,14 +96,6 @@ func BenchmarkStreamCompleteChunks_Sequential(b *testing.B) {
 	}
 
 	b.ReportMetric(float64(latencyStore.getChunkCalls.Load())/float64(b.N), "chunks/op")
-}
-
-// BenchmarkStreamCompleteChunks_Prefetch benchmarks the optimized prefetch implementation.
-// This will initially show similar or worse performance until the optimization is implemented.
-func BenchmarkStreamCompleteChunks_Prefetch(b *testing.B) {
-	// This benchmark will be identical to Sequential until we implement prefetching.
-	// After implementation, we expect this to be significantly faster.
-	BenchmarkStreamCompleteChunks_Sequential(b)
 }
 
 // TestPrefetchPipelineOrdering verifies that chunks are streamed in the correct order
