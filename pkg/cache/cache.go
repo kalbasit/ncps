@@ -48,6 +48,7 @@ const (
 	// Migration result constants for metrics.
 	migrationResultSuccess = "success"
 	migrationResultFailure = "failure"
+	migrationResultSkipped = "skipped"
 
 	// Migration type constants for metrics.
 	migrationTypeNarInfoToDB = "narinfo-to-db"
@@ -81,6 +82,9 @@ var (
 
 	// ErrCDCDisabled is returned when CDC is required but not enabled.
 	ErrCDCDisabled = errors.New("CDC must be enabled and chunk store configured for migration")
+
+	// ErrNarAlreadyChunked is returned when the nar is already chunked.
+	ErrNarAlreadyChunked = errors.New("nar is already chunked")
 
 	//nolint:gochecknoglobals
 	meter metric.Meter
@@ -4374,7 +4378,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL nar.URL) error {
 	}
 
 	if hasChunks {
-		return nil // Already migrated
+		return ErrNarAlreadyChunked
 	}
 
 	// 2. Fetch the NAR from the store
@@ -4440,7 +4444,9 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 		log.Debug().Msg("starting background migration to chunks")
 
 		opStartTime := time.Now()
+
 		err := c.MigrateNarToChunks(ctx, narURL)
+
 		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(
 				attribute.String("migration_type", migrationTypeNarToChunks),
@@ -4449,6 +4455,21 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 		)
 
 		if err != nil {
+			// if the nar is already chunked, we don't need to do anything else.
+			if errors.Is(err, ErrNarAlreadyChunked) {
+				log.Debug().Msg("skipping background migration to chunks, nar already chunked")
+
+				backgroundMigrationObjectsTotal.Add(ctx, 1,
+					metric.WithAttributes(
+						attribute.String("migration_type", migrationTypeNarToChunks),
+						attribute.String("operation", migrationOperationMigrate),
+						attribute.String("result", migrationResultSkipped),
+					),
+				)
+
+				return
+			}
+
 			log.Error().Err(err).Msg("error migrating nar to chunks")
 			backgroundMigrationObjectsTotal.Add(ctx, 1,
 				metric.WithAttributes(
