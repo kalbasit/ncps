@@ -281,3 +281,147 @@ func TestLocker_IgnoresKeyAndTTL(t *testing.T) {
 	err = locker.Unlock(ctx, "key3")
 	require.NoError(t, err)
 }
+
+func TestLocker_DeadlockReproduction(t *testing.T) {
+	t.Parallel()
+
+	// These keys were found to hash to the same shard (202) in the user's report.
+	// In the new implementation, they use separate mutexes, so there's no deadlock.
+	key1 := "download:narinfo:6wpnygxh29xzn5pkav0x66jxhfh9d6hj"
+	key2 := "download:nar:0rwy6f0xg45wxlcz4cd2qwb88xfvskvadpv0pc7k5c1b18qal4yh"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	locker := local.NewLocker()
+
+	t.Log("Acquiring first lock...")
+
+	err := locker.Lock(ctx, key1, time.Second)
+	require.NoError(t, err)
+
+	defer func() {
+		err := locker.Unlock(ctx, key1)
+		assert.NoError(t, err)
+	}()
+
+	t.Log("Acquiring second lock (should NO LONGER deadlock)...")
+
+	err = locker.Lock(ctx, key2, time.Second)
+	require.NoError(t, err)
+
+	defer func() {
+		err := locker.Unlock(ctx, key2)
+		assert.NoError(t, err)
+	}()
+
+	t.Log("Success!")
+}
+
+// TestLocker_ConcurrentUnlock tests the race condition where multiple goroutines
+// call Unlock concurrently on the same key. Without proper synchronization,
+// both can pass the !ok check and attempt to unlock, causing a panic.
+func TestLocker_ConcurrentUnlock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewLocker()
+
+	// Acquire lock
+	err := locker.Lock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	// Try to unlock from multiple goroutines simultaneously
+	// This should trigger the race condition where both goroutines
+	// can pass the !ok check before either completes the unlock
+	var wg sync.WaitGroup
+
+	numGoroutines := 10
+
+	// Use a channel to synchronize the start of all goroutines
+	start := make(chan struct{})
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			<-start // Wait for signal to start
+
+			_ = locker.Unlock(ctx, "test-key")
+		}()
+	}
+
+	// Release all goroutines at once to maximize race condition probability
+	close(start)
+	wg.Wait()
+
+	// If we get here without panic, the race condition is fixed
+}
+
+// TestRWLocker_ConcurrentUnlock tests the race condition in RWLocker.Unlock.
+func TestRWLocker_ConcurrentUnlock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewRWLocker()
+
+	// Acquire write lock
+	err := locker.Lock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	// Try to unlock from multiple goroutines simultaneously
+	var wg sync.WaitGroup
+
+	numGoroutines := 10
+	start := make(chan struct{})
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			_ = locker.Unlock(ctx, "test-key")
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+}
+
+// TestRWLocker_ConcurrentRUnlock tests the race condition in RWLocker.RUnlock.
+func TestRWLocker_ConcurrentRUnlock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewRWLocker()
+
+	// Acquire read lock
+	err := locker.RLock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	// Try to RUnlock from multiple goroutines simultaneously
+	var wg sync.WaitGroup
+
+	numGoroutines := 10
+	start := make(chan struct{})
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			<-start
+
+			_ = locker.RUnlock(ctx, "test-key")
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+}
