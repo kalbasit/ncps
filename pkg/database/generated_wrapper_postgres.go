@@ -741,6 +741,10 @@ func (w *postgresWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFil
 func (w *postgresWrapper) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
+	if len(arg.ChunkIndex) != len(arg.ChunkID) {
+		return ErrMismatchedSlices
+	}
+
 	return w.adapter.LinkNarFileToChunks(ctx, postgresdb.LinkNarFileToChunksParams{
 		NarFileID:  arg.NarFileID,
 		ChunkID:    arg.ChunkID,

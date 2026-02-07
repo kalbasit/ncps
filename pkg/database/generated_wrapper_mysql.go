@@ -763,6 +763,9 @@ func (w *mysqlWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileTo
 func (w *mysqlWrapper) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
+	if len(arg.ChunkIndex) != len(arg.ChunkID) {
+		return ErrMismatchedSlices
+	}
 	for i, v := range arg.ChunkID {
 		_ = i
 		err := w.adapter.LinkNarFileToChunk(ctx, mysqldb.LinkNarFileToChunkParams{

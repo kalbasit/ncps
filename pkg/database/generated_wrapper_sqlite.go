@@ -759,6 +759,9 @@ func (w *sqliteWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileT
 func (w *sqliteWrapper) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
+	if len(arg.ChunkIndex) != len(arg.ChunkID) {
+		return ErrMismatchedSlices
+	}
 	for i, v := range arg.ChunkID {
 		_ = i
 		err := w.adapter.LinkNarFileToChunk(ctx, sqlitedb.LinkNarFileToChunkParams{
