@@ -2252,9 +2252,6 @@ func testGetNarInfoMultipleConcurrentPutsDuringMigration(factory cacheFactory) f
 		hash := testdata.Nar1.NarInfoHash
 		entry := testdata.Nar1
 
-		t.Cleanup(c.Close)
-		t.Cleanup(func() { db.DB().Close() })
-
 		// Pre-populate storage
 		narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
 		narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
@@ -2494,7 +2491,6 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(factory cacheFactory) fu
 		require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
 
 		// Channel to coordinate the race
-		migrationCalled := make(chan struct{})
 		migrationComplete := make(chan struct{})
 
 		var (
@@ -2510,8 +2506,6 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(factory cacheFactory) fu
 			beforeGetNarInfo: func(h string) {
 				if h == hash {
 					migrationOnce.Do(func() {
-						close(migrationCalled)
-
 						// This is the critical race window:
 						// GetNarInfo has checked HasNarInfo (returned true)
 						// Now it's about to call GetNarInfo on storage
