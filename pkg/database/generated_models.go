@@ -140,6 +140,12 @@ type LinkNarFileToChunkParams struct {
 	ChunkIndex int64
 }
 
+type LinkNarFileToChunksParams struct {
+	NarFileID  int64
+	ChunkID    []int64
+	ChunkIndex []int64
+}
+
 type LinkNarInfoToNarFileParams struct {
 	NarInfoID int64
 	NarFileID int64

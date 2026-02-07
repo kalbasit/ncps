@@ -756,6 +756,26 @@ func (w *sqliteWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileT
 	})
 }
 
+func (w *sqliteWrapper) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	for i, v := range arg.ChunkID {
+		_ = i
+		err := w.adapter.LinkNarFileToChunk(ctx, sqlitedb.LinkNarFileToChunkParams{
+			NarFileID: arg.NarFileID,
+
+			ChunkID: v,
+
+			ChunkIndex: arg.ChunkIndex[i],
+		},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

@@ -738,6 +738,16 @@ func (w *postgresWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFil
 	})
 }
 
+func (w *postgresWrapper) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.LinkNarFileToChunks(ctx, postgresdb.LinkNarFileToChunksParams{
+		NarFileID:  arg.NarFileID,
+		ChunkID:    arg.ChunkID,
+		ChunkIndex: arg.ChunkIndex,
+	})
+}
+
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

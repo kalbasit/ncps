@@ -1372,6 +1372,9 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 	}
 
 	return c.withTransaction(ctx, "recordChunkBatch", func(qtx database.Querier) error {
+		chunkIDs := make([]int64, len(batch))
+		chunkIndices := make([]int64, len(batch))
+
 		for i, chunkMetadata := range batch {
 			// Create or increment ref count.
 			ch, err := qtx.CreateChunk(ctx, database.CreateChunkParams{
@@ -1382,15 +1385,18 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 				return fmt.Errorf("error creating chunk record: %w", err)
 			}
 
-			// Link to NAR file
-			err = qtx.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
-				NarFileID:  narFileID,
-				ChunkID:    ch.ID,
-				ChunkIndex: startIndex + int64(i),
-			})
-			if err != nil {
-				return fmt.Errorf("error linking chunk: %w", err)
-			}
+			chunkIDs[i] = ch.ID
+			chunkIndices[i] = startIndex + int64(i)
+		}
+
+		// Link to NAR file in bulk
+		err := qtx.LinkNarFileToChunks(ctx, database.LinkNarFileToChunksParams{
+			NarFileID:  narFileID,
+			ChunkID:    chunkIDs,
+			ChunkIndex: chunkIndices,
+		})
+		if err != nil {
+			return fmt.Errorf("error linking chunks in bulk: %w", err)
 		}
 
 		return nil
