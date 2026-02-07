@@ -12,7 +12,7 @@ import (
 )
 
 const addNarInfoReference = `-- name: AddNarInfoReference :exec
-INSERT INTO narinfo_references (
+INSERT IGNORE INTO narinfo_references (
     narinfo_id, reference
 ) VALUES (
     ?, ?
@@ -26,7 +26,7 @@ type AddNarInfoReferenceParams struct {
 
 // AddNarInfoReference
 //
-//	INSERT INTO narinfo_references (
+//	INSERT IGNORE INTO narinfo_references (
 //	    narinfo_id, reference
 //	) VALUES (
 //	    ?, ?
@@ -37,7 +37,7 @@ func (q *Queries) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferen
 }
 
 const addNarInfoSignature = `-- name: AddNarInfoSignature :exec
-INSERT INTO narinfo_signatures (
+INSERT IGNORE INTO narinfo_signatures (
     narinfo_id, signature
 ) VALUES (
     ?, ?
@@ -51,7 +51,7 @@ type AddNarInfoSignatureParams struct {
 
 // AddNarInfoSignature
 //
-//	INSERT INTO narinfo_signatures (
+//	INSERT IGNORE INTO narinfo_signatures (
 //	    narinfo_id, signature
 //	) VALUES (
 //	    ?, ?
@@ -163,7 +163,6 @@ INSERT INTO narinfos (
 ON DUPLICATE KEY UPDATE
     id = LAST_INSERT_ID(id),
     store_path = IF(url IS NULL, VALUES(store_path), store_path),
-    url = IF(url IS NULL, VALUES(url), url),
     compression = IF(url IS NULL, VALUES(compression), compression),
     file_hash = IF(url IS NULL, VALUES(file_hash), file_hash),
     file_size = IF(url IS NULL, VALUES(file_size), file_size),
@@ -172,6 +171,7 @@ ON DUPLICATE KEY UPDATE
     deriver = IF(url IS NULL, VALUES(deriver), deriver),
     system = IF(url IS NULL, VALUES(system), system),
     ca = IF(url IS NULL, VALUES(ca), ca),
+    url = IF(url IS NULL, VALUES(url), url),
     updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at)
 `
 
@@ -199,7 +199,6 @@ type CreateNarInfoParams struct {
 //	ON DUPLICATE KEY UPDATE
 //	    id = LAST_INSERT_ID(id),
 //	    store_path = IF(url IS NULL, VALUES(store_path), store_path),
-//	    url = IF(url IS NULL, VALUES(url), url),
 //	    compression = IF(url IS NULL, VALUES(compression), compression),
 //	    file_hash = IF(url IS NULL, VALUES(file_hash), file_hash),
 //	    file_size = IF(url IS NULL, VALUES(file_size), file_size),
@@ -208,6 +207,7 @@ type CreateNarInfoParams struct {
 //	    deriver = IF(url IS NULL, VALUES(deriver), deriver),
 //	    system = IF(url IS NULL, VALUES(system), system),
 //	    ca = IF(url IS NULL, VALUES(ca), ca),
+//	    url = IF(url IS NULL, VALUES(url), url),
 //	    updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at)
 func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createNarInfo,

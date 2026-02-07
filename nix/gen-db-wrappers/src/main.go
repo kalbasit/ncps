@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/parser"
 	"go/token"
 	"log"
@@ -16,6 +15,7 @@ import (
 	"text/template"
 
 	"github.com/jinzhu/inflection"
+	"mvdan.cc/gofumpt/format"
 )
 
 const generatedFilePrefix = "generated_"
@@ -341,7 +341,10 @@ func extractBulkFor(comment string) string {
 func toSingular(s string) string { return inflection.Singular(s) }
 
 func writeFile(dir, filename string, content []byte) {
-	formatted, err := format.Source(content)
+	formatted, err := format.Source(content, format.Options{
+		LangVersion: "",
+		ExtraRules:  true,
+	})
 	if err != nil {
 		log.Println(string(content))
 		log.Fatalf("formatting %s: %v", filename, err)
@@ -583,27 +586,12 @@ type {{.Engine.Name}}Wrapper struct {
 	adapter *{{.Engine.Package}}.Adapter
 }
 
-{{- define "handleErrorReturn" -}}
-	{{- $retType := firstReturnType .Method.Returns -}}
-	{{- if .Method.ReturnsSelf }}
-		return nil, {{.ErrorVar}} // Assuming Querier methods return (Querier, error)
-	{{- else if not .Method.HasValue }}
-		return {{.ErrorVar}}
-	{{- else if isSlice $retType }}
-		return nil, {{.ErrorVar}}
-	{{- else if isDomainStruct .Method.ReturnElem }}
-		return {{.Method.ReturnElem}}{}, {{.ErrorVar}}
-	{{- else }}
-		return {{zeroValue $retType}}, {{.ErrorVar}}
-	{{- end }}
-{{- end -}}
-
 {{range .Methods}}
 {{- $methodParams := .Params }}
 func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
-	{{- /* --- Auto-Loop for Bulk Insert on Non-Postgres --- */ -}}
-	{{- $isAutoLoop := false -}}
-	{{- $singularMethodName := "" -}}
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+	{{$isAutoLoop := false}}
+	{{$singularMethodName := ""}}
 	{{- $paramType := "" -}}
 	{{- $sliceField := dict "Name" "" -}}
 	{{- if and (not $.Engine.IsPostgres) (gt (len .Params) 1) -}}
@@ -630,69 +618,63 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- end -}}
 	{{- end -}}
 
-	{{- if $isAutoLoop -}}
+	{{if $isAutoLoop}}
 		{{- $bulkParamType := (index .Params 1).Type -}}
 		{{- $bulkStructInfo := getStruct $bulkParamType -}}
 		{{- $singularParamType := printf "%sParams" $singularMethodName -}}
 		{{- $targetSingularParamType := $singularParamType -}} {{/* Assume same name for now */}}
 		{{- $targetStructInfo := getTargetStruct $targetSingularParamType -}}
-		for i, v := range {{(index $methodParams 1).Name}}.{{$sliceField.Name}} {
+		for i, v := range {{(index .Params 1).Name}}.{{$sliceField.Name}} {
 			_ = i
-			err := w.adapter.{{$singularMethodName}}({{(index $methodParams 0).Name}}, {{$.Engine.Package}}.{{$targetSingularParamType}}{
-				{{- range $targetStructField := $targetStructInfo.Fields }}
-					{{- /* Find matching field in bulk (source) struct */ -}}
-					{{- $sourceField := dict "Name" "" -}}
-					{{- range $bulkStructInfo.Fields }}
-						{{- if eq .Name $targetStructField.Name }}
-							{{- $sourceField = . }}
-						{{- end }}
-						{{- if and (eq $sourceField.Name "") (eq (toSingular .Name) $targetStructField.Name) }}
-							{{- $sourceField = . }}
-						{{- end }}
-					{{- end }}
-					{{- if ne $sourceField.Name "" }}
-						{{- if eq $sourceField.Name $sliceField.Name }}
-							{{- if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type }}
+			err := w.adapter.{{$singularMethodName}}({{(index .Params 0).Name}}, {{$.Engine.Package}}.{{$targetSingularParamType}}{
+				{{range $targetStructField := $targetStructInfo.Fields}}
+					{{/* Find matching field in bulk (source) struct */}}
+					{{$sourceField := dict "Name" ""}}
+					{{range $bulkStructInfo.Fields}}
+						{{if eq .Name $targetStructField.Name}}
+							{{$sourceField = .}}
+						{{end}}
+						{{if and (eq $sourceField.Name "") (eq (toSingular .Name) $targetStructField.Name)}}
+							{{$sourceField = .}}
+						{{end}}
+					{{end}}
+					{{if ne $sourceField.Name ""}}
+						{{if eq $sourceField.Name $sliceField.Name}}
+							{{if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type}}
 								{{$targetStructField.Name}}: v,
-							{{- else }}
+							{{else}}
 								{{$targetStructField.Name}}: {{$targetStructField.Type}}(v),
-							{{- end }}
-						{{- else if isSlice $sourceField.Type }}
-							{{- if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type }}
+							{{end}}
+						{{else if isSlice $sourceField.Type}}
+							{{if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type}}
 								{{$targetStructField.Name}}: {{(index $methodParams 1).Name}}.{{$sourceField.Name}}[i],
-							{{- else }}
+							{{else}}
 								{{$targetStructField.Name}}: {{$targetStructField.Type}}({{(index $methodParams 1).Name}}.{{$sourceField.Name}}[i]),
-							{{- end }}
-						{{- else }}
-							{{- if eq $sourceField.Type $targetStructField.Type }}
+							{{end}}
+						{{else}}
+							{{if eq $sourceField.Type $targetStructField.Type}}
 								{{$targetStructField.Name}}: {{(index $methodParams 1).Name}}.{{$sourceField.Name}},
-							{{- else }}
+							{{else}}
 								{{$targetStructField.Name}}: {{$targetStructField.Type}}({{(index $methodParams 1).Name}}.{{$sourceField.Name}}),
-							{{- end }}
-						{{- end }}
-					{{- end }}
-				{{- end }}
+							{{end}}
+						{{end}}
+					{{end}}
+				{{end}}
 				},
 			)
 			if err != nil {
-				if IsDuplicateKeyError(err) {
-					continue
-				}
-				if errors.Is(err, sql.ErrNoRows) {
-					{{- template "handleErrorReturn" (dict "Method" . "ErrorVar" "ErrNotFound") -}}
-				}
-				{{- template "handleErrorReturn" (dict "Method" . "ErrorVar" "err") -}}
+				{{$retType := firstReturnType .Returns}}
+				return {{if .ReturnsSelf}}nil, {{else if not .HasValue}}{{else if isSlice $retType}}nil, {{else if isDomainStruct .ReturnElem}}{{.ReturnElem}}{}, {{else}}{{zeroValue $retType}}, {{end}}err
 			}
 		}
 		return nil
-	{{- else -}}
-		{{- template "standardBody" (dict "Method" . "Engine" $.Engine) -}}
-	{{- end -}}
+	{{else}}
+		{{template "standardBody" (dict "Method" . "Engine" $.Engine)}}
+	{{end}}
 }
 {{end}}
 
 {{define "standardBody"}}
-	{{- /* --- MySQL CREATE Special Handling --- */ -}}
 	{{if and .Engine.IsMySQL .Method.IsCreate}}
 		// MySQL does not support RETURNING for INSERTs.
 		// We insert, get LastInsertId, and then fetch the object.
@@ -708,73 +690,64 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 
 		return w.Get{{.Method.ReturnElem}}ByID(ctx, id)
 
-	{{- else -}}
+	{{else}}
 
-	{{- /* --- Standard Handling --- */ -}}
+	{{/* --- Standard Handling --- */}}
 		{{- $retType := firstReturnType .Method.Returns -}}
 		{{- $targetMethod := getTargetMethod .Method.Name -}}
 		{{- $targetRetType := firstReturnType $targetMethod.Returns -}}
 
-		{{/* 1. CALL ADAPTER */}}
-		{{- if .Method.HasValue -}}
+		{{if not .Method.HasValue}}
+			{{if .Method.ReturnsError}}
+				return w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
+			{{else}}
+				w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
+				return
+			{{end}}
+		{{else}}
 			res{{if .Method.ReturnsError}}, err{{end}} := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
-		{{- else -}}
-			err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
-		{{- end -}}
-
-		{{/* 2. HANDLE ERROR */}}
-		{{- if .Method.ReturnsError}}
-		if err != nil {
-			{{- if and .Method.HasValue (not (isSlice $retType)) }}
-			if errors.Is(err, sql.ErrNoRows) {
-				{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "ErrNotFound") -}}
-			}
-			{{- end}}
-			{{- template "handleErrorReturn" (dict "Method" .Method "ErrorVar" "err") -}}
-		}
-		{{- end}}
-
-		{{/* 3. RETURN RESULTS */}}
-		{{- if .Method.ReturnsSelf}}
-			// Wrap the returned adapter (for WithTx)
-
-			return &{{.Engine.Name}}Wrapper{adapter: res}
-
-		{{- else if isSlice $retType }}
-			{{- if isDomainStruct .Method.ReturnElem}}
-				// Convert Slice of Domain Structs
-				items := make([]{{.Method.ReturnElem}}, len(res))
-				for i, v := range res {
-					items[i] = {{.Method.ReturnElem}}(v)
+			{{if .Method.ReturnsError}}
+				if err != nil {
+					{{if and .Method.HasValue (not (isSlice $retType))}}
+						if errors.Is(err, sql.ErrNoRows) {
+							return {{if .Method.ReturnsSelf}}nil, {{else if isSlice $retType}}nil, {{else if isDomainStruct .Method.ReturnElem}}{{.Method.ReturnElem}}{}, {{else}}{{zeroValue $retType}}, {{end}}ErrNotFound
+						}
+					{{end}}
+					return {{if .Method.ReturnsSelf}}nil, {{else if isSlice $retType}}nil, {{else if isDomainStruct .Method.ReturnElem}}{{.Method.ReturnElem}}{}, {{else}}{{zeroValue $retType}}, {{end}}err
 				}
+			{{end}}
 
-				return items{{if .Method.ReturnsError}}, nil{{end}}
-			{{- else}}
-				// Return Slice of Primitives (direct match)
-				return res{{if .Method.ReturnsError}}, nil{{end}}
-			{{- end}}
+			{{if .Method.ReturnsSelf}}
+				// Wrap the returned adapter (for WithTx)
+				return &{{.Engine.Name}}Wrapper{adapter: res}
+			{{else if isSlice $retType}}
+				{{if isDomainStruct .Method.ReturnElem}}
+					// Convert Slice of Domain Structs
+					items := make([]{{.Method.ReturnElem}}, len(res))
+					for i, v := range res {
+						items[i] = {{.Method.ReturnElem}}(v)
+					}
+					return items{{if .Method.ReturnsError}}, nil{{end}}
+				{{else}}
+					// Return Slice of Primitives (direct match)
+					return res{{if .Method.ReturnsError}}, nil{{end}}
+				{{end}}
+			{{else if isDomainStruct .Method.ReturnElem}}
+				// Convert Single Domain Struct
+				return {{.Method.ReturnElem}}(res){{if .Method.ReturnsError}}, nil{{end}}
+			{{else}}
+				// Return Primitive / *sql.DB / etc
+				{{if and (eq $retType "bool") (eq $targetRetType "int64")}}
+					return res != 0{{if .Method.ReturnsError}}, nil{{end}}
+				{{else if and (ne $retType $targetRetType) (ne $targetRetType "")}}
+					return {{$retType}}(res){{if .Method.ReturnsError}}, nil{{end}}
+				{{else}}
+					return res{{if .Method.ReturnsError}}, nil{{end}}
+				{{end}}
+			{{end}}
+		{{end}}
 
-		{{- else if isDomainStruct .Method.ReturnElem}}
-			// Convert Single Domain Struct
-
-			return {{.Method.ReturnElem}}(res){{if .Method.ReturnsError}}, nil{{end}}
-
-		{{- else if .Method.HasValue}}
-			// Return Primitive / *sql.DB / etc
-			{{- if and (eq $retType "bool") (eq $targetRetType "int64") }}
-				return res != 0{{if .Method.ReturnsError}}, nil{{end}}
-			{{- else if and (ne $retType $targetRetType) (ne $targetRetType "")}}
-				return {{$retType}}(res){{if .Method.ReturnsError}}, nil{{end}}
-			{{- else}}
-				return res{{if .Method.ReturnsError}}, nil{{end}}
-			{{- end}}
-
-		{{- else}}
-			// No return value (void)
-			{{if .Method.ReturnsError}}return nil{{end}}
-		{{- end}}
-
-	{{- end}}
+	{{end}}
 {{end}}
 
 func (w *{{.Engine.Name}}Wrapper) WithTx(tx *sql.Tx) Querier {

@@ -17,6 +17,7 @@ type Querier interface {
 	//  ) VALUES (
 	//      $1, $2
 	//  )
+	//  ON CONFLICT (narinfo_id, reference) DO NOTHING
 	AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error
 	// @bulk-for AddNarInfoReference
 	//
@@ -32,6 +33,7 @@ type Querier interface {
 	//  ) VALUES (
 	//      $1, $2
 	//  )
+	//  ON CONFLICT (narinfo_id, signature) DO NOTHING
 	AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error
 	// @bulk-for AddNarInfoSignature
 	//
