@@ -28,7 +28,8 @@ func (w *mysqlWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoRe
 }
 
 func (w *mysqlWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error {
-	for _, v := range arg.Reference {
+	for i, v := range arg.Reference {
+		_ = i
 		err := w.adapter.AddNarInfoReference(ctx, mysqldb.AddNarInfoReferenceParams{
 			NarInfoID: arg.NarInfoID,
 			Reference: v,
@@ -61,7 +62,8 @@ func (w *mysqlWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSi
 }
 
 func (w *mysqlWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error {
-	for _, v := range arg.Signature {
+	for i, v := range arg.Signature {
+		_ = i
 		err := w.adapter.AddNarInfoSignature(ctx, mysqldb.AddNarInfoSignatureParams{
 			NarInfoID: arg.NarInfoID,
 			Signature: v,

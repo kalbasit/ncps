@@ -28,7 +28,8 @@ func (w *sqliteWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoR
 }
 
 func (w *sqliteWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error {
-	for _, v := range arg.Reference {
+	for i, v := range arg.Reference {
+		_ = i
 		err := w.adapter.AddNarInfoReference(ctx, sqlitedb.AddNarInfoReferenceParams{
 			NarInfoID: arg.NarInfoID,
 			Reference: v,
@@ -61,7 +62,8 @@ func (w *sqliteWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoS
 }
 
 func (w *sqliteWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error {
-	for _, v := range arg.Signature {
+	for i, v := range arg.Signature {
+		_ = i
 		err := w.adapter.AddNarInfoSignature(ctx, sqlitedb.AddNarInfoSignatureParams{
 			NarInfoID: arg.NarInfoID,
 			Signature: v,

@@ -303,7 +303,7 @@ func TestWrapperTemplate(t *testing.T) {
 	output := buf.String()
 
 	// Verify auto-looping was triggered
-	if !strings.Contains(output, "for _, v := range arg.Usernames") {
+	if !strings.Contains(output, "for i, v := range arg.Usernames") {
 		t.Errorf("expected output to contain loop over arg.Usernames, but it didn't\n%s", output)
 	}
 
