@@ -9,6 +9,13 @@
     {
       devShells.default = pkgs.mkShell {
         buildInputs = [
+          # python environment for dev-scripts.
+          (pkgs.python3.withPackages (
+            ps: with ps; [
+              httpx # httpx is used by dev-scripts/ttfb.py.
+            ]
+          ))
+
           # the postgres dump contains \restrict and \unrestrict commands that
           # contain a randomly generated string that are noisy to git commands;
           # Strip them.
