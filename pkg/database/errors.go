@@ -99,4 +99,7 @@ var (
 
 	// ErrInvalidMySQLUnixURL is returned when a mysql+unix URL is invalid.
 	ErrInvalidMySQLUnixURL = errors.New("invalid mysql+unix URL")
+
+	// ErrMismatchedSlices is returned when bulk operations receive slices of different lengths.
+	ErrMismatchedSlices = errors.New("mismatched slice lengths")
 )

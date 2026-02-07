@@ -587,6 +587,7 @@ type {{.Engine.Name}}Wrapper struct {
 }
 
 {{range .Methods}}
+{{- $method := . -}}
 {{- $methodParams := .Params }}
 func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({{joinReturns .Returns}}) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
@@ -624,6 +625,15 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		{{- $singularParamType := printf "%sParams" $singularMethodName -}}
 		{{- $targetSingularParamType := $singularParamType -}} {{/* Assume same name for now */}}
 		{{- $targetStructInfo := getTargetStruct $targetSingularParamType -}}
+		{{/* Check for mismatched slice lengths */}}
+		{{- range $bulkStructInfo.Fields}}
+			{{- if and (isSlice .Type) (ne .Name $sliceField.Name) }}
+		if len({{(index $methodParams 1).Name}}.{{.Name}}) != len({{(index $methodParams 1).Name}}.{{$sliceField.Name}}) {
+			{{$retType := firstReturnType $method.Returns}}
+			return {{if $method.ReturnsSelf}}nil, {{else if not $method.HasValue}}{{else if isSlice $retType}}nil, {{else if isDomainStruct $method.ReturnElem}}{{$method.ReturnElem}}{}, {{else}}{{zeroValue $retType}}, {{end}}ErrMismatchedSlices
+		}
+			{{- end}}
+		{{- end}}
 		for i, v := range {{(index .Params 1).Name}}.{{$sliceField.Name}} {
 			_ = i
 			err := w.adapter.{{$singularMethodName}}({{(index .Params 0).Name}}, {{$.Engine.Package}}.{{$targetSingularParamType}}{
