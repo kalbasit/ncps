@@ -2159,31 +2159,18 @@ func testBackgroundMigrateNarInfoAfterCancellation(factory cacheFactory) func(*t
 	}
 }
 
-func testGetNarInfoConcurrentPutNarInfoDuringMigration(_ cacheFactory) func(*testing.T) {
+func testGetNarInfoConcurrentPutNarInfoDuringMigration(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		// This test verifies that if a PutNarInfo operation occurs while a background
 		// migration is happening for the same hash, both operations handle the duplicate
 		// key error correctly and the final state is consistent.
+		c, db, _, tmpDir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
 		ctx := newContext()
-		tmpDir := t.TempDir()
-		dbFile := filepath.Join(tmpDir, "ncps.db")
-
-		testhelper.CreateMigrateDatabase(t, dbFile)
-
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-
-		store, err := local.New(ctx, tmpDir)
-		require.NoError(t, err)
-
-		rebind := func(s string) string { return s }
 
 		hash := testdata.Nar1.NarInfoHash
 		entry := testdata.Nar1
-
-		// Create a cache with background migration enabled
-		c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
-		require.NoError(t, err)
 
 		// 1. Pre-populate storage with narinfo (simulating old data before migration)
 		narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
@@ -2197,7 +2184,7 @@ func testGetNarInfoConcurrentPutNarInfoDuringMigration(_ cacheFactory) func(*tes
 		// Verify it's not in the database
 		var count int
 
-		err = db.DB().QueryRowContext(ctx,
+		err := db.DB().QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
@@ -2249,33 +2236,21 @@ func testGetNarInfoConcurrentPutNarInfoDuringMigration(_ cacheFactory) func(*tes
 	}
 }
 
-func testGetNarInfoMultipleConcurrentPutsDuringMigration(_ cacheFactory) func(*testing.T) {
+func testGetNarInfoMultipleConcurrentPutsDuringMigration(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		// This test simulates multiple concurrent PutNarInfo operations for the same
 		// hash while a background migration is happening. This is a more extreme version
 		// of the thundering herd scenario.
+		c, db, _, tmpDir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
 		ctx := newContext()
-		tmpDir := t.TempDir()
-		dbFile := filepath.Join(tmpDir, "ncps.db")
-
-		testhelper.CreateMigrateDatabase(t, dbFile)
-
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-
-		rebind := func(s string) string { return s }
 
 		// Increase connection pool for concurrent operations
 		db.DB().SetMaxOpenConns(20)
 
-		store, err := local.New(ctx, tmpDir)
-		require.NoError(t, err)
-
 		hash := testdata.Nar1.NarInfoHash
 		entry := testdata.Nar1
-
-		c, err := newTestCache(ctx, cacheName, db, store, store, store, "")
-		require.NoError(t, err)
 
 		t.Cleanup(c.Close)
 		t.Cleanup(func() { db.DB().Close() })
@@ -2319,7 +2294,7 @@ func testGetNarInfoMultipleConcurrentPutsDuringMigration(_ cacheFactory) func(*t
 		// Verify final state: exactly one record
 		var count int
 
-		err = db.DB().QueryRowContext(ctx,
+		err := db.DB().QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count, "should have exactly one narinfo record despite concurrent operations")
@@ -2489,30 +2464,21 @@ func (s *storageWithHook) HasNarInfo(ctx context.Context, hash string) bool {
 // 4. GetNarInfo tries to read from storage (file now deleted!)
 // 5. Expected: Should retry database and succeed (migration completed)
 // 6. Current Bug: Returns error because storage read fails.
-func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*testing.T) {
+func testGetNarInfoRaceConditionDuringMigrationDeletion(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
+		c, db, baseStore, tmpDir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Close the generic cache from the factory so it doesn't interfere
+		c.Close()
+
 		ctx := newContext()
-		tmpDir := t.TempDir()
-		dbFile := filepath.Join(tmpDir, "ncps.db")
-
-		testhelper.CreateMigrateDatabase(t, dbFile)
-
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-
-		t.Cleanup(func() { db.DB().Close() })
-
-		rebind := func(s string) string { return s }
-
-		baseStore, err := local.New(ctx, tmpDir)
-		require.NoError(t, err)
-
 		hash := testdata.Nar1.NarInfoHash
 		entry := testdata.Nar1
 
 		// Create a partial database record (simulating what GetNarInfo creates as a placeholder)
 		// This has hash but NULL URL, which causes getNarInfoFromDatabase to return ErrNotFound
-		_, err = db.DB().ExecContext(ctx, rebind(`
+		_, err := db.DB().ExecContext(ctx, rebind(`
 			INSERT INTO narinfos (hash, store_path, url, compression, file_hash, file_size, nar_hash, nar_size)
 			VALUES (?, '', NULL, '', '', 0, '', 0)
 		`), hash)
@@ -2528,39 +2494,51 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*te
 		require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
 
 		// Channel to coordinate the race
+		migrationCalled := make(chan struct{})
 		migrationComplete := make(chan struct{})
 
-		var migrationErr error
+		var (
+			migrationErr  error
+			migrationOnce sync.Once
+		)
+
+		var cacheInstance *cache.Cache
 
 		// Wrap the store to inject migration at the critical moment
 		storeWithHook := &storageWithHook{
 			Store: baseStore,
 			beforeGetNarInfo: func(h string) {
 				if h == hash {
-					// This is the critical race window:
-					// GetNarInfo has checked HasNarInfo (returned true)
-					// Now it's about to call GetNarInfo on storage
-					// We trigger migration here which will delete the file
+					migrationOnce.Do(func() {
+						close(migrationCalled)
 
-					// Parse the narinfo for migration
-					ni, parseErr := baseStore.GetNarInfo(ctx, hash)
-					require.NoError(t, parseErr, "should be able to read narinfo before migration")
+						// This is the critical race window:
+						// GetNarInfo has checked HasNarInfo (returned true)
+						// Now it's about to call GetNarInfo on storage
+						// We trigger migration here which will delete the file
 
-					// Run migration (writes to DB and deletes from storage)
-					locker := locklocal.NewLocker()
-					migrationErr = cache.MigrateNarInfo(ctx, locker, db, baseStore, hash, ni)
+						// Parse the narinfo for migration
+						ni, parseErr := baseStore.GetNarInfo(ctx, hash)
+						require.NoError(t, parseErr, "should be able to read narinfo before migration")
 
-					close(migrationComplete)
+						// Run migration (writes to DB and deletes from storage)
+						// Use the cache's own MigrateNarInfoToDatabase which uses the correct locker/stores.
+						migrationErr = cacheInstance.MigrateNarInfoToDatabase(ctx, hash, ni, true)
 
-					// Now the file is deleted from storage!
-					// When GetNarInfo continues, it will try to read a file that no longer exists
+						close(migrationComplete)
+
+						// Now the file is deleted from storage!
+						// When GetNarInfo continues, it will try to read a file that no longer exists
+					})
 				}
 			},
 		}
 
 		// Create cache with the hooked store (same for all three store types)
-		c, err := newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
+		c, err = newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
 		require.NoError(t, err)
+
+		cacheInstance = c // Expose to the hook
 
 		t.Cleanup(c.Close)
 
@@ -2570,6 +2548,20 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*te
 		// Wait for migration to complete
 		<-migrationComplete
 		require.NoError(t, migrationErr, "migration should succeed")
+
+		// Assertions to help debugging if it fails
+		if err != nil {
+			// Check if it's in the database
+			var dbURL sql.NullString
+
+			checkErr := db.DB().QueryRowContext(ctx,
+				rebind("SELECT url FROM narinfos WHERE hash = ?"), hash).Scan(&dbURL)
+			if checkErr != nil {
+				t.Logf("DEBUG: record not found in database: %v", checkErr)
+			} else {
+				t.Logf("DEBUG: record found in database: URL.Valid=%v, URL.String=%q", dbURL.Valid, dbURL.String)
+			}
+		}
 
 		// This is where the bug manifests:
 		// Current behavior: err != nil (storage read failed, file was deleted)
@@ -2599,24 +2591,14 @@ func testGetNarInfoRaceConditionDuringMigrationDeletion(_ cacheFactory) func(*te
 	}
 }
 
-func testGetNarInfoRaceWithPutNarInfoDeterministic(_ cacheFactory) func(*testing.T) {
+func testGetNarInfoRaceWithPutNarInfoDeterministic(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		// This test determines if legacy narinfo is deleted even if PutNarInfo
 		// finishes before GetNarInfo can trigger migration.
+		_, db, baseStore, tmpDir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
 		ctx := newContext()
-		tmpDir := t.TempDir()
-		dbFile := filepath.Join(tmpDir, "ncps.db")
-
-		testhelper.CreateMigrateDatabase(t, dbFile)
-
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-
-		t.Cleanup(func() { db.DB().Close() })
-
-		baseStore, err := local.New(ctx, tmpDir)
-		require.NoError(t, err)
-
 		hash := testdata.Nar2.NarInfoHash
 		entry := testdata.Nar2
 
