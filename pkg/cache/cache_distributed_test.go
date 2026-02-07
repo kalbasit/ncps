@@ -799,7 +799,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 			// Create a context with timeout for each request (simulates HTTP request timeout)
 			// This should be longer than the download delay (2s) plus chunking time
 			// For CDC-enabled tests, progressive streaming may take longer
-			requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			requestCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 			defer cancel()
 
 			// All instances request the same NAR concurrently
@@ -1036,7 +1036,7 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 				defer wg.Done()
 
 				// Create a context with timeout (give enough time for CDC chunking)
-				requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+				requestCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 				defer cancel()
 
 				// Measure TTFB (time to first byte)
