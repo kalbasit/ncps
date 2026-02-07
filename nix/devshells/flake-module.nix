@@ -13,6 +13,7 @@
           (pkgs.python3.withPackages (
             ps: with ps; [
               boto3
+              httpx
               kubernetes
               psycopg2-binary
               pymysql
