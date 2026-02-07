@@ -287,6 +287,14 @@ INSERT IGNORE INTO nar_file_chunks (
     ?, ?, ?
 );
 
+-- @bulk-for LinkNarFileToChunk
+-- name: LinkNarFileToChunks :exec
+INSERT IGNORE INTO nar_file_chunks (
+    nar_file_id, chunk_id, chunk_index
+) VALUES (
+    ?, ?, ?
+);
+
 
 
 -- name: GetTotalChunkSize :one

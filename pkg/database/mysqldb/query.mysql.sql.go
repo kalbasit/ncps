@@ -1385,6 +1385,32 @@ func (q *Queries) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunk
 	return err
 }
 
+const linkNarFileToChunks = `-- name: LinkNarFileToChunks :exec
+INSERT IGNORE INTO nar_file_chunks (
+    nar_file_id, chunk_id, chunk_index
+) VALUES (
+    ?, ?, ?
+)
+`
+
+type LinkNarFileToChunksParams struct {
+	NarFileID  int64
+	ChunkID    int64
+	ChunkIndex int64
+}
+
+// @bulk-for LinkNarFileToChunk
+//
+//	INSERT IGNORE INTO nar_file_chunks (
+//	    nar_file_id, chunk_id, chunk_index
+//	) VALUES (
+//	    ?, ?, ?
+//	)
+func (q *Queries) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
+	_, err := q.db.ExecContext(ctx, linkNarFileToChunks, arg.NarFileID, arg.ChunkID, arg.ChunkIndex)
+	return err
+}
+
 const linkNarInfoToNarFile = `-- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
     narinfo_id, nar_file_id

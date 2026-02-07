@@ -1469,6 +1469,32 @@ func (q *Queries) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunk
 	return err
 }
 
+const linkNarFileToChunks = `-- name: LinkNarFileToChunks :exec
+INSERT INTO nar_file_chunks (
+    nar_file_id, chunk_id, chunk_index
+)
+SELECT $1, unnest($2::bigint[]), unnest($3::bigint[])
+ON CONFLICT (nar_file_id, chunk_index) DO NOTHING
+`
+
+type LinkNarFileToChunksParams struct {
+	NarFileID  int64
+	ChunkID    []int64
+	ChunkIndex []int64
+}
+
+// @bulk-for LinkNarFileToChunk
+//
+//	INSERT INTO nar_file_chunks (
+//	    nar_file_id, chunk_id, chunk_index
+//	)
+//	SELECT $1, unnest($2::bigint[]), unnest($3::bigint[])
+//	ON CONFLICT (nar_file_id, chunk_index) DO NOTHING
+func (q *Queries) LinkNarFileToChunks(ctx context.Context, arg LinkNarFileToChunksParams) error {
+	_, err := q.db.ExecContext(ctx, linkNarFileToChunks, arg.NarFileID, pq.Array(arg.ChunkID), pq.Array(arg.ChunkIndex))
+	return err
+}
+
 const linkNarInfoToNarFile = `-- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
     narinfo_id, nar_file_id
