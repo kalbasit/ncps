@@ -1916,8 +1916,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		// Create 3 narinfos with different nar files of different sizes
-		hash1, err := helper.RandString(32, nil)
-		require.NoError(t, err)
+hash1 := helper.MustRandString(32, nil)
 
 		ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 		require.NoError(t, err)
@@ -2765,7 +2764,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				ChunkID:    []int64{chunk.ID},
 				ChunkIndex: []int64{}, // Mismatched length
 			})
-			require.Error(t, err)
+require.ErrorIs(t, err, database.ErrMismatchedSlices)
 		})
 	})
 
