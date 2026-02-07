@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -183,6 +184,36 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			for err := range errC {
 				assert.NoError(t, err)
 			}
+		})
+
+		t.Run("CreateNarInfoUpdateFromPlaceholder", func(t *testing.T) {
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// 1. Create a placeholder (url IS NULL)
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash: hash,
+			})
+			require.NoError(t, err)
+
+			// 2. Perform the "migration" upsert
+			fileHash := "sha256:1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri"
+			narURL := "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz"
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash:     hash,
+				URL:      sql.NullString{String: narURL, Valid: true},
+				FileHash: sql.NullString{String: fileHash, Valid: true},
+			})
+			require.NoError(t, err)
+
+			// 3. Verify it was correctly updated
+			ni, err := db.GetNarInfoByHash(context.Background(), hash)
+			require.NoError(t, err)
+
+			assert.True(t, ni.URL.Valid)
+			assert.Equal(t, narURL, ni.URL.String)
+			assert.True(t, ni.FileHash.Valid)
+			assert.Equal(t, fileHash, ni.FileHash.String)
 		})
 	})
 
