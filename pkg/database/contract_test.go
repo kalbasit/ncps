@@ -1361,4 +1361,1887 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			assert.Len(t, sigs, 2)
 		})
 	})
+
+	t.Run("GetConfigByID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("config not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			_, err := db.GetConfigByID(context.Background(), 999999)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+
+		t.Run("config existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			key, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			value, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
+				Key:   key,
+				Value: value,
+			})
+			require.NoError(t, err)
+
+			conf2, err := db.GetConfigByID(context.Background(), conf1.ID)
+			require.NoError(t, err)
+
+			assert.Equal(t, conf1, conf2)
+		})
+	})
+
+	t.Run("GetNarInfoByID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("narinfo not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			_, err := db.GetNarInfoByID(context.Background(), 999999)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+
+		t.Run("narinfo existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			ni2, err := db.GetNarInfoByID(context.Background(), ni1.ID)
+			require.NoError(t, err)
+
+			assert.Equal(t, ni1.ID, ni2.ID)
+			assert.Equal(t, ni1.Hash, ni2.Hash)
+		})
+	})
+
+	t.Run("GetNarFileByID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("nar file not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			_, err := db.GetNarFileByID(context.Background(), 999999)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+
+		t.Run("nar file existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			nf2, err := db.GetNarFileByID(context.Background(), nf1.ID)
+			require.NoError(t, err)
+
+			assert.Equal(t, nf1.ID, nf2.ID)
+			assert.Equal(t, nf1.Hash, nf2.Hash)
+		})
+	})
+
+	t.Run("UpdateNarInfoFileSize", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("update file size", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			assert.False(t, ni.FileSize.Valid)
+
+			err = db.UpdateNarInfoFileSize(context.Background(), database.UpdateNarInfoFileSizeParams{
+				Hash:     hash,
+				FileSize: sql.NullInt64{Int64: 456, Valid: true},
+			})
+			require.NoError(t, err)
+
+			ni2, err := db.GetNarInfoByHash(context.Background(), hash)
+			require.NoError(t, err)
+
+			if assert.True(t, ni2.FileSize.Valid) {
+				assert.EqualValues(t, 456, ni2.FileSize.Int64)
+			}
+		})
+	})
+
+	t.Run("GetNarInfoHashesByURL", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no narinfos with url", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hashes, err := db.GetNarInfoHashesByURL(context.Background(),
+				sql.NullString{String: "nonexistent.nar", Valid: true})
+			require.NoError(t, err)
+			assert.Empty(t, hashes)
+		})
+
+		t.Run("multiple narinfos with same url", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			url := "nar/test.nar.xz"
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash: hash1,
+				URL:  sql.NullString{String: url, Valid: true},
+			})
+			require.NoError(t, err)
+
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash: hash2,
+				URL:  sql.NullString{String: url, Valid: true},
+			})
+			require.NoError(t, err)
+
+			hashes, err := db.GetNarInfoHashesByURL(context.Background(),
+				sql.NullString{String: url, Valid: true})
+			require.NoError(t, err)
+
+			assert.Len(t, hashes, 2)
+			assert.Contains(t, hashes, hash1)
+			assert.Contains(t, hashes, hash2)
+		})
+	})
+
+	t.Run("LinkNarInfoToNarFile", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("successful linking", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			// Verify the link by fetching nar file by narinfo id
+			nf2, err := db.GetNarFileByNarInfoID(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			assert.Equal(t, nf.ID, nf2.ID)
+		})
+
+		t.Run("duplicate link is idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			// Link again - should not error
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err, "duplicate link should be idempotent")
+		})
+	})
+
+	t.Run("GetNarFileByNarInfoID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no link exists", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			_, err = db.GetNarFileByNarInfoID(context.Background(), ni.ID)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+
+		t.Run("link exists", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			nf2, err := db.GetNarFileByNarInfoID(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			assert.Equal(t, nf.ID, nf2.ID)
+		})
+	})
+
+	t.Run("GetNarInfoHashesByNarFileID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no narinfos linked", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			hashes, err := db.GetNarInfoHashesByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+			assert.Empty(t, hashes)
+		})
+
+		t.Run("multiple narinfos linked to one nar file", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
+			require.NoError(t, err)
+
+			hash3, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash3,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni1.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni2.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			hashes, err := db.GetNarInfoHashesByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			assert.Len(t, hashes, 2)
+			assert.Contains(t, hashes, hash1)
+			assert.Contains(t, hashes, hash2)
+		})
+	})
+
+	t.Run("DeleteNarInfoByID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("narinfo not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			ra, err := db.DeleteNarInfoByID(context.Background(), 999999)
+			require.NoError(t, err)
+			assert.Zero(t, ra)
+		})
+
+		t.Run("narinfo existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteNarInfoByID(context.Background(), ni.ID)
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, ra)
+
+			_, err = db.GetNarInfoByID(context.Background(), ni.ID)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+	})
+
+	t.Run("DeleteNarFileByID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("nar file not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			ra, err := db.DeleteNarFileByID(context.Background(), 999999)
+			require.NoError(t, err)
+			assert.Zero(t, ra)
+		})
+
+		t.Run("nar file existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteNarFileByID(context.Background(), nf.ID)
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, ra)
+
+			_, err = db.GetNarFileByID(context.Background(), nf.ID)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+	})
+
+	t.Run("DeleteOrphanedNarFiles", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no orphaned nar files", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteOrphanedNarFiles(context.Background())
+			require.NoError(t, err)
+			assert.Zero(t, ra)
+		})
+
+		t.Run("orphaned nar files are deleted", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash1,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    456,
+			})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteOrphanedNarFiles(context.Background())
+			require.NoError(t, err)
+			assert.EqualValues(t, 2, ra)
+
+			_, err = db.GetNarFileByID(context.Background(), nf1.ID)
+			require.ErrorIs(t, err, database.ErrNotFound)
+
+			_, err = db.GetNarFileByID(context.Background(), nf2.ID)
+			require.ErrorIs(t, err, database.ErrNotFound)
+		})
+	})
+
+	t.Run("DeleteOrphanedNarInfos", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no orphaned narinfos", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteOrphanedNarInfos(context.Background())
+			require.NoError(t, err)
+			assert.Zero(t, ra)
+		})
+
+		t.Run("orphaned narinfos are deleted", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteOrphanedNarInfos(context.Background())
+			require.NoError(t, err)
+			assert.EqualValues(t, 2, ra)
+
+			_, err = db.GetNarInfoByID(context.Background(), ni1.ID)
+			require.ErrorIs(t, err, database.ErrNotFound)
+
+			_, err = db.GetNarInfoByID(context.Background(), ni2.ID)
+			require.ErrorIs(t, err, database.ErrNotFound)
+		})
+	})
+
+	t.Run("GetNarInfoCount", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		initialCount, err := db.GetNarInfoCount(context.Background())
+		require.NoError(t, err)
+
+		for i := 0; i < 5; i++ {
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+		}
+
+		count, err := db.GetNarInfoCount(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, initialCount+5, count)
+	})
+
+	t.Run("GetNarFileCount", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		initialCount, err := db.GetNarFileCount(context.Background())
+		require.NoError(t, err)
+
+		for i := 0; i < 3; i++ {
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			//nolint:gosec // G115: Safe conversion, i is small and controlled
+			_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash,
+				Compression: "xz",
+				FileSize:    uint64(100 * (i + 1)),
+			})
+			require.NoError(t, err)
+		}
+
+		count, err := db.GetNarFileCount(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, initialCount+3, count)
+	})
+
+	t.Run("GetLeastUsedNarInfos", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		// Create 3 narinfos with different nar files of different sizes
+		hash1, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+		require.NoError(t, err)
+
+		nfHash1, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        nfHash1,
+			Compression: "xz",
+			FileSize:    100,
+		})
+		require.NoError(t, err)
+
+		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			NarInfoID: ni1.ID,
+			NarFileID: nf1.ID,
+		})
+		require.NoError(t, err)
+
+		hash2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
+		require.NoError(t, err)
+
+		nfHash2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        nfHash2,
+			Compression: "xz",
+			FileSize:    200,
+		})
+		require.NoError(t, err)
+
+		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			NarInfoID: ni2.ID,
+			NarFileID: nf2.ID,
+		})
+		require.NoError(t, err)
+
+		hash3, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni3, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash3})
+		require.NoError(t, err)
+
+		nfHash3, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		nf3, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        nfHash3,
+			Compression: "xz",
+			FileSize:    300,
+		})
+		require.NoError(t, err)
+
+		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			NarInfoID: ni3.ID,
+			NarFileID: nf3.ID,
+		})
+		require.NoError(t, err)
+
+		time.Sleep(time.Second)
+
+		// Touch ni2 and ni3, making ni1 the least used
+		_, err = db.TouchNarInfo(context.Background(), hash2)
+		require.NoError(t, err)
+
+		_, err = db.TouchNarInfo(context.Background(), hash3)
+		require.NoError(t, err)
+
+		// Ask for narinfos up to 100 bytes - should return only ni1
+		narInfos, err := db.GetLeastUsedNarInfos(context.Background(), 100)
+		require.NoError(t, err)
+
+		if assert.Len(t, narInfos, 1) {
+			assert.Equal(t, hash1, narInfos[0].Hash)
+		}
+	})
+
+	t.Run("GetOrphanedNarFiles", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no orphaned nar files", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+				NarInfoID: ni.ID,
+				NarFileID: nf.ID,
+			})
+			require.NoError(t, err)
+
+			orphaned, err := db.GetOrphanedNarFiles(context.Background())
+			require.NoError(t, err)
+			assert.Empty(t, orphaned)
+		})
+
+		t.Run("orphaned nar files are returned", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash1,
+				Compression: "xz",
+				FileSize:    123,
+			})
+			require.NoError(t, err)
+
+			hash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        hash2,
+				Compression: "xz",
+				FileSize:    456,
+			})
+			require.NoError(t, err)
+
+			orphaned, err := db.GetOrphanedNarFiles(context.Background())
+			require.NoError(t, err)
+
+			assert.Len(t, orphaned, 2)
+			foundIDs := []int64{orphaned[0].ID, orphaned[1].ID}
+			assert.Contains(t, foundIDs, nf1.ID)
+			assert.Contains(t, foundIDs, nf2.ID)
+		})
+	})
+
+	t.Run("GetUnmigratedNarInfoHashes", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		hash1, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+		require.NoError(t, err)
+
+		hash2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			Hash: hash2,
+			URL:  sql.NullString{String: "nar/test.nar.xz", Valid: true},
+		})
+		require.NoError(t, err)
+
+		unmigrated, err := db.GetUnmigratedNarInfoHashes(context.Background())
+		require.NoError(t, err)
+
+		assert.Contains(t, unmigrated, hash1)
+		assert.NotContains(t, unmigrated, hash2)
+	})
+
+	t.Run("GetMigratedNarInfoHashes", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		hash1, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+		require.NoError(t, err)
+
+		hash2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			Hash: hash2,
+			URL:  sql.NullString{String: "nar/test.nar.xz", Valid: true},
+		})
+		require.NoError(t, err)
+
+		migrated, err := db.GetMigratedNarInfoHashes(context.Background())
+		require.NoError(t, err)
+
+		assert.NotContains(t, migrated, hash1)
+		assert.Contains(t, migrated, hash2)
+	})
+
+	t.Run("IsNarInfoMigrated", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("unmigrated narinfo", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			migrated, err := db.IsNarInfoMigrated(context.Background(), hash)
+			require.NoError(t, err)
+
+			assert.False(t, migrated)
+		})
+
+		t.Run("migrated narinfo", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash: hash,
+				URL:  sql.NullString{String: "nar/test.nar.xz", Valid: true},
+			})
+			require.NoError(t, err)
+
+			migrated, err := db.IsNarInfoMigrated(context.Background(), hash)
+			require.NoError(t, err)
+
+			assert.True(t, migrated)
+		})
+	})
+
+	t.Run("GetMigratedNarInfoHashesPaginated", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		// Create 5 migrated narinfos
+		for i := 0; i < 5; i++ {
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash: hash,
+				URL:  sql.NullString{String: fmt.Sprintf("nar/test%d.nar.xz", i), Valid: true},
+			})
+			require.NoError(t, err)
+		}
+
+		// Create 2 unmigrated narinfos (should not appear in results)
+		for i := 0; i < 2; i++ {
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+		}
+
+		// Get first page (limit 2, offset 0)
+		page1, err := db.GetMigratedNarInfoHashesPaginated(context.Background(),
+			database.GetMigratedNarInfoHashesPaginatedParams{
+				Limit:  2,
+				Offset: 0,
+			})
+		require.NoError(t, err)
+		assert.Len(t, page1, 2)
+
+		// Get second page (limit 2, offset 2)
+		page2, err := db.GetMigratedNarInfoHashesPaginated(context.Background(),
+			database.GetMigratedNarInfoHashesPaginatedParams{
+				Limit:  2,
+				Offset: 2,
+			})
+		require.NoError(t, err)
+		assert.Len(t, page2, 2)
+
+		// Get third page (limit 2, offset 4) - should have 1 item
+		page3, err := db.GetMigratedNarInfoHashesPaginated(context.Background(),
+			database.GetMigratedNarInfoHashesPaginatedParams{
+				Limit:  2,
+				Offset: 4,
+			})
+		require.NoError(t, err)
+		assert.Len(t, page3, 1)
+	})
+
+	t.Run("CreateChunk", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("create new chunk", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			assert.Equal(t, chunkHash, chunk.Hash)
+			assert.EqualValues(t, 1024, chunk.Size)
+		})
+
+		t.Run("duplicate chunk is idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			chunk2, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			assert.Equal(t, chunk1.ID, chunk2.ID)
+		})
+	})
+
+	t.Run("GetChunkByHash", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("chunk not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.GetChunkByHash(context.Background(), hash)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+
+		t.Run("chunk existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			chunk2, err := db.GetChunkByHash(context.Background(), chunkHash)
+			require.NoError(t, err)
+
+			assert.Equal(t, chunk1.ID, chunk2.ID)
+			assert.Equal(t, chunk1.Hash, chunk2.Hash)
+		})
+	})
+
+	t.Run("GetChunkByID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("chunk not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			_, err := db.GetChunkByID(context.Background(), 999999)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+
+		t.Run("chunk existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			chunk2, err := db.GetChunkByID(context.Background(), chunk1.ID)
+			require.NoError(t, err)
+
+			assert.Equal(t, chunk1.ID, chunk2.ID)
+			assert.Equal(t, chunk1.Hash, chunk2.Hash)
+		})
+	})
+
+	t.Run("LinkNarFileToChunk", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("successful linking", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    1024,
+			})
+			require.NoError(t, err)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunk.ID,
+				ChunkIndex: 0,
+			})
+			require.NoError(t, err)
+
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, chunks, 1) {
+				assert.Equal(t, chunk.ID, chunks[0].ID)
+			}
+		})
+
+		t.Run("duplicate link is idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    1024,
+			})
+			require.NoError(t, err)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunk.ID,
+				ChunkIndex: 0,
+			})
+			require.NoError(t, err)
+
+			// Link again - should not error
+			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunk.ID,
+				ChunkIndex: 0,
+			})
+			require.NoError(t, err, "duplicate link should be idempotent")
+		})
+	})
+
+	t.Run("LinkNarFileToChunks", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("successful bulk linking of multiple chunks", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    3072,
+			})
+			require.NoError(t, err)
+
+			// Create 3 chunks
+			chunkIDs := make([]int64, 3)
+			chunkIndices := make([]int64, 3)
+
+			for i := 0; i < 3; i++ {
+				chunkHash, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+					Hash: chunkHash,
+					Size: 1024,
+				})
+				require.NoError(t, err)
+
+				chunkIDs[i] = chunk.ID
+				chunkIndices[i] = int64(i)
+			}
+
+			// Link all chunks in bulk
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunkIDs,
+				ChunkIndex: chunkIndices,
+			})
+			require.NoError(t, err)
+
+			// Verify all chunks are linked
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, chunks, 3) {
+				// Verify order is maintained
+				for i := 0; i < 3; i++ {
+					assert.Equal(t, chunkIDs[i], chunks[i].ID)
+				}
+			}
+		})
+
+		t.Run("bulk link with single chunk", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    1024,
+			})
+			require.NoError(t, err)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			// Link single chunk using bulk operation
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    []int64{chunk.ID},
+				ChunkIndex: []int64{0},
+			})
+			require.NoError(t, err)
+
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, chunks, 1) {
+				assert.Equal(t, chunk.ID, chunks[0].ID)
+			}
+		})
+
+		t.Run("bulk link with empty arrays", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    0,
+			})
+			require.NoError(t, err)
+
+			// Link with empty arrays - should not error
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    []int64{},
+				ChunkIndex: []int64{},
+			})
+			require.NoError(t, err)
+
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+			assert.Empty(t, chunks)
+		})
+
+		t.Run("duplicate bulk links are idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    2048,
+			})
+			require.NoError(t, err)
+
+			// Create 2 chunks
+			chunkIDs := make([]int64, 2)
+			chunkIndices := make([]int64, 2)
+
+			for i := 0; i < 2; i++ {
+				chunkHash, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+					Hash: chunkHash,
+					Size: 1024,
+				})
+				require.NoError(t, err)
+
+				chunkIDs[i] = chunk.ID
+				chunkIndices[i] = int64(i)
+			}
+
+			// Link chunks first time
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunkIDs,
+				ChunkIndex: chunkIndices,
+			})
+			require.NoError(t, err)
+
+			// Link same chunks again - should be idempotent
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunkIDs,
+				ChunkIndex: chunkIndices,
+			})
+			require.NoError(t, err, "duplicate bulk link should be idempotent")
+
+			// Verify we still have only 2 chunks
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+			assert.Len(t, chunks, 2)
+		})
+
+		t.Run("bulk link maintains correct chunk order", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    5120,
+			})
+			require.NoError(t, err)
+
+			// Create 5 chunks
+			numChunks := 5
+			chunkIDs := make([]int64, numChunks)
+			chunkIndices := make([]int64, numChunks)
+
+			for i := 0; i < numChunks; i++ {
+				chunkHash, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+					Hash: chunkHash,
+					Size: 1024,
+				})
+				require.NoError(t, err)
+
+				chunkIDs[i] = chunk.ID
+				chunkIndices[i] = int64(i)
+			}
+
+			// Link all chunks in bulk
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunkIDs,
+				ChunkIndex: chunkIndices,
+			})
+			require.NoError(t, err)
+
+			// Verify chunks are in correct order
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, chunks, numChunks) {
+				for i := 0; i < numChunks; i++ {
+					assert.Equal(t, chunkIDs[i], chunks[i].ID, "chunk at index %d should match", i)
+				}
+			}
+		})
+
+		t.Run("bulk link with non-sequential indices", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    3072,
+			})
+			require.NoError(t, err)
+
+			// Create 3 chunks with non-sequential indices (e.g., 10, 20, 30)
+			chunkIDs := make([]int64, 3)
+			chunkIndices := []int64{10, 20, 30}
+
+			for i := 0; i < 3; i++ {
+				chunkHash, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+					Hash: chunkHash,
+					Size: 1024,
+				})
+				require.NoError(t, err)
+
+				chunkIDs[i] = chunk.ID
+			}
+
+			// Link chunks with non-sequential indices
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunkIDs,
+				ChunkIndex: chunkIndices,
+			})
+			require.NoError(t, err)
+
+			// Verify chunks are linked
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, chunks, 3) {
+				// Chunks should be returned in order by index
+				for i := 0; i < 3; i++ {
+					assert.Equal(t, chunkIDs[i], chunks[i].ID)
+				}
+			}
+		})
+
+		t.Run("bulk link mixed with individual links", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    4096,
+			})
+			require.NoError(t, err)
+
+			// Create 4 chunks
+			var allChunkIDs []int64
+
+			for i := 0; i < 4; i++ {
+				chunkHash, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+					Hash: chunkHash,
+					Size: 1024,
+				})
+				require.NoError(t, err)
+
+				allChunkIDs = append(allChunkIDs, chunk.ID)
+			}
+
+			// Link first 2 chunks individually
+			for i := 0; i < 2; i++ {
+				err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+					NarFileID:  nf.ID,
+					ChunkID:    allChunkIDs[i],
+					ChunkIndex: int64(i),
+				})
+				require.NoError(t, err)
+			}
+
+			// Link last 2 chunks in bulk
+			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+				NarFileID:  nf.ID,
+				ChunkID:    allChunkIDs[2:],
+				ChunkIndex: []int64{2, 3},
+			})
+			require.NoError(t, err)
+
+			// Verify all chunks are linked in correct order
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, chunks, 4) {
+				for i := 0; i < 4; i++ {
+					assert.Equal(t, allChunkIDs[i], chunks[i].ID)
+				}
+			}
+		})
+	})
+
+	t.Run("GetChunksByNarFileID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no chunks linked", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    1024,
+			})
+			require.NoError(t, err)
+
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+			assert.Empty(t, chunks)
+		})
+
+		t.Run("multiple chunks linked in order", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    1536,
+			})
+			require.NoError(t, err)
+
+			// Create 3 chunks
+			var chunkIDs []int64
+
+			for i := 0; i < 3; i++ {
+				chunkHash, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+					Hash: chunkHash,
+					Size: 512,
+				})
+				require.NoError(t, err)
+
+				chunkIDs = append(chunkIDs, chunk.ID)
+
+				err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+					NarFileID:  nf.ID,
+					ChunkID:    chunk.ID,
+					ChunkIndex: int64(i),
+				})
+				require.NoError(t, err)
+			}
+
+			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, chunks, 3) {
+				// Verify order is maintained
+				assert.Equal(t, chunkIDs[0], chunks[0].ID)
+				assert.Equal(t, chunkIDs[1], chunks[1].ID)
+				assert.Equal(t, chunkIDs[2], chunks[2].ID)
+			}
+		})
+	})
+
+	t.Run("GetChunkByNarFileIDAndIndex", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("chunk not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    1024,
+			})
+			require.NoError(t, err)
+
+			_, err = db.GetChunkByNarFileIDAndIndex(context.Background(),
+				database.GetChunkByNarFileIDAndIndexParams{
+					NarFileID:  nf.ID,
+					ChunkIndex: 0,
+				})
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+
+		t.Run("chunk existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    1024,
+			})
+			require.NoError(t, err)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunk.ID,
+				ChunkIndex: 0,
+			})
+			require.NoError(t, err)
+
+			chunk2, err := db.GetChunkByNarFileIDAndIndex(context.Background(),
+				database.GetChunkByNarFileIDAndIndexParams{
+					NarFileID:  nf.ID,
+					ChunkIndex: 0,
+				})
+			require.NoError(t, err)
+
+			assert.Equal(t, chunk.ID, chunk2.ID)
+		})
+	})
+
+	t.Run("GetTotalChunkSize", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		initialSize, err := db.GetTotalChunkSize(context.Background())
+		require.NoError(t, err)
+
+		var totalAdded int64
+
+		for i := 0; i < 3; i++ {
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			//nolint:gosec // G115: Safe conversion, i is small and controlled
+			size := uint32(512 * (i + 1))
+			totalAdded += int64(size)
+
+			_, err = db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: size,
+			})
+			require.NoError(t, err)
+		}
+
+		totalSize, err := db.GetTotalChunkSize(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, initialSize+totalAdded, totalSize)
+	})
+
+	t.Run("GetChunkCount", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		initialCount, err := db.GetChunkCount(context.Background())
+		require.NoError(t, err)
+
+		for i := 0; i < 4; i++ {
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			_, err = db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 512,
+			})
+			require.NoError(t, err)
+		}
+
+		count, err := db.GetChunkCount(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, initialCount+4, count)
+	})
+
+	t.Run("GetOrphanedChunks", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no orphaned chunks", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    512,
+			})
+			require.NoError(t, err)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunk.ID,
+				ChunkIndex: 0,
+			})
+			require.NoError(t, err)
+
+			orphaned, err := db.GetOrphanedChunks(context.Background())
+			require.NoError(t, err)
+			assert.Empty(t, orphaned)
+		})
+
+		t.Run("orphaned chunks are returned", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			chunkHash1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash1,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			chunkHash2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk2, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash2,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			orphaned, err := db.GetOrphanedChunks(context.Background())
+			require.NoError(t, err)
+
+			assert.Len(t, orphaned, 2)
+			foundIDs := []int64{orphaned[0].ID, orphaned[1].ID}
+			assert.Contains(t, foundIDs, chunk1.ID)
+			assert.Contains(t, foundIDs, chunk2.ID)
+		})
+	})
+
+	t.Run("DeleteChunkByID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("chunk not existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			err := db.DeleteChunkByID(context.Background(), 999999)
+			require.NoError(t, err)
+		})
+
+		t.Run("chunk existing", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			chunkHash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			err = db.DeleteChunkByID(context.Background(), chunk.ID)
+			require.NoError(t, err)
+
+			_, err = db.GetChunkByID(context.Background(), chunk.ID)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+	})
+
+	t.Run("UpdateNarFileTotalChunks", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		narHash, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        narHash,
+			Compression: "xz",
+			FileSize:    1536,
+		})
+		require.NoError(t, err)
+
+		assert.EqualValues(t, 0, nf.TotalChunks)
+
+		err = db.UpdateNarFileTotalChunks(context.Background(), database.UpdateNarFileTotalChunksParams{
+			TotalChunks: 3,
+			ID:          nf.ID,
+		})
+		require.NoError(t, err)
+
+		nf2, err := db.GetNarFileByID(context.Background(), nf.ID)
+		require.NoError(t, err)
+
+		assert.EqualValues(t, 3, nf2.TotalChunks)
+	})
+
+	t.Run("GetNarInfoHashesToChunk", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		// Create a migrated narinfo without chunks
+		hash1, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			Hash: hash1,
+			URL:  sql.NullString{String: "nar/test1.nar.xz", Valid: true},
+		})
+		require.NoError(t, err)
+
+		// Create a migrated narinfo with chunks (total_chunks > 0)
+		hash2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			Hash: hash2,
+			URL:  sql.NullString{String: "nar/test2.nar.xz", Valid: true},
+		})
+		require.NoError(t, err)
+
+		nfHash2, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        nfHash2,
+			Compression: "xz",
+			FileSize:    1024,
+		})
+		require.NoError(t, err)
+
+		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			NarInfoID: ni2.ID,
+			NarFileID: nf2.ID,
+		})
+		require.NoError(t, err)
+
+		err = db.UpdateNarFileTotalChunks(context.Background(), database.UpdateNarFileTotalChunksParams{
+			TotalChunks: 2,
+			ID:          nf2.ID,
+		})
+		require.NoError(t, err)
+
+		// Create an unmigrated narinfo (should not appear)
+		hash3, err := helper.RandString(32, nil)
+		require.NoError(t, err)
+
+		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash3})
+		require.NoError(t, err)
+
+		// Get narinfos to chunk - should only return ni1
+		toChunk, err := db.GetNarInfoHashesToChunk(context.Background())
+		require.NoError(t, err)
+
+		assert.Len(t, toChunk, 1)
+
+		if len(toChunk) > 0 {
+			assert.Equal(t, hash1, toChunk[0].Hash)
+			assert.True(t, toChunk[0].URL.Valid)
+		}
+	})
 }
