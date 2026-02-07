@@ -55,7 +55,6 @@ type Querier interface {
 	//  ON DUPLICATE KEY UPDATE
 	//      id = LAST_INSERT_ID(id),
 	//      store_path = IF(url IS NULL, VALUES(store_path), store_path),
-	//      url = IF(url IS NULL, VALUES(url), url),
 	//      compression = IF(url IS NULL, VALUES(compression), compression),
 	//      file_hash = IF(url IS NULL, VALUES(file_hash), file_hash),
 	//      file_size = IF(url IS NULL, VALUES(file_size), file_size),
@@ -64,6 +63,7 @@ type Querier interface {
 	//      deriver = IF(url IS NULL, VALUES(deriver), deriver),
 	//      system = IF(url IS NULL, VALUES(system), system),
 	//      ca = IF(url IS NULL, VALUES(ca), ca),
+	//      url = IF(url IS NULL, VALUES(url), url),
 	//      updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at)
 	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (sql.Result, error)
 	//DeleteNarFileByHash
