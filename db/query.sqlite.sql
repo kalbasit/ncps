@@ -91,14 +91,16 @@ INSERT INTO narinfo_references (
     narinfo_id, reference
 ) VALUES (
     ?, ?
-);
+)
+ON CONFLICT (narinfo_id, reference) DO NOTHING;
 
 -- name: AddNarInfoSignature :exec
 INSERT INTO narinfo_signatures (
     narinfo_id, signature
 ) VALUES (
     ?, ?
-);
+)
+ON CONFLICT (narinfo_id, signature) DO NOTHING;
 
 -- name: GetNarInfoReferences :many
 SELECT reference

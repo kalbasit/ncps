@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -183,6 +184,36 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			for err := range errC {
 				assert.NoError(t, err)
 			}
+		})
+
+		t.Run("CreateNarInfoUpdateFromPlaceholder", func(t *testing.T) {
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// 1. Create a placeholder (url IS NULL)
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash: hash,
+			})
+			require.NoError(t, err)
+
+			// 2. Perform the "migration" upsert
+			fileHash := "sha256:1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri"
+			narURL := "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz"
+			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+				Hash:     hash,
+				URL:      sql.NullString{String: narURL, Valid: true},
+				FileHash: sql.NullString{String: fileHash, Valid: true},
+			})
+			require.NoError(t, err)
+
+			// 3. Verify it was correctly updated
+			ni, err := db.GetNarInfoByHash(context.Background(), hash)
+			require.NoError(t, err)
+
+			assert.True(t, ni.URL.Valid)
+			assert.Equal(t, narURL, ni.URL.String)
+			assert.True(t, ni.FileHash.Valid)
+			assert.Equal(t, fileHash, ni.FileHash.String)
 		})
 	})
 
@@ -980,6 +1011,354 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			assert.Equal(t, key, conf.Key)
 			assert.Equal(t, value2, conf.Value)
+		})
+	})
+
+	t.Run("AddNarInfoReference", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("successful insertion", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			reference, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
+				NarInfoID: ni.ID,
+				Reference: reference,
+			})
+			require.NoError(t, err)
+
+			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, refs, 1) {
+				assert.Equal(t, reference, refs[0])
+			}
+		})
+
+		t.Run("duplicate reference is idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			reference, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// Insert first time
+			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
+				NarInfoID: ni.ID,
+				Reference: reference,
+			})
+			require.NoError(t, err)
+
+			// Insert duplicate - should not error
+			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
+				NarInfoID: ni.ID,
+				Reference: reference,
+			})
+			require.NoError(t, err, "duplicate reference insertion should be idempotent")
+
+			// Verify only one reference exists
+			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, refs, 1) {
+				assert.Equal(t, reference, refs[0])
+			}
+		})
+	})
+
+	t.Run("AddNarInfoReferences", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("successful bulk insertion", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			references := make([]string, 3)
+			for i := range references {
+				ref, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				references[i] = ref
+			}
+
+			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+				NarInfoID: ni.ID,
+				Reference: references,
+			})
+			require.NoError(t, err)
+
+			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			assert.Len(t, refs, 3)
+		})
+
+		t.Run("duplicate references in same batch are idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			reference, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// Insert same reference multiple times in one batch
+			references := []string{reference, reference, reference}
+
+			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+				NarInfoID: ni.ID,
+				Reference: references,
+			})
+			require.NoError(t, err, "duplicate references in batch should be idempotent")
+
+			// Verify only one reference exists
+			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, refs, 1) {
+				assert.Equal(t, reference, refs[0])
+			}
+		})
+
+		t.Run("duplicate references across batches are idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			ref1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ref2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// First batch
+			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+				NarInfoID: ni.ID,
+				Reference: []string{ref1, ref2},
+			})
+			require.NoError(t, err)
+
+			// Second batch with duplicates
+			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+				NarInfoID: ni.ID,
+				Reference: []string{ref1, ref2},
+			})
+			require.NoError(t, err, "duplicate references across batches should be idempotent")
+
+			// Verify only two unique references exist
+			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			assert.Len(t, refs, 2)
+		})
+	})
+
+	t.Run("AddNarInfoSignature", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("successful insertion", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			signature, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
+				NarInfoID: ni.ID,
+				Signature: signature,
+			})
+			require.NoError(t, err)
+
+			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, sigs, 1) {
+				assert.Equal(t, signature, sigs[0])
+			}
+		})
+
+		t.Run("duplicate signature is idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			signature, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// Insert first time
+			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
+				NarInfoID: ni.ID,
+				Signature: signature,
+			})
+			require.NoError(t, err)
+
+			// Insert duplicate - should not error
+			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
+				NarInfoID: ni.ID,
+				Signature: signature,
+			})
+			require.NoError(t, err, "duplicate signature insertion should be idempotent")
+
+			// Verify only one signature exists
+			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, sigs, 1) {
+				assert.Equal(t, signature, sigs[0])
+			}
+		})
+	})
+
+	t.Run("AddNarInfoSignatures", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("successful bulk insertion", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			signatures := make([]string, 3)
+			for i := range signatures {
+				sig, err := helper.RandString(32, nil)
+				require.NoError(t, err)
+
+				signatures[i] = sig
+			}
+
+			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+				NarInfoID: ni.ID,
+				Signature: signatures,
+			})
+			require.NoError(t, err)
+
+			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			assert.Len(t, sigs, 3)
+		})
+
+		t.Run("duplicate signatures in same batch are idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			signature, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// Insert same signature multiple times in one batch
+			signatures := []string{signature, signature, signature}
+
+			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+				NarInfoID: ni.ID,
+				Signature: signatures,
+			})
+			require.NoError(t, err, "duplicate signatures in batch should be idempotent")
+
+			// Verify only one signature exists
+			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			if assert.Len(t, sigs, 1) {
+				assert.Equal(t, signature, sigs[0])
+			}
+		})
+
+		t.Run("duplicate signatures across batches are idempotent", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			hash, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			require.NoError(t, err)
+
+			sig1, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			sig2, err := helper.RandString(32, nil)
+			require.NoError(t, err)
+
+			// First batch
+			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+				NarInfoID: ni.ID,
+				Signature: []string{sig1, sig2},
+			})
+			require.NoError(t, err)
+
+			// Second batch with duplicates
+			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+				NarInfoID: ni.ID,
+				Signature: []string{sig1, sig2},
+			})
+			require.NoError(t, err, "duplicate signatures across batches should be idempotent")
+
+			// Verify only two unique signatures exist
+			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			require.NoError(t, err)
+
+			assert.Len(t, sigs, 2)
 		})
 	})
 }

@@ -67,7 +67,6 @@ INSERT INTO narinfos (
 ON DUPLICATE KEY UPDATE
     id = LAST_INSERT_ID(id),
     store_path = IF(url IS NULL, VALUES(store_path), store_path),
-    url = IF(url IS NULL, VALUES(url), url),
     compression = IF(url IS NULL, VALUES(compression), compression),
     file_hash = IF(url IS NULL, VALUES(file_hash), file_hash),
     file_size = IF(url IS NULL, VALUES(file_size), file_size),
@@ -76,6 +75,7 @@ ON DUPLICATE KEY UPDATE
     deriver = IF(url IS NULL, VALUES(deriver), deriver),
     system = IF(url IS NULL, VALUES(system), system),
     ca = IF(url IS NULL, VALUES(ca), ca),
+    url = IF(url IS NULL, VALUES(url), url),
     updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at);
 
 -- name: UpdateNarInfoFileSize :exec
@@ -84,14 +84,14 @@ SET file_size = ?, updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
 -- name: AddNarInfoReference :exec
-INSERT INTO narinfo_references (
+INSERT IGNORE INTO narinfo_references (
     narinfo_id, reference
 ) VALUES (
     ?, ?
 );
 
 -- name: AddNarInfoSignature :exec
-INSERT INTO narinfo_signatures (
+INSERT IGNORE INTO narinfo_signatures (
     narinfo_id, signature
 ) VALUES (
     ?, ?

@@ -91,7 +91,8 @@ INSERT INTO narinfo_references (
     narinfo_id, reference
 ) VALUES (
     $1, $2
-);
+)
+ON CONFLICT (narinfo_id, reference) DO NOTHING;
 
 -- @bulk-for AddNarInfoReference
 -- name: AddNarInfoReferences :exec
@@ -105,7 +106,8 @@ INSERT INTO narinfo_signatures (
     narinfo_id, signature
 ) VALUES (
     $1, $2
-);
+)
+ON CONFLICT (narinfo_id, signature) DO NOTHING;
 
 -- @bulk-for AddNarInfoSignature
 -- name: AddNarInfoSignatures :exec

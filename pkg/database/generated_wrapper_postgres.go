@@ -15,92 +15,84 @@ type postgresWrapper struct {
 }
 
 func (w *postgresWrapper) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error {
-	err := w.adapter.AddNarInfoReference(ctx, postgresdb.AddNarInfoReferenceParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.AddNarInfoReference(ctx, postgresdb.AddNarInfoReferenceParams{
 		NarInfoID: arg.NarInfoID,
 		Reference: arg.Reference,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) AddNarInfoReferences(ctx context.Context, arg AddNarInfoReferencesParams) error {
-	err := w.adapter.AddNarInfoReferences(ctx, postgresdb.AddNarInfoReferencesParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.AddNarInfoReferences(ctx, postgresdb.AddNarInfoReferencesParams{
 		NarInfoID: arg.NarInfoID,
 		Reference: arg.Reference,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
-	err := w.adapter.AddNarInfoSignature(ctx, postgresdb.AddNarInfoSignatureParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.AddNarInfoSignature(ctx, postgresdb.AddNarInfoSignatureParams{
 		NarInfoID: arg.NarInfoID,
 		Signature: arg.Signature,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error {
-	err := w.adapter.AddNarInfoSignatures(ctx, postgresdb.AddNarInfoSignaturesParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.AddNarInfoSignatures(ctx, postgresdb.AddNarInfoSignaturesParams{
 		NarInfoID: arg.NarInfoID,
 		Signature: arg.Signature,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.CreateChunk(ctx, postgresdb.CreateChunkParams{
 		Hash: arg.Hash,
 		Size: arg.Size,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return Chunk{}, ErrNotFound
 		}
+
 		return Chunk{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return Chunk(res), nil
 }
 
 func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.CreateConfig(ctx, postgresdb.CreateConfigParams{
 		Key:   arg.Key,
 		Value: arg.Value,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return Config{}, ErrNotFound
 		}
+
 		return Config{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return Config(res), nil
 }
 
 func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.CreateNarFile(ctx, postgresdb.CreateNarFileParams{
 		Hash:        arg.Hash,
 		Compression: arg.Compression,
@@ -109,18 +101,21 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 		TotalChunks: arg.TotalChunks,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarFile{}, ErrNotFound
 		}
+
 		return NarFile{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return NarFile(res), nil
 }
 
 func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.CreateNarInfo(ctx, postgresdb.CreateNarInfoParams{
 		Hash:        arg.Hash,
 		StorePath:   arg.StorePath,
@@ -135,168 +130,211 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPa
 		Ca:          arg.Ca,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarInfo{}, ErrNotFound
 		}
+
 		return NarInfo{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return NarInfo(res), nil
 }
 
 func (w *postgresWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
-	err := w.adapter.DeleteChunkByID(ctx, id)
-	if err != nil {
-		return err
-	}
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	// No return value (void)
-	return nil
+	return w.adapter.DeleteChunkByID(ctx, id)
 }
 
 func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.DeleteNarFileByHash(ctx, postgresdb.DeleteNarFileByHashParams{
 		Hash:        arg.Hash,
 		Compression: arg.Compression,
 		Query:       arg.Query,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetChunkByHash(ctx, hash)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return Chunk{}, ErrNotFound
 		}
+
 		return Chunk{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return Chunk(res), nil
 }
 
 func (w *postgresWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetChunkByID(ctx, id)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return Chunk{}, ErrNotFound
 		}
+
 		return Chunk{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return Chunk(res), nil
 }
 
 func (w *postgresWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetChunkByNarFileIDAndIndex(ctx, postgresdb.GetChunkByNarFileIDAndIndexParams{
 		NarFileID:  arg.NarFileID,
 		ChunkIndex: arg.ChunkIndex,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return Chunk{}, ErrNotFound
 		}
+
 		return Chunk{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return Chunk(res), nil
 }
 
 func (w *postgresWrapper) GetChunkCount(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetChunkCount(ctx)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetChunksByNarFileID(ctx, narFileID)
 	if err != nil {
 		return nil, err
@@ -307,39 +345,46 @@ func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID in
 	for i, v := range res {
 		items[i] = Chunk(v)
 	}
-
 	return items, nil
 }
 
 func (w *postgresWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetConfigByID(ctx, id)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return Config{}, ErrNotFound
 		}
+
 		return Config{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return Config(res), nil
 }
 
 func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Config, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetConfigByKey(ctx, key)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return Config{}, ErrNotFound
 		}
+
 		return Config{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return Config(res), nil
 }
 
 func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
 	if err != nil {
 		return nil, err
@@ -350,11 +395,12 @@ func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uin
 	for i, v := range res {
 		items[i] = GetLeastUsedNarFilesRow(v)
 	}
-
 	return items, nil
 }
 
 func (w *postgresWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetLeastUsedNarInfos(ctx, fileSize)
 	if err != nil {
 		return nil, err
@@ -365,11 +411,12 @@ func (w *postgresWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uin
 	for i, v := range res {
 		items[i] = NarInfo(v)
 	}
-
 	return items, nil
 }
 
 func (w *postgresWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetMigratedNarInfoHashes(ctx)
 	if err != nil {
 		return nil, err
@@ -380,6 +427,8 @@ func (w *postgresWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]strin
 }
 
 func (w *postgresWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetMigratedNarInfoHashesPaginated(ctx, postgresdb.GetMigratedNarInfoHashesPaginatedParams{
 		Limit:  arg.Limit,
 		Offset: arg.Offset,
@@ -393,106 +442,133 @@ func (w *postgresWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context,
 }
 
 func (w *postgresWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarFileByHashAndCompressionAndQuery(ctx, postgresdb.GetNarFileByHashAndCompressionAndQueryParams{
 		Hash:        arg.Hash,
 		Compression: arg.Compression,
 		Query:       arg.Query,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarFile{}, ErrNotFound
 		}
+
 		return NarFile{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return NarFile(res), nil
 }
 
 func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarFileByID(ctx, id)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarFile{}, ErrNotFound
 		}
+
 		return NarFile{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return NarFile(res), nil
 }
 
 func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return GetNarFileByNarInfoIDRow{}, ErrNotFound
 		}
+
 		return GetNarFileByNarInfoIDRow{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return GetNarFileByNarInfoIDRow(res), nil
 }
 
 func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarFileCount(ctx)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoByHash(ctx, hash)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarInfo{}, ErrNotFound
 		}
+
 		return NarInfo{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return NarInfo(res), nil
 }
 
 func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoByID(ctx, id)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarInfo{}, ErrNotFound
 		}
+
 		return NarInfo{}, err
 	}
 
 	// Convert Single Domain Struct
-
 	return NarInfo(res), nil
 }
 
 func (w *postgresWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoCount(ctx)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
 	if err != nil {
 		return nil, err
@@ -503,6 +579,8 @@ func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFi
 }
 
 func (w *postgresWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoHashesByURL(ctx, url)
 	if err != nil {
 		return nil, err
@@ -513,6 +591,8 @@ func (w *postgresWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.Nul
 }
 
 func (w *postgresWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoHashesToChunk(ctx)
 	if err != nil {
 		return nil, err
@@ -523,11 +603,12 @@ func (w *postgresWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNar
 	for i, v := range res {
 		items[i] = GetNarInfoHashesToChunkRow(v)
 	}
-
 	return items, nil
 }
 
 func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoReferences(ctx, narinfoID)
 	if err != nil {
 		return nil, err
@@ -538,6 +619,8 @@ func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID in
 }
 
 func (w *postgresWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarInfoSignatures(ctx, narinfoID)
 	if err != nil {
 		return nil, err
@@ -548,19 +631,26 @@ func (w *postgresWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID in
 }
 
 func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetOrphanedChunks(ctx)
 	if err != nil {
 		return nil, err
@@ -571,11 +661,12 @@ func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error
 	for i, v := range res {
 		items[i] = Chunk(v)
 	}
-
 	return items, nil
 }
 
 func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
 	if err != nil {
 		return nil, err
@@ -586,24 +677,30 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphane
 	for i, v := range res {
 		items[i] = GetOrphanedNarFilesRow(v)
 	}
-
 	return items, nil
 }
 
 func (w *postgresWrapper) GetTotalChunkSize(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetTotalChunkSize(ctx)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.GetUnmigratedNarInfoHashes(ctx)
 	if err != nil {
 		return nil, err
@@ -614,112 +711,107 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 }
 
 func (w *postgresWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, ErrNotFound
 		}
+
 		return false, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error {
-	err := w.adapter.LinkNarFileToChunk(ctx, postgresdb.LinkNarFileToChunkParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.LinkNarFileToChunk(ctx, postgresdb.LinkNarFileToChunkParams{
 		NarFileID:  arg.NarFileID,
 		ChunkID:    arg.ChunkID,
 		ChunkIndex: arg.ChunkIndex,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error {
-	err := w.adapter.LinkNarInfoToNarFile(ctx, postgresdb.LinkNarInfoToNarFileParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.LinkNarInfoToNarFile(ctx, postgresdb.LinkNarInfoToNarFileParams{
 		NarInfoID: arg.NarInfoID,
 		NarFileID: arg.NarFileID,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
-	err := w.adapter.SetConfig(ctx, postgresdb.SetConfigParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.SetConfig(ctx, postgresdb.SetConfigParams{
 		Key:   arg.Key,
 		Value: arg.Value,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.TouchNarFile(ctx, postgresdb.TouchNarFileParams{
 		Hash:        arg.Hash,
 		Compression: arg.Compression,
 		Query:       arg.Query,
 	})
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
+
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
+
 		return 0, err
 	}
 
 	// Return Primitive / *sql.DB / etc
+
 	return res, nil
 }
 
 func (w *postgresWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error {
-	err := w.adapter.UpdateNarFileTotalChunks(ctx, postgresdb.UpdateNarFileTotalChunksParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarFileTotalChunks(ctx, postgresdb.UpdateNarFileTotalChunksParams{
 		TotalChunks: arg.TotalChunks,
 		ID:          arg.ID,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
-	err := w.adapter.UpdateNarInfoFileSize(ctx, postgresdb.UpdateNarInfoFileSizeParams{
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarInfoFileSize(ctx, postgresdb.UpdateNarInfoFileSizeParams{
 		Hash:     arg.Hash,
 		FileSize: arg.FileSize,
 	})
-	if err != nil {
-		return err
-	}
-
-	// No return value (void)
-	return nil
 }
 
 func (w *postgresWrapper) WithTx(tx *sql.Tx) Querier {

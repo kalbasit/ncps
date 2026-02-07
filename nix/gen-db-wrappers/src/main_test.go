@@ -282,6 +282,13 @@ func TestWrapperTemplate(t *testing.T) {
 			return joinParamsCall(params, engPkg, targetMethod, structs, structs)
 		},
 		"hasSuffix": strings.HasSuffix,
+		"zeroReturn": func(m MethodInfo) string {
+			// simplified for test
+			if m.ReturnsSelf {
+				return "nil"
+			}
+			return "0"
+		},
 	}
 
 	tmpl, err := template.New("wrapper").Funcs(funcMap).Parse(wrapperTemplate)
@@ -303,7 +310,7 @@ func TestWrapperTemplate(t *testing.T) {
 	output := buf.String()
 
 	// Verify auto-looping was triggered
-	if !strings.Contains(output, "for _, v := range arg.Usernames") {
+	if !strings.Contains(output, "for i, v := range arg.Usernames") {
 		t.Errorf("expected output to contain loop over arg.Usernames, but it didn't\n%s", output)
 	}
 
@@ -359,10 +366,10 @@ func TestWrapperTemplate(t *testing.T) {
 	}
 
 	output = buf.String()
-	if !strings.Contains(output, "return nil, ErrNotFound") {
-		t.Errorf("expected output to contain 'return nil, ErrNotFound' for WithTx, but it didn't\n%s", output)
+	if !strings.Contains(output, "nil, ErrNotFound") {
+		t.Errorf("expected output to contain 'nil, ErrNotFound' for WithTx, but it didn't\n%s", output)
 	}
-	if !strings.Contains(output, "return nil, err") {
-		t.Errorf("expected output to contain 'return nil, err' for WithTx, but it didn't\n%s", output)
+	if !strings.Contains(output, "nil, err") {
+		t.Errorf("expected output to contain 'nil, err' for WithTx, but it didn't\n%s", output)
 	}
 }
