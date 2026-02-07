@@ -685,6 +685,24 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 {{end}}
 
 {{define "standardBody"}}
+	{{- $method := .Method -}}
+	{{- $methodParams := .Method.Params -}}
+	{{- if and .Engine.IsPostgres (gt (len .Method.Params) 1) -}}
+		{{- $pType := (index .Method.Params 1).Type -}}
+		{{- $sInfo := getStruct $pType -}}
+		{{- if and (ne $sInfo.Name "") (hasSliceField $sInfo) -}}
+			{{- $sliceField := getSliceField $sInfo -}}
+			{{/* Check for mismatched slice lengths */}}
+			{{- range $sInfo.Fields -}}
+				{{- if and (isSlice .Type) (ne .Name $sliceField.Name) -}}
+		if len({{(index $methodParams 1).Name}}.{{.Name}}) != len({{(index $methodParams 1).Name}}.{{$sliceField.Name}}) {
+			{{$retType := firstReturnType $method.Returns}}
+			return {{if $method.ReturnsSelf}}nil, {{else if not $method.HasValue}}{{else if isSlice $retType}}nil, {{else if isDomainStruct $method.ReturnElem}}{{$method.ReturnElem}}{}, {{else}}{{zeroValue $retType}}, {{end}}ErrMismatchedSlices
+		}
+				{{- end -}}
+			{{- end -}}
+		{{- end -}}
+	{{- end -}}
 	{{if and .Engine.IsMySQL .Method.IsCreate}}
 		// MySQL does not support RETURNING for INSERTs.
 		// We insert, get LastInsertId, and then fetch the object.
