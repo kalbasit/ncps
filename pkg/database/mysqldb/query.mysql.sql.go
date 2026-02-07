@@ -12,7 +12,7 @@ import (
 )
 
 const addNarInfoReference = `-- name: AddNarInfoReference :exec
-INSERT INTO narinfo_references (
+INSERT IGNORE INTO narinfo_references (
     narinfo_id, reference
 ) VALUES (
     ?, ?
@@ -26,7 +26,7 @@ type AddNarInfoReferenceParams struct {
 
 // AddNarInfoReference
 //
-//	INSERT INTO narinfo_references (
+//	INSERT IGNORE INTO narinfo_references (
 //	    narinfo_id, reference
 //	) VALUES (
 //	    ?, ?
@@ -37,7 +37,7 @@ func (q *Queries) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferen
 }
 
 const addNarInfoSignature = `-- name: AddNarInfoSignature :exec
-INSERT INTO narinfo_signatures (
+INSERT IGNORE INTO narinfo_signatures (
     narinfo_id, signature
 ) VALUES (
     ?, ?
@@ -51,7 +51,7 @@ type AddNarInfoSignatureParams struct {
 
 // AddNarInfoSignature
 //
-//	INSERT INTO narinfo_signatures (
+//	INSERT IGNORE INTO narinfo_signatures (
 //	    narinfo_id, signature
 //	) VALUES (
 //	    ?, ?

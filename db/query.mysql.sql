@@ -84,14 +84,14 @@ SET file_size = ?, updated_at = CURRENT_TIMESTAMP
 WHERE hash = ?;
 
 -- name: AddNarInfoReference :exec
-INSERT INTO narinfo_references (
+INSERT IGNORE INTO narinfo_references (
     narinfo_id, reference
 ) VALUES (
     ?, ?
 );
 
 -- name: AddNarInfoSignature :exec
-INSERT INTO narinfo_signatures (
+INSERT IGNORE INTO narinfo_signatures (
     narinfo_id, signature
 ) VALUES (
     ?, ?

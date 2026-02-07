@@ -19,6 +19,7 @@ INSERT INTO narinfo_references (
 ) VALUES (
     $1, $2
 )
+ON CONFLICT (narinfo_id, reference) DO NOTHING
 `
 
 type AddNarInfoReferenceParams struct {
@@ -33,6 +34,7 @@ type AddNarInfoReferenceParams struct {
 //	) VALUES (
 //	    $1, $2
 //	)
+//	ON CONFLICT (narinfo_id, reference) DO NOTHING
 func (q *Queries) AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error {
 	_, err := q.db.ExecContext(ctx, addNarInfoReference, arg.NarInfoID, arg.Reference)
 	return err
@@ -67,6 +69,7 @@ INSERT INTO narinfo_signatures (
 ) VALUES (
     $1, $2
 )
+ON CONFLICT (narinfo_id, signature) DO NOTHING
 `
 
 type AddNarInfoSignatureParams struct {
@@ -81,6 +84,7 @@ type AddNarInfoSignatureParams struct {
 //	) VALUES (
 //	    $1, $2
 //	)
+//	ON CONFLICT (narinfo_id, signature) DO NOTHING
 func (q *Queries) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error {
 	_, err := q.db.ExecContext(ctx, addNarInfoSignature, arg.NarInfoID, arg.Signature)
 	return err

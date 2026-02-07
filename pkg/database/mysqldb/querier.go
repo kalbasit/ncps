@@ -12,7 +12,7 @@ import (
 type Querier interface {
 	//AddNarInfoReference
 	//
-	//  INSERT INTO narinfo_references (
+	//  INSERT IGNORE INTO narinfo_references (
 	//      narinfo_id, reference
 	//  ) VALUES (
 	//      ?, ?
@@ -20,7 +20,7 @@ type Querier interface {
 	AddNarInfoReference(ctx context.Context, arg AddNarInfoReferenceParams) error
 	//AddNarInfoSignature
 	//
-	//  INSERT INTO narinfo_signatures (
+	//  INSERT IGNORE INTO narinfo_signatures (
 	//      narinfo_id, signature
 	//  ) VALUES (
 	//      ?, ?
