@@ -645,11 +645,11 @@ func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, 
 		targetPrimitive := getPrimitiveFromNullType(targetFieldType)
 		if sourcePrimitive != "" && targetPrimitive != "" {
 			sourceFieldName := getFieldNameForNullType(sourceFieldType)
-			targetFieldName := getFieldNameForNullType(targetFieldType)
+			targetValueFieldName := getFieldNameForNullType(targetFieldType)
 			if sourcePrimitive == targetPrimitive {
-				return fmt.Sprintf("%s: %s{%s: %s.%s, Valid: %s.Valid}", targetFieldName, targetFieldType, targetFieldName, sourceExpr, sourceFieldName, sourceExpr)
+				return fmt.Sprintf("%s: %s{%s: %s.%s, Valid: %s.Valid}", targetFieldName, targetFieldType, targetValueFieldName, sourceExpr, sourceFieldName, sourceExpr)
 			} else {
-				return fmt.Sprintf("%s: %s{%s: %s(%s.%s), Valid: %s.Valid}", targetFieldName, targetFieldType, targetFieldName, targetPrimitive, sourceExpr, sourceFieldName, sourceExpr)
+				return fmt.Sprintf("%s: %s{%s: %s(%s.%s), Valid: %s.Valid}", targetFieldName, targetFieldType, targetValueFieldName, targetPrimitive, sourceExpr, sourceFieldName, sourceExpr)
 			}
 		}
 	}
