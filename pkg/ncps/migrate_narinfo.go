@@ -273,38 +273,29 @@ to enable safe concurrent migration.`,
 				return err
 			}
 
-			walker, ok := narInfoStore.(NarInfoWalker)
-			if !ok {
-				return ErrStorageIterationNotSupported
-			}
+			// 5. Migrate
+			logger.Info().Msg("starting migration")
 
-			// 5. Setup Migrated Hashes Map
-			logger.Info().Msg("fetching existing narinfo hashes from the database")
+			startTime := time.Now()
+
+			unmigratedHashes, err := db.GetUnmigratedNarInfoHashes(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to fetch unmigrated hashes from database: %w", err)
+			}
 
 			migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch migrated hashes from database: %w", err)
 			}
 
-			migratedHashesMap := make(map[string]struct{}, len(migratedHashes))
-			for _, hash := range migratedHashes {
-				migratedHashesMap[hash] = struct{}{}
-			}
+			totalToProcess := int64(len(unmigratedHashes) + len(migratedHashes))
 
-			logger.Info().Int("count", len(migratedHashesMap)).Msg("loaded migrated hashes from database")
-
-			// 5. Migrate
-			logger.Info().Msg("starting migration")
-
-			startTime := time.Now()
-
-			var totalFound int32
-
-			var totalProcessed int32
-
-			var totalSucceeded int32
-
-			var totalFailed int32
+			var (
+				totalProcessed int32
+				totalSucceeded int32
+				totalFailed    int32
+				totalSkipped   int32
+			)
 
 			g, ctx := errgroup.WithContext(ctx)
 			g.SetLimit(cmd.Int("concurrency"))
@@ -321,21 +312,28 @@ to enable safe concurrent migration.`,
 					select {
 					case <-progressTicker.C:
 						elapsed := time.Since(startTime)
-						found := atomic.LoadInt32(&totalFound)
 						processed := atomic.LoadInt32(&totalProcessed)
 						succeeded := atomic.LoadInt32(&totalSucceeded)
 						failed := atomic.LoadInt32(&totalFailed)
+						skipped := atomic.LoadInt32(&totalSkipped)
 
 						var rate float64
 						if durationInSeconds := elapsed.Seconds(); durationInSeconds > 0 {
 							rate = float64(processed) / durationInSeconds
 						}
 
+						var percent float64
+						if totalToProcess > 0 {
+							percent = float64(processed) / float64(totalToProcess) * 100
+						}
+
 						logger.Info().
-							Int32("found", found).
+							Int64("total", totalToProcess).
 							Int32("processed", processed).
 							Int32("succeeded", succeeded).
 							Int32("failed", failed).
+							Int32("skipped", skipped).
+							Str("percent", fmt.Sprintf("%.2f%%", percent)).
 							Str("elapsed", elapsed.Round(time.Second).String()).
 							Float64("rate", rate).
 							Msg("migration progress")
@@ -345,46 +343,15 @@ to enable safe concurrent migration.`,
 				}
 			}()
 
-			err = walker.WalkNarInfos(ctx, func(hash string) error {
-				atomic.AddInt32(&totalFound, 1)
-
-				if _, ok := migratedHashesMap[hash]; ok {
-					// Already migrated - only delete from storage if not dry-run
-					g.Go(func() error {
-						atomic.AddInt32(&totalProcessed, 1)
-
-						log := logger.With().Str("hash", hash).Logger()
-						ctxWithLog := log.WithContext(ctx)
-						log.Info().Msg("narinfo already migrated, deleting from storage")
-
-						if dryRun {
-							log.Info().Msg("[DRY-RUN] would delete from storage")
-							atomic.AddInt32(&totalSucceeded, 1)
-							RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultSuccess)
-
-							return nil
-						}
-
-						if err := narInfoStore.DeleteNarInfo(ctxWithLog, hash); err != nil {
-							log.Error().Err(err).Msg("failed to delete from store")
-							atomic.AddInt32(&totalFailed, 1)
-							RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultFailure)
-						} else {
-							atomic.AddInt32(&totalSucceeded, 1)
-							RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultSuccess)
-						}
-
-						return nil
-					})
-
-					return nil
-				}
+			// Process unmigrated hashes
+			for _, hash := range unmigratedHashes {
+				hash := hash // captured for closure
 
 				g.Go(func() error {
 					atomic.AddInt32(&totalProcessed, 1)
 
 					log := logger.With().Str("hash", hash).Logger()
-					log.Info().Msg("processing narinfo")
+					log.Debug().Msg("processing unmigrated narinfo")
 
 					ctxWithLog := log.WithContext(ctx)
 
@@ -432,11 +399,39 @@ to enable safe concurrent migration.`,
 
 					return nil
 				})
+			}
 
-				return nil
-			})
-			if err != nil {
-				return err
+			// Process migrated hashes (only cleanup from storage)
+			for _, hash := range migratedHashes {
+				hash := hash // captured for closure
+
+				g.Go(func() error {
+					atomic.AddInt32(&totalProcessed, 1)
+
+					log := logger.With().Str("hash", hash).Logger()
+					ctxWithLog := log.WithContext(ctx)
+					log.Debug().Msg("narinfo already migrated, ensuring it's deleted from storage")
+
+					if dryRun {
+						log.Debug().Msg("[DRY-RUN] would ensure deleted from storage")
+						atomic.AddInt32(&totalSkipped, 1)
+						RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultSkipped)
+
+						return nil
+					}
+
+					if err := narInfoStore.DeleteNarInfo(ctxWithLog, hash); err != nil {
+						log.Debug().Err(err).Msg("failed to delete from store (already migrated)")
+						// We don't count this as a failure of the migration itself, but more as a skip since it's already migrated
+						atomic.AddInt32(&totalSkipped, 1)
+						RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultSkipped)
+					} else {
+						atomic.AddInt32(&totalSkipped, 1)
+						RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationDelete, MigrationResultSkipped)
+					}
+
+					return nil
+				})
 			}
 
 			if err := g.Wait(); err != nil {
@@ -445,10 +440,10 @@ to enable safe concurrent migration.`,
 
 			// Final summary
 			duration := time.Since(startTime)
-			found := atomic.LoadInt32(&totalFound)
 			processed := atomic.LoadInt32(&totalProcessed)
 			succeeded := atomic.LoadInt32(&totalSucceeded)
 			failed := atomic.LoadInt32(&totalFailed)
+			skipped := atomic.LoadInt32(&totalSkipped)
 
 			var rate float64
 			if durationInSeconds := duration.Seconds(); durationInSeconds > 0 {
@@ -456,13 +451,14 @@ to enable safe concurrent migration.`,
 			}
 
 			// Record batch size metric
-			RecordMigrationBatchSize(ctx, MigrationTypeNarInfoToDB, int64(found))
+			RecordMigrationBatchSize(ctx, MigrationTypeNarInfoToDB, totalToProcess)
 
 			logger.Info().
-				Int32("found", found).
+				Int64("total", totalToProcess).
 				Int32("processed", processed).
 				Int32("succeeded", succeeded).
 				Int32("failed", failed).
+				Int32("skipped", skipped).
 				Str("duration", duration.Round(time.Millisecond).String()).
 				Float64("rate", rate).
 				Msg("migration completed")
