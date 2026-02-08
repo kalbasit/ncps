@@ -175,11 +175,6 @@ func (w *sqliteWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFi
 		Query:       arg.Query,
 	})
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -193,11 +188,6 @@ func (w *sqliteWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64,
 
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -211,11 +201,6 @@ func (w *sqliteWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (i
 
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -229,11 +214,6 @@ func (w *sqliteWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64,
 
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -247,11 +227,6 @@ func (w *sqliteWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, erro
 
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -265,11 +240,6 @@ func (w *sqliteWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, erro
 
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -337,11 +307,6 @@ func (w *sqliteWrapper) GetChunkCount(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetChunkCount(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -519,11 +484,35 @@ func (w *sqliteWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetNarFileCount(ctx)
 	if err != nil {
+		return 0, err
+	}
 
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
+	// Return Primitive / *sql.DB / etc
 
+	return res, nil
+}
+
+func (w *sqliteWrapper) GetNarFilesToChunk(ctx context.Context) ([]GetNarFilesToChunkRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarFilesToChunk(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetNarFilesToChunkRow, len(res))
+	for i, v := range res {
+		items[i] = GetNarFilesToChunkRow(v)
+	}
+	return items, nil
+}
+
+func (w *sqliteWrapper) GetNarFilesToChunkCount(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarFilesToChunkCount(ctx)
+	if err != nil {
 		return 0, err
 	}
 
@@ -571,11 +560,6 @@ func (w *sqliteWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetNarInfoCount(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -653,11 +637,6 @@ func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -703,11 +682,6 @@ func (w *sqliteWrapper) GetTotalChunkSize(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetTotalChunkSize(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -733,11 +707,6 @@ func (w *sqliteWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (boo
 
 	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, ErrNotFound
-		}
-
 		return false, err
 	}
 
@@ -806,11 +775,6 @@ func (w *sqliteWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams
 		Query:       arg.Query,
 	})
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -824,11 +788,6 @@ func (w *sqliteWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, e
 
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 

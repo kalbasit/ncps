@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"sync/atomic"
 	"time"
@@ -324,8 +325,12 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 
 			startTime := time.Now()
 
+			totalToChunk, err := db.GetNarFilesToChunkCount(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to fetch total count of NAR files to chunk: %w", err)
+			}
+
 			var (
-				totalFound     int32
 				totalProcessed int32
 				totalSucceeded int32
 				totalFailed    int32
@@ -347,7 +352,6 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					select {
 					case <-progressTicker.C:
 						elapsed := time.Since(startTime)
-						found := atomic.LoadInt32(&totalFound)
 						processed := atomic.LoadInt32(&totalProcessed)
 						succeeded := atomic.LoadInt32(&totalSucceeded)
 						failed := atomic.LoadInt32(&totalFailed)
@@ -358,12 +362,18 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 							rate = float64(processed) / durationInSeconds
 						}
 
+						var percent float64
+						if totalToChunk > 0 {
+							percent = float64(processed) / float64(totalToChunk) * 100
+						}
+
 						logger.Info().
-							Int32("found", found).
+							Int64("total", totalToChunk).
 							Int32("processed", processed).
 							Int32("succeeded", succeeded).
 							Int32("failed", failed).
 							Int32("skipped", skipped).
+							Str("percent", fmt.Sprintf("%.2f%%", percent)).
 							Str("elapsed", elapsed.Round(time.Second).String()).
 							Float64("rate", rate).
 							Msg("migration progress")
@@ -373,34 +383,34 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				}
 			}()
 
-			hashes, err := db.GetNarInfoHashesToChunk(ctx)
+			narFiles, err := db.GetNarFilesToChunk(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to fetch candidate hashes from database: %w", err)
+				return fmt.Errorf("failed to fetch candidate NAR files from database: %w", err)
 			}
 
-			for _, row := range hashes {
-				hash := row.Hash
-
-				atomic.AddInt32(&totalFound, 1)
+			for _, row := range narFiles {
+				row := row // captured for closure
 
 				g.Go(func() error {
-					log := logger.With().Str("narinfo_hash", hash).Logger()
+					log := logger.With().Str("nar_hash", row.Hash).Logger()
 
-					if !row.URL.Valid {
-						log.Error().Msg("narinfo record has no URL")
-						atomic.AddInt32(&totalFailed, 1)
-						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
-
-						return nil
+					narURL := nar.URL{
+						Hash:        row.Hash,
+						Compression: nar.CompressionType(row.Compression),
+						Query:       make(map[string][]string),
 					}
 
-					narURL, err := nar.ParseURL(row.URL.String)
-					if err != nil {
-						log.Error().Err(err).Str("url", row.URL.String).Msg("failed to parse nar URL")
-						atomic.AddInt32(&totalFailed, 1)
-						RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
+					if row.Query != "" {
+						q, err := url.ParseQuery(row.Query)
+						if err != nil {
+							log.Error().Err(err).Str("query", row.Query).Msg("failed to parse nar query")
+							atomic.AddInt32(&totalFailed, 1)
+							RecordMigrationObject(ctx, MigrationTypeNarToChunks, MigrationOperationMigrate, MigrationResultFailure)
 
-						return nil
+							return nil
+						}
+
+						narURL.Query = q
 					}
 
 					// double check if already chunked (might have been migrated by background task)
@@ -477,18 +487,28 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				return err
 			}
 
-			// Final summary
 			duration := time.Since(startTime)
+			processed := atomic.LoadInt32(&totalProcessed)
+			succeeded := atomic.LoadInt32(&totalSucceeded)
+			failed := atomic.LoadInt32(&totalFailed)
+			skipped := atomic.LoadInt32(&totalSkipped)
+
+			var rate float64
+			if durationInSeconds := duration.Seconds(); durationInSeconds > 0 {
+				rate = float64(processed) / durationInSeconds
+			}
+
 			logger.Info().
-				Int32("found", atomic.LoadInt32(&totalFound)).
-				Int32("processed", atomic.LoadInt32(&totalProcessed)).
-				Int32("succeeded", atomic.LoadInt32(&totalSucceeded)).
-				Int32("failed", atomic.LoadInt32(&totalFailed)).
-				Int32("skipped", atomic.LoadInt32(&totalSkipped)).
+				Int64("total", totalToChunk).
+				Int32("processed", processed).
+				Int32("succeeded", succeeded).
+				Int32("failed", failed).
+				Int32("skipped", skipped).
 				Str("duration", duration.Round(time.Millisecond).String()).
+				Float64("rate", rate).
 				Msg("migration completed")
 
-			RecordMigrationBatchSize(ctx, MigrationTypeNarToChunks, int64(atomic.LoadInt32(&totalFound)))
+			RecordMigrationBatchSize(ctx, MigrationTypeNarToChunks, totalToChunk)
 
 			return nil
 		},

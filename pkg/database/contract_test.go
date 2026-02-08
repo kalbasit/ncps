@@ -3153,4 +3153,72 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			assert.True(t, toChunk[0].URL.Valid)
 		}
 	})
+
+	t.Run("GetNarFilesToChunk", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+
+		// Create some nar files
+		hash1 := helper.MustRandString(32, nil)
+		hash2 := helper.MustRandString(32, nil)
+		hash3 := helper.MustRandString(32, nil)
+
+		nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        hash1,
+			Compression: "xz",
+			FileSize:    1024,
+			TotalChunks: 0, // Unchunked
+		})
+		require.NoError(t, err)
+
+		_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        hash2,
+			Compression: "xz",
+			FileSize:    1024,
+			TotalChunks: 0, // Unchunked
+		})
+		require.NoError(t, err)
+
+		_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        hash3,
+			Compression: "xz",
+			FileSize:    1024,
+			TotalChunks: 5, // Already chunked
+		})
+		require.NoError(t, err)
+
+		// Check count
+		count, err := db.GetNarFilesToChunkCount(context.Background())
+		require.NoError(t, err)
+		assert.EqualValues(t, 2, count)
+
+		// Get files
+		toChunk, err := db.GetNarFilesToChunk(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, toChunk, 2)
+
+		hashes := []string{toChunk[0].Hash, toChunk[1].Hash}
+		assert.Contains(t, hashes, hash1)
+		assert.Contains(t, hashes, hash2)
+		assert.NotContains(t, hashes, hash3)
+
+		// Update one of them to be chunked
+		err = db.UpdateNarFileTotalChunks(context.Background(), database.UpdateNarFileTotalChunksParams{
+			TotalChunks: 10,
+			ID:          nf1.ID,
+		})
+		require.NoError(t, err)
+
+		// Check count again
+		count, err = db.GetNarFilesToChunkCount(context.Background())
+		require.NoError(t, err)
+		assert.EqualValues(t, 1, count)
+
+		// Get files again
+		toChunk, err = db.GetNarFilesToChunk(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, toChunk, 1)
+		assert.Equal(t, hash2, toChunk[0].Hash)
+	})
 }

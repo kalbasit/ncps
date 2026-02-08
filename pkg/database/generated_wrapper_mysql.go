@@ -179,11 +179,6 @@ func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFil
 		Query:       arg.Query,
 	})
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -197,11 +192,6 @@ func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, 
 
 	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -215,11 +205,6 @@ func (w *mysqlWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (in
 
 	res, err := w.adapter.DeleteNarInfoByHash(ctx, hash)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -233,11 +218,6 @@ func (w *mysqlWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64, 
 
 	res, err := w.adapter.DeleteNarInfoByID(ctx, id)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -251,11 +231,6 @@ func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error
 
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -269,11 +244,6 @@ func (w *mysqlWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error
 
 	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -341,11 +311,6 @@ func (w *mysqlWrapper) GetChunkCount(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetChunkCount(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -523,11 +488,35 @@ func (w *mysqlWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetNarFileCount(ctx)
 	if err != nil {
+		return 0, err
+	}
 
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
+	// Return Primitive / *sql.DB / etc
 
+	return res, nil
+}
+
+func (w *mysqlWrapper) GetNarFilesToChunk(ctx context.Context) ([]GetNarFilesToChunkRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarFilesToChunk(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetNarFilesToChunkRow, len(res))
+	for i, v := range res {
+		items[i] = GetNarFilesToChunkRow(v)
+	}
+	return items, nil
+}
+
+func (w *mysqlWrapper) GetNarFilesToChunkCount(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarFilesToChunkCount(ctx)
+	if err != nil {
 		return 0, err
 	}
 
@@ -575,11 +564,6 @@ func (w *mysqlWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetNarInfoCount(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -657,11 +641,6 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -707,11 +686,6 @@ func (w *mysqlWrapper) GetTotalChunkSize(ctx context.Context) (int64, error) {
 
 	res, err := w.adapter.GetTotalChunkSize(ctx)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -737,11 +711,6 @@ func (w *mysqlWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool
 
 	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, ErrNotFound
-		}
-
 		return false, err
 	}
 
@@ -810,11 +779,6 @@ func (w *mysqlWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams)
 		Query:       arg.Query,
 	})
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 
@@ -828,11 +792,6 @@ func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, er
 
 	res, err := w.adapter.TouchNarInfo(ctx, hash)
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-
 		return 0, err
 	}
 

@@ -118,6 +118,14 @@ type GetNarFileByNarInfoIDRow struct {
 	LastAccessedAt sql.NullTime
 }
 
+type GetNarFilesToChunkRow struct {
+	ID          int64
+	Hash        string
+	Compression string
+	Query       string
+	FileSize    uint64
+}
+
 type GetNarInfoHashesToChunkRow struct {
 	Hash string
 	URL  sql.NullString

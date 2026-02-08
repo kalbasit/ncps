@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -68,6 +69,7 @@ func runMigrateNarToChunksSuite(t *testing.T, factory narToChunksMigrationFactor
 	t.Run("DryRun", testMigrateNarToChunksDryRun(factory))
 	t.Run("Idempotency", testMigrateNarToChunksIdempotency(factory))
 	t.Run("MultipleNARs", testMigrateNarToChunksMultipleNARs(factory))
+	t.Run("Deduplication", testMigrateNarToChunksDeduplication(factory))
 }
 
 func testMigrateNarToChunksSuccess(factory narToChunksMigrationFactory) func(*testing.T) {
@@ -270,6 +272,87 @@ func testMigrateNarToChunksIdempotency(factory narToChunksMigrationFactory) func
 		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count2)
 		require.NoError(t, err)
 		assert.Equal(t, count1, count2, "Chunks count should remain same after second run")
+	}
+}
+
+func testMigrateNarToChunksDeduplication(factory narToChunksMigrationFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		// Setup
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+		db, _, dir, dbURL, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Create two narinfos pointing to the same NAR URL
+		narInfo1Text := testdata.Nar1.NarInfoText
+		// Use Nar2 but change its URL to Nar1's URL
+		narInfo2Text := strings.Replace(
+			testdata.Nar2.NarInfoText,
+			"URL: nar/"+testdata.Nar2.NarHash+".nar.xz",
+			"URL: nar/"+testdata.Nar1.NarHash+".nar.xz",
+			1,
+		)
+
+		narInfo1Path := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfo1Path), 0o755))
+		require.NoError(t, os.WriteFile(narInfo1Path, []byte(narInfo1Text), 0o600))
+
+		narInfo2Path := filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfo2Path), 0o755))
+		require.NoError(t, os.WriteFile(narInfo2Path, []byte(narInfo2Text), 0o600))
+
+		narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
+		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// 1. Migrate NarInfo to DB first
+		migrateNarInfoArgs := []string{
+			"ncps", "migrate-narinfo",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+		require.NoError(t, app.Run(ctx, migrateNarInfoArgs))
+
+		// Verify we have 2 narinfos but 1 nar_file
+		var niCount, nfCount int
+
+		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM narinfos").Scan(&niCount)
+		require.NoError(t, err)
+		assert.Equal(t, 2, niCount)
+
+		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM nar_files").Scan(&nfCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, nfCount)
+
+		// 2. Run the migration command
+		args := []string{
+			"ncps", "migrate-nar-to-chunks",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--cache-cdc-enabled",
+		}
+
+		err = app.Run(ctx, args)
+		require.NoError(t, err)
+
+		// Verification
+		// Chunks should be created for ONE file
+		var chunkCount int
+
+		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&chunkCount)
+		require.NoError(t, err)
+		assert.Positive(t, chunkCount, "Chunks should have been created")
+
+		// The NAR file record should have total_chunks > 0
+		var totalChunks int
+
+		err = db.DB().QueryRowContext(ctx, "SELECT total_chunks FROM nar_files LIMIT 1").Scan(&totalChunks)
+		require.NoError(t, err)
+		assert.Positive(t, totalChunks)
 	}
 }
 

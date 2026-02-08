@@ -355,3 +355,16 @@ LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
 WHERE ni.url IS NOT NULL
   AND (nf.id IS NULL OR nf.total_chunks = 0)
 ORDER BY ni.hash;
+
+-- name: GetNarFilesToChunk :many
+-- Get all NAR files that are not yet chunked.
+SELECT id, hash, compression, query, file_size
+FROM nar_files
+WHERE total_chunks = 0
+ORDER BY id;
+
+-- name: GetNarFilesToChunkCount :one
+-- Get the count of NAR files that are not yet chunked.
+SELECT COUNT(*)
+FROM nar_files
+WHERE total_chunks = 0;
