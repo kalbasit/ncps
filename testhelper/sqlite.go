@@ -152,6 +152,25 @@ func MigrateNarInfoToDatabase(ctx context.Context, db database.Querier, hash str
 	return nil
 }
 
+// RegisterNarInfoAsUnmigrated registers a narinfo in the database as unmigrated (no URL).
+func RegisterNarInfoAsUnmigrated(ctx context.Context, db database.Querier, hash string, ni *narinfo.NarInfo) error {
+	_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+		Hash:        hash,
+		StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
+		Compression: sql.NullString{String: ni.Compression, Valid: ni.Compression != ""},
+		FileHash:    sql.NullString{String: ni.FileHash.String(), Valid: ni.FileHash != nil},
+		FileSize:    sql.NullInt64{Int64: int64(ni.FileSize), Valid: true}, //nolint:gosec
+		NarHash:     sql.NullString{String: ni.NarHash.String(), Valid: ni.NarHash != nil},
+		NarSize:     sql.NullInt64{Int64: int64(ni.NarSize), Valid: true}, //nolint:gosec
+		Deriver:     sql.NullString{String: ni.Deriver, Valid: ni.Deriver != ""},
+		System:      sql.NullString{String: ni.System, Valid: ni.System != ""},
+		Ca:          sql.NullString{String: ni.CA, Valid: ni.CA != ""},
+		// URL is intentionally omitted/NULL
+	})
+
+	return err
+}
+
 func getOrCreateNarInfo(
 	ctx context.Context,
 	qtx database.Querier,

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,6 +90,11 @@ func testMigrateNarToChunksSuccess(factory narToChunksMigrationFactory) func(*te
 		narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+		// Register in DB as unmigrated
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni))
 
 		app, err := ncps.New()
 		require.NoError(t, err)
@@ -175,6 +181,11 @@ func testMigrateNarToChunksDryRun(factory narToChunksMigrationFactory) func(*tes
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
 
+		// Register in DB as unmigrated
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni))
+
 		app, err := ncps.New()
 		require.NoError(t, err)
 
@@ -228,6 +239,11 @@ func testMigrateNarToChunksIdempotency(factory narToChunksMigrationFactory) func
 		narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+		// Register in DB as unmigrated
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni))
 
 		app, err := ncps.New()
 		require.NoError(t, err)
@@ -298,9 +314,19 @@ func testMigrateNarToChunksDeduplication(factory narToChunksMigrationFactory) fu
 		require.NoError(t, os.MkdirAll(filepath.Dir(narInfo1Path), 0o755))
 		require.NoError(t, os.WriteFile(narInfo1Path, []byte(narInfo1Text), 0o600))
 
+		// Register in DB as unmigrated
+		ni1, err := narinfo.Parse(strings.NewReader(narInfo1Text))
+		require.NoError(t, err)
+		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni1))
+
 		narInfo2Path := filepath.Join(dir, "store", "narinfo", testdata.Nar2.NarInfoPath)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narInfo2Path), 0o755))
 		require.NoError(t, os.WriteFile(narInfo2Path, []byte(narInfo2Text), 0o600))
+
+		// Register in DB as unmigrated
+		ni2, err := narinfo.Parse(strings.NewReader(narInfo2Text))
+		require.NoError(t, err)
+		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar2.NarInfoHash, ni2))
 
 		narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
@@ -375,6 +401,11 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 			narPath := filepath.Join(dir, "store", "nar", entry.NarPath)
 			require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
 			require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
+
+			// Register in DB as unmigrated
+			ni, err := narinfo.Parse(strings.NewReader(entry.NarInfoText))
+			require.NoError(t, err)
+			require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, entry.NarInfoHash, ni))
 		}
 
 		app, err := ncps.New()
