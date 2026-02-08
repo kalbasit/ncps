@@ -610,6 +610,22 @@ func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, 
 		return fmt.Sprintf("%s: %s", targetFieldName, sourceExpr)
 	}
 
+	// Case 4: Both are sql.Null* types but different
+	if isSqlNullType(sourceFieldType) && isSqlNullType(targetFieldType) {
+		// This is a complex case - extract from source and wrap in target
+		sourcePrimitive := getPrimitiveFromNullType(sourceFieldType)
+		targetPrimitive := getPrimitiveFromNullType(targetFieldType)
+		if sourcePrimitive != "" && targetPrimitive != "" {
+			sourceFieldName := getFieldNameForNullType(sourceFieldType)
+			targetValueFieldName := getFieldNameForNullType(targetFieldType)
+			if sourcePrimitive == targetPrimitive {
+				return fmt.Sprintf("%s: %s{%s: %s.%s, Valid: %s.Valid}", targetFieldName, targetFieldType, targetValueFieldName, sourceExpr, sourceFieldName, sourceExpr)
+			} else {
+				return fmt.Sprintf("%s: %s{%s: %s(%s.%s), Valid: %s.Valid}", targetFieldName, targetFieldType, targetValueFieldName, targetPrimitive, sourceExpr, sourceFieldName, sourceExpr)
+			}
+		}
+	}
+
 	// Case 2: Converting from primitive to sql.Null*
 	if isSqlNullType(targetFieldType) {
 		expectedPrimitive := getPrimitiveFromNullType(targetFieldType)
@@ -635,22 +651,6 @@ func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, 
 			// Extraction and conversion (e.g., sql.NullInt64 to int32)
 			fieldName := getFieldNameForNullType(sourceFieldType)
 			return fmt.Sprintf("%s: %s(%s.%s)", targetFieldName, targetFieldType, sourceExpr, fieldName)
-		}
-	}
-
-	// Case 4: Both are sql.Null* types but different
-	if isSqlNullType(sourceFieldType) && isSqlNullType(targetFieldType) {
-		// This is a complex case - extract from source and wrap in target
-		sourcePrimitive := getPrimitiveFromNullType(sourceFieldType)
-		targetPrimitive := getPrimitiveFromNullType(targetFieldType)
-		if sourcePrimitive != "" && targetPrimitive != "" {
-			sourceFieldName := getFieldNameForNullType(sourceFieldType)
-			targetValueFieldName := getFieldNameForNullType(targetFieldType)
-			if sourcePrimitive == targetPrimitive {
-				return fmt.Sprintf("%s: %s{%s: %s.%s, Valid: %s.Valid}", targetFieldName, targetFieldType, targetValueFieldName, sourceExpr, sourceFieldName, sourceExpr)
-			} else {
-				return fmt.Sprintf("%s: %s{%s: %s(%s.%s), Valid: %s.Valid}", targetFieldName, targetFieldType, targetValueFieldName, targetPrimitive, sourceExpr, sourceFieldName, sourceExpr)
-			}
 		}
 	}
 

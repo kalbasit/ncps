@@ -508,6 +508,14 @@ func TestGenerateFieldConversion(t *testing.T) {
 			sourceExpr:      "row.Bio",
 			want:            "Bio: row.Bio.String",
 		},
+		{
+			name:            "NullInt32 to NullInt64",
+			targetFieldName: "Count",
+			targetFieldType: "sql.NullInt64",
+			sourceFieldType: "sql.NullInt32",
+			sourceExpr:      "src.Count",
+			want:            "Count: sql.NullInt64{Int64: int64(src.Count.Int32), Valid: src.Count.Valid}",
+		},
 	}
 
 	for _, tt := range tests {
