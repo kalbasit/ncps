@@ -1920,11 +1920,19 @@ func (c *Cache) pullNarInfo(
 	// Wait for any active migration or PutNarInfo for this hash.
 	// Since PutNarInfo takes a Write Lock on c.cacheLocker, and MigrateNarInfo
 	// takes a Lock on c.downloadLocker, we need to wait on both.
-	if err := c.downloadLocker.Lock(ctx, migrationLockKey(hash), c.downloadLockTTL); err == nil {
-		_ = c.downloadLocker.Unlock(ctx, migrationLockKey(hash))
+	if err := c.downloadLocker.Lock(ctx, migrationLockKey(hash), c.downloadLockTTL); err != nil {
+		ds.setError(fmt.Errorf("failed to acquire migration lock: %w", err))
+
+		return
 	}
 
-	_ = c.withReadLock(ctx, "pullNarInfo-wait-put", narInfoLockKey(hash), func() error { return nil })
+	_ = c.downloadLocker.Unlock(ctx, migrationLockKey(hash))
+
+	if err := c.withReadLock(ctx, "pullNarInfo-wait-put", narInfoLockKey(hash), func() error { return nil }); err != nil {
+		ds.setError(fmt.Errorf("failed to acquire put lock: %w", err))
+
+		return
+	}
 
 	// Check if the record is now in the database after waiting for locks.
 	if _, err := c.getNarInfoFromDatabase(ctx, hash); err == nil {
@@ -2377,11 +2385,21 @@ func (c *Cache) handleStorageFetchError(
 	// Only retry on NotFound errors (file deleted by migration)
 	if errors.Is(storageErr, storage.ErrNotFound) {
 		// Wait for any active migration or PutNarInfo for this hash.
-		if err := c.downloadLocker.Lock(ctx, migrationLockKey(hash), c.downloadLockTTL); err == nil {
-			_ = c.downloadLocker.Unlock(ctx, migrationLockKey(hash))
+		if err := c.downloadLocker.Lock(ctx, migrationLockKey(hash), c.downloadLockTTL); err != nil {
+			return fmt.Errorf("failed to acquire migration lock after storage error: %w", err)
 		}
 
-		_ = c.withReadLock(ctx, "handleStorageFetchError-wait-put", narInfoLockKey(hash), func() error { return nil })
+		_ = c.downloadLocker.Unlock(ctx, migrationLockKey(hash))
+
+		if err := c.withReadLock(ctx,
+			"handleStorageFetchError-wait-put",
+			narInfoLockKey(hash),
+			func() error {
+				return nil
+			},
+		); err != nil {
+			return fmt.Errorf("failed to acquire put lock after storage error: %w", err)
+		}
 
 		var dbErr error
 
