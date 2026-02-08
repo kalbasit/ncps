@@ -57,7 +57,16 @@ jobs:
         run: |
           go mod tidy
 
-          if nix build --print-build-logs .#ncps.goModules --rebuild 2> /tmp/log; then
+          nix build --print-build-logs .#ncps.goModules 2> /tmp/log
+          ret=$?
+
+          if [[ "$ret" -eq 0 ]]; then
+            nix build --print-build-logs .#ncps.goModules --rebuild 2> /tmp/log
+            ret=$?
+          fi
+
+          if [[ "$ret" -eq 0 ]]; then
+            echo "::notice::Hash is up to date"
             exit 0
           fi
 
@@ -65,8 +74,8 @@ jobs:
           echo "hash=$hash"
 
           if [[ -z "$hash" ]]; then
-            echo >&2 "hash is empty"
             cat /tmp/log
+            echo "::error::hash is empty"
             exit 1
           fi
 
