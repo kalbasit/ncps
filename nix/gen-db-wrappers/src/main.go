@@ -15,6 +15,7 @@ import (
 	"text/template"
 
 	"github.com/jinzhu/inflection"
+	"golang.org/x/tools/imports"
 	"mvdan.cc/gofumpt/format"
 )
 
@@ -341,14 +342,23 @@ func extractBulkFor(comment string) string {
 func toSingular(s string) string { return inflection.Singular(s) }
 
 func writeFile(dir, filename string, content []byte) {
-	formatted, err := format.Source(content, format.Options{
+	// 1. Manage imports with goimports
+	withImports, err := imports.Process(filename, content, nil)
+	if err != nil {
+		log.Println(string(content))
+		log.Fatalf("imports.Process %s: %v", filename, err)
+	}
+
+	// 2. Format with gofumpt
+	formatted, err := format.Source(withImports, format.Options{
 		LangVersion: "",
 		ExtraRules:  true,
 	})
 	if err != nil {
-		log.Println(string(content))
+		log.Println(string(withImports))
 		log.Fatalf("formatting %s: %v", filename, err)
 	}
+
 	if err := os.WriteFile(filepath.Join(dir, filename), formatted, 0o644); err != nil {
 		log.Fatal(err)
 	}
@@ -537,7 +547,6 @@ package database
 
 import (
 	"database/sql"
-	"time"
 )
 
 {{range .}}
@@ -753,7 +762,25 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 					// Convert Slice of Domain Structs
 					items := make([]{{.Method.ReturnElem}}, len(res))
 					for i, v := range res {
-						items[i] = {{.Method.ReturnElem}}(v)
+						{{$targetStruct := getStruct .Method.ReturnElem}}
+						{{$sourceStruct := getTargetStruct .Method.ReturnElem}}
+						items[i] = {{.Method.ReturnElem}}{
+							{{range $targetField := $targetStruct.Fields}}
+								{{$sourceField := dict "Name" ""}}
+								{{range $sf := $sourceStruct.Fields}}
+									{{if eq $sf.Name $targetField.Name}}
+										{{$sourceField = $sf}}
+									{{end}}
+								{{end}}
+								{{if ne $sourceField.Name ""}}
+									{{if eq $sourceField.Type $targetField.Type}}
+										{{$targetField.Name}}: v.{{$sourceField.Name}},
+									{{else}}
+										{{$targetField.Name}}: {{$targetField.Type}}(v.{{$sourceField.Name}}),
+									{{end}}
+								{{end}}
+							{{end}}
+						}
 					}
 					return items{{if .Method.ReturnsError}}, nil{{end}}
 				{{else}}
@@ -762,7 +789,25 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 				{{end}}
 			{{else if isDomainStruct .Method.ReturnElem}}
 				// Convert Single Domain Struct
-				return {{.Method.ReturnElem}}(res){{if .Method.ReturnsError}}, nil{{end}}
+				{{$targetStruct := getStruct .Method.ReturnElem}}
+				{{$sourceStruct := getTargetStruct .Method.ReturnElem}}
+				return {{.Method.ReturnElem}}{
+					{{range $targetField := $targetStruct.Fields}}
+						{{$sourceField := dict "Name" ""}}
+						{{range $sf := $sourceStruct.Fields}}
+							{{if eq $sf.Name $targetField.Name}}
+								{{$sourceField = $sf}}
+							{{end}}
+						{{end}}
+						{{if ne $sourceField.Name ""}}
+							{{if eq $sourceField.Type $targetField.Type}}
+								{{$targetField.Name}}: res.{{$sourceField.Name}},
+							{{else}}
+								{{$targetField.Name}}: {{$targetField.Type}}(res.{{$sourceField.Name}}),
+							{{end}}
+						{{end}}
+					{{end}}
+				}{{if .Method.ReturnsError}}, nil{{end}}
 			{{else}}
 				// Return Primitive / *sql.DB / etc
 				{{if and (eq $retType "bool") (eq $targetRetType "int64")}}

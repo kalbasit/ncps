@@ -67,7 +67,18 @@ func (w *postgresWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams
 	}
 
 	// Convert Single Domain Struct
-	return Chunk(res), nil
+
+	return Chunk{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Size: res.Size,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
@@ -87,7 +98,18 @@ func (w *postgresWrapper) CreateConfig(ctx context.Context, arg CreateConfigPara
 	}
 
 	// Convert Single Domain Struct
-	return Config(res), nil
+
+	return Config{
+		ID: res.ID,
+
+		Key: res.Key,
+
+		Value: res.Value,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
@@ -110,7 +132,26 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 	}
 
 	// Convert Single Domain Struct
-	return NarFile(res), nil
+
+	return NarFile{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Compression: res.Compression,
+
+		FileSize: res.FileSize,
+
+		Query: res.Query,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		TotalChunks: res.TotalChunks,
+	}, nil
 }
 
 func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
@@ -139,7 +180,38 @@ func (w *postgresWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPa
 	}
 
 	// Convert Single Domain Struct
-	return NarInfo(res), nil
+
+	return NarInfo{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		StorePath: res.StorePath,
+
+		URL: res.URL,
+
+		Compression: res.Compression,
+
+		FileHash: res.FileHash,
+
+		FileSize: res.FileSize,
+
+		NarHash: res.NarHash,
+
+		NarSize: res.NarSize,
+
+		Deriver: res.Deriver,
+
+		System: res.System,
+
+		Ca: res.Ca,
+	}, nil
 }
 
 func (w *postgresWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
@@ -244,7 +316,18 @@ func (w *postgresWrapper) GetChunkByHash(ctx context.Context, hash string) (Chun
 	}
 
 	// Convert Single Domain Struct
-	return Chunk(res), nil
+
+	return Chunk{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Size: res.Size,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
@@ -261,7 +344,18 @@ func (w *postgresWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, er
 	}
 
 	// Convert Single Domain Struct
-	return Chunk(res), nil
+
+	return Chunk{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Size: res.Size,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error) {
@@ -281,7 +375,18 @@ func (w *postgresWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg G
 	}
 
 	// Convert Single Domain Struct
-	return Chunk(res), nil
+
+	return Chunk{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Size: res.Size,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) GetChunkCount(ctx context.Context) (int64, error) {
@@ -308,7 +413,17 @@ func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID in
 	// Convert Slice of Domain Structs
 	items := make([]Chunk, len(res))
 	for i, v := range res {
-		items[i] = Chunk(v)
+		items[i] = Chunk{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Size: v.Size,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
 	}
 	return items, nil
 }
@@ -327,7 +442,18 @@ func (w *postgresWrapper) GetConfigByID(ctx context.Context, id int64) (Config, 
 	}
 
 	// Convert Single Domain Struct
-	return Config(res), nil
+
+	return Config{
+		ID: res.ID,
+
+		Key: res.Key,
+
+		Value: res.Value,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Config, error) {
@@ -344,7 +470,18 @@ func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Confi
 	}
 
 	// Convert Single Domain Struct
-	return Config(res), nil
+
+	return Config{
+		ID: res.ID,
+
+		Key: res.Key,
+
+		Value: res.Value,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error) {
@@ -358,7 +495,23 @@ func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uin
 	// Convert Slice of Domain Structs
 	items := make([]GetLeastUsedNarFilesRow, len(res))
 	for i, v := range res {
-		items[i] = GetLeastUsedNarFilesRow(v)
+		items[i] = GetLeastUsedNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			FileSize: v.FileSize,
+
+			Query: v.Query,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+		}
 	}
 	return items, nil
 }
@@ -374,7 +527,37 @@ func (w *postgresWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uin
 	// Convert Slice of Domain Structs
 	items := make([]NarInfo, len(res))
 	for i, v := range res {
-		items[i] = NarInfo(v)
+		items[i] = NarInfo{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+
+			StorePath: v.StorePath,
+
+			URL: v.URL,
+
+			Compression: v.Compression,
+
+			FileHash: v.FileHash,
+
+			FileSize: v.FileSize,
+
+			NarHash: v.NarHash,
+
+			NarSize: v.NarSize,
+
+			Deriver: v.Deriver,
+
+			System: v.System,
+
+			Ca: v.Ca,
+		}
 	}
 	return items, nil
 }
@@ -424,7 +607,26 @@ func (w *postgresWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Con
 	}
 
 	// Convert Single Domain Struct
-	return NarFile(res), nil
+
+	return NarFile{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Compression: res.Compression,
+
+		FileSize: res.FileSize,
+
+		Query: res.Query,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		TotalChunks: res.TotalChunks,
+	}, nil
 }
 
 func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
@@ -441,7 +643,26 @@ func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile
 	}
 
 	// Convert Single Domain Struct
-	return NarFile(res), nil
+
+	return NarFile{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Compression: res.Compression,
+
+		FileSize: res.FileSize,
+
+		Query: res.Query,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		TotalChunks: res.TotalChunks,
+	}, nil
 }
 
 func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error) {
@@ -458,7 +679,24 @@ func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID i
 	}
 
 	// Convert Single Domain Struct
-	return GetNarFileByNarInfoIDRow(res), nil
+
+	return GetNarFileByNarInfoIDRow{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Compression: res.Compression,
+
+		FileSize: res.FileSize,
+
+		Query: res.Query,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+	}, nil
 }
 
 func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
@@ -485,7 +723,17 @@ func (w *postgresWrapper) GetNarFilesToChunk(ctx context.Context) ([]GetNarFiles
 	// Convert Slice of Domain Structs
 	items := make([]GetNarFilesToChunkRow, len(res))
 	for i, v := range res {
-		items[i] = GetNarFilesToChunkRow(v)
+		items[i] = GetNarFilesToChunkRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			Query: v.Query,
+
+			FileSize: v.FileSize,
+		}
 	}
 	return items, nil
 }
@@ -517,7 +765,38 @@ func (w *postgresWrapper) GetNarInfoByHash(ctx context.Context, hash string) (Na
 	}
 
 	// Convert Single Domain Struct
-	return NarInfo(res), nil
+
+	return NarInfo{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		StorePath: res.StorePath,
+
+		URL: res.URL,
+
+		Compression: res.Compression,
+
+		FileHash: res.FileHash,
+
+		FileSize: res.FileSize,
+
+		NarHash: res.NarHash,
+
+		NarSize: res.NarSize,
+
+		Deriver: res.Deriver,
+
+		System: res.System,
+
+		Ca: res.Ca,
+	}, nil
 }
 
 func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
@@ -534,7 +813,38 @@ func (w *postgresWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo
 	}
 
 	// Convert Single Domain Struct
-	return NarInfo(res), nil
+
+	return NarInfo{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		StorePath: res.StorePath,
+
+		URL: res.URL,
+
+		Compression: res.Compression,
+
+		FileHash: res.FileHash,
+
+		FileSize: res.FileSize,
+
+		NarHash: res.NarHash,
+
+		NarSize: res.NarSize,
+
+		Deriver: res.Deriver,
+
+		System: res.System,
+
+		Ca: res.Ca,
+	}, nil
 }
 
 func (w *postgresWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
@@ -585,7 +895,11 @@ func (w *postgresWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNar
 	// Convert Slice of Domain Structs
 	items := make([]GetNarInfoHashesToChunkRow, len(res))
 	for i, v := range res {
-		items[i] = GetNarInfoHashesToChunkRow(v)
+		items[i] = GetNarInfoHashesToChunkRow{
+			Hash: v.Hash,
+
+			URL: v.URL,
+		}
 	}
 	return items, nil
 }
@@ -638,7 +952,17 @@ func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error
 	// Convert Slice of Domain Structs
 	items := make([]Chunk, len(res))
 	for i, v := range res {
-		items[i] = Chunk(v)
+		items[i] = Chunk{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Size: v.Size,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
 	}
 	return items, nil
 }
@@ -654,7 +978,23 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphane
 	// Convert Slice of Domain Structs
 	items := make([]GetOrphanedNarFilesRow, len(res))
 	for i, v := range res {
-		items[i] = GetOrphanedNarFilesRow(v)
+		items[i] = GetOrphanedNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			FileSize: v.FileSize,
+
+			Query: v.Query,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+		}
 	}
 	return items, nil
 }
