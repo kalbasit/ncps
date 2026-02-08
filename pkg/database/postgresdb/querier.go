@@ -250,6 +250,19 @@ type Querier interface {
 	//  SELECT CAST(COUNT(*) AS BIGINT) AS count
 	//  FROM nar_files
 	GetNarFileCount(ctx context.Context) (int64, error)
+	// Get all NAR files that are not yet chunked.
+	//
+	//  SELECT id, hash, compression, query, file_size
+	//  FROM nar_files
+	//  WHERE total_chunks = 0
+	//  ORDER BY id
+	GetNarFilesToChunk(ctx context.Context) ([]GetNarFilesToChunkRow, error)
+	// Get the count of NAR files that are not yet chunked.
+	//
+	//  SELECT COUNT(*)
+	//  FROM nar_files
+	//  WHERE total_chunks = 0
+	GetNarFilesToChunkCount(ctx context.Context) (int64, error)
 	//GetNarInfoByHash
 	//
 	//  SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca

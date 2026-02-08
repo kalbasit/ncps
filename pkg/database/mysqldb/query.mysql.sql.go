@@ -904,6 +904,74 @@ func (q *Queries) GetNarFileCount(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const getNarFilesToChunk = `-- name: GetNarFilesToChunk :many
+SELECT id, hash, compression, ` + "`" + `query` + "`" + `, file_size
+FROM nar_files
+WHERE total_chunks = 0
+ORDER BY id
+`
+
+type GetNarFilesToChunkRow struct {
+	ID          int64
+	Hash        string
+	Compression string
+	Query       string
+	FileSize    uint64
+}
+
+// Get all NAR files that are not yet chunked.
+//
+//	SELECT id, hash, compression, `query`, file_size
+//	FROM nar_files
+//	WHERE total_chunks = 0
+//	ORDER BY id
+func (q *Queries) GetNarFilesToChunk(ctx context.Context) ([]GetNarFilesToChunkRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNarFilesToChunk)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNarFilesToChunkRow
+	for rows.Next() {
+		var i GetNarFilesToChunkRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Compression,
+			&i.Query,
+			&i.FileSize,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNarFilesToChunkCount = `-- name: GetNarFilesToChunkCount :one
+SELECT COUNT(*)
+FROM nar_files
+WHERE total_chunks = 0
+`
+
+// Get the count of NAR files that are not yet chunked.
+//
+//	SELECT COUNT(*)
+//	FROM nar_files
+//	WHERE total_chunks = 0
+func (q *Queries) GetNarFilesToChunkCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getNarFilesToChunkCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getNarInfoByHash = `-- name: GetNarInfoByHash :one
 SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, ` + "`" + `system` + "`" + `, ca
 FROM narinfos

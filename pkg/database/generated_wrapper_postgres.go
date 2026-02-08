@@ -514,6 +514,40 @@ func (w *postgresWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
 	return res, nil
 }
 
+func (w *postgresWrapper) GetNarFilesToChunk(ctx context.Context) ([]GetNarFilesToChunkRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarFilesToChunk(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetNarFilesToChunkRow, len(res))
+	for i, v := range res {
+		items[i] = GetNarFilesToChunkRow(v)
+	}
+	return items, nil
+}
+
+func (w *postgresWrapper) GetNarFilesToChunkCount(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarFilesToChunkCount(ctx)
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
 func (w *postgresWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
