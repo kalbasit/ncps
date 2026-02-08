@@ -876,7 +876,7 @@ func testWithReadLock(factory cacheFactory) func(*testing.T) {
 			t.Parallel()
 
 			executed := false
-			err := c.withReadLock(ctx, "test", func() error {
+			err := c.withReadLock(ctx, "test", "test-key", func() error {
 				executed = true
 
 				return nil
@@ -889,7 +889,7 @@ func testWithReadLock(factory cacheFactory) func(*testing.T) {
 		t.Run("function error is propagated", func(t *testing.T) {
 			t.Parallel()
 
-			err := c.withReadLock(ctx, "test", func() error {
+			err := c.withReadLock(ctx, "test", "test-key", func() error {
 				return errTest
 			})
 

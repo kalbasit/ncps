@@ -67,6 +67,12 @@ func narInfoJobKey(hash string) string { return "download:narinfo:" + hash }
 // narJobKey returns the key used for tracking NAR download jobs.
 func narJobKey(hash string) string { return "download:nar:" + hash }
 
+// narInfoLockKey returns the lock key used for narinfo operations.
+func narInfoLockKey(hash string) string { return "narinfo:" + hash }
+
+// migrationLockKey returns the lock key used for migration operations.
+func migrationLockKey(hash string) string { return "migration:" + hash }
+
 var (
 	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
@@ -779,7 +785,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		reader io.ReadCloser
 	)
 
-	err := c.withReadLock(ctx, "GetNar", func() error {
+	err := c.withReadLock(ctx, "GetNar", narJobKey(narURL.Hash), func() error {
 		ctx = narURL.
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
@@ -1031,7 +1037,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 	)
 	defer span.End()
 
-	return c.withReadLock(ctx, "PutNar", func() error {
+	return c.withReadLock(ctx, "PutNar", narJobKey(narURL.Hash), func() error {
 		ctx = narURL.
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
@@ -1106,7 +1112,7 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	)
 	defer span.End()
 
-	return c.withReadLock(ctx, "DeleteNar", func() error {
+	return c.withReadLock(ctx, "DeleteNar", narJobKey(narURL.Hash), func() error {
 		ctx = narURL.
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
@@ -1793,7 +1799,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	var narInfo *narinfo.NarInfo
 
-	err := c.withReadLock(ctx, "GetNarInfo", func() error {
+	err := c.withReadLock(ctx, "GetNarInfo", narInfoJobKey(hash), func() error {
 		ctx = zerolog.Ctx(ctx).
 			With().
 			Str("narinfo_hash", hash).
@@ -1910,6 +1916,37 @@ func (c *Cache) pullNarInfo(
 	defer span.End()
 
 	now := time.Now()
+
+	// Wait for any active migration or PutNarInfo for this hash.
+	// Since PutNarInfo takes a Write Lock on c.cacheLocker, and MigrateNarInfo
+	// takes a Lock on c.downloadLocker, we need to wait on both.
+	if err := c.downloadLocker.Lock(ctx, migrationLockKey(hash), c.downloadLockTTL); err != nil {
+		ds.setError(fmt.Errorf("failed to acquire migration lock: %w", err))
+
+		return
+	}
+
+	if err := c.downloadLocker.Unlock(ctx, migrationLockKey(hash)); err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Str("key", migrationLockKey(hash)).
+			Msg("Failed to unlock migration lock after waiting")
+	}
+
+	if err := c.withReadLock(ctx, "pullNarInfo-wait-put", narInfoLockKey(hash), func() error { return nil }); err != nil {
+		ds.setError(fmt.Errorf("failed to acquire put lock: %w", err))
+
+		return
+	}
+
+	// Check if the record is now in the database after waiting for locks.
+	if _, err := c.getNarInfoFromDatabase(ctx, hash); err == nil {
+		ds.startOnce.Do(func() { close(ds.start) })
+		ds.doneOnce.Do(func() { close(ds.done) })
+
+		return
+	}
 
 	uc, narInfo, err := c.getNarInfoFromUpstream(ctx, hash)
 	if err != nil {
@@ -2055,9 +2092,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 	}()
 
 	// Use hash-specific lock to prevent concurrent writes of the same narinfo
-	lockKey := fmt.Sprintf("narinfo:%s", hash)
-
-	err := c.withWriteLock(ctx, "PutNarInfo", lockKey, func() error {
+	err := c.withWriteLock(ctx, "PutNarInfo", narInfoLockKey(hash), func() error {
 		narInfo, err := narinfo.Parse(r)
 		if err != nil {
 			return fmt.Errorf("error parsing narinfo: %w", err)
@@ -2114,7 +2149,7 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	)
 	defer span.End()
 
-	return c.withReadLock(ctx, "DeleteNarInfo", func() error {
+	return c.withReadLock(ctx, "DeleteNarInfo", narInfoJobKey(hash), func() error {
 		ctx = zerolog.Ctx(ctx).
 			With().
 			Str("narinfo_hash", hash).
@@ -2354,7 +2389,31 @@ func (c *Cache) handleStorageFetchError(
 	}
 
 	// Only retry on NotFound errors (file deleted by migration)
+	//nolint:nestif // TODO: Remove this and fix it
 	if errors.Is(storageErr, storage.ErrNotFound) {
+		// Wait for any active migration or PutNarInfo for this hash.
+		if err := c.downloadLocker.Lock(ctx, migrationLockKey(hash), c.downloadLockTTL); err != nil {
+			return fmt.Errorf("failed to acquire migration lock after storage error: %w", err)
+		}
+
+		if err := c.downloadLocker.Unlock(ctx, migrationLockKey(hash)); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Str("key", migrationLockKey(hash)).
+				Msg("Failed to unlock migration lock after waiting in handleStorageFetchError")
+		}
+
+		if err := c.withReadLock(ctx,
+			"handleStorageFetchError-wait-put",
+			narInfoLockKey(hash),
+			func() error {
+				return nil
+			},
+		); err != nil {
+			return fmt.Errorf("failed to acquire put lock after storage error: %w", err)
+		}
+
 		var dbErr error
 
 		*narInfo, dbErr = c.getNarInfoFromDatabase(ctx, hash)
@@ -2910,7 +2969,7 @@ func MigrateNarInfo(
 	ni *narinfo.NarInfo,
 ) error {
 	// Use a short-lived, non-blocking lock to coordinate migrations and prevent a "thundering herd".
-	lockKey := "migration:" + hash
+	lockKey := migrationLockKey(hash)
 
 	acquired, err := locker.TryLock(ctx, lockKey, 10*time.Second)
 	if err != nil {
@@ -3559,10 +3618,10 @@ func (c *Cache) executeTransaction(ctx context.Context, operation string, fn fun
 	return nil
 }
 
-// withReadLock executes fn while holding a read lock on the cache.
+// withReadLock executes fn while holding a read lock with the specified key.
 // It automatically handles lock acquisition, release, and error logging.
-func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() error) error {
-	if err := c.cacheLocker.RLock(ctx, cacheLockKey, c.cacheLockTTL); err != nil {
+func (c *Cache) withReadLock(ctx context.Context, operation string, lockKey string, fn func() error) error {
+	if err := c.cacheLocker.RLock(ctx, lockKey, c.cacheLockTTL); err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
 			Str("operation", operation).
@@ -3572,7 +3631,7 @@ func (c *Cache) withReadLock(ctx context.Context, operation string, fn func() er
 	}
 
 	defer func() {
-		if err := c.cacheLocker.RUnlock(ctx, cacheLockKey); err != nil {
+		if err := c.cacheLocker.RUnlock(ctx, lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("operation", operation).

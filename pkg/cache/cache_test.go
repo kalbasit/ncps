@@ -2461,6 +2461,97 @@ func (s *storageWithHook) HasNarInfo(ctx context.Context, hash string) bool {
 // 4. GetNarInfo tries to read from storage (file now deleted!)
 // 5. Expected: Should retry database and succeed (migration completed)
 // 6. Current Bug: Returns error because storage read fails.
+func testGetNarInfoRaceConditionBeforeHasNarInfo(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		c, db, baseStore, tmpDir, _, cleanup := factory(t)
+
+		t.Cleanup(cleanup)
+
+		// Close the generic cache from the factory so it doesn't interfere
+		c.Close()
+
+		ctx := newContext()
+		hash := testdata.Nar1.NarInfoHash
+		entry := testdata.Nar1
+
+		// Put narinfo and nar files in storage (simulating legacy data)
+		narInfoPath := filepath.Join(tmpDir, "store", "narinfo", entry.NarInfoPath)
+		narPath := filepath.Join(tmpDir, "store", "nar", entry.NarPath)
+
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+		require.NoError(t, os.WriteFile(narInfoPath, []byte(entry.NarInfoText), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
+		require.NoError(t, os.WriteFile(narPath, []byte(entry.NarText), 0o600))
+
+		// Channel to coordinate the race
+		migrationStarted := make(chan struct{})
+		migrationComplete := make(chan struct{})
+
+		var (
+			migrationErr  error
+			migrationOnce sync.Once
+		)
+
+		var cacheInstance *cache.Cache
+
+		// Wrap the store to inject migration at the critical moment
+		storeWithHook := &storageWithHook{
+			Store: baseStore,
+			beforeHasNarInfo: func(h string) {
+				if h == hash {
+					migrationOnce.Do(func() {
+						// This is the critical race window:
+						// GetNarInfo is about to check HasNarInfo.
+						// We trigger migration here which will delete the file from storage and put into DB.
+
+						// Parse the narinfo for migration
+						r, parseErr := baseStore.GetNarInfo(ctx, hash)
+						require.NoError(t, parseErr, "should be able to read narinfo before migration")
+
+						go func() {
+							// Delete it from storage now!
+							require.NoError(t, baseStore.DeleteNarInfo(ctx, hash), "should be able to delete narinfo from storage")
+
+							close(migrationStarted)
+
+							// Run migration (writes to DB)
+							migrationErr = cacheInstance.MigrateNarInfoToDatabase(ctx, hash, r, false)
+
+							close(migrationComplete)
+						}()
+
+						// Wait for the migration goroutine to start and delete the file
+						<-migrationStarted
+					})
+				}
+			},
+		}
+
+		// Create cache with the hooked store
+		var cacheErr error
+
+		c, cacheErr = newTestCache(ctx, cacheName, db, storeWithHook, storeWithHook, storeWithHook, "")
+
+		require.NoError(t, cacheErr)
+
+		cacheInstance = c // Expose to the hook
+
+		t.Cleanup(c.Close)
+
+		// Call GetNarInfo
+		niFound, getErr := c.GetNarInfo(ctx, hash)
+
+		// Wait for migration to finish to ensure we can check everything
+		<-migrationComplete
+		require.NoError(t, migrationErr, "migration should succeed")
+
+		// Assertions
+		require.NoError(t, getErr, "GetNarInfo should succeed by retrying database after missing from storage")
+		require.NotNil(t, niFound)
+		assert.Contains(t, entry.NarInfoText, niFound.StorePath)
+	}
+}
+
 func testGetNarInfoRaceConditionDuringMigrationDeletion(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		c, db, baseStore, tmpDir, rebind, cleanup := factory(t)
@@ -2736,6 +2827,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 		testGetNarInfoMultipleConcurrentPutsDuringMigration(factory))
 	t.Run("NarStreaming", testNarStreaming(factory))
 	t.Run("GetNarInfoRaceConditionDuringMigrationDeletion", testGetNarInfoRaceConditionDuringMigrationDeletion(factory))
+	t.Run("GetNarInfoRaceConditionBeforeHasNarInfo", testGetNarInfoRaceConditionBeforeHasNarInfo(factory))
 	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
 	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
 	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
