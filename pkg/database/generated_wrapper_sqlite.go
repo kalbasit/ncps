@@ -446,6 +446,55 @@ func (w *sqliteWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int6
 	return items, nil
 }
 
+func (w *sqliteWrapper) GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetCompressedNarInfos(ctx, sqlitedb.GetCompressedNarInfosParams{
+		Limit:  int64(arg.Limit),
+		Offset: int64(arg.Offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]NarInfo, len(res))
+	for i, v := range res {
+		items[i] = NarInfo{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+
+			StorePath: v.StorePath,
+
+			URL: v.URL,
+
+			Compression: v.Compression,
+
+			FileHash: v.FileHash,
+
+			FileSize: v.FileSize,
+
+			NarHash: v.NarHash,
+
+			NarSize: v.NarSize,
+
+			Deriver: v.Deriver,
+
+			System: v.System,
+
+			Ca: v.Ca,
+		}
+	}
+	return items, nil
+}
+
 func (w *sqliteWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -957,6 +1006,44 @@ func (w *sqliteWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	// Return Primitive / *sql.DB / etc
 
 	return res, nil
+}
+
+func (w *sqliteWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetOldCompressedNarFilesParams) ([]NarFile, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetOldCompressedNarFiles(ctx, sqlitedb.GetOldCompressedNarFilesParams{
+		CreatedAt: arg.CreatedAt,
+		Limit:     int64(arg.Limit),
+		Offset:    int64(arg.Offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]NarFile, len(res))
+	for i, v := range res {
+		items[i] = NarFile{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			FileSize: v.FileSize,
+
+			Query: v.Query,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+
+			TotalChunks: v.TotalChunks,
+		}
+	}
+	return items, nil
 }
 
 func (w *sqliteWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {

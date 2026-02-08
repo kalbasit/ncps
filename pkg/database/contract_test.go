@@ -3221,4 +3221,129 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		assert.Len(t, toChunk, 1)
 		assert.Equal(t, hash2, toChunk[0].Hash)
 	})
+
+	t.Run("GetCompressedNarInfos", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+		ctx := context.Background()
+
+		// 1. Create compressed narinfos
+		hash1 := "hash1"
+		_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+			Hash:        hash1,
+			Compression: sql.NullString{String: "zstd", Valid: true},
+		})
+		require.NoError(t, err)
+
+		hash2 := "hash2"
+		_, err = db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+			Hash:        hash2,
+			Compression: sql.NullString{String: "xz", Valid: true},
+		})
+		require.NoError(t, err)
+
+		// 2. Create uncompressed narinfos
+		hash3 := "hash3"
+		_, err = db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+			Hash:        hash3,
+			Compression: sql.NullString{String: "none", Valid: true},
+		})
+		require.NoError(t, err)
+
+		hash4 := "hash4"
+		_, err = db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+			Hash:        hash4,
+			Compression: sql.NullString{String: "", Valid: true},
+		})
+		require.NoError(t, err)
+
+		// 3. Get compressed narinfos
+		res, err := db.GetCompressedNarInfos(ctx, database.GetCompressedNarInfosParams{
+			Limit:  10,
+			Offset: 0,
+		})
+		require.NoError(t, err)
+
+		hashes := make([]string, 0, len(res))
+		for _, ni := range res {
+			hashes = append(hashes, ni.Hash)
+		}
+
+		assert.Contains(t, hashes, hash1)
+		assert.Contains(t, hashes, hash2)
+		assert.NotContains(t, hashes, hash3)
+		assert.NotContains(t, hashes, hash4)
+	})
+
+	t.Run("GetOldCompressedNarFiles", func(t *testing.T) {
+		t.Parallel()
+
+		db := factory(t)
+		ctx := context.Background()
+
+		// 1. Create compressed nar-files
+		hash1 := "hash1"
+		_, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        hash1,
+			Compression: "zstd",
+			FileSize:    100,
+		})
+		require.NoError(t, err)
+
+		hash2 := "hash2"
+		_, err = db.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        hash2,
+			Compression: "xz",
+			FileSize:    200,
+		})
+		require.NoError(t, err)
+
+		// 2. Create uncompressed nar-files
+		hash3 := "hash3"
+		_, err = db.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        hash3,
+			Compression: "none",
+			FileSize:    300,
+		})
+		require.NoError(t, err)
+
+		hash4 := "hash4"
+		_, err = db.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        hash4,
+			Compression: "",
+			FileSize:    400,
+		})
+		require.NoError(t, err)
+
+		// Give it a tiny bit of time to make sure created_at is captured
+		time.Sleep(10 * time.Millisecond)
+
+		// 3. Get compressed nar-files
+		res, err := db.GetOldCompressedNarFiles(ctx, database.GetOldCompressedNarFilesParams{
+			CreatedAt: time.Now().UTC().Add(time.Hour),
+			Limit:     10,
+			Offset:    0,
+		})
+		require.NoError(t, err)
+
+		hashes := make([]string, 0, len(res))
+		for _, nf := range res {
+			hashes = append(hashes, nf.Hash)
+		}
+
+		assert.Contains(t, hashes, hash1)
+		assert.Contains(t, hashes, hash2)
+		assert.NotContains(t, hashes, hash3)
+		assert.NotContains(t, hashes, hash4)
+
+		// 4. Test with timestamp before insertion
+		res, err = db.GetOldCompressedNarFiles(ctx, database.GetOldCompressedNarFilesParams{
+			CreatedAt: time.Now().Add(-1 * time.Hour),
+			Limit:     10,
+			Offset:    0,
+		})
+		require.NoError(t, err)
+		assert.Empty(t, res)
+	})
 }

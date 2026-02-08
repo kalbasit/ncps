@@ -498,6 +498,65 @@ func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]
 	return items, nil
 }
 
+const getCompressedNarInfos = `-- name: GetCompressedNarInfos :many
+SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, ` + "`" + `system` + "`" + `, ca
+FROM narinfos
+WHERE compression NOT IN ('', 'none')
+ORDER BY id
+LIMIT ? OFFSET ?
+`
+
+type GetCompressedNarInfosParams struct {
+	Limit  int32
+	Offset int32
+}
+
+// GetCompressedNarInfos
+//
+//	SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, `system`, ca
+//	FROM narinfos
+//	WHERE compression NOT IN ('', 'none')
+//	ORDER BY id
+//	LIMIT ? OFFSET ?
+func (q *Queries) GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error) {
+	rows, err := q.db.QueryContext(ctx, getCompressedNarInfos, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NarInfo
+	for rows.Next() {
+		var i NarInfo
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastAccessedAt,
+			&i.StorePath,
+			&i.URL,
+			&i.Compression,
+			&i.FileHash,
+			&i.FileSize,
+			&i.NarHash,
+			&i.NarSize,
+			&i.Deriver,
+			&i.System,
+			&i.Ca,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConfigByID = `-- name: GetConfigByID :one
 SELECT id, ` + "`" + `key` + "`" + `, value, created_at, updated_at
 FROM config
@@ -1255,6 +1314,74 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 	var total_size int64
 	err := row.Scan(&total_size)
 	return total_size, err
+}
+
+const getOldCompressedNarFiles = `-- name: GetOldCompressedNarFiles :many
+SELECT id, hash, compression, file_size, ` + "`" + `query` + "`" + `, created_at, updated_at, last_accessed_at, total_chunks
+FROM nar_files
+WHERE compression NOT IN ('', 'none')
+  AND created_at < ?
+ORDER BY id
+LIMIT ? OFFSET ?
+`
+
+type GetOldCompressedNarFilesParams struct {
+	CreatedAt time.Time
+	Limit     int32
+	Offset    int32
+}
+
+type GetOldCompressedNarFilesRow struct {
+	ID             int64
+	Hash           string
+	Compression    string
+	FileSize       uint64
+	Query          string
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
+	LastAccessedAt sql.NullTime
+	TotalChunks    int64
+}
+
+// GetOldCompressedNarFiles
+//
+//	SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+//	FROM nar_files
+//	WHERE compression NOT IN ('', 'none')
+//	  AND created_at < ?
+//	ORDER BY id
+//	LIMIT ? OFFSET ?
+func (q *Queries) GetOldCompressedNarFiles(ctx context.Context, arg GetOldCompressedNarFilesParams) ([]GetOldCompressedNarFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getOldCompressedNarFiles, arg.CreatedAt, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOldCompressedNarFilesRow
+	for rows.Next() {
+		var i GetOldCompressedNarFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Compression,
+			&i.FileSize,
+			&i.Query,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastAccessedAt,
+			&i.TotalChunks,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getOrphanedChunks = `-- name: GetOrphanedChunks :many

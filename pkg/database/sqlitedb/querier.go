@@ -154,6 +154,14 @@ type Querier interface {
 	//  WHERE nfc.nar_file_id = ?
 	//  ORDER BY nfc.chunk_index
 	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error)
+	//GetCompressedNarInfos
+	//
+	//  SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
+	//  FROM narinfos
+	//  WHERE compression NOT IN ('', 'none')
+	//  ORDER BY id
+	//  LIMIT ? OFFSET ?
+	GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error)
 	//GetConfigByID
 	//
 	//  SELECT id, "key", value, created_at, updated_at
@@ -306,6 +314,15 @@ type Querier interface {
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS INTEGER) AS total_size
 	//  FROM nar_files
 	GetNarTotalSize(ctx context.Context) (int64, error)
+	//GetOldCompressedNarFiles
+	//
+	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
+	//  FROM nar_files
+	//  WHERE compression NOT IN ('', 'none')
+	//    AND created_at < ?
+	//  ORDER BY id
+	//  LIMIT ? OFFSET ?
+	GetOldCompressedNarFiles(ctx context.Context, arg GetOldCompressedNarFilesParams) ([]NarFile, error)
 	//GetOrphanedChunks
 	//
 	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
