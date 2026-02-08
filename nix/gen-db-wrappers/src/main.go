@@ -313,7 +313,8 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 			}
 			return dict, nil
 		},
-		"hasSuffix": strings.HasSuffix,
+		"hasSuffix":               strings.HasSuffix,
+		"generateFieldConversion": generateFieldConversion,
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
@@ -408,15 +409,14 @@ func joinParamsCall(params []Param, engPkg string, targetMethod MethodInfo, targ
 						}
 
 						if found {
-							// For struct types (like sql.NullInt64), we can't use simple function call casting.
-							// This applies when types are identical, or when they differ but the target is a non-castable
-							// struct. We perform a direct assignment and let the compiler catch any potential incompatibilities.
-							if sourceField.Type == targetField.Type || isStructType(targetField.Type) {
-								fields = append(fields, fmt.Sprintf("%s: %s.%s", targetField.Name, param.Name, sourceField.Name))
-							} else {
-								// Type cast if needed (for primitive types)
-								fields = append(fields, fmt.Sprintf("%s: %s(%s.%s)", targetField.Name, targetField.Type, param.Name, sourceField.Name))
-							}
+							// Use generateFieldConversion to handle all type conversions including sql.Null*
+							conversion := generateFieldConversion(
+								targetField.Name,
+								targetField.Type,
+								sourceField.Type,
+								fmt.Sprintf("%s.%s", param.Name, sourceField.Name),
+							)
+							fields = append(fields, conversion)
 						}
 					}
 					p = append(p, fmt.Sprintf("%s.%s{\n%s,\n}", engPkg, targetParamType, strings.Join(fields, ",\n")))
@@ -520,6 +520,147 @@ func isStructType(t string) bool {
 	}
 	// Add other struct types as needed
 	return false
+}
+
+// isSqlNullType checks if a type is a sql.Null* type
+func isSqlNullType(t string) bool {
+	return strings.HasPrefix(t, "sql.Null")
+}
+
+// getPrimitiveFromNullType returns the primitive type for a sql.Null* type
+// e.g., sql.NullString -> string, sql.NullInt64 -> int64
+func getPrimitiveFromNullType(t string) string {
+	switch t {
+	case "sql.NullString":
+		return "string"
+	case "sql.NullInt64":
+		return "int64"
+	case "sql.NullInt32":
+		return "int32"
+	case "sql.NullInt16":
+		return "int16"
+	case "sql.NullBool":
+		return "bool"
+	case "sql.NullFloat64":
+		return "float64"
+	case "sql.NullTime":
+		return "time.Time"
+	case "sql.NullByte":
+		return "byte"
+	default:
+		return ""
+	}
+}
+
+// getNullTypeFromPrimitive returns the sql.Null* type for a primitive type
+// e.g., string -> sql.NullString, int64 -> sql.NullInt64
+func getNullTypeFromPrimitive(t string) string {
+	switch t {
+	case "string":
+		return "sql.NullString"
+	case "int64":
+		return "sql.NullInt64"
+	case "int32":
+		return "sql.NullInt32"
+	case "int16":
+		return "sql.NullInt16"
+	case "bool":
+		return "sql.NullBool"
+	case "float64":
+		return "sql.NullFloat64"
+	case "time.Time":
+		return "sql.NullTime"
+	case "byte":
+		return "sql.NullByte"
+	default:
+		return ""
+	}
+}
+
+// getFieldNameForNullType returns the field name to access the value in a sql.Null* type
+// e.g., sql.NullString -> String, sql.NullInt64 -> Int64
+func getFieldNameForNullType(t string) string {
+	switch t {
+	case "sql.NullString":
+		return "String"
+	case "sql.NullInt64":
+		return "Int64"
+	case "sql.NullInt32":
+		return "Int32"
+	case "sql.NullInt16":
+		return "Int16"
+	case "sql.NullBool":
+		return "Bool"
+	case "sql.NullFloat64":
+		return "Float64"
+	case "sql.NullTime":
+		return "Time"
+	case "sql.NullByte":
+		return "Byte"
+	default:
+		return ""
+	}
+}
+
+// generateFieldConversion generates the conversion code for a field mapping
+// It handles conversions between primitive types, sql.Null* types, and domain structs
+func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, sourceExpr string) string {
+	// Case 1: Types are identical - direct assignment
+	if sourceFieldType == targetFieldType {
+		return fmt.Sprintf("%s: %s", targetFieldName, sourceExpr)
+	}
+
+	// Case 2: Converting from primitive to sql.Null*
+	if isSqlNullType(targetFieldType) {
+		expectedPrimitive := getPrimitiveFromNullType(targetFieldType)
+		if expectedPrimitive == sourceFieldType {
+			// Direct conversion from matching primitive
+			fieldName := getFieldNameForNullType(targetFieldType)
+			return fmt.Sprintf("%s: %s{%s: %s, Valid: true}", targetFieldName, targetFieldType, fieldName, sourceExpr)
+		} else if expectedPrimitive != "" {
+			// Conversion from different primitive (e.g., int32 to sql.NullInt64)
+			fieldName := getFieldNameForNullType(targetFieldType)
+			return fmt.Sprintf("%s: %s{%s: %s(%s), Valid: true}", targetFieldName, targetFieldType, fieldName, expectedPrimitive, sourceExpr)
+		}
+	}
+
+	// Case 3: Converting from sql.Null* to primitive
+	if isSqlNullType(sourceFieldType) {
+		primitive := getPrimitiveFromNullType(sourceFieldType)
+		if primitive == targetFieldType {
+			// Direct extraction of matching primitive
+			fieldName := getFieldNameForNullType(sourceFieldType)
+			return fmt.Sprintf("%s: %s.%s", targetFieldName, sourceExpr, fieldName)
+		} else if primitive != "" {
+			// Extraction and conversion (e.g., sql.NullInt64 to int32)
+			fieldName := getFieldNameForNullType(sourceFieldType)
+			return fmt.Sprintf("%s: %s(%s.%s)", targetFieldName, targetFieldType, sourceExpr, fieldName)
+		}
+	}
+
+	// Case 4: Both are sql.Null* types but different
+	if isSqlNullType(sourceFieldType) && isSqlNullType(targetFieldType) {
+		// This is a complex case - extract from source and wrap in target
+		sourcePrimitive := getPrimitiveFromNullType(sourceFieldType)
+		targetPrimitive := getPrimitiveFromNullType(targetFieldType)
+		if sourcePrimitive != "" && targetPrimitive != "" {
+			sourceFieldName := getFieldNameForNullType(sourceFieldType)
+			targetFieldName := getFieldNameForNullType(targetFieldType)
+			if sourcePrimitive == targetPrimitive {
+				return fmt.Sprintf("%s: %s{%s: %s.%s, Valid: %s.Valid}", targetFieldName, targetFieldType, targetFieldName, sourceExpr, sourceFieldName, sourceExpr)
+			} else {
+				return fmt.Sprintf("%s: %s{%s: %s(%s.%s), Valid: %s.Valid}", targetFieldName, targetFieldType, targetFieldName, targetPrimitive, sourceExpr, sourceFieldName, sourceExpr)
+			}
+		}
+	}
+
+	// Case 5: Struct types (non-sql.Null*) - direct assignment
+	if isStructType(targetFieldType) {
+		return fmt.Sprintf("%s: %s", targetFieldName, sourceExpr)
+	}
+
+	// Case 6: Primitive type conversion
+	return fmt.Sprintf("%s: %s(%s)", targetFieldName, targetFieldType, sourceExpr)
 }
 
 func exprToString(expr ast.Expr) string {
@@ -658,25 +799,19 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 						{{end}}
 					{{end}}
 					{{if ne $sourceField.Name ""}}
+						{{$srcExpr := ""}}
 						{{if eq $sourceField.Name $sliceField.Name}}
-							{{if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type}}
-								{{$targetStructField.Name}}: v,
-							{{else}}
-								{{$targetStructField.Name}}: {{$targetStructField.Type}}(v),
-							{{end}}
+							{{$srcExpr = "v"}}
 						{{else if isSlice $sourceField.Type}}
-							{{if eq (trimPrefix $sourceField.Type "[]") $targetStructField.Type}}
-								{{$targetStructField.Name}}: {{(index $methodParams 1).Name}}.{{$sourceField.Name}}[i],
-							{{else}}
-								{{$targetStructField.Name}}: {{$targetStructField.Type}}({{(index $methodParams 1).Name}}.{{$sourceField.Name}}[i]),
-							{{end}}
+							{{$srcExpr = printf "%s.%s[i]" (index $methodParams 1).Name $sourceField.Name}}
 						{{else}}
-							{{if eq $sourceField.Type $targetStructField.Type}}
-								{{$targetStructField.Name}}: {{(index $methodParams 1).Name}}.{{$sourceField.Name}},
-							{{else}}
-								{{$targetStructField.Name}}: {{$targetStructField.Type}}({{(index $methodParams 1).Name}}.{{$sourceField.Name}}),
-							{{end}}
+							{{$srcExpr = printf "%s.%s" (index $methodParams 1).Name $sourceField.Name}}
 						{{end}}
+						{{$srcType := $sourceField.Type}}
+						{{if or (eq $sourceField.Name $sliceField.Name) (isSlice $sourceField.Type)}}
+							{{$srcType = trimPrefix $srcType "[]"}}
+						{{end}}
+						{{generateFieldConversion $targetStructField.Name $targetStructField.Type $srcType $srcExpr}},
 					{{end}}
 				{{end}}
 				},
@@ -773,11 +908,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 									{{end}}
 								{{end}}
 								{{if ne $sourceField.Name ""}}
-									{{if eq $sourceField.Type $targetField.Type}}
-										{{$targetField.Name}}: v.{{$sourceField.Name}},
-									{{else}}
-										{{$targetField.Name}}: {{$targetField.Type}}(v.{{$sourceField.Name}}),
-									{{end}}
+									{{generateFieldConversion $targetField.Name $targetField.Type $sourceField.Type (printf "v.%s" $sourceField.Name)}},
 								{{end}}
 							{{end}}
 						}
@@ -800,11 +931,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 							{{end}}
 						{{end}}
 						{{if ne $sourceField.Name ""}}
-							{{if eq $sourceField.Type $targetField.Type}}
-								{{$targetField.Name}}: res.{{$sourceField.Name}},
-							{{else}}
-								{{$targetField.Name}}: {{$targetField.Type}}(res.{{$sourceField.Name}}),
-							{{end}}
+							{{generateFieldConversion $targetField.Name $targetField.Type $sourceField.Type (printf "res.%s" $sourceField.Name)}},
 						{{end}}
 					{{end}}
 				}{{if .Method.ReturnsError}}, nil{{end}}
