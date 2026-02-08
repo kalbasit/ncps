@@ -1926,7 +1926,13 @@ func (c *Cache) pullNarInfo(
 		return
 	}
 
-	_ = c.downloadLocker.Unlock(ctx, migrationLockKey(hash))
+	if err := c.downloadLocker.Unlock(ctx, migrationLockKey(hash)); err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Str("key", migrationLockKey(hash)).
+			Msg("Failed to unlock migration lock after waiting")
+	}
 
 	if err := c.withReadLock(ctx, "pullNarInfo-wait-put", narInfoLockKey(hash), func() error { return nil }); err != nil {
 		ds.setError(fmt.Errorf("failed to acquire put lock: %w", err))
@@ -2383,13 +2389,20 @@ func (c *Cache) handleStorageFetchError(
 	}
 
 	// Only retry on NotFound errors (file deleted by migration)
+	//nolint:nestif // TODO: Remove this and fix it
 	if errors.Is(storageErr, storage.ErrNotFound) {
 		// Wait for any active migration or PutNarInfo for this hash.
 		if err := c.downloadLocker.Lock(ctx, migrationLockKey(hash), c.downloadLockTTL); err != nil {
 			return fmt.Errorf("failed to acquire migration lock after storage error: %w", err)
 		}
 
-		_ = c.downloadLocker.Unlock(ctx, migrationLockKey(hash))
+		if err := c.downloadLocker.Unlock(ctx, migrationLockKey(hash)); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Str("key", migrationLockKey(hash)).
+				Msg("Failed to unlock migration lock after waiting in handleStorageFetchError")
+		}
 
 		if err := c.withReadLock(ctx,
 			"handleStorageFetchError-wait-put",
