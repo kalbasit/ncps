@@ -2,18 +2,18 @@ package chunker
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"sync"
 
 	"github.com/kalbasit/fastcdc"
+	"github.com/zeebo/blake3"
 )
 
 // Chunk represents a single content-defined chunk.
 type Chunk struct {
-	Hash   string // SHA-256 hash of chunk content
+	Hash   string // BLAKE3 hash of chunk content
 	Offset int64  // Offset in original stream
 	Size   uint32 // Chunk size in bytes
 	Data   []byte // Chunk data
@@ -110,8 +110,8 @@ func (c *CDCChunker) Chunk(ctx context.Context, r io.Reader) (<-chan Chunk, <-ch
 					return
 				}
 
-				// Compute SHA-256 hash of the chunk data
-				h := sha256.Sum256(chunk.Data)
+				// Compute BLAKE3 hash of the chunk data
+				h := blake3.Sum256(chunk.Data)
 				hashStr := hex.EncodeToString(h[:])
 
 				// Copy data to a pooled buffer to avoid allocations and ensure thread-safety
