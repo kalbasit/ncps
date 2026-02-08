@@ -34,11 +34,23 @@ func TestCDCChunker_Chunk(t *testing.T) {
 	t.Run("deterministic chunking", func(t *testing.T) {
 		t.Parallel()
 
-		chunks1, err1 := collectChunks(ctx, chr, bytes.NewReader(data))
+		chunks1, err1 := collectChunks(ctx, t, chr, bytes.NewReader(data))
 		require.NoError(t, err1)
 
-		chunks2, err2 := collectChunks(ctx, chr, bytes.NewReader(data))
+		defer func() {
+			for _, c := range chunks1 {
+				c.Free()
+			}
+		}()
+
+		chunks2, err2 := collectChunks(ctx, t, chr, bytes.NewReader(data))
 		require.NoError(t, err2)
+
+		defer func() {
+			for _, c := range chunks2 {
+				c.Free()
+			}
+		}()
 
 		assert.Len(t, chunks2, len(chunks1))
 
@@ -52,11 +64,23 @@ func TestCDCChunker_Chunk(t *testing.T) {
 	t.Run("resilience to modification", func(t *testing.T) {
 		t.Parallel()
 
-		chunksOriginal, err1 := collectChunks(ctx, chr, bytes.NewReader(data))
+		chunksOriginal, err1 := collectChunks(ctx, t, chr, bytes.NewReader(data))
 		require.NoError(t, err1)
 
-		chunksModified, err2 := collectChunks(ctx, chr, bytes.NewReader(modifiedData))
+		defer func() {
+			for _, c := range chunksOriginal {
+				c.Free()
+			}
+		}()
+
+		chunksModified, err2 := collectChunks(ctx, t, chr, bytes.NewReader(modifiedData))
 		require.NoError(t, err2)
+
+		defer func() {
+			for _, c := range chunksModified {
+				c.Free()
+			}
+		}()
 
 		// Most chunks should be identical
 		identicalCount := 0
@@ -80,13 +104,21 @@ func TestCDCChunker_Chunk(t *testing.T) {
 	t.Run("empty reader", func(t *testing.T) {
 		t.Parallel()
 
-		chunks, err := collectChunks(ctx, chr, bytes.NewReader([]byte{}))
+		chunks, err := collectChunks(ctx, t, chr, bytes.NewReader([]byte{}))
+		require.NoError(t, err)
+
+		defer func() {
+			for _, c := range chunks {
+				c.Free()
+			}
+		}()
+
 		require.NoError(t, err)
 		assert.Empty(t, chunks)
 	})
 }
 
-func collectChunks(ctx context.Context, c chunker.Chunker, r io.Reader) ([]chunker.Chunk, error) {
+func collectChunks(ctx context.Context, t *testing.T, c chunker.Chunker, r io.Reader) ([]chunker.Chunk, error) {
 	chunksChan, errChan := c.Chunk(ctx, r)
 
 	var chunks []chunker.Chunk
@@ -104,6 +136,8 @@ func collectChunks(ctx context.Context, c chunker.Chunker, r io.Reader) ([]chunk
 				}
 			}
 
+			// Verify data integrity
+			assert.Len(t, chunk.Data, int(chunk.Size))
 			chunks = append(chunks, chunk)
 		case err := <-errChan:
 			return nil, err

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/kalbasit/fastcdc"
 )
@@ -15,6 +16,16 @@ type Chunk struct {
 	Hash   string // SHA-256 hash of chunk content
 	Offset int64  // Offset in original stream
 	Size   uint32 // Chunk size in bytes
+	Data   []byte // Chunk data
+
+	free func() // function to return Data to the pool
+}
+
+// Free returns the chunk data to the pool.
+func (c Chunk) Free() {
+	if c.free != nil {
+		c.free()
+	}
 }
 
 // Chunker interface for content-defined chunking.
@@ -30,6 +41,8 @@ type CDCChunker struct {
 	avgSize uint32
 	maxSize uint32
 	pool    *fastcdc.ChunkerPool
+
+	bufferPool *sync.Pool
 }
 
 // NewCDCChunker returns a new CDCChunker.
@@ -43,11 +56,20 @@ func NewCDCChunker(minSize, avgSize, maxSize uint32) (*CDCChunker, error) {
 		return nil, fmt.Errorf("failed to create chunker pool: %w", err)
 	}
 
+	bufferPool := &sync.Pool{
+		New: func() any {
+			b := make([]byte, maxSize)
+
+			return &b
+		},
+	}
+
 	return &CDCChunker{
-		minSize: minSize,
-		avgSize: avgSize,
-		maxSize: maxSize,
-		pool:    pool,
+		minSize:    minSize,
+		avgSize:    avgSize,
+		maxSize:    maxSize,
+		pool:       pool,
+		bufferPool: bufferPool,
 	}, nil
 }
 
@@ -92,8 +114,16 @@ func (c *CDCChunker) Chunk(ctx context.Context, r io.Reader) (<-chan Chunk, <-ch
 				h := sha256.Sum256(chunk.Data)
 				hashStr := hex.EncodeToString(h[:])
 
+				// Copy data to a pooled buffer to avoid allocations and ensure thread-safety
+				// as the fastcdc.Chunk.Data is only valid until the next call to Next().
+				bufPtr := c.bufferPool.Get().(*[]byte)
+				buf := *bufPtr
+				copy(buf, chunk.Data)
+
 				select {
 				case <-ctx.Done():
+					c.bufferPool.Put(bufPtr)
+
 					errChan <- ctx.Err()
 
 					return
@@ -102,6 +132,10 @@ func (c *CDCChunker) Chunk(ctx context.Context, r io.Reader) (<-chan Chunk, <-ch
 					Offset: offset,
 					//nolint:gosec // G115: Chunk size is bounded by maxSize (uint32)
 					Size: uint32(len(chunk.Data)),
+					Data: buf[:len(chunk.Data)],
+					free: func() {
+						c.bufferPool.Put(bufPtr)
+					},
 				}:
 					offset += int64(len(chunk.Data))
 				}

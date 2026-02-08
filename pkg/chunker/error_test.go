@@ -45,7 +45,11 @@ func TestCDCChunker_Chunk_ErrorRace(t *testing.T) {
 			err:  errRead,
 		}
 
-		_, err := collectChunks(ctx, chr, reader)
+		chunks, err := collectChunks(ctx, t, chr, reader)
+		for _, c := range chunks {
+			c.Free()
+		}
+
 		if !errors.Is(err, errRead) {
 			t.Fatalf("at iteration %d: expected error %v, got %v", i, errRead, err)
 		}
