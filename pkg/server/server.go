@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
@@ -546,7 +548,22 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		h := w.Header()
 		h.Set(contentType, contentTypeNar)
 
-		if size > 0 {
+		// Check for transparent compression support
+		useZstd := false
+
+		if nu.Compression == nar.CompressionTypeNone && withBody {
+			ae := r.Header.Get("Accept-Encoding")
+			if strings.Contains(ae, "zstd") {
+				useZstd = true
+			}
+		}
+
+		if useZstd {
+			h.Set("Content-Encoding", "zstd")
+			// We can't know the compressed size in advance without compressing it all.
+			// So we remove Content-Length and use chunked encoding.
+			h.Del(contentLength)
+		} else if size > 0 {
 			h.Set(contentLength, strconv.FormatInt(size, 10))
 		}
 
@@ -575,7 +592,23 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		written, err := io.Copy(w, reader)
+		w.WriteHeader(http.StatusOK)
+
+		var out io.Writer = w
+		if useZstd {
+			enc, err := zstd.NewWriter(w)
+			if err != nil {
+				zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to create zstd writer")
+				// Fallback to uncompressed? We already sent headers, so we can't really.
+				// But zstd.NewWriter shouldn't fail with just a writer.
+			} else {
+				defer enc.Close()
+
+				out = enc
+			}
+		}
+
+		written, err := io.Copy(out, reader)
 		if err != nil {
 			zerolog.Ctx(r.Context()).
 				Error().
@@ -585,7 +618,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		if size != -1 && written != size {
+		if !useZstd && size != -1 && written != size {
 			zerolog.Ctx(r.Context()).
 				Error().
 				Int64("expected", size).

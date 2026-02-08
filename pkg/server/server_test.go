@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
@@ -764,4 +765,206 @@ func TestGetNar_HeadFallback(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, strconv.Itoa(len(testdata.Nar1.NarText)), resp.Header.Get("Content-Length"))
 	resp.Body.Close()
+}
+
+func TestGetNar_ZstdCompression(t *testing.T) {
+	t.Parallel()
+
+	// create a temporary directory for the cache
+	dir, err := os.MkdirTemp("", "cache-path-zstd-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	// create the server
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// create the test server
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// 1. Put an uncompressed Nar into the cache.
+	narData := strings.Repeat("uncompressed nar data ", 1000)
+	narHash := "00000000000000000000000000000001" // dummy 32-char hash
+	narURL := ts.URL + "/nar/" + narHash + ".nar"
+
+	req, err := http.NewRequestWithContext(
+		newContext(),
+		http.MethodPut,
+		narURL,
+		strings.NewReader(narData),
+	)
+	require.NoError(t, err)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	// 2. Request the NAR with Accept-Encoding: zstd
+	req = httptest.NewRequest(http.MethodGet, "/nar/"+narHash+".nar", nil)
+	req.Header.Set("Accept-Encoding", "zstd")
+
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	resp = w.Result()
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "zstd", resp.Header.Get("Content-Encoding"))
+	assert.Equal(t, "application/x-nix-nar", resp.Header.Get("Content-Type"))
+	assert.Empty(t, resp.Header.Get("Content-Length"))
+
+	// 3. Decompress the body and verify content
+	dec, err := zstd.NewReader(resp.Body)
+	require.NoError(t, err)
+
+	defer dec.Close()
+
+	decompressed, err := io.ReadAll(dec)
+	require.NoError(t, err)
+	assert.Equal(t, narData, string(decompressed))
+}
+
+func TestGetNar_NoZstdCompression(t *testing.T) {
+	t.Parallel()
+
+	// create a temporary directory for the cache
+	dir, err := os.MkdirTemp("", "cache-path-no-zstd-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	// create the server
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// create the test server
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// 1. Put an uncompressed Nar into the cache.
+	narData := "uncompressed nar data"
+	narHash := "00000000000000000000000000000002" // dummy 32-char hash
+	narURL := ts.URL + "/nar/" + narHash + ".nar"
+
+	req, err := http.NewRequestWithContext(
+		newContext(),
+		http.MethodPut,
+		narURL,
+		strings.NewReader(narData),
+	)
+	require.NoError(t, err)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	// 2. Request the NAR WITHOUT Accept-Encoding: zstd
+	req, err = http.NewRequestWithContext(newContext(), http.MethodGet, narURL, nil)
+	require.NoError(t, err)
+
+	resp, err = ts.Client().Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NotEqual(t, "zstd", resp.Header.Get("Content-Encoding"))
+	assert.Equal(t, "application/x-nix-nar", resp.Header.Get("Content-Type"))
+	assert.Equal(t, strconv.Itoa(len(narData)), resp.Header.Get("Content-Length"))
+
+	// 3. Verify content
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, narData, string(body))
+}
+
+func TestGetNar_ZstdCompression_Head(t *testing.T) {
+	t.Parallel()
+
+	// create a temporary directory for the cache
+	dir, err := os.MkdirTemp("", "cache-path-zstd-head-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	// create the server
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// create the test server
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// 1. Put an uncompressed Nar into the cache.
+	narData := "uncompressed nar data"
+	narHash := "00000000000000000000000000000003" // dummy 32-char hash
+	narURL := ts.URL + "/nar/" + narHash + ".nar"
+
+	req, err := http.NewRequestWithContext(
+		newContext(),
+		http.MethodPut,
+		narURL,
+		strings.NewReader(narData),
+	)
+	require.NoError(t, err)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	// 2. Request the NAR with HEAD and Accept-Encoding: zstd
+	req = httptest.NewRequest(http.MethodHead, "/nar/"+narHash+".nar", nil)
+	req.Header.Set("Accept-Encoding", "zstd")
+
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	resp = w.Result()
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	// Currently the implementation only enables zstd if withBody is true.
+	assert.Empty(t, resp.Header.Get("Content-Encoding"))
+	assert.Equal(t, strconv.Itoa(len(narData)), resp.Header.Get("Content-Length"))
 }
