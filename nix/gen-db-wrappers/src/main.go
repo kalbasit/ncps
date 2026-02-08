@@ -736,7 +736,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 			res{{if .Method.ReturnsError}}, err{{end}} := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
 			{{if .Method.ReturnsError}}
 				if err != nil {
-					{{if and .Method.HasValue (not (isSlice $retType))}}
+					{{if and .Method.HasValue (not (isSlice $retType)) (or (isDomainStruct .Method.ReturnElem) .Method.ReturnsSelf)}}
 						if errors.Is(err, sql.ErrNoRows) {
 							return {{if .Method.ReturnsSelf}}nil, {{else if isSlice $retType}}nil, {{else if isDomainStruct .Method.ReturnElem}}{{.Method.ReturnElem}}{}, {{else}}{{zeroValue $retType}}, {{end}}ErrNotFound
 						}

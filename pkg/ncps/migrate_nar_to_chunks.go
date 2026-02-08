@@ -362,13 +362,18 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 							rate = float64(processed) / durationInSeconds
 						}
 
+						var percent float64
+						if totalToChunk > 0 {
+							percent = float64(processed) / float64(totalToChunk) * 100
+						}
+
 						logger.Info().
 							Int64("total", totalToChunk).
 							Int32("processed", processed).
 							Int32("succeeded", succeeded).
 							Int32("failed", failed).
 							Int32("skipped", skipped).
-							Str("percent", fmt.Sprintf("%.2f%%", float64(processed)/float64(totalToChunk)*100)).
+							Str("percent", fmt.Sprintf("%.2f%%", percent)).
 							Str("elapsed", elapsed.Round(time.Second).String()).
 							Float64("rate", rate).
 							Msg("migration progress")
@@ -392,7 +397,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					narURL := nar.URL{
 						Hash:        row.Hash,
 						Compression: nar.CompressionType(row.Compression),
-						Query:       make(map[string][]string), // TODO: Parse row.Query
+						Query:       make(map[string][]string),
 					}
 
 					if row.Query != "" {
@@ -481,6 +486,27 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			if err := g.Wait(); err != nil {
 				return err
 			}
+
+			duration := time.Since(startTime)
+			processed := atomic.LoadInt32(&totalProcessed)
+			succeeded := atomic.LoadInt32(&totalSucceeded)
+			failed := atomic.LoadInt32(&totalFailed)
+			skipped := atomic.LoadInt32(&totalSkipped)
+
+			var rate float64
+			if durationInSeconds := duration.Seconds(); durationInSeconds > 0 {
+				rate = float64(processed) / durationInSeconds
+			}
+
+			logger.Info().
+				Int64("total", totalToChunk).
+				Int32("processed", processed).
+				Int32("succeeded", succeeded).
+				Int32("failed", failed).
+				Int32("skipped", skipped).
+				Str("duration", duration.Round(time.Millisecond).String()).
+				Float64("rate", rate).
+				Msg("migration completed")
 
 			RecordMigrationBatchSize(ctx, MigrationTypeNarToChunks, totalToChunk)
 
