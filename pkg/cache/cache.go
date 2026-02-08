@@ -1313,19 +1313,15 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 				return totalSize, nil
 			}
 
-			// Process chunk
-			data := make([]byte, chunkMetadata.Size)
-
-			_, err := f.ReadAt(data, chunkMetadata.Offset)
-			if err != nil {
-				return 0, fmt.Errorf("error reading chunk data: %w", err)
-			}
-
 			// Store in chunkStore if new
-			_, err = chunkStore.PutChunk(ctx, chunkMetadata.Hash, data)
+			_, err = chunkStore.PutChunk(ctx, chunkMetadata.Hash, chunkMetadata.Data)
 			if err != nil {
+				chunkMetadata.Free()
+
 				return 0, fmt.Errorf("error storing chunk: %w", err)
 			}
+
+			chunkMetadata.Free()
 
 			totalSize += int64(chunkMetadata.Size)
 
