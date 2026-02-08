@@ -123,10 +123,12 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni))
 
+		// Use --concurrency=1 to avoid MySQL deadlocks when migrating multiple narinfos in parallel
 		args := []string{
 			"ncps", "migrate-narinfo",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
+			"--concurrency", "1",
 		}
 		require.NoError(t, app.Run(ctx, args))
 
