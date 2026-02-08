@@ -4,6 +4,7 @@ go 1.25.6
 
 require (
 	github.com/XSAM/otelsql v0.41.0
+	github.com/andybalholm/brotli v1.2.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-redsync/redsync/v4 v4.15.0
 	github.com/go-sql-driver/mysql v1.9.3
@@ -15,13 +16,16 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/minio/minio-go/v7 v7.0.98
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
+	github.com/pierrec/lz4/v4 v4.1.25
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.17.3
 	github.com/riandyrn/otelchi v0.12.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.34.0
+	github.com/sorairolake/lzip-go v0.3.8
 	github.com/stretchr/testify v1.11.1
 	github.com/sysbot/go-netrc v0.0.0-20231214061310-8bb3fde9e2d4
+	github.com/ulikunitz/xz v0.5.15
 	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.6.2
 	github.com/zeebo/blake3 v0.2.4
