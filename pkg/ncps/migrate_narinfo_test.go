@@ -11,12 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/ncps"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -25,7 +27,7 @@ import (
 // migrationFactory is a function that returns a clean, ready-to-use database,
 // local store, and directory path, and takes care of cleaning up once the test is done.
 // It also returns a rebind function to convert SQL queries from ? bindvars to the backend's format.
-type migrationFactory func(t *testing.T) (database.Querier, *local.Store, string, func(string) string, func())
+type migrationFactory func(t *testing.T) (database.Querier, *local.Store, string, string, func(string) string, func())
 
 // TestMigrateNarInfoBackends runs all migration tests against all supported database backends.
 func TestMigrateNarInfoBackends(t *testing.T) {
@@ -91,7 +93,7 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, _, dir, dbURL, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfos
@@ -112,48 +114,23 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 
-		// Run migration (not dry-run, no delete)
-		migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
+		// Run migration using CLI command
+		app, err := ncps.New()
 		require.NoError(t, err)
 
-		migratedHashesMap := make(map[string]struct{}, len(migratedHashes))
-		for _, hash := range migratedHashes {
-			migratedHashesMap[hash] = struct{}{}
+		// Register in DB as unmigrated
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni))
+
+		// Use --concurrency=1 to avoid MySQL deadlocks when migrating multiple narinfos in parallel
+		args := []string{
+			"ncps", "migrate-narinfo",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--concurrency", "1",
 		}
-
-		totalProcessed := 0
-
-		var errorsCount int32
-
-		err = store.WalkNarInfos(ctx, func(hash string) error {
-			totalProcessed++
-
-			if _, ok := migratedHashesMap[hash]; ok {
-				return nil
-			}
-
-			ni, err := store.GetNarInfo(ctx, hash)
-			if err != nil {
-				atomic.AddInt32(&errorsCount, 1)
-
-				return nil //nolint:nilerr // Continue processing other narinfos
-			}
-
-			// Migrate to database
-			if err := testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni); err != nil {
-				atomic.AddInt32(&errorsCount, 1)
-			}
-
-			// Delete from storage (default behavior)
-			if err := store.DeleteNarInfo(ctx, hash); err != nil {
-				atomic.AddInt32(&errorsCount, 1)
-			}
-
-			return nil
-		})
-		require.NoError(t, err)
-		assert.Equal(t, 1, totalProcessed)
-		assert.Equal(t, int32(0), atomic.LoadInt32(&errorsCount))
+		require.NoError(t, app.Run(ctx, args))
 
 		// Verify in database
 		err = db.DB().QueryRowContext(
@@ -174,7 +151,7 @@ func testMigrateNarInfoDryRun(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfos
@@ -223,7 +200,7 @@ func testMigrateNarInfoIdempotency(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfos
@@ -285,7 +262,7 @@ func testMigrateNarInfoMultipleNarInfos(factory migrationFactory) func(*testing.
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with multiple narinfos
@@ -335,7 +312,7 @@ func testMigrateNarInfoAlreadyMigrated(factory migrationFactory) func(*testing.T
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfo
@@ -402,7 +379,7 @@ func testMigrateNarInfoStorageIterationError(factory migrationFactory) func(*tes
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		_, store, _, _, cleanup := factory(t)
+		_, store, _, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Walk should succeed even if there are no narinfos
@@ -426,7 +403,7 @@ func testMigrateNarInfoWithReferencesAndSignatures(factory migrationFactory) fun
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Use Nar1 which has references and signatures
@@ -479,7 +456,7 @@ func testMigrateNarInfoDeleteAlreadyMigrated(factory migrationFactory) func(*tes
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage
@@ -544,7 +521,7 @@ func testMigrateNarInfoConcurrentMigration(factory migrationFactory) func(*testi
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Increase connection pool for concurrent operations
@@ -609,7 +586,7 @@ func testMigrateNarInfoPartialData(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Use testdata.Nar1 but verify it has no Deriver, System, or CA fields
@@ -633,7 +610,7 @@ func testMigrateNarInfoPartialData(factory migrationFactory) func(*testing.T) {
 		var (
 			dbHash      string
 			dbStorePath sql.NullString
-			dbURL       sql.NullString
+			dbURLResult sql.NullString
 			dbDeriver   sql.NullString
 			dbSystem    sql.NullString
 			dbCA        sql.NullString
@@ -641,12 +618,12 @@ func testMigrateNarInfoPartialData(factory migrationFactory) func(*testing.T) {
 
 		err = db.DB().QueryRowContext(ctx,
 			rebind("SELECT hash, store_path, url, deriver, system, ca FROM narinfos WHERE hash = ?"),
-			testdata.Nar1.NarInfoHash).Scan(&dbHash, &dbStorePath, &dbURL, &dbDeriver, &dbSystem, &dbCA)
+			testdata.Nar1.NarInfoHash).Scan(&dbHash, &dbStorePath, &dbURLResult, &dbDeriver, &dbSystem, &dbCA)
 		require.NoError(t, err)
 
 		assert.Equal(t, testdata.Nar1.NarInfoHash, dbHash)
 		assert.True(t, dbStorePath.Valid, "StorePath should be populated")
-		assert.True(t, dbURL.Valid, "URL should be populated")
+		assert.True(t, dbURLResult.Valid, "URL should be populated")
 
 		// Verify the values match what was in the narinfo
 		if ni.Deriver != "" {
@@ -679,7 +656,7 @@ func testMigrateNarInfoTransactionRollback(factory migrationFactory) func(*testi
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage
@@ -739,7 +716,7 @@ func testMigrateNarInfoMissingNarFile(factory migrationFactory) func(*testing.T)
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate ONLY narinfo (no nar file)
@@ -776,7 +753,7 @@ func testMigrateNarInfoProgressTracking(factory migrationFactory) func(*testing.
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, cleanup := factory(t)
+		db, store, dir, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with multiple narinfos
@@ -852,7 +829,7 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, rebind, cleanup := factory(t)
+		db, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Create a large narinfo with many references and signatures
@@ -1018,7 +995,14 @@ func BenchmarkMigrateNarInfo(b *testing.B) {
 	}
 }
 
-func setupNarInfoMigrationSQLite(t *testing.T) (database.Querier, *local.Store, string, func(string) string, func()) {
+func setupNarInfoMigrationSQLite(t *testing.T) (
+	database.Querier,
+	*local.Store,
+	string,
+	string,
+	func(string) string,
+	func(),
+) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -1036,18 +1020,26 @@ func setupNarInfoMigrationSQLite(t *testing.T) (database.Querier, *local.Store, 
 		db.DB().Close()
 	}
 
+	dbURL := "sqlite:" + dbFile
 	rebind := func(query string) string { return query }
 
-	return db, store, dir, rebind, cleanup
+	return db, store, dir, dbURL, rebind, cleanup
 }
 
-func setupNarInfoMigrationPostgres(t *testing.T) (database.Querier, *local.Store, string, func(string) string, func()) {
+func setupNarInfoMigrationPostgres(t *testing.T) (
+	database.Querier,
+	*local.Store,
+	string,
+	string,
+	func(string) string,
+	func(),
+) {
 	t.Helper()
 
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbCleanup := testhelper.SetupPostgres(t)
+	db, dbURL, dbCleanup := testhelper.SetupPostgres(t)
 
 	store, err := local.New(ctx, dir)
 	require.NoError(t, err)
@@ -1076,16 +1068,23 @@ func setupNarInfoMigrationPostgres(t *testing.T) (database.Querier, *local.Store
 		return builder.String()
 	}
 
-	return db, store, dir, rebind, cleanup
+	return db, store, dir, dbURL, rebind, cleanup
 }
 
-func setupNarInfoMigrationMySQL(t *testing.T) (database.Querier, *local.Store, string, func(string) string, func()) {
+func setupNarInfoMigrationMySQL(t *testing.T) (
+	database.Querier,
+	*local.Store,
+	string,
+	string,
+	func(string) string,
+	func(),
+) {
 	t.Helper()
 
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbCleanup := testhelper.SetupMySQL(t)
+	db, dbURL, dbCleanup := testhelper.SetupMySQL(t)
 
 	store, err := local.New(ctx, dir)
 	require.NoError(t, err)
@@ -1096,5 +1095,5 @@ func setupNarInfoMigrationMySQL(t *testing.T) (database.Querier, *local.Store, s
 
 	rebind := func(query string) string { return query }
 
-	return db, store, dir, rebind, cleanup
+	return db, store, dir, dbURL, rebind, cleanup
 }
