@@ -266,7 +266,18 @@ func (w *mysqlWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk, 
 	}
 
 	// Convert Single Domain Struct
-	return Chunk(res), nil
+
+	return Chunk{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Size: res.Size,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
@@ -283,7 +294,18 @@ func (w *mysqlWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error
 	}
 
 	// Convert Single Domain Struct
-	return Chunk(res), nil
+
+	return Chunk{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Size: res.Size,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error) {
@@ -303,7 +325,18 @@ func (w *mysqlWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetC
 	}
 
 	// Convert Single Domain Struct
-	return Chunk(res), nil
+
+	return Chunk{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Size: res.Size,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetChunkCount(ctx context.Context) (int64, error) {
@@ -330,7 +363,17 @@ func (w *mysqlWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64
 	// Convert Slice of Domain Structs
 	items := make([]Chunk, len(res))
 	for i, v := range res {
-		items[i] = Chunk(v)
+		items[i] = Chunk{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Size: v.Size,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
 	}
 	return items, nil
 }
@@ -349,7 +392,18 @@ func (w *mysqlWrapper) GetConfigByID(ctx context.Context, id int64) (Config, err
 	}
 
 	// Convert Single Domain Struct
-	return Config(res), nil
+
+	return Config{
+		ID: res.ID,
+
+		Key: res.Key,
+
+		Value: res.Value,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetConfigByKey(ctx context.Context, key string) (Config, error) {
@@ -366,7 +420,18 @@ func (w *mysqlWrapper) GetConfigByKey(ctx context.Context, key string) (Config, 
 	}
 
 	// Convert Single Domain Struct
-	return Config(res), nil
+
+	return Config{
+		ID: res.ID,
+
+		Key: res.Key,
+
+		Value: res.Value,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error) {
@@ -380,7 +445,23 @@ func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64
 	// Convert Slice of Domain Structs
 	items := make([]GetLeastUsedNarFilesRow, len(res))
 	for i, v := range res {
-		items[i] = GetLeastUsedNarFilesRow(v)
+		items[i] = GetLeastUsedNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			FileSize: v.FileSize,
+
+			Query: v.Query,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+		}
 	}
 	return items, nil
 }
@@ -396,7 +477,37 @@ func (w *mysqlWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64
 	// Convert Slice of Domain Structs
 	items := make([]NarInfo, len(res))
 	for i, v := range res {
-		items[i] = NarInfo(v)
+		items[i] = NarInfo{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+
+			StorePath: v.StorePath,
+
+			URL: v.URL,
+
+			Compression: v.Compression,
+
+			FileHash: v.FileHash,
+
+			FileSize: v.FileSize,
+
+			NarHash: v.NarHash,
+
+			NarSize: v.NarSize,
+
+			Deriver: v.Deriver,
+
+			System: v.System,
+
+			Ca: v.Ca,
+		}
 	}
 	return items, nil
 }
@@ -446,7 +557,26 @@ func (w *mysqlWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Contex
 	}
 
 	// Convert Single Domain Struct
-	return NarFile(res), nil
+
+	return NarFile{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Compression: res.Compression,
+
+		FileSize: res.FileSize,
+
+		Query: res.Query,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		TotalChunks: res.TotalChunks,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
@@ -463,7 +593,26 @@ func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, e
 	}
 
 	// Convert Single Domain Struct
-	return NarFile(res), nil
+
+	return NarFile{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Compression: res.Compression,
+
+		FileSize: res.FileSize,
+
+		Query: res.Query,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		TotalChunks: res.TotalChunks,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error) {
@@ -480,7 +629,24 @@ func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int6
 	}
 
 	// Convert Single Domain Struct
-	return GetNarFileByNarInfoIDRow(res), nil
+
+	return GetNarFileByNarInfoIDRow{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		Compression: res.Compression,
+
+		FileSize: res.FileSize,
+
+		Query: res.Query,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetNarFileCount(ctx context.Context) (int64, error) {
@@ -507,7 +673,17 @@ func (w *mysqlWrapper) GetNarFilesToChunk(ctx context.Context) ([]GetNarFilesToC
 	// Convert Slice of Domain Structs
 	items := make([]GetNarFilesToChunkRow, len(res))
 	for i, v := range res {
-		items[i] = GetNarFilesToChunkRow(v)
+		items[i] = GetNarFilesToChunkRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			Query: v.Query,
+
+			FileSize: v.FileSize,
+		}
 	}
 	return items, nil
 }
@@ -539,7 +715,38 @@ func (w *mysqlWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarIn
 	}
 
 	// Convert Single Domain Struct
-	return NarInfo(res), nil
+
+	return NarInfo{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		StorePath: res.StorePath,
+
+		URL: res.URL,
+
+		Compression: res.Compression,
+
+		FileHash: res.FileHash,
+
+		FileSize: res.FileSize,
+
+		NarHash: res.NarHash,
+
+		NarSize: res.NarSize,
+
+		Deriver: res.Deriver,
+
+		System: res.System,
+
+		Ca: res.Ca,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
@@ -556,7 +763,38 @@ func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, e
 	}
 
 	// Convert Single Domain Struct
-	return NarInfo(res), nil
+
+	return NarInfo{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		StorePath: res.StorePath,
+
+		URL: res.URL,
+
+		Compression: res.Compression,
+
+		FileHash: res.FileHash,
+
+		FileSize: res.FileSize,
+
+		NarHash: res.NarHash,
+
+		NarSize: res.NarSize,
+
+		Deriver: res.Deriver,
+
+		System: res.System,
+
+		Ca: res.Ca,
+	}, nil
 }
 
 func (w *mysqlWrapper) GetNarInfoCount(ctx context.Context) (int64, error) {
@@ -607,7 +845,11 @@ func (w *mysqlWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInf
 	// Convert Slice of Domain Structs
 	items := make([]GetNarInfoHashesToChunkRow, len(res))
 	for i, v := range res {
-		items[i] = GetNarInfoHashesToChunkRow(v)
+		items[i] = GetNarInfoHashesToChunkRow{
+			Hash: v.Hash,
+
+			URL: v.URL,
+		}
 	}
 	return items, nil
 }
@@ -660,7 +902,17 @@ func (w *mysqlWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
 	// Convert Slice of Domain Structs
 	items := make([]Chunk, len(res))
 	for i, v := range res {
-		items[i] = Chunk(v)
+		items[i] = Chunk{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Size: v.Size,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
 	}
 	return items, nil
 }
@@ -676,7 +928,23 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNa
 	// Convert Slice of Domain Structs
 	items := make([]GetOrphanedNarFilesRow, len(res))
 	for i, v := range res {
-		items[i] = GetOrphanedNarFilesRow(v)
+		items[i] = GetOrphanedNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			FileSize: v.FileSize,
+
+			Query: v.Query,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+		}
 	}
 	return items, nil
 }

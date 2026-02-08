@@ -281,7 +281,8 @@ func TestWrapperTemplate(t *testing.T) {
 			}
 			return joinParamsCall(params, engPkg, targetMethod, structs, structs)
 		},
-		"hasSuffix": strings.HasSuffix,
+		"hasSuffix":               strings.HasSuffix,
+		"generateFieldConversion": generateFieldConversion,
 		"zeroReturn": func(m MethodInfo) string {
 			// simplified for test
 			if m.ReturnsSelf {
@@ -371,5 +372,158 @@ func TestWrapperTemplate(t *testing.T) {
 	}
 	if !strings.Contains(output, "nil, err") {
 		t.Errorf("expected output to contain 'nil, err' for WithTx, but it didn't\n%s", output)
+	}
+
+	// 4. Test sql.NullString conversion
+	methods = []MethodInfo{
+		{
+			Name: "CreateUser",
+			Params: []Param{
+				{Name: "ctx", Type: "context.Context"},
+				{Name: "arg", Type: "CreateUserParams"},
+			},
+			Returns: []Return{{Type: "error"}},
+			Docs:    []string{"// CreateUser creates a user"},
+		},
+	}
+
+	// Update structs to have NullString
+	structs["CreateUserParams"] = StructInfo{
+		Name: "CreateUserParams",
+		Fields: []FieldInfo{
+			{Name: "Bio", Type: "sql.NullString"},
+		},
+	}
+	// Add domain struct User with regular string
+	structs["User"] = StructInfo{
+		Name: "User",
+		Fields: []FieldInfo{
+			{Name: "Bio", Type: "string"},
+		},
+	}
+
+	// Mock getTargetStruct to return the User struct when asked (simulating domain struct)
+	// But wait, joinParamsCall uses sourceStructs and targetStructs.
+	// In the test, we passed `structs` for both.
+	// We need to simulate that we are passing a domain struct "User" but the method takes "CreateUserParams".
+	// The template uses `joinParamsCall`.
+	// Let's adjust the method params to use "User" as input, and the target method to use "CreateUserParams".
+
+	methods = []MethodInfo{
+		{
+			Name: "CreateUser",
+			Params: []Param{
+				{Name: "ctx", Type: "context.Context"},
+				{Name: "user", Type: "User"},
+			},
+			Returns: []Return{{Type: "error"}},
+		},
+	}
+
+	funcMap["getTargetMethod"] = func(name string) MethodInfo {
+		if name == "CreateUser" {
+			return MethodInfo{
+				Name: "CreateUser",
+				Params: []Param{
+					{Name: "ctx", Type: "context.Context"},
+					{Name: "arg", Type: "CreateUserParams"},
+				},
+				Returns: []Return{{Type: "error"}},
+			}
+		}
+		return MethodInfo{}
+	}
+
+	// Re-parse with updated funcMap (captured closure needs update? No, funcMap is map, but we created new template)
+	// We need to re-create template because we changed funcMap values or we need to ensure the closure uses current values.
+	// tailored funcMap for this test case
+	funcMap["joinParamsCall"] = func(params []Param, engPkg string, targetMethodName string) (string, error) {
+		targetMethod := MethodInfo{
+			Name: "CreateUser",
+			Params: []Param{
+				{Name: "ctx", Type: "context.Context"},
+				{Name: "arg", Type: "CreateUserParams"},
+			},
+			Returns: []Return{{Type: "error"}},
+		}
+		return joinParamsCall(params, engPkg, targetMethod, structs, structs)
+	}
+
+	tmpl, err = template.New("wrapper").Funcs(funcMap).Parse(wrapperTemplate)
+	if err != nil {
+		t.Fatalf("failed to parse template: %v", err)
+	}
+
+	data["Methods"] = methods
+	buf.Reset()
+	if err := tmpl.Execute(&buf, data); err != nil {
+		t.Fatalf("failed to execute template: %v", err)
+	}
+
+	output = buf.String()
+	expectedConversion := "Bio: sql.NullString{String: user.Bio, Valid: true}"
+	if !strings.Contains(output, expectedConversion) {
+		t.Errorf("expected output to contain '%s', but it didn't\n%s", expectedConversion, output)
+	}
+}
+
+func TestGenerateFieldConversion(t *testing.T) {
+	tests := []struct {
+		name            string
+		targetFieldName string
+		targetFieldType string
+		sourceFieldType string
+		sourceExpr      string
+		want            string
+	}{
+		{
+			name:            "Same Types",
+			targetFieldName: "ID",
+			targetFieldType: "int64",
+			sourceFieldType: "int64",
+			sourceExpr:      "user.ID",
+			want:            "ID: user.ID",
+		},
+		{
+			name:            "String to NullString",
+			targetFieldName: "Bio",
+			targetFieldType: "sql.NullString",
+			sourceFieldType: "string",
+			sourceExpr:      "user.Bio",
+			want:            "Bio: sql.NullString{String: user.Bio, Valid: true}",
+		},
+		{
+			name:            "Int64 to NullInt64",
+			targetFieldName: "Age",
+			targetFieldType: "sql.NullInt64",
+			sourceFieldType: "int64",
+			sourceExpr:      "user.Age",
+			want:            "Age: sql.NullInt64{Int64: user.Age, Valid: true}",
+		},
+		{
+			name:            "NullString to String",
+			targetFieldName: "Bio",
+			targetFieldType: "string",
+			sourceFieldType: "sql.NullString",
+			sourceExpr:      "row.Bio",
+			want:            "Bio: row.Bio.String",
+		},
+		{
+			name:            "NullInt32 to NullInt64",
+			targetFieldName: "Count",
+			targetFieldType: "sql.NullInt64",
+			sourceFieldType: "sql.NullInt32",
+			sourceExpr:      "src.Count",
+			want:            "Count: sql.NullInt64{Int64: int64(src.Count.Int32), Valid: src.Count.Valid}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := generateFieldConversion(tt.targetFieldName, tt.targetFieldType, tt.sourceFieldType, tt.sourceExpr)
+			if got != tt.want {
+				t.Errorf("generateFieldConversion() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
