@@ -89,9 +89,6 @@ var (
 	// errNarInfoPurged is returned if the narinfo was purged.
 	errNarInfoPurged = errors.New("the narinfo was purged")
 
-	// ErrInconsistentState is returned when the database is in an inconsistent state (e.g., nar exists without narinfo).
-	ErrInconsistentState = errors.New("inconsistent database state")
-
 	// ErrCDCDisabled is returned when CDC is required but not enabled.
 	ErrCDCDisabled = errors.New("CDC must be enabled and chunk store configured for migration")
 

@@ -59,7 +59,6 @@ jobs:
       - name: Update vendor hash for ncps
         if: needs.filter.outputs.go_deps == 'true'
         run: |
-          set -x
           go mod tidy
 
           set +e
@@ -98,8 +97,6 @@ jobs:
       - name: Update vendor hash for gen-db-wrappers
         if: needs.filter.outputs.nix_db_wrappers_go_deps == 'true'
         run: |
-          set -x
-
           pushd nix/gen-db-wrappers/src
           go mod tidy
           popd
