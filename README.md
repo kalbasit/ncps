@@ -25,6 +25,13 @@ ncps acts as a local binary cache for Nix, fetching store paths from upstream ca
 - **Observability**: OpenTelemetry and Prometheus metrics support
 - **Easy setup**: Simple configuration and deployment
 
+## ⚠️ Development Status & Data Safety
+
+> [!important]
+> **Production Warning**: The main branch and pre-release versions are under active development and should never be used in production. Your data will be lost! Always use the [latest stable release](https://github.com/kalbasit/ncps/releases/latest) for production environments.
+>
+> **Early Stage Notice**: ncps is in early development and data consistency/recovery is not guaranteed. Please maintain regular backups of your data, especially when updating ncps versions.
+
 ## Quick Start
 
 Get ncps running in minutes with Docker:
