@@ -21,6 +21,7 @@ jobs:
       database: ${{ steps.filter.outputs.database }}
       docs: ${{ steps.filter.outputs.docs }}
       go_deps: ${{ steps.filter.outputs.go_deps }}
+      nix_db_wrappers_go_deps: ${{ steps.filter.outputs.nix_db_wrappers_go_deps }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
@@ -35,6 +36,9 @@ jobs:
             go_deps:
               - "go.mod"
               - "go.sum"
+            nix_db_wrappers_go_deps:
+              - "nix/gen-db-wrappers/src/go.mod"
+              - "nix/gen-db-wrappers/src/go.sum"
             docs:
               - "docs/**"
   generate:
@@ -52,7 +56,7 @@ jobs:
         with:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Update vendor hash
+      - name: Update vendor hash for ncps
         if: needs.filter.outputs.go_deps == 'true'
         run: |
           go mod tidy
@@ -85,7 +89,43 @@ jobs:
       - uses: stefanzweifel/git-auto-commit-action@v7
         if: needs.filter.outputs.go_deps == 'true'
         with:
-          commit_message: "Auto Update Vendor Hash"
+          commit_message: "Auto Update Vendor Hash for ncps"
+      - name: Update vendor hash for gen-db-wrappers
+        if: needs.filter.outputs.gen_db_wrappers == 'true'
+        run: |
+          pushd nix/gen-db-wrappers/src
+          go mod tidy
+          popd
+
+          nix build --print-build-logs .#gen-db-wrappers.goModules 2> /tmp/log
+          ret=$?
+
+          if [[ "$ret" -eq 0 ]]; then
+            nix build --print-build-logs .#gen-db-wrappers.goModules --rebuild 2> /tmp/log
+            ret=$?
+          fi
+
+          if [[ "$ret" -eq 0 ]]; then
+            echo "::notice::Hash is up to date"
+            exit 0
+          fi
+
+          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
+          echo "hash=$hash"
+
+          if [[ -z "$hash" ]]; then
+            cat /tmp/log
+            echo "::error::hash is empty"
+            exit 1
+          fi
+
+          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/gen-db-wrappers/flake-module.nix
+
+          git diff
+      - uses: stefanzweifel/git-auto-commit-action@v7
+        if: needs.filter.outputs.gen_db_wrappers == 'true'
+        with:
+          commit_message: "Auto Update Vendor Hash for gen-db-wrappers"
       - name: Generate Database Code
         if: needs.filter.outputs.database == 'true'
         run: nix develop --command sqlc generate
