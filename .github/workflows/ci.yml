@@ -61,12 +61,16 @@ jobs:
         run: |
           go mod tidy
 
-          nix build --print-build-logs .#ncps.goModules 2> /tmp/log
+          set +e
+          is nix build --print-build-logs .#ncps.goModules 2> /tmp/log
           ret=$?
+          set -e
 
           if [[ "$ret" -eq 0 ]]; then
+            set +e
             nix build --print-build-logs .#ncps.goModules --rebuild 2> /tmp/log
             ret=$?
+            set -e
           fi
 
           if [[ "$ret" -eq 0 ]]; then
