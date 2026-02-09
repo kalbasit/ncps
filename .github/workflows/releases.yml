@@ -38,7 +38,7 @@ jobs:
           body: |
             ${{ (contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc')) && '> [!WARNING]
             > This is a pre-release version and should not be used in production. Your data may be lost or corrupted.
-            > Please use the latest stable release for production environments.
+            > Please use the latest release for production environments.
             ' || '' }}
 
             > [!Important]
