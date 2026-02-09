@@ -85,6 +85,11 @@ type GetChunkByNarFileIDAndIndexParams struct {
 	ChunkIndex int64
 }
 
+type GetCompressedNarInfosParams struct {
+	Limit  int32
+	Offset int32
+}
+
 type GetLeastUsedNarFilesRow struct {
 	ID             int64
 	Hash           string
@@ -129,6 +134,12 @@ type GetNarFilesToChunkRow struct {
 type GetNarInfoHashesToChunkRow struct {
 	Hash string
 	URL  sql.NullString
+}
+
+type GetOldCompressedNarFilesParams struct {
+	CreatedAt time.Time
+	Limit     int32
+	Offset    int32
 }
 
 type GetOrphanedNarFilesRow struct {

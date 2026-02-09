@@ -348,3 +348,18 @@ ORDER BY id;
 SELECT COUNT(*)
 FROM nar_files
 WHERE total_chunks = 0;
+
+-- name: GetCompressedNarInfos :many
+SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, `system`, ca
+FROM narinfos
+WHERE compression NOT IN ('', 'none')
+ORDER BY id
+LIMIT ? OFFSET ?;
+
+-- name: GetOldCompressedNarFiles :many
+SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+FROM nar_files
+WHERE compression NOT IN ('', 'none')
+  AND created_at < ?
+ORDER BY id
+LIMIT ? OFFSET ?;
