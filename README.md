@@ -28,7 +28,7 @@ ncps acts as a local binary cache for Nix, fetching store paths from upstream ca
 ## ⚠️ Development Status & Data Safety
 
 > [!important]
-> **Production Warning**: The main branch and pre-release versions are under active development and should never be used in production. Your data will be lost! Always use the [latest release](https://github.com/kalbasit/ncps/releases/latest) for production environments.
+> **Production Warning**: The main branch and pre-release versions are under active development and should never be used in production. There is a high risk of data loss! Always use the [latest release](https://github.com/kalbasit/ncps/releases/latest) for production environments.
 >
 > **Early Stage Notice**: ncps is in early development and data consistency/recovery is not guaranteed. Please maintain regular backups of your data, especially when updating ncps versions.
 
