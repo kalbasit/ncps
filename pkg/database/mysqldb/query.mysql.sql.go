@@ -1737,6 +1737,69 @@ func (q *Queries) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFil
 	return err
 }
 
+const updateNarInfo = `-- name: UpdateNarInfo :execresult
+UPDATE narinfos
+SET
+    store_path = ?,
+    url = ?,
+    compression = ?,
+    file_hash = ?,
+    file_size = ?,
+    nar_hash = ?,
+    nar_size = ?,
+    deriver = ?,
+    system = ?,
+    ca = ?,
+    updated_at = CURRENT_TIMESTAMP
+WHERE hash = ?
+`
+
+type UpdateNarInfoParams struct {
+	StorePath   sql.NullString
+	URL         sql.NullString
+	Compression sql.NullString
+	FileHash    sql.NullString
+	FileSize    sql.NullInt64
+	NarHash     sql.NullString
+	NarSize     sql.NullInt64
+	Deriver     sql.NullString
+	System      sql.NullString
+	Ca          sql.NullString
+	Hash        string
+}
+
+// UpdateNarInfo
+//
+//	UPDATE narinfos
+//	SET
+//	    store_path = ?,
+//	    url = ?,
+//	    compression = ?,
+//	    file_hash = ?,
+//	    file_size = ?,
+//	    nar_hash = ?,
+//	    nar_size = ?,
+//	    deriver = ?,
+//	    system = ?,
+//	    ca = ?,
+//	    updated_at = CURRENT_TIMESTAMP
+//	WHERE hash = ?
+func (q *Queries) UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, updateNarInfo,
+		arg.StorePath,
+		arg.URL,
+		arg.Compression,
+		arg.FileHash,
+		arg.FileSize,
+		arg.NarHash,
+		arg.NarSize,
+		arg.Deriver,
+		arg.System,
+		arg.Ca,
+		arg.Hash,
+	)
+}
+
 const updateNarInfoFileSize = `-- name: UpdateNarInfoFileSize :exec
 UPDATE narinfos
 SET file_size = ?, updated_at = CURRENT_TIMESTAMP

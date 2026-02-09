@@ -204,6 +204,74 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 	})
 
+	t.Run("UpdateNarInfo", func(t *testing.T) {
+		db := factory(t)
+		ctx := context.Background()
+
+		t.Run("updating an existing narinfo", func(t *testing.T) {
+			hash := helper.MustRandString(32, nil)
+
+			// 1. Create a narinfo
+			_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+				Hash: hash,
+			})
+			require.NoError(t, err)
+
+			// 2. Update it
+			params := database.UpdateNarInfoParams{
+				Hash:        hash,
+				StorePath:   sql.NullString{String: "/nix/store/hash-name", Valid: true},
+				URL:         sql.NullString{String: "nar/hash.nar", Valid: true},
+				Compression: sql.NullString{String: "zstd", Valid: true},
+				FileHash:    sql.NullString{String: "sha256:filehash", Valid: true},
+				FileSize:    sql.NullInt64{Int64: 1234, Valid: true},
+				NarHash:     sql.NullString{String: "sha256:narhash", Valid: true},
+				NarSize:     sql.NullInt64{Int64: 5678, Valid: true},
+				Deriver:     sql.NullString{String: "deriver", Valid: true},
+				System:      sql.NullString{String: "x86_64-linux", Valid: true},
+				Ca:          sql.NullString{String: "ca", Valid: true},
+			}
+
+			updated, err := db.UpdateNarInfo(ctx, params)
+			require.NoError(t, err)
+
+			// helper function to verify narinfo fields
+			verifyFields := func(t *testing.T, ni database.NarInfo) {
+				t.Helper()
+				assert.Equal(t, params.StorePath, ni.StorePath)
+				assert.Equal(t, params.URL, ni.URL)
+				assert.Equal(t, params.Compression, ni.Compression)
+				assert.Equal(t, params.FileHash, ni.FileHash)
+				assert.Equal(t, params.FileSize, ni.FileSize)
+				assert.Equal(t, params.NarHash, ni.NarHash)
+				assert.Equal(t, params.NarSize, ni.NarSize)
+				assert.Equal(t, params.Deriver, ni.Deriver)
+				assert.Equal(t, params.System, ni.System)
+				assert.Equal(t, params.Ca, ni.Ca)
+			}
+
+			// Verify returned object
+			assert.Equal(t, hash, updated.Hash)
+			verifyFields(t, updated)
+
+			// 3. Verify the updates by fetching
+			ni, err := db.GetNarInfoByHash(ctx, hash)
+			require.NoError(t, err)
+
+			verifyFields(t, ni)
+		})
+
+		t.Run("updating a non-existing narinfo", func(t *testing.T) {
+			hash := helper.MustRandString(32, nil)
+			params := database.UpdateNarInfoParams{
+				Hash: hash,
+			}
+
+			_, err := db.UpdateNarInfo(ctx, params)
+			assert.ErrorIs(t, err, database.ErrNotFound)
+		})
+	})
+
 	t.Run("TouchNarInfo", func(t *testing.T) {
 		db := factory(t)
 

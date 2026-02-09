@@ -81,6 +81,23 @@ ON CONFLICT (hash) DO UPDATE SET
 WHERE narinfos.url IS NULL
 RETURNING *;
 
+-- name: UpdateNarInfo :one
+UPDATE narinfos
+SET
+    store_path = $2,
+    url = $3,
+    compression = $4,
+    file_hash = $5,
+    file_size = $6,
+    nar_hash = $7,
+    nar_size = $8,
+    deriver = $9,
+    system = $10,
+    ca = $11,
+    updated_at = CURRENT_TIMESTAMP
+WHERE hash = $1
+RETURNING *;
+
 -- name: UpdateNarInfoFileSize :exec
 UPDATE narinfos
 SET file_size = $2, updated_at = CURRENT_TIMESTAMP

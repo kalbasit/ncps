@@ -1164,6 +1164,39 @@ func (w *mysqlWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateN
 	})
 }
 
+func (w *mysqlWrapper) UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	// MySQL does not support RETURNING for UPDATEs.
+	// We update, and then fetch the object by its unique key (assumed to be the first param after context, or we try by Hash if it exists).
+	res, err := w.adapter.UpdateNarInfo(ctx, mysqldb.UpdateNarInfoParams{
+		StorePath:   arg.StorePath,
+		URL:         arg.URL,
+		Compression: arg.Compression,
+		FileHash:    arg.FileHash,
+		FileSize:    arg.FileSize,
+		NarHash:     arg.NarHash,
+		NarSize:     arg.NarSize,
+		Deriver:     arg.Deriver,
+		System:      arg.System,
+		Ca:          arg.Ca,
+		Hash:        arg.Hash,
+	})
+	if err != nil {
+		return NarInfo{}, err
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return NarInfo{}, err
+	}
+	if rowsAffected == 0 {
+		return NarInfo{}, ErrNotFound
+	}
+
+	return w.GetNarInfoByHash(ctx, arg.Hash)
+}
+
 func (w *mysqlWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

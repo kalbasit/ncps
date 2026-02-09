@@ -1205,6 +1205,66 @@ func (w *postgresWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg Upda
 	})
 }
 
+func (w *postgresWrapper) UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.UpdateNarInfo(ctx, postgresdb.UpdateNarInfoParams{
+		Hash:        arg.Hash,
+		StorePath:   arg.StorePath,
+		URL:         arg.URL,
+		Compression: arg.Compression,
+		FileHash:    arg.FileHash,
+		FileSize:    arg.FileSize,
+		NarHash:     arg.NarHash,
+		NarSize:     arg.NarSize,
+		Deriver:     arg.Deriver,
+		System:      arg.System,
+		Ca:          arg.Ca,
+	})
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return NarInfo{}, ErrNotFound
+		}
+
+		return NarInfo{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return NarInfo{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+
+		LastAccessedAt: res.LastAccessedAt,
+
+		StorePath: res.StorePath,
+
+		URL: res.URL,
+
+		Compression: res.Compression,
+
+		FileHash: res.FileHash,
+
+		FileSize: res.FileSize,
+
+		NarHash: res.NarHash,
+
+		NarSize: res.NarSize,
+
+		Deriver: res.Deriver,
+
+		System: res.System,
+
+		Ca: res.Ca,
+	}, nil
+}
+
 func (w *postgresWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
