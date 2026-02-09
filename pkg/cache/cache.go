@@ -1043,61 +1043,94 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			WithContext(ctx)
 
 		defer func() {
-			//nolint:errcheck
-			io.Copy(io.Discard, r)
-
+			// It's important to read the entire body to allow connection reuse.
+			_, _ = io.Copy(io.Discard, r)
 			r.Close()
 		}()
 
 		if c.isCDCEnabled() {
-			// Stream to temp file first
-			pattern := narURL.Hash + "-*.nar"
-			if cext := narURL.Compression.String(); cext != "" {
-				pattern += "." + cext
-			}
+			return c.putNarWithCDC(ctx, narURL, r)
+		}
 
-			f, err := os.CreateTemp(c.tempDir, pattern)
-			if err != nil {
+		written, err := c.narStore.PutNar(ctx, narURL, r)
+		if err != nil {
+			if errors.Is(err, storage.ErrAlreadyExists) {
+				zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, getting size to ensure db record")
+
+				// We still need the size to ensure the DB record is correct.
+				var getErr error
+
+				var reader io.ReadCloser
+
+				written, reader, getErr = c.narStore.GetNar(ctx, narURL)
+				if getErr != nil {
+					return fmt.Errorf("nar exists in storage but failed to get its metadata: %w", getErr)
+				}
+
+				reader.Close()
+			} else {
 				return err
 			}
+		}
 
-			tempPath := f.Name()
-			defer os.Remove(tempPath)
+		// Ensure we have a NarFile record for it.
+		// fileSize is 'written'.
+		err = c.withTransaction(ctx, "PutNar.ensureNarFile", func(qtx database.Querier) error {
+			_, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+				Hash:        narURL.Hash,
+				Compression: narURL.Compression.String(),
+				Query:       narURL.Query.Encode(),
+				//nolint:gosec // G115: conversion is safe because size is non-negative
+				FileSize:    uint64(written),
+				TotalChunks: 0, // initially 0, background job will chunk if needed
+			})
 
-			_, err = io.Copy(f, r)
-			f.Close()
-
-			if err != nil {
-				return err
-			}
-
-			_, err = c.storeNarWithCDC(ctx, tempPath, &narURL)
+			return err
+		})
+		if err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Msg("failed to ensure nar file record in PutNar")
 
 			return err
 		}
 
-		_, err := c.narStore.PutNar(ctx, narURL, r)
-		if errors.Is(err, storage.ErrAlreadyExists) {
-			// Already exists is not an error for PUT - return success
-			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, skipping")
-
-			// Check if we need to update a corresponding narinfo (if it exists)
-			if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
-				zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfo file size after PutNar (already exists)")
-			}
-
-			return nil
-		}
-
 		if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
-			zerolog.Ctx(ctx).
-				Warn().
-				Err(err).
-				Msg("failed to fix narinfo file size after PutNar")
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfos after PutNar")
 		}
 
-		return err
+		return nil
 	})
+}
+
+func (c *Cache) putNarWithCDC(ctx context.Context, narURL nar.URL, r io.Reader) error {
+	f, err := os.CreateTemp(c.tempDir, fmt.Sprintf("%s-*.nar", narURL.Hash))
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for CDC: %w", err)
+	}
+
+	tempPath := f.Name()
+	defer os.Remove(tempPath)
+
+	_, err = io.Copy(f, r)
+	f.Close()
+
+	if err != nil {
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+
+	_, err = c.storeNarWithCDC(ctx, tempPath, &narURL)
+	if err != nil {
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			zerolog.Ctx(ctx).Debug().Msg("nar already exists in chunk storage, skipping")
+		} else {
+			return err
+		}
+	}
+
+	if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfos after PutNar")
+	}
+
+	return nil
 }
 
 // DeleteNar deletes the nar from the store.
@@ -2454,7 +2487,7 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 	err := c.withTransaction(ctx, "getNarInfoFromDatabase", func(qtx database.Querier) error {
 		var populateErr error
 
-		ni, narURL, populateErr = c.populateNarInfoFromDatabase(ctx, qtx, hash)
+		ni, narURL, populateErr = c.populateNarInfoFromDatabase(ctx, qtx, hash, true)
 
 		return populateErr
 	})
@@ -2492,6 +2525,7 @@ func (c *Cache) populateNarInfoFromDatabase(
 	ctx context.Context,
 	qtx database.Querier,
 	hash string,
+	touch bool,
 ) (*narinfo.NarInfo, *nar.URL, error) {
 	nir, err := qtx.GetNarInfoByHash(ctx, hash)
 	if err != nil {
@@ -2555,9 +2589,11 @@ func (c *Cache) populateNarInfoFromDatabase(
 	}
 
 	// Touch the record if needed
-	if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-		if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
-			return nil, nil, fmt.Errorf("error touching the narinfo record: %w", err)
+	if touch {
+		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
+			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
+				return nil, nil, fmt.Errorf("error touching the narinfo record: %w", err)
+			}
 		}
 	}
 
