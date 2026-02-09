@@ -1035,6 +1035,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 	defer span.End()
 
 	return c.withReadLock(ctx, "PutNar", narJobKey(narURL.Hash), func() error {
+		// TODO: The context already has these keys from the server (caller), should this be removed?
 		ctx = narURL.
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
