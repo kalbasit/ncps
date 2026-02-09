@@ -34,7 +34,10 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-const cacheName = "cache.example.com"
+const (
+	cacheName           = "cache.example.com"
+	uncompressedNarData = "uncompressed nar data"
+)
 
 func newTestCache(
 	ctx context.Context,
@@ -870,7 +873,7 @@ func TestGetNar_NoZstdCompression(t *testing.T) {
 	defer ts.Close()
 
 	// 1. Put an uncompressed Nar into the cache.
-	narData := "uncompressed nar data"
+	narData := uncompressedNarData
 	narHash := "00000000000000000000000000000002" // dummy 32-char hash
 	narURL := ts.URL + "/nar/" + narHash + ".nar"
 
@@ -936,7 +939,7 @@ func TestGetNar_ZstdCompression_Head(t *testing.T) {
 	defer ts.Close()
 
 	// 1. Put an uncompressed Nar into the cache.
-	narData := "uncompressed nar data"
+	narData := uncompressedNarData
 	narHash := "00000000000000000000000000000003" // dummy 32-char hash
 	narURL := ts.URL + "/nar/" + narHash + ".nar"
 
@@ -967,4 +970,87 @@ func TestGetNar_ZstdCompression_Head(t *testing.T) {
 	// Currently the implementation only enables zstd if withBody is true.
 	assert.Empty(t, resp.Header.Get("Content-Encoding"))
 	assert.Equal(t, strconv.Itoa(len(narData)), resp.Header.Get("Content-Length"))
+}
+
+type responseWriterRecorder struct {
+	headers http.Header
+	status  int
+	events  []string
+}
+
+func (r *responseWriterRecorder) Header() http.Header {
+	return r.headers
+}
+
+func (r *responseWriterRecorder) WriteHeader(status int) {
+	// Record current state of Content-Encoding before WriteHeader
+	ce := r.headers.Get("Content-Encoding")
+	if ce != "" {
+		r.events = append(r.events, "Header:Content-Encoding:"+ce)
+	}
+
+	r.status = status
+
+	r.events = append(r.events, "WriteHeader")
+}
+
+func (r *responseWriterRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+
+	r.events = append(r.events, "Write")
+
+	return len(b), nil
+}
+
+func TestGetNar_HeaderSettingSequence(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-header-seq-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// Put an uncompressed Nar into the cache.
+	narData := uncompressedNarData
+	narHash := "00000000000000000000000000000004"
+	narURL := "/nar/" + narHash + ".nar"
+
+	req := httptest.NewRequest(http.MethodPut, narURL, strings.NewReader(narData))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	t.Run("Content-Encoding header is set AFTER determining compression is used", func(t *testing.T) {
+		req = httptest.NewRequest(http.MethodGet, narURL, nil)
+		req.Header.Set("Accept-Encoding", "zstd")
+
+		recorder := &responseWriterRecorder{
+			headers: make(http.Header),
+		}
+
+		s.ServeHTTP(recorder, req)
+
+		// In the current BUGGY code, the events are:
+		// ["Header:Content-Encoding:zstd", "WriteHeader", "Write"]
+		// This is because h.Set("Content-Encoding", "zstd") is called at line 562
+		// and w.WriteHeader(http.StatusOK) is called at line 595.
+
+		assert.Equal(t, []string{"Header:Content-Encoding:zstd", "WriteHeader", "Write"}, recorder.events)
+	})
 }

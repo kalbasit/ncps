@@ -558,6 +558,23 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			}
 		}
 
+		var out io.Writer = w
+		if useZstd {
+			enc, err := zstd.NewWriter(w)
+			if err != nil {
+				zerolog.Ctx(r.Context()).
+					Error().
+					Err(err).
+					Msg("error creating zstd writer")
+
+				useZstd = false
+			} else {
+				defer enc.Close()
+
+				out = enc
+			}
+		}
+
 		if useZstd {
 			h.Set("Content-Encoding", "zstd")
 			// We can't know the compressed size in advance without compressing it all.
@@ -593,20 +610,6 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusOK)
-
-		var out io.Writer = w
-		if useZstd {
-			enc, err := zstd.NewWriter(w)
-			if err != nil {
-				zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to create zstd writer")
-				// Fallback to uncompressed? We already sent headers, so we can't really.
-				// But zstd.NewWriter shouldn't fail with just a writer.
-			} else {
-				defer enc.Close()
-
-				out = enc
-			}
-		}
 
 		written, err := io.Copy(out, reader)
 		if err != nil {
