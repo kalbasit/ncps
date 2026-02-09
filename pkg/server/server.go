@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -57,6 +58,17 @@ var tracer trace.Tracer
 
 //nolint:gochecknoglobals
 var prometheusGatherer promclient.Gatherer
+
+//nolint:gochecknoglobals
+var zstdWriterPool = sync.Pool{
+	New: func() interface{} {
+		// Not providing any options will use the default compression level.
+		// The error is ignored as NewWriter(nil) with no options doesn't error.
+		enc, _ := zstd.NewWriter(nil)
+
+		return enc
+	},
+}
 
 //nolint:gochecknoinits
 func init() {
@@ -559,20 +571,19 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		}
 
 		var out io.Writer = w
+
 		if useZstd {
-			enc, err := zstd.NewWriter(w)
-			if err != nil {
-				zerolog.Ctx(r.Context()).
-					Error().
-					Err(err).
-					Msg("error creating zstd writer")
+			enc := zstdWriterPool.Get().(*zstd.Encoder)
+			enc.Reset(w)
+			out = enc
 
-				useZstd = false
-			} else {
-				defer enc.Close()
+			defer func() {
+				if err := enc.Close(); err != nil {
+					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close zstd writer")
+				}
 
-				out = enc
-			}
+				zstdWriterPool.Put(enc)
+			}()
 		}
 
 		if useZstd {
