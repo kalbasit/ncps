@@ -43,7 +43,7 @@ jobs:
               - "docs/**"
   generate:
     needs: filter
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true')
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true' || needs.filter.outputs.gen_db_wrappers == 'true')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
