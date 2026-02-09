@@ -1811,6 +1811,90 @@ func (q *Queries) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFil
 	return err
 }
 
+const updateNarInfo = `-- name: UpdateNarInfo :one
+UPDATE narinfos
+SET
+    store_path = $2,
+    url = $3,
+    compression = $4,
+    file_hash = $5,
+    file_size = $6,
+    nar_hash = $7,
+    nar_size = $8,
+    deriver = $9,
+    system = $10,
+    ca = $11,
+    updated_at = CURRENT_TIMESTAMP
+WHERE hash = $1
+RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
+`
+
+type UpdateNarInfoParams struct {
+	Hash        string
+	StorePath   sql.NullString
+	URL         sql.NullString
+	Compression sql.NullString
+	FileHash    sql.NullString
+	FileSize    sql.NullInt64
+	NarHash     sql.NullString
+	NarSize     sql.NullInt64
+	Deriver     sql.NullString
+	System      sql.NullString
+	Ca          sql.NullString
+}
+
+// UpdateNarInfo
+//
+//	UPDATE narinfos
+//	SET
+//	    store_path = $2,
+//	    url = $3,
+//	    compression = $4,
+//	    file_hash = $5,
+//	    file_size = $6,
+//	    nar_hash = $7,
+//	    nar_size = $8,
+//	    deriver = $9,
+//	    system = $10,
+//	    ca = $11,
+//	    updated_at = CURRENT_TIMESTAMP
+//	WHERE hash = $1
+//	RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
+func (q *Queries) UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error) {
+	row := q.db.QueryRowContext(ctx, updateNarInfo,
+		arg.Hash,
+		arg.StorePath,
+		arg.URL,
+		arg.Compression,
+		arg.FileHash,
+		arg.FileSize,
+		arg.NarHash,
+		arg.NarSize,
+		arg.Deriver,
+		arg.System,
+		arg.Ca,
+	)
+	var i NarInfo
+	err := row.Scan(
+		&i.ID,
+		&i.Hash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastAccessedAt,
+		&i.StorePath,
+		&i.URL,
+		&i.Compression,
+		&i.FileHash,
+		&i.FileSize,
+		&i.NarHash,
+		&i.NarSize,
+		&i.Deriver,
+		&i.System,
+		&i.Ca,
+	)
+	return i, err
+}
+
 const updateNarInfoFileSize = `-- name: UpdateNarInfoFileSize :exec
 UPDATE narinfos
 SET file_size = $2, updated_at = CURRENT_TIMESTAMP

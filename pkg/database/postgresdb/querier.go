@@ -430,6 +430,24 @@ type Querier interface {
 	//  SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
 	//  WHERE id = $2
 	UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error
+	//UpdateNarInfo
+	//
+	//  UPDATE narinfos
+	//  SET
+	//      store_path = $2,
+	//      url = $3,
+	//      compression = $4,
+	//      file_hash = $5,
+	//      file_size = $6,
+	//      nar_hash = $7,
+	//      nar_size = $8,
+	//      deriver = $9,
+	//      system = $10,
+	//      ca = $11,
+	//      updated_at = CURRENT_TIMESTAMP
+	//  WHERE hash = $1
+	//  RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
+	UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error)
 	//UpdateNarInfoFileSize
 	//
 	//  UPDATE narinfos

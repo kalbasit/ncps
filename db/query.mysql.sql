@@ -78,6 +78,22 @@ ON DUPLICATE KEY UPDATE
     url = IF(url IS NULL, VALUES(url), url),
     updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at);
 
+-- name: UpdateNarInfo :execresult
+UPDATE narinfos
+SET
+    store_path = ?,
+    url = ?,
+    compression = ?,
+    file_hash = ?,
+    file_size = ?,
+    nar_hash = ?,
+    nar_size = ?,
+    deriver = ?,
+    system = ?,
+    ca = ?,
+    updated_at = CURRENT_TIMESTAMP
+WHERE hash = ?;
+
 -- name: UpdateNarInfoFileSize :exec
 UPDATE narinfos
 SET file_size = ?, updated_at = CURRENT_TIMESTAMP

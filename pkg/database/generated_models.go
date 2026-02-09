@@ -220,3 +220,17 @@ type UpdateNarInfoFileSizeParams struct {
 	Hash     string
 	FileSize sql.NullInt64
 }
+
+type UpdateNarInfoParams struct {
+	Hash        string
+	StorePath   sql.NullString
+	URL         sql.NullString
+	Compression sql.NullString
+	FileHash    sql.NullString
+	FileSize    sql.NullInt64
+	NarHash     sql.NullString
+	NarSize     sql.NullInt64
+	Deriver     sql.NullString
+	System      sql.NullString
+	Ca          sql.NullString
+}
