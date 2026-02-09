@@ -62,7 +62,7 @@ jobs:
           go mod tidy
 
           set +e
-          is nix build --print-build-logs .#ncps.goModules 2> /tmp/log
+          nix build --print-build-logs .#ncps.goModules 2> /tmp/log
           ret=$?
           set -e
 
