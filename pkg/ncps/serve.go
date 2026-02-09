@@ -961,30 +961,35 @@ func createCache(
 	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.
 	c.GetHealthChecker().Trigger()
 
-	if cmd.String("cache-lru-schedule") == "" {
+	lruScheduleStr := cmd.String("cache-lru-schedule")
+	if lruScheduleStr == "" {
 		return c, nil
 	}
 
-	maxSizeStr := cmd.String("cache-max-size")
-	if maxSizeStr == "" {
-		return nil, ErrCacheMaxSizeRequired
-	}
-
-	maxSize, err := helper.ParseSize(maxSizeStr)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing the size: %w", err)
-	}
-
-	zerolog.Ctx(ctx).
-		Info().
-		Uint64("max-size", maxSize).
-		Msg("setting up the cache max-size")
-
-	c.SetMaxSize(maxSize)
-
 	var loc *time.Location
 
+	if lruScheduleStr != "" {
+		maxSizeStr := cmd.String("cache-max-size")
+		if maxSizeStr == "" {
+			return nil, ErrCacheMaxSizeRequired
+		}
+
+		maxSize, err := helper.ParseSize(maxSizeStr)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing the size: %w", err)
+		}
+
+		zerolog.Ctx(ctx).
+			Info().
+			Uint64("max-size", maxSize).
+			Msg("setting up the cache max-size")
+
+		c.SetMaxSize(maxSize)
+	}
+
 	if cronTimezone := cmd.String("cache-lru-schedule-timezone"); cronTimezone != "" {
+		var err error
+
 		loc, err = time.LoadLocation(cronTimezone)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
@@ -998,9 +1003,9 @@ func createCache(
 
 	c.SetupCron(ctx, loc)
 
-	schedule, err := cron.ParseStandard(cmd.String("cache-lru-schedule"))
+	schedule, err := cron.ParseStandard(lruScheduleStr)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing the cron spec %q: %w", cmd.String("cache-lru-schedule"), err)
+		return nil, fmt.Errorf("error parsing the cron spec %q: %w", lruScheduleStr, err)
 	}
 
 	c.AddLRUCronJob(ctx, schedule)

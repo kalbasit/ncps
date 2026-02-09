@@ -7,10 +7,13 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
@@ -55,6 +58,17 @@ var tracer trace.Tracer
 
 //nolint:gochecknoglobals
 var prometheusGatherer promclient.Gatherer
+
+//nolint:gochecknoglobals
+var zstdWriterPool = sync.Pool{
+	New: func() interface{} {
+		// Not providing any options will use the default compression level.
+		// The error is ignored as NewWriter(nil) with no options doesn't error.
+		enc, _ := zstd.NewWriter(nil)
+
+		return enc
+	},
+}
 
 //nolint:gochecknoinits
 func init() {
@@ -546,7 +560,38 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		h := w.Header()
 		h.Set(contentType, contentTypeNar)
 
-		if size > 0 {
+		// Check for transparent compression support
+		useZstd := false
+
+		if nu.Compression == nar.CompressionTypeNone && withBody {
+			ae := r.Header.Get("Accept-Encoding")
+			if strings.Contains(ae, "zstd") {
+				useZstd = true
+			}
+		}
+
+		var out io.Writer = w
+
+		if useZstd {
+			enc := zstdWriterPool.Get().(*zstd.Encoder)
+			enc.Reset(w)
+			out = enc
+
+			defer func() {
+				if err := enc.Close(); err != nil {
+					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close zstd writer")
+				}
+
+				zstdWriterPool.Put(enc)
+			}()
+		}
+
+		if useZstd {
+			h.Set("Content-Encoding", "zstd")
+			// We can't know the compressed size in advance without compressing it all.
+			// So we remove Content-Length and use chunked encoding.
+			h.Del(contentLength)
+		} else if size > 0 {
 			h.Set(contentLength, strconv.FormatInt(size, 10))
 		}
 
@@ -575,7 +620,9 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		written, err := io.Copy(w, reader)
+		w.WriteHeader(http.StatusOK)
+
+		written, err := io.Copy(out, reader)
 		if err != nil {
 			zerolog.Ctx(r.Context()).
 				Error().
@@ -585,7 +632,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		if size != -1 && written != size {
+		if !useZstd && size != -1 && written != size {
 			zerolog.Ctx(r.Context()).
 				Error().
 				Int64("expected", size).

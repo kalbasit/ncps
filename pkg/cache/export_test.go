@@ -1,8 +1,66 @@
 package cache
 
-import "context"
+import (
+	"context"
+	"io"
+	"strings"
+	"testing"
+
+	"github.com/klauspost/compress/zstd"
+	"github.com/nix-community/go-nix/pkg/narinfo"
+	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/nix-community/go-nix/pkg/nixhash"
+	"github.com/stretchr/testify/require"
+)
 
 // CheckAndFixNarInfo is a test-only export of the unexported checkAndFixNarInfo method.
 func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	return c.checkAndFixNarInfo(ctx, hash)
+}
+
+// SetupNarInfo is a test-only export.
+func SetupNarInfo(t *testing.T, hash, urlVal, compression string) *narinfo.NarInfo {
+	return setupNarInfo(t, hash, urlVal, compression)
+}
+
+// CompressZstd is a test-only export.
+func CompressZstd(t *testing.T, data string) string {
+	return compressZstd(t, data)
+}
+
+func compressZstd(t *testing.T, data string) string {
+	t.Helper()
+
+	var buf strings.Builder
+
+	enc, err := zstd.NewWriter(&buf)
+	require.NoError(t, err)
+	_, err = io.WriteString(enc, data)
+	require.NoError(t, err)
+	err = enc.Close()
+	require.NoError(t, err)
+
+	return buf.String()
+}
+
+func setupNarInfo(t *testing.T, hash, urlVal, compression string) *narinfo.NarInfo {
+	t.Helper()
+
+	h, err := nixhash.ParseAny("sha256:"+hash, nil)
+	require.NoError(t, err)
+
+	return &narinfo.NarInfo{
+		StorePath:   "/nix/store/" + hash + "-test",
+		URL:         urlVal,
+		Compression: compression,
+		FileHash:    h,
+		FileSize:    1234,
+		NarHash:     h,
+		NarSize:     1234,
+		References:  []string{},
+		Deriver:     "test.drv",
+		System:      "x86_64-linux",
+		Signatures:  []signature.Signature{},
+		CA:          "",
+	}
 }
