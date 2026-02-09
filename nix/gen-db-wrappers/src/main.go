@@ -39,6 +39,7 @@ type MethodInfo struct {
 	Params       []Param
 	Returns      []Return
 	IsCreate     bool   // Special handling for MySQL Create
+	IsUpdate     bool   // Special handling for MySQL Update
 	ReturnElem   string // The underlying type (e.g. "NarFile" or "string")
 	ReturnsError bool   // Does the method return an error?
 	ReturnsSelf  bool   // Does it return the wrapper type (like WithTx)?
@@ -198,6 +199,7 @@ func parsePackage(dir string) PackageData {
 							}
 						}
 						m.IsCreate = strings.HasPrefix(m.Name, "Create") && isDomainStruct(m.ReturnElem)
+						m.IsUpdate = strings.HasPrefix(m.Name, "Update") && isDomainStruct(m.ReturnElem)
 						methods = append(methods, m)
 					}
 				}
@@ -315,6 +317,8 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 		},
 		"hasSuffix":               strings.HasSuffix,
 		"generateFieldConversion": generateFieldConversion,
+		"hasParam":                hasParam,
+		"paramHasField":           paramHasField,
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
@@ -367,6 +371,42 @@ func writeFile(dir, filename string, content []byte) {
 }
 
 // Helpers
+
+func hasParam(name string, params []Param) bool {
+	for _, param := range params {
+		if param.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func paramHasField(paramName string, fieldName string, params []Param, structs map[string]StructInfo) bool {
+	for _, param := range params {
+		if param.Name == paramName {
+			// Check if type is in structs
+			typeName := strings.TrimPrefix(param.Type, "[]")
+			typeName = strings.TrimPrefix(typeName, "*")
+			// Handle package prefix if any (though usually parsed from same package so no prefix in internal AST unless imported)
+			typeParts := strings.Split(typeName, ".")
+			if len(typeParts) > 1 {
+				typeName = typeParts[len(typeParts)-1]
+			}
+
+			if s, ok := structs[typeName]; ok {
+				for _, f := range s.Fields {
+					if f.Name == fieldName {
+						return true
+					}
+				}
+			}
+			// We've found the parameter. If we haven't returned true by now, the field doesn't exist.
+			// Since parameter names are unique, we can stop searching.
+			return false
+		}
+	}
+	return false
+}
 
 func joinParamsSignature(params []Param) string {
 	var p []string
@@ -823,7 +863,7 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		}
 		return nil
 	{{else}}
-		{{template "standardBody" (dict "Method" . "Engine" $.Engine)}}
+		{{template "standardBody" (dict "Method" . "Engine" $.Engine "Structs" $.Structs)}}
 	{{end}}
 }
 {{end}}
@@ -861,6 +901,38 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		}
 
 		return w.Get{{.Method.ReturnElem}}ByID(ctx, id)
+	{{else if and .Engine.IsMySQL .Method.IsUpdate}}
+		// MySQL does not support RETURNING for UPDATEs.
+		// We update, and then fetch the object by its unique key (assumed to be the first param after context, or we try by Hash if it exists).
+		res, err := w.adapter.{{.Method.Name}}({{joinParamsCall .Method.Params .Engine.Package .Method.Name}})
+		if err != nil {
+			return {{.Method.ReturnElem}}{}, err
+		}
+
+		rowsAffected, err := res.RowsAffected()
+		if err != nil {
+			return {{.Method.ReturnElem}}{}, err
+		}
+		if rowsAffected == 0 {
+			return {{.Method.ReturnElem}}{}, ErrNotFound
+		}
+
+		{{if hasParam "id" .Method.Params}}
+		return w.Get{{.Method.ReturnElem}}ByID(ctx, id)
+		{{else if hasParam "hash" .Method.Params}}
+		return w.Get{{.Method.ReturnElem}}ByHash(ctx, hash)
+		{{else if hasParam "key" .Method.Params}}
+		return w.Get{{.Method.ReturnElem}}ByKey(ctx, key)
+		{{else if paramHasField "arg" "ID" .Method.Params $.Structs}}
+		return w.Get{{.Method.ReturnElem}}ByID(ctx, arg.ID)
+		{{else if paramHasField "arg" "Hash" .Method.Params $.Structs}}
+		return w.Get{{.Method.ReturnElem}}ByHash(ctx, arg.Hash)
+		{{else if paramHasField "arg" "Key" .Method.Params $.Structs}}
+		return w.Get{{.Method.ReturnElem}}ByKey(ctx, arg.Key)
+		{{else}}
+		// Fallback to error if we can't easily fetch it by a common key.
+		return {{.Method.ReturnElem}}{}, errors.New("cannot fetch updated object: no common unique key parameter (id, hash, key) found")
+		{{end}}
 
 	{{else}}
 

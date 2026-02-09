@@ -228,6 +228,8 @@ func TestWrapperTemplate(t *testing.T) {
 
 	// Helper functions as defined in main.go
 	funcMap := template.FuncMap{
+		"hasParam":            hasParam,
+		"paramHasField":       paramHasField,
 		"joinParamsSignature": joinParamsSignature,
 		"joinReturns":         joinReturns,
 		"isSlice":             isSlice,
