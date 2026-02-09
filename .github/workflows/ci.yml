@@ -98,16 +98,22 @@ jobs:
       - name: Update vendor hash for gen-db-wrappers
         if: needs.filter.outputs.nix_db_wrappers_go_deps == 'true'
         run: |
+          set -x
+
           pushd nix/gen-db-wrappers/src
           go mod tidy
           popd
 
+          set +e
           nix build --print-build-logs .#gen-db-wrappers.goModules 2> /tmp/log
           ret=$?
+          set -e
 
           if [[ "$ret" -eq 0 ]]; then
+            set +e
             nix build --print-build-logs .#gen-db-wrappers.goModules --rebuild 2> /tmp/log
             ret=$?
+            set -e
           fi
 
           if [[ "$ret" -eq 0 ]]; then
