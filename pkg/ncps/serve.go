@@ -239,34 +239,6 @@ func serveCommand(
 				Sources: flagSources("cache.temp-path", "CACHE_TEMP_PATH"),
 				Value:   os.TempDir(),
 			},
-			&cli.DurationFlag{
-				Name:    "cache-compressed-nar-ttl",
-				Usage:   "The TTL for compressed NAR files before they are cleaned up",
-				Sources: flagSources("cache.compressed-nar.ttl", "CACHE_COMPRESSED_NAR_TTL"),
-				Value:   48 * time.Hour,
-			},
-			&cli.StringFlag{
-				Name:    "cache-compressed-nar-cleanup-schedule",
-				Usage:   "The cron spec for cleaning up old compressed NAR files",
-				Sources: flagSources("cache.compressed-nar-cleanup.schedule", "CACHE_COMPRESSED_NAR_CLEANUP_SCHEDULE"),
-				Value:   "@daily",
-				Validator: func(s string) error {
-					_, err := cron.ParseStandard(s)
-
-					return err
-				},
-			},
-			&cli.StringFlag{
-				Name:    "cache-nar-migration-schedule",
-				Usage:   "The cron spec for migrating compressed NAR files to uncompressed chunked storage",
-				Sources: flagSources("cache.nar-migration.schedule", "CACHE_NAR_MIGRATION_SCHEDULE"),
-				Value:   "@every 1m",
-				Validator: func(s string) error {
-					_, err := cron.ParseStandard(s)
-
-					return err
-				},
-			},
 			&cli.StringSliceFlag{
 				Name:    "cache-upstream-url",
 				Usage:   "Set to URL (with scheme) for each upstream cache",
@@ -989,14 +961,8 @@ func createCache(
 	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.
 	c.GetHealthChecker().Trigger()
 
-	// Set compressed NAR TTL
-	c.SetCompressedNarTTL(cmd.Duration("cache-compressed-nar-ttl"))
-
 	lruScheduleStr := cmd.String("cache-lru-schedule")
-	cleanupScheduleStr := cmd.String("cache-compressed-nar-cleanup-schedule")
-	migrationScheduleStr := cmd.String("cache-nar-migration-schedule")
-
-	if lruScheduleStr == "" && cleanupScheduleStr == "" && migrationScheduleStr == "" {
+	if lruScheduleStr == "" {
 		return c, nil
 	}
 
@@ -1037,32 +1003,12 @@ func createCache(
 
 	c.SetupCron(ctx, loc)
 
-	if lruScheduleStr != "" {
-		schedule, err := cron.ParseStandard(lruScheduleStr)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing the cron spec %q: %w", lruScheduleStr, err)
-		}
-
-		c.AddLRUCronJob(ctx, schedule)
+	schedule, err := cron.ParseStandard(lruScheduleStr)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing the cron spec %q: %w", lruScheduleStr, err)
 	}
 
-	if cleanupScheduleStr != "" {
-		schedule, err := cron.ParseStandard(cleanupScheduleStr)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing the cleanup cron spec %q: %w", cleanupScheduleStr, err)
-		}
-
-		c.AddCompressedNarCleanupCronJob(ctx, schedule)
-	}
-
-	if migrationScheduleStr != "" {
-		schedule, err := cron.ParseStandard(migrationScheduleStr)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing the migration cron spec %q: %w", migrationScheduleStr, err)
-		}
-
-		c.AddNarMigrationCronJob(ctx, schedule)
-	}
+	c.AddLRUCronJob(ctx, schedule)
 
 	c.StartCron(ctx)
 
