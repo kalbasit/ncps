@@ -43,7 +43,7 @@ jobs:
               - "docs/**"
   generate:
     needs: filter
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true' || needs.filter.outputs.gen_db_wrappers == 'true')
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true' || needs.filter.outputs.nix_db_wrappers_go_deps == 'true')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -91,7 +91,7 @@ jobs:
         with:
           commit_message: "Auto Update Vendor Hash for ncps"
       - name: Update vendor hash for gen-db-wrappers
-        if: needs.filter.outputs.gen_db_wrappers == 'true'
+        if: needs.filter.outputs.nix_db_wrappers_go_deps == 'true'
         run: |
           pushd nix/gen-db-wrappers/src
           go mod tidy
@@ -123,7 +123,7 @@ jobs:
 
           git diff
       - uses: stefanzweifel/git-auto-commit-action@v7
-        if: needs.filter.outputs.gen_db_wrappers == 'true'
+        if: needs.filter.outputs.nix_db_wrappers_go_deps == 'true'
         with:
           commit_message: "Auto Update Vendor Hash for gen-db-wrappers"
       - name: Generate Database Code
