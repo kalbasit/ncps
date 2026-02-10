@@ -23,7 +23,7 @@ Deriver: msnhw2b4dcn9kbswsfz63jplf7ncnxik-hello-2.12.2.drv
 Sig: cache.nixos.org-1:oPqkkDFlniUh1BaGWwWd7LY2EfUh3r/GBxriDGE7vCfvJ3fKsnIDg1L4QFkuHKWIfwWxWy4FlpO6/5FHPx00AQ==`,
 
 	NarHash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
-	NarCompression: nar.CompressionTypeXz,
+	NarCompression: nar.CompressionTypeNone,
 	NarPath:        filepath.Join("0", "09", "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0.nar"),
 	NarText:        helper.MustRandString(113256, nil),
 }
