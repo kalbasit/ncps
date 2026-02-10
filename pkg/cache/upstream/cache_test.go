@@ -361,30 +361,30 @@ func TestGetNar(t *testing.T) {
 				assert.Equal(t, strconv.Itoa(len(narEntry.NarText)), resp.Header.Get("Content-Length"))
 			})
 		})
-
-		t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
-			t.Parallel()
-
-			slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				time.Sleep(5 * time.Second)
-				w.WriteHeader(http.StatusNoContent)
-			}))
-			t.Cleanup(slowServer.Close)
-
-			c, err := upstream.New(
-				newContext(),
-				testhelper.MustParseURL(t, slowServer.URL),
-				&upstream.Options{
-					PublicKeys: testdata.PublicKeys(),
-				},
-			)
-			require.NoError(t, err)
-
-			nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
-			_, err = c.GetNar(context.Background(), nu)
-			require.ErrorIs(t, err, context.DeadlineExceeded)
-		})
 	}
+
+	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+		t.Parallel()
+
+		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		t.Cleanup(slowServer.Close)
+
+		c, err := upstream.New(
+			newContext(),
+			testhelper.MustParseURL(t, slowServer.URL),
+			&upstream.Options{
+				PublicKeys: testdata.PublicKeys(),
+			},
+		)
+		require.NoError(t, err)
+
+		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
+		_, err = c.GetNar(context.Background(), nu)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
 }
 
 func TestHasNar(t *testing.T) {
