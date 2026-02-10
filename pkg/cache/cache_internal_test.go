@@ -333,7 +333,7 @@ func TestRunLRU(t *testing.T) {
 	// pull the nars except for the last entry to get their last_accessed_at updated
 	sizePulled = 0
 
-	for _, narEntry := range entries {
+	for i, narEntry := range entries {
 		_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 		require.NoError(t, err)
 
@@ -356,14 +356,15 @@ func TestRunLRU(t *testing.T) {
 			require.NoError(t, err)
 		}
 
+		t.Logf("Entry %d (%s): reported size=%d, NarText size=%d, diff=%d",
+			i, narEntry.NarInfoHash, size, len(narEntry.NarText), size-int64(len(narEntry.NarText)))
+
 		sizePulled += size
 	}
 
-	// Note: In phase 2, we pull the same entries again, so the size should equal maxSize.
-	// However, due to how GetNar returns sizes (may be different from phase 1 due to caching),
-	// we allow a small tolerance.
-	//nolint:gosec
-	assert.InDelta(t, int64(maxSize), sizePulled, 100, "confirm size pulled is approximately maxSize")
+	assert.Equal(t,
+		int64(maxSize), //nolint:gosec
+		sizePulled, "confirm size pulled is exactly maxSize")
 
 	// all narinfo records are in the database
 	for _, narEntry := range allEntries {
