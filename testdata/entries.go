@@ -8,4 +8,5 @@ var Entries = []Entry{
 	Nar4,
 	Nar5,
 	Nar6,
+	Nar7,
 }
