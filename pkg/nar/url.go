@@ -8,16 +8,14 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog"
-
-	"github.com/kalbasit/ncps/pkg/helper"
 )
 
 var (
 	// ErrInvalidURL is returned if the regexp did not match the given URL.
 	ErrInvalidURL = errors.New("invalid nar URL")
 
-	// https://regex101.com/r/yPwxpw/2
-	narRegexp = regexp.MustCompile(`^nar/([a-z0-9]+)\.nar(\.([a-z0-9]+))?(\?([a-z0-9=&]*))?$`)
+	// https://regex101.com/r/yPwxpw/4
+	narRegexp = regexp.MustCompile(`^nar/(` + narHashPattern + `)\.nar(\.([a-z0-9]+))?(\?([a-z0-9=&]*))?$`)
 )
 
 // URL represents a nar URL.
@@ -90,8 +88,7 @@ func (u URL) String() string {
 
 // ToFilePath returns the filepath in the store for a given nar URL.
 func (u URL) ToFilePath() (string, error) {
-	// TODO: bring it out of the helper
-	return helper.NarFilePath(u.Hash, u.Compression.ToFileExtension())
+	return FilePath(u.Hash, u.Compression.ToFileExtension())
 }
 
 func (u URL) pathWithCompression() string {

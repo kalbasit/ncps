@@ -10,15 +10,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kalbasit/ncps/pkg/helper"
+	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
+
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
 
@@ -150,7 +151,7 @@ func (s *Store) DeleteSecretKey(ctx context.Context) error {
 
 // HasNarInfo returns true if the store has the narinfo.
 func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
-	nifP, err := helper.NarInfoFilePath(hash)
+	nifP, err := narinfo.FilePath(hash)
 	if err != nil {
 		return false
 	}
@@ -214,8 +215,8 @@ func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) er
 }
 
 // GetNarInfo returns narinfo from the store.
-func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
-	nifP, err := helper.NarInfoFilePath(hash)
+func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfopkg.NarInfo, error) {
+	nifP, err := narinfo.FilePath(hash)
 	if err != nil {
 		return nil, err
 	}
@@ -244,12 +245,12 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	defer nif.Close()
 
-	return narinfo.Parse(nif)
+	return narinfopkg.Parse(nif)
 }
 
 // PutNarInfo puts the narinfo in the store.
-func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
-	nifP, err := helper.NarInfoFilePath(hash)
+func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfopkg.NarInfo) error {
+	nifP, err := narinfo.FilePath(hash)
 	if err != nil {
 		return err
 	}
@@ -295,7 +296,7 @@ func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.Na
 
 // DeleteNarInfo deletes the narinfo from the store.
 func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
-	nifP, err := helper.NarInfoFilePath(hash)
+	nifP, err := narinfo.FilePath(hash)
 	if err != nil {
 		return err
 	}
