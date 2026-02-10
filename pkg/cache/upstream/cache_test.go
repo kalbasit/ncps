@@ -318,9 +318,8 @@ func TestHasNarInfo(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest
 func TestGetNar(t *testing.T) {
-	t.Parallel()
-
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
@@ -333,18 +332,16 @@ func TestGetNar(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	//nolint:paralleltest
 	t.Run("not found", func(t *testing.T) {
-		t.Parallel()
-
 		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
 		_, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
 	for i, narEntry := range testdata.Entries {
+		//nolint:paralleltest
 		t.Run(fmt.Sprintf("testing nar entry ID %d hash %s", i, narEntry.NarHash), func(t *testing.T) {
-			t.Parallel()
-
 			t.Run("hash is found", func(t *testing.T) {
 				t.Parallel()
 
