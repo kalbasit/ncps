@@ -2174,13 +2174,19 @@ func (c *Cache) storeInDatabase(
 			StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
 			URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
 			Compression: sql.NullString{String: narInfo.Compression, Valid: narInfo.Compression != ""},
-			FileHash:    sql.NullString{String: narInfo.FileHash.String(), Valid: narInfo.FileHash != nil},
 			FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: true}, //nolint:gosec
-			NarHash:     sql.NullString{String: narInfo.NarHash.String(), Valid: narInfo.NarHash != nil},
-			NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true}, //nolint:gosec
+			NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true},  //nolint:gosec
 			Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
 			System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
 			Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
+		}
+
+		if narInfo.FileHash != nil {
+			createNarInfoParams.FileHash = sql.NullString{String: narInfo.FileHash.String(), Valid: true}
+		}
+
+		if narInfo.NarHash != nil {
+			createNarInfoParams.NarHash = sql.NullString{String: narInfo.NarHash.String(), Valid: true}
 		}
 
 		nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
@@ -2434,13 +2440,19 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 		StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
 		URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
 		Compression: sql.NullString{String: narInfo.Compression, Valid: narInfo.Compression != ""},
-		FileHash:    sql.NullString{String: narInfo.FileHash.String(), Valid: narInfo.FileHash != nil},
 		FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: true}, //nolint:gosec
-		NarHash:     sql.NullString{String: narInfo.NarHash.String(), Valid: narInfo.NarHash != nil},
-		NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true}, //nolint:gosec
+		NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true},  //nolint:gosec
 		Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
 		System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
 		Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
+	}
+
+	if narInfo.FileHash != nil {
+		createNarInfoParams.FileHash = sql.NullString{String: narInfo.FileHash.String(), Valid: true}
+	}
+
+	if narInfo.NarHash != nil {
+		createNarInfoParams.NarHash = sql.NullString{String: narInfo.NarHash.String(), Valid: true}
 	}
 
 	nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)

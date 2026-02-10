@@ -16,8 +16,6 @@ var Nar7 = Entry{
 	NarInfoText: `StorePath: /nix/store/c12lxpykv6sld7a0sakcnr3y0la70x8w-hello-2.12.2
 URL: nar/09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0.nar
 Compression: none
-FileHash: sha256:1yf3p87fsqig07crd9sj9wh7i9jpsa0x86a22fqbls7c81lc7ws2
-FileSize: 113256
 NarHash: sha256:1yf3p87fsqig07crd9sj9wh7i9jpsa0x86a22fqbls7c81lc7ws2
 NarSize: 113256
 References: 7h6icyvqv6lqd0bcx41c8h3615rjcqb2-libiconv-109.100.2
