@@ -13,7 +13,7 @@ var (
 	ErrInvalidHash = errors.New("invalid narinfo hash")
 
 	// hashRegexp is used to validate hashes.
-	hashRegexp = regexp.MustCompile(`^[a-z0-9]+$`)
+hashRegexp = regexp.MustCompile(`^([a-z0-9]{32}|[a-z0-9]{52})$`)
 )
 
 // ValidateHash validates the given hash.
