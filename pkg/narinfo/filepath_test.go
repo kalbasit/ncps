@@ -11,18 +11,21 @@ import (
 	"github.com/kalbasit/ncps/pkg/narinfo"
 )
 
-func TestNarInfoFilePath(t *testing.T) {
+func TestFilePath(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		hash string
 		path string
 	}{
-		{hash: "abc123", path: filepath.Join("a", "ab", "abc123.narinfo")},
+		{
+			hash: "n5glp21rsz314qssw9fbvfswgy3kc68f",
+			path: filepath.Join("n", "n5", "n5glp21rsz314qssw9fbvfswgy3kc68f.narinfo"),
+		},
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
-		t.Run(fmt.Sprintf("NarInfoFilePath(%q) should return error", test), func(t *testing.T) {
+		t.Run(fmt.Sprintf("FilePath(%q) should return error", test), func(t *testing.T) {
 			t.Parallel()
 
 			_, err := narinfo.FilePath(test)
@@ -31,7 +34,7 @@ func TestNarInfoFilePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("NarInfoFilePath(%q) -> %q", test.hash, test.path), func(t *testing.T) {
+		t.Run(fmt.Sprintf("FilePath(%q) -> %q", test.hash, test.path), func(t *testing.T) {
 			t.Parallel()
 
 			path, err := narinfo.FilePath(test.hash)
@@ -40,7 +43,7 @@ func TestNarInfoFilePath(t *testing.T) {
 		})
 	}
 
-	t.Run("NarInfoFilePath with invalid hash", func(t *testing.T) {
+	t.Run("FilePath with invalid hash", func(t *testing.T) {
 		t.Parallel()
 
 		_, err := narinfo.FilePath("abc!@#")
