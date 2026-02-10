@@ -479,23 +479,24 @@ func (s *Server) withNarURL(
 			return
 		}
 
-		nu := nar.URL{Hash: hash, Query: r.URL.Query()}
-
-		r = r.WithContext(
-			nu.NewLogger(*zerolog.Ctx(r.Context())).
-				WithContext(r.Context()))
-
-		var err error
-
-		nu.Compression, err = nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
+		comp, err := nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 
 			return
 		}
 
+		nu := nar.URL{
+			Compression: comp,
+			Hash:        hash,
+			Query:       r.URL.Query(),
+		}
+
+		ctx := nu.NewLogger(*zerolog.Ctx(r.Context())).
+			WithContext(r.Context())
+
 		ctx, span := tracer.Start(
-			r.Context(),
+			ctx,
 			operationName,
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
@@ -505,9 +506,7 @@ func (s *Server) withNarURL(
 		)
 		defer span.End()
 
-		r = r.WithContext(
-			nu.NewLogger(*zerolog.Ctx(ctx)).
-				WithContext(ctx))
+		r = r.WithContext(ctx)
 
 		handler(w, r, nu)
 	}
