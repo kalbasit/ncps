@@ -375,7 +375,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 			// TODO: Realistically this can be determined by looking at the NAR
 			// when it arrives but ncps is undergoing a lot of changes currently
 			// and since this is async it breaks a lot of tests.
-return nil, fmt.Errorf("%w: FileSize is missing for a compressed NAR", ErrInvalidNarInfo)
+			return nil, fmt.Errorf("%w: FileSize is missing for a compressed NAR", ErrInvalidNarInfo)
 		}
 
 		ni.FileSize = ni.NarSize
