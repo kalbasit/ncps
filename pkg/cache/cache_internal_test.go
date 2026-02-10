@@ -347,7 +347,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		for _, narEntry := range allEntries {
 			// Use the actual compression that was stored (which may have been transformed to zstd)
 			compression := narEntry.NarCompression
-if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
 			}
 
@@ -380,7 +380,7 @@ if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
 			}
 
@@ -431,7 +431,7 @@ if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 		for _, narEntry := range entries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
 			}
 
@@ -441,7 +441,7 @@ if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 
 		// Get the actual compression for the last entry
 		lastCompression := lastEntry.NarCompression
-if c, ok := actualCompressions[lastEntry.NarInfoHash]; ok {
+		if c, ok := actualCompressions[lastEntry.NarInfoHash]; ok {
 			lastCompression = c
 		}
 
@@ -462,7 +462,7 @@ if c, ok := actualCompressions[lastEntry.NarInfoHash]; ok {
 		for _, narEntry := range entries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
 			}
 
@@ -614,7 +614,7 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 			// Use the actual compression that was stored (which may have been transformed to zstd)
 			compression := narEntry.NarCompression
-if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
 			}
 
@@ -656,7 +656,7 @@ if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 		for i, narEntry := range allEntries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
 			}
 
@@ -679,7 +679,7 @@ if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 		for _, narEntry := range allEntries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
 			}
 
