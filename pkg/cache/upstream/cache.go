@@ -381,6 +381,10 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		ni.FileSize = ni.NarSize
 	}
 
+	// nix-serve serves the NarURL with the narinfo hash included in the URL as
+	// prefix to the NAR Hash. Trim that out, we don't need it.
+	ni.URL = strings.ReplaceAll(ni.URL, hash+"-", "")
+
 	return ni, nil
 }
 

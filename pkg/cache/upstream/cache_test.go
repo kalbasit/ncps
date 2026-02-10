@@ -176,6 +176,15 @@ func TestGetNarInfo(t *testing.T) {
 
 						assert.EqualValues(t, len(narEntry.NarText), ni.FileSize)
 					})
+
+					if narEntry.NarInfoHash == "c12lxpykv6sld7a0sakcnr3y0la70x8w" {
+						t.Run("narinfo is removed from nar url", func(t *testing.T) {
+							ni, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+							require.NoError(t, err)
+
+							assert.Equal(t, strings.ReplaceAll(ni.URL, narEntry.NarInfoHash+"-", ""), ni.URL)
+						})
+					}
 				})
 			}
 

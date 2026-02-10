@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -302,6 +304,26 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			maxSize += uint64(len(nar.NarText))
 		}
 
+		// Pre-calculate zstd-compressed sizes for entries with Compression: none
+		// These will be used when the second pull happens (after LRU)
+		zstdSizes := make(map[string]uint64)
+
+		narNone := nar.CompressionTypeNone
+		for _, entry := range entries {
+			if entry.NarCompression == narNone {
+				encoder, _ := zstd.NewWriter(nil)
+
+				var compressed bytes.Buffer
+				encoder.Reset(&compressed)
+				_, err = encoder.Write([]byte(entry.NarText))
+				require.NoError(t, err)
+				err = encoder.Close()
+				require.NoError(t, err)
+
+				zstdSizes[entry.NarInfoHash] = uint64(compressed.Len()) //nolint:gosec
+			}
+		}
+
 		c.SetMaxSize(maxSize)
 
 		assert.Equal(t, maxSize, c.maxSize, "confirm the maxSize is set correctly")
@@ -374,7 +396,18 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
 
+		// Calculate expected size accounting for zstd-compressed NARs
+		var expectedMaxSize uint64
+
 		for _, narEntry := range entries {
+			if zstdSize, ok := zstdSizes[narEntry.NarInfoHash]; ok {
+				expectedMaxSize += zstdSize
+			} else {
+				expectedMaxSize += uint64(len(narEntry.NarText))
+			}
+		}
+
+		for i, narEntry := range entries {
 			_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 			require.NoError(t, err)
 
@@ -388,11 +421,24 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			size, _, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
+			t.Logf("Entry %d (%s): reported size=%d, NarText size=%d, diff=%d",
+				i, narEntry.NarInfoHash, size, len(narEntry.NarText), size-int64(len(narEntry.NarText)))
+
 			sizePulled += size
 		}
 
-		//nolint:gosec
-		assert.Equal(t, int64(maxSize), sizePulled, "confirm size pulled is exactly maxSize")
+		t.Logf(
+			"Final sizes: expectedMaxSize=%d, sizePulled=%d, diff=%d",
+			expectedMaxSize,
+			sizePulled,
+			int64(expectedMaxSize)-sizePulled, //nolint:gosec
+		)
+
+		assert.Equal(t,
+			int64(expectedMaxSize), //nolint:gosec
+			sizePulled,
+			"confirm size pulled is exactly maxSize (accounting for zstd compression)",
+		)
 
 		// all narinfo records are in the database
 		for _, narEntry := range allEntries {
