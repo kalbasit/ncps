@@ -782,18 +782,21 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		reader io.ReadCloser
 	)
 
-	err := c.withReadLock(ctx, "GetNar", narJobKey(narURL.Hash), func() error {
-		ctx = narURL.
+	// Normalize the NAR URL to handle URLs with embedded narinfo hash prefix
+	normalizedNarURL := narURL.Normalize()
+
+	err := c.withReadLock(ctx, "GetNar", narJobKey(normalizedNarURL.Hash), func() error {
+		ctx = normalizedNarURL.
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
 
-		hasNarInStore := c.narStore.HasNar(ctx, narURL)
+		hasNarInStore := c.narStore.HasNar(ctx, normalizedNarURL)
 
 		var err error
 
 		hasNar := hasNarInStore
 		if !hasNar {
-			hasNar, err = c.HasNarInChunks(ctx, narURL)
+			hasNar, err = c.HasNarInChunks(ctx, normalizedNarURL)
 			if err != nil {
 				return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 			}
@@ -801,10 +804,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 		if hasNar {
 			if hasNarInStore {
-				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
+				c.maybeBackgroundMigrateNarToChunks(ctx, normalizedNarURL)
 			}
 
-			size, reader, err = c.serveNarFromStorageViaPipe(ctx, &narURL, hasNarInStore)
+			size, reader, err = c.serveNarFromStorageViaPipe(ctx, &normalizedNarURL, hasNarInStore)
 			if err != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			} else {
@@ -823,7 +826,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
 		detachedCtx := c.detachedContext(ctx)
-		ds := c.prePullNar(ctx, detachedCtx, &narURL, nil, nil, false)
+		ds := c.prePullNar(ctx, detachedCtx, &normalizedNarURL, nil, nil, false)
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
 		// This prevents race with cleanup goroutine calling ds.wg.Wait()
@@ -836,8 +839,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 		ds.mu.Unlock()
 
-		hasNarInStore = c.narStore.HasNar(ctx, narURL)
-		hasNarInChunks, _ := c.HasNarFileRecord(ctx, narURL)
+		hasNarInStore = c.narStore.HasNar(ctx, normalizedNarURL)
+		hasNarInChunks, _ := c.HasNarFileRecord(ctx, normalizedNarURL)
 
 		// If download is complete or NAR is in store, get from storage
 		if !canStream || hasNarInStore || (c.isCDCEnabled() && hasNarInChunks) {
@@ -852,7 +855,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 			var err error
 
-			size, reader, err = c.serveNarFromStorageViaPipe(ctx, &narURL, hasNarInStore)
+			size, reader, err = c.serveNarFromStorageViaPipe(ctx, &normalizedNarURL, hasNarInStore)
 			if err != nil {
 				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 			}
@@ -941,7 +944,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 				// Determine how much data is now available to read
 				bytesToRead := ds.bytesWritten - bytesSent
-				isDownloadComplete := ds.finalSize != 0
+				finalSize := ds.finalSize
+				isDownloadComplete := finalSize != 0
 
 				ds.mu.Unlock() // Unlock while doing I/O
 
@@ -963,7 +967,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 					bytesSent += n
 				}
 
-				if isDownloadComplete && bytesSent >= ds.finalSize {
+				if isDownloadComplete && bytesSent >= finalSize {
 					// Wait for the asset to be fully stored before closing the stream
 					// This avoids a race condition where the client finishes reading
 					// but the asset is not yet in storage (HasNar would return false).
@@ -973,6 +977,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 					case <-ds.done:
 						// Download completed - check for errors
 						if err := ds.getError(); err != nil {
+							zerolog.Ctx(ctx).Debug().Err(err).Msg("prePullNar failed")
 							zerolog.Ctx(ctx).Warn().
 								Err(err).
 								Str("nar_url", narURL.String()).
@@ -1223,8 +1228,12 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 
 // storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
 func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
+	// Normalize the NAR URL to trim any narinfo hash prefix before storing.
+	// nix-serve includes the narinfo hash in the NAR URL, but we standardize it for storage.
+	normalizedURL := narURL.Normalize()
+
 	if c.isCDCEnabled() {
-		return c.storeNarWithCDC(ctx, tempPath, narURL)
+		return c.storeNarWithCDC(ctx, tempPath, &normalizedURL)
 	}
 
 	f, err := os.Open(tempPath)
@@ -1239,7 +1248,7 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 
 	defer f.Close()
 
-	written, err := c.narStore.PutNar(ctx, *narURL, f)
+	written, err := c.narStore.PutNar(ctx, normalizedURL, f)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			// Already exists is not an error - another request stored it first
@@ -1513,6 +1522,14 @@ func (c *Cache) pullNarIntoStore(
 		resp.Body.Close()
 	}()
 
+	_, narInfo, err = c.getNarInfoForPull(ctx, narURL, uc, narInfo)
+	if err != nil {
+		zerolog.Ctx(ctx).Debug().Err(err).Msg("getNarInfoForPull failed")
+		ds.setError(err)
+
+		return
+	}
+
 	f, err := c.createTempNarFile(ctx, narURL, ds)
 	if err != nil {
 		ds.setError(err)
@@ -1550,7 +1567,10 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
-	written, err := c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
+	// Use the normalized URL (with narinfo hash prefix trimmed) for storage
+	normalizedURL := narURL.Normalize()
+
+	written, err := c.storeNarFromTempFile(ctx, ds.assetPath, &normalizedURL)
 	if err != nil {
 		ds.setError(err)
 
@@ -1561,7 +1581,7 @@ func (c *Cache) pullNarIntoStore(
 	// This prevents the race condition where other instances check hasAsset() before storage completes
 	ds.storedOnce.Do(func() { close(ds.stored) })
 
-	if err := c.checkAndFixNarInfosForNar(ctx, *narURL); err != nil {
+	if err := c.checkAndFixNarInfosForNar(ctx, normalizedURL); err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
 			Err(err).
@@ -1879,8 +1899,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 		zerolog.Ctx(ctx).
 			Debug().
-			Msg("pulling nar in a go-routing and will wait for it")
-		<-ds.done
+			Msg("pulling narinfo in a go-routine and will wait for it")
+
+		select {
+		case <-ds.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 
 		err = ds.getError()
 		if err != nil {
@@ -2036,6 +2061,7 @@ func (c *Cache) pullNarInfo(
 	if enableZSTD {
 		// Use detached context to ensure NAR download completes even if narinfo context is canceled
 		detachedCtx := c.detachedContext(ctx)
+		// Use the original narURL (not normalized) for pulling - normalization happens during storage
 		narDs := c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
 		<-narDs.done
 
@@ -2056,6 +2082,7 @@ func (c *Cache) pullNarInfo(
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
 		detachedCtx := c.detachedContext(ctx)
+		// Use the original narURL (not normalized) for pulling - normalization happens during storage
 		c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
 	}
 
@@ -2075,6 +2102,16 @@ func (c *Cache) pullNarInfo(
 	// Signal that the asset is now in final storage and the distributed lock can be released
 	// This prevents the race condition where other instances check hasAsset() before storage completes
 	ds.storedOnce.Do(func() { close(ds.stored) })
+
+	// Normalize the NAR URL in narInfo before storing to database
+	// This ensures the database URL matches the file path where the NAR is actually stored
+	if narInfo.URL != "" {
+		parsedURL, err := nar.ParseURL(narInfo.URL)
+		if err == nil {
+			normalizedURL := parsedURL.Normalize()
+			narInfo.URL = normalizedURL.String()
+		}
+	}
 
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
 		zerolog.Ctx(ctx).
@@ -2198,9 +2235,12 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 	)
 	defer span.End()
 
+	// Use a detached context for the background download
+	detachedCtx := c.detachedContext(ctx)
+
 	return c.coordinateDownload(
 		ctx,
-		ctx,
+		detachedCtx,
 		narInfoJobKey(hash),
 		hash,
 		true,
@@ -2208,7 +2248,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 			return c.narInfoStore.HasNarInfo(ctx, hash)
 		},
 		func(ds *downloadState) {
-			c.pullNarInfo(ctx, hash, ds)
+			c.pullNarInfo(detachedCtx, hash, ds)
 		},
 	)
 }
@@ -2235,14 +2275,16 @@ func (c *Cache) prePullNar(
 	// ctx is the detached context for the download itself
 	// We need both: coordCtx to respond to caller cancellation, ctx for background download
 
+	normalizedURL := narURL.Normalize()
+
 	return c.coordinateDownload(
 		coordCtx,
 		ctx,
-		narJobKey(narURL.Hash),
-		narURL.Hash,
+		narJobKey(normalizedURL.Hash),
+		normalizedURL.Hash,
 		false,
 		func(ctx context.Context) bool {
-			hasInStore := c.narStore.HasNar(ctx, *narURL)
+			hasInStore := c.narStore.HasNar(ctx, normalizedURL)
 			if hasInStore {
 				return true
 			}
@@ -2250,7 +2292,7 @@ func (c *Cache) prePullNar(
 			// Check if NAR file record exists (even if chunking in progress)
 			// This allows progressive streaming to work only if CDC is enabled
 			if c.isCDCEnabled() {
-				hasInChunks, _ := c.HasNarFileRecord(ctx, *narURL)
+				hasInChunks, _ := c.HasNarFileRecord(ctx, normalizedURL)
 
 				return hasInChunks
 			}
@@ -2337,7 +2379,8 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		NewLogger(*zerolog.Ctx(ctx)).
 		WithContext(ctx)
 
-	if !c.narStore.HasNar(ctx, narURL) && !c.hasUpstreamJob(narURL.Hash) {
+	normalizedURL := narURL.Normalize()
+	if !c.narStore.HasNar(ctx, normalizedURL) && !c.hasUpstreamJob(narURL.Hash) {
 		zerolog.Ctx(ctx).
 			Error().
 			Msg("narinfo was found in the store but no nar was found, requesting a purge")
@@ -2494,11 +2537,15 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 	}
 
 	// Verify Nar file exists in storage
-	hasNar := c.narStore.HasNar(ctx, *narURL)
+	// Normalize the NAR URL to match the file path where it's actually stored
+	// (the nar file is stored with the prefix trimmed, but the database URL has the prefix)
+	normalizedURL := narURL.Normalize()
+
+	hasNar := c.narStore.HasNar(ctx, normalizedURL)
 	if !hasNar {
 		var err error
 
-		hasNar, err = c.HasNarInChunks(ctx, *narURL)
+		hasNar, err = c.HasNarInChunks(ctx, normalizedURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 		}
@@ -2694,8 +2741,9 @@ func (c *Cache) purgeNarInfo(
 	}
 
 	if narURL.Hash != "" {
-		if c.narStore.HasNar(ctx, *narURL) {
-			if err := c.deleteNarFromStore(ctx, narURL); err != nil {
+		normalizedURL := narURL.Normalize()
+		if c.narStore.HasNar(ctx, normalizedURL) {
+			if err := c.deleteNarFromStore(ctx, &normalizedURL); err != nil {
 				return fmt.Errorf("error removing nar from store: %w", err)
 			}
 		}
@@ -2873,11 +2921,13 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 	// Now get the actual NAR size. We only want to check the size if we already
 	// have the NAR in our store or in chunks. We don't want to pull the NAR
 	// from upstream just to check its size.
-	hasNar := c.narStore.HasNar(ctx, nu)
+	normalizedURL := nu.Normalize()
+
+	hasNar := c.narStore.HasNar(ctx, normalizedURL)
 	if !hasNar {
 		var err error
 
-		hasNar, err = c.HasNarInChunks(ctx, nu)
+		hasNar, err = c.HasNarInChunks(ctx, normalizedURL)
 		if err != nil {
 			return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 		}
@@ -2887,7 +2937,7 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 		return nil
 	}
 
-	size, reader, err := c.GetNar(ctx, nu)
+	size, reader, err := c.GetNar(ctx, normalizedURL)
 	if err != nil {
 		// If the NAR is not found, we can't verify the size. This is not an
 		// error in this context, as the NAR might be uploaded later.

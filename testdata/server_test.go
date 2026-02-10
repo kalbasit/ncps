@@ -89,3 +89,33 @@ func TestNewTestServerWithZSTD(t *testing.T) {
 		}
 	}
 }
+
+func TestNewTestServerNarInfoByNarHash(t *testing.T) {
+	t.Parallel()
+
+	ts := testdata.NewTestServer(t, 40)
+	t.Cleanup(ts.Close)
+
+	// Test fetching narinfo by NAR hash (not NarInfoHash)
+	// This is used by the cache when it only has the NAR hash available
+	u := ts.URL + "/" + testdata.Nar1.NarHash + ".narinfo"
+
+	r, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(r)
+	require.NoError(t, err)
+
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	if assert.Equal(t, http.StatusOK, resp.StatusCode) {
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, testdata.Nar1.NarInfoText, string(body))
+	}
+}

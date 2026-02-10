@@ -115,6 +115,22 @@ func TestParseURL(t *testing.T) {
 			},
 			err: nil,
 		},
+		{
+			url: "nar/mxz31j8mf7kddi3vipqhxhdm4lswiyl0-0hgyymhfxkkr8xqfciql7ygapy04m2m8finhbbnx8c44frp6v77c.nar",
+			narURL: nar.URL{
+				Hash:        "mxz31j8mf7kddi3vipqhxhdm4lswiyl0-0hgyymhfxkkr8xqfciql7ygapy04m2m8finhbbnx8c44frp6v77c",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+		},
+		{
+			url: "nar/mxz31j8mf7kddi3vipqhxhdm4lswiyl0_0hgyymhfxkkr8xqfciql7ygapy04m2m8finhbbnx8c44frp6v77c.nar",
+			narURL: nar.URL{
+				Hash:        "mxz31j8mf7kddi3vipqhxhdm4lswiyl0_0hgyymhfxkkr8xqfciql7ygapy04m2m8finhbbnx8c44frp6v77c",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+		},
 	}
 
 	t.Parallel()
@@ -210,6 +226,66 @@ func TestJoinURL(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, test.url, test.narURL.JoinURL(u).String())
+		})
+	}
+}
+
+func TestNormalize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input  nar.URL
+		output nar.URL
+	}{
+		{
+			input: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+			output: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+		},
+		{
+			input: nar.URL{
+				Hash:        "c12lxpykv6sld7a0sakcnr3y0la70x8w-09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+			output: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+		},
+		{
+			input: nar.URL{
+				Hash:        "c12lxpykv6sld7a0sakcnr3y0la70x8w_09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeZstd,
+				Query:       url.Values(map[string][]string{"hash": {"123"}}),
+			},
+			output: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeZstd,
+				Query:       url.Values(map[string][]string{"hash": {"123"}}),
+			},
+		},
+	}
+
+	for _, test := range tests {
+		tname := fmt.Sprintf(
+			"Normalize(%q) -> %q",
+			test.input.Hash,
+			test.output.Hash,
+		)
+		t.Run(tname, func(t *testing.T) {
+			t.Parallel()
+
+			result := test.input.Normalize()
+			assert.Equal(t, test.output, result)
 		})
 	}
 }

@@ -122,6 +122,11 @@ func (s *Server) handler() http.Handler {
 				bs = []byte(entry.NarInfoText)
 			}
 
+			// Support fetching narinfo by NAR hash (used by cache when only NAR hash is available)
+			if r.URL.Path == "/"+entry.NarHash+".narinfo" {
+				bs = []byte(entry.NarInfoText)
+			}
+
 			if r.URL.Path == "/nar/"+entry.NarHash+".nar" {
 				bs = []byte(entry.NarText)
 			}
