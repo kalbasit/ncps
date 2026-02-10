@@ -174,11 +174,7 @@ func TestGetNarInfo(t *testing.T) {
 						ni, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 						require.NoError(t, err)
 
-						if narEntry.NarInfoHash == "mxz31j8mf7kddi3vipqhxhdm4lswiyl0" {
-							assert.EqualValues(t, len(narEntry.NarText), ni.NarSize)
-						} else {
-							assert.EqualValues(t, len(narEntry.NarText), ni.FileSize)
-						}
+						assert.EqualValues(t, len(narEntry.NarText), ni.FileSize)
 					})
 				})
 			}
