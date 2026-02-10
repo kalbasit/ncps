@@ -11,13 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
+
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/ncps"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
@@ -119,7 +122,7 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Register in DB as unmigrated
-		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		ni, err := narinfopkg.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni))
 
@@ -883,14 +886,14 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		narInfoText := narInfoBuilder.String()
 
 		// Write to storage
-		nifP, err := helper.NarInfoFilePath(hash)
+		nifP, err := narinfo.FilePath(hash)
 		require.NoError(t, err)
 
 		narInfoPath := filepath.Join(dir, "store", "narinfo", nifP)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o755))
 		require.NoError(t, os.WriteFile(narInfoPath, []byte(narInfoText), 0o600))
 
-		nFP, err := helper.NarFilePath(narHash, "xz")
+		nFP, err := nar.FilePath(narHash, "xz")
 		require.NoError(t, err)
 
 		narPath := filepath.Join(dir, "store", "nar", nFP)
