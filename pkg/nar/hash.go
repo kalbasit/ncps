@@ -11,7 +11,7 @@ var (
 
 	// narHashPattern defines the valid characters for a nar hash.
 	//nolint:gochecknoglobals // This is used in other regexes to ensure they validate the same thing.
-narHashPattern = `[a-z0-9]{32}|[a-z0-9]{52}`
+	narHashPattern = `[a-z0-9]+`
 
 	narHashRegexp = regexp.MustCompile(`^(` + narHashPattern + `)$`)
 )
