@@ -47,6 +47,9 @@ var (
 	// ErrNotFound is returned if the nar or narinfo were not found.
 	ErrNotFound = errors.New("not found")
 
+	// ErrInvalidNarInfo is returned if the given narinfo is invalid.
+	ErrInvalidNarInfo = errors.New("invalid narinfo")
+
 	// ErrUnexpectedHTTPStatusCode is returned if the response has an unexpected status code.
 	ErrUnexpectedHTTPStatusCode = errors.New("unexpected HTTP status code")
 
@@ -365,6 +368,17 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		if !signature.VerifyFirst(ni.Fingerprint(), ni.Signatures, c.publicKeys) {
 			return ni, ErrSignatureValidationFailed
 		}
+	}
+
+	if ni.FileSize == 0 {
+		if ni.Compression != nar.CompressionTypeNone.String() {
+			// TODO: Realistically this can be determined by looking at the NAR
+			// when it arrives but ncps is undergoing a lot of changes currently
+			// and since this is async it breaks a lot of tests.
+return nil, fmt.Errorf("%w: FileSize is missing for a compressed NAR", ErrInvalidNarInfo)
+		}
+
+		ni.FileSize = ni.NarSize
 	}
 
 	return ni, nil
