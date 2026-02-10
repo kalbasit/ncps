@@ -17,6 +17,8 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -915,14 +917,14 @@ func TestMigrateNarInfo_LargeNarInfo(t *testing.T) {
 	narInfoText := narInfoBuilder.String()
 
 	// Write to storage
-	nifP, err := helper.NarInfoFilePath(hash)
+	nifP, err := narinfo.FilePath(hash)
 	require.NoError(t, err)
 
 	narInfoPath := filepath.Join(dir, "store", "narinfo", nifP)
 	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o755))
 	require.NoError(t, os.WriteFile(narInfoPath, []byte(narInfoText), 0o600))
 
-	nFP, err := helper.NarFilePath(narHash, "xz")
+	nFP, err := nar.FilePath(narHash, "xz")
 	require.NoError(t, err)
 
 	narPath := filepath.Join(dir, "store", "nar", nFP)

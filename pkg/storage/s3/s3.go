@@ -11,15 +11,16 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kalbasit/ncps/pkg/helper"
+	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
+
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
 
@@ -294,7 +295,7 @@ func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) er
 }
 
 // GetNarInfo returns narinfo from the store.
-func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error) {
+func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfopkg.NarInfo, error) {
 	key, err := s.narInfoPath(hash)
 	if err != nil {
 		return nil, err
@@ -328,11 +329,11 @@ func (s *Store) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return nil, fmt.Errorf("error getting narinfo from S3: %w", err)
 	}
 
-	return narinfo.Parse(obj)
+	return narinfopkg.Parse(obj)
 }
 
 // PutNarInfo puts the narinfo in the store.
-func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
+func (s *Store) PutNarInfo(ctx context.Context, hash string, narInfo *narinfopkg.NarInfo) error {
 	key, err := s.narInfoPath(hash)
 	if err != nil {
 		return err
@@ -572,7 +573,7 @@ func (s *Store) secretKeyPath() string {
 }
 
 func (s *Store) narInfoPath(hash string) (string, error) {
-	nifP, err := helper.NarInfoFilePath(hash)
+	nifP, err := narinfo.FilePath(hash)
 	if err != nil {
 		return "", err
 	}
