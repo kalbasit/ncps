@@ -347,8 +347,8 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		for _, narEntry := range allEntries {
 			// Use the actual compression that was stored (which may have been transformed to zstd)
 			compression := narEntry.NarCompression
-			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
-				compression = actualCompressions[narEntry.NarInfoHash]
+if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+				compression = c
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
@@ -380,8 +380,8 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
-				compression = actualCompressions[narEntry.NarInfoHash]
+if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+				compression = c
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
@@ -431,8 +431,8 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		for _, narEntry := range entries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
-				compression = actualCompressions[narEntry.NarInfoHash]
+if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+				compression = c
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
@@ -441,8 +441,8 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 		// Get the actual compression for the last entry
 		lastCompression := lastEntry.NarCompression
-		if actualCompressions[lastEntry.NarInfoHash] != nar.CompressionTypeNone {
-			lastCompression = actualCompressions[lastEntry.NarInfoHash]
+if c, ok := actualCompressions[lastEntry.NarInfoHash]; ok {
+			lastCompression = c
 		}
 
 		nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastCompression}
@@ -462,8 +462,8 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		for _, narEntry := range entries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
-				compression = actualCompressions[narEntry.NarInfoHash]
+if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+				compression = c
 			}
 
 			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
@@ -614,8 +614,8 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 			// Use the actual compression that was stored (which may have been transformed to zstd)
 			compression := narEntry.NarCompression
-			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
-				compression = actualCompressions[narEntry.NarInfoHash]
+if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+				compression = c
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
@@ -656,8 +656,8 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 		for i, narEntry := range allEntries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
-				compression = actualCompressions[narEntry.NarInfoHash]
+if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+				compression = c
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
@@ -679,8 +679,8 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 		for _, narEntry := range allEntries {
 			// Use the actual compression that was stored
 			compression := narEntry.NarCompression
-			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
-				compression = actualCompressions[narEntry.NarInfoHash]
+if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
+				compression = c
 			}
 
 			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
