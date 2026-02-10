@@ -308,9 +308,20 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 		var sizePulled int64
 
+		// Create a map to store the actual compression for each narinfo (after potential zstd transformation)
+		actualCompressions := make(map[string]nar.CompressionType)
+
 		for i, narEntry := range allEntries {
-			_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
-			require.NoErrorf(t, err, "unable to get narinfo for idx %d", i)
+			narInfo, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+			require.NoErrorf(t, err, "unable to get narinfo for idx %d hash %s", i, narEntry.NarInfoHash)
+
+			// Store the actual compression from the fetched narinfo (which may have been transformed to zstd)
+			if narInfo != nil {
+				nu, parseErr := nar.ParseURL(narInfo.URL)
+				require.NoErrorf(t, parseErr, "failed to parse nar url for idx %d: %s", i, narInfo.URL)
+
+				actualCompressions[narEntry.NarInfoHash] = nu.Compression
+			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
 			size, reader, err := c.GetNar(context.Background(), nu)
@@ -334,7 +345,13 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		assert.Equal(t, expectedSize, sizePulled, "size pulled is less than maxSize by exactly the last one")
 
 		for _, narEntry := range allEntries {
-			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+			// Use the actual compression that was stored (which may have been transformed to zstd)
+			compression := narEntry.NarCompression
+			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
+				compression = actualCompressions[narEntry.NarInfoHash]
+			}
+
+			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
 
 			var found bool
 
@@ -361,7 +378,13 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 			require.NoError(t, err)
 
-			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+			// Use the actual compression that was stored
+			compression := narEntry.NarCompression
+			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
+				compression = actualCompressions[narEntry.NarInfoHash]
+			}
+
+			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
 			size, _, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
@@ -377,16 +400,26 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			require.NoError(t, err)
 		}
 
-		// all nar_file records are in the database
+		// all nar_file records are in the database - use actual compression from stored narinfo
 		for _, narEntry := range allEntries {
-			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
+			// Get the stored narinfo to retrieve the actual URL (which may have been modified
+			// with zstd compression if the original had compression: none)
+			ni, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+			require.NoErrorf(t, err, "failed to get narinfo for idx, hash %s", narEntry.NarInfoHash)
+
+			// Parse the stored URL to get the actual NAR hash and compression
+			nu, parseErr := nar.ParseURL(ni.URL.String)
+			require.NoErrorf(t, parseErr, "failed to parse nar url for hash %s: %s", narEntry.NarInfoHash, ni.URL.String)
+
+			// Look up nar_file using the actual compression from the stored URL
+			_, err = c.db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
 				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narEntry.NarHash,
-					Compression: narEntry.NarCompression.String(),
+					Hash:        nu.Hash,
+					Compression: nu.Compression.String(),
 					Query:       "",
 				})
-			require.NoError(t, err)
+			require.NoErrorf(t, err, "failed to get nar file for hash %s", narEntry.NarInfoHash)
 		}
 
 		c.runLRU(newContext())()
@@ -396,11 +429,23 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 		// confirm all nars except the last one are in the store
 		for _, narEntry := range entries {
-			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+			// Use the actual compression that was stored
+			compression := narEntry.NarCompression
+			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
+				compression = actualCompressions[narEntry.NarInfoHash]
+			}
+
+			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
 			assert.True(t, c.narStore.HasNar(newContext(), nu))
 		}
 
-		nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastEntry.NarCompression}
+		// Get the actual compression for the last entry
+		lastCompression := lastEntry.NarCompression
+		if actualCompressions[lastEntry.NarInfoHash] != nar.CompressionTypeNone {
+			lastCompression = actualCompressions[lastEntry.NarInfoHash]
+		}
+
+		nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastCompression}
 		assert.False(t, c.narStore.HasNar(newContext(), nu))
 
 		// all narinfo records except the last one are in the database
@@ -415,24 +460,30 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		// all nar_file records except the last one are in the database
 
 		for _, narEntry := range entries {
+			// Use the actual compression that was stored
+			compression := narEntry.NarCompression
+			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
+				compression = actualCompressions[narEntry.NarInfoHash]
+			}
+
 			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
 				database.GetNarFileByHashAndCompressionAndQueryParams{
 					Hash:        narEntry.NarHash,
-					Compression: narEntry.NarCompression.String(),
+					Compression: compression.String(),
 					Query:       "",
 				})
 			require.NoError(t, err)
 		}
 
-		_, err = c.db.GetNarFileByHashAndCompressionAndQuery(
+		_, lastErr := c.db.GetNarFileByHashAndCompressionAndQuery(
 			context.Background(),
 			database.GetNarFileByHashAndCompressionAndQueryParams{
 				Hash:        lastEntry.NarHash,
-				Compression: lastEntry.NarCompression.String(),
+				Compression: lastCompression.String(),
 				Query:       "",
 			})
-		require.ErrorIs(t, err, database.ErrNotFound)
+		require.ErrorIs(t, lastErr, database.ErrNotFound)
 	}
 }
 
@@ -497,9 +548,20 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 		var sizePulled int64
 
+		// Create a map to store the actual compression for each narinfo (after potential zstd transformation)
+		actualCompressions := make(map[string]nar.CompressionType)
+
 		for i, narEntry := range allEntries {
-			_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
-			require.NoErrorf(t, err, "unable to get narinfo for idx %d", i)
+			narInfo, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+			require.NoErrorf(t, err, "unable to get narinfo for idx %d hash %s", i, narEntry.NarInfoHash)
+
+			// Store the actual compression from the fetched narinfo
+			if narInfo != nil {
+				nu, err := nar.ParseURL(narInfo.URL)
+				require.NoErrorf(t, err, "failed to parse nar url for idx %d: %s", i, narInfo.URL)
+
+				actualCompressions[narEntry.NarInfoHash] = nu.Compression
+			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
 			size, reader, err := c.GetNar(context.Background(), nu)
@@ -507,7 +569,7 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 			// If the size is zero (likely) then the download is in progress so
 			// compute the size by reading it fully first.
-			if size < 0 {
+			if size <= 0 {
 				var err error
 
 				size, err = io.Copy(io.Discard, reader)
@@ -550,7 +612,13 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 			_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 			require.NoError(t, err)
 
-			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+			// Use the actual compression that was stored (which may have been transformed to zstd)
+			compression := narEntry.NarCompression
+			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
+				compression = actualCompressions[narEntry.NarInfoHash]
+			}
+
+			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
 			size, _, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
@@ -585,9 +653,15 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 		// confirm all nars are in the store, the last one should not be deleted
 		// because it has another narinfo referring to it that was indeed pulled.
-		for _, narEntry := range allEntries {
-			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-			assert.True(t, c.narStore.HasNar(newContext(), nu))
+		for i, narEntry := range allEntries {
+			// Use the actual compression that was stored
+			compression := narEntry.NarCompression
+			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
+				compression = actualCompressions[narEntry.NarInfoHash]
+			}
+
+			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
+			assert.True(t, c.narStore.HasNar(newContext(), nu), "narinfo id %d hash %s", i, narEntry.NarInfoHash)
 		}
 
 		// all narinfo records except the last one are in the database
@@ -603,11 +677,17 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 		// be deleted because it has another narinfo referring to it that was indeed
 		// pulled.
 		for _, narEntry := range allEntries {
+			// Use the actual compression that was stored
+			compression := narEntry.NarCompression
+			if actualCompressions[narEntry.NarInfoHash] != nar.CompressionTypeNone {
+				compression = actualCompressions[narEntry.NarInfoHash]
+			}
+
 			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
 				database.GetNarFileByHashAndCompressionAndQueryParams{
 					Hash:        narEntry.NarHash,
-					Compression: narEntry.NarCompression.String(),
+					Compression: compression.String(),
 					Query:       "",
 				})
 			require.NoError(t, err)
