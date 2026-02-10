@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -167,12 +168,20 @@ func TestGetNarInfo(t *testing.T) {
 				assert.ErrorIs(t, err, upstream.ErrNotFound)
 			})
 
-			t.Run("hash is found", func(t *testing.T) {
-				ni, err := c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
-				require.NoError(t, err)
+			for i, narEntry := range testdata.Entries {
+				t.Run(fmt.Sprintf("testing nar entry ID %d hash %s", i, narEntry.NarHash), func(t *testing.T) {
+					t.Run("hash is found", func(t *testing.T) {
+						ni, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+						require.NoError(t, err)
 
-				assert.Equal(t, "/nix/store/n5glp21rsz314qssw9fbvfswgy3kc68f-hello-2.12.1", ni.StorePath)
-			})
+						if narEntry.NarInfoHash == "mxz31j8mf7kddi3vipqhxhdm4lswiyl0" {
+							assert.EqualValues(t, len(narEntry.NarText), ni.NarSize)
+						} else {
+							assert.EqualValues(t, len(narEntry.NarText), ni.FileSize)
+						}
+					})
+				})
+			}
 
 			t.Run("check has failed", func(t *testing.T) {
 				idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
@@ -328,50 +337,58 @@ func TestGetNar(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	//nolint:paralleltest
 	t.Run("not found", func(t *testing.T) {
+		t.Parallel()
+
 		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
 		_, err := c.GetNar(context.Background(), nu)
 		assert.ErrorIs(t, err, upstream.ErrNotFound)
 	})
 
-	//nolint:paralleltest
-	t.Run("hash is found", func(t *testing.T) {
-		nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-		resp, err := c.GetNar(context.Background(), nu)
-		require.NoError(t, err)
+	for i, narEntry := range testdata.Entries {
+		t.Run(fmt.Sprintf("testing nar entry ID %d hash %s", i, narEntry.NarHash), func(t *testing.T) {
+			t.Parallel()
 
-		defer func() {
-			//nolint:errcheck
-			io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
-		}()
+			t.Run("hash is found", func(t *testing.T) {
+				t.Parallel()
 
-		assert.Equal(t, "50160", resp.Header.Get("Content-Length"))
-	})
+				nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
+				resp, err := c.GetNar(context.Background(), nu)
+				require.NoError(t, err)
 
-	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
-		t.Parallel()
+				defer func() {
+					//nolint:errcheck
+					io.Copy(io.Discard, resp.Body)
+					resp.Body.Close()
+				}()
 
-		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
-			w.WriteHeader(http.StatusNoContent)
-		}))
-		t.Cleanup(slowServer.Close)
+				assert.Equal(t, strconv.Itoa(len(narEntry.NarText)), resp.Header.Get("Content-Length"))
+			})
+		})
 
-		c, err := upstream.New(
-			newContext(),
-			testhelper.MustParseURL(t, slowServer.URL),
-			&upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
-			},
-		)
-		require.NoError(t, err)
+		t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+			t.Parallel()
 
-		nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
-		_, err = c.GetNar(context.Background(), nu)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-	})
+			slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				time.Sleep(5 * time.Second)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			t.Cleanup(slowServer.Close)
+
+			c, err := upstream.New(
+				newContext(),
+				testhelper.MustParseURL(t, slowServer.URL),
+				&upstream.Options{
+					PublicKeys: testdata.PublicKeys(),
+				},
+			)
+			require.NoError(t, err)
+
+			nu := nar.URL{Hash: "abc123", Compression: nar.CompressionTypeXz}
+			_, err = c.GetNar(context.Background(), nu)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+		})
+	}
 }
 
 func TestHasNar(t *testing.T) {
