@@ -6,7 +6,10 @@ import (
 	"math/big"
 )
 
-const allChars = "abcdefghijklmnopqrstuvwxyz0123456789"
+const (
+	allChars   = "abcdefghijklmnopqrstuvwxyz0123456789"
+	nix32Chars = "abcdfghijklmnpqrsvwxyz0123456789"
+)
 
 func randChars(n int, charSet string, r io.Reader) (string, error) {
 	ret := make([]byte, n)
@@ -31,6 +34,32 @@ func RandString(n int) (string, error) { return randChars(n, allChars, rand.Read
 // returns an error, it will panic.
 func MustRandString(n int) string {
 	str, err := RandString(n)
+	if err != nil {
+		panic(err)
+	}
+
+	return str
+}
+
+func RandNarInfoHash() (string, error) {
+	return randChars(32, nix32Chars, rand.Reader)
+}
+
+func MustRandNarInfoHash() string {
+	str, err := RandNarInfoHash()
+	if err != nil {
+		panic(err)
+	}
+
+	return str
+}
+
+func RandNarHash() (string, error) {
+	return randChars(52, nix32Chars, rand.Reader)
+}
+
+func MustRandNarHash() string {
+	str, err := RandNarHash()
 	if err != nil {
 		panic(err)
 	}
