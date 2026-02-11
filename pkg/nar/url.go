@@ -100,3 +100,40 @@ func (u URL) pathWithCompression() string {
 
 	return p
 }
+
+// Normalize returns a new URL with the narinfo hash prefix trimmed from the Hash.
+// nix-serve serves NAR URLs with the narinfo hash as a prefix (e.g., "narinfo-hash-actual-hash").
+// This method removes that prefix to standardize the hash for storage.
+func (u URL) Normalize() URL {
+	// The prefix is typically a hash followed by a dash/underscore, then the actual NAR hash.
+	// We need to find the last occurrence of a dash or underscore and trim everything before it.
+	hash := u.Hash
+
+	// Look for the pattern: narinfo_hash-(or_)actual_nar_hash
+	// We identify this by looking for the last dash or underscore that separates two hash-like parts
+	parts := strings.FieldsFunc(hash, func(r rune) bool {
+		return r == '-' || r == '_'
+	})
+
+	// If we have more than one part, check if the first part looks like a narinfo hash
+	// and the remaining parts form the actual NAR hash
+	if len(parts) > 1 {
+		// A narinfo hash is typically 32 characters, and a NAR hash is also typically 52+ characters
+		// We use a heuristic: if the first part is shorter than the second part,
+		// it's likely the narinfo prefix
+		if len(parts[0]) < len(parts[1]) {
+			// Remove the first part and the separator
+			// Find the position of the first separator
+			firstSepIdx := strings.IndexAny(hash, "-_")
+			if firstSepIdx > 0 {
+				hash = hash[firstSepIdx+1:]
+			}
+		}
+	}
+
+	return URL{
+		Hash:        hash,
+		Compression: u.Compression,
+		Query:       u.Query,
+	}
+}
