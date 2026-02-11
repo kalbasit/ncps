@@ -121,9 +121,9 @@ func TestDistributedDownloadDeduplication(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create separate upstream cache for each instance to avoid data races
-		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-			PublicKeys: testdata.PublicKeys(),
-		})
+		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
+		// Don't use public keys for distributed tests with generated entries
+		// since they don't have valid signatures (we don't have the private key to sign them)
 		require.NoError(t, err)
 
 		c, err := cache.New(
@@ -215,9 +215,9 @@ func TestDistributedConcurrentReads(t *testing.T) {
 	defer ts.Close()
 
 	// Create upstream cache
-	uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-		PublicKeys: testdata.PublicKeys(),
-	})
+	uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
+	// Don't use public keys for distributed tests with generated entries
+	// since they don't have valid signatures (we don't have the private key to sign them)
 	require.NoError(t, err)
 
 	// Create shared directory for all instances
