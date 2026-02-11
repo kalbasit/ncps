@@ -12,6 +12,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/kalbasit/ncps/pkg/helper"
+	"github.com/kalbasit/ncps/pkg/nar"
 )
 
 type Server struct {
@@ -122,12 +123,41 @@ func (s *Server) handler() http.Handler {
 				bs = []byte(entry.NarInfoText)
 			}
 
+			// Support fetching narinfo by NAR hash (used by cache when only NAR hash is available)
+			if r.URL.Path == "/"+entry.NarHash+".narinfo" {
+				bs = []byte(entry.NarInfoText)
+			}
+
 			if r.URL.Path == "/nar/"+entry.NarHash+".nar" {
 				bs = []byte(entry.NarText)
 			}
 
-			if r.URL.Path == "/nar/"+entry.NarHash+".nar."+entry.NarCompression.ToFileExtension() {
+			// Build path with compression extension, only adding dot if extension is not empty
+			narPath := "/nar/" + entry.NarHash + ".nar"
+			if ext := entry.NarCompression.ToFileExtension(); ext != "" {
+				narPath += "." + ext
+			}
+
+			if r.URL.Path == narPath {
 				bs = []byte(entry.NarText)
+			}
+
+			// Support fetching by normalized hash (with prefix stripped)
+			normalizedHash := (&nar.URL{Hash: entry.NarHash}).Normalize().Hash
+			if normalizedHash != entry.NarHash {
+				if r.URL.Path == "/nar/"+normalizedHash+".nar" {
+					bs = []byte(entry.NarText)
+				}
+
+				// Build normalized path with compression extension
+				normalizedNarPath := "/nar/" + normalizedHash + ".nar"
+				if ext := entry.NarCompression.ToFileExtension(); ext != "" {
+					normalizedNarPath += "." + ext
+				}
+
+				if r.URL.Path == normalizedNarPath {
+					bs = []byte(entry.NarText)
+				}
 			}
 
 			if len(bs) > 0 {
