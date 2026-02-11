@@ -458,11 +458,14 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			require.NoErrorf(t, parseErr, "failed to parse nar url for hash %s: %s", narEntry.NarInfoHash, ni.URL.String)
 
 			// Look up nar_file using the actual compression from the stored URL
+			// Normalize the URL before querying the database (handles prefixed hashes)
+			normalizedNU := nu.Normalize()
+
 			_, err = c.db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
 				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        nu.Hash,
-					Compression: nu.Compression.String(),
+					Hash:        normalizedNU.Hash,
+					Compression: normalizedNU.Compression.String(),
 					Query:       "",
 				})
 			require.NoErrorf(t, err, "failed to get nar file for hash %s", narEntry.NarInfoHash)
@@ -512,23 +515,29 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 				compression = c
 			}
 
+			// Normalize the hash before querying the database (handles prefixed hashes)
+			normalizedHash := (&nar.URL{Hash: narEntry.NarHash, Compression: compression}).Normalize().Hash
+
 			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
 				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narEntry.NarHash,
+					Hash:        normalizedHash,
 					Compression: compression.String(),
 					Query:       "",
 				})
 			require.NoError(t, err)
 		}
 
-		_, lastErr := c.db.GetNarFileByHashAndCompressionAndQuery(
-			context.Background(),
-			database.GetNarFileByHashAndCompressionAndQueryParams{
-				Hash:        lastEntry.NarHash,
-				Compression: lastCompression.String(),
-				Query:       "",
-			})
+	// Normalize the hash for the last entry as well
+	normalizedLastHash := (&nar.URL{Hash: lastEntry.NarHash, Compression: lastCompression}).Normalize().Hash
+
+	_, lastErr := c.db.GetNarFileByHashAndCompressionAndQuery(
+	context.Background(),
+	database.GetNarFileByHashAndCompressionAndQueryParams{
+	Hash:        normalizedLastHash,
+		Compression: lastCompression.String(),
+		Query:       "",
+	})
 		require.ErrorIs(t, lastErr, database.ErrNotFound)
 	}
 }
@@ -726,10 +735,13 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 				compression = c
 			}
 
+		// Normalize the hash before querying the database (handles prefixed hashes)
+		normalizedHash := (&nar.URL{Hash: narEntry.NarHash, Compression: compression}).Normalize().Hash
+
 			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
 				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narEntry.NarHash,
+					Hash:        normalizedHash,
 					Compression: compression.String(),
 					Query:       "",
 				})
