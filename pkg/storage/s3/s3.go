@@ -566,7 +566,10 @@ func (s *Store) narInfoPath(hash string) (string, error) {
 }
 
 func (s *Store) narPath(narURL nar.URL) (string, error) {
-	tfp, err := narURL.ToFilePath()
+	// Normalize the NAR URL to handle URLs with embedded narinfo hash prefix
+	normalizedURL := narURL.Normalize()
+
+	tfp, err := normalizedURL.ToFilePath()
 	if err != nil {
 		return "", err
 	}
