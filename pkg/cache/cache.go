@@ -2300,7 +2300,7 @@ func (c *Cache) prePullNar(
 			return false
 		},
 		func(ds *downloadState) {
-			c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
+			c.pullNarIntoStore(ctx, &normalizedURL, uc, narInfo, enableZSTD, ds)
 		},
 	)
 }

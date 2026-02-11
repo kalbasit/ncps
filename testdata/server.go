@@ -145,6 +145,11 @@ func (s *Server) handler() http.Handler {
 			// Support fetching by normalized hash (with prefix stripped)
 			normalizedHash := (&nar.URL{Hash: entry.NarHash}).Normalize().Hash
 			if normalizedHash != entry.NarHash {
+				// Support fetching narinfo by normalized NAR hash
+				if r.URL.Path == "/"+normalizedHash+".narinfo" {
+					bs = []byte(entry.NarInfoText)
+				}
+
 				if r.URL.Path == "/nar/"+normalizedHash+".nar" {
 					bs = []byte(entry.NarText)
 				}
