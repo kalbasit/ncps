@@ -528,16 +528,16 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			require.NoError(t, err)
 		}
 
-	// Normalize the hash for the last entry as well
-	normalizedLastHash := (&nar.URL{Hash: lastEntry.NarHash, Compression: lastCompression}).Normalize().Hash
+		// Normalize the hash for the last entry as well
+		normalizedLastHash := (&nar.URL{Hash: lastEntry.NarHash, Compression: lastCompression}).Normalize().Hash
 
-	_, lastErr := c.db.GetNarFileByHashAndCompressionAndQuery(
-	context.Background(),
-	database.GetNarFileByHashAndCompressionAndQueryParams{
-	Hash:        normalizedLastHash,
-		Compression: lastCompression.String(),
-		Query:       "",
-	})
+		_, lastErr := c.db.GetNarFileByHashAndCompressionAndQuery(
+			context.Background(),
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        normalizedLastHash,
+				Compression: lastCompression.String(),
+				Query:       "",
+			})
 		require.ErrorIs(t, lastErr, database.ErrNotFound)
 	}
 }
@@ -735,8 +735,8 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 				compression = c
 			}
 
-		// Normalize the hash before querying the database (handles prefixed hashes)
-		normalizedHash := (&nar.URL{Hash: narEntry.NarHash, Compression: compression}).Normalize().Hash
+			// Normalize the hash before querying the database (handles prefixed hashes)
+			normalizedHash := (&nar.URL{Hash: narEntry.NarHash, Compression: compression}).Normalize().Hash
 
 			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
