@@ -2798,9 +2798,13 @@ func (c *Cache) storeInDatabase(
 			return fmt.Errorf("error parsing the nar URL: %w", err)
 		}
 
+		// Normalize the NAR URL to remove any narinfo hash prefix.
+		// This ensures nar_files.hash matches what's actually stored in the storage layer.
+		normalizedNarURL := narURL.Normalize()
+
 		// Check if nar_file already exists (multiple narinfos can share the same nar_file)
 
-		narFileID, err := c.ensureNarFile(ctx, qtx, narURL, narInfo.FileSize)
+		narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narInfo.FileSize)
 		if err != nil {
 			return err
 		}
@@ -2943,7 +2947,7 @@ func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) e
 	return errors.Join(errs...)
 }
 
-func (c *Cache) ensureNarFile(
+func createOrUpdateNarFile(
 	ctx context.Context,
 	qtx database.Querier,
 	narURL nar.URL,
@@ -3195,21 +3199,20 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 		return fmt.Errorf("error parsing the nar URL: %w", err)
 	}
 
+	// Normalize the NAR URL to remove any narinfo hash prefix.
+	// This ensures nar_files.hash matches what's actually stored in the storage layer.
+	normalizedNarURL := narURL.Normalize()
+
 	// Create or get nar_file record
-	newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-		Hash:        narURL.Hash,
-		Compression: narURL.Compression.String(),
-		Query:       narURL.Query.Encode(),
-		FileSize:    narInfo.FileSize,
-	})
+	narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narInfo.FileSize)
 	if err != nil {
-		return fmt.Errorf("error creating or updating nar_file record in the database: %w", err)
+		return err
 	}
 
 	// Link narinfo to nar_file
 	if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
 		NarInfoID: nir.ID,
-		NarFileID: newNarFile.ID,
+		NarFileID: narFileID,
 	}); err != nil {
 		// Duplicate key errors are expected with UPSERT
 		if !database.IsDuplicateKeyError(err) {
