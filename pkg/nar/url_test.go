@@ -175,6 +175,33 @@ func TestNormalize(t *testing.T) {
 				Query:       url.Values(map[string][]string{"hash": {"123"}}),
 			},
 		},
+		{
+			// Valid hash with separator but no prefix
+			input: nar.URL{
+				Hash: "my-hash",
+			},
+			output: nar.URL{
+				Hash: "my-hash",
+			},
+		},
+		{
+			// Valid prefix and multiple separators in the suffix
+			input: nar.URL{
+				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-part1-part2",
+			},
+			output: nar.URL{
+				Hash: "part1-part2",
+			},
+		},
+		{
+			// Potential path traversal attempt in the hash (should remain unchanged or be sanitized)
+			input: nar.URL{
+				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-../../etc/passwd",
+			},
+			output: nar.URL{
+				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-../../etc/passwd",
+			},
+		},
 	}
 
 	for _, test := range tests {

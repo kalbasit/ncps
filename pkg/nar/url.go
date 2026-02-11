@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -105,34 +106,36 @@ func (u URL) pathWithCompression() string {
 // nix-serve serves NAR URLs with the narinfo hash as a prefix (e.g., "narinfo-hash-actual-hash").
 // This method removes that prefix to standardize the hash for storage.
 func (u URL) Normalize() URL {
-	// The prefix is typically a hash followed by a dash/underscore, then the actual NAR hash.
-	// We need to find the last occurrence of a dash or underscore and trim everything before it.
 	hash := u.Hash
 
-	// Look for the pattern: narinfo_hash-(or_)actual_nar_hash
-	// We identify this by looking for the last dash or underscore that separates two hash-like parts
-	parts := strings.FieldsFunc(hash, func(r rune) bool {
-		return r == '-' || r == '_'
-	})
+	// Find the first separator ('-' or '_').
+	idx := strings.IndexAny(hash, "-_")
 
-	// If we have more than one part, check if the first part looks like a narinfo hash
-	// and the remaining parts form the actual NAR hash
-	if len(parts) > 1 {
-		// A narinfo hash is typically 32 characters, and a NAR hash is also typically 52+ characters
-		// We use a heuristic: if the first part is shorter than the second part,
-		// it's likely the narinfo prefix
-		if len(parts[0]) < len(parts[1]) {
-			// Remove the first part and the separator
-			// Find the position of the first separator
-			firstSepIdx := strings.IndexAny(hash, "-_")
-			if firstSepIdx > 0 {
-				hash = hash[firstSepIdx+1:]
-			}
+	// If a separator is found after the first character.
+	if idx > 0 {
+		prefix := hash[:idx]
+		suffix := hash[idx+1:]
+
+		// A narinfo hash prefix is typically 32 characters long. This is a strong signal.
+		// We check this and ensure the suffix is not empty.
+		if len(prefix) == 32 && len(suffix) > 0 {
+			hash = suffix
 		}
 	}
 
+	// Sanitize the hash to prevent path traversal.
+	// Even though ParseURL validates the hash, URL is a public struct
+	// and Normalize could be called on a manually constructed URL.
+	cleanedHash := filepath.Clean(hash)
+	if strings.Contains(cleanedHash, "..") || strings.HasPrefix(cleanedHash, "/") {
+		// If the cleaned hash is still invalid, we return the original URL
+		// to avoid potentially breaking something that might be valid in some context,
+		// but storage layers will still validate it using ToFilePath().
+		return u
+	}
+
 	return URL{
-		Hash:        hash,
+		Hash:        cleanedHash,
 		Compression: u.Compression,
 		Query:       u.Query,
 	}
