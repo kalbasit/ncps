@@ -582,7 +582,7 @@ func (s *Store) narInfoPath(hash string) (string, error) {
 }
 
 func (s *Store) narPath(narURL nar.URL) (string, error) {
-	tfp, err := narURL.ToFilePath()
+	tfp, err := narURL.Normalize().ToFilePath()
 	if err != nil {
 		return "", err
 	}
