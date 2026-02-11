@@ -584,7 +584,7 @@ func TestDeleteNarInfo_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		err = store.DeleteNarInfo(ctx, "hash")
+		err = store.DeleteNarInfo(ctx, "0a90gw9sdyz3680wfncd5xf0qg6zh27w")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error checking if narinfo exists")
 	})
@@ -615,7 +615,7 @@ func TestDeleteNarInfo_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		err = store.DeleteNarInfo(ctx, "hash")
+		err = store.DeleteNarInfo(ctx, "0a90gw9sdyz3680wfncd5xf0qg6zh27w")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error deleting narinfo from S3")
 	})
@@ -674,7 +674,7 @@ func TestNarInfo_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		_, err = store.GetNarInfo(ctx, "nonexistent")
+		_, err = store.GetNarInfo(ctx, "0a90gw9sdyz3680wfncd5xf0qg6zh27w")
 		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
@@ -706,7 +706,7 @@ func TestNarInfo_ErrorPaths(t *testing.T) {
 		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
-		err = store.PutNarInfo(ctx, "hash", ni)
+		err = store.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "put failed")
 	})
