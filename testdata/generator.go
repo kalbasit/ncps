@@ -27,6 +27,9 @@ func GenerateEntry(t *testing.T, narData []byte) (Entry, error) {
 
 	// Create narinfo text (using uncompressed NAR for simplicity in testing)
 	narURL := fmt.Sprintf("nar/%s.nar", narHash)
+	// Note: Generated entries do not include signatures since we don't have the private key.
+	// Tests using these entries should not use public key verification.
+	// Use the narinfo hash as a self-reference since this is a generated test package with no dependencies.
 	narInfoText := fmt.Sprintf(`StorePath: %s
 URL: %s
 Compression: none
@@ -34,8 +37,7 @@ FileHash: sha256:%s
 FileSize: %d
 NarHash: sha256:%s
 NarSize: %d
-References: %s
-Sig: test-cache:1:fakesignature==`,
+References: %s-generated-test`,
 		storePath,
 		narURL,
 		narHash,
