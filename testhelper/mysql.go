@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 )
 
 // MigrateMySQLDatabase will migrate the MySQL database using dbmate.
@@ -68,7 +67,7 @@ func SetupMySQL(t *testing.T) (database.Querier, string, func()) {
 	adminDb, err := database.Open(adminDbURL, nil)
 	require.NoError(t, err, "failed to connect to the mysql database")
 
-	dbName := "test-" + helper.MustRandString(58, nil)
+	dbName := "test-" + MustRandString(58)
 
 	// MySQL CREATE DATABASE
 	_, err = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("CREATE DATABASE `%s`", dbName))

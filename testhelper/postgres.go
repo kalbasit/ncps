@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 )
 
 // MigratePostgresDatabase will migrate the PostgreSQL database using dbmate.
@@ -68,7 +67,7 @@ func SetupPostgres(t *testing.T) (database.Querier, string, func()) {
 	adminDb, err := database.Open(adminDbURL, nil)
 	require.NoError(t, err, "failed to connect to the postgres database")
 
-	dbName := "test-" + helper.MustRandString(58, nil)
+	dbName := "test-" + MustRandString(58)
 	_, err = adminDb.DB().ExecContext(context.Background(), "SELECT create_test_db($1);", dbName)
 	require.NoError(t, err, "failed to create database %s", dbName)
 
