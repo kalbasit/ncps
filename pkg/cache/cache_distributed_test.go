@@ -223,9 +223,9 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 			require.NoError(t, err)
 
 			// Create separate upstream cache for each instance to avoid data races
-			uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
-			})
+			// Don't use public keys for distributed tests with generated entries
+			// since they don't have valid signatures (we don't have the private key to sign them)
+			uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			c, err := cache.New(
@@ -323,9 +323,9 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 		t.Cleanup(ts.Close)
 
 		// Create upstream cache
-		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-			PublicKeys: testdata.PublicKeys(),
-		})
+		// Don't use public keys for distributed tests with generated entries
+		// since they don't have valid signatures (we don't have the private key to sign them)
+		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
 		require.NoError(t, err)
 
 		// Create shared storage
@@ -742,9 +742,9 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 		cacheLocker, err := redis.NewRWLocker(ctx, redisCfg, retryCfg, false)
 		require.NoError(t, err)
 
-		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-			PublicKeys: testdata.PublicKeys(),
-		})
+		// Don't use public keys for distributed tests with generated entries
+		// since they don't have valid signatures (we don't have the private key to sign them)
+		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
 		require.NoError(t, err)
 
 		c, err := cache.New(
@@ -982,9 +982,9 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 			require.NoError(t, err)
 
 			// Create separate upstream cache for each instance to avoid data races
-			uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
-			})
+			// Don't use public keys for distributed tests with generated entries
+			// since they don't have valid signatures (we don't have the private key to sign them)
+			uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
 			require.NoError(t, err)
 
 			c, err := cache.New(
