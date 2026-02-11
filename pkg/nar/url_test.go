@@ -132,6 +132,93 @@ func TestParseURL(t *testing.T) {
 	}
 }
 
+func TestNormalize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input  nar.URL
+		output nar.URL
+	}{
+		{
+			input: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+			output: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+		},
+		{
+			input: nar.URL{
+				Hash:        "c12lxpykv6sld7a0sakcnr3y0la70x8w-09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+			output: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeNone,
+				Query:       url.Values{},
+			},
+		},
+		{
+			input: nar.URL{
+				Hash:        "c12lxpykv6sld7a0sakcnr3y0la70x8w_09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeZstd,
+				Query:       url.Values(map[string][]string{"hash": {"123"}}),
+			},
+			output: nar.URL{
+				Hash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
+				Compression: nar.CompressionTypeZstd,
+				Query:       url.Values(map[string][]string{"hash": {"123"}}),
+			},
+		},
+		{
+			// Valid hash with separator but no prefix
+			input: nar.URL{
+				Hash: "my-hash",
+			},
+			output: nar.URL{
+				Hash: "my-hash",
+			},
+		},
+		{
+			// Valid prefix and multiple separators in the suffix
+			input: nar.URL{
+				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-part1-part2",
+			},
+			output: nar.URL{
+				Hash: "part1-part2",
+			},
+		},
+		{
+			// Potential path traversal attempt in the hash (should remain unchanged or be sanitized)
+			input: nar.URL{
+				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-../../etc/passwd",
+			},
+			output: nar.URL{
+				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-../../etc/passwd",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		tname := fmt.Sprintf(
+			"Normalize(%q) -> %q",
+			test.input.Hash,
+			test.output.Hash,
+		)
+		t.Run(tname, func(t *testing.T) {
+			t.Parallel()
+
+			result := test.input.Normalize()
+			assert.Equal(t, test.output, result)
+		})
+	}
+}
+
 func TestJoinURL(t *testing.T) {
 	t.Parallel()
 

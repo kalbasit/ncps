@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -99,4 +100,43 @@ func (u URL) pathWithCompression() string {
 	}
 
 	return p
+}
+
+// Normalize returns a new URL with the narinfo hash prefix trimmed from the Hash.
+// nix-serve serves NAR URLs with the narinfo hash as a prefix (e.g., "narinfo-hash-actual-hash").
+// This method removes that prefix to standardize the hash for storage.
+func (u URL) Normalize() URL {
+	hash := u.Hash
+
+	// Find the first separator ('-' or '_').
+	idx := strings.IndexAny(hash, "-_")
+
+	// If a separator is found after the first character.
+	if idx > 0 {
+		prefix := hash[:idx]
+		suffix := hash[idx+1:]
+
+		// A narinfo hash prefix is typically 32 characters long. This is a strong signal.
+		// We check this and ensure the suffix is not empty.
+		if len(prefix) == 32 && len(suffix) > 0 {
+			hash = suffix
+		}
+	}
+
+	// Sanitize the hash to prevent path traversal.
+	// Even though ParseURL validates the hash, URL is a public struct
+	// and Normalize could be called on a manually constructed URL.
+	cleanedHash := filepath.Clean(hash)
+	if strings.Contains(cleanedHash, "..") || strings.HasPrefix(cleanedHash, "/") {
+		// If the cleaned hash is still invalid, we return the original URL
+		// to avoid potentially breaking something that might be valid in some context,
+		// but storage layers will still validate it using ToFilePath().
+		return u
+	}
+
+	return URL{
+		Hash:        cleanedHash,
+		Compression: u.Compression,
+		Query:       u.Query,
+	}
 }
