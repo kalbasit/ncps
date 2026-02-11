@@ -526,7 +526,7 @@ func TestHasNarInfo_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		exists := store.HasNarInfo(ctx, "hash")
+		exists := store.HasNarInfo(ctx, "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27")
 		assert.False(t, exists)
 	})
 
@@ -783,7 +783,7 @@ func TestHasNar_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
 		exists := store.HasNar(ctx, narURL)
 		assert.False(t, exists)
 	})
@@ -841,7 +841,7 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
 		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error checking if nar exists")
@@ -873,7 +873,7 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
 		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error putting nar to S3")
@@ -935,7 +935,7 @@ func TestNar_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
 		_, _, err = store.GetNar(ctx, narURL)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "get failed")
@@ -962,7 +962,7 @@ func TestNar_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
 		err = store.DeleteNar(ctx, narURL)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error checking if nar exists")
@@ -993,7 +993,7 @@ func TestNar_ErrorPaths(t *testing.T) {
 		store, err := storage_s3.New(ctx, cfgWithMock)
 		require.NoError(t, err)
 
-		narURL := nar.URL{Hash: "hash", Compression: "none"}
+		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
 		err = store.DeleteNar(ctx, narURL)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "delete failed")

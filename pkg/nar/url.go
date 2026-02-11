@@ -15,8 +15,8 @@ var (
 	// ErrInvalidURL is returned if the regexp did not match the given URL.
 	ErrInvalidURL = errors.New("invalid nar URL")
 
-	// https://regex101.com/r/yPwxpw/4
-	narRegexp = regexp.MustCompile(`^nar/(` + narHashPattern + `)\.nar(\.([a-z0-9]+))?(\?([a-z0-9=&]*))?$`)
+	// hashValidationRegexp validates that a string matches the HashPattern.
+	hashValidationRegexp = regexp.MustCompile(`^(` + HashPattern + `)$`)
 )
 
 // URL represents a nar URL.
@@ -27,29 +27,65 @@ type URL struct {
 }
 
 // ParseURL parses a nar URL (as present in narinfo) and returns its components.
+// It accepts URLs in the format: [path/]<hash>.nar[.<compression>][?query]
+// The hash must match HashPattern. This implementation is flexible about the
+// directory structure - only the filename matters, not the "nar/" prefix.
 func ParseURL(u string) (URL, error) {
-	if u == "" || !strings.HasPrefix(u, "nar/") {
+	if u == "" {
 		return URL{}, ErrInvalidURL
 	}
 
-	sm := narRegexp.FindStringSubmatch(u)
-	if len(sm) != 6 {
+	// Separate the query string from the path
+	pathPart, rawQuery, _ := strings.Cut(u, "?")
+
+	// Get the filename (last component of the path)
+	filename := filepath.Base(pathPart)
+	if filename == "" || filename == "." {
 		return URL{}, ErrInvalidURL
 	}
 
-	nu := URL{Hash: sm[1]}
+	// The filename must contain ".nar" followed by optional compression extension
+	// Format: hash.nar[.compression]
+	// Everything before .nar is the hash, everything after is optional compression
+	hash, afterNar, found := strings.Cut(filename, ".nar")
+	if !found || hash == "" {
+		return URL{}, ErrInvalidURL
+	}
 
-	var err error
+	// Validate that the hash matches HashPattern before processing further
+	if !hashValidationRegexp.MatchString(hash) {
+		return URL{}, ErrInvalidURL
+	}
 
-	if nu.Compression, err = CompressionTypeFromExtension(sm[3]); err != nil {
+	// Extract compression extension (e.g., ".bz2" -> "bz2", "" -> "")
+	var compression string
+
+	if afterNar != "" {
+		// afterNar should start with a dot
+		if !strings.HasPrefix(afterNar, ".") {
+			return URL{}, ErrInvalidURL
+		}
+
+		compression = afterNar[1:] // remove leading dot
+	}
+
+	// Determine compression type
+	ct, err := CompressionTypeFromExtension(compression)
+	if err != nil {
 		return URL{}, fmt.Errorf("error computing the compression type: %w", err)
 	}
 
-	if nu.Query, err = url.ParseQuery(sm[5]); err != nil {
+	// Parse the query string if present
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
 		return URL{}, fmt.Errorf("error parsing the RawQuery as url.Values: %w", err)
 	}
 
-	return nu, nil
+	return URL{
+		Hash:        hash,
+		Compression: ct,
+		Query:       query,
+	}, nil
 }
 
 // NewLogger returns a new logger with the right fields.
