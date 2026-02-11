@@ -182,7 +182,7 @@ func TestGetNarInfo(t *testing.T) {
 							ni, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 							require.NoError(t, err)
 
-							expectedURL := "nar/c12lxpykv6sld7a0sakcnr3y0la70x8w-09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0.nar"
+							expectedURL := "nar/09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0.nar"
 							assert.Equal(t, expectedURL, ni.URL)
 						})
 					}
