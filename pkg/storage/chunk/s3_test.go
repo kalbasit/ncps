@@ -1,9 +1,11 @@
 package chunk_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,12 +36,12 @@ func TestS3Store_Integration(t *testing.T) {
 		t.Parallel()
 
 		hash := "test-hash-s3-1"
-		content := "s3 chunk content"
+		content := strings.Repeat("s3 chunk content", 1024)
 
 		created, size, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created)
-		assert.Equal(t, int64(len(content)), size)
+		assert.Greater(t, int64(len(content)), size)
 
 		defer func() {
 			err := store.DeleteChunk(ctx, hash)
@@ -64,12 +66,12 @@ func TestS3Store_Integration(t *testing.T) {
 		t.Parallel()
 
 		hash := "test-hash-s3-2"
-		content := "s3 chunk content"
+		content := strings.Repeat("s3 chunk content", 1024)
 
 		created1, size1, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created1)
-		assert.Equal(t, int64(len(content)), size1)
+		assert.Greater(t, int64(len(content)), size1)
 
 		defer func() {
 			err := store.DeleteChunk(ctx, hash)
@@ -79,7 +81,7 @@ func TestS3Store_Integration(t *testing.T) {
 		created2, size2, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.False(t, created2)
-		assert.Equal(t, int64(len(content)), size2)
+		assert.Greater(t, int64(len(content)), size2)
 	})
 
 	t.Run("get non-existent chunk", func(t *testing.T) {
@@ -94,7 +96,7 @@ func TestS3Store_Integration(t *testing.T) {
 		t.Parallel()
 
 		hash := "test-hash-s3-idempotency"
-		content := "s3 chunk content idempotency"
+		content := strings.Repeat("s3 chunk content idempotency", 1024)
 
 		// Delete non-existent chunk should not return error
 		err := store.DeleteChunk(ctx, hash)
@@ -103,13 +105,49 @@ func TestS3Store_Integration(t *testing.T) {
 		created, size, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created)
-		assert.Equal(t, int64(len(content)), size)
+		assert.Greater(t, int64(len(content)), size)
 
 		err = store.DeleteChunk(ctx, hash)
 		require.NoError(t, err)
 
 		err = store.DeleteChunk(ctx, hash)
 		require.NoError(t, err)
+	})
+
+	t.Run("stored chunk is zstd-compressed in S3", func(t *testing.T) {
+		t.Parallel()
+
+		data := bytes.Repeat([]byte("compressible"), 1024)
+		isNew, compressedSize, err := store.PutChunk(ctx, "test-hash-s3-compress", data)
+		require.NoError(t, err)
+		assert.True(t, isNew)
+		assert.Greater(t, int64(len(data)), compressedSize, "compressed size should be less than original")
+		assert.Positive(t, compressedSize)
+
+		defer func() {
+			_ = store.DeleteChunk(ctx, "test-hash-s3-compress")
+		}()
+	})
+
+	t.Run("compressed chunk round-trips correctly via S3", func(t *testing.T) {
+		t.Parallel()
+
+		data := []byte("hello from S3 compressed chunk! hello from S3 compressed chunk!")
+		_, _, err := store.PutChunk(ctx, "test-hash-s3-roundtrip", data)
+		require.NoError(t, err)
+
+		defer func() {
+			_ = store.DeleteChunk(ctx, "test-hash-s3-roundtrip")
+		}()
+
+		rc, err := store.GetChunk(ctx, "test-hash-s3-roundtrip")
+		require.NoError(t, err)
+
+		defer rc.Close()
+
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		assert.Equal(t, data, got)
 	})
 }
 
@@ -129,7 +167,7 @@ func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
 	require.NoError(t, err)
 
 	hash := "test-hash-race"
-	content := []byte("race condition content")
+	content := []byte(strings.Repeat("race condition content", 1024))
 
 	defer func() {
 		_ = store.DeleteChunk(ctx, hash)
@@ -140,12 +178,12 @@ func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
 	results := make(chan bool, numGoRoutines)
 	errors := make(chan error, numGoRoutines)
 
-	for i := 0; i < numGoRoutines; i++ {
+	for range numGoRoutines {
 		go func() {
 			created, size, err := store.PutChunk(ctx, hash, content)
 			results <- created
 
-			assert.Equal(t, int64(len(content)), size)
+			assert.Greater(t, int64(len(content)), size)
 
 			errors <- err
 		}()
@@ -153,7 +191,7 @@ func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
 
 	createdCount := 0
 
-	for i := 0; i < numGoRoutines; i++ {
+	for range numGoRoutines {
 		err := <-errors
 		require.NoError(t, err)
 
@@ -234,12 +272,12 @@ func TestS3Store_ChunkPath(t *testing.T) {
 
 	t.Run("short hash", func(t *testing.T) {
 		hash := "a"
-		content := "short hash content"
+		content := strings.Repeat("short hash content", 1024)
 
 		created, size, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created)
-		assert.Equal(t, int64(len(content)), size)
+		assert.Greater(t, int64(len(content)), size)
 
 		defer func() {
 			_ = store.DeleteChunk(ctx, hash)
