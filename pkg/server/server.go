@@ -332,7 +332,27 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		narInfoBytes := []byte(narInfo.String())
+		// Create a copy of narInfo to avoid race conditions when modifying
+		narInfoCopy := *narInfo
+
+		// Normalize the NAR URL in the narinfo to remove any narinfo hash prefix
+		if narInfoCopy.URL != "" {
+			narURL, err := nar.ParseURL(narInfoCopy.URL)
+			if err != nil {
+				zerolog.Ctx(r.Context()).
+					Error().
+					Err(err).
+					Msg("error parsing the NAR URL")
+
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+
+				return
+			}
+
+			narInfoCopy.URL = narURL.Normalize().String()
+		}
+
+		narInfoBytes := []byte(narInfoCopy.String())
 
 		h := w.Header()
 		h.Set(contentType, contentTypeNarInfo)

@@ -289,6 +289,123 @@ func TestServeHTTP(t *testing.T) {
 		s := server.New(c)
 
 		t.Run("narinfo", func(t *testing.T) {
+			t.Run("returns normalized URL in narinfo response", func(t *testing.T) {
+				// This test verifies that when a narinfo is returned, the URL
+				// inside the narinfo is normalized (i.e., narinfo hash prefix is removed)
+				//
+				// The issue: upstream caches may return narinfo with URLs like:
+				// URL: nar/narinfo-hash-actual-hash.nar.zst
+				// But the server only serves NARs with the actual hash:
+				// /nar/actual-hash.nar.zst
+				//
+				// The server should normalize the URL before returning it.
+
+				// Use Nar8 for this test to avoid polluting the shared localStore with modified narinfo
+				narInfoHash := testdata.Nar8.NarInfoHash
+				actualNarHash := testdata.Nar8.NarHash
+
+				// Create a narinfo string with a prefixed URL (simulating upstream behavior)
+				prefixedNarHash := narInfoHash + "-" + actualNarHash
+				narInfoWithPrefixedURL := `StorePath: /nix/store/test-path
+URL: nar/` + prefixedNarHash + `.nar.xz
+Compression: xz
+FileHash: sha256:` + actualNarHash + `
+FileSize: 50160
+NarHash: sha256:` + actualNarHash + `
+NarSize: 226552
+References: test-path
+Deriver: test.drv
+`
+
+				// Parse the narinfo string into a NarInfo object
+				parsedNarInfo, err := narinfo.Parse(strings.NewReader(narInfoWithPrefixedURL))
+				require.NoError(t, err)
+
+				// Create a separate local store for this test to avoid polluting the shared store
+				testDir, err := os.MkdirTemp("", "narinfo-normalize-test-")
+				require.NoError(t, err)
+				t.Cleanup(func() { os.RemoveAll(testDir) })
+
+				testLocalStore, err := local.New(newContext(), testDir)
+				require.NoError(t, err)
+
+				// Store this narinfo in the test store
+				err = testLocalStore.PutNarInfo(newContext(), narInfoHash, parsedNarInfo)
+				require.NoError(t, err)
+
+				// Also store the actual NAR so we can verify it can be fetched
+				narURL := nar.URL{
+					Hash:        actualNarHash,
+					Compression: nar.CompressionTypeXz,
+				}
+				narSize, err := testLocalStore.PutNar(newContext(), narURL, strings.NewReader(testdata.Nar8.NarText))
+				require.NoError(t, err)
+				require.Positive(t, narSize)
+
+				// Create a cache using the test store
+				testDBFile := filepath.Join(testDir, "db.sqlite")
+				testhelper.CreateMigrateDatabase(t, testDBFile)
+				testDB, err := database.Open("sqlite:"+testDBFile, nil)
+				require.NoError(t, err)
+
+				testCache, err := newTestCache(newContext(), testDB, testLocalStore, testLocalStore, testLocalStore)
+				require.NoError(t, err)
+
+				// Create a server using the test cache
+				testServer := server.New(testCache)
+
+				// Request the narinfo via HTTP server
+				r := httptest.NewRequest(http.MethodGet, "/"+narInfoHash+".narinfo", nil)
+				w := httptest.NewRecorder()
+				testServer.ServeHTTP(w, r)
+
+				require.Equal(t, http.StatusOK, w.Code, "should return 200 OK for valid narinfo request")
+
+				// Parse the response to get the narinfo
+				body := w.Body.String()
+				require.NotEmpty(t, body)
+
+				// Parse the narinfo to extract the URL
+				respNarInfo, err := narinfo.Parse(strings.NewReader(body))
+				require.NoError(t, err)
+				require.NotNil(t, respNarInfo)
+
+				// The URL should be normalized (no narinfo hash prefix)
+				url := respNarInfo.URL
+				require.NotEmpty(t, url)
+
+				// Parse the URL to verify its structure
+				parsedNarURL, err := nar.ParseURL(url)
+				require.NoError(t, err, "returned URL should be parseable: %s", url)
+
+				// The hash in the URL should be the actual NAR hash, not the prefixed version
+				assert.Equal(t, actualNarHash, parsedNarURL.Hash,
+					"URL hash should be normalized (prefix should be stripped), got: %s", parsedNarURL.Hash)
+
+				// Verify we can actually fetch the NAR using the URL from narinfo
+				// This is the critical test - the server should serve the NAR using the normalized URL
+				ts := httptest.NewServer(testServer)
+				t.Cleanup(ts.Close)
+
+				narURL2 := nar.URL{
+					Hash:        parsedNarURL.Hash,
+					Compression: parsedNarURL.Compression,
+				}
+				httpURL := ts.URL + "/" + narURL2.String()
+
+				req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, httpURL, nil)
+				require.NoError(t, err)
+
+				resp, err := ts.Client().Do(req)
+				require.NoError(t, err)
+
+				defer resp.Body.Close()
+
+				// This should NOT be 404 - it should return the NAR successfully
+				assert.Equal(t, http.StatusOK, resp.StatusCode,
+					"should be able to fetch NAR with normalized URL from narinfo at %s", httpURL)
+			})
+
 			t.Run("narinfo does not exist upstream", func(t *testing.T) {
 				r := httptest.NewRequest(http.MethodGet, "/doesnotexist.narinfo", nil)
 				w := httptest.NewRecorder()
