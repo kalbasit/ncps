@@ -870,8 +870,8 @@ func TestMigrateNarInfo_LargeNarInfo(t *testing.T) {
 
 	const numSignatures = 50
 
-	hash := "largenarinfo1234567890abcdef1234567890abcdef"
-	narHash := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	hash := "0a90gw9sdyz3680wfncd5xf0qg6zh27w"
+	narHash := "024wilh5y46xqqjnwp159s13kgvsh8zfr6g6znb8ix2vlyf61rwp"
 
 	// Build references string
 	var referencesBuilder strings.Builder

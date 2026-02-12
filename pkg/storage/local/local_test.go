@@ -8,26 +8,28 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
+
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/testdata"
 )
 
 const (
-	cacheName      = "cache.example.com"
-	testHashABC    = "abc123"
-	testHashABC456 = "abc456"
-	testHashACD    = "acd456"
-	testHashXYZ    = "xyz789"
-	testHashXYZ123 = "xyz123"
-	testHashXYZ456 = "xyz456"
+	cacheName    = "cache.example.com"
+	narInfoHash1 = "0amzzlz5w7ihknr59cn0q56pvp17bqqz"
+	narInfoHash2 = "0b04gz1zzpapkni0yib4jk3xb6a7rmkh"
+	narInfoHash3 = "0bz5d30q8f28yz8yhf65aya4jbcxn33n"
+	narHash1     = "1s8p1kgdms8rmxkq24q51wc7zpn0aqcwgzvc473v9cii7z2qyxq0"
+	narHash2     = "123x3zvy8mfbxw8c9i7pqh2cmcya3g6w8y8yhldp5s39685dhsx4"
+	narHash3     = "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27"
 )
 
 func TestNew(t *testing.T) {
@@ -409,7 +411,7 @@ func TestPutNarInfo(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		ni1, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		ni1, err := narinfopkg.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
 		require.NoError(t, s.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni1))
@@ -428,7 +430,7 @@ func TestPutNarInfo(t *testing.T) {
 
 		defer ni2c.Close()
 
-		ni2, err := narinfo.Parse(ni2c)
+		ni2, err := narinfopkg.Parse(ni2c)
 		require.NoError(t, err)
 
 		assert.Equal(t,
@@ -462,7 +464,7 @@ func TestPutNarInfo(t *testing.T) {
 		err = os.WriteFile(narInfoPath, []byte(testdata.Nar1.NarInfoText), 0o400)
 		require.NoError(t, err)
 
-		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		ni, err := narinfopkg.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
 		err = s.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni)
@@ -842,17 +844,13 @@ func TestDeleteNarInfo_RemovesEmptyParentDirectories(t *testing.T) {
 	s, err := local.New(ctx, dir)
 	require.NoError(t, err)
 
-	// Use a hash that will create a unique directory structure: abc123
-	// This creates: store/narinfo/a/ab/abc123.narinfo
-	hash := testHashABC
-	narInfoPath := filepath.Join(
-		dir,
-		"store",
-		"narinfo",
-		"a",
-		"ab",
-		hash+".narinfo",
-	)
+	// Use a hash that will create a unique directory structure (narInfoHash1)
+	// The actual path is computed by narinfo.FilePath()
+	hash := narInfoHash1
+	relPath, err := narinfo.FilePath(hash)
+	require.NoError(t, err)
+
+	narInfoPath := filepath.Join(dir, "store", "narinfo", relPath)
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
 	require.NoError(t, os.WriteFile(narInfoPath, []byte("test"), 0o400))
@@ -863,14 +861,10 @@ func TestDeleteNarInfo_RemovesEmptyParentDirectories(t *testing.T) {
 	// Verify file is deleted
 	assert.NoFileExists(t, narInfoPath)
 
-	// Verify ab/ directory is removed
-	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ab"))
-
-	// Verify a/ directory is removed
-	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", "a"))
-
-	// Verify narinfo/ directory is removed
-	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo"))
+	// Verify directory structure is removed
+	relDir := filepath.Dir(relPath)
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", relDir))
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", filepath.Dir(relDir)))
 }
 
 func TestDeleteNarInfo_PreservesNonEmptyDirectories(t *testing.T) {
@@ -887,28 +881,22 @@ func TestDeleteNarInfo_PreservesNonEmptyDirectories(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create two narinfo files in the same level-2 directory
-	// abc123 and abc456 both go into a/ab/
-	hash1 := testHashABC
-	hash2 := testHashABC456
+	// narInfoHash1 and narInfoHash2 will be placed in the same level-2 directory
+	hash1 := narInfoHash1
+	hash2 := narInfoHash2
 
-	narInfoPath1 := filepath.Join(
-		dir,
-		"store",
-		"narinfo",
-		"a",
-		"ab",
-		hash1+".narinfo",
-	)
-	narInfoPath2 := filepath.Join(
-		dir,
-		"store",
-		"narinfo",
-		"a",
-		"ab",
-		hash2+".narinfo",
-	)
+	relPath1, err := narinfo.FilePath(hash1)
+	require.NoError(t, err)
+
+	narInfoPath1 := filepath.Join(dir, "store", "narinfo", relPath1)
+
+	relPath2, err := narinfo.FilePath(hash2)
+	require.NoError(t, err)
+
+	narInfoPath2 := filepath.Join(dir, "store", "narinfo", relPath2)
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath1), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath2), 0o700))
 	require.NoError(t, os.WriteFile(narInfoPath1, []byte("test1"), 0o400))
 	require.NoError(t, os.WriteFile(narInfoPath2, []byte("test2"), 0o400))
 
@@ -921,14 +909,10 @@ func TestDeleteNarInfo_PreservesNonEmptyDirectories(t *testing.T) {
 	// Verify the other file still exists
 	assert.FileExists(t, narInfoPath2)
 
-	// Verify ab/ directory still exists (contains abc456.narinfo)
-	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ab"))
-
-	// Verify a/ directory still exists
-	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a"))
-
-	// Verify narinfo/ directory still exists
-	assert.DirExists(t, filepath.Join(dir, "store", "narinfo"))
+	// Verify directory structure still exists (contains narinfo for hash2)
+	relDir2 := filepath.Dir(relPath2)
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", relDir2))
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", filepath.Dir(relDir2)))
 }
 
 func TestDeleteNarInfo_PartialCleanup(t *testing.T) {
@@ -945,50 +929,42 @@ func TestDeleteNarInfo_PartialCleanup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create narinfo files in multiple level-2 dirs under same level-1
-	// abc goes into a/ab/
-	// acd goes into a/ac/
-	hashAB := testHashABC
-	hashAC := testHashACD
+	// narInfoHash1 goes into one level-2 dir
+	// narInfoHash3 goes into a different level-2 dir under same level-1
+	hashAB := narInfoHash1
+	hashAC := narInfoHash3
 
-	narInfoPathAB := filepath.Join(
-		dir,
-		"store",
-		"narinfo",
-		"a",
-		"ab",
-		hashAB+".narinfo",
-	)
-	narInfoPathAC := filepath.Join(
-		dir,
-		"store",
-		"narinfo",
-		"a",
-		"ac",
-		hashAC+".narinfo",
-	)
+	relPathAB, err := narinfo.FilePath(hashAB)
+	require.NoError(t, err)
+
+	narInfoPathAB := filepath.Join(dir, "store", "narinfo", relPathAB)
+
+	relPathAC, err := narinfo.FilePath(hashAC)
+	require.NoError(t, err)
+
+	narInfoPathAC := filepath.Join(dir, "store", "narinfo", relPathAC)
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPathAB), 0o700))
 	require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPathAC), 0o700))
 	require.NoError(t, os.WriteFile(narInfoPathAB, []byte("test1"), 0o400))
 	require.NoError(t, os.WriteFile(narInfoPathAC, []byte("test2"), 0o400))
 
-	// Delete abc123
+	// Delete the first narinfo file (hashAB)
 	require.NoError(t, s.DeleteNarInfo(ctx, hashAB))
 
 	// Verify deleted file is gone
 	assert.NoFileExists(t, narInfoPathAB)
 
-	// Verify ab/ is removed (was empty)
-	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ab"))
+	// Verify ab directory is removed (was empty)
+	relDirAB := filepath.Dir(relPathAB)
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", relDirAB))
 
-	// Verify ac/ still exists
-	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a", "ac"))
+	// Verify ac directory still exists (contains hash for hashAC)
+	relDirAC := filepath.Dir(relPathAC)
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", relDirAC))
 
-	// Verify a/ still exists (contains ac/)
-	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", "a"))
-
-	// Verify narinfo/ still exists
-	assert.DirExists(t, filepath.Join(dir, "store", "narinfo"))
+	// Verify level-1 directory still exists (contains ac/)
+	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", filepath.Dir(relDirAC)))
 }
 
 func TestDeleteNar_RemovesEmptyParentDirectories(t *testing.T) {
@@ -1004,17 +980,13 @@ func TestDeleteNar_RemovesEmptyParentDirectories(t *testing.T) {
 	s, err := local.New(ctx, dir)
 	require.NoError(t, err)
 
-	// Use a hash that will create a unique directory structure: xyz789
-	// This creates: store/nar/x/xy/xyz789.nar.xz
-	hash := testHashXYZ
-	narPath := filepath.Join(
-		dir,
-		"store",
-		"nar",
-		"x",
-		"xy",
-		hash+".nar.xz",
-	)
+	// Use a hash that will create a unique directory structure (narHash1)
+	// The actual path is computed by nar.FilePath()
+	hash := narHash1
+	relPath, err := nar.FilePath(hash, nar.CompressionTypeXz.ToFileExtension())
+	require.NoError(t, err)
+
+	narPath := filepath.Join(dir, "store", "nar", relPath)
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
 	require.NoError(t, os.WriteFile(narPath, []byte("test"), 0o400))
@@ -1030,14 +1002,10 @@ func TestDeleteNar_RemovesEmptyParentDirectories(t *testing.T) {
 	// Verify file is deleted
 	assert.NoFileExists(t, narPath)
 
-	// Verify xy/ directory is removed
-	assert.NoDirExists(t, filepath.Join(dir, "store", "nar", "x", "xy"))
-
-	// Verify x/ directory is removed
-	assert.NoDirExists(t, filepath.Join(dir, "store", "nar", "x"))
-
-	// Verify nar/ directory is removed
-	assert.NoDirExists(t, filepath.Join(dir, "store", "nar"))
+	// Verify directory structure is removed
+	relDir := filepath.Dir(relPath)
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", relDir))
+	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", filepath.Dir(relDir)))
 }
 
 func TestDeleteNar_PreservesNonEmptyDirectories(t *testing.T) {
@@ -1054,28 +1022,22 @@ func TestDeleteNar_PreservesNonEmptyDirectories(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create two nar files in the same level-2 directory
-	// xyz123 and xyz456 both go into x/xy/
-	hash1 := testHashXYZ123
-	hash2 := testHashXYZ456
+	// narHash2 and narHash3 will be placed in the same level-2 directory
+	hash1 := narHash2
+	hash2 := narHash3
 
-	narPath1 := filepath.Join(
-		dir,
-		"store",
-		"nar",
-		"x",
-		"xy",
-		hash1+".nar.xz",
-	)
-	narPath2 := filepath.Join(
-		dir,
-		"store",
-		"nar",
-		"x",
-		"xy",
-		hash2+".nar.zst",
-	)
+	relPath1, err := nar.FilePath(hash1, nar.CompressionTypeXz.ToFileExtension())
+	require.NoError(t, err)
+
+	narPath1 := filepath.Join(dir, "store", "nar", relPath1)
+
+	relPath2, err := nar.FilePath(hash2, nar.CompressionTypeZstd.ToFileExtension())
+	require.NoError(t, err)
+
+	narPath2 := filepath.Join(dir, "store", "nar", relPath2)
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(narPath1), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Dir(narPath2), 0o700))
 	require.NoError(t, os.WriteFile(narPath1, []byte("test1"), 0o400))
 	require.NoError(t, os.WriteFile(narPath2, []byte("test2"), 0o400))
 
@@ -1093,14 +1055,10 @@ func TestDeleteNar_PreservesNonEmptyDirectories(t *testing.T) {
 	// Verify the other file still exists
 	assert.FileExists(t, narPath2)
 
-	// Verify xy/ directory still exists (contains xyz456.nar.zst)
-	assert.DirExists(t, filepath.Join(dir, "store", "nar", "x", "xy"))
-
-	// Verify x/ directory still exists
-	assert.DirExists(t, filepath.Join(dir, "store", "nar", "x"))
-
-	// Verify nar/ directory still exists
-	assert.DirExists(t, filepath.Join(dir, "store", "nar"))
+	// Verify directory structure still exists (contains narpath for hash2)
+	relDir2 := filepath.Dir(relPath2)
+	assert.DirExists(t, filepath.Join(dir, "store", "nar", relDir2))
+	assert.DirExists(t, filepath.Join(dir, "store", "nar", filepath.Dir(relDir2)))
 }
 
 func newContext() context.Context {
