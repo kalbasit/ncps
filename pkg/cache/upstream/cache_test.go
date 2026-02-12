@@ -236,10 +236,7 @@ func TestGetNarInfo(t *testing.T) {
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
 		t.Parallel()
 
-		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
-			w.WriteHeader(http.StatusNoContent)
-		}))
+		slowServer := httptest.NewServer(newSlowHandler(3500 * time.Millisecond))
 		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
@@ -306,10 +303,7 @@ func TestHasNarInfo(t *testing.T) {
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
 		t.Parallel()
 
-		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
-			w.WriteHeader(http.StatusNoContent)
-		}))
+		slowServer := httptest.NewServer(newSlowHandler(3500 * time.Millisecond))
 		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
@@ -375,10 +369,7 @@ func TestGetNar(t *testing.T) {
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
 		t.Parallel()
 
-		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
-			w.WriteHeader(http.StatusNoContent)
-		}))
+		slowServer := httptest.NewServer(newSlowHandler(3500 * time.Millisecond))
 		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
@@ -448,10 +439,7 @@ func TestHasNar(t *testing.T) {
 	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
 		t.Parallel()
 
-		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
-			w.WriteHeader(http.StatusNoContent)
-		}))
+		slowServer := httptest.NewServer(newSlowHandler(3500 * time.Millisecond))
 		t.Cleanup(slowServer.Close)
 
 		c, err := upstream.New(
@@ -649,7 +637,7 @@ func TestNewWithOptions(t *testing.T) {
 
 		slowListener := &slowAcceptListener{
 			Listener: listener,
-			delay:    4 * time.Second, // Longer than default 3s timeout
+			delay:    4 * time.Second, // Longer than default 3s timeout to test timeout behavior
 		}
 
 		// Start a server with the slow listener
@@ -667,7 +655,8 @@ func TestNewWithOptions(t *testing.T) {
 		}()
 
 		// Allow the server goroutine to start before making a connection.
-		time.Sleep(100 * time.Millisecond)
+		// Use a very short sleep since we're testing connection timeout, not actual delay
+		time.Sleep(1 * time.Millisecond)
 		t.Cleanup(func() { server.Close() })
 
 		serverURL := fmt.Sprintf("http://%s", listener.Addr().String())
@@ -708,12 +697,8 @@ func TestNewWithOptions(t *testing.T) {
 	t.Run("custom response header timeout is respected - slow server succeeds with longer timeout", func(t *testing.T) {
 		t.Parallel()
 
-		// Server that takes 4 seconds to respond (longer than default 3s timeout)
-		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(4 * time.Second)
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "StorePath: /nix/store/test")
-		}))
+		// Server that delays responding to test timeout behavior
+		slowServer := httptest.NewServer(newSlowHandler(3500 * time.Millisecond))
 		t.Cleanup(slowServer.Close)
 
 		// With default timeout (3s), this should fail
@@ -748,13 +733,36 @@ func TestNewWithOptions(t *testing.T) {
 	})
 }
 
+// newSlowHandler creates an HTTP handler that delays responding,
+// but respects request context cancellation from client timeouts.
+// This simulates a slow server without sleeping for the full timeout duration.
+func newSlowHandler(delay time.Duration) http.HandlerFunc { //nolint:unparam // currently it's only used with 3500ms
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Wait for delay or context cancellation (whichever comes first)
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+
+		select {
+		case <-timer.C:
+			// Delay completed, write response
+			w.WriteHeader(http.StatusNoContent)
+		case <-r.Context().Done():
+			// Request context was cancelled (due to client timeout or other reason)
+			// Just return without writing response - the connection will be closed
+		}
+	}
+}
+
 // slowAcceptListener wraps a net.Listener to delay accepting connections.
+// This is used to test client connection timeout behavior.
 type slowAcceptListener struct {
 	net.Listener
 	delay time.Duration
 }
 
 func (l *slowAcceptListener) Accept() (net.Conn, error) {
+	// Block the accept for the specified delay duration.
+	// The client's dialer timeout will trigger independently if the delay exceeds it.
 	time.Sleep(l.delay)
 
 	return l.Listener.Accept()

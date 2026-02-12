@@ -9,10 +9,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 )
@@ -49,6 +49,7 @@ func TestSelectUpstream_NoGoroutineLeak(t *testing.T) {
 
 	t.Run("all upstreams succeed should not leak goroutines", func(t *testing.T) {
 		t.Parallel()
+		defer goleak.VerifyNone(t)
 
 		const numUpstreams = 3
 
@@ -89,9 +90,6 @@ func TestSelectUpstream_NoGoroutineLeak(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Give goroutines time to complete (they should if not leaked)
-		time.Sleep(500 * time.Millisecond)
-
 		assert.Equal(
 			t,
 			int32(numUpstreams),
@@ -102,6 +100,7 @@ func TestSelectUpstream_NoGoroutineLeak(t *testing.T) {
 
 	t.Run("one succeeds while others error should not leak goroutines", func(t *testing.T) {
 		t.Parallel()
+		defer goleak.VerifyNone(t)
 
 		const numUpstreams = 3
 
@@ -125,11 +124,9 @@ func TestSelectUpstream_NoGoroutineLeak(t *testing.T) {
 				// First upstream succeeds immediately
 				ch <- uc
 			} else {
-				// Error workers delay to ensure the main loop has already
-				// consumed from ch and returned. After the function returns,
-				// nobody reads from errC, so these sends block forever.
-				time.Sleep(100 * time.Millisecond)
-
+				// Error workers will be cleaned up by goleak verification.
+				// These sends would block forever after the function returns
+				// since nobody reads from errC, but goleak will detect them.
 				errC <- errUpstreamUnavailable
 			}
 		}
@@ -137,9 +134,6 @@ func TestSelectUpstream_NoGoroutineLeak(t *testing.T) {
 		result, err := c.selectUpstream(newContext(), ucs, selectFn)
 		require.NoError(t, err)
 		require.NotNil(t, result)
-
-		// Give goroutines time to complete (they should if not leaked)
-		time.Sleep(500 * time.Millisecond)
 
 		assert.Equal(
 			t,

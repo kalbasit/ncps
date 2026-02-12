@@ -5,13 +5,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -247,7 +246,7 @@ func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.
 	return func(t *testing.T) {
 		t.Parallel()
 
-		t.Skip("test is failing/fragile, I will try and integrate go.uber.org/goleak in it later")
+		defer goleak.VerifyNone(t, goleak.IgnoreTopFunction("testing.(*M).Run"))
 
 		ctx := context.Background()
 
@@ -274,13 +273,6 @@ func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.
 		err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
 		require.NoError(t, err)
 
-		// Record baseline goroutine count
-		runtime.GC()
-		time.Sleep(100 * time.Millisecond)
-
-		baselineGoroutines := runtime.NumGoroutine()
-		t.Logf("Baseline goroutines: %d", baselineGoroutines)
-
 		// Create a cancellable context to simulate client disconnect
 		clientCtx, cancel := context.WithCancel(ctx)
 
@@ -298,19 +290,6 @@ func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.
 
 		// Close the reader
 		rc.Close()
-
-		// Give goroutines time to leak (if they're going to)
-		time.Sleep(1 * time.Second)
-		runtime.GC()
-		time.Sleep(100 * time.Millisecond)
-
-		// Check that no goroutines are leaked
-		finalGoroutines := runtime.NumGoroutine()
-		t.Logf("Final goroutines: %d (difference: %d)", finalGoroutines, finalGoroutines-baselineGoroutines)
-
-		// Allow a small tolerance for test infrastructure goroutines to prevent flakiness.
-		assert.LessOrEqual(t, finalGoroutines, baselineGoroutines+2,
-			"Goroutine leak detected: baseline=%d, final=%d", baselineGoroutines, finalGoroutines)
 	}
 }
 

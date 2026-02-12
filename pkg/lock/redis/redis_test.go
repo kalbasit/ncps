@@ -15,6 +15,25 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 )
 
+// ensureLockHeld waits for a lock to be held in concurrent scenarios.
+// This replaces arbitrary time.Sleep calls with semantic naming that documents
+// the synchronization intent. The 50ms duration is sufficient for lock acquisition
+// across all platforms while being much faster than longer waits.
+func ensureLockHeld(t *testing.T) {
+	t.Helper()
+	time.Sleep(50 * time.Millisecond)
+}
+
+// ensureLockTTLExpiry waits for a lock to expire.
+// Instead of using a long TTL (1 second) and waiting 2+ seconds,
+// we use a short TTL (50ms) and wait slightly longer (75ms) to ensure expiry.
+// This reduces waiting time while maintaining the test's intent.
+func ensureLockTTLExpiry(t *testing.T, duration time.Duration) {
+	t.Helper()
+	// Wait 1.5x the TTL to ensure expiry across different Redis versions and network conditions
+	time.Sleep(duration * 3 / 2)
+}
+
 // skipIfRedisNotAvailable skips the test if Redis is not available for testing.
 func skipIfRedisNotAvailable(t *testing.T) {
 	t.Helper()
@@ -180,12 +199,13 @@ func TestLocker_LockExpiry(t *testing.T) {
 
 	key := getUniqueKey(t, "expiry")
 
-	// Acquire lock with short TTL
-	err = locker1.Lock(ctx, key, 1*time.Second)
+	// Acquire lock with short TTL (50ms instead of 1s for faster testing)
+	ttl := 50 * time.Millisecond
+	err = locker1.Lock(ctx, key, ttl)
 	require.NoError(t, err)
 
-	// Wait for lock to expire
-	time.Sleep(2 * time.Second)
+	// Wait for lock to expire using helper function
+	ensureLockTTLExpiry(t, ttl)
 
 	// Second locker should be able to acquire (lock expired)
 	err = locker2.Lock(ctx, key, 5*time.Second)
@@ -220,9 +240,9 @@ func TestLocker_RetryWithBackoff(t *testing.T) {
 	err = locker1.Lock(ctx, key, 3*time.Second)
 	require.NoError(t, err)
 
-	// Start goroutine to release lock after 1 second
+	// Start goroutine to release lock after 50ms (faster test iteration)
 	go func() {
-		time.Sleep(1 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 
 		_ = locker1.Unlock(ctx, key)
 	}()
@@ -386,7 +406,7 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 			assert.GreaterOrEqual(t, active, int64(len(lockers)), "all readers should be active simultaneously")
 
 			// Hold the lock briefly to ensure readers can coexist
-			time.Sleep(50 * time.Millisecond)
+			ensureLockHeld(t)
 
 			atomic.AddInt64(&readersActive, -1)
 

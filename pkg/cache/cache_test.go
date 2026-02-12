@@ -45,6 +45,19 @@ const (
 	cacheLockTTL        = 30 * time.Minute
 )
 
+// ensureTimestampProgression ensures that database timestamps will be different
+// between successive operations. This is needed because some databases (like SQLite)
+// have second-level timestamp precision and cannot distinguish operations that
+// happen within the same second.
+//
+// For databases with microsecond precision (PostgreSQL, MySQL), this could be
+// optimized to use shorter sleeps, but using 1 second ensures compatibility
+// across all supported backends.
+func ensureTimestampProgression(t *testing.T) {
+	t.Helper()
+	time.Sleep(time.Second)
+}
+
 // cacheFactory is a function that returns a clean, ready-to-use Cache instance,
 // database, local store, directory path, a rebind function, and takes care of cleaning up once the test is done.
 type cacheFactory func(t *testing.T) (*cache.Cache, database.Querier, *local.Store, string, func(string) string, func())
@@ -573,7 +586,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
 
@@ -592,7 +605,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 				require.NoError(t, err)
@@ -932,7 +945,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
 
@@ -953,7 +966,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 				size, r, err := c.GetNar(context.Background(), nu)
@@ -1325,8 +1338,8 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 						f.Flush()
 					}
 
-					// Sleep to make download slow
-					time.Sleep(10 * time.Millisecond)
+					// Minimal sleep to simulate work while keeping tests fast (reduced from 10ms)
+					time.Sleep(1 * time.Millisecond)
 				}
 
 				return true
@@ -1463,8 +1476,8 @@ func testBackgroundDownloadCompletionAfterCancellation(factory cacheFactory) fun
 						f.Flush()
 					}
 
-					// Sleep to make download slow (but not too slow to avoid test timeout)
-					time.Sleep(2 * time.Millisecond)
+					// Minimal sleep to simulate work while keeping tests fast (reduced from 2ms)
+					time.Sleep(1 * time.Millisecond)
 				}
 
 				// Signal download is complete
@@ -1652,8 +1665,8 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 						f.Flush()
 					}
 
-					// Sleep to make download slow
-					time.Sleep(2 * time.Millisecond)
+					// Minimal sleep to simulate work while keeping tests fast (reduced from 2ms)
+					time.Sleep(1 * time.Millisecond)
 				}
 
 				// Signal download is complete
@@ -1803,6 +1816,8 @@ func newContext() context.Context {
 		WithContext(context.Background())
 }
 
+// waitForFile waits for a file to exist on disk with exponential backoff polling.
+// This is used for tests that wait for async file operations to complete.
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
 

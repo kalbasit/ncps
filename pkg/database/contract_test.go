@@ -18,6 +18,15 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
+// ensureTimestampProgression ensures that database timestamps will be different
+// between successive operations. This is needed because some databases (like SQLite)
+// have second-level timestamp precision and cannot distinguish operations that
+// happen within the same second.
+func ensureTimestampProgression(t *testing.T) {
+	t.Helper()
+	time.Sleep(time.Second)
+}
+
 // querierFactory is a function that returns a clean, ready-to-use Querier and
 // it takes care of cleaning up once the test is done.
 type querierFactory func(t *testing.T) database.Querier
@@ -318,7 +327,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 
 			t.Run("touch the narinfo", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				ra, err := db.TouchNarInfo(context.Background(), hash)
 				require.NoError(t, err)
@@ -378,7 +387,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 
 			t.Run("delete the narinfo", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				ra, err := db.DeleteNarInfoByHash(context.Background(), hash)
 				require.NoError(t, err)
@@ -730,7 +739,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 
 			t.Run("touch the nar", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				ra, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
 					Hash:        hash,
@@ -814,7 +823,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 
 			t.Run("delete the narinfo", func(t *testing.T) {
-				time.Sleep(time.Second)
+				ensureTimestampProgression(t)
 
 				ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
 					Hash:        hash,
@@ -967,7 +976,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 		}
 
-		time.Sleep(time.Second)
+		ensureTimestampProgression(t)
 
 		for _, narEntry := range allEntries[:len(allEntries)-1] {
 			_, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
@@ -2049,10 +2058,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 		require.NoError(t, err)
 
-		// Wait for one second to ensure that last_accessed_at is different from
-		// created_at. This is needed because some databases (like SQLite) might
-		// not have sub-second precision for CURRENT_TIMESTAMP.
-		time.Sleep(time.Second)
+		// Ensure timestamp progression so last_accessed_at differs from created_at.
+		// This is needed because some databases (like SQLite) have second-level precision.
+		ensureTimestampProgression(t)
 
 		// Touch ni2 and ni3, making ni1 the least used
 		_, err = db.TouchNarInfo(context.Background(), hash2)

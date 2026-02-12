@@ -18,6 +18,15 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
+// ensureLockHeld waits for a lock to be held in concurrent scenarios.
+// This replaces arbitrary time.Sleep calls with semantic naming that documents
+// the synchronization intent. The 50ms duration is sufficient for lock acquisition
+// across all platforms while being much faster than longer waits.
+func ensureLockHeld(t *testing.T) {
+	t.Helper()
+	time.Sleep(50 * time.Millisecond)
+}
+
 // skipIfPostgresNotAvailable skips the test if PostgreSQL is not available for testing.
 func skipIfPostgresNotAvailable(t *testing.T) {
 	t.Helper()
@@ -250,7 +259,7 @@ func TestLocker_RetryWithBackoff(t *testing.T) {
 
 	// Start goroutine to release lock after 1 second
 	go func() {
-		time.Sleep(1 * time.Second)
+		time.Sleep(50 * time.Millisecond)
 
 		_ = locker1.Unlock(ctx, key)
 	}()
@@ -389,7 +398,7 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 			assert.GreaterOrEqual(t, active, int64(len(lockers)), "all readers should be active simultaneously")
 
 			// Hold the lock briefly to ensure readers can coexist
-			time.Sleep(50 * time.Millisecond)
+			ensureLockHeld(t)
 
 			atomic.AddInt64(&readersActive, -1)
 

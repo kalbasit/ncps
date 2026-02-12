@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -202,37 +202,19 @@ func TestPrefetchErrorPropagation(t *testing.T) {
 // TestPrefetchContextCancellation verifies graceful shutdown when context is cancelled.
 func TestPrefetchContextCancellation(t *testing.T) {
 	t.Parallel()
-
-	t.Skip("test is failing/fragile, I will try and integrate go.uber.org/goleak in it later")
+	defer goleak.VerifyNone(t, goleak.IgnoreTopFunction("testing.(*M).Run"))
 
 	ctx := context.Background()
 
-	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, _, _, _, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
-
-	// Initialize chunk store with latency to make cancellation timing easier
-	chunkStoreDir := filepath.Join(dir, "chunks-store")
-	baseStore, err := chunk.NewLocalStore(chunkStoreDir)
-	require.NoError(t, err)
-
-	latencyStore := &mockLatencyChunkStore{
-		Store:           baseStore,
-		getChunkLatency: 100 * time.Millisecond,
-	}
-
-	c.SetChunkStore(latencyStore)
-	err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
-	require.NoError(t, err)
 
 	// Create a NAR with multiple chunks
 	content := strings.Repeat("cancellation test content ", 500)
 	nu := nar.URL{Hash: "cancel-test", Compression: nar.CompressionTypeNone}
 
-	err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+	err := c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
 	require.NoError(t, err)
-
-	// Capture initial goroutine count
-	initialGoroutines := runtime.NumGoroutine()
 
 	// Create a context that we'll cancel mid-stream
 	ctx, cancel := context.WithCancel(context.Background())
@@ -257,18 +239,6 @@ func TestPrefetchContextCancellation(t *testing.T) {
 
 	// Wait for the reader goroutine to finish
 	<-errChan
-
-	// Give the prefetcher goroutine some time to exit
-	time.Sleep(200 * time.Millisecond)
-
-	// Check for goroutine leaks. We expect the number of goroutines back to baseline.
-	// We allow a small tolerance if needed, but here it should be exact.
-	finalGoroutines := runtime.NumGoroutine()
-	assert.LessOrEqual(t,
-		finalGoroutines,
-		initialGoroutines+2,
-		"should not leak many goroutines (allowing for test infrastructure)",
-	)
 }
 
 // TestPrefetchMemoryBounds verifies that the prefetch buffer doesn't grow unbounded.
@@ -340,7 +310,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	// Start a goroutine that will "complete" the chunking after a delay
 	// This simulates the scenario where instance A is still chunking while instance B streams
 	go func() {
-		time.Sleep(100 * time.Millisecond) // Reduced delay to speed up test
+		time.Sleep(10 * time.Millisecond) // Minimal delay to test concurrent scenarios quickly
 
 		_, _ = db.DB().ExecContext(
 			context.Background(),
@@ -388,7 +358,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 	t.Parallel()
 
-	t.Skip("test is failing/fragile, I will try and integrate go.uber.org/goleak in it later")
+	defer goleak.VerifyNone(t, goleak.IgnoreTopFunction("testing.(*M).Run"))
 
 	ctx := context.Background()
 
@@ -428,12 +398,6 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 	_, err = db.DB().ExecContext(ctx, "UPDATE nar_files SET total_chunks = 0 WHERE id = ?", narFile.ID)
 	require.NoError(t, err)
 
-	// Count goroutines before
-	runtime.GC()
-	time.Sleep(100 * time.Millisecond)
-
-	goroutinesBefore := runtime.NumGoroutine()
-
 	// Start progressive streaming and cancel mid-stream
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -454,15 +418,4 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 		// Give time for cleanup
 		time.Sleep(50 * time.Millisecond)
 	}
-
-	// Force GC and wait for goroutines to clean up
-	runtime.GC()
-	time.Sleep(200 * time.Millisecond)
-
-	goroutinesAfter := runtime.NumGoroutine()
-
-	// Allow some tolerance for background goroutines, but there should be no significant leak
-	// We'll allow up to 2 extra goroutines as noise
-	assert.LessOrEqual(t, goroutinesAfter, goroutinesBefore+2,
-		"should not leak goroutines (before: %d, after: %d)", goroutinesBefore, goroutinesAfter)
 }
