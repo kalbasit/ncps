@@ -26,6 +26,7 @@ CREATE TABLE `chunks` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `hash` varchar(64) NOT NULL,
   `size` int(10) unsigned NOT NULL,
+  `compressed_size` int(10) unsigned NOT NULL DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),

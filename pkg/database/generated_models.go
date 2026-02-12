@@ -27,11 +27,12 @@ type AddNarInfoSignaturesParams struct {
 }
 
 type Chunk struct {
-	ID        int64
-	Hash      string
-	Size      uint32
-	CreatedAt time.Time
-	UpdatedAt sql.NullTime
+	ID             int64
+	Hash           string
+	Size           uint32
+	CompressedSize uint32
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
 }
 
 type Config struct {
@@ -83,6 +84,22 @@ type DeleteNarFileByHashParams struct {
 type GetChunkByNarFileIDAndIndexParams struct {
 	NarFileID  int64
 	ChunkIndex int64
+}
+
+type GetChunkByNarFileIDAndIndexRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
+type GetChunksByNarFileIDRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
 }
 
 type GetCompressedNarInfosParams struct {
@@ -140,6 +157,14 @@ type GetOldCompressedNarFilesParams struct {
 	CreatedAt time.Time
 	Limit     int32
 	Offset    int32
+}
+
+type GetOrphanedChunksRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
 }
 
 type GetOrphanedNarFilesRow struct {

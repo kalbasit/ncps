@@ -73,7 +73,7 @@ INSERT INTO chunks (
 )
 ON CONFLICT(hash) DO UPDATE SET
     updated_at = CURRENT_TIMESTAMP
-RETURNING id, hash, size, created_at, updated_at
+RETURNING id, hash, size, compressed_size, created_at, updated_at
 `
 
 type CreateChunkParams struct {
@@ -90,7 +90,7 @@ type CreateChunkParams struct {
 //	)
 //	ON CONFLICT(hash) DO UPDATE SET
 //	    updated_at = CURRENT_TIMESTAMP
-//	RETURNING id, hash, size, created_at, updated_at
+//	RETURNING id, hash, size, compressed_size, created_at, updated_at
 func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
 	row := q.db.QueryRowContext(ctx, createChunk, arg.Hash, arg.Size)
 	var i Chunk
@@ -98,6 +98,7 @@ func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk
 		&i.ID,
 		&i.Hash,
 		&i.Size,
+		&i.CompressedSize,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -418,14 +419,14 @@ func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
 }
 
 const getChunkByHash = `-- name: GetChunkByHash :one
-SELECT id, hash, size, created_at, updated_at
+SELECT id, hash, size, compressed_size, created_at, updated_at
 FROM chunks
 WHERE hash = ?
 `
 
 // GetChunkByHash
 //
-//	SELECT id, hash, size, created_at, updated_at
+//	SELECT id, hash, size, compressed_size, created_at, updated_at
 //	FROM chunks
 //	WHERE hash = ?
 func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
@@ -435,6 +436,7 @@ func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error
 		&i.ID,
 		&i.Hash,
 		&i.Size,
+		&i.CompressedSize,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -442,14 +444,14 @@ func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error
 }
 
 const getChunkByID = `-- name: GetChunkByID :one
-SELECT id, hash, size, created_at, updated_at
+SELECT id, hash, size, compressed_size, created_at, updated_at
 FROM chunks
 WHERE id = ?
 `
 
 // GetChunkByID
 //
-//	SELECT id, hash, size, created_at, updated_at
+//	SELECT id, hash, size, compressed_size, created_at, updated_at
 //	FROM chunks
 //	WHERE id = ?
 func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
@@ -459,6 +461,7 @@ func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
 		&i.ID,
 		&i.Hash,
 		&i.Size,
+		&i.CompressedSize,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -477,15 +480,23 @@ type GetChunkByNarFileIDAndIndexParams struct {
 	ChunkIndex int64
 }
 
+type GetChunkByNarFileIDAndIndexRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
 // GetChunkByNarFileIDAndIndex
 //
 //	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 //	FROM chunks c
 //	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?
-func (q *Queries) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error) {
+func (q *Queries) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (GetChunkByNarFileIDAndIndexRow, error) {
 	row := q.db.QueryRowContext(ctx, getChunkByNarFileIDAndIndex, arg.NarFileID, arg.ChunkIndex)
-	var i Chunk
+	var i GetChunkByNarFileIDAndIndexRow
 	err := row.Scan(
 		&i.ID,
 		&i.Hash,
@@ -520,6 +531,14 @@ WHERE nfc.nar_file_id = ?
 ORDER BY nfc.chunk_index
 `
 
+type GetChunksByNarFileIDRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
 // GetChunksByNarFileID
 //
 //	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
@@ -527,15 +546,15 @@ ORDER BY nfc.chunk_index
 //	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.nar_file_id = ?
 //	ORDER BY nfc.chunk_index
-func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, getChunksByNarFileID, narFileID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Chunk
+	var items []GetChunksByNarFileIDRow
 	for rows.Next() {
-		var i Chunk
+		var i GetChunksByNarFileIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
@@ -1413,21 +1432,29 @@ LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.chunk_id IS NULL
 `
 
+type GetOrphanedChunksRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
 // GetOrphanedChunks
 //
 //	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 //	FROM chunks c
 //	LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.chunk_id IS NULL
-func (q *Queries) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+func (q *Queries) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error) {
 	rows, err := q.db.QueryContext(ctx, getOrphanedChunks)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Chunk
+	var items []GetOrphanedChunksRow
 	for rows.Next() {
-		var i Chunk
+		var i GetOrphanedChunksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
