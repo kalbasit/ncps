@@ -28,7 +28,7 @@ Sig: nix-community.cachix.org-1:wKpIFGNnM2hyGkGUaX+qhMhYzEwMio7o4RayDDD/BUF0eOOz
 	NarPath: filepath.Join(
 		"5",
 		"50",
-		"504dd9a697cdfa0ddc22552ca66b3322afd52beee44642419d0fff83bb9071e2.nar.xz",
+		"504dd9a697cdfa0ddc22552ca66b3322afd52beee44642419d0fff83bb9071e2.nar.zst",
 	),
 	NarText: testhelper.MustRandString(1126),
 }
