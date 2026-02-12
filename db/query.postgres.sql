@@ -300,7 +300,7 @@ FROM chunks
 WHERE id = $1;
 
 -- name: GetChunksByNarFileID :many
-SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+SELECT c.id, c.hash, c.size, c.compressed_size, c.created_at, c.updated_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = $1
@@ -308,9 +308,9 @@ ORDER BY nfc.chunk_index;
 
 -- name: CreateChunk :one
 INSERT INTO chunks (
-    hash, size
+    hash, size, compressed_size
 ) VALUES (
-    $1, $2
+    $1, $2, $3
 )
 ON CONFLICT(hash) DO UPDATE SET
     updated_at = CURRENT_TIMESTAMP

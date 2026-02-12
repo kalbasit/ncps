@@ -63,9 +63,9 @@ func (q *Queries) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatu
 
 const createChunk = `-- name: CreateChunk :execresult
 INSERT INTO chunks (
-    hash, size
+    hash, size, compressed_size
 ) VALUES (
-    ?, ?
+    ?, ?, ?
 )
 ON DUPLICATE KEY UPDATE
     id = LAST_INSERT_ID(id),
@@ -73,22 +73,23 @@ ON DUPLICATE KEY UPDATE
 `
 
 type CreateChunkParams struct {
-	Hash string
-	Size uint32
+	Hash           string
+	Size           uint32
+	CompressedSize uint32
 }
 
 // CreateChunk
 //
 //	INSERT INTO chunks (
-//	    hash, size
+//	    hash, size, compressed_size
 //	) VALUES (
-//	    ?, ?
+//	    ?, ?, ?
 //	)
 //	ON DUPLICATE KEY UPDATE
 //	    id = LAST_INSERT_ID(id),
 //	    updated_at = CURRENT_TIMESTAMP
 func (q *Queries) CreateChunk(ctx context.Context, arg CreateChunkParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, createChunk, arg.Hash, arg.Size)
+	return q.db.ExecContext(ctx, createChunk, arg.Hash, arg.Size, arg.CompressedSize)
 }
 
 const createConfig = `-- name: CreateConfig :execresult
@@ -465,41 +466,34 @@ func (q *Queries) GetChunkCount(ctx context.Context) (int64, error) {
 }
 
 const getChunksByNarFileID = `-- name: GetChunksByNarFileID :many
-SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+SELECT c.id, c.hash, c.size, c.compressed_size, c.created_at, c.updated_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ?
 ORDER BY nfc.chunk_index
 `
 
-type GetChunksByNarFileIDRow struct {
-	ID        int64
-	Hash      string
-	Size      uint32
-	CreatedAt time.Time
-	UpdatedAt sql.NullTime
-}
-
 // GetChunksByNarFileID
 //
-//	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+//	SELECT c.id, c.hash, c.size, c.compressed_size, c.created_at, c.updated_at
 //	FROM chunks c
 //	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 //	WHERE nfc.nar_file_id = ?
 //	ORDER BY nfc.chunk_index
-func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error) {
+func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
 	rows, err := q.db.QueryContext(ctx, getChunksByNarFileID, narFileID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetChunksByNarFileIDRow
+	var items []Chunk
 	for rows.Next() {
-		var i GetChunksByNarFileIDRow
+		var i Chunk
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
 			&i.Size,
+			&i.CompressedSize,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

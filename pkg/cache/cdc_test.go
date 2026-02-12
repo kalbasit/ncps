@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
 )
@@ -340,9 +341,27 @@ func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Verify chunks exist in DB and have compressed_size set
-		chunkCount, err := db.GetChunkCount(ctx)
+		narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        nu.Hash,
+			Compression: nu.Compression.String(),
+			Query:       nu.Query.Encode(),
+		})
 		require.NoError(t, err)
-		assert.Positive(t, chunkCount)
+
+		chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, chunks, "should have chunks in the database")
+
+		var totalSize, totalCompressedSize int64
+		for _, chunk := range chunks {
+			totalSize += int64(chunk.Size)
+			totalCompressedSize += int64(chunk.CompressedSize)
+			assert.Positive(t, chunk.CompressedSize, "compressed size should be positive")
+		}
+
+		assert.Equal(t, int64(len(content)), totalSize, "sum of chunk sizes should equal original content size")
+		assert.Less(t, totalCompressedSize, totalSize,
+			"total compressed size should be less than total original size for compressible data")
 
 		// Verify reassembly to ensure compression is transparent
 		size, rc, err := c.GetNar(ctx, nu)

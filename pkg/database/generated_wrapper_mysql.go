@@ -74,8 +74,9 @@ func (w *mysqlWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (
 	// MySQL does not support RETURNING for INSERTs.
 	// We insert, get LastInsertId, and then fetch the object.
 	res, err := w.adapter.CreateChunk(ctx, mysqldb.CreateChunkParams{
-		Hash: arg.Hash,
-		Size: arg.Size,
+		Hash:           arg.Hash,
+		Size:           arg.Size,
+		CompressedSize: arg.CompressedSize,
 	})
 	if err != nil {
 		return Chunk{}, err
@@ -356,7 +357,7 @@ func (w *mysqlWrapper) GetChunkCount(ctx context.Context) (int64, error) {
 	return res, nil
 }
 
-func (w *mysqlWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error) {
+func (w *mysqlWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetChunksByNarFileID(ctx, narFileID)
@@ -365,14 +366,16 @@ func (w *mysqlWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]GetChunksByNarFileIDRow, len(res))
+	items := make([]Chunk, len(res))
 	for i, v := range res {
-		items[i] = GetChunksByNarFileIDRow{
+		items[i] = Chunk{
 			ID: v.ID,
 
 			Hash: v.Hash,
 
 			Size: v.Size,
+
+			CompressedSize: v.CompressedSize,
 
 			CreatedAt: v.CreatedAt,
 

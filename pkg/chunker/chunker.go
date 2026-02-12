@@ -13,10 +13,11 @@ import (
 
 // Chunk represents a single content-defined chunk.
 type Chunk struct {
-	Hash   string // BLAKE3 hash of chunk content
-	Offset int64  // Offset in original stream
-	Size   uint32 // Chunk size in bytes
-	Data   []byte // Chunk data
+	Hash           string // BLAKE3 hash of chunk content
+	Offset         int64  // Offset in original stream
+	Size           uint32 // Chunk size in bytes
+	CompressedSize uint32 // Compressed chunk size in bytes
+	Data           []byte // Chunk data
 
 	free func() // function to return Data to the pool
 }
