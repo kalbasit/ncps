@@ -330,7 +330,12 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 
 // HasNar returns true if the store has the nar.
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
-	tfp, err := narURL.Normalize().ToFilePath()
+	normalizedURL, err := narURL.Normalize()
+	if err != nil {
+		return false
+	}
+
+	tfp, err := normalizedURL.ToFilePath()
 	if err != nil {
 		return false
 	}
@@ -357,7 +362,10 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 // NOTE: The caller must close the returned io.ReadCloser!
 func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
 	// Normalize the NAR URL to handle URLs with embedded narinfo hash prefix
-	normalizedURL := narURL.Normalize()
+	normalizedURL, err := narURL.Normalize()
+	if err != nil {
+		return 0, nil, err
+	}
 
 	tfp, err := normalizedURL.ToFilePath()
 	if err != nil {
@@ -397,7 +405,10 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 // PutNar puts the nar in the store.
 func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
 	// Normalize the NAR URL to handle URLs with embedded narinfo hash prefix
-	normalizedURL := narURL.Normalize()
+	normalizedURL, err := narURL.Normalize()
+	if err != nil {
+		return 0, err
+	}
 
 	tfp, err := normalizedURL.ToFilePath()
 	if err != nil {
@@ -457,7 +468,10 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 // DeleteNar deletes the nar from the store.
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	// Normalize the NAR URL to handle URLs with embedded narinfo hash prefix
-	normalizedURL := narURL.Normalize()
+	normalizedURL, err := narURL.Normalize()
+	if err != nil {
+		return err
+	}
 
 	tfp, err := normalizedURL.ToFilePath()
 	if err != nil {
