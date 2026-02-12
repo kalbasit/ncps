@@ -29,7 +29,7 @@ const (
 	narInfoHash3 = "0bz5d30q8f28yz8yhf65aya4jbcxn33n"
 	narHash1     = "1s8p1kgdms8rmxkq24q51wc7zpn0aqcwgzvc473v9cii7z2qyxq0"
 	narHash2     = "123x3zvy8mfbxw8c9i7pqh2cmcya3g6w8y8yhldp5s39685dhsx4"
-	narHash3     = "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27"
+	narHash3     = "12ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27"
 )
 
 func TestNew(t *testing.T) {
@@ -881,9 +881,9 @@ func TestDeleteNarInfo_PreservesNonEmptyDirectories(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create two narinfo files in the same level-2 directory
-	// narInfoHash1 and narInfoHash2 will be placed in the same level-2 directory
-	hash1 := narInfoHash1
-	hash2 := narInfoHash2
+	// narInfoHash2 and narInfoHash3 will be placed in the same level-2 directory
+	hash1 := narInfoHash2
+	hash2 := narInfoHash3
 
 	relPath1, err := narinfo.FilePath(hash1)
 	require.NoError(t, err)
@@ -1004,8 +1004,9 @@ func TestDeleteNar_RemovesEmptyParentDirectories(t *testing.T) {
 
 	// Verify directory structure is removed
 	relDir := filepath.Dir(relPath)
-	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", relDir))
-	assert.NoDirExists(t, filepath.Join(dir, "store", "narinfo", filepath.Dir(relDir)))
+	assert.NoDirExists(t, filepath.Join(dir, "store", "nar", relDir))
+	assert.NoDirExists(t, filepath.Join(dir, "store", "nar", filepath.Dir(relDir)))
+	assert.NoDirExists(t, filepath.Join(dir, "store", "nar"))
 }
 
 func TestDeleteNar_PreservesNonEmptyDirectories(t *testing.T) {
