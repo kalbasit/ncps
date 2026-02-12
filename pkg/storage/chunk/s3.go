@@ -10,6 +10,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
@@ -27,11 +28,25 @@ const (
 	chunkPutLockTTL = 5 * time.Minute
 )
 
+// s3ReadCloser wraps a zstd decoder and io.ReadCloser to properly close both.
+type s3ReadCloser struct {
+	*zstd.Decoder
+	body io.ReadCloser
+}
+
+func (r *s3ReadCloser) Close() error {
+	r.Decoder.Close()
+
+	return r.body.Close()
+}
+
 // s3Store implements Store for S3 storage.
 type s3Store struct {
-	client *minio.Client
-	locker lock.Locker
-	bucket string
+	client  *minio.Client
+	locker  lock.Locker
+	bucket  string
+	encoder *zstd.Encoder
+	decoder *zstd.Decoder
 }
 
 // NewS3Store returns a new S3 chunk store.
@@ -73,10 +88,24 @@ func NewS3Store(ctx context.Context, cfg s3.Config, locker lock.Locker) (Store, 
 		return nil, fmt.Errorf("%w: %s", ErrBucketNotFound, cfg.Bucket)
 	}
 
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd encoder: %w", err)
+	}
+
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		encoder.Close()
+
+		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+	}
+
 	return &s3Store{
-		client: client,
-		locker: locker,
-		bucket: cfg.Bucket,
+		client:  client,
+		locker:  locker,
+		bucket:  cfg.Bucket,
+		encoder: encoder,
+		decoder: decoder,
 	}, nil
 }
 
@@ -118,7 +147,15 @@ func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, err
 		return nil, err
 	}
 
-	return obj, nil
+	// Create a new decoder for this specific object
+	decoder, err := zstd.NewReader(obj)
+	if err != nil {
+		obj.Close()
+
+		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+	}
+
+	return &s3ReadCloser{decoder, obj}, nil
 }
 
 func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool, int64, error) {
@@ -135,6 +172,9 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 		_ = s.locker.Unlock(ctx, lockKey)
 	}()
 
+	// Compress data with zstd
+	compressed := s.encoder.EncodeAll(data, nil)
+
 	// Check if exists.
 	exists, err := s.HasChunk(ctx, hash)
 	if err != nil {
@@ -142,17 +182,22 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 	}
 
 	if exists {
-		return false, int64(len(data)), nil
+		return false, int64(len(compressed)), nil
 	}
 
-	_, err = s.client.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
-		ContentType: "application/octet-stream",
-	})
+	_, err = s.client.PutObject(
+		ctx,
+		s.bucket,
+		key,
+		bytes.NewReader(compressed),
+		int64(len(compressed)),
+		minio.PutObjectOptions{ContentType: "application/octet-stream"},
+	)
 	if err != nil {
 		return false, 0, fmt.Errorf("error putting chunk to S3: %w", err)
 	}
 
-	return true, int64(len(data)), nil
+	return true, int64(len(compressed)), nil
 }
 
 func (s *s3Store) DeleteChunk(ctx context.Context, hash string) error {
