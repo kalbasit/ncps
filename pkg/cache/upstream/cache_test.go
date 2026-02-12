@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -483,7 +482,7 @@ func TestGetNarCanMutate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	pingV := helper.MustRandString(10, nil)
+	pingV := testhelper.MustRandString(10)
 
 	mutator := func(r *http.Request) {
 		r.Header.Set("ping", pingV)

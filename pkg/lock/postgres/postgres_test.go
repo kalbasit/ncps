@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/postgres"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 // skipIfPostgresNotAvailable skips the test if PostgreSQL is not available for testing.
@@ -39,7 +39,7 @@ func getTestDatabase(t *testing.T) (database.Querier, func()) {
 	require.NoError(t, err, "failed to connect to admin database")
 
 	// Create ephemeral test database
-	dbName := "test-lock-" + helper.MustRandString(40, nil)
+	dbName := "test-lock-" + testhelper.MustRandString(40)
 
 	_, err = adminDb.DB().ExecContext(context.Background(), "SELECT create_test_db($1)", dbName)
 	require.NoError(t, err, "failed to create test database")
