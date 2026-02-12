@@ -5,19 +5,13 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/rs/zerolog"
 )
 
-var (
-	// ErrInvalidURL is returned if the regexp did not match the given URL.
-	ErrInvalidURL = errors.New("invalid nar URL")
-
-	// hashValidationRegexp validates that a string matches the HashPattern.
-	hashValidationRegexp = regexp.MustCompile(`^(` + HashPattern + `)$`)
-)
+// ErrInvalidURL is returned if the regexp did not match the given URL.
+var ErrInvalidURL = errors.New("invalid nar URL")
 
 // URL represents a nar URL.
 type URL struct {
@@ -53,8 +47,8 @@ func ParseURL(u string) (URL, error) {
 	}
 
 	// Validate that the hash matches HashPattern before processing further
-	if !hashValidationRegexp.MatchString(hash) {
-		return URL{}, ErrInvalidURL
+	if err := ValidateHash(hash); err != nil {
+		return URL{}, err
 	}
 
 	// Extract compression extension (e.g., ".bz2" -> "bz2", "" -> "")
@@ -141,38 +135,28 @@ func (u URL) pathWithCompression() string {
 // Normalize returns a new URL with the narinfo hash prefix trimmed from the Hash.
 // nix-serve serves NAR URLs with the narinfo hash as a prefix (e.g., "narinfo-hash-actual-hash").
 // This method removes that prefix to standardize the hash for storage.
-func (u URL) Normalize() URL {
+func (u URL) Normalize() (URL, error) {
 	hash := u.Hash
 
-	// Find the first separator ('-' or '_').
-	idx := strings.IndexAny(hash, "-_")
-
-	// If a separator is found after the first character.
-	if idx > 0 {
-		prefix := hash[:idx]
-		suffix := hash[idx+1:]
-
-		// A narinfo hash prefix is typically 32 characters long. This is a strong signal.
-		// We check this and ensure the suffix is not empty.
-		if len(prefix) == 32 && len(suffix) > 0 {
-			hash = suffix
-		}
+	// First, try the lenient regex to extract prefix and potential hash part
+	sm := narHashLenientRegexp.FindStringSubmatch(hash)
+	if len(sm) < 3 {
+		return URL{}, fmt.Errorf("%w: %s", ErrInvalidHash, hash)
 	}
 
-	// Sanitize the hash to prevent path traversal.
-	// Even though ParseURL validates the hash, URL is a public struct
-	// and Normalize could be called on a manually constructed URL.
-	cleanedHash := filepath.Clean(hash)
-	if strings.Contains(cleanedHash, "..") || strings.HasPrefix(cleanedHash, "/") {
-		// If the cleaned hash is still invalid, we return the original URL
-		// to avoid potentially breaking something that might be valid in some context,
-		// but storage layers will still validate it using ToFilePath().
-		return u
+	// sm[0] is the entire match
+	// sm[1] is the optional prefix with separator (e.g., "abc-" or "abc_"), or empty if no prefix
+	// sm[2] is everything after the optional prefix (always the actual hash we want)
+	actualHash := sm[2]
+
+	// Strictly validate the extracted hash matches the normalized pattern
+	if !narNormalizedHashRegexp.MatchString(actualHash) {
+		return URL{}, fmt.Errorf("%w: %s", ErrInvalidHash, actualHash)
 	}
 
 	return URL{
-		Hash:        cleanedHash,
+		Hash:        actualHash,
 		Compression: u.Compression,
 		Query:       u.Query,
-	}
+	}, nil
 }

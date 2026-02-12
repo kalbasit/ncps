@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -960,7 +961,7 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 // createTempNarFile creates a temporary file for storing the NAR during download.
 // It sets up cleanup to remove the file once all readers are done.
 func (c *Cache) createTempNarFile(ctx context.Context, narURL *nar.URL, ds *downloadState) (*os.File, error) {
-	pattern := narURL.Hash + "-*.nar"
+	pattern := filepath.Base(narURL.Hash) + "-*.nar"
 	if cext := narURL.Compression.String(); cext != "" {
 		pattern += "." + cext
 	}
@@ -2245,7 +2246,10 @@ func (c *Cache) storeInDatabase(
 
 		// Normalize the NAR URL to remove any narinfo hash prefix.
 		// This ensures nar_files.hash matches what's actually stored in the storage layer.
-		normalizedNarURL := narURL.Normalize()
+		normalizedNarURL, err := narURL.Normalize()
+		if err != nil {
+			return fmt.Errorf("error normalizing the nar URL: %w", err)
+		}
 
 		// Check if nar_file already exists (multiple narinfos can share the same nar_file)
 
@@ -2509,7 +2513,10 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 
 	// Normalize the NAR URL to remove any narinfo hash prefix.
 	// This ensures nar_files.hash matches what's actually stored in the storage layer.
-	normalizedNarURL := narURL.Normalize()
+	normalizedNarURL, err := narURL.Normalize()
+	if err != nil {
+		return fmt.Errorf("error normalizing the nar URL: %w", err)
+	}
 
 	// Create or get nar_file record
 	narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narInfo.FileSize)

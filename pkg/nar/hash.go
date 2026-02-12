@@ -13,13 +13,23 @@ import (
 // Hashes must be exactly 52 characters long.
 const NormalizedHashPattern = `[0-9a-df-np-sv-z]{52}`
 
-const HashPattern = `(` + narinfo.HashPattern + `-)?` + NormalizedHashPattern
+// HashPattern is the strict validation pattern for complete nar hashes.
+// It matches an optional prefix (narinfo hash + separator) followed by exactly
+// a 52-character normalized hash. Used with anchors (^...$) to validate the full input.
+// For extraction and lenient parsing, use HashPatternLenient instead.
+const HashPattern = `(?:(` + narinfo.HashPattern + `[-_]))?` + NormalizedHashPattern
+
+// HashPatternLenient is used for parsing/extraction. It matches optional prefix
+// followed by anything, allowing us to extract and validate parts separately.
+const HashPatternLenient = `(?:(` + narinfo.HashPattern + `[-_]))?(.+)`
 
 var (
 	// ErrInvalidHash is returned if the hash is not valid.
 	ErrInvalidHash = errors.New("invalid nar hash")
 
-	narHashRegexp = regexp.MustCompile(`^(` + HashPattern + `)$`)
+	narHashRegexp           = regexp.MustCompile(`^` + HashPattern + `$`)
+	narNormalizedHashRegexp = regexp.MustCompile(`^` + NormalizedHashPattern + `$`)
+	narHashLenientRegexp    = regexp.MustCompile(`^` + HashPatternLenient + `$`)
 )
 
 func ValidateHash(hash string) error {
