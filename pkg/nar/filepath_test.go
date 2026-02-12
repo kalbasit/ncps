@@ -19,8 +19,16 @@ func TestNarFilePath(t *testing.T) {
 		compression string
 		path        string
 	}{
-		{hash: "abc123", compression: "", path: filepath.Join("a", "ab", "abc123.nar")},
-		{hash: "def456", compression: "xz", path: filepath.Join("d", "de", "def456.nar.xz")},
+		{
+			hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
+			compression: "",
+			path:        filepath.Join("1", "1m", "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps.nar"),
+		},
+		{
+			hash:        "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps",
+			compression: "xz",
+			path:        filepath.Join("1", "1m", "1mb5fxh7nzbx1b2q40bgzwjnjh8xqfap9mfnfqxlvvgvdyv8xwps.nar.xz"),
+		},
 	}
 
 	for _, test := range []string{"", "a", "ab"} {

@@ -158,7 +158,7 @@ func TestParseURL(t *testing.T) {
 
 			narURL, err := nar.ParseURL(test.url)
 
-			if assert.ErrorIs(t, test.err, err) {
+			if assert.ErrorIs(t, err, test.err) {
 				assert.Equal(t, test.narURL, narURL)
 			}
 		})
