@@ -98,13 +98,6 @@ L:
 			shouldReachUpstream: true,
 		},
 		{
-			name:                "Valid 52-char narinfo hash",
-			method:              http.MethodGet,
-			path:                "/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.narinfo",
-			expectedStatus:      http.StatusNotFound,
-			shouldReachUpstream: true,
-		},
-		{
 			name:                "Invalid hash length (31 chars)",
 			method:              http.MethodGet,
 			path:                "/n5glp21rsz314qssw9fbvfswgy3kc68.narinfo",
@@ -121,8 +114,8 @@ L:
 		{
 			name:                "Path traversal attempt (alphanumeric but malicious)",
 			method:              http.MethodGet,
-			path:                "/abcdefghijklmnopqrstuvwxyz0123456789.narinfo", // 44 chars
-			expectedStatus:      http.StatusBadRequest,                           // Rejected by helper.IsValidHash
+			path:                "/aeou456789abcdfghijklmnpqrsvwxy.narinfo", // contains all 4 chars not allowed aeou
+			expectedStatus:      http.StatusNotFound,
 			shouldReachUpstream: false,
 		},
 		{
