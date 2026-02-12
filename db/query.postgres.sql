@@ -360,8 +360,8 @@ WHERE nfc.nar_file_id = $1 AND nfc.chunk_index = $2;
 
 -- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
-SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
-WHERE id = $2;
+SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $3;
 
 -- name: GetNarInfoHashesToChunk :many
 -- Get all narinfo hashes that have a URL (migrated) but whose NAR is not yet chunked.

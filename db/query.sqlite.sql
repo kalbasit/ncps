@@ -347,7 +347,7 @@ WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?;
 
 -- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
-SET total_chunks = ?, updated_at = CURRENT_TIMESTAMP
+SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
 -- name: GetNarInfoHashesToChunk :many

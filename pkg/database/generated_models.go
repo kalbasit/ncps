@@ -231,6 +231,7 @@ type TouchNarFileParams struct {
 
 type UpdateNarFileTotalChunksParams struct {
 	TotalChunks int64
+	FileSize    uint64
 	ID          int64
 }
 

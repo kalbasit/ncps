@@ -1237,6 +1237,7 @@ func (w *sqliteWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg Update
 
 	return w.adapter.UpdateNarFileTotalChunks(ctx, sqlitedb.UpdateNarFileTotalChunksParams{
 		TotalChunks: arg.TotalChunks,
+		FileSize:    arg.FileSize,
 		ID:          arg.ID,
 	})
 }
