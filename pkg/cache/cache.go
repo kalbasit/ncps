@@ -4779,9 +4779,31 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 
 	// 4. Store using CDC logic
 	// storeNarWithCDC handles chunking, storing chunks, and DB updates.
+	// Save original URL before storeNarWithCDC normalizes narURL.Compression to "none".
+	originalURL := narURL.String()
+
 	_, err = c.storeNarWithCDC(ctx, tempPath, narURL)
 	if err != nil {
 		return fmt.Errorf("error storing nar with CDC: %w", err)
+	}
+
+	// 5. Update narinfo records in the database to reflect CDC normalization.
+	// After storeNarWithCDC, narURL.Compression is "none" and narURL.String() gives the new URL.
+	newURL := narURL.String()
+	if originalURL != newURL {
+		if _, err := c.db.UpdateNarInfoCompressionAndURL(ctx, database.UpdateNarInfoCompressionAndURLParams{
+			Compression: sql.NullString{String: nar.CompressionTypeNone.String(), Valid: true},
+			NewUrl:      sql.NullString{String: newURL, Valid: true},
+			OldUrl:      sql.NullString{String: originalURL, Valid: true},
+		}); err != nil {
+			zerolog.Ctx(ctx).Warn().
+				Err(err).
+				Str("old_url", originalURL).
+				Str("new_url", newURL).
+				Msg("failed to update narinfo compression/URL after CDC migration")
+
+			return fmt.Errorf("error updating the narinfo compression/URL: %w", err)
+		}
 	}
 
 	return nil

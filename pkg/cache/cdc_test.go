@@ -59,6 +59,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("chunks are stored compressed", testCDCChunksAreCompressed(factory))
 	t.Run("decompress zstd before chunking", testCDCDecompressZstdBeforeChunking(factory))
 	t.Run("pullNarInfo normalizes compression for CDC", testCDCPullNarInfoNormalizesCompression(factory))
+	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -535,5 +536,63 @@ func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing
 			assert.NotContains(t, ni.URL, ".zst",
 				"Harmonia narinfo URL should not contain .zst extension for CDC")
 		})
+	}
+}
+
+// testCDCMigrateNarToChunksUpdatesNarInfo verifies that after migrating a NAR
+// from whole-file storage to CDC chunks, the narinfo in the database is updated
+// to Compression: none and URL without compression extension.
+func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// 1. Store a NAR as whole file (CDC disabled) with xz compression
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		err := c.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		// 2. Store a narinfo referencing this NAR with xz compression
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// Verify narinfo in DB has original compression
+		var compression, url string
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
+			entry.NarInfoHash).Scan(&compression, &url)
+		require.NoError(t, err)
+		assert.Equal(t, "xz", compression, "narinfo should initially have xz compression")
+		assert.Contains(t, url, ".xz", "narinfo URL should initially contain .xz")
+
+		// 3. Enable CDC
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// 4. Migrate the NAR to chunks
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err)
+
+		// 5. Verify the narinfo in DB now says Compression: none and URL without .xz
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
+			entry.NarInfoHash).Scan(&compression, &url)
+		require.NoError(t, err)
+		assert.Equal(t, nar.CompressionTypeNone.String(), compression,
+			"narinfo should have Compression: none after CDC migration")
+		assert.NotContains(t, url, ".xz",
+			"narinfo URL should not contain .xz after CDC migration")
 	}
 }

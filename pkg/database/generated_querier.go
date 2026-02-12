@@ -445,6 +445,12 @@ type Querier interface {
 	//  WHERE hash = $1
 	//  RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 	UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error)
+	// Update narinfo compression and URL after CDC migration.
+	//
+	//  UPDATE narinfos
+	//  SET compression = $1, url = $2, updated_at = CURRENT_TIMESTAMP
+	//  WHERE url = $3
+	UpdateNarInfoCompressionAndURL(ctx context.Context, arg UpdateNarInfoCompressionAndURLParams) (int64, error)
 	//UpdateNarInfoFileSize
 	//
 	//  UPDATE narinfos
