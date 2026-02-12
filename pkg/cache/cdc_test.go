@@ -14,9 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
+	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 func TestCDCBackends(t *testing.T) {
@@ -55,6 +58,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("Client Disconnect No Goroutine Leak", testCDCClientDisconnectNoGoroutineLeak(factory))
 	t.Run("chunks are stored compressed", testCDCChunksAreCompressed(factory))
 	t.Run("decompress zstd before chunking", testCDCDecompressZstdBeforeChunking(factory))
+	t.Run("pullNarInfo normalizes compression for CDC", testCDCPullNarInfoNormalizesCompression(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -453,5 +457,83 @@ func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, content, string(data), "decompressed data should match original")
 		assert.Equal(t, int64(len(content)), size, "size should match original content size")
+	}
+}
+
+// testCDCPullNarInfoNormalizesCompression verifies that when CDC is enabled and
+// a narinfo is pulled from upstream, the narinfo stored in the database has
+// Compression: none and URL without compression extension, regardless of
+// the upstream's compression (xz, zstd via Harmonia, etc.).
+func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Set up CDC
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// Set up upstream cache
+		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		})
+		require.NoError(t, err)
+
+		c.AddUpstreamCaches(newContext(), uc)
+
+		// Wait for upstream to become available
+		<-c.GetHealthChecker().Trigger()
+
+		t.Run("xz-compressed upstream narinfo is normalized to none", func(t *testing.T) {
+			// Nar2 has Compression: xz upstream
+			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
+
+			// Verify narinfo returned to client says Compression: none
+			assert.Equal(t, nar.CompressionTypeNone.String(), ni.Compression,
+				"narinfo Compression should be normalized to 'none' for CDC")
+
+			// Verify the URL has no compression extension
+			assert.NotContains(t, ni.URL, ".xz",
+				"narinfo URL should not contain .xz extension for CDC")
+			assert.NotContains(t, ni.URL, ".zst",
+				"narinfo URL should not contain .zst extension for CDC")
+
+			// Verify the narinfo in the database also says Compression: none
+			var compression, url string
+
+			err = db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
+				testdata.Nar2.NarInfoHash).Scan(&compression, &url)
+			require.NoError(t, err)
+			assert.Equal(t, nar.CompressionTypeNone.String(), compression,
+				"narinfo in DB should have Compression: none")
+			assert.NotContains(t, url, ".xz",
+				"narinfo URL in DB should not contain .xz extension")
+		})
+
+		t.Run("Harmonia narinfo with none compression stays none", func(t *testing.T) {
+			// Nar7 has Compression: none upstream (Harmonia-like, served with zstd Content-Encoding)
+			ni, err := c.GetNarInfo(context.Background(), testdata.Nar7.NarInfoHash)
+			require.NoError(t, err)
+
+			// Should still be none
+			assert.Equal(t, nar.CompressionTypeNone.String(), ni.Compression,
+				"Harmonia narinfo Compression should remain 'none' for CDC")
+
+			// Verify the URL has no compression extension
+			assert.NotContains(t, ni.URL, ".zst",
+				"Harmonia narinfo URL should not contain .zst extension for CDC")
+		})
 	}
 }

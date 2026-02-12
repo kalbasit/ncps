@@ -8,6 +8,7 @@ import (
 	"io"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -55,6 +56,9 @@ func init() {
 type Store struct {
 	client *minio.Client
 	bucket string
+
+	// secretKeyMu protects the secret key storage.
+	secretKeyMu sync.Mutex
 }
 
 // New creates a new S3 store with the given configuration.
@@ -147,11 +151,14 @@ func (s *Store) PutSecretKey(ctx context.Context, sk signature.SecretKey) error 
 	)
 	defer span.End()
 
-	// TODO: There's a possible race condition here that is only relevant if/when
-	// ncps achieves high availability; It currently only runs as a single
-	// process. If/when that is achieved, we can fixed this with a distributed
-	// lock.
+	// RACE CONDITION FIX: Use a global mutex to serialize access to PutSecretKey.
+	// This prevents the TOCTOU (time-of-check-time-of-use) race condition where
+	// two concurrent calls could both see the key doesn't exist and both succeed.
+	// This is sufficient for single-process deployments. For distributed deployments,
+	// this should be replaced with a distributed lock.
 	// https://github.com/kalbasit/ncps/pull/353#discussion_r2648008530
+	s.secretKeyMu.Lock()
+	defer s.secretKeyMu.Unlock()
 
 	// Check if key already exists
 	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
