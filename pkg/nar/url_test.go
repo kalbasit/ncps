@@ -138,6 +138,7 @@ func TestNormalize(t *testing.T) {
 	tests := []struct {
 		input  nar.URL
 		output nar.URL
+		errStr string
 	}{
 		{
 			input: nar.URL{
@@ -178,19 +179,19 @@ func TestNormalize(t *testing.T) {
 		{
 			// Valid hash with separator but no prefix
 			input: nar.URL{
-				Hash: "my-hash",
+				Hash: "1m9phnql68mxrnjc7ssxcvjrxxwcx0fzc849w025mkanwgsy1bpy",
 			},
 			output: nar.URL{
-				Hash: "my-hash",
+				Hash: "1m9phnql68mxrnjc7ssxcvjrxxwcx0fzc849w025mkanwgsy1bpy",
 			},
 		},
 		{
 			// Valid prefix and multiple separators in the suffix
 			input: nar.URL{
-				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-part1-part2",
+				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-1m9phnql68mxrnjc7ssxcvjrxxwcx0fzc849w025mkanwgsy1bpy",
 			},
 			output: nar.URL{
-				Hash: "part1-part2",
+				Hash: "1m9phnql68mxrnjc7ssxcvjrxxwcx0fzc849w025mkanwgsy1bpy",
 			},
 		},
 		{
@@ -198,9 +199,7 @@ func TestNormalize(t *testing.T) {
 			input: nar.URL{
 				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-../../etc/passwd",
 			},
-			output: nar.URL{
-				Hash: "c12lxpykv6sld7a0sakcnr3y0la70x8w-../../etc/passwd",
-			},
+			errStr: "invalid nar hash: ../../etc/passwd",
 		},
 	}
 
@@ -213,8 +212,13 @@ func TestNormalize(t *testing.T) {
 		t.Run(tname, func(t *testing.T) {
 			t.Parallel()
 
-			result := test.input.Normalize()
-			assert.Equal(t, test.output, result)
+			result, err := test.input.Normalize()
+			if test.errStr != "" {
+				assert.EqualError(t, err, test.errStr)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, test.output, result)
+			}
 		})
 	}
 }

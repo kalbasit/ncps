@@ -359,7 +359,19 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 				return
 			}
 
-			narInfoCopy.URL = narURL.Normalize().String()
+			normalizedURL, err := narURL.Normalize()
+			if err != nil {
+				zerolog.Ctx(r.Context()).
+					Error().
+					Err(err).
+					Msg("error normalizing the NAR URL")
+
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+
+				return
+			}
+
+			narInfoCopy.URL = normalizedURL.String()
 		}
 
 		narInfoBytes := []byte(narInfoCopy.String())
