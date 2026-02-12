@@ -1167,6 +1167,7 @@ func (w *mysqlWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateN
 
 	return w.adapter.UpdateNarFileTotalChunks(ctx, mysqldb.UpdateNarFileTotalChunksParams{
 		TotalChunks: arg.TotalChunks,
+		FileSize:    arg.FileSize,
 		ID:          arg.ID,
 	})
 }

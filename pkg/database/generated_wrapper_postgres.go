@@ -1210,6 +1210,7 @@ func (w *postgresWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg Upda
 
 	return w.adapter.UpdateNarFileTotalChunks(ctx, postgresdb.UpdateNarFileTotalChunksParams{
 		TotalChunks: arg.TotalChunks,
+		FileSize:    arg.FileSize,
 		ID:          arg.ID,
 	})
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
@@ -53,6 +54,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfo with CDC chunks", testCDCGetNarInfo(factory))
 	t.Run("Client Disconnect No Goroutine Leak", testCDCClientDisconnectNoGoroutineLeak(factory))
 	t.Run("chunks are stored compressed", testCDCChunksAreCompressed(factory))
+	t.Run("decompress zstd before chunking", testCDCDecompressZstdBeforeChunking(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -311,6 +313,84 @@ func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.
 		// Allow a small tolerance for test infrastructure goroutines to prevent flakiness.
 		assert.LessOrEqual(t, finalGoroutines, baselineGoroutines+2,
 			"Goroutine leak detected: baseline=%d, final=%d", baselineGoroutines, finalGoroutines)
+	}
+}
+
+// testCDCDecompressZstdBeforeChunking verifies that when a zstd-compressed NAR
+// is stored with CDC enabled, the data is decompressed before chunking.
+// This ensures that:
+// 1. The nar_files DB record stores Compression: none (not zstd)
+// 2. Chunks contain raw uncompressed data (not double-compressed)
+// 3. Reassembly returns the original uncompressed content.
+func testCDCDecompressZstdBeforeChunking(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
+		require.NoError(t, err)
+
+		// Create original uncompressed content
+		originalContent := strings.Repeat("test content for decompression before chunking ", 100)
+
+		// Compress it with zstd
+		compressedContent := cache.CompressZstd(t, originalContent)
+
+		// Store the zstd-compressed NAR with CompressionTypeZstd
+		nu := nar.URL{Hash: "decompress-zstd-test1", Compression: nar.CompressionTypeZstd}
+
+		r := io.NopCloser(strings.NewReader(compressedContent))
+		err = c.PutNar(ctx, nu, r)
+		require.NoError(t, err)
+
+		// Verify the nar_files record stores Compression: none (not zstd)
+		// After CDC decompression, the narURL should have been normalized
+
+		narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        nu.Hash,
+			Compression: nar.CompressionTypeNone.String(),
+			Query:       "",
+		})
+		require.NoError(t, err, "nar_files should have Compression: none after CDC decompression")
+		assert.Equal(t, nar.CompressionTypeNone.String(), narFile.Compression)
+
+		// Verify chunks exist
+		chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, chunks, "should have chunks in the database")
+
+		// Verify that the total uncompressed chunk size matches the original content size
+		// (not the compressed size), proving decompression happened before chunking
+		var totalChunkSize int64
+		for _, ch := range chunks {
+			totalChunkSize += int64(ch.Size)
+		}
+
+		assert.Equal(t, int64(len(originalContent)), totalChunkSize,
+			"total chunk size should match original uncompressed content size, not compressed size")
+
+		// Verify reassembly returns the original uncompressed content
+		// We need to retrieve using CompressionTypeNone since that's what's in the DB
+		nuNone := nar.URL{Hash: nu.Hash, Compression: nar.CompressionTypeNone}
+		size, rc, err := c.GetNar(ctx, nuNone)
+		require.NoError(t, err)
+
+		defer rc.Close()
+
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		assert.Equal(t, originalContent, string(data), "reassembled data should be original uncompressed content")
+		assert.Equal(t, int64(len(originalContent)), size)
 	}
 }
 

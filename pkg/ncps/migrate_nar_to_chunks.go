@@ -448,8 +448,11 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 						return nil
 					}
 
+					// Save original narURL before migration (which may normalize compression to "none")
+					originalNarURL := narURL
+
 					opStartTime := time.Now()
-					err = c.MigrateNarToChunks(ctx, narURL)
+					err = c.MigrateNarToChunks(ctx, &narURL)
 
 					RecordMigrationDuration(
 						ctx,
@@ -467,7 +470,8 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					}
 
 					// 2. Delete original NAR if migration was successful
-					if err := narStore.DeleteNar(ctx, narURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
+					// Use originalNarURL to delete the file with the correct compression path.
+					if err := narStore.DeleteNar(ctx, originalNarURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
 						log.Warn().Err(err).Msg("failed to delete original nar after migration")
 					}
 

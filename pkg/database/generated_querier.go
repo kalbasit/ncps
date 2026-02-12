@@ -424,8 +424,8 @@ type Querier interface {
 	//UpdateNarFileTotalChunks
 	//
 	//  UPDATE nar_files
-	//  SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
-	//  WHERE id = $2
+	//  SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = $3
 	UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error
 	//UpdateNarInfo
 	//

@@ -1813,22 +1813,23 @@ func (q *Queries) TouchNarInfo(ctx context.Context, hash string) (int64, error) 
 
 const updateNarFileTotalChunks = `-- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
-SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
-WHERE id = $2
+SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $3
 `
 
 type UpdateNarFileTotalChunksParams struct {
 	TotalChunks int64
+	FileSize    uint64
 	ID          int64
 }
 
 // UpdateNarFileTotalChunks
 //
 //	UPDATE nar_files
-//	SET total_chunks = $1, updated_at = CURRENT_TIMESTAMP
-//	WHERE id = $2
+//	SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP
+//	WHERE id = $3
 func (q *Queries) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error {
-	_, err := q.db.ExecContext(ctx, updateNarFileTotalChunks, arg.TotalChunks, arg.ID)
+	_, err := q.db.ExecContext(ctx, updateNarFileTotalChunks, arg.TotalChunks, arg.FileSize, arg.ID)
 	return err
 }
 
