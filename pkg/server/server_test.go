@@ -918,7 +918,7 @@ func TestGetNar_ZstdCompression(t *testing.T) {
 
 	// 1. Put an uncompressed Nar into the cache.
 	narData := strings.Repeat("uncompressed nar data ", 1000)
-	narHash := "00000000000000000000000000000001" // dummy 32-char hash
+	narHash := "0000000000000000000000000000000000000000000000000001" // dummy 52-char hash
 	narURL := ts.URL + "/nar/" + narHash + ".nar"
 
 	req, err := http.NewRequestWithContext(
@@ -991,7 +991,7 @@ func TestGetNar_NoZstdCompression(t *testing.T) {
 
 	// 1. Put an uncompressed Nar into the cache.
 	narData := uncompressedNarData
-	narHash := "00000000000000000000000000000002" // dummy 32-char hash
+	narHash := "0000000000000000000000000000000000000000000000000002" // dummy 52-char hash
 	narURL := ts.URL + "/nar/" + narHash + ".nar"
 
 	req, err := http.NewRequestWithContext(
@@ -1057,7 +1057,7 @@ func TestGetNar_ZstdCompression_Head(t *testing.T) {
 
 	// 1. Put an uncompressed Nar into the cache.
 	narData := uncompressedNarData
-	narHash := "00000000000000000000000000000003" // dummy 32-char hash
+	narHash := "0000000000000000000000000000000000000000000000000003" // dummy 52-char hash
 	narURL := ts.URL + "/nar/" + narHash + ".nar"
 
 	req, err := http.NewRequestWithContext(
@@ -1145,7 +1145,7 @@ func TestGetNar_HeaderSettingSequence(t *testing.T) {
 
 	// Put an uncompressed Nar into the cache.
 	narData := uncompressedNarData
-	narHash := "00000000000000000000000000000004"
+	narHash := "0000000000000000000000000000000000000000000000000004"
 	narURL := "/nar/" + narHash + ".nar"
 
 	req := httptest.NewRequest(http.MethodPut, narURL, strings.NewReader(narData))

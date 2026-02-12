@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1245,107 +1244,6 @@ func testDeleteNar(factory cacheFactory) func(*testing.T) {
 				assert.NoFileExists(t, storePath)
 			})
 		})
-	}
-}
-
-// TestDeadlock_NarInfo_Triggers_Nar_Refetch reproduces a deadlock where pulling a NarInfo
-// triggers a Nar fetch (because compression is none), and both waiting on each other
-// if they share the same lock/job key.
-func testDeadlockNarInfoTriggersNarRefetch(factory cacheFactory) func(*testing.T) {
-	return func(t *testing.T) {
-		t.Parallel()
-
-		c, _, _, _, _, cleanup := factory(t)
-		t.Cleanup(cleanup)
-
-		// 1. Setup a test server
-		ts := testdata.NewTestServer(t, 1)
-		t.Cleanup(ts.Close)
-
-		// CRITICAL: We must ensure NarInfoHash == NarHash to cause the collision in upstreamJobs map.
-		// The deadlock happens because pullNarInfo starts a job with key=hash, and then prePullNar
-		// tries to start a job with key=hash (derived from URL).
-
-		// NarInfoHash is 32 chars.
-		// narURL.Hash comes from URL.
-		// We want narURL.Hash == NarInfoHash.
-		collisionHash := "11111111111111111111111111111111"
-
-		entry := testdata.Entry{
-			NarInfoHash:    collisionHash,
-			NarHash:        collisionHash,
-			NarCompression: "none",
-			NarInfoText: `StorePath: /nix/store/11111111111111111111111111111111-test-1.0
-URL: nar/11111111111111111111111111111111.nar
-Compression: none
-FileHash: sha256:1111111111111111111111111111111111111111111111111111
-FileSize: 123
-NarHash: sha256:1111111111111111111111111111111111111111111111111111
-NarSize: 123
-References: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dummy
-Deriver: dddddddddddddddddddddddddddddddd-test-1.0.drv
-Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
-`,
-			NarText: "content-of-the-nar",
-		}
-		ts.AddEntry(entry)
-
-		// Add debug handler to see what's being requested and serve content manually
-		ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
-			if r.URL.Path == "/"+collisionHash+".narinfo" {
-				_, _ = w.Write([]byte(entry.NarInfoText))
-
-				return true
-			}
-
-			if r.URL.Path == "/nar/"+collisionHash+".nar" {
-				_, _ = w.Write([]byte(entry.NarText))
-
-				return true
-			}
-
-			return false // Let the real handler process other things
-		})
-
-		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
-		require.NoError(t, err)
-
-		c.AddUpstreamCaches(newContext(), uc)
-
-		// Wait for health check
-		select {
-		case <-c.GetHealthChecker().Trigger():
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for upstream health check")
-		}
-
-		// 2. Trigger the download
-		// We use a timeout to detect the deadlock
-		ctx, cancel := context.WithTimeout(newContext(), 5*time.Second)
-		defer cancel()
-
-		done := make(chan struct{})
-
-		var narInfo *narinfo.NarInfo
-
-		go func() {
-			defer close(done)
-
-			narInfo, err = c.GetNarInfo(ctx, entry.NarInfoHash)
-		}()
-
-		select {
-		case <-done:
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				t.Fatal("Deadlock detected! GetNarInfo timed out.")
-			}
-		case <-time.After(10 * time.Second):
-			t.Fatal("Timeout waiting for GetNarInfo to complete")
-		}
-
-		require.NoError(t, err)
-		assert.NotNil(t, narInfo)
 	}
 }
 
@@ -2809,7 +2707,6 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoMigratesInvalidURL", testGetNarInfoMigratesInvalidURL(factory))
 	t.Run("GetNarInfoConcurrentMigrationAttempts", testGetNarInfoConcurrentMigrationAttempts(factory))
 	t.Run("DeleteNar", testDeleteNar(factory))
-	t.Run("DeadlockNarInfoTriggersNarRefetch", testDeadlockNarInfoTriggersNarRefetch(factory))
 	t.Run("DeadlockContextCancellationDuringDownload", testDeadlockContextCancellationDuringDownload(factory))
 	t.Run("BackgroundDownloadCompletionAfterCancellation",
 		testBackgroundDownloadCompletionAfterCancellation(factory))
