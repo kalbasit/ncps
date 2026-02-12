@@ -13,7 +13,7 @@ import (
 //     Used for truncated SHA-256 (52 chars).
 //  2. Hexadecimal (Base16): Standard 0-9, a-f.
 //     Used for full SHA-256 digests (64 chars).
-const NormalizedHashPattern = `[0-9a-df-np-sv-z]{52}|[0-9a-f]{64}`
+const NormalizedHashPattern = `(?:[0-9a-df-np-sv-z]{52}|[0-9a-f]{64})`
 
 // HashPattern is the strict validation pattern for complete nar hashes.
 // It matches an optional prefix (narinfo hash + separator) followed by exactly
