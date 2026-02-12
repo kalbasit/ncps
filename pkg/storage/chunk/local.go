@@ -7,17 +7,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/klauspost/compress/zstd"
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
-// localReadCloser wraps a zstd decoder and file to properly close both on Close().
+// localReadCloser wraps a pooled zstd reader and file to properly close both on Close().
 type localReadCloser struct {
-	*zstd.Decoder
+	*zstd.PooledReader
 	file *os.File
 }
 
 func (r *localReadCloser) Close() error {
-	r.Decoder.Close()
+	_ = r.PooledReader.Close()
 
 	return r.file.Close()
 }
@@ -25,34 +25,15 @@ func (r *localReadCloser) Close() error {
 // localStore implements Store for local filesystem.
 type localStore struct {
 	baseDir string
-	encoder *zstd.Encoder
-	decoder *zstd.Decoder
 }
 
 // NewLocalStore returns a new local chunk store.
 func NewLocalStore(baseDir string) (Store, error) {
-	encoder, err := zstd.NewWriter(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create zstd encoder: %w", err)
-	}
-
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		encoder.Close()
-
-		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
-	}
-
 	s := &localStore{
 		baseDir: baseDir,
-		encoder: encoder,
-		decoder: decoder,
 	}
 	// Ensure base directory exists
 	if err := os.MkdirAll(s.storeDir(), 0o755); err != nil {
-		encoder.Close()
-		decoder.Close()
-
 		return nil, fmt.Errorf("failed to create chunk store directory: %w", err)
 	}
 
@@ -94,15 +75,15 @@ func (s *localStore) GetChunk(_ context.Context, hash string) (io.ReadCloser, er
 		return nil, err
 	}
 
-	// Create a new decoder for this specific file
-	decoder, err := zstd.NewReader(f)
+	// Use pooled reader instead of creating new instance
+	pr, err := zstd.NewPooledReader(f)
 	if err != nil {
 		f.Close()
 
-		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+		return nil, fmt.Errorf("failed to create zstd reader: %w", err)
 	}
 
-	return &localReadCloser{decoder, f}, nil
+	return &localReadCloser{pr, f}, nil
 }
 
 func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool, int64, error) {
@@ -114,8 +95,12 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 		return false, 0, err
 	}
 
+	// Use pooled encoder
+	enc := zstd.GetWriter()
+	defer zstd.PutWriter(enc)
+
 	// Compress data with zstd
-	compressed := s.encoder.EncodeAll(data, nil)
+	compressed := enc.EncodeAll(data, nil)
 
 	// Write to temporary file first to ensure atomicity
 	tmpFile, err := os.CreateTemp(dir, "chunk-*")

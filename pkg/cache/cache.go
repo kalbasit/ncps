@@ -4081,7 +4081,7 @@ func zstdMutator(
 	return func(r *http.Request) {
 		zerolog.Ctx(ctx).
 			Debug().
-			Msg("narinfo compress is none will set Accept-Encoding to zstd")
+			Msg("narinfo compression is none will set Accept-Encoding to zstd")
 
 		r.Header.Set("Accept-Encoding", "zstd")
 

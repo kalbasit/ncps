@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
@@ -31,6 +30,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
 	"github.com/kalbasit/ncps/pkg/storage/local"
+	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 
@@ -648,10 +648,10 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 						require.NoError(t, err)
 
 						if assert.NotEqual(t, narEntry.NarText, string(body), "narText should be stored compressed in the store") {
-							decoder, err := zstd.NewReader(nil)
-							require.NoError(t, err)
+							dec := zstd.GetReader()
+							defer zstd.PutReader(dec)
 
-							plain, err := decoder.DecodeAll(body, []byte{})
+							plain, err := dec.DecodeAll(body, []byte{})
 							require.NoError(t, err)
 
 							assert.Equal(t, narEntry.NarText, string(plain))

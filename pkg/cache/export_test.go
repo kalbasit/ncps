@@ -6,11 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/nix-community/go-nix/pkg/nixhash"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 // CheckAndFixNarInfo is a test-only export of the unexported checkAndFixNarInfo method.
@@ -33,12 +35,13 @@ func compressZstd(t *testing.T, data string) string {
 
 	var buf strings.Builder
 
-	enc, err := zstd.NewWriter(&buf)
+	pw := zstd.NewPooledWriter(&buf)
+
+	_, err := io.WriteString(pw, data)
 	require.NoError(t, err)
-	_, err = io.WriteString(enc, data)
-	require.NoError(t, err)
-	err = enc.Close()
-	require.NoError(t, err)
+
+	err = pw.Close()
+	assert.NoError(t, err) //nolint:testifylint
 
 	return buf.String()
 }

@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testdata"
 )
 
@@ -77,10 +77,10 @@ func TestNewTestServerWithZSTD(t *testing.T) {
 		require.NoError(t, err)
 
 		if assert.NotEqual(t, testdata.Nar1.NarText, string(body)) {
-			decoder, err := zstd.NewReader(nil)
-			require.NoError(t, err)
+			dec := zstd.GetReader()
+			defer zstd.PutReader(dec)
 
-			plain, err := decoder.DecodeAll(body, []byte{})
+			plain, err := dec.DecodeAll(body, []byte{})
 			require.NoError(t, err)
 
 			if assert.Len(t, testdata.Nar1.NarText, len(string(plain))) {

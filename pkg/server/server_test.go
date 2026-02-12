@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
@@ -30,6 +29,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/server"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/local"
+	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -949,13 +949,13 @@ func TestGetNar_ZstdCompression(t *testing.T) {
 	assert.Equal(t, "application/x-nix-nar", resp.Header.Get("Content-Type"))
 	assert.Empty(t, resp.Header.Get("Content-Length"))
 
-	// 3. Decompress the body and verify content
-	dec, err := zstd.NewReader(resp.Body)
+	// 3. DecompressReader the body and verify content
+	pr, err := zstd.NewPooledReader(resp.Body)
 	require.NoError(t, err)
 
-	defer dec.Close()
+	defer pr.Close()
 
-	decompressed, err := io.ReadAll(dec)
+	decompressed, err := io.ReadAll(pr)
 	require.NoError(t, err)
 	assert.Equal(t, narData, string(decompressed))
 }

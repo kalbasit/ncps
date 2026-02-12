@@ -164,7 +164,7 @@ func TestLocalStore(t *testing.T) {
 
 		// Use highly compressible data (repeated bytes)
 		data := bytes.Repeat([]byte("compressible"), 1024)
-		isNew, compressedSize, err := store.PutChunk(ctx, "test-hash-compress-1", data)
+		isNew, compressedSize, err := store.PutChunk(ctx, testhelper.MustRandNarHash(), data)
 		require.NoError(t, err)
 		assert.True(t, isNew)
 		assert.Greater(t, int64(len(data)), compressedSize, "compressed size should be less than original")
@@ -175,10 +175,11 @@ func TestLocalStore(t *testing.T) {
 		t.Parallel()
 
 		data := []byte("hello, compressed world! hello, compressed world! hello, compressed world!")
-		_, _, err := store.PutChunk(ctx, "test-hash-roundtrip", data)
+		hash := testhelper.MustRandNarHash()
+		_, _, err := store.PutChunk(ctx, hash, data)
 		require.NoError(t, err)
 
-		rc, err := store.GetChunk(ctx, "test-hash-roundtrip")
+		rc, err := store.GetChunk(ctx, hash)
 		require.NoError(t, err)
 
 		defer rc.Close()

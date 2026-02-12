@@ -10,12 +10,12 @@ import (
 	"path"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/s3"
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 // ErrBucketNotFound is returned when the bucket is not found.
@@ -28,25 +28,23 @@ const (
 	chunkPutLockTTL = 5 * time.Minute
 )
 
-// s3ReadCloser wraps a zstd decoder and io.ReadCloser to properly close both.
+// s3ReadCloser wraps a pooled zstd reader and io.ReadCloser to properly close both.
 type s3ReadCloser struct {
-	*zstd.Decoder
+	*zstd.PooledReader
 	body io.ReadCloser
 }
 
 func (r *s3ReadCloser) Close() error {
-	r.Decoder.Close()
+	_ = r.PooledReader.Close()
 
 	return r.body.Close()
 }
 
 // s3Store implements Store for S3 storage.
 type s3Store struct {
-	client  *minio.Client
-	locker  lock.Locker
-	bucket  string
-	encoder *zstd.Encoder
-	decoder *zstd.Decoder
+	client *minio.Client
+	locker lock.Locker
+	bucket string
 }
 
 // NewS3Store returns a new S3 chunk store.
@@ -88,24 +86,10 @@ func NewS3Store(ctx context.Context, cfg s3.Config, locker lock.Locker) (Store, 
 		return nil, fmt.Errorf("%w: %s", ErrBucketNotFound, cfg.Bucket)
 	}
 
-	encoder, err := zstd.NewWriter(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create zstd encoder: %w", err)
-	}
-
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		encoder.Close()
-
-		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
-	}
-
 	return &s3Store{
-		client:  client,
-		locker:  locker,
-		bucket:  cfg.Bucket,
-		encoder: encoder,
-		decoder: decoder,
+		client: client,
+		locker: locker,
+		bucket: cfg.Bucket,
 	}, nil
 }
 
@@ -147,15 +131,15 @@ func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, err
 		return nil, err
 	}
 
-	// Create a new decoder for this specific object
-	decoder, err := zstd.NewReader(obj)
+	// Use pooled reader instead of creating new instance
+	pr, err := zstd.NewPooledReader(obj)
 	if err != nil {
 		obj.Close()
 
-		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+		return nil, fmt.Errorf("failed to create zstd reader: %w", err)
 	}
 
-	return &s3ReadCloser{decoder, obj}, nil
+	return &s3ReadCloser{pr, obj}, nil
 }
 
 func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool, int64, error) {
@@ -172,8 +156,12 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 		_ = s.locker.Unlock(ctx, lockKey)
 	}()
 
+	// Use pooled encoder
+	enc := zstd.GetWriter()
+	defer zstd.PutWriter(enc)
+
 	// Compress data with zstd
-	compressed := s.encoder.EncodeAll(data, nil)
+	compressed := enc.EncodeAll(data, nil)
 
 	// Check if exists.
 	exists, err := s.HasChunk(ctx, hash)
