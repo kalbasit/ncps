@@ -27,7 +27,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/storage"
@@ -399,11 +398,6 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
-	if !helper.IsValidHash(hash) {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-
-		return
-	}
 
 	ctx, span := tracer.Start(
 		r.Context(),
@@ -444,11 +438,6 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
-	if !helper.IsValidHash(hash) {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-
-		return
-	}
 
 	ctx, span := tracer.Start(
 		r.Context(),
@@ -501,11 +490,6 @@ func (s *Server) withNarURL(
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
-		if !helper.IsValidHash(hash) {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-
-			return
-		}
 
 		comp, err := nar.CompressionTypeFromExtension(chi.URLParam(r, "compression"))
 		if err != nil {
