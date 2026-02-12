@@ -36,7 +36,7 @@ func TestS3Store_Integration(t *testing.T) {
 		hash := "test-hash-s3-1"
 		content := "s3 chunk content"
 
-		created, err := store.PutChunk(ctx, hash, []byte(content))
+		created, _, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created)
 
@@ -65,7 +65,7 @@ func TestS3Store_Integration(t *testing.T) {
 		hash := "test-hash-s3-2"
 		content := "s3 chunk content"
 
-		created1, err := store.PutChunk(ctx, hash, []byte(content))
+		created1, _, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created1)
 
@@ -74,7 +74,7 @@ func TestS3Store_Integration(t *testing.T) {
 			assert.NoError(t, err)
 		}()
 
-		created2, err := store.PutChunk(ctx, hash, []byte(content))
+		created2, _, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.False(t, created2)
 	})
@@ -98,7 +98,7 @@ func TestS3Store_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Put and then delete twice
-		created, err := store.PutChunk(ctx, hash, []byte(content))
+		created, _, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created)
 
@@ -139,7 +139,7 @@ func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
 
 	for i := 0; i < numGoRoutines; i++ {
 		go func() {
-			created, err := store.PutChunk(ctx, hash, content)
+			created, _, err := store.PutChunk(ctx, hash, content)
 			results <- created
 
 			errors <- err
@@ -231,7 +231,7 @@ func TestS3Store_ChunkPath(t *testing.T) {
 		hash := "a"
 		content := "short hash content"
 
-		created, err := store.PutChunk(ctx, hash, []byte(content))
+		created, _, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created)
 
@@ -283,7 +283,7 @@ func TestS3Store_PutChunk_LockFailure(t *testing.T) {
 	expectedErr := errors.New("lock failure")
 	s.SetLocker(&mockLocker{lockErr: expectedErr})
 
-	_, err = store.PutChunk(ctx, "test-hash", []byte("content"))
+	_, _, err = store.PutChunk(ctx, "test-hash", []byte("content"))
 	require.ErrorIs(t, err, expectedErr)
 	assert.Contains(t, err.Error(), "error acquiring lock for chunk put")
 }

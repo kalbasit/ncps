@@ -1346,7 +1346,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			}
 
 			// Store in chunkStore if new
-			_, err = chunkStore.PutChunk(ctx, chunkMetadata.Hash, chunkMetadata.Data)
+			_, _, err = chunkStore.PutChunk(ctx, chunkMetadata.Hash, chunkMetadata.Data)
 			if err != nil {
 				chunkMetadata.Free()
 

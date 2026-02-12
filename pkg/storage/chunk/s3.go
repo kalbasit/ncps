@@ -121,14 +121,14 @@ func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, err
 	return obj, nil
 }
 
-func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool, error) {
+func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool, int64, error) {
 	key := s.chunkPath(hash)
 
 	// Acquire a lock to prevent race conditions during check-then-act.
 	// We use a prefix to avoid collisions with other locks.
 	lockKey := fmt.Sprintf("chunk-put:%s", hash)
 	if err := s.locker.Lock(ctx, lockKey, chunkPutLockTTL); err != nil {
-		return false, fmt.Errorf("error acquiring lock for chunk put: %w", err)
+		return false, 0, fmt.Errorf("error acquiring lock for chunk put: %w", err)
 	}
 
 	defer func() {
@@ -138,21 +138,21 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 	// Check if exists.
 	exists, err := s.HasChunk(ctx, hash)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 
 	if exists {
-		return false, nil
+		return false, 0, nil
 	}
 
 	_, err = s.client.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 	})
 	if err != nil {
-		return false, fmt.Errorf("error putting chunk to S3: %w", err)
+		return false, 0, fmt.Errorf("error putting chunk to S3: %w", err)
 	}
 
-	return true, nil
+	return true, 0, nil
 }
 
 func (s *s3Store) DeleteChunk(ctx context.Context, hash string) error {
