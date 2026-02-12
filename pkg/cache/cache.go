@@ -1356,7 +1356,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 				return 0, fmt.Errorf("chunking error: %w", err)
 			}
 		case chunkMetadata, ok := <-chunksChan:
-			if !ok {
+			if !ok { //nolint:nestif // TODO: Improve this later.
 				// Process remaining batch
 				if err := c.recordChunkBatch(ctx, narFileID, chunkCount, batch); err != nil {
 					return 0, err
@@ -1381,11 +1381,13 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 				// If compression was normalized (e.g., xz → none), clean up the old NarFile record
 				// to avoid having two records for the same hash with different compressions.
 				if originalCompression != nar.CompressionTypeNone {
-					_, _ = c.db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+					if _, err := c.db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
 						Hash:        narURL.Hash,
 						Compression: originalCompression.String(),
 						Query:       narURL.Query.Encode(),
-					})
+					}); err != nil {
+						zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to clean up old NarFile record after CDC normalization")
+					}
 				}
 
 				return totalSize, nil
