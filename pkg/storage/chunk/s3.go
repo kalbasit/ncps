@@ -142,7 +142,7 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 	}
 
 	if exists {
-		return false, 0, nil
+		return false, int64(len(data)), nil
 	}
 
 	_, err = s.client.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
@@ -152,7 +152,7 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 		return false, 0, fmt.Errorf("error putting chunk to S3: %w", err)
 	}
 
-	return true, 0, nil
+	return true, int64(len(data)), nil
 }
 
 func (s *s3Store) DeleteChunk(ctx context.Context, hash string) error {

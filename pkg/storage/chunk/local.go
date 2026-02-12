@@ -93,13 +93,13 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 	if err := os.Link(tmpFile.Name(), path); err != nil {
 		if os.IsExist(err) {
 			// Chunk already exists, which is fine. We didn't create it.
-			return false, 0, nil
+			return false, int64(len(data)), nil
 		}
 
 		return false, 0, err // Some other error
 	}
 
-	return true, 0, nil
+	return true, int64(len(data)), nil
 }
 
 func (s *localStore) DeleteChunk(_ context.Context, hash string) error {
