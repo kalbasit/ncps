@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path"
 	"strings"
 
@@ -66,6 +67,9 @@ type Config struct {
 	// Set to true for MinIO and other S3-compatible services
 	// Set to false for AWS S3 (default)
 	ForcePathStyle bool
+
+	// Transport is the HTTP transport to use for S3 requests.
+	Transport http.RoundTripper
 }
 
 // Store represents an S3 store and implements storage.Store.
@@ -96,6 +100,7 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 		Secure:       useSSL,
 		Region:       cfg.Region,
 		BucketLookup: bucketLookup,
+		Transport:    cfg.Transport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating MinIO client: %w", err)
