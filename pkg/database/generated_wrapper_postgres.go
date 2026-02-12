@@ -75,6 +75,8 @@ func (w *postgresWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams
 
 		Size: res.Size,
 
+		CompressedSize: res.CompressedSize,
+
 		CreatedAt: res.CreatedAt,
 
 		UpdatedAt: res.UpdatedAt,
@@ -324,6 +326,8 @@ func (w *postgresWrapper) GetChunkByHash(ctx context.Context, hash string) (Chun
 
 		Size: res.Size,
 
+		CompressedSize: res.CompressedSize,
+
 		CreatedAt: res.CreatedAt,
 
 		UpdatedAt: res.UpdatedAt,
@@ -352,13 +356,15 @@ func (w *postgresWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, er
 
 		Size: res.Size,
 
+		CompressedSize: res.CompressedSize,
+
 		CreatedAt: res.CreatedAt,
 
 		UpdatedAt: res.UpdatedAt,
 	}, nil
 }
 
-func (w *postgresWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error) {
+func (w *postgresWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (GetChunkByNarFileIDAndIndexRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetChunkByNarFileIDAndIndex(ctx, postgresdb.GetChunkByNarFileIDAndIndexParams{
@@ -368,15 +374,15 @@ func (w *postgresWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg G
 	if err != nil {
 
 		if errors.Is(err, sql.ErrNoRows) {
-			return Chunk{}, ErrNotFound
+			return GetChunkByNarFileIDAndIndexRow{}, ErrNotFound
 		}
 
-		return Chunk{}, err
+		return GetChunkByNarFileIDAndIndexRow{}, err
 	}
 
 	// Convert Single Domain Struct
 
-	return Chunk{
+	return GetChunkByNarFileIDAndIndexRow{
 		ID: res.ID,
 
 		Hash: res.Hash,
@@ -402,7 +408,7 @@ func (w *postgresWrapper) GetChunkCount(ctx context.Context) (int64, error) {
 	return res, nil
 }
 
-func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetChunksByNarFileID(ctx, narFileID)
@@ -411,9 +417,9 @@ func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID in
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]Chunk, len(res))
+	items := make([]GetChunksByNarFileIDRow, len(res))
 	for i, v := range res {
-		items[i] = Chunk{
+		items[i] = GetChunksByNarFileIDRow{
 			ID: v.ID,
 
 			Hash: v.Hash,
@@ -1028,7 +1034,7 @@ func (w *postgresWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetO
 	return items, nil
 }
 
-func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetOrphanedChunks(ctx)
@@ -1037,9 +1043,9 @@ func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]Chunk, len(res))
+	items := make([]GetOrphanedChunksRow, len(res))
 	for i, v := range res {
-		items[i] = Chunk{
+		items[i] = GetOrphanedChunksRow{
 			ID: v.ID,
 
 			Hash: v.Hash,

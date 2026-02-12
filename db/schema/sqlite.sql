@@ -51,6 +51,7 @@ CREATE TABLE chunks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hash TEXT NOT NULL UNIQUE,
     size INTEGER NOT NULL CHECK (size >= 0),
+    compressed_size INTEGER NOT NULL DEFAULT 0 CHECK (compressed_size >= 0),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP
 );

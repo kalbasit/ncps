@@ -10,11 +10,12 @@ import (
 )
 
 type Chunk struct {
-	ID        int64
-	Hash      string
-	Size      uint32
-	CreatedAt time.Time
-	UpdatedAt sql.NullTime
+	ID             int64
+	Hash           string
+	Size           uint32
+	CompressedSize uint32
+	CreatedAt      time.Time
+	UpdatedAt      sql.NullTime
 }
 
 type Config struct {

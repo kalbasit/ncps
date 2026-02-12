@@ -93,6 +93,8 @@ func (w *sqliteWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) 
 
 		Size: res.Size,
 
+		CompressedSize: res.CompressedSize,
+
 		CreatedAt: res.CreatedAt,
 
 		UpdatedAt: res.UpdatedAt,
@@ -342,6 +344,8 @@ func (w *sqliteWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk,
 
 		Size: res.Size,
 
+		CompressedSize: res.CompressedSize,
+
 		CreatedAt: res.CreatedAt,
 
 		UpdatedAt: res.UpdatedAt,
@@ -370,13 +374,15 @@ func (w *sqliteWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, erro
 
 		Size: res.Size,
 
+		CompressedSize: res.CompressedSize,
+
 		CreatedAt: res.CreatedAt,
 
 		UpdatedAt: res.UpdatedAt,
 	}, nil
 }
 
-func (w *sqliteWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error) {
+func (w *sqliteWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (GetChunkByNarFileIDAndIndexRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetChunkByNarFileIDAndIndex(ctx, sqlitedb.GetChunkByNarFileIDAndIndexParams{
@@ -386,15 +392,15 @@ func (w *sqliteWrapper) GetChunkByNarFileIDAndIndex(ctx context.Context, arg Get
 	if err != nil {
 
 		if errors.Is(err, sql.ErrNoRows) {
-			return Chunk{}, ErrNotFound
+			return GetChunkByNarFileIDAndIndexRow{}, ErrNotFound
 		}
 
-		return Chunk{}, err
+		return GetChunkByNarFileIDAndIndexRow{}, err
 	}
 
 	// Convert Single Domain Struct
 
-	return Chunk{
+	return GetChunkByNarFileIDAndIndexRow{
 		ID: res.ID,
 
 		Hash: res.Hash,
@@ -420,7 +426,7 @@ func (w *sqliteWrapper) GetChunkCount(ctx context.Context) (int64, error) {
 	return res, nil
 }
 
-func (w *sqliteWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error) {
+func (w *sqliteWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetChunksByNarFileID(ctx, narFileID)
@@ -429,9 +435,9 @@ func (w *sqliteWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int6
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]Chunk, len(res))
+	items := make([]GetChunksByNarFileIDRow, len(res))
 	for i, v := range res {
-		items[i] = Chunk{
+		items[i] = GetChunksByNarFileIDRow{
 			ID: v.ID,
 
 			Hash: v.Hash,
@@ -1046,7 +1052,7 @@ func (w *sqliteWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetOld
 	return items, nil
 }
 
-func (w *sqliteWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) {
+func (w *sqliteWrapper) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetOrphanedChunks(ctx)
@@ -1055,9 +1061,9 @@ func (w *sqliteWrapper) GetOrphanedChunks(ctx context.Context) ([]Chunk, error) 
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]Chunk, len(res))
+	items := make([]GetOrphanedChunksRow, len(res))
 	for i, v := range res {
-		items[i] = Chunk{
+		items[i] = GetOrphanedChunksRow{
 			ID: v.ID,
 
 			Hash: v.Hash,

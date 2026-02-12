@@ -120,13 +120,13 @@ type Querier interface {
 	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	//GetChunkByHash
 	//
-	//  SELECT id, hash, size, created_at, updated_at
+	//  SELECT id, hash, size, compressed_size, created_at, updated_at
 	//  FROM chunks
 	//  WHERE hash = ?
 	GetChunkByHash(ctx context.Context, hash string) (Chunk, error)
 	//GetChunkByID
 	//
-	//  SELECT id, hash, size, created_at, updated_at
+	//  SELECT id, hash, size, compressed_size, created_at, updated_at
 	//  FROM chunks
 	//  WHERE id = ?
 	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
@@ -136,7 +136,7 @@ type Querier interface {
 	//  FROM chunks c
 	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?
-	GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (Chunk, error)
+	GetChunkByNarFileIDAndIndex(ctx context.Context, arg GetChunkByNarFileIDAndIndexParams) (GetChunkByNarFileIDAndIndexRow, error)
 	//GetChunkCount
 	//
 	//  SELECT CAST(COUNT(*) AS SIGNED) AS count
@@ -149,7 +149,7 @@ type Querier interface {
 	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.nar_file_id = ?
 	//  ORDER BY nfc.chunk_index
-	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error)
+	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]GetChunksByNarFileIDRow, error)
 	//GetCompressedNarInfos
 	//
 	//  SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, `system`, ca
@@ -325,7 +325,7 @@ type Querier interface {
 	//  FROM chunks c
 	//  LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 	//  WHERE nfc.chunk_id IS NULL
-	GetOrphanedChunks(ctx context.Context) ([]Chunk, error)
+	GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error)
 	// Find files that have no relationship to any narinfo
 	//
 	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
