@@ -334,7 +334,7 @@ func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
 
 		// Use highly compressible data (repeated bytes)
 		content := strings.Repeat("compressible", 1000)
-		nu := nar.URL{Hash: "testnar-compress", Compression: nar.CompressionTypeNone}
+		nu := nar.URL{Hash: "testnar-zstd", Compression: nar.CompressionTypeNone}
 
 		r := io.NopCloser(strings.NewReader(content))
 		err = c.PutNar(ctx, nu, r)

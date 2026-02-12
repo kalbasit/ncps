@@ -9,9 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testhelper"
 )
 
@@ -37,7 +36,7 @@ func NewTestServer(t *testing.T, priority int) *Server {
 
 	s.entries = append(s.entries, Entries...)
 
-	s.Server = httptest.NewServer(compressMiddleware(s.handler()))
+	s.Server = httptest.NewServer(zstdMiddleware(s.handler()))
 
 	return s
 }
@@ -74,7 +73,7 @@ func (s *Server) RemoveMaybeHandler(idx string) {
 	delete(s.maybeHandlers, idx)
 }
 
-func compressMiddleware(next http.Handler) http.Handler {
+func zstdMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Accept-Encoding") != "zstd" {
 			next.ServeHTTP(w, r)
@@ -82,13 +81,10 @@ func compressMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		encoder, err := zstd.NewWriter(w)
-		if !requireNoError(w, err) {
-			return
-		}
-		defer encoder.Close()
+		pw := zstd.NewPooledWriter(w)
+		defer pw.Close()
 
-		zw := &zstdResponseWriter{Writer: encoder, ResponseWriter: w}
+		zw := &zstdResponseWriter{Writer: pw, ResponseWriter: w}
 
 		next.ServeHTTP(zw, r)
 	})

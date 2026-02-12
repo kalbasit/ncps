@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +25,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/local"
+	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -311,13 +311,14 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		narNone := nar.CompressionTypeNone
 		for _, entry := range entries {
 			if entry.NarCompression == narNone {
-				encoder, _ := zstd.NewWriter(nil)
+				enc := zstd.GetWriter()
+				defer zstd.PutWriter(enc)
 
 				var compressed bytes.Buffer
-				encoder.Reset(&compressed)
-				_, err = encoder.Write([]byte(entry.NarText))
+				enc.Reset(&compressed)
+				_, err = enc.Write([]byte(entry.NarText))
 				require.NoError(t, err)
-				err = encoder.Close()
+				err = enc.Close()
 				require.NoError(t, err)
 
 				zstdSizes[entry.NarInfoHash] = uint64(compressed.Len()) //nolint:gosec

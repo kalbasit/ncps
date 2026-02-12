@@ -8,12 +8,10 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/riandyrn/otelchi"
 	"github.com/rs/zerolog"
@@ -31,6 +29,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/storage"
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 const (
@@ -59,17 +58,6 @@ var tracer trace.Tracer
 
 //nolint:gochecknoglobals
 var prometheusGatherer promclient.Gatherer
-
-//nolint:gochecknoglobals
-var zstdWriterPool = sync.Pool{
-	New: func() interface{} {
-		// Not providing any options will use the default compression level.
-		// The error is ignored as NewWriter(nil) with no options doesn't error.
-		enc, _ := zstd.NewWriter(nil)
-
-		return enc
-	},
-}
 
 //nolint:gochecknoinits
 func init() {
@@ -591,16 +579,13 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		var out io.Writer = w
 
 		if useZstd {
-			enc := zstdWriterPool.Get().(*zstd.Encoder)
-			enc.Reset(w)
-			out = enc
+			pw := zstd.NewPooledWriter(w)
+			out = pw
 
 			defer func() {
-				if err := enc.Close(); err != nil {
+				if err := pw.Close(); err != nil {
 					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close zstd writer")
 				}
-
-				zstdWriterPool.Put(enc)
 			}()
 		}
 

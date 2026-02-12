@@ -117,30 +117,34 @@ func TestS3Store_Integration(t *testing.T) {
 	t.Run("stored chunk is zstd-compressed in S3", func(t *testing.T) {
 		t.Parallel()
 
+		hash := testhelper.MustRandNarHash()
+
 		data := bytes.Repeat([]byte("compressible"), 1024)
-		isNew, compressedSize, err := store.PutChunk(ctx, "test-hash-s3-compress", data)
+		isNew, compressedSize, err := store.PutChunk(ctx, hash, data)
 		require.NoError(t, err)
 		assert.True(t, isNew)
 		assert.Greater(t, int64(len(data)), compressedSize, "compressed size should be less than original")
 		assert.Positive(t, compressedSize)
 
 		defer func() {
-			_ = store.DeleteChunk(ctx, "test-hash-s3-compress")
+			_ = store.DeleteChunk(ctx, hash)
 		}()
 	})
 
 	t.Run("compressed chunk round-trips correctly via S3", func(t *testing.T) {
 		t.Parallel()
 
+		hash := testhelper.MustRandNarHash()
+
 		data := []byte("hello from S3 compressed chunk! hello from S3 compressed chunk!")
-		_, _, err := store.PutChunk(ctx, "test-hash-s3-roundtrip", data)
+		_, _, err := store.PutChunk(ctx, hash, data)
 		require.NoError(t, err)
 
 		defer func() {
-			_ = store.DeleteChunk(ctx, "test-hash-s3-roundtrip")
+			_ = store.DeleteChunk(ctx, hash)
 		}()
 
-		rc, err := store.GetChunk(ctx, "test-hash-s3-roundtrip")
+		rc, err := store.GetChunk(ctx, hash)
 		require.NoError(t, err)
 
 		defer rc.Close()
@@ -151,8 +155,18 @@ func TestS3Store_Integration(t *testing.T) {
 	})
 }
 
-func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
+func TestS3Store_PutSameChunk_RaceCondition(t *testing.T) {
 	t.Parallel()
+	runRaceConditionTest(t, false)
+}
+
+func TestS3Store_PutDifferentChunk_RaceCondition(t *testing.T) {
+	t.Parallel()
+	runRaceConditionTest(t, true)
+}
+
+func runRaceConditionTest(t *testing.T, distinctHashes bool) {
+	t.Helper()
 
 	ctx := context.Background()
 
@@ -162,37 +176,49 @@ func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
 	}
 
 	// We pass a local locker to ensure thread safety during the test.
-
 	store, err := chunk.NewS3Store(ctx, *cfg, local.NewLocker())
 	require.NoError(t, err)
 
-	hash := "test-hash-race"
-	content := []byte(strings.Repeat("race condition content", 1024))
-
-	defer func() {
-		_ = store.DeleteChunk(ctx, hash)
-	}()
-
 	const numGoRoutines = 10
 
+	hashes := make(chan string, numGoRoutines)
+
+	defer func() {
+		close(hashes)
+
+		for hash := range hashes {
+			_ = store.DeleteChunk(ctx, hash)
+		}
+	}()
+
+	content := []byte(strings.Repeat("race condition content", 1024))
+	sharedHash := testhelper.MustRandNarHash()
+
 	results := make(chan bool, numGoRoutines)
-	errors := make(chan error, numGoRoutines)
+	errs := make(chan error, numGoRoutines)
 
 	for range numGoRoutines {
 		go func() {
+			hash := sharedHash
+			if distinctHashes {
+				hash = testhelper.MustRandNarHash()
+			}
+
+			hashes <- hash
+
 			created, size, err := store.PutChunk(ctx, hash, content)
 			results <- created
 
 			assert.Greater(t, int64(len(content)), size)
 
-			errors <- err
+			errs <- err
 		}()
 	}
 
 	createdCount := 0
 
 	for range numGoRoutines {
-		err := <-errors
+		err := <-errs
 		require.NoError(t, err)
 
 		if <-results {
@@ -200,10 +226,14 @@ func TestS3Store_PutChunk_RaceCondition(t *testing.T) {
 		}
 	}
 
-	// The contract says true if chunk was new. In a race condition WITHOUT locking,
-	// multiple goroutines might see created: true.
-	// We want to ensure only ONE goroutine gets created: true.
-	assert.Equal(t, 1, createdCount, "Only one goroutine should have created the chunk")
+	if distinctHashes {
+		assert.Equal(t, numGoRoutines, createdCount, "All goroutines should have created their unique chunk")
+	} else {
+		// The contract says true if chunk was new. In a race condition WITHOUT locking,
+		// multiple goroutines might see created: true.
+		// We want to ensure only ONE goroutine gets created: true.
+		assert.Equal(t, 1, createdCount, "Only one goroutine should have created the chunk")
+	}
 }
 
 func TestNewS3Store_Validation(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/andybalholm/brotli"
-	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/sorairolake/lzip-go"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +14,7 @@ import (
 	"github.com/ulikunitz/xz"
 
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 func TestDecompressReader(t *testing.T) {
@@ -70,11 +70,10 @@ func TestDecompressReader(t *testing.T) {
 			getInput: func(t *testing.T) io.Reader {
 				var buf bytes.Buffer
 
-				zw, err := zstd.NewWriter(&buf)
+				pw := zstd.NewPooledWriter(&buf)
+				_, err := pw.Write(content)
 				require.NoError(t, err)
-				_, err = zw.Write(content)
-				require.NoError(t, err)
-				require.NoError(t, zw.Close())
+				require.NoError(t, pw.Close())
 
 				return &buf
 			},

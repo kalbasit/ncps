@@ -7,10 +7,11 @@ import (
 	"io"
 
 	"github.com/andybalholm/brotli"
-	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/sorairolake/lzip-go"
 	"github.com/ulikunitz/xz"
+
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 // ErrUnsupportedCompressionType is returned when an unsupported compression type is encountered.
@@ -31,12 +32,12 @@ func DecompressReader(r io.Reader, comp CompressionType) (io.ReadCloser, error) 
 		return io.NopCloser(bzip2.NewReader(r)), nil
 
 	case CompressionTypeZstd:
-		zr, err := zstd.NewReader(r)
+		pr, err := zstd.NewPooledReader(r)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create zstd reader: %w", err)
 		}
 
-		return zr.IOReadCloser(), nil
+		return pr, nil
 
 	case CompressionTypeLz4:
 		return io.NopCloser(lz4.NewReader(r)), nil
