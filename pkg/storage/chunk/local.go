@@ -6,18 +6,53 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/klauspost/compress/zstd"
 )
+
+// localReadCloser wraps a zstd decoder and file to properly close both on Close().
+type localReadCloser struct {
+	*zstd.Decoder
+	file *os.File
+}
+
+func (r *localReadCloser) Close() error {
+	r.Decoder.Close()
+
+	return r.file.Close()
+}
 
 // localStore implements Store for local filesystem.
 type localStore struct {
 	baseDir string
+	encoder *zstd.Encoder
+	decoder *zstd.Decoder
 }
 
 // NewLocalStore returns a new local chunk store.
 func NewLocalStore(baseDir string) (Store, error) {
-	s := &localStore{baseDir: baseDir}
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd encoder: %w", err)
+	}
+
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		encoder.Close()
+
+		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+	}
+
+	s := &localStore{
+		baseDir: baseDir,
+		encoder: encoder,
+		decoder: decoder,
+	}
 	// Ensure base directory exists
 	if err := os.MkdirAll(s.storeDir(), 0o755); err != nil {
+		encoder.Close()
+		decoder.Close()
+
 		return nil, fmt.Errorf("failed to create chunk store directory: %w", err)
 	}
 
@@ -59,7 +94,15 @@ func (s *localStore) GetChunk(_ context.Context, hash string) (io.ReadCloser, er
 		return nil, err
 	}
 
-	return f, nil
+	// Create a new decoder for this specific file
+	decoder, err := zstd.NewReader(f)
+	if err != nil {
+		f.Close()
+
+		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+	}
+
+	return &localReadCloser{decoder, f}, nil
 }
 
 func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool, int64, error) {
@@ -71,6 +114,9 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 		return false, 0, err
 	}
 
+	// Compress data with zstd
+	compressed := s.encoder.EncodeAll(data, nil)
+
 	// Write to temporary file first to ensure atomicity
 	tmpFile, err := os.CreateTemp(dir, "chunk-*")
 	if err != nil {
@@ -78,7 +124,7 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 	}
 	defer os.Remove(tmpFile.Name()) // Ensure temp file is cleaned up
 
-	if _, err = tmpFile.Write(data); err == nil {
+	if _, err = tmpFile.Write(compressed); err == nil {
 		err = tmpFile.Sync()
 	}
 
@@ -93,13 +139,13 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 	if err := os.Link(tmpFile.Name(), path); err != nil {
 		if os.IsExist(err) {
 			// Chunk already exists, which is fine. We didn't create it.
-			return false, int64(len(data)), nil
+			return false, int64(len(compressed)), nil
 		}
 
 		return false, 0, err // Some other error
 	}
 
-	return true, int64(len(data)), nil
+	return true, int64(len(compressed)), nil
 }
 
 func (s *localStore) DeleteChunk(_ context.Context, hash string) error {
