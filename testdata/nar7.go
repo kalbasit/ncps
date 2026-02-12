@@ -3,8 +3,8 @@ package testdata
 import (
 	"path/filepath"
 
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 // Nar7 is the nar representing hello from release-25.11.
@@ -25,5 +25,5 @@ Sig: cache.nixos.org-1:oPqkkDFlniUh1BaGWwWd7LY2EfUh3r/GBxriDGE7vCfvJ3fKsnIDg1L4Q
 	NarHash:        "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0",
 	NarCompression: nar.CompressionTypeNone,
 	NarPath:        filepath.Join("0", "09", "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0.nar"),
-	NarText:        helper.MustRandString(113256, nil),
+	NarText:        testhelper.MustRandString(113256),
 }

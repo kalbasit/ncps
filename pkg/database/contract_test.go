@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 // querierFactory is a function that returns a clean, ready-to-use Querier and
@@ -33,7 +33,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key := helper.MustRandString(32, nil)
+			key := testhelper.MustRandString(32)
 
 			_, err := db.GetConfigByKey(context.Background(), key)
 			assert.ErrorIs(t, err, database.ErrNotFound)
@@ -44,9 +44,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key := helper.MustRandString(32, nil)
+			key := testhelper.MustRandString(32)
 
-			value := helper.MustRandString(32, nil)
+			value := testhelper.MustRandString(32)
 
 			conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
 				Key:   key,
@@ -69,7 +69,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err := db.GetNarInfoByHash(context.Background(), hash)
 			assert.ErrorIs(t, err, database.ErrNotFound)
@@ -80,7 +80,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -96,7 +96,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("inserting one record", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			nio, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -134,7 +134,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("hash is unique", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -158,7 +158,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				go func() {
 					defer wg.Done()
 
-					hash := helper.MustRandString(128, nil)
+					hash := testhelper.MustRandString(128)
 
 					if _, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash}); err != nil {
 						errC <- fmt.Errorf("error creating the narinfo record: %w", err)
@@ -175,7 +175,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("CreateNarInfoUpdateFromPlaceholder", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			// 1. Create a placeholder (url IS NULL)
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
@@ -209,7 +209,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		ctx := context.Background()
 
 		t.Run("updating an existing narinfo", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			// 1. Create a narinfo
 			_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
@@ -262,7 +262,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("updating a non-existing narinfo", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 			params := database.UpdateNarInfoParams{
 				Hash: hash,
 			}
@@ -276,7 +276,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("narinfo not existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ra, err := db.TouchNarInfo(context.Background(), hash)
 			require.NoError(t, err)
@@ -285,7 +285,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("narinfo existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -361,7 +361,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("narinfo not existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ra, err := db.DeleteNarInfoByHash(context.Background(), hash)
 			require.NoError(t, err)
@@ -370,7 +370,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("narinfo existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			t.Run("create the narinfo", func(t *testing.T) {
 				_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
@@ -420,9 +420,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key := helper.MustRandString(32, nil)
+			key := testhelper.MustRandString(32)
 
-			value := helper.MustRandString(32, nil)
+			value := testhelper.MustRandString(32)
 
 			createdConf, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
 				Key:   key,
@@ -441,9 +441,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key := helper.MustRandString(32, nil)
+			key := testhelper.MustRandString(32)
 
-			value := helper.MustRandString(32, nil)
+			value := testhelper.MustRandString(32)
 
 			_, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
 				Key:   key,
@@ -468,7 +468,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -518,7 +518,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			_, err := db.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
@@ -536,7 +536,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -578,7 +578,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				require.NoError(t, err)
 
 				t.Run("inserting one record", func(t *testing.T) {
-					hash, err := helper.RandString(32, nil)
+					hash, err := testhelper.RandString(32)
 					require.NoError(t, err)
 
 					narFile, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -632,7 +632,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				})
 
 				t.Run("upsert on duplicate hash", func(t *testing.T) {
-					hash, err := helper.RandString(32, nil)
+					hash, err := testhelper.RandString(32)
 					require.NoError(t, err)
 
 					nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -667,7 +667,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("nar not existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ra, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
 				Hash: hash,
@@ -678,7 +678,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("nar existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			t.Run("create the nar", func(t *testing.T) {
 				_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -790,7 +790,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("nar not existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
 				Hash: hash,
@@ -801,7 +801,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("nar existing", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			t.Run("create the nar", func(t *testing.T) {
 				_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -863,7 +863,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("independent variants", func(t *testing.T) {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			// Create two variants
 			_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -1000,9 +1000,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key := helper.MustRandString(32, nil)
+			key := testhelper.MustRandString(32)
 
-			value := helper.MustRandString(32, nil)
+			value := testhelper.MustRandString(32)
 
 			err := db.SetConfig(context.Background(), database.SetConfigParams{
 				Key:   key,
@@ -1022,9 +1022,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key := helper.MustRandString(32, nil)
+			key := testhelper.MustRandString(32)
 
-			value := helper.MustRandString(32, nil)
+			value := testhelper.MustRandString(32)
 
 			err := db.SetConfig(context.Background(), database.SetConfigParams{
 				Key:   key,
@@ -1032,7 +1032,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			value2 := helper.MustRandString(32, nil)
+			value2 := testhelper.MustRandString(32)
 
 			err = db.SetConfig(context.Background(), database.SetConfigParams{
 				Key:   key,
@@ -1056,12 +1056,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			reference := helper.MustRandString(32, nil)
+			reference := testhelper.MustRandString(32)
 
 			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
 				NarInfoID: ni.ID,
@@ -1082,12 +1082,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			reference := helper.MustRandString(32, nil)
+			reference := testhelper.MustRandString(32)
 
 			// Insert first time
 			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
@@ -1121,14 +1121,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			references := make([]string, 3)
 			for i := range references {
-				ref, err := helper.RandString(32, nil)
+				ref, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				references[i] = ref
@@ -1151,12 +1151,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			reference := helper.MustRandString(32, nil)
+			reference := testhelper.MustRandString(32)
 
 			// Insert same reference multiple times in one batch
 			references := []string{reference, reference, reference}
@@ -1181,14 +1181,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			ref1 := helper.MustRandString(32, nil)
+			ref1 := testhelper.MustRandString(32)
 
-			ref2 := helper.MustRandString(32, nil)
+			ref2 := testhelper.MustRandString(32)
 
 			// First batch
 			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
@@ -1220,12 +1220,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			signature := helper.MustRandString(32, nil)
+			signature := testhelper.MustRandString(32)
 
 			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
 				NarInfoID: ni.ID,
@@ -1246,12 +1246,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			signature := helper.MustRandString(32, nil)
+			signature := testhelper.MustRandString(32)
 
 			// Insert first time
 			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
@@ -1285,14 +1285,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			signatures := make([]string, 3)
 			for i := range signatures {
-				sig, err := helper.RandString(32, nil)
+				sig, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				signatures[i] = sig
@@ -1315,12 +1315,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			signature := helper.MustRandString(32, nil)
+			signature := testhelper.MustRandString(32)
 
 			// Insert same signature multiple times in one batch
 			signatures := []string{signature, signature, signature}
@@ -1345,14 +1345,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			sig1 := helper.MustRandString(32, nil)
+			sig1 := testhelper.MustRandString(32)
 
-			sig2 := helper.MustRandString(32, nil)
+			sig2 := testhelper.MustRandString(32)
 
 			// First batch
 			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
@@ -1393,9 +1393,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key := helper.MustRandString(32, nil)
+			key := testhelper.MustRandString(32)
 
-			value := helper.MustRandString(32, nil)
+			value := testhelper.MustRandString(32)
 
 			conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
 				Key:   key,
@@ -1427,7 +1427,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -1457,7 +1457,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash,
@@ -1482,7 +1482,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -1524,9 +1524,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			db := factory(t)
 
 			url := "nar/test.nar.xz"
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
 				Hash: hash1,
@@ -1558,12 +1558,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -1590,12 +1590,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -1627,7 +1627,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -1641,12 +1641,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -1676,7 +1676,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash,
@@ -1695,17 +1695,17 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
 			require.NoError(t, err)
 
-			hash3 := helper.MustRandString(32, nil)
+			hash3 := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash3,
@@ -1753,7 +1753,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -1785,7 +1785,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash,
@@ -1811,12 +1811,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -1841,7 +1841,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash1,
@@ -1850,7 +1850,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -1879,12 +1879,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -1909,12 +1909,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
 			require.NoError(t, err)
@@ -1940,7 +1940,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		require.NoError(t, err)
 
 		for i := 0; i < 5; i++ {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -1961,7 +1961,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		require.NoError(t, err)
 
 		for i := 0; i < 3; i++ {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			//nolint:gosec // G115: Safe conversion, i is small and controlled
 			_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -1984,12 +1984,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		// Create 3 narinfos with different nar files of different sizes
-		hash1 := helper.MustRandString(32, nil)
+		hash1 := testhelper.MustRandString(32)
 
 		ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 		require.NoError(t, err)
 
-		nfHash1, err := helper.RandString(32, nil)
+		nfHash1, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -2005,13 +2005,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 		require.NoError(t, err)
 
-		hash2, err := helper.RandString(32, nil)
+		hash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
 		require.NoError(t, err)
 
-		nfHash2, err := helper.RandString(32, nil)
+		nfHash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -2027,13 +2027,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 		require.NoError(t, err)
 
-		hash3, err := helper.RandString(32, nil)
+		hash3, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		ni3, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash3})
 		require.NoError(t, err)
 
-		nfHash3, err := helper.RandString(32, nil)
+		nfHash3, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		nf3, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -2078,12 +2078,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -2108,7 +2108,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash1 := helper.MustRandString(32, nil)
+			hash1 := testhelper.MustRandString(32)
 
 			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash1,
@@ -2117,7 +2117,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			hash2 := helper.MustRandString(32, nil)
+			hash2 := testhelper.MustRandString(32)
 
 			nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        hash2,
@@ -2141,13 +2141,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		db := factory(t)
 
-		hash1, err := helper.RandString(32, nil)
+		hash1, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 		require.NoError(t, err)
 
-		hash2, err := helper.RandString(32, nil)
+		hash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
@@ -2168,13 +2168,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		db := factory(t)
 
-		hash1, err := helper.RandString(32, nil)
+		hash1, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
 		require.NoError(t, err)
 
-		hash2, err := helper.RandString(32, nil)
+		hash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
@@ -2198,7 +2198,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -2214,7 +2214,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
 				Hash: hash,
@@ -2236,7 +2236,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		// Create 5 migrated narinfos
 		for i := 0; i < 5; i++ {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
 				Hash: hash,
@@ -2247,7 +2247,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		// Create 2 unmigrated narinfos (should not appear in results)
 		for i := 0; i < 2; i++ {
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
@@ -2289,7 +2289,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2306,7 +2306,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2332,7 +2332,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash := helper.MustRandString(32, nil)
+			hash := testhelper.MustRandString(32)
 
 			_, err := db.GetChunkByHash(context.Background(), hash)
 			assert.ErrorIs(t, err, database.ErrNotFound)
@@ -2343,7 +2343,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2376,7 +2376,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2400,7 +2400,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2409,7 +2409,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2437,7 +2437,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2446,7 +2446,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2479,7 +2479,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2493,7 +2493,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIndices := make([]int64, 3)
 
 			for i := 0; i < 3; i++ {
-				chunkHash, err := helper.RandString(32, nil)
+				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
@@ -2531,7 +2531,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2540,7 +2540,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2569,7 +2569,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2596,7 +2596,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2610,7 +2610,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIndices := make([]int64, 2)
 
 			for i := 0; i < 2; i++ {
-				chunkHash, err := helper.RandString(32, nil)
+				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
@@ -2650,7 +2650,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2665,7 +2665,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIndices := make([]int64, numChunks)
 
 			for i := 0; i < numChunks; i++ {
-				chunkHash, err := helper.RandString(32, nil)
+				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
@@ -2702,7 +2702,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2716,7 +2716,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIndices := []int64{10, 20, 30}
 
 			for i := 0; i < 3; i++ {
-				chunkHash, err := helper.RandString(32, nil)
+				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
@@ -2753,7 +2753,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2766,7 +2766,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			var allChunkIDs []int64
 
 			for i := 0; i < 4; i++ {
-				chunkHash, err := helper.RandString(32, nil)
+				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
@@ -2812,7 +2812,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
@@ -2820,7 +2820,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
@@ -2844,7 +2844,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2863,7 +2863,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2876,7 +2876,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			var chunkIDs []int64
 
 			for i := 0; i < 3; i++ {
-				chunkHash, err := helper.RandString(32, nil)
+				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
 				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
@@ -2915,7 +2915,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2937,7 +2937,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -2946,7 +2946,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -2983,7 +2983,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		var totalAdded int64
 
 		for i := 0; i < 3; i++ {
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			//nolint:gosec // G115: Safe conversion, i is small and controlled
 			size := uint32(512 * (i + 1))
@@ -3011,7 +3011,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		require.NoError(t, err)
 
 		for i := 0; i < 4; i++ {
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			_, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -3034,7 +3034,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash := helper.MustRandString(32, nil)
+			narHash := testhelper.MustRandString(32)
 
 			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 				Hash:        narHash,
@@ -3043,7 +3043,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -3068,7 +3068,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			chunkHash1 := helper.MustRandString(32, nil)
+			chunkHash1 := testhelper.MustRandString(32)
 
 			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash1,
@@ -3076,7 +3076,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			chunkHash2 := helper.MustRandString(32, nil)
+			chunkHash2 := testhelper.MustRandString(32)
 
 			chunk2, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash2,
@@ -3111,7 +3111,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			chunkHash := helper.MustRandString(32, nil)
+			chunkHash := testhelper.MustRandString(32)
 
 			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
 				Hash: chunkHash,
@@ -3132,7 +3132,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		db := factory(t)
 
-		narHash, err := helper.RandString(32, nil)
+		narHash, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -3162,7 +3162,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		// Create a migrated narinfo without chunks
-		hash1, err := helper.RandString(32, nil)
+		hash1, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
@@ -3172,7 +3172,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		require.NoError(t, err)
 
 		// Create a migrated narinfo with chunks (total_chunks > 0)
-		hash2, err := helper.RandString(32, nil)
+		hash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
@@ -3181,7 +3181,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 		require.NoError(t, err)
 
-		nfHash2, err := helper.RandString(32, nil)
+		nfHash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -3204,7 +3204,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		require.NoError(t, err)
 
 		// Create an unmigrated narinfo (should not appear)
-		hash3, err := helper.RandString(32, nil)
+		hash3, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
 		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash3})
@@ -3228,9 +3228,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		// Create some nar files
-		hash1 := helper.MustRandString(32, nil)
-		hash2 := helper.MustRandString(32, nil)
-		hash3 := helper.MustRandString(32, nil)
+		hash1 := testhelper.MustRandString(32)
+		hash2 := testhelper.MustRandString(32)
+		hash3 := testhelper.MustRandString(32)
 
 		nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
 			Hash:        hash1,

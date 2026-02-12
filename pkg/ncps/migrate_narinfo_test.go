@@ -18,7 +18,6 @@ import (
 	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
 
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/ncps"
@@ -898,7 +897,7 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 
 		narPath := filepath.Join(dir, "store", "nar", nFP)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
-		require.NoError(t, os.WriteFile(narPath, []byte(helper.MustRandString(999999, nil)), 0o600))
+		require.NoError(t, os.WriteFile(narPath, []byte(testhelper.MustRandString(999999)), 0o600))
 
 		// Run migration
 		err = store.WalkNarInfos(ctx, func(h string) error {
