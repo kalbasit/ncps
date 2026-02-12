@@ -1346,7 +1346,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			}
 
 			// Store in chunkStore if new
-			_, _, err = chunkStore.PutChunk(ctx, chunkMetadata.Hash, chunkMetadata.Data)
+			_, compressedSize, err := chunkStore.PutChunk(ctx, chunkMetadata.Hash, chunkMetadata.Data)
 			if err != nil {
 				chunkMetadata.Free()
 
@@ -1354,6 +1354,8 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			}
 
 			chunkMetadata.Free()
+			//nolint:gosec // G115: Chunk size is small enough to fit in uint32
+			chunkMetadata.CompressedSize = uint32(compressedSize)
 
 			totalSize += int64(chunkMetadata.Size)
 
@@ -1415,8 +1417,9 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 		for i, chunkMetadata := range batch {
 			// Create or increment ref count.
 			ch, err := qtx.CreateChunk(ctx, database.CreateChunkParams{
-				Hash: chunkMetadata.Hash,
-				Size: chunkMetadata.Size,
+				Hash:           chunkMetadata.Hash,
+				Size:           chunkMetadata.Size,
+				CompressedSize: chunkMetadata.CompressedSize,
 			})
 			if err != nil {
 				return fmt.Errorf("error creating chunk record: %w", err)

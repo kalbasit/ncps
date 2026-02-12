@@ -44,8 +44,9 @@ type Config struct {
 }
 
 type CreateChunkParams struct {
-	Hash string
-	Size uint32
+	Hash           string
+	Size           uint32
+	CompressedSize uint32
 }
 
 type CreateConfigParams struct {
@@ -87,14 +88,6 @@ type GetChunkByNarFileIDAndIndexParams struct {
 }
 
 type GetChunkByNarFileIDAndIndexRow struct {
-	ID        int64
-	Hash      string
-	Size      uint32
-	CreatedAt time.Time
-	UpdatedAt sql.NullTime
-}
-
-type GetChunksByNarFileIDRow struct {
 	ID        int64
 	Hash      string
 	Size      uint32

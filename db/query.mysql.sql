@@ -280,7 +280,7 @@ FROM chunks
 WHERE id = ?;
 
 -- name: GetChunksByNarFileID :many
-SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+SELECT c.id, c.hash, c.size, c.compressed_size, c.created_at, c.updated_at
 FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ?
@@ -288,9 +288,9 @@ ORDER BY nfc.chunk_index;
 
 -- name: CreateChunk :execresult
 INSERT INTO chunks (
-    hash, size
+    hash, size, compressed_size
 ) VALUES (
-    ?, ?
+    ?, ?, ?
 )
 ON DUPLICATE KEY UPDATE
     id = LAST_INSERT_ID(id),

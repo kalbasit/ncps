@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
 )
@@ -51,6 +52,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("Mixed Mode", testCDCMixedMode(factory))
 	t.Run("GetNarInfo with CDC chunks", testCDCGetNarInfo(factory))
 	t.Run("Client Disconnect No Goroutine Leak", testCDCClientDisconnectNoGoroutineLeak(factory))
+	t.Run("chunks are stored compressed", testCDCChunksAreCompressed(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -309,5 +311,67 @@ func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.
 		// Allow a small tolerance for test infrastructure goroutines to prevent flakiness.
 		assert.LessOrEqual(t, finalGoroutines, baselineGoroutines+2,
 			"Goroutine leak detected: baseline=%d, final=%d", baselineGoroutines, finalGoroutines)
+	}
+}
+
+func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
+		require.NoError(t, err)
+
+		// Use highly compressible data (repeated bytes)
+		content := strings.Repeat("compressible", 1000)
+		nu := nar.URL{Hash: "testnar-compress", Compression: nar.CompressionTypeNone}
+
+		r := io.NopCloser(strings.NewReader(content))
+		err = c.PutNar(ctx, nu, r)
+		require.NoError(t, err)
+
+		// Verify chunks exist in DB and have compressed_size set
+		narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        nu.Hash,
+			Compression: nu.Compression.String(),
+			Query:       nu.Query.Encode(),
+		})
+		require.NoError(t, err)
+
+		chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, chunks, "should have chunks in the database")
+
+		var totalSize, totalCompressedSize int64
+		for _, chunk := range chunks {
+			totalSize += int64(chunk.Size)
+			totalCompressedSize += int64(chunk.CompressedSize)
+			assert.Positive(t, chunk.CompressedSize, "compressed size should be positive")
+		}
+
+		assert.Equal(t, int64(len(content)), totalSize, "sum of chunk sizes should equal original content size")
+		assert.Less(t, totalCompressedSize, totalSize,
+			"total compressed size should be less than total original size for compressible data")
+
+		// Verify reassembly to ensure compression is transparent
+		size, rc, err := c.GetNar(ctx, nu)
+		require.NoError(t, err)
+
+		defer rc.Close()
+
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		assert.Equal(t, content, string(data), "decompressed data should match original")
+		assert.Equal(t, int64(len(content)), size, "size should match original content size")
 	}
 }
