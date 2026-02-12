@@ -7,11 +7,13 @@ import (
 	"github.com/kalbasit/ncps/pkg/narinfo"
 )
 
-// NormalizedHashPattern defines the valid characters for a Nix32 encoded hash.
-// Nix32 uses a 32-character alphabet excluding 'e', 'o', 'u', and 't'.
-// Valid characters: 0-9, a-d, f-n, p-s, v-z
-// Hashes must be exactly 52 characters long.
-const NormalizedHashPattern = `[0-9a-df-np-sv-z]{52}`
+// NormalizedHashPattern defines the valid patterns for Nix store hashes.
+// It supports two primary formats:
+//  1. Nix32 (Base32): A custom 32-character alphabet (0-9, a-z excluding 'e', 'o', 'u', 't').
+//     Used for truncated SHA-256 (52 chars).
+//  2. Hexadecimal (Base16): Standard 0-9, a-f.
+//     Used for full SHA-256 digests (64 chars).
+const NormalizedHashPattern = `[0-9a-df-np-sv-z]{52}|[0-9a-f]{64}`
 
 // HashPattern is the strict validation pattern for complete nar hashes.
 // It matches an optional prefix (narinfo hash + separator) followed by exactly

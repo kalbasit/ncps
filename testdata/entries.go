@@ -10,4 +10,5 @@ var Entries = []Entry{
 	Nar6,
 	Nar7, // Nar7 must not be the last entry or tests will break.
 	Nar8,
+	Nar9,
 }
