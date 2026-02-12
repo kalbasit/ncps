@@ -11,8 +11,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 type Server struct {
@@ -56,7 +56,7 @@ func (s *Server) AddMaybeHandler(maybeHandler MaybeHandlerFunc) string {
 	var idx string
 
 	for {
-		idx = helper.MustRandString(10, nil)
+		idx = testhelper.MustRandString(10)
 		if _, ok := s.maybeHandlers[idx]; !ok {
 			break
 		}

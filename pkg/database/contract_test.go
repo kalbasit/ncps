@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/database"
-	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/testdata"
+	"github.com/kalbasit/ncps/testhelper"
 )
 
 // querierFactory is a function that returns a clean, ready-to-use Querier and
@@ -33,7 +33,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key, err := helper.RandString(32, nil)
+			key, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			_, err = db.GetConfigByKey(context.Background(), key)
@@ -45,10 +45,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key, err := helper.RandString(32, nil)
+			key, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
-			value, err := helper.RandString(32, nil)
+			value, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
@@ -72,7 +72,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			_, err = db.GetNarInfoByHash(context.Background(), hash)
@@ -84,7 +84,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
@@ -101,7 +101,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("inserting one record", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			nio, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
@@ -140,7 +140,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("hash is unique", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
@@ -165,7 +165,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				go func() {
 					defer wg.Done()
 
-					hash, err := helper.RandString(128, nil)
+					hash, err := testhelper.RandString(128)
 					if err != nil {
 						errC <- fmt.Errorf("expected no error but got: %w", err)
 
@@ -187,7 +187,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("CreateNarInfoUpdateFromPlaceholder", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			// 1. Create a placeholder (url IS NULL)
@@ -221,7 +221,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("narinfo not existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			ra, err := db.TouchNarInfo(context.Background(), hash)
@@ -231,7 +231,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("narinfo existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
@@ -308,7 +308,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("narinfo not existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			ra, err := db.DeleteNarInfoByHash(context.Background(), hash)
@@ -318,7 +318,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("narinfo existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			t.Run("create the narinfo", func(t *testing.T) {
@@ -369,10 +369,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key, err := helper.RandString(32, nil)
+			key, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
-			value, err := helper.RandString(32, nil)
+			value, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			createdConf, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
@@ -392,10 +392,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key, err := helper.RandString(32, nil)
+			key, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
-			value, err := helper.RandString(32, nil)
+			value, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			_, err = db.CreateConfig(context.Background(), database.CreateConfigParams{
@@ -421,7 +421,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash, err := helper.RandString(32, nil)
+			narHash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -472,7 +472,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash, err := helper.RandString(32, nil)
+			narHash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			_, err = db.GetNarFileByHashAndCompressionAndQuery(
@@ -491,7 +491,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			narHash, err := helper.RandString(32, nil)
+			narHash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -534,7 +534,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				require.NoError(t, err)
 
 				t.Run("inserting one record", func(t *testing.T) {
-					hash, err := helper.RandString(32, nil)
+					hash, err := testhelper.RandString(32)
 					require.NoError(t, err)
 
 					narFile, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -588,7 +588,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				})
 
 				t.Run("upsert on duplicate hash", func(t *testing.T) {
-					hash, err := helper.RandString(32, nil)
+					hash, err := testhelper.RandString(32)
 					require.NoError(t, err)
 
 					nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
@@ -623,7 +623,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("nar not existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			ra, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
@@ -635,7 +635,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("nar existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			t.Run("create the nar", func(t *testing.T) {
@@ -748,7 +748,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		t.Run("nar not existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
@@ -760,7 +760,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("nar existing", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			t.Run("create the nar", func(t *testing.T) {
@@ -823,7 +823,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 
 		t.Run("independent variants", func(t *testing.T) {
-			hash, err := helper.RandString(32, nil)
+			hash, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			// Create two variants
@@ -961,10 +961,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key, err := helper.RandString(32, nil)
+			key, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
-			value, err := helper.RandString(32, nil)
+			value, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			err = db.SetConfig(context.Background(), database.SetConfigParams{
@@ -985,10 +985,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			db := factory(t)
 
-			key, err := helper.RandString(32, nil)
+			key, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
-			value, err := helper.RandString(32, nil)
+			value, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			err = db.SetConfig(context.Background(), database.SetConfigParams{
@@ -997,7 +997,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			value2, err := helper.RandString(32, nil)
+			value2, err := testhelper.RandString(32)
 			require.NoError(t, err)
 
 			err = db.SetConfig(context.Background(), database.SetConfigParams{
