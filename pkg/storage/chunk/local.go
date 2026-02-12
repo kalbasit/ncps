@@ -62,19 +62,19 @@ func (s *localStore) GetChunk(_ context.Context, hash string) (io.ReadCloser, er
 	return f, nil
 }
 
-func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool, error) {
+func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool, int64, error) {
 	path := s.chunkPath(hash)
 
 	// Create parent directory
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return false, err
+		return false, 0, err
 	}
 
 	// Write to temporary file first to ensure atomicity
 	tmpFile, err := os.CreateTemp(dir, "chunk-*")
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	defer os.Remove(tmpFile.Name()) // Ensure temp file is cleaned up
 
@@ -87,19 +87,19 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 	}
 
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 
 	if err := os.Link(tmpFile.Name(), path); err != nil {
 		if os.IsExist(err) {
 			// Chunk already exists, which is fine. We didn't create it.
-			return false, nil
+			return false, int64(len(data)), nil
 		}
 
-		return false, err // Some other error
+		return false, 0, err // Some other error
 	}
 
-	return true, nil
+	return true, int64(len(data)), nil
 }
 
 func (s *localStore) DeleteChunk(_ context.Context, hash string) error {

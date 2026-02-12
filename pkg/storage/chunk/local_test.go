@@ -31,9 +31,10 @@ func TestLocalStore(t *testing.T) {
 		hash := "test-hash-1"
 		content := "chunk content"
 
-		created, err := store.PutChunk(ctx, hash, []byte(content))
+		created, size, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created)
+		assert.Equal(t, int64(len(content)), size)
 
 		has, err := store.HasChunk(ctx, hash)
 		require.NoError(t, err)
@@ -55,13 +56,15 @@ func TestLocalStore(t *testing.T) {
 		hash := "test-hash-2"
 		content := "chunk content"
 
-		created1, err := store.PutChunk(ctx, hash, []byte(content))
+		created1, size1, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.True(t, created1)
+		assert.Equal(t, int64(len(content)), size1)
 
-		created2, err := store.PutChunk(ctx, hash, []byte(content))
+		created2, size2, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 		assert.False(t, created2)
+		assert.Equal(t, int64(len(content)), size2)
 	})
 
 	t.Run("get non-existent chunk", func(t *testing.T) {
@@ -78,7 +81,7 @@ func TestLocalStore(t *testing.T) {
 		hash := "abcdef123456"
 		content := "cleanup test"
 
-		_, err := store.PutChunk(ctx, hash, []byte(content))
+		_, _, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 
 		path := filepath.Join(dir, "chunks", hash[:2], hash)
@@ -122,7 +125,7 @@ func TestLocalStore(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				created, err := store.PutChunk(ctx, hash, []byte(content))
+				created, _, err := store.PutChunk(ctx, hash, []byte(content))
 
 				createds <- created
 

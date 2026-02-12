@@ -19,8 +19,8 @@ type Store interface {
 	// NOTE: The caller must close the returned io.ReadCloser!
 	GetChunk(ctx context.Context, hash string) (io.ReadCloser, error)
 
-	// PutChunk stores a chunk. Returns true if chunk was new.
-	PutChunk(ctx context.Context, hash string, data []byte) (bool, error)
+	// PutChunk stores a chunk. Returns true if chunk was new, and the compressed size.
+	PutChunk(ctx context.Context, hash string, data []byte) (bool, int64, error)
 
 	// DeleteChunk removes a chunk.
 	DeleteChunk(ctx context.Context, hash string) error
