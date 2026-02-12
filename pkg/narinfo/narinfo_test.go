@@ -18,7 +18,10 @@ func TestNarInfoFilePath(t *testing.T) {
 		hash string
 		path string
 	}{
-		{hash: "abc123", path: filepath.Join("a", "ab", "abc123.narinfo")},
+		{
+			hash: "n5glp21rsz314qssw9fbvfswgy3kc68f",
+			path: filepath.Join("n", "n5", "n5glp21rsz314qssw9fbvfswgy3kc68f.narinfo"),
+		},
 	}
 
 	for _, test := range []string{"", "a", "ab"} {
