@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/rs/zerolog"
@@ -1007,16 +1009,21 @@ func TestGetNar_NoZstdCompression(t *testing.T) {
 	resp.Body.Close()
 
 	// 2. Request the NAR WITHOUT Accept-Encoding: zstd
+	// Use DisableCompression to prevent the Go HTTP client from adding Accept-Encoding: gzip
+	// automatically, which would trigger the server's transparent gzip encoding.
 	req, err = http.NewRequestWithContext(newContext(), http.MethodGet, narURL, nil)
 	require.NoError(t, err)
 
-	resp, err = ts.Client().Do(req)
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+	//nolint:bodyclose // closed below
+	resp, err = client.Do(req)
 	require.NoError(t, err)
 
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.NotEqual(t, "zstd", resp.Header.Get("Content-Encoding"))
+	assert.Empty(t, resp.Header.Get("Content-Encoding"), "should have no Content-Encoding without Accept-Encoding")
 	assert.Equal(t, "application/x-nix-nar", resp.Header.Get("Content-Type"))
 	assert.Equal(t, strconv.Itoa(len(narData)), resp.Header.Get("Content-Length"))
 
@@ -1169,5 +1176,147 @@ func TestGetNar_HeaderSettingSequence(t *testing.T) {
 		// and w.WriteHeader(http.StatusOK) is called at line 595.
 
 		assert.Equal(t, []string{"Header:Content-Encoding:zstd", "WriteHeader", "Write"}, recorder.events)
+	})
+}
+
+func TestGetNar_TransparentEncoding(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-encoding-")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	ts := httptest.NewServer(s)
+	t.Cleanup(ts.Close)
+
+	// Put an uncompressed NAR via the test server
+	narData := strings.Repeat("test data for transparent encoding ", 1000)
+	narHash := "0000000000000000000000000000000000000000000000000002"
+
+	putReq, err := http.NewRequestWithContext(
+		newContext(), http.MethodPut, ts.URL+"/nar/"+narHash+".nar", strings.NewReader(narData))
+	require.NoError(t, err)
+
+	putResp, err := ts.Client().Do(putReq)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, putResp.StatusCode)
+	putResp.Body.Close()
+
+	// Test brotli encoding
+	t.Run("Accept-Encoding br returns brotli", func(t *testing.T) {
+		t.Parallel()
+
+		req, err := http.NewRequestWithContext(
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+		require.NoError(t, err)
+
+		req.Header.Set("Accept-Encoding", "br")
+
+		//nolint:bodyclose // closed below
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "br", resp.Header.Get("Content-Encoding"))
+
+		decompressed, err := io.ReadAll(brotli.NewReader(resp.Body))
+		require.NoError(t, err)
+		assert.Equal(t, narData, string(decompressed))
+	})
+
+	// Test gzip encoding
+	t.Run("Accept-Encoding gzip returns gzip", func(t *testing.T) {
+		t.Parallel()
+
+		req, err := http.NewRequestWithContext(
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+		require.NoError(t, err)
+
+		req.Header.Set("Accept-Encoding", "gzip")
+
+		// Disable default transport gzip handling to get raw compressed bytes
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+		//nolint:bodyclose // closed below
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"))
+
+		gr, err := gzip.NewReader(resp.Body)
+		require.NoError(t, err)
+
+		defer gr.Close()
+
+		decompressed, err := io.ReadAll(gr)
+		require.NoError(t, err)
+		assert.Equal(t, narData, string(decompressed))
+	})
+
+	// Test zstd takes priority over gzip
+	t.Run("Accept-Encoding gzip zstd prefers zstd", func(t *testing.T) {
+		t.Parallel()
+
+		req, err := http.NewRequestWithContext(
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+		require.NoError(t, err)
+
+		req.Header.Set("Accept-Encoding", "gzip, zstd")
+
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+		//nolint:bodyclose // closed below
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "zstd", resp.Header.Get("Content-Encoding"))
+	})
+
+	// Test no encoding returns raw bytes
+	t.Run("no Accept-Encoding returns raw", func(t *testing.T) {
+		t.Parallel()
+
+		req, err := http.NewRequestWithContext(
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+		require.NoError(t, err)
+
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+		//nolint:bodyclose // closed below
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Empty(t, resp.Header.Get("Content-Encoding"))
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		assert.Equal(t, narData, string(body))
 	})
 }

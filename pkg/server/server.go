@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -550,19 +552,35 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		h := w.Header()
 		h.Set(contentType, contentTypeNar)
 
-		// Check for transparent compression support
-		useZstd := false
+		// Check for transparent compression support (priority: zstd > br > gzip > raw)
+		var selectedEncoding string
 
 		if nu.Compression == nar.CompressionTypeNone && withBody {
 			ae := r.Header.Get("Accept-Encoding")
-			if strings.Contains(ae, "zstd") {
-				useZstd = true
+
+			clientAccepts := make(map[string]struct{})
+
+			for _, v := range strings.Split(ae, ",") {
+				// Trim whitespace and remove q-factor if present
+				enc := strings.TrimSpace(strings.Split(v, ";")[0])
+				if enc != "" {
+					clientAccepts[enc] = struct{}{}
+				}
+			}
+
+			if _, ok := clientAccepts["zstd"]; ok {
+				selectedEncoding = "zstd"
+			} else if _, ok := clientAccepts["br"]; ok {
+				selectedEncoding = "br"
+			} else if _, ok := clientAccepts["gzip"]; ok {
+				selectedEncoding = "gzip"
 			}
 		}
 
 		var out io.Writer = w
 
-		if useZstd {
+		switch selectedEncoding {
+		case "zstd":
 			pw := zstd.NewPooledWriter(w)
 			out = pw
 
@@ -571,10 +589,28 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close zstd writer")
 				}
 			}()
+		case "br":
+			bw := brotli.NewWriter(w)
+			out = bw
+
+			defer func() {
+				if err := bw.Close(); err != nil {
+					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close brotli writer")
+				}
+			}()
+		case "gzip":
+			gw := gzip.NewWriter(w)
+			out = gw
+
+			defer func() {
+				if err := gw.Close(); err != nil {
+					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close gzip writer")
+				}
+			}()
 		}
 
-		if useZstd {
-			h.Set("Content-Encoding", "zstd")
+		if selectedEncoding != "" {
+			h.Set("Content-Encoding", selectedEncoding)
 			// We can't know the compressed size in advance without compressing it all.
 			// So we remove Content-Length and use chunked encoding.
 			h.Del(contentLength)
@@ -619,7 +655,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		if !useZstd && size != -1 && written != size {
+		if selectedEncoding == "" && size != -1 && written != size {
 			zerolog.Ctx(r.Context()).
 				Error().
 				Int64("expected", size).
