@@ -33,22 +33,6 @@ jobs:
             func: FuzzCompressionTypeFromExtension
             fuzz_pattern: FuzzCompressionTypeFromExtension
             time: 45m
-          - pkg: pkg/golomb
-            func: FuzzDecode
-            fuzz_pattern: ^FuzzDecode$
-            time: 45m
-          - pkg: pkg/golomb
-            func: FuzzDecodeBig
-            fuzz_pattern: ^FuzzDecodeBig$
-            time: 45m
-          - pkg: pkg/golomb
-            func: FuzzEncode
-            fuzz_pattern: ^FuzzEncode$
-            time: 45m
-          - pkg: pkg/golomb
-            func: FuzzEncodeBig
-            fuzz_pattern: ^FuzzEncodeBig$
-            time: 45m
           - pkg: pkg/cache
             func: FuzzParseNarInfo
             fuzz_pattern: FuzzParseNarInfo
