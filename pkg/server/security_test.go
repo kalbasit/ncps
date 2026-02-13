@@ -119,11 +119,11 @@ L:
 			shouldReachUpstream: false,
 		},
 		{
-			name:                "Valid NAR hash (32 chars)",
+			name:                "Invalid NAR hash (32 chars - should be 52 or 64)",
 			method:              http.MethodGet,
 			path:                "/nar/1lid9xrpirkzcpqsxfq02qwiq0yd70ch.nar.xz",
 			expectedStatus:      http.StatusNotFound,
-			shouldReachUpstream: true,
+			shouldReachUpstream: false,
 		},
 		{
 			name:                "Valid NAR hash (52 chars)",
