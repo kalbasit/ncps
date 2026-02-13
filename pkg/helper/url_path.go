@@ -2,7 +2,7 @@ package helper
 
 import "regexp"
 
-var isValidHashRegexp = regexp.MustCompile(`^([a-z0-9]{32}|[a-z0-9]{52})$`)
+var isValidHashRegexp = regexp.MustCompile(`^([a-z0-9]{32,64})$`)
 
 // NarInfoURLPath returns the path of the narinfo file given a hash.
 func NarInfoURLPath(hash string) string { return "/" + hash + ".narinfo" }
