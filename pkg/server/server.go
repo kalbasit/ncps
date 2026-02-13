@@ -35,8 +35,8 @@ import (
 
 const (
 	routeIndex          = "/"
-	routeNar            = "/nar/{hash:[a-z0-9]{32,52}}.nar"
-	routeNarCompression = "/nar/{hash:[a-z0-9]{32,52}}.nar.{compression:*}"
+	routeNar            = "/nar/{hash:" + nar.NormalizedHashPattern + "}.nar"
+	routeNarCompression = "/nar/{hash:" + nar.NormalizedHashPattern + "}.nar.{compression:*}"
 	routeNarInfo        = "/{hash:" + narinfo.HashPattern + "}.narinfo"
 	routeCacheInfo      = "/nix-cache-info"
 	routeCachePublicKey = "/pubkey"

@@ -562,7 +562,7 @@ Deriver: test.drv
 
 			t.Run("nar", func(t *testing.T) {
 				t.Run("without compression", func(t *testing.T) {
-					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar"
+					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
 
 					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
@@ -574,7 +574,7 @@ Deriver: test.drv
 				})
 
 				t.Run("with compression", func(t *testing.T) {
-					p := ts.URL + "/nar/" + testdata.Nar1.NarInfoHash + ".nar.xz"
+					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
 					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
@@ -1319,4 +1319,69 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, narData, string(body))
 	})
+}
+
+func TestGetNar_Base16Hash(t *testing.T) {
+	t.Parallel()
+
+	// create a temporary directory for the cache
+	dir, err := os.MkdirTemp("", "cache-path-base16-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	// create the server
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	// create the test server
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// 1. Put an uncompressed Nar using a 64-char base16 hash
+	narData := strings.Repeat("base16 nar data ", 100)
+	narHash := testhelper.MustRandBase16NarHash()
+	narURL := ts.URL + "/nar/" + narHash + ".nar"
+
+	req, err := http.NewRequestWithContext(
+		newContext(),
+		http.MethodPut,
+		narURL,
+		strings.NewReader(narData),
+	)
+	require.NoError(t, err)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	// 2. Request the NAR
+	req = httptest.NewRequest(http.MethodGet, "/nar/"+narHash+".nar", nil)
+
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	resp = w.Result()
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/x-nix-nar", resp.Header.Get("Content-Type"))
+
+	// 3. Verify content
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, narData, string(body))
 }
