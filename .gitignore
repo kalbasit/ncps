@@ -50,3 +50,8 @@ charts/ncps/test-values/
 
 # Websites
 /public
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
