@@ -1391,7 +1391,7 @@ func TestHasNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -1412,7 +1412,7 @@ func TestHasNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -1445,7 +1445,7 @@ func TestGetNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -1467,7 +1467,7 @@ func TestGetNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -1509,7 +1509,7 @@ func TestPutNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -1541,7 +1541,7 @@ func TestPutNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -1576,7 +1576,7 @@ func TestDeleteNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
@@ -1598,7 +1598,7 @@ func TestDeleteNar_Integration(t *testing.T) {
 		ctx := newContext()
 
 		narURL := nar.URL{
-			Hash:        testhelper.MustRandNarHash(),
+			Hash:        testhelper.MustRandBase32NarHash(),
 			Compression: testdata.Nar1.NarCompression,
 		}
 
