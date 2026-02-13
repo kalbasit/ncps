@@ -60,6 +60,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("decompress zstd before chunking", testCDCDecompressZstdBeforeChunking(factory))
 	t.Run("pullNarInfo normalizes compression for CDC", testCDCPullNarInfoNormalizesCompression(factory))
 	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
+	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -594,5 +595,81 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 			"narinfo should have Compression: none after CDC migration")
 		assert.NotContains(t, url, ".xz",
 			"narinfo URL should not contain .xz after CDC migration")
+	}
+}
+
+// testCDCPutNarInfoNormalizesCompression verifies that PutNarInfo normalizes
+// compression to "none" when CDC is enabled, regardless of the input compression type.
+func testCDCPutNarInfoNormalizesCompression(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Enable CDC
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		compressions := []struct {
+			name        string
+			compression string
+			narHash     string
+		}{
+			{"xz", "xz", "1s8p1kgdms8rmxkq24q51wc7zpn0aqcwgzvc473v9cii7z2qyxq0"},
+			{"zstd", "zstd", "07kc6swib31psygpmwi8952lvywlpqn474059yxl7grwsvr6k0fj"},
+			{"brotli", "br", "188g68hrjilbsjifcj70k8729zqhm9sl1q336vg5wxwzw0qp0sk4"},
+			{"none stays none", "none", "14vg46h9nbbqgbrbszrqm48f0bgzj6c4q3wkkcjf6gp53g8b21gh"},
+		}
+
+		for _, tc := range compressions {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				hash := "putnarinfo-cdc-" + tc.name
+
+				narURLStr := "nar/" + tc.narHash + ".nar"
+				if ext := nar.CompressionTypeFromString(tc.compression).ToFileExtension(); ext != "" {
+					narURLStr += "." + ext
+				}
+
+				niText := "StorePath: /nix/store/" + hash + "-test\n" +
+					"URL: " + narURLStr + "\n" +
+					"Compression: " + tc.compression + "\n" +
+					"FileHash: sha256:" + tc.narHash + "\n" +
+					"FileSize: 100\n" +
+					"NarHash: sha256:" + tc.narHash + "\n" +
+					"NarSize: 100\n"
+
+				err := c.PutNarInfo(ctx, hash, io.NopCloser(strings.NewReader(niText)))
+				require.NoError(t, err)
+
+				// Verify narinfo in DB has Compression: none
+				var compression, url string
+
+				err = db.DB().QueryRowContext(ctx,
+					rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
+					hash).Scan(&compression, &url)
+				require.NoError(t, err)
+				assert.Equal(t, nar.CompressionTypeNone.String(), compression,
+					"narinfo Compression should be normalized to 'none' for CDC")
+
+				parsedURL, err := nar.ParseURL(url)
+				require.NoError(t, err, "URL from database should be parsable")
+				assert.Equal(
+					t,
+					nar.CompressionTypeNone,
+					parsedURL.Compression,
+					"URL from database should have no compression extension",
+				)
+			})
+		}
 	}
 }

@@ -2197,6 +2197,19 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 			return fmt.Errorf("error parsing narinfo: %w", err)
 		}
 
+		// For CDC mode, normalize all NARs to Compression: none.
+		// CDC chunks are stored uncompressed and re-compressed individually.
+		if c.isCDCEnabled() && narInfo.Compression != nar.CompressionTypeNone.String() && narInfo.Compression != "" {
+			nu, parseErr := nar.ParseURL(narInfo.URL)
+			if parseErr != nil {
+				return fmt.Errorf("failed to parse narinfo URL %q for CDC normalization: %w", narInfo.URL, parseErr)
+			}
+
+			nu.Compression = nar.CompressionTypeNone
+			narInfo.URL = nu.String()
+			narInfo.Compression = nar.CompressionTypeNone.String()
+		}
+
 		if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
 			return fmt.Errorf("error signing the narinfo: %w", err)
 		}
