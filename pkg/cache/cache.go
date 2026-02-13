@@ -1620,7 +1620,10 @@ func (c *Cache) pullNarIntoStore(
 			Msg("failed to fix narinfo file size after pullNarIntoStore")
 	}
 
-	if enableZSTD && written > 0 {
+	// For non-CDC mode with zstd support, update FileSize to reflect the compressed size.
+	// For CDC mode, narURL.Compression is normalized to "none", so no FileSize update is needed.
+	if enableZSTD && written > 0 && !c.isCDCEnabled() {
+		//nolint:gosec // G115: written > 0 guarantees safe conversion
 		narInfo.FileSize = uint64(written)
 	}
 
@@ -2085,7 +2088,8 @@ func (c *Cache) pullNarInfo(
 	// explicitly returns none for compression but does accept encoding request,
 	// if that's the case we should get the compressed version and store that
 	// instead.
-	if enableZSTD {
+	// For CDC mode, we normalize to "none" regardless, so no need to wait.
+	if enableZSTD && !c.isCDCEnabled() {
 		// Use detached context to ensure NAR download completes even if narinfo context is canceled
 		detachedCtx := c.detachedContext(ctx)
 		narDs := c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
@@ -2108,7 +2112,23 @@ func (c *Cache) pullNarInfo(
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
 		detachedCtx := c.detachedContext(ctx)
-		c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
+
+		// create a copy of narURL to avoid a race condition when
+		// narURL.Compression is modified within getNarFromUpstream.
+		narURLForBG := narURL
+
+		// fire and forget fetching the NAR in the background.
+		c.prePullNar(ctx, detachedCtx, &narURLForBG, uc, narInfo, enableZSTD)
+	}
+
+	// For CDC mode, NARs are stored as raw uncompressed chunks.
+	// Normalize narInfo to reflect this regardless of upstream compression.
+	// Note: we must NOT modify narURL here since prePullNar may still be using
+	// the pointer in a background goroutine. Instead, build the normalized URL string directly.
+	if c.isCDCEnabled() {
+		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+		narInfo.Compression = nar.CompressionTypeNone.String()
+		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
