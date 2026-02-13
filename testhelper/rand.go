@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	allChars   = "abcdefghijklmnopqrstuvwxyz0123456789"
-	nix32Chars = "abcdfghijklmnpqrsvwxyz0123456789"
+	allChars    = "abcdefghijklmnopqrstuvwxyz0123456789"
+	nix32Chars  = "abcdfghijklmnpqrsvwxyz0123456789"
+	base16Chars = "0123456789abcdef"
 )
 
 func randChars(n int, charSet string, r io.Reader) (string, error) {
@@ -54,12 +55,25 @@ func MustRandNarInfoHash() string {
 	return str
 }
 
-func RandNarHash() (string, error) {
+func RandBase32NarHash() (string, error) {
 	return randChars(52, nix32Chars, rand.Reader)
 }
 
-func MustRandNarHash() string {
-	str, err := RandNarHash()
+func MustRandBase32NarHash() string {
+	str, err := RandBase32NarHash()
+	if err != nil {
+		panic(err)
+	}
+
+	return str
+}
+
+func RandBase16NarHash() (string, error) {
+	return randChars(64, base16Chars, rand.Reader)
+}
+
+func MustRandBase16NarHash() string {
+	str, err := RandBase16NarHash()
 	if err != nil {
 		panic(err)
 	}

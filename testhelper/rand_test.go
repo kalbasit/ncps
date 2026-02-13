@@ -91,11 +91,67 @@ func TestMustRandNarInfoHash(t *testing.T) {
 	})
 }
 
-func TestRandNarHash(t *testing.T) {
+func TestRandBase16NarHash(t *testing.T) {
 	t.Run("validate length", func(t *testing.T) {
 		t.Parallel()
 
-		s, err := testhelper.RandNarHash()
+		s, err := testhelper.RandBase16NarHash()
+		require.NoError(t, err)
+
+		assert.Len(t, s, 64)
+	})
+
+	t.Run("validate character set", func(t *testing.T) {
+		t.Parallel()
+
+		s, err := testhelper.RandBase16NarHash()
+		require.NoError(t, err)
+
+		for _, ch := range s {
+			assert.Contains(t, testhelper.Base16Chars, string(ch))
+		}
+	})
+
+	t.Run("returns different values", func(t *testing.T) {
+		t.Parallel()
+
+		s1, err := testhelper.RandBase16NarHash()
+		require.NoError(t, err)
+
+		s2, err := testhelper.RandBase16NarHash()
+		require.NoError(t, err)
+
+		assert.NotEqual(t, s1, s2)
+	})
+}
+
+func TestMustRandBase16NarHash(t *testing.T) {
+	t.Run("returns valid hash", func(t *testing.T) {
+		t.Parallel()
+
+		s := testhelper.MustRandBase16NarHash()
+
+		assert.Len(t, s, 64)
+
+		for _, ch := range s {
+			assert.Contains(t, testhelper.Base16Chars, string(ch))
+		}
+	})
+
+	t.Run("does not panic", func(t *testing.T) {
+		t.Parallel()
+
+		assert.NotPanics(t, func() {
+			testhelper.MustRandBase16NarHash()
+		})
+	})
+}
+
+func TestRandBase32NarHash(t *testing.T) {
+	t.Run("validate length", func(t *testing.T) {
+		t.Parallel()
+
+		s, err := testhelper.RandBase32NarHash()
 		require.NoError(t, err)
 
 		assert.Len(t, s, 52)
@@ -104,7 +160,7 @@ func TestRandNarHash(t *testing.T) {
 	t.Run("validate character set", func(t *testing.T) {
 		t.Parallel()
 
-		s, err := testhelper.RandNarHash()
+		s, err := testhelper.RandBase32NarHash()
 		require.NoError(t, err)
 
 		for _, ch := range s {
@@ -115,21 +171,21 @@ func TestRandNarHash(t *testing.T) {
 	t.Run("returns different values", func(t *testing.T) {
 		t.Parallel()
 
-		s1, err := testhelper.RandNarHash()
+		s1, err := testhelper.RandBase32NarHash()
 		require.NoError(t, err)
 
-		s2, err := testhelper.RandNarHash()
+		s2, err := testhelper.RandBase32NarHash()
 		require.NoError(t, err)
 
 		assert.NotEqual(t, s1, s2)
 	})
 }
 
-func TestMustRandNarHash(t *testing.T) {
+func TestMustRandBase32NarHash(t *testing.T) {
 	t.Run("returns valid hash", func(t *testing.T) {
 		t.Parallel()
 
-		s := testhelper.MustRandNarHash()
+		s := testhelper.MustRandBase32NarHash()
 
 		assert.Len(t, s, 52)
 
@@ -142,7 +198,7 @@ func TestMustRandNarHash(t *testing.T) {
 		t.Parallel()
 
 		assert.NotPanics(t, func() {
-			testhelper.MustRandNarHash()
+			testhelper.MustRandBase32NarHash()
 		})
 	})
 }

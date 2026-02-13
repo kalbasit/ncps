@@ -117,7 +117,7 @@ func TestS3Store_Integration(t *testing.T) {
 	t.Run("stored chunk is zstd-compressed in S3", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 
 		data := bytes.Repeat([]byte("compressible"), 1024)
 		isNew, compressedSize, err := store.PutChunk(ctx, hash, data)
@@ -134,7 +134,7 @@ func TestS3Store_Integration(t *testing.T) {
 	t.Run("compressed chunk round-trips correctly via S3", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 
 		data := []byte("hello from S3 compressed chunk! hello from S3 compressed chunk!")
 		_, _, err := store.PutChunk(ctx, hash, data)
@@ -192,7 +192,7 @@ func runRaceConditionTest(t *testing.T, distinctHashes bool) {
 	}()
 
 	content := []byte(strings.Repeat("race condition content", 1024))
-	sharedHash := testhelper.MustRandNarHash()
+	sharedHash := testhelper.MustRandBase32NarHash()
 
 	results := make(chan bool, numGoRoutines)
 	errs := make(chan error, numGoRoutines)
@@ -201,7 +201,7 @@ func runRaceConditionTest(t *testing.T, distinctHashes bool) {
 		go func() {
 			hash := sharedHash
 			if distinctHashes {
-				hash = testhelper.MustRandNarHash()
+				hash = testhelper.MustRandBase32NarHash()
 			}
 
 			hashes <- hash

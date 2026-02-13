@@ -31,7 +31,7 @@ func TestLocalStore(t *testing.T) {
 	t.Run("put and get chunk", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("chunk content", 1024)
 
 		created, size, err := store.PutChunk(ctx, hash, []byte(content))
@@ -56,7 +56,7 @@ func TestLocalStore(t *testing.T) {
 	t.Run("duplicate put", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("chunk content", 1024)
 
 		created1, size1, err := store.PutChunk(ctx, hash, []byte(content))
@@ -73,7 +73,7 @@ func TestLocalStore(t *testing.T) {
 	t.Run("get non-existent chunk", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 		_, err := store.GetChunk(ctx, hash)
 		require.ErrorIs(t, err, chunk.ErrNotFound)
 	})
@@ -81,7 +81,7 @@ func TestLocalStore(t *testing.T) {
 	t.Run("delete chunk cleans up directory", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("cleanup test", 1024)
 
 		_, _, err := store.PutChunk(ctx, hash, []byte(content))
@@ -112,7 +112,7 @@ func TestLocalStore(t *testing.T) {
 	t.Run("PutChunk concurrent", func(t *testing.T) {
 		t.Parallel()
 
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("concurrent content", 1024)
 		numGoroutines := 10
 
@@ -164,7 +164,7 @@ func TestLocalStore(t *testing.T) {
 
 		// Use highly compressible data (repeated bytes)
 		data := bytes.Repeat([]byte("compressible"), 1024)
-		isNew, compressedSize, err := store.PutChunk(ctx, testhelper.MustRandNarHash(), data)
+		isNew, compressedSize, err := store.PutChunk(ctx, testhelper.MustRandBase32NarHash(), data)
 		require.NoError(t, err)
 		assert.True(t, isNew)
 		assert.Greater(t, int64(len(data)), compressedSize, "compressed size should be less than original")
@@ -175,7 +175,7 @@ func TestLocalStore(t *testing.T) {
 		t.Parallel()
 
 		data := []byte("hello, compressed world! hello, compressed world! hello, compressed world!")
-		hash := testhelper.MustRandNarHash()
+		hash := testhelper.MustRandBase32NarHash()
 		_, _, err := store.PutChunk(ctx, hash, data)
 		require.NoError(t, err)
 
