@@ -34,6 +34,11 @@ var (
 	narHashLenientRegexp    = regexp.MustCompile(`^` + HashPatternLenient + `$`)
 )
 
+// ValidateHash validates a Nix archive (nar) hash string. It returns
+// ErrInvalidHash if the hash does not match the expected pattern. The
+// function accepts both the optional narinfo hash prefix and the 52‑ or
+// 64‑character normalized hash value, following the definitions in
+// NormalizedHashPattern and HashPattern.
 func ValidateHash(hash string) error {
 	if !narHashRegexp.MatchString(hash) {
 		return ErrInvalidHash

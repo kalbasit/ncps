@@ -2129,6 +2129,10 @@ func (c *Cache) pullNarInfo(
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
+		// For CDC, we serve raw uncompressed data, so FileSize == NarSize.
+		// FileSize != NarSize is expected here (upstream serves compressed),
+		// so no warning is needed.
+		narInfo.FileSize = narInfo.NarSize
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -2199,15 +2203,21 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 
 		// For CDC mode, normalize all NARs to Compression: none.
 		// CDC chunks are stored uncompressed and re-compressed individually.
-		if c.isCDCEnabled() && narInfo.Compression != nar.CompressionTypeNone.String() && narInfo.Compression != "" {
-			nu, parseErr := nar.ParseURL(narInfo.URL)
-			if parseErr != nil {
-				return fmt.Errorf("failed to parse narinfo URL %q for CDC normalization: %w", narInfo.URL, parseErr)
-			}
+		if c.isCDCEnabled() {
+			if narInfo.Compression != nar.CompressionTypeNone.String() && narInfo.Compression != "" {
+				nu, parseErr := nar.ParseURL(narInfo.URL)
+				if parseErr != nil {
+					return fmt.Errorf("failed to parse narinfo URL %q for CDC normalization: %w", narInfo.URL, parseErr)
+				}
 
-			nu.Compression = nar.CompressionTypeNone
-			narInfo.URL = nu.String()
-			narInfo.Compression = nar.CompressionTypeNone.String()
+				nu.Compression = nar.CompressionTypeNone
+				narInfo.URL = nu.String()
+				narInfo.Compression = nar.CompressionTypeNone.String()
+			}
+			// For CDC, we serve raw uncompressed data, so FileSize == NarSize.
+			// FileSize != NarSize is expected here (upstream serves compressed),
+			// so no warning is needed.
+			narInfo.FileSize = narInfo.NarSize
 		}
 
 		if err := c.signNarInfo(ctx, hash, narInfo); err != nil {

@@ -59,8 +59,10 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("chunks are stored compressed", testCDCChunksAreCompressed(factory))
 	t.Run("decompress zstd before chunking", testCDCDecompressZstdBeforeChunking(factory))
 	t.Run("pullNarInfo normalizes compression for CDC", testCDCPullNarInfoNormalizesCompression(factory))
+	t.Run("pullNarInfo sets FileSize == NarSize for CDC", testCDCPullNarInfoSetsFileSizeForCDC(factory))
 	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
+	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -671,5 +673,110 @@ func testCDCPutNarInfoNormalizesCompression(factory cacheFactory) func(*testing.
 				)
 			})
 		}
+	}
+}
+
+// testCDCPullNarInfoSetsFileSizeForCDC verifies that when CDC is enabled and
+// a narinfo is pulled from upstream, the FileSize in the narinfo is set to
+// NarSize (uncompressed size), not the upstream's compressed FileSize.
+func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Set up CDC
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// Set up upstream cache
+		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		})
+		require.NoError(t, err)
+
+		c.AddUpstreamCaches(newContext(), uc)
+
+		// Wait for upstream to become available
+		<-c.GetHealthChecker().Trigger()
+
+		t.Run("upstream compressed FileSize != NarSize, CDC normalizes FileSize to NarSize", func(t *testing.T) {
+			// Nar2 has Compression: xz upstream with FileSize != NarSize (compressed vs uncompressed)
+			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+			require.NoError(t, err)
+
+			// Verify FileSize == NarSize for CDC mode
+			assert.Equal(t, ni.NarSize, ni.FileSize,
+				"CDC mode should set FileSize == NarSize, not the compressed upstream size")
+
+			// Also verify in the database
+			var fileSize, narSize uint64
+
+			err = db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size, nar_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar2.NarInfoHash).Scan(&fileSize, &narSize)
+			require.NoError(t, err)
+			assert.Equal(t, narSize, fileSize,
+				"narinfo in DB should have FileSize == NarSize for CDC")
+		})
+	}
+}
+
+// testCDCPutNarInfoSetsFileSizeForCDC verifies that when PutNarInfo is called
+// with CDC enabled, the FileSize in the narinfo is set to NarSize, not kept
+// from the input narinfo (which might be compressed).
+func testCDCPutNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Enable CDC
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		hash := "putnarinfo-cdc-filesize-test"
+		narHash := "1s8p1kgdms8rmxkq24q51wc7zpn0aqcwgzvc473v9cii7z2qyxq0"
+
+		// Create a narinfo with FileSize != NarSize (simulating upstream compression mismatch)
+		niText := "StorePath: /nix/store/" + hash + "-test\n" +
+			"URL: nar/" + narHash + ".nar.xz\n" +
+			"Compression: xz\n" +
+			"FileHash: sha256:" + narHash + "\n" +
+			"FileSize: 5000\n" + // Compressed size (different from NarSize)
+			"NarHash: sha256:" + narHash + "\n" +
+			"NarSize: 10000\n" // Uncompressed size
+
+		err = c.PutNarInfo(ctx, hash, io.NopCloser(strings.NewReader(niText)))
+		require.NoError(t, err)
+
+		// Verify narinfo in DB has FileSize == NarSize
+		var fileSize, narSize uint64
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT file_size, nar_size FROM narinfos WHERE hash = ?"),
+			hash).Scan(&fileSize, &narSize)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint64(10000), narSize, "NarSize should be 10000 from input")
+		assert.Equal(t, narSize, fileSize,
+			"CDC mode should set FileSize == NarSize (10000), not the upstream compressed size (5000)")
 	}
 }
