@@ -29,6 +29,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/narinfo"
+	"github.com/kalbasit/ncps/pkg/oidc"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/zstd"
 )
@@ -65,6 +66,17 @@ func init() {
 	tracer = otel.Tracer(otelPackageName)
 }
 
+// Option configures optional Server behavior.
+type Option func(*Server)
+
+// WithOIDCVerifier configures the server with an OIDC token verifier
+// that gates write (PUT/DELETE) routes.
+func WithOIDCVerifier(v *oidc.Verifier) Option {
+	return func(s *Server) {
+		s.oidcVerifier = v
+	}
+}
+
 // Server represents the main HTTP server.
 type Server struct {
 	cache  *cache.Cache
@@ -72,14 +84,19 @@ type Server struct {
 
 	deletePermitted bool
 	putPermitted    bool
+	oidcVerifier    *oidc.Verifier
 }
 
 // SetPrometheusGatherer configures the server with a Prometheus gatherer for /metrics endpoint.
 func SetPrometheusGatherer(gatherer promclient.Gatherer) { prometheusGatherer = gatherer }
 
 // New returns a new server.
-func New(cache *cache.Cache) *Server {
+func New(cache *cache.Cache, opts ...Option) *Server {
 	s := &Server{cache: cache}
+
+	for _, opt := range opts {
+		opt(s)
+	}
 
 	s.createRouter()
 
@@ -107,12 +124,18 @@ func (s *Server) createRouter() {
 	// 1. Register standard routes at the root
 	s.registerRoutes(s.router)
 
-	// 2. Register DELETE routes at the root
-	s.router.Delete(routeNarInfo, s.deleteNarInfo)
-	s.router.Delete(routeNarCompression, s.deleteNar)
-	s.router.Delete(routeNar, s.deleteNar)
+	// 2. Register DELETE routes at the root (optional OIDC gate)
+	s.router.Group(func(r chi.Router) {
+		if s.oidcVerifier != nil {
+			r.Use(s.oidcVerifier.Middleware())
+		}
 
-	// 2. Register "upload only" routes under /upload
+		r.Delete(routeNarInfo, s.deleteNarInfo)
+		r.Delete(routeNarCompression, s.deleteNar)
+		r.Delete(routeNar, s.deleteNar)
+	})
+
+	// 3. Register "upload only" routes under /upload
 	s.router.Route("/upload", func(r chi.Router) {
 		// Middleware to inject the UploadOnly flag
 		r.Use(func(next http.Handler) http.Handler {
@@ -122,13 +145,19 @@ func (s *Server) createRouter() {
 			})
 		})
 
-		// register standard routes
+		// register standard routes (read, no auth)
 		s.registerRoutes(r)
 
-		// register PUT routes
-		r.Put(routeNarInfo, s.putNarInfo)
-		r.Put(routeNarCompression, s.putNar)
-		r.Put(routeNar, s.putNar)
+		// register PUT routes (optional OIDC gate)
+		r.Group(func(r chi.Router) {
+			if s.oidcVerifier != nil {
+				r.Use(s.oidcVerifier.Middleware())
+			}
+
+			r.Put(routeNarInfo, s.putNarInfo)
+			r.Put(routeNarCompression, s.putNar)
+			r.Put(routeNar, s.putNar)
+		})
 	})
 
 	// Add Prometheus metrics endpoint if gatherer is configured

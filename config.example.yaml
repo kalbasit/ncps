@@ -32,6 +32,28 @@ cache:
   allow-delete-verb: true
   # Whether to allow the PUT verb to push narInfo and nar files directly
   allow-put-verb: true
+  # OIDC push authorization (optional)
+  # When configured, PUT and DELETE requests require a valid OIDC Bearer token.
+  # Useful for securing push access from CI/CD systems (GitHub Actions, GitLab CI)
+  # that support native OIDC tokens - no stored secrets needed.
+  # If not configured, existing behavior is preserved (no token required).
+  #
+  # Each provider requires an issuer (for OIDC discovery) and audience (must
+  # match the token's aud claim). The optional claims field restricts access
+  # based on token claim values using glob patterns (* matches any characters).
+  # Within a claim key, values are ORed. Across claim keys, conditions are ANDed.
+  # oidc:
+  #   policies:
+  #     - issuer: "https://token.actions.githubusercontent.com"
+  #       audience: "ncps.mycompany.tld"
+  #       claims:
+  #         sub:
+  #           - "repo:myorg/*"
+  #         ref:
+  #           - "refs/heads/main"
+  #           - "refs/tags/*"
+  #     - issuer: "https://gitlab.internal.company.com"
+  #       audience: "ncps.internal"
   # The hostname of the cache server
   hostname: "ncps.mycompany.tld"
   # Download configuration

@@ -343,3 +343,69 @@ tests:
       - matchRegex:
           path: data["config.yaml"]
           pattern: 'allow-degraded-mode: true'
+
+  - it: should not render OIDC section when no policies configured
+    set:
+      config.hostname: test.example.com
+      config.oidc.policies: []
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'oidc:'
+
+  - it: should render OIDC section with single provider
+    set:
+      config.hostname: test.example.com
+      config.oidc.policies:
+        - issuer: "https://token.actions.githubusercontent.com"
+          audience: "ncps.example.com"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'oidc:'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'issuer: "https://token.actions.githubusercontent.com"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'audience: "ncps.example.com"'
+
+  - it: should render OIDC section with multiple policies and claims
+    set:
+      config.hostname: test.example.com
+      config.oidc.policies:
+        - issuer: "https://token.actions.githubusercontent.com"
+          audience: "ncps.example.com"
+          claims:
+            sub:
+              - "repo:myorg/*"
+            ref:
+              - "refs/heads/main"
+              - "refs/tags/*"
+        - issuer: "https://gitlab.example.com"
+          audience: "ncps.internal"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'issuer: "https://token.actions.githubusercontent.com"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'issuer: "https://gitlab.example.com"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'claims:'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'sub:'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- "repo:myorg/\*"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'ref:'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- "refs/heads/main"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- "refs/tags/\*"'
