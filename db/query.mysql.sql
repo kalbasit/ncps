@@ -379,3 +379,9 @@ WHERE compression NOT IN ('', 'none')
   AND created_at < ?
 ORDER BY id
 LIMIT ? OFFSET ?;
+
+-- name: UpdateNarInfoCompressionAndURL :execrows
+-- Update narinfo compression and URL after CDC migration.
+UPDATE narinfos
+SET compression = sqlc.arg(compression), url = sqlc.arg(new_url), updated_at = CURRENT_TIMESTAMP
+WHERE url = sqlc.arg(old_url);

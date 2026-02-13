@@ -235,6 +235,12 @@ type UpdateNarFileTotalChunksParams struct {
 	ID          int64
 }
 
+type UpdateNarInfoCompressionAndURLParams struct {
+	Compression sql.NullString
+	NewUrl      sql.NullString
+	OldUrl      sql.NullString
+}
+
 type UpdateNarInfoFileSizeParams struct {
 	Hash     string
 	FileSize sql.NullInt64
