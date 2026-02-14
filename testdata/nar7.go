@@ -26,4 +26,5 @@ Sig: cache.nixos.org-1:oPqkkDFlniUh1BaGWwWd7LY2EfUh3r/GBxriDGE7vCfvJ3fKsnIDg1L4Q
 	NarCompression: nar.CompressionTypeNone,
 	NarPath:        filepath.Join("0", "09", "09xizkfyvigl5fqs0dhkn46nghfwwijbpdzzl4zg6kx90prjmsg0.nar"),
 	NarText:        testhelper.MustRandString(113256),
+	NoZstdEncoding: true,
 }

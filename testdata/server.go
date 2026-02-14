@@ -36,7 +36,7 @@ func NewTestServer(t *testing.T, priority int) *Server {
 
 	s.entries = append(s.entries, Entries...)
 
-	s.Server = httptest.NewServer(zstdMiddleware(s.handler()))
+	s.Server = httptest.NewServer(s.handler())
 
 	return s
 }
@@ -71,23 +71,6 @@ func (s *Server) RemoveMaybeHandler(idx string) {
 	defer s.mu.Unlock()
 
 	delete(s.maybeHandlers, idx)
-}
-
-func zstdMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Accept-Encoding") != "zstd" {
-			next.ServeHTTP(w, r)
-
-			return
-		}
-
-		pw := zstd.NewPooledWriter(w)
-		defer pw.Close()
-
-		zw := &zstdResponseWriter{Writer: pw, ResponseWriter: w}
-
-		next.ServeHTTP(zw, r)
-	})
 }
 
 func (s *Server) handler() http.Handler {
@@ -164,7 +147,7 @@ func (s *Server) handler() http.Handler {
 				}
 			}
 
-			if len(bs) > 0 {
+			if len(bs) > 0 { //nolint:nestif
 				if s := r.URL.Query().Get("fakesize"); s != "" {
 					size, err := strconv.Atoi(s)
 					if !requireNoError(w, err) {
@@ -178,10 +161,18 @@ func (s *Server) handler() http.Handler {
 					return
 				}
 
-				w.Header().Add("Content-Length", strconv.Itoa(len(bs)))
+				if r.Header.Get("Accept-Encoding") == "zstd" && !entry.NoZstdEncoding {
+					pw := zstd.NewPooledWriter(w)
+					defer pw.Close()
 
-				_, err := w.Write(bs)
-				requireNoError(w, err)
+					zw := &zstdResponseWriter{Writer: pw, ResponseWriter: w}
+					_, err := zw.Write(bs)
+					requireNoError(w, err)
+				} else {
+					w.Header().Add("Content-Length", strconv.Itoa(len(bs)))
+					_, err := w.Write(bs)
+					requireNoError(w, err)
+				}
 
 				return
 			}
