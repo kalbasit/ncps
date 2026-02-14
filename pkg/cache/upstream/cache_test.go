@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -361,13 +360,15 @@ func TestGetNar(t *testing.T) {
 				resp, err := c.GetNar(context.Background(), nu)
 				require.NoError(t, err)
 
-				defer func() {
-					//nolint:errcheck
-					io.Copy(io.Discard, resp.Body)
-					resp.Body.Close()
-				}()
+				defer resp.Body.Close()
 
-				assert.Equal(t, strconv.Itoa(len(narEntry.NarText)), resp.Header.Get("Content-Length"))
+				// GetNar transparently decompresses zstd-encoded responses, so the body
+				// always contains raw bytes regardless of upstream encoding. Content-Length
+				// is stripped after decompression since the decompressed size is unknown upfront.
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+
+				assert.Equal(t, narEntry.NarText, string(body))
 			})
 		})
 	}
