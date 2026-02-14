@@ -11,6 +11,7 @@ on:
     branches:
       - "main"
       - "release-*"
+  workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
@@ -43,14 +44,14 @@ jobs:
               - "docs/**"
   generate:
     needs: filter
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true' || needs.filter.outputs.nix_db_wrappers_go_deps == 'true')
+    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && (needs.filter.outputs.database == 'true' || needs.filter.outputs.go_deps == 'true' || needs.filter.outputs.nix_db_wrappers_go_deps == 'true')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
           token: ${{ secrets.GHA_PAT_TOKEN }}
-          ref: ${{ github.event.pull_request.head.ref }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v16
         with:
@@ -152,7 +153,7 @@ jobs:
       contents: read
       pull-requests: write
     needs: filter
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && needs.filter.outputs.docs == 'true'
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.docs == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -188,7 +189,7 @@ jobs:
       systems: "['x86_64-linux', 'aarch64-linux']"
       images: kalbasit/ncps
       dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
-      push_images: ${{ github.event.pull_request.head.repo.fork == false }}
+      push_images: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) }}
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
