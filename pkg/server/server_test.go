@@ -1385,3 +1385,168 @@ func TestGetNar_Base16Hash(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, narData, string(body))
 }
+
+// TestGetNar_NixServeUpstream tests that ncps correctly proxies NARs from a
+// nix-serve style upstream (Compression: none, no Content-Encoding support).
+func TestGetNar_NixServeUpstream(t *testing.T) {
+	t.Parallel()
+
+	hts := testdata.NewTestServer(t, 40)
+	t.Cleanup(hts.Close)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, hts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	require.NoError(t, err)
+
+	dir, err := os.MkdirTemp("", "cache-nix-serve-")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	<-c.GetHealthChecker().Trigger()
+
+	s := server.New(c)
+
+	ts := httptest.NewServer(s)
+	t.Cleanup(ts.Close)
+
+	t.Run("narinfo has Compression:none and FileSize==NarSize", func(t *testing.T) {
+		t.Parallel()
+
+		req, err := http.NewRequestWithContext(
+			newContext(),
+			http.MethodGet,
+			ts.URL+"/"+testdata.Nar7.NarInfoHash+".narinfo",
+			nil,
+		)
+		require.NoError(t, err)
+
+		//nolint:bodyclose // closed below
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		ni, err := narinfo.Parse(strings.NewReader(string(body)))
+		require.NoError(t, err)
+
+		assert.Equal(t, "none", ni.Compression)
+		assert.Equal(t, ni.NarSize, ni.FileSize)
+		assert.True(t, strings.HasSuffix(ni.URL, ".nar"), "expected URL to end in .nar, got: %s", ni.URL)
+		assert.False(t, strings.HasSuffix(ni.URL, ".nar.zst"), "URL must not end in .nar.zst")
+	})
+
+	t.Run("nar served as raw bytes without Accept-Encoding", func(t *testing.T) {
+		t.Parallel()
+
+		// First trigger narinfo fetch to ensure NAR is pulled.
+		req, err := http.NewRequestWithContext(
+			newContext(),
+			http.MethodGet,
+			ts.URL+"/"+testdata.Nar7.NarInfoHash+".narinfo",
+			nil,
+		)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, resp.Body)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		narReqURL := ts.URL + "/nar/" + testdata.Nar7.NarHash + ".nar"
+
+		req, err = http.NewRequestWithContext(newContext(), http.MethodGet, narReqURL, nil)
+		require.NoError(t, err)
+
+		// Use DisableCompression to prevent Go HTTP client adding Accept-Encoding: gzip automatically.
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+		//nolint:bodyclose // closed below
+		resp, err = client.Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Empty(t, resp.Header.Get("Content-Encoding"))
+
+		narBody, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, testdata.Nar7.NarText, string(narBody))
+	})
+
+	t.Run("nar served with zstd transparent encoding", func(t *testing.T) {
+		t.Parallel()
+
+		// First trigger narinfo fetch to ensure NAR is pulled.
+		req, err := http.NewRequestWithContext(
+			newContext(),
+			http.MethodGet,
+			ts.URL+"/"+testdata.Nar7.NarInfoHash+".narinfo",
+			nil,
+		)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, resp.Body)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		narReqURL := ts.URL + "/nar/" + testdata.Nar7.NarHash + ".nar"
+
+		req, err = http.NewRequestWithContext(newContext(), http.MethodGet, narReqURL, nil)
+		require.NoError(t, err)
+
+		req.Header.Set("Accept-Encoding", "zstd")
+
+		// Use DisableCompression to prevent Go HTTP client from intercepting the zstd response.
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+		//nolint:bodyclose // closed below
+		resp, err = client.Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "zstd", resp.Header.Get("Content-Encoding"))
+
+		zr, err := zstd.NewPooledReader(resp.Body)
+		require.NoError(t, err)
+
+		defer zr.Close()
+
+		narBody, err := io.ReadAll(zr)
+		require.NoError(t, err)
+
+		assert.Equal(t, testdata.Nar7.NarText, string(narBody))
+	})
+}
