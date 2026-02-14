@@ -24,6 +24,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/nixcacheinfo"
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 const (
@@ -214,9 +215,6 @@ func (c *Cache) setupHTTPClient() error {
 
 	// configure dialer with tighter timeout
 	dt.DialContext = dialer.DialContext
-
-	// Disable automatic compression handling so we can deal with it ourselves (transparent zstd support).
-	dt.DisableCompression = true
 
 	// Set timeout to first byte
 	dt.ResponseHeaderTimeout = c.responseHeaderTimeout
@@ -431,6 +429,9 @@ func (c *Cache) HasNarInfo(ctx context.Context, hash string) (bool, error) {
 }
 
 // GetNar returns the NAR archive from the cache server.
+// It always sends Accept-Encoding: zstd to request compressed transfer when possible.
+// If the response has Content-Encoding: zstd, the body is transparently decompressed
+// so the caller always receives raw (uncompressed) NAR bytes.
 // NOTE: It's the caller responsibility to close the body.
 func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*http.Request)) (*http.Response, error) {
 	u := narURL.JoinURL(c.url).String()
@@ -458,7 +459,15 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 		Info().
 		Msg("download the nar from upstream")
 
-	resp, err := c.doRequest(ctx, http.MethodGet, u, mutators...)
+	// Always request zstd-compressed transfer for bandwidth savings.
+	// Upstreams that don't support it (e.g. nix-serve) will simply ignore this header.
+	zstdMutator := func(r *http.Request) {
+		r.Header.Set("Accept-Encoding", "zstd")
+	}
+
+	allMutators := append([]func(*http.Request){zstdMutator}, mutators...)
+
+	resp, err := c.doRequest(ctx, http.MethodGet, u, allMutators...)
 	if err != nil {
 		return nil, err
 	}
@@ -478,6 +487,32 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 			Send()
 
 		return nil, ErrUnexpectedHTTPStatusCode
+	}
+
+	// If the upstream honoured our Accept-Encoding: zstd request, transparently decompress.
+	// This normalises the response so callers always receive raw NAR bytes regardless of
+	// whether the upstream supports content-encoding negotiation.
+	if resp.Header.Get("Content-Encoding") == "zstd" {
+		zerolog.Ctx(ctx).Debug().Msg("upstream returned zstd-encoded NAR, decompressing transparently")
+
+		// The zstd.PooledReader does not close the underlying reader, so we must
+		// wrap it to ensure the original response body is closed to prevent connection leaks.
+		originalBody := resp.Body
+
+		zr, err := zstd.NewPooledReader(originalBody)
+		if err != nil {
+			originalBody.Close()
+
+			return nil, fmt.Errorf("failed to create zstd reader for NAR response: %w", err)
+		}
+
+		resp.Body = &zstdBodyCloser{
+			zstdReader: zr,
+			bodyCloser: originalBody,
+		}
+		resp.Header.Del("Content-Encoding")
+		resp.Header.Del("Content-Length")
+		resp.ContentLength = -1
 	}
 
 	return resp, nil
@@ -588,4 +623,26 @@ func isTimeout(err error) bool {
 	var netErr net.Error
 
 	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
+}
+
+// zstdBodyCloser wraps a zstd reader and the original body to ensure both are closed.
+type zstdBodyCloser struct {
+	zstdReader io.ReadCloser
+	bodyCloser io.ReadCloser
+}
+
+func (z *zstdBodyCloser) Read(p []byte) (int, error) {
+	return z.zstdReader.Read(p)
+}
+
+func (z *zstdBodyCloser) Close() error {
+	// Close both. Return first error.
+	err1 := z.zstdReader.Close()
+	err2 := z.bodyCloser.Close()
+
+	if err1 != nil {
+		return err1
+	}
+
+	return err2
 }
