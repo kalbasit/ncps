@@ -6,6 +6,7 @@ package sqlitedb
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
@@ -221,6 +222,15 @@ type Querier interface {
 	//  FROM narinfo_signatures
 	//  WHERE narinfo_id = ?
 	GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error)
+	//GetNarInfoURLByNarFileHash
+	//
+	//  SELECT ni.url
+	//  FROM narinfos ni
+	//  INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+	//  INNER JOIN nar_files nf ON nf.id = nnf.nar_file_id
+	//  WHERE nf.hash = ? AND nf.compression = ? AND nf."query" = ?
+	//  LIMIT 1
+	GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNarInfoURLByNarFileHashParams) (sql.NullString, error)
 	//GetNarTotalSize
 	//
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS INTEGER) AS total_size

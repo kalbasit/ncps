@@ -77,6 +77,12 @@ type GetNarFileByHashAndCompressionAndQueryParams struct {
 	Query       string
 }
 
+type GetNarInfoURLByNarFileHashParams struct {
+	Hash        string
+	Compression string
+	Query       string
+}
+
 type LinkNarInfoToNarFileParams struct {
 	NarInfoID int64
 	NarFileID int64
