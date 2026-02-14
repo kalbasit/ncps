@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -2454,53 +2455,44 @@ func TestGetNar_RespectsContentEncoding(t *testing.T) {
 		c, db, _, _, cleanup := setupTestCache(t)
 		defer cleanup()
 
-		ts := testdata.NewTestServer(t, 1)
-		defer ts.Close()
-
 		hash := "00000000000000000000000000000001"
 		narHash := "1111111111111111111111111111111111111111111111111111"
 		narText := "raw-nar-content-123"
-		entry := testdata.Entry{
-			NarInfoHash:    hash,
-			NarHash:        narHash,
-			NarCompression: "none",
-			NarInfoText: `StorePath: /nix/store/` + hash + `-test-1.0
-URL: nar/` + narHash + `.nar
-Compression: none
-FileHash: sha256:` + narHash + `
-FileSize: ` + strconv.Itoa(len(narText)) + `
-NarHash: sha256:` + narHash + `
-NarSize: ` + strconv.Itoa(len(narText)) + `
-References:
-Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
-`,
-			NarText: narText,
-		}
-		ts.AddEntry(entry)
+		narInfoText := strings.Join([]string{
+			"StorePath: /nix/store/" + hash + "-test-1.0",
+			"URL: nar/" + narHash + ".nar",
+			"Compression: none",
+			"FileHash: sha256:" + narHash,
+			"FileSize: " + strconv.Itoa(len(narText)),
+			"NarHash: sha256:" + narHash,
+			"NarSize: " + strconv.Itoa(len(narText)),
+			"References: ",
+			"",
+		}, "\n")
 
-		ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
-			if r.URL.Path == "/"+entry.NarInfoHash+".narinfo" {
-				w.Header().Add("Content-Length", strconv.Itoa(len(entry.NarInfoText)))
-				_, _ = w.Write([]byte(entry.NarInfoText))
-
-				return true
+		// Use a plain httptest.Server (no compressMiddleware) so we can control
+		// Content-Encoding precisely. The cache sends Accept-Encoding: zstd when
+		// Compression is none, but this server intentionally ignores it and replies
+		// with no Content-Encoding, verifying the cache stores compression="none".
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/nix-cache-info":
+				_, _ = w.Write([]byte(testdata.NixStoreInfo(1)))
+			case "/" + hash + ".narinfo":
+				w.Header().Set("Content-Length", strconv.Itoa(len(narInfoText)))
+				_, _ = w.Write([]byte(narInfoText))
+			case "/nar/" + narHash + ".nar":
+				// Serve raw bytes with no Content-Encoding, regardless of Accept-Encoding.
+				w.Header().Set("Content-Length", strconv.Itoa(len(narText)))
+				_, _ = w.Write([]byte(narText))
+			default:
+				w.WriteHeader(http.StatusNotFound)
 			}
+		}))
+		defer ts.Close()
 
-			if r.URL.Path == "/nar/"+entry.NarHash+".nar" {
-				// Explicitly set no Content-Encoding to bypass middleware compression
-				w.Header().Set("Content-Encoding", "")
-				w.Header().Add("Content-Length", strconv.Itoa(len(entry.NarText)))
-				_, _ = w.Write([]byte(entry.NarText))
-
-				return true
-			}
-
-			return false
-		})
-
-		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-			PublicKeys: testdata.PublicKeys(),
-		})
+		// No PublicKeys: the narinfo has no verifiable signature, so skip verification.
+		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
 		require.NoError(t, err)
 		c.AddUpstreamCaches(ctx, uc)
 
@@ -2512,13 +2504,13 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 		}
 
 		// Pull NARInfo (which triggers NAR pull because it's none)
-		_, err = c.GetNarInfo(ctx, entry.NarInfoHash)
+		_, err = c.GetNarInfo(ctx, hash)
 		require.NoError(t, err)
 
 		// Verify it's stored as none in DB
 		var comp string
 
-		err = db.DB().QueryRowContext(ctx, "SELECT compression FROM nar_files WHERE hash = ?", entry.NarHash).Scan(&comp)
+		err = db.DB().QueryRowContext(ctx, "SELECT compression FROM nar_files WHERE hash = ?", narHash).Scan(&comp)
 		require.NoError(t, err)
 		assert.Equal(t, "none", comp)
 	})
@@ -2529,63 +2521,53 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 		c, db, _, _, cleanup := setupTestCache(t)
 		defer cleanup()
 
-		ts := testdata.NewTestServer(t, 1)
-		defer ts.Close()
-
 		hash := "00000000000000000000000000000002"
-		narHash := "2222222222222222222222222222222222222222222222222222"
+		narHash := "0000000000000000000000000000000000000000000000000002"
 		narText := "raw-nar-content-456"
-		entry := testdata.Entry{
-			NarInfoHash:    hash,
-			NarHash:        narHash,
-			NarCompression: "none",
-			NarInfoText: `StorePath: /nix/store/` + hash + `-test-1.0
-URL: nar/` + narHash + `.nar
-Compression: none
-FileHash: sha256:` + narHash + `
-FileSize: ` + strconv.Itoa(len(narText)) + `
-NarHash: sha256:` + narHash + `
-NarSize: ` + strconv.Itoa(len(narText)) + `
-References:
-Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
-`,
-			NarText: narText,
-		}
-		ts.AddEntry(entry)
+		narInfoText := strings.Join([]string{
+			"StorePath: /nix/store/" + hash + "-test-1.0",
+			"URL: nar/" + narHash + ".nar",
+			"Compression: none",
+			"FileHash: sha256:" + narHash,
+			"FileSize: " + strconv.Itoa(len(narText)),
+			"NarHash: sha256:" + narHash,
+			"NarSize: " + strconv.Itoa(len(narText)),
+			"References: ",
+			"",
+		}, "\n")
 
-		ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
-			if r.URL.Path == "/"+entry.NarInfoHash+".narinfo" {
-				w.Header().Add("Content-Length", strconv.Itoa(len(entry.NarInfoText)))
-				_, _ = w.Write([]byte(entry.NarInfoText))
-
-				return true
-			}
-
-			if r.URL.Path == "/nar/"+entry.NarHash+".nar" {
+		// Use a plain httptest.Server (no compressMiddleware) so we can fully control
+		// when Content-Encoding: zstd is set. This server compresses the NAR body and
+		// sets Content-Encoding: zstd when Accept-Encoding: zstd is requested,
+		// verifying the cache detects it and stores compression="zstd".
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/nix-cache-info":
+				_, _ = w.Write([]byte(testdata.NixStoreInfo(1)))
+			case "/" + hash + ".narinfo":
+				w.Header().Set("Content-Length", strconv.Itoa(len(narInfoText)))
+				_, _ = w.Write([]byte(narInfoText))
+			case "/nar/" + narHash + ".nar":
 				if r.Header.Get("Accept-Encoding") == "zstd" {
 					w.Header().Set("Content-Encoding", "zstd")
 
 					encoder, err := zstd.NewWriter(w)
 					assert.NoError(t, err)
-					_, err = encoder.Write([]byte(entry.NarText))
+					_, err = encoder.Write([]byte(narText))
 					assert.NoError(t, err)
 					assert.NoError(t, encoder.Close())
-
-					return true
+				} else {
+					w.Header().Set("Content-Length", strconv.Itoa(len(narText)))
+					_, _ = w.Write([]byte(narText))
 				}
-				// Fallback: serve uncompressed if no Accept-Encoding: zstd
-				w.Header().Add("Content-Length", strconv.Itoa(len(entry.NarText)))
-				_, _ = w.Write([]byte(entry.NarText))
-
-				return true
+			default:
+				w.WriteHeader(http.StatusNotFound)
 			}
+		}))
+		defer ts.Close()
 
-			return false
-		})
-
-		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), &upstream.Options{
-			PublicKeys: testdata.PublicKeys(),
-		})
+		// No PublicKeys: the narinfo has no verifiable signature, so skip verification.
+		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
 		require.NoError(t, err)
 		c.AddUpstreamCaches(ctx, uc)
 
@@ -2597,13 +2579,13 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 		}
 
 		// Pull NARInfo (which triggers NAR pull because it's none)
-		_, err = c.GetNarInfo(ctx, entry.NarInfoHash)
+		_, err = c.GetNarInfo(ctx, hash)
 		require.NoError(t, err)
 
 		// Verify it's stored as zstd in DB
 		var comp string
 
-		err = db.DB().QueryRowContext(ctx, "SELECT compression FROM nar_files WHERE hash = ?", entry.NarHash).Scan(&comp)
+		err = db.DB().QueryRowContext(ctx, "SELECT compression FROM nar_files WHERE hash = ?", narHash).Scan(&comp)
 		require.NoError(t, err)
 		assert.Equal(t, "zstd", comp)
 	})
