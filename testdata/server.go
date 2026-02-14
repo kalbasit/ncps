@@ -107,43 +107,61 @@ func (s *Server) handler() http.Handler {
 				bs = []byte(entry.NarInfoText)
 			}
 
-			if r.URL.Path == "/nar/"+entry.NarHash+".nar" {
-				bs = []byte(entry.NarText)
-			}
-
-			// Build path with compression extension, only adding dot if extension is not empty
-			narPath := "/nar/" + entry.NarHash + ".nar"
-			if ext := entry.NarCompression.ToFileExtension(); ext != "" {
-				narPath += "." + ext
-			}
-
-			if r.URL.Path == narPath {
-				bs = []byte(entry.NarText)
-			}
-
-			// Support fetching by normalized hash (with prefix stripped)
-			normalizedURL, err := (&nar.URL{Hash: entry.NarHash}).Normalize()
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-
-				return
-			}
-
-			normalizedHash := normalizedURL.Hash
-
-			if normalizedHash != entry.NarHash {
-				if r.URL.Path == "/nar/"+normalizedHash+".nar" {
+			// If NarInfoNarHash is set (nix-serve style with prefix), only serve at that path
+			if entry.NarInfoNarHash != "" {
+				if r.URL.Path == "/nar/"+entry.NarInfoNarHash+".nar" {
 					bs = []byte(entry.NarText)
 				}
 
-				// Build normalized path with compression extension
-				normalizedNarPath := "/nar/" + normalizedHash + ".nar"
+				// Build path with compression extension for prefixed URL
+				narPath := "/nar/" + entry.NarInfoNarHash + ".nar"
 				if ext := entry.NarCompression.ToFileExtension(); ext != "" {
-					normalizedNarPath += "." + ext
+					narPath += "." + ext
 				}
 
-				if r.URL.Path == normalizedNarPath {
+				if r.URL.Path == narPath {
 					bs = []byte(entry.NarText)
+				}
+			} else {
+				// Standard behavior: serve at both the hash and normalized paths
+				if r.URL.Path == "/nar/"+entry.NarHash+".nar" {
+					bs = []byte(entry.NarText)
+				}
+
+				// Build path with compression extension, only adding dot if extension is not empty
+				narPath := "/nar/" + entry.NarHash + ".nar"
+				if ext := entry.NarCompression.ToFileExtension(); ext != "" {
+					narPath += "." + ext
+				}
+
+				if r.URL.Path == narPath {
+					bs = []byte(entry.NarText)
+				}
+
+				// Support fetching by normalized hash (with prefix stripped)
+				normalizedURL, err := (&nar.URL{Hash: entry.NarHash}).Normalize()
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+
+					return
+				}
+
+				normalizedHash := normalizedURL.Hash
+
+				if normalizedHash != entry.NarHash {
+					if r.URL.Path == "/nar/"+normalizedHash+".nar" {
+						bs = []byte(entry.NarText)
+					}
+
+					// Build normalized path with compression extension
+					normalizedNarPath := "/nar/" + normalizedHash + ".nar"
+					if ext := entry.NarCompression.ToFileExtension(); ext != "" {
+						normalizedNarPath += "." + ext
+					}
+
+					if r.URL.Path == normalizedNarPath {
+						bs = []byte(entry.NarText)
+					}
 				}
 			}
 

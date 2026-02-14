@@ -146,6 +146,12 @@ type GetNarInfoHashesToChunkRow struct {
 	URL  sql.NullString
 }
 
+type GetNarInfoURLByNarFileHashParams struct {
+	Hash        string
+	Compression string
+	Query       string
+}
+
 type GetOldCompressedNarFilesParams struct {
 	CreatedAt time.Time
 	Limit     int32

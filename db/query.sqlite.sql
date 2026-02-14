@@ -41,6 +41,14 @@ FROM narinfos ni
 INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
 WHERE nnf.nar_file_id = ?;
 
+-- name: GetNarInfoURLByNarFileHash :one
+SELECT ni.url
+FROM narinfos ni
+INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+INNER JOIN nar_files nf ON nf.id = nnf.nar_file_id
+WHERE nf.hash = ? AND nf.compression = ? AND nf."query" = ?
+LIMIT 1;
+
 -- name: CreateConfig :one
 INSERT INTO config (
     key, value
