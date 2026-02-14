@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import gzip
+import os
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
 import time
-import shlex
 from urllib.parse import urlparse
 
 # --- Configuration Constants ---
@@ -38,7 +38,7 @@ BLUE = "\033[0;34m"
 NC = "\033[0m"
 
 processes = []
-extra_panes = [] # Track tmux panes created by this script
+extra_panes = []  # Track tmux panes created by this script
 
 
 class TmuxManager:
@@ -48,12 +48,23 @@ class TmuxManager:
 
     @staticmethod
     def get_pane_id():
-        return subprocess.check_output(["tmux", "display-message", "-p", "#{pane_id}"], text=True).strip()
+        return subprocess.check_output(
+            ["tmux", "display-message", "-p", "#{pane_id}"], text=True
+        ).strip()
 
     @staticmethod
     def split_window(target_pane, command=None):
         # Split vertically (even layout will be applied later)
-        args = ["tmux", "split-window", "-d", "-t", target_pane, "-P", "-F", "#{pane_id}"]
+        args = [
+            "tmux",
+            "split-window",
+            "-d",
+            "-t",
+            target_pane,
+            "-P",
+            "-F",
+            "#{pane_id}",
+        ]
         if command:
             args.append(command)
         return subprocess.check_output(args, text=True).strip()
@@ -65,7 +76,6 @@ class TmuxManager:
     @staticmethod
     def kill_pane(pane_id):
         subprocess.run(["tmux", "kill-pane", "-t", pane_id], check=True)
-
 
 
 def log(msg, color=NC):
@@ -91,7 +101,7 @@ def cleanup(signum, frame):
         try:
             TmuxManager.kill_pane(pane_id)
         except subprocess.CalledProcessError:
-            pass # Pane might already be gone
+            pass  # Pane might already be gone
 
     log("All instances stopped.", GREEN)
     sys.exit(0)
@@ -108,7 +118,7 @@ def rotate_logs(log_path, max_backups=5):
     # Rotate existing backups
     for i in range(max_backups - 1, 0, -1):
         s = f"{log_path}.{i}.gz"
-        d = f"{log_path}.{i+1}.gz"
+        d = f"{log_path}.{i + 1}.gz"
         if os.path.exists(s):
             os.rename(s, d)
 
@@ -279,6 +289,12 @@ def main():
         "--enable-cdc",
         action="store_true",
         help="Enable the CDC feature",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warn", "error", "fatal", "panic"],
+        default="debug",
+        help="Set the log level",
     )
     parser.add_argument(
         "--mode",
@@ -452,6 +468,7 @@ def main():
         # Chunk 3: Go application arguments
         cmd_app = [
             "--analytics-reporting-enabled=false",
+            f"--log-level={args.log_level}",
             "serve",
             "--cache-allow-put-verb",
             f"--cache-hostname=cache-{i}.example.com",
