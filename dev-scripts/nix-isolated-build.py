@@ -8,35 +8,48 @@ import tempfile
 import urllib.request
 from typing import List, Tuple
 
+
 def get_physical_temp_dir() -> str:
     """Creates a temp dir and resolves symlinks (crucial for macOS /var)."""
     tmp = tempfile.mkdtemp(prefix="nix-store.")
     return os.path.realpath(tmp)
 
+
 def probe_caches(urls: List[str]) -> List[Tuple[str, str]]:
     """Determines which caches are online and fetches their public keys."""
     active_caches = []
     for url in urls:
-        url = url.rstrip('/')
+        url = url.rstrip("/")
         try:
             # Check if cache is alive
             with urllib.request.urlopen(f"{url}/nix-cache-info", timeout=2):
                 # Fetch pubkey
                 with urllib.request.urlopen(f"{url}/pubkey", timeout=2) as r:
-                    pubkey = r.read().decode('utf-8').strip()
+                    pubkey = r.read().decode("utf-8").strip()
                     active_caches.append((url, pubkey))
                     print(f"✅ Found active cache: {url}")
         except Exception:
             print(f"── Ignoring offline cache: {url}")
     return active_caches
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Multi-cache Nix build reproduction script")
+    parser = argparse.ArgumentParser(
+        description="Multi-cache Nix build reproduction script"
+    )
     parser.add_argument("packages", nargs="+", help="Nix flakeref packages to build")
-    parser.add_argument("--leave-nix-store", action="store_true", help="Do not delete the temp store on exit")
+    parser.add_argument(
+        "--leave-nix-store",
+        action="store_true",
+        help="Do not delete the temp store on exit",
+    )
     args = parser.parse_args()
 
-    default_urls = ["http://localhost:8501", "http://localhost:8502", "http://localhost:8503"]
+    default_urls = [
+        "http://localhost:8501",
+        "http://localhost:8502",
+        "http://localhost:8503",
+    ]
     active_configs = probe_caches(default_urls)
 
     if not active_configs:
@@ -54,15 +67,30 @@ def main():
     pubkeys = " ".join([c[1] for c in active_configs])
 
     cmd = [
-        "nix", "run", "nixpkgs#nixVersions.stable", "--",
+        "nix",
+        "run",
+        "nixpkgs#nixVersions.stable",
+        "--",
         "build",
-        "--store", temp_store,
+        "--refresh",
+        "--store",
+        temp_store,
+        "--option",
+        "require-sigs",
+        "false",
         "--no-link",
         # OVERRIDE: This replaces the default https://cache.nixos.org
-        "--substituters", substituters,
+        "--substituters",
+        substituters,
         # OVERRIDE: This empties any global extra substituters (like flake settings)
-        "--option", "extra-substituters", "",
-        "--trusted-public-keys", pubkeys
+        "--option",
+        "extra-substituters",
+        "",
+        "--trusted-public-keys",
+        pubkeys,
+        # OVERRIDE: This empties any global extra substituters (like flake settings)
+        "--extra-trusted-public-keys",
+        "",
     ] + args.packages
 
     try:
@@ -79,6 +107,7 @@ def main():
             shutil.rmtree(temp_store, ignore_errors=True)
         else:
             print(f"Leaving Nix store at: {temp_store}")
+
 
 if __name__ == "__main__":
     main()
