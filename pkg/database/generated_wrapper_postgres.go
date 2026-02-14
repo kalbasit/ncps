@@ -454,6 +454,23 @@ func (w *postgresWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID in
 	return res, nil
 }
 
+func (w *postgresWrapper) GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNarInfoURLByNarFileHashParams) (sql.NullString, error) {
+	res, err := w.adapter.GetNarInfoURLByNarFileHash(ctx, postgresdb.GetNarInfoURLByNarFileHashParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return sql.NullString{}, ErrNotFound
+		}
+		return sql.NullString{}, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+	return res, nil
+}
+
 func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	res, err := w.adapter.GetNarTotalSize(ctx)
 	if err != nil {

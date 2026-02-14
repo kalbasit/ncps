@@ -6,6 +6,7 @@ package postgresdb
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
@@ -235,6 +236,15 @@ type Querier interface {
 	//  FROM narinfo_signatures
 	//  WHERE narinfo_id = $1
 	GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]string, error)
+	//GetNarInfoURLByNarFileHash
+	//
+	//  SELECT ni.url
+	//  FROM narinfos ni
+	//  INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+	//  INNER JOIN nar_files nf ON nf.id = nnf.nar_file_id
+	//  WHERE nf.hash = $1 AND nf.compression = $2 AND nf.query = $3
+	//  LIMIT 1
+	GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNarInfoURLByNarFileHashParams) (sql.NullString, error)
 	//GetNarTotalSize
 	//
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size

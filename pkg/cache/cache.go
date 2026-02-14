@@ -722,6 +722,11 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			Debug().
 			Msg("pulling nar in a go-routine and will stream the file back to the client")
 
+		// Look up the original NAR URL from the narinfo in the database.
+		// The client requests the normalized hash, but the upstream may require
+		// the original (prefixed) hash (e.g., nix-serve style upstreams).
+		narURL = c.lookupOriginalNarURL(ctx, narURL)
+
 		// create a detachedCtx that has the same span and logger as the main
 		// context but with the baseContext as parent; This context will not cancel
 		// when ctx is canceled allowing us to continue pulling the nar in the
@@ -899,6 +904,38 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 	}
 
 	return size, reader, nil
+}
+
+// lookupOriginalNarURL looks up the original (potentially prefixed) NAR URL from the database
+// by matching the narinfo that references a nar_file with the given hash.
+// This is used to recover the original upstream URL (with prefix) when fetching from
+// nix-serve style upstreams that use prefixed URLs (e.g., narinfohash-narhash).
+func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.URL) nar.URL {
+	urlStr, err := c.db.GetNarInfoURLByNarFileHash(ctx, database.GetNarInfoURLByNarFileHashParams{
+		Hash:        normalizedNarURL.Hash,
+		Compression: normalizedNarURL.Compression.String(),
+		Query:       normalizedNarURL.Query.Encode(),
+	})
+	if err != nil {
+		// Not found is an expected case. We should log any other database errors.
+		if !database.IsNotFoundError(err) && !errors.Is(err, sql.ErrNoRows) {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup original nar URL")
+		}
+
+		return normalizedNarURL
+	}
+
+	if urlStr.Valid && urlStr.String != "" {
+		originalURL, parseErr := nar.ParseURL(urlStr.String)
+		if parseErr == nil {
+			return originalURL
+		}
+		// Log if we have a URL in the DB but can't parse it.
+		zerolog.Ctx(ctx).Warn().Err(parseErr).Str("url", urlStr.String).Msg("Failed to parse original nar URL from DB")
+	}
+
+	// If parsing fails or URL is invalid/empty, return the normalized URL unchanged
+	return normalizedNarURL
 }
 
 // PutNar records the NAR (given as an io.Reader) into the store.
