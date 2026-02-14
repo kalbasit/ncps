@@ -1312,11 +1312,6 @@ func (c *Cache) getNarFromUpstream(
 
 	if enableZSTD {
 		mutators = append(mutators, zstdMutator(ctx, narURL.Compression))
-
-		narURL.Compression = nar.CompressionTypeZstd
-
-		narInfo.Compression = nar.CompressionTypeZstd.String()
-		narInfo.URL = narURL.String()
 	}
 
 	ctx = narURL.
@@ -1355,6 +1350,13 @@ func (c *Cache) getNarFromUpstream(
 		}
 
 		return nil, err
+	}
+
+	if enableZSTD && resp.Header.Get("Content-Encoding") == "zstd" {
+		narURL.Compression = nar.CompressionTypeZstd
+
+		narInfo.Compression = nar.CompressionTypeZstd.String()
+		narInfo.URL = narURL.String()
 	}
 
 	return resp, nil
