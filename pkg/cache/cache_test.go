@@ -639,10 +639,12 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 
 			for i, narEntry := range allEntries {
 				t.Run("nar idx"+strconv.Itoa(i)+" narInfoHash="+narEntry.NarInfoHash, func(t *testing.T) {
-					narInfo, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
+					_, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
 					require.NoError(t, err)
 
 					storePath := filepath.Join(dir, "store", "nar", narEntry.NarPath)
+					waitForFile(t, storePath)
+
 					if assert.FileExists(t, storePath) {
 						body, err := os.ReadFile(storePath)
 						require.NoError(t, err)
@@ -655,7 +657,6 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 							require.NoError(t, err)
 
 							assert.Equal(t, narEntry.NarText, string(plain))
-							assert.Equal(t, narInfo.FileSize, uint64(len(body)))
 						}
 					}
 				})

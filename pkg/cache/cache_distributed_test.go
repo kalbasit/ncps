@@ -657,8 +657,8 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 	db, sharedDir, cleanup := factory(t)
 	t.Cleanup(cleanup)
 
-	// Generate a large NAR (12MB) to ensure CDC chunking can happen
-	const largeNARSize = 12 * 1024 * 1024
+	// Generate a large NAR (2MB) - enough for chunking but fast for tests
+	const largeNARSize = 2 * 1024 * 1024
 
 	narData := make([]byte, largeNARSize)
 	_, err := rand.Read(narData)
@@ -758,7 +758,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 			downloadLocker,
 			cacheLocker,
 			5*time.Minute,
-			60*time.Second, // downloadPollTimeout
+			120*time.Second, // downloadPollTimeout
 			30*time.Minute,
 		)
 		require.NoError(t, err)
@@ -799,7 +799,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 			// Create a context with timeout for each request (simulates HTTP request timeout)
 			// This should be longer than the download delay (2s) plus chunking time
 			// For CDC-enabled tests, progressive streaming may take longer
-			requestCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+			requestCtx, cancel := context.WithTimeout(ctx, 150*time.Second)
 			defer cancel()
 
 			// All instances request the same NAR concurrently

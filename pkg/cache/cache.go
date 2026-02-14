@@ -35,6 +35,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
+	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 const (
@@ -328,12 +329,11 @@ func init() {
 type Cache struct {
 	baseContext context.Context
 
-	hostName       string
-	secretKey      signature.SecretKey
-	upstreamCaches []*upstream.Cache
-	healthChecker  *healthcheck.HealthChecker
-	maxSize        uint64
-	db             database.Querier
+	hostName      string
+	secretKey     signature.SecretKey
+	healthChecker *healthcheck.HealthChecker
+	maxSize       uint64
+	db            database.Querier
 
 	// tempDir is used to store nar files temporarily.
 	tempDir string
@@ -371,8 +371,10 @@ type Cache struct {
 	// for jobs. Protected by upstreamJobsMu for local synchronization.
 	upstreamJobsMu sync.Mutex
 	upstreamJobs   map[string]*downloadState
-
-	cron *cron.Cron
+	cron           *cron.Cron
+	// upstreamCachesMu protects upstreamCaches
+	upstreamCachesMu sync.RWMutex
+	upstreamCaches   []*upstream.Cache
 
 	// Wait group to track background operations
 	backgroundWG sync.WaitGroup
@@ -481,6 +483,7 @@ func New(
 		downloadPollTimeout:  downloadPollTimeout,
 		cacheLockTTL:         cacheLockTTL,
 		upstreamJobs:         make(map[string]*downloadState),
+		upstreamCaches:       make([]*upstream.Cache, 0),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
 	}
 
@@ -615,7 +618,9 @@ func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
 		Strs("hostnames", hostnames).
 		Msg("adding upstream caches")
 
+	c.upstreamCachesMu.Lock()
 	c.upstreamCaches = append(c.upstreamCaches, ucs...)
+	c.upstreamCachesMu.Unlock()
 	c.healthChecker.AddUpstreams(ucs)
 }
 
@@ -640,11 +645,14 @@ func (c *Cache) RegisterUpstreamMetrics(m metric.Meter) error {
 	}
 
 	_, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		c.upstreamCachesMu.RLock()
+		defer c.upstreamCachesMu.RUnlock()
+
 		// Observe Total
 		o.ObserveInt64(totalGauge, int64(len(c.upstreamCaches)))
 
 		// Observe Healthy
-		o.ObserveInt64(healthyGauge, int64(c.GetHealthyUpstreamCount()))
+		o.ObserveInt64(healthyGauge, int64(c.GetHealthyUpstreamCountLocked()))
 
 		return nil
 	}, totalGauge, healthyGauge)
@@ -654,6 +662,15 @@ func (c *Cache) RegisterUpstreamMetrics(m metric.Meter) error {
 
 // GetHealthyUpstreamCount returns the number of healthy upstream caches.
 func (c *Cache) GetHealthyUpstreamCount() int {
+	c.upstreamCachesMu.RLock()
+	defer c.upstreamCachesMu.RUnlock()
+
+	return c.GetHealthyUpstreamCountLocked()
+}
+
+// GetHealthyUpstreamCountLocked returns the number of healthy upstream caches.
+// It assumes the caller holds at least a read lock on upstreamCachesMu.
+func (c *Cache) GetHealthyUpstreamCountLocked() int {
 	var count int
 
 	for _, u := range c.upstreamCaches {
@@ -788,7 +805,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
 
-		hasNarInStore := c.narStore.HasNar(ctx, narURL)
+		hasNarInStore := c.hasNarInStore(ctx, narURL)
 
 		var err error
 
@@ -837,7 +854,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 		ds.mu.Unlock()
 
-		hasNarInStore = c.narStore.HasNar(ctx, narURL)
+		hasNarInStore = c.hasNarInStore(ctx, narURL)
 		hasNarInChunks, _ := c.HasNarFileRecord(ctx, narURL)
 
 		// If download is complete or NAR is in store, get from storage
@@ -1240,7 +1257,36 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 
 	defer f.Close()
 
-	written, err := c.narStore.PutNar(ctx, *narURL, f)
+	var reader io.Reader = f
+
+	// For Compression:none NARs the temp file holds raw bytes (the upstream package
+	// transparently decompresses any content-encoding). We re-compress them as zstd
+	// before storing so all "uncompressed" NARs are uniformly stored as .nar.zst.
+	// Other compression types (zstd, xz, etc.) are stored as-is under their original
+	// extension.
+	storeURL := *narURL
+	if narURL.Compression == nar.CompressionTypeNone {
+		pr, pw := io.Pipe()
+
+		analytics.SafeGo(ctx, func() {
+			zw := zstd.NewPooledWriter(pw)
+
+			_, copyErr := io.Copy(zw, f)
+
+			closeErr := zw.Close()
+
+			if copyErr != nil {
+				pw.CloseWithError(copyErr)
+			} else {
+				pw.CloseWithError(closeErr)
+			}
+		})
+
+		reader = pr
+		storeURL.Compression = nar.CompressionTypeZstd
+	}
+
+	written, err := c.narStore.PutNar(ctx, storeURL, reader)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			// Already exists is not an error - another request stored it first
@@ -1714,9 +1760,37 @@ func (c *Cache) getNarFromStore(
 	)
 	defer span.End()
 
-	size, r, err := c.narStore.GetNar(ctx, *narURL)
+	// For Compression:none NARs, the physical file is stored as .nar.zst.
+	// Try reading from .nar.zst and decompress transparently.
+	storeURL := *narURL
+
+	var decompress bool
+
+	if narURL.Compression == nar.CompressionTypeNone {
+		zstdURL := *narURL
+		zstdURL.Compression = nar.CompressionTypeZstd
+
+		if c.narStore.HasNar(ctx, zstdURL) {
+			storeURL = zstdURL
+			decompress = true
+		}
+	}
+
+	size, r, err := c.narStore.GetNar(ctx, storeURL)
 	if err != nil {
 		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
+	}
+
+	if decompress {
+		decompressed, decompErr := nar.DecompressReader(r, nar.CompressionTypeZstd)
+		if decompErr != nil {
+			_ = r.Close()
+
+			return 0, nil, fmt.Errorf("error decompressing nar from store: %w", decompErr)
+		}
+
+		r = decompressed
+		size = -1 // decompressed size is unknown
 	}
 
 	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
@@ -1822,7 +1896,7 @@ func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 	// downstream HTTP request to cancel this.
 	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
-	if !c.narStore.HasNar(ctx, *narURL) {
+	if !c.hasNarInStore(ctx, *narURL) {
 		return storage.ErrNotFound
 	}
 
@@ -2067,17 +2141,22 @@ func (c *Cache) pullNarInfo(
 	c.prePullNar(ctx, detachedCtx, &narURLForBG, uc)
 
 	// For CDC mode, NARs are stored as raw uncompressed chunks.
+	// For Compression:none upstreams, NARs are stored as zstd files and served
+	// as Compression:none with transparent HTTP encoding.
 	// Normalize narInfo to reflect this regardless of upstream compression.
 	// Note: we must NOT modify narURL here since prePullNar may still be using
 	// the pointer in a background goroutine. Instead, build the normalized URL string directly.
-	if c.isCDCEnabled() {
+	if c.isCDCEnabled() || narInfo.Compression == nar.CompressionTypeNone.String() {
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
-		// For CDC, we serve raw uncompressed data, so FileSize == NarSize.
-		// FileSize != NarSize is expected here (upstream serves compressed),
-		// so no warning is needed.
+		// FileSize == NarSize since we serve raw uncompressed data.
 		narInfo.FileSize = narInfo.NarSize
+		// For Compression:none, file IS the NAR so FileHash == NarHash.
+		// The narinfo library only serializes FileSize when FileHash is non-nil.
+		if narInfo.FileHash == nil {
+			narInfo.FileHash = narInfo.NarHash
+		}
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -2148,7 +2227,9 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 
 		// For CDC mode, normalize all NARs to Compression: none.
 		// CDC chunks are stored uncompressed and re-compressed individually.
-		if c.isCDCEnabled() {
+		// For Compression:none upstreams, NARs are stored as zstd and served
+		// as Compression:none with transparent HTTP encoding.
+		if c.isCDCEnabled() || narInfo.Compression == nar.CompressionTypeNone.String() {
 			if narInfo.Compression != nar.CompressionTypeNone.String() && narInfo.Compression != "" {
 				nu, parseErr := nar.ParseURL(narInfo.URL)
 				if parseErr != nil {
@@ -2159,10 +2240,13 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 				narInfo.URL = nu.String()
 				narInfo.Compression = nar.CompressionTypeNone.String()
 			}
-			// For CDC, we serve raw uncompressed data, so FileSize == NarSize.
-			// FileSize != NarSize is expected here (upstream serves compressed),
-			// so no warning is needed.
+			// FileSize == NarSize since we serve raw uncompressed data.
 			narInfo.FileSize = narInfo.NarSize
+			// For Compression:none, file IS the NAR so FileHash == NarHash.
+			// The narinfo library only serializes FileSize when FileHash is non-nil.
+			if narInfo.FileHash == nil {
+				narInfo.FileHash = narInfo.NarHash
+			}
 		}
 
 		if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -2280,7 +2364,7 @@ func (c *Cache) prePullNar(
 		narURL.Hash,
 		false,
 		func(ctx context.Context) bool {
-			hasInStore := c.narStore.HasNar(ctx, *narURL)
+			hasInStore := c.hasNarInStore(ctx, *narURL)
 			if hasInStore {
 				return true
 			}
@@ -2299,6 +2383,21 @@ func (c *Cache) prePullNar(
 			c.pullNarIntoStore(ctx, narURL, uc, ds)
 		},
 	)
+}
+
+// hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
+func (c *Cache) hasNarInStore(ctx context.Context, narURL nar.URL) bool {
+	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
+	if narURL.Compression == nar.CompressionTypeNone {
+		zstdURL := narURL
+
+		zstdURL.Compression = nar.CompressionTypeZstd
+		if c.narStore.HasNar(ctx, zstdURL) {
+			return true
+		}
+	}
+
+	return c.narStore.HasNar(ctx, narURL)
 }
 
 func (c *Cache) signNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
@@ -2375,7 +2474,20 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		NewLogger(*zerolog.Ctx(ctx)).
 		WithContext(ctx)
 
-	if !c.narStore.HasNar(ctx, narURL) && !c.hasUpstreamJob(narURL.Hash) {
+	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
+	hasNarInStore := false
+
+	if narURL.Compression == nar.CompressionTypeNone {
+		zstdURL := narURL
+		zstdURL.Compression = nar.CompressionTypeZstd
+		hasNarInStore = c.narStore.HasNar(ctx, zstdURL)
+	}
+
+	if !hasNarInStore {
+		hasNarInStore = c.narStore.HasNar(ctx, narURL)
+	}
+
+	if !hasNarInStore && !c.hasUpstreamJob(narURL.Hash) {
 		zerolog.Ctx(ctx).
 			Error().
 			Msg("narinfo was found in the store but no nar was found, requesting a purge")
@@ -2531,8 +2643,10 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 		return nil, err
 	}
 
-	// Verify Nar file exists in storage
-	hasNar := c.narStore.HasNar(ctx, *narURL)
+	// Verify Nar file exists in storage.
+	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
+	hasNar := c.hasNarInStore(ctx, *narURL)
+
 	if !hasNar {
 		var err error
 
@@ -2732,7 +2846,7 @@ func (c *Cache) purgeNarInfo(
 	}
 
 	if narURL.Hash != "" {
-		if c.narStore.HasNar(ctx, *narURL) {
+		if c.hasNarInStore(ctx, *narURL) {
 			if err := c.deleteNarFromStore(ctx, narURL); err != nil {
 				return fmt.Errorf("error removing nar from store: %w", err)
 			}
@@ -2918,7 +3032,7 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 	// Now get the actual NAR size. We only want to check the size if we already
 	// have the NAR in our store or in chunks. We don't want to pull the NAR
 	// from upstream just to check its size.
-	hasNar := c.narStore.HasNar(ctx, nu)
+	hasNar := c.hasNarInStore(ctx, nu)
 	if !hasNar {
 		var err error
 
@@ -3512,6 +3626,7 @@ func (c *Cache) coordinateDownload(
 
 					// Return a completed downloadState
 					ds := newDownloadState()
+					ds.closed = true
 					ds.startOnce.Do(func() { close(ds.start) })
 					ds.storedOnce.Do(func() { close(ds.stored) })
 					ds.doneOnce.Do(func() { close(ds.done) })
@@ -3530,6 +3645,8 @@ func (c *Cache) coordinateDownload(
 				ds := newDownloadState()
 				ds.downloadError = fmt.Errorf("failed to acquire download lock and timeout polling for completion: %w", err)
 				// Signal that the download is done (with error) to prevent deadlocks
+				ds.startOnce.Do(func() { close(ds.start) })
+				ds.storedOnce.Do(func() { close(ds.stored) })
 				ds.doneOnce.Do(func() { close(ds.done) })
 
 				return ds
@@ -4117,6 +4234,9 @@ type upstreamSelectionFn func(
 )
 
 func (c *Cache) getHealthyUpstreams() []*upstream.Cache {
+	c.upstreamCachesMu.RLock()
+	defer c.upstreamCachesMu.RUnlock()
+
 	healthyUpstreams := make([]*upstream.Cache, 0, len(c.upstreamCaches))
 
 	for _, u := range c.upstreamCaches {

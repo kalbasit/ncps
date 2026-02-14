@@ -368,10 +368,15 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		assert.Equal(t, expectedSize, sizePulled, "size pulled is less than maxSize by exactly the last one")
 
 		for _, narEntry := range allEntries {
-			// Use the actual compression that was stored (which may have been transformed to zstd)
+			// Compression:none NARs are physically stored as zstd.
+			// Use zstd for the store lookup in that case.
 			compression := narEntry.NarCompression
 			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
+			}
+
+			if compression == nar.CompressionTypeNone {
+				compression = nar.CompressionTypeZstd
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
@@ -397,15 +402,12 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
 
-		// Calculate expected size accounting for zstd-compressed NARs
+		// Calculate expected size: GetNar always returns raw (decompressed) bytes.
+		// For Compression:none NARs stored as .nar.zst, we decompress on read.
 		var expectedMaxSize uint64
 
 		for _, narEntry := range entries {
-			if zstdSize, ok := zstdSizes[narEntry.NarInfoHash]; ok {
-				expectedMaxSize += zstdSize
-			} else {
-				expectedMaxSize += uint64(len(narEntry.NarText))
-			}
+			expectedMaxSize += uint64(len(narEntry.NarText))
 		}
 
 		for i, narEntry := range entries {
@@ -419,8 +421,16 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
-			size, _, err := c.GetNar(context.Background(), nu)
+			size, reader, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
+
+			// If size is unknown (e.g. decompression of .nar.zst), read the body to measure.
+			if size < 0 {
+				size, err = io.Copy(io.Discard, reader)
+				require.NoError(t, err)
+			} else if reader != nil {
+				_ = reader.Close()
+			}
 
 			t.Logf("Entry %d (%s): reported size=%d, NarText size=%d, diff=%d",
 				i, narEntry.NarInfoHash, size, len(narEntry.NarText), size-int64(len(narEntry.NarText)))
@@ -476,10 +486,14 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 		// confirm all nars except the last one are in the store
 		for _, narEntry := range entries {
-			// Use the actual compression that was stored
+			// Compression:none NARs are physically stored as zstd.
 			compression := narEntry.NarCompression
 			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
+			}
+
+			if compression == nar.CompressionTypeNone {
+				compression = nar.CompressionTypeZstd
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
@@ -490,6 +504,10 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		lastCompression := lastEntry.NarCompression
 		if c, ok := actualCompressions[lastEntry.NarInfoHash]; ok {
 			lastCompression = c
+		}
+
+		if lastCompression == nar.CompressionTypeNone {
+			lastCompression = nar.CompressionTypeZstd
 		}
 
 		nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastCompression}
@@ -652,10 +670,15 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 		c.SetMaxSize(maxSize)
 
 		for _, narEntry := range allEntries {
-			// Use the actual compression that was stored (which may have been transformed to zstd)
+			// Compression:none NARs are physically stored as zstd.
+			// Use zstd for the store lookup in that case.
 			compression := narEntry.NarCompression
 			if c, ok := actualCompressions[narEntry.NarInfoHash]; ok {
 				compression = c
+			}
+
+			if compression == nar.CompressionTypeNone {
+				compression = nar.CompressionTypeZstd
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
