@@ -14,10 +14,19 @@ import (
 func TestNarsValid(t *testing.T) {
 	t.Parallel()
 
-	for _, nar := range testdata.Entries {
-		ni, err := narinfo.Parse(strings.NewReader(nar.NarInfoText))
+	for _, entry := range testdata.Entries {
+		ni, err := narinfo.Parse(strings.NewReader(entry.NarInfoText))
 		require.NoError(t, err)
 		require.NoError(t, ni.Check())
-		assert.EqualValues(t, ni.FileSize, len(nar.NarText)) //nolint:testifylint
+
+		// For Compression: none, FileSize may be 0 (omitted by nix-serve style upstreams).
+		// In that case, the NarText length should match NarSize (uncompressed = NarSize).
+		// For compressed NARs, FileSize is the compressed size and must match NarText length.
+		sizeToCompare := ni.FileSize
+		if sizeToCompare == 0 {
+			sizeToCompare = ni.NarSize
+		}
+
+		assert.EqualValues(t, sizeToCompare, len(entry.NarText)) //nolint:testifylint
 	}
 }
