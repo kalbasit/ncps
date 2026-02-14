@@ -934,6 +934,23 @@ func (w *mysqlWrapper) GetNarInfoSignatures(ctx context.Context, narinfoID int64
 	return res, nil
 }
 
+func (w *mysqlWrapper) GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNarInfoURLByNarFileHashParams) (sql.NullString, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarInfoURLByNarFileHash(ctx, mysqldb.GetNarInfoURLByNarFileHashParams{
+		Hash:        arg.Hash,
+		Compression: arg.Compression,
+		Query:       arg.Query,
+	})
+	if err != nil {
+		return sql.NullString{}, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
 func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

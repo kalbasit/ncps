@@ -1550,3 +1550,129 @@ func TestGetNar_NixServeUpstream(t *testing.T) {
 		assert.Equal(t, testdata.Nar7.NarText, string(narBody))
 	})
 }
+
+// TestGetNar_NixServeUpstream_PrefixedNarURL tests that ncps correctly proxies NARs when
+// the nix-serve upstream uses prefixed URLs (narinfo-hash-nar-hash), and the test
+// server only serves the NAR at the prefixed path (not the normalized path).
+// This reproduces the race condition bug where GetNar tries to fetch from upstream
+// using the normalized URL (which the upstream doesn't recognize).
+func TestGetNar_NixServeUpstream_PrefixedNarURL(t *testing.T) {
+	t.Parallel()
+
+	hts := testdata.NewTestServer(t, 40)
+	t.Cleanup(hts.Close)
+
+	// Create a test entry with a prefixed NAR URL (nix-serve style)
+	// Based on Nar7 but with a prefixed URL
+	prefixedNarInfoHash := testdata.Nar7.NarInfoHash + "-" + testdata.Nar7.NarHash
+	prefixedNarInfoText := `StorePath: /nix/store/c12lxpykv6sld7a0sakcnr3y0la70x8w-hello-2.12.2
+URL: nar/` + prefixedNarInfoHash + `.nar
+Compression: none
+NarHash: sha256:1yf3p87fsqig07crd9sj9wh7i9jpsa0x86a22fqbls7c81lc7ws2
+NarSize: 113256
+References: 7h6icyvqv6lqd0bcx41c8h3615rjcqb2-libiconv-109.100.2
+Deriver: msnhw2b4dcn9kbswsfz63jplf7ncnxik-hello-2.12.2.drv
+Sig: cache.nixos.org-1:oPqkkDFlniUh1BaGWwWd7LY2EfUh3r/GBxriDGE7vCfvJ3fKsnIDg1L4QFkuHKWIfwWxWy4FlpO6/5FHPx00AQ==`
+
+	prefixedEntry := testdata.Entry{
+		NarInfoHash:    testdata.Nar7.NarInfoHash,
+		NarInfoPath:    testdata.Nar7.NarInfoPath,
+		NarInfoText:    prefixedNarInfoText,
+		NarHash:        testdata.Nar7.NarHash,
+		NarCompression: testdata.Nar7.NarCompression,
+		NarPath:        testdata.Nar7.NarPath,
+		NarText:        testdata.Nar7.NarText,
+		NoZstdEncoding: testdata.Nar7.NoZstdEncoding,
+		NarInfoNarHash: prefixedNarInfoHash,
+	}
+	hts.AddEntry(prefixedEntry)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, hts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	require.NoError(t, err)
+
+	dir, err := os.MkdirTemp("", "cache-nix-serve-prefixed-")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	<-c.GetHealthChecker().Trigger()
+
+	s := server.New(c)
+
+	ts := httptest.NewServer(s)
+	t.Cleanup(ts.Close)
+
+	// Fetch narinfo first to trigger background NAR pull.
+	// This uses the prefixed URL from the upstream.
+	narInfoReq, err := http.NewRequestWithContext(
+		newContext(),
+		http.MethodGet,
+		ts.URL+"/"+prefixedEntry.NarInfoHash+".narinfo",
+		nil,
+	)
+	require.NoError(t, err)
+
+	//nolint:bodyclose // closed below
+	narInfoResp, err := ts.Client().Do(narInfoReq)
+	require.NoError(t, err)
+
+	defer narInfoResp.Body.Close()
+
+	require.Equal(t, http.StatusOK, narInfoResp.StatusCode)
+
+	narInfoBody, err := io.ReadAll(narInfoResp.Body)
+	require.NoError(t, err)
+
+	ni, err := narinfo.Parse(strings.NewReader(string(narInfoBody)))
+	require.NoError(t, err)
+
+	// Parse the URL to get the normalized NAR hash
+	narURL, err := nar.ParseURL(ni.URL)
+	require.NoError(t, err)
+
+	normalizedNarURL, err := narURL.Normalize()
+	require.NoError(t, err)
+
+	// Request the NAR using the normalized URL (as a client would after reading narinfo).
+	// The test server only serves the NAR at the prefixed path (prefixedEntry.NarInfoNarHash),
+	// not at the normalized path.
+	// Without the fix, this would fail because GetNar would try to fetch from upstream
+	// using the normalized URL when the NAR isn't in the store yet.
+	narReqURL := ts.URL + "/nar/" + normalizedNarURL.Hash + ".nar"
+
+	narReq, err := http.NewRequestWithContext(newContext(), http.MethodGet, narReqURL, nil)
+	require.NoError(t, err)
+
+	// Use DisableCompression to prevent Go HTTP client adding Accept-Encoding: gzip.
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+	//nolint:bodyclose // closed below
+	narResp, err := client.Do(narReq)
+	require.NoError(t, err)
+
+	defer narResp.Body.Close()
+
+	require.Equal(t, http.StatusOK, narResp.StatusCode)
+
+	narBody, err := io.ReadAll(narResp.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, prefixedEntry.NarText, string(narBody))
+}

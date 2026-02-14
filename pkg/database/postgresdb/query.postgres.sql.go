@@ -1395,6 +1395,36 @@ func (q *Queries) GetNarInfoSignatures(ctx context.Context, narinfoID int64) ([]
 	return items, nil
 }
 
+const getNarInfoURLByNarFileHash = `-- name: GetNarInfoURLByNarFileHash :one
+SELECT ni.url
+FROM narinfos ni
+INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+INNER JOIN nar_files nf ON nf.id = nnf.nar_file_id
+WHERE nf.hash = $1 AND nf.compression = $2 AND nf.query = $3
+LIMIT 1
+`
+
+type GetNarInfoURLByNarFileHashParams struct {
+	Hash        string
+	Compression string
+	Query       string
+}
+
+// GetNarInfoURLByNarFileHash
+//
+//	SELECT ni.url
+//	FROM narinfos ni
+//	INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+//	INNER JOIN nar_files nf ON nf.id = nnf.nar_file_id
+//	WHERE nf.hash = $1 AND nf.compression = $2 AND nf.query = $3
+//	LIMIT 1
+func (q *Queries) GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNarInfoURLByNarFileHashParams) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getNarInfoURLByNarFileHash, arg.Hash, arg.Compression, arg.Query)
+	var url sql.NullString
+	err := row.Scan(&url)
+	return url, err
+}
+
 const getNarTotalSize = `-- name: GetNarTotalSize :one
 SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size
 FROM nar_files
