@@ -1057,7 +1057,7 @@ func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.U
 	})
 	if err != nil {
 		// Not found is an expected case. We should log any other database errors.
-		if !database.IsNotFoundError(err) && !errors.Is(err, sql.ErrNoRows) {
+		if !database.IsNotFoundError(err) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup original nar URL")
 		}
 
