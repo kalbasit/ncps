@@ -824,7 +824,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
 		detachedCtx := c.detachedContext(ctx)
-		ds := c.prePullNar(ctx, detachedCtx, &narURL, nil, nil, false)
+		ds := c.prePullNar(ctx, detachedCtx, &narURL, nil)
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
 		// This prevents race with cleanup goroutine calling ds.wg.Wait()
@@ -1495,8 +1495,6 @@ func (c *Cache) pullNarIntoStore(
 	ctx context.Context,
 	narURL *nar.URL,
 	uc *upstream.Cache,
-	narInfo *narinfo.NarInfo,
-	enableZSTD bool,
 	ds *downloadState,
 ) {
 	// Track download completion for cleanup synchronization
@@ -1539,7 +1537,7 @@ func (c *Cache) pullNarIntoStore(
 		Info().
 		Msg("downloading the nar from upstream")
 
-	resp, err := c.getNarFromUpstream(ctx, narURL, uc, narInfo, enableZSTD)
+	resp, err := c.getNarFromUpstream(ctx, narURL, uc)
 	if err != nil {
 		if !errors.Is(err, storage.ErrNotFound) {
 			zerolog.Ctx(ctx).
@@ -1602,7 +1600,7 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
-	written, err := c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
+	_, err = c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
 	if err != nil {
 		ds.setError(err)
 
@@ -1618,13 +1616,6 @@ func (c *Cache) pullNarIntoStore(
 			Warn().
 			Err(err).
 			Msg("failed to fix narinfo file size after pullNarIntoStore")
-	}
-
-	// For non-CDC mode with zstd support, update FileSize to reflect the compressed size.
-	// For CDC mode, narURL.Compression is normalized to "none", so no FileSize update is needed.
-	if enableZSTD && written > 0 && !c.isCDCEnabled() {
-		//nolint:gosec // G115: written > 0 guarantees safe conversion
-		narInfo.FileSize = uint64(written)
 	}
 
 	zerolog.Ctx(ctx).
@@ -1766,8 +1757,6 @@ func (c *Cache) getNarFromUpstream(
 	ctx context.Context,
 	narURL *nar.URL,
 	uc *upstream.Cache,
-	narInfo *narinfo.NarInfo,
-	enableZSTD bool,
 ) (*http.Response, error) {
 	ctx, span := tracer.Start(
 		ctx,
@@ -1787,17 +1776,6 @@ func (c *Cache) getNarFromUpstream(
 		upstreamNarFetchDuration.Record(ctx, duration)
 	}()
 
-	var mutators []func(*http.Request)
-
-	if enableZSTD {
-		mutators = append(mutators, zstdMutator(ctx, narURL.Compression))
-
-		narURL.Compression = nar.CompressionTypeZstd
-
-		narInfo.Compression = nar.CompressionTypeZstd.String()
-		narInfo.URL = narURL.String()
-	}
-
 	ctx = narURL.
 		NewLogger(*zerolog.Ctx(ctx)).
 		WithContext(ctx)
@@ -1809,7 +1787,7 @@ func (c *Cache) getNarFromUpstream(
 		ucs = c.getHealthyUpstreams()
 	}
 
-	uc, err := c.selectNarUpstream(ctx, narURL, ucs, mutators)
+	uc, err := c.selectNarUpstream(ctx, narURL, ucs)
 	if err != nil {
 		zerolog.Ctx(ctx).
 			Error().
@@ -1823,7 +1801,7 @@ func (c *Cache) getNarFromUpstream(
 		return nil, storage.ErrNotFound
 	}
 
-	resp, err := uc.GetNar(ctx, *narURL, mutators...)
+	resp, err := uc.GetNar(ctx, *narURL)
 	if err != nil {
 		if !errors.Is(err, upstream.ErrNotFound) {
 			zerolog.Ctx(ctx).
@@ -2070,56 +2048,23 @@ func (c *Cache) pullNarInfo(
 	// Signal that we've successfully fetched the narinfo (no streaming for narinfo)
 	ds.startOnce.Do(func() { close(ds.start) })
 
-	var enableZSTD bool
-
-	if narInfo.Compression == nar.CompressionTypeNone.String() {
-		enableZSTD = true
-	}
-
 	ctx = zerolog.Ctx(ctx).
 		With().
 		Str("nar_url", narInfo.URL).
-		Bool("zstd_support", enableZSTD).
 		Logger().
 		WithContext(ctx)
 
-	// Start a job to also pull the nar but don't wait for it to come back unless
-	// we need to alter the filesize/compression. For instance, Harmonia,
-	// explicitly returns none for compression but does accept encoding request,
-	// if that's the case we should get the compressed version and store that
-	// instead.
-	// For CDC mode, we normalize to "none" regardless, so no need to wait.
-	if enableZSTD && !c.isCDCEnabled() {
-		// Use detached context to ensure NAR download completes even if narinfo context is canceled
-		detachedCtx := c.detachedContext(ctx)
-		narDs := c.prePullNar(ctx, detachedCtx, &narURL, uc, narInfo, enableZSTD)
-		<-narDs.done
+		// Fire and forget: fetch the NAR in the background.
+		// The upstream package now handles transparent zstd encoding/decoding, so
+		// we always get raw bytes regardless of upstream support. FileSize = NarSize
+		// for Compression:none upstreams, so no synchronous wait is needed.
+	detachedCtx := c.detachedContext(ctx)
 
-		err := narDs.getError()
-		if err != nil {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("error pulling the nar")
+	// create a copy of narURL to avoid a race condition when
+	// narURL is modified within a background goroutine.
+	narURLForBG := narURL
 
-			ds.setError(err)
-
-			return
-		}
-	} else {
-		// create a detachedCtx that has the same span and logger as the main
-		// context but with the baseContext as parent; This context will not cancel
-		// when ctx is canceled allowing us to continue pulling the nar in the
-		// background.
-		detachedCtx := c.detachedContext(ctx)
-
-		// create a copy of narURL to avoid a race condition when
-		// narURL.Compression is modified within getNarFromUpstream.
-		narURLForBG := narURL
-
-		// fire and forget fetching the NAR in the background.
-		c.prePullNar(ctx, detachedCtx, &narURLForBG, uc, narInfo, enableZSTD)
-	}
+	c.prePullNar(ctx, detachedCtx, &narURLForBG, uc)
 
 	// For CDC mode, NARs are stored as raw uncompressed chunks.
 	// Normalize narInfo to reflect this regardless of upstream compression.
@@ -2313,8 +2258,6 @@ func (c *Cache) prePullNar(
 	ctx context.Context,
 	narURL *nar.URL,
 	uc *upstream.Cache,
-	narInfo *narinfo.NarInfo,
-	enableZSTD bool,
 ) *downloadState {
 	ctx, span := tracer.Start(
 		ctx,
@@ -2353,7 +2296,7 @@ func (c *Cache) prePullNar(
 			return false
 		},
 		func(ds *downloadState) {
-			c.pullNarIntoStore(ctx, narURL, uc, narInfo, enableZSTD, ds)
+			c.pullNarIntoStore(ctx, narURL, uc, ds)
 		},
 	)
 }
@@ -4165,30 +4108,6 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 	}
 }
 
-func zstdMutator(
-	ctx context.Context,
-	compression nar.CompressionType,
-) func(r *http.Request) {
-	return func(r *http.Request) {
-		zerolog.Ctx(ctx).
-			Debug().
-			Msg("narinfo compression is none will set Accept-Encoding to zstd")
-
-		r.Header.Set("Accept-Encoding", "zstd")
-
-		cfe := compression.ToFileExtension()
-		if cfe != "" {
-			cfe = "." + cfe
-		}
-
-		r.URL.Path = strings.ReplaceAll(
-			r.URL.Path,
-			"."+nar.CompressionTypeZstd.ToFileExtension(),
-			cfe,
-		)
-	}
-}
-
 type upstreamSelectionFn func(
 	ctx context.Context,
 	uc *upstream.Cache,
@@ -4246,7 +4165,6 @@ func (c *Cache) selectNarUpstream(
 	ctx context.Context,
 	narURL *nar.URL,
 	ucs []*upstream.Cache,
-	mutators []func(*http.Request),
 ) (*upstream.Cache, error) {
 	return c.selectUpstream(ctx, ucs, func(
 		ctx context.Context,
@@ -4257,7 +4175,7 @@ func (c *Cache) selectNarUpstream(
 	) {
 		defer wg.Done()
 
-		exists, err := uc.HasNar(ctx, *narURL, mutators...)
+		exists, err := uc.HasNar(ctx, *narURL)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				errC <- err
