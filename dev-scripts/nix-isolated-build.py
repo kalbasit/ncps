@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -8,6 +9,25 @@ import tempfile
 import urllib.request
 from typing import List, Tuple
 
+STATE_FILE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "var",
+    "ncps",
+    "state.json",
+)
+
+
+def get_urls_from_state_file() -> List[str]:
+    """Read running instance URLs from run.py's state file."""
+    try:
+        with open(STATE_FILE_PATH) as f:
+            data = json.load(f)
+        return [
+            f"http://127.0.0.1:{inst['port']}" for inst in data.get("instances", [])
+        ]
+    except (FileNotFoundError, KeyError, json.JSONDecodeError):
+        return []
+
 
 def get_physical_temp_dir() -> str:
     """Creates a temp dir and resolves symlinks (crucial for macOS /var)."""
@@ -15,9 +35,9 @@ def get_physical_temp_dir() -> str:
     return os.path.realpath(tmp)
 
 
-def probe_caches(urls: List[str]) -> List[Tuple[str, str]]:
-    """Determines which caches are online and fetches their public keys."""
-    active_caches = []
+def probe_ncpses(urls: List[str]) -> List[Tuple[str, str]]:
+    """Determines which ncps is online and fetches their public keys."""
+    active_ncpses = []
     for url in urls:
         url = url.rstrip("/")
         try:
@@ -26,11 +46,11 @@ def probe_caches(urls: List[str]) -> List[Tuple[str, str]]:
                 # Fetch pubkey
                 with urllib.request.urlopen(f"{url}/pubkey", timeout=2) as r:
                     pubkey = r.read().decode("utf-8").strip()
-                    active_caches.append((url, pubkey))
-                    print(f"✅ Found active cache: {url}")
+                    active_ncpses.append((url, pubkey))
+                    print(f"✅ Found active ncps: {url}")
         except Exception:
-            print(f"── Ignoring offline cache: {url}")
-    return active_caches
+            print(f"── Ignoring offline ncps: {url}")
+    return active_ncpses
 
 
 def main():
@@ -43,17 +63,22 @@ def main():
         action="store_true",
         help="Do not delete the temp store on exit",
     )
+    parser.add_argument(
+        "--ncps-url",
+        action="append",
+    )
     args = parser.parse_args()
 
-    default_urls = [
-        "http://localhost:8501",
-        "http://localhost:8502",
-        "http://localhost:8503",
-    ]
-    active_configs = probe_caches(default_urls)
+    default_urls = get_urls_from_state_file()
+    active_configs = probe_ncpses(args.ncps_url or default_urls)
 
     if not active_configs:
-        print("error: No active caches found.")
+        if not args.ncps_url and not default_urls:
+            print(
+                "error: No ncps instances found (state file not present and no --ncps-url given)."
+            )
+        else:
+            print("error: No active caches found.")
         sys.exit(1)
 
     # 1. Define temp_store before using it
@@ -75,9 +100,6 @@ def main():
         "--refresh",
         "--store",
         temp_store,
-        "--option",
-        "require-sigs",
-        "false",
         "--no-link",
         # OVERRIDE: This replaces the default https://cache.nixos.org
         "--substituters",
