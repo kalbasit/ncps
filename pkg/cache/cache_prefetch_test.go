@@ -121,7 +121,7 @@ func TestPrefetchPipelineOrdering(t *testing.T) {
 	// Create content that will be split into multiple chunks
 	// Use a pattern that makes it easy to verify ordering
 	var contentBuilder strings.Builder
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		contentBuilder.WriteString(fmt.Sprintf("CHUNK_%02d_", i))
 		contentBuilder.WriteString(strings.Repeat("X", 500))
 	}
@@ -435,7 +435,7 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 	goroutinesBefore := runtime.NumGoroutine()
 
 	// Start progressive streaming and cancel mid-stream
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		_, rc, err := c.GetNar(ctx, nu)

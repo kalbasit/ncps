@@ -337,12 +337,12 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 	retryCfg := getTestRetryConfig()
 
 	// Create multiple locker instances
-	var lockers []interface {
+	lockers := make([]interface {
 		RLock(context.Context, string, time.Duration) error
 		RUnlock(context.Context, string) error
-	}
+	}, 0, 5)
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		locker, err := redis.NewRWLocker(ctx, cfg, retryCfg, false)
 		require.NoError(t, err)
 

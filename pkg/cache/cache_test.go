@@ -1151,7 +1151,7 @@ func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testi
 		errChan := make(chan error, concurrency)
 		results := make([]*narinfo.NarInfo, concurrency)
 
-		for i := 0; i < concurrency; i++ {
+		for i := range concurrency {
 			wg.Add(1)
 
 			go func(idx int) {
@@ -1304,10 +1304,7 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 
 				chunkSize := 1024
 				for i := 0; i < len(data); i += chunkSize {
-					end := i + chunkSize
-					if end > len(data) {
-						end = len(data)
-					}
+					end := min(i+chunkSize, len(data))
 
 					// Check if client disconnected
 					select {
@@ -1449,10 +1446,7 @@ func testBackgroundDownloadCompletionAfterCancellation(factory cacheFactory) fun
 
 				chunkSize := 1024
 				for i := 0; i < len(data); i += chunkSize {
-					end := i + chunkSize
-					if end > len(data) {
-						end = len(data)
-					}
+					end := min(i+chunkSize, len(data))
 
 					_, err := w.Write(data[i:end])
 					if err != nil {
@@ -1638,10 +1632,7 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 
 				chunkSize := 1024
 				for i := 0; i < len(data); i += chunkSize {
-					end := i + chunkSize
-					if end > len(data) {
-						end = len(data)
-					}
+					end := min(i+chunkSize, len(data))
 
 					_, err := w.Write(data[i:end])
 					if err != nil {
@@ -1699,10 +1690,7 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 
 		// Client A - will be cancelled mid-download
 
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer close(doneA)
 
 			nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
@@ -1715,13 +1703,11 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 				_, _ = r.Read(buf)
 				r.Close()
 			}
-		}()
+		})
 
 		// Client B - should complete successfully despite A's cancellation
-		wg.Add(1)
 
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer close(doneB)
 
 			nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
@@ -1730,7 +1716,7 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 
 			sizeB, readerB, err = c.GetNar(ctxB, nu)
 			getNarErrB = err
-		}()
+		})
 
 		// Wait for the download to start
 		select {
@@ -1952,7 +1938,7 @@ func testBackgroundMigrateNarInfoThunderingHerd(_ cacheFactory) func(*testing.T)
 
 		t.Logf("Starting %d concurrent GetNarInfo calls", concurrency)
 
-		for i := 0; i < concurrency; i++ {
+		for i := range concurrency {
 			wg.Add(1)
 
 			go func(id int) {
@@ -2091,32 +2077,25 @@ func testGetNarInfoConcurrentPutNarInfoDuringMigration(factory cacheFactory) fun
 		// 2. Start GetNarInfo which will trigger background migration
 		var wg sync.WaitGroup
 
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			ni, err := c.GetNarInfo(ctx, hash)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.NotNil(t, ni)
-		}()
+		})
 
 		// Give GetNarInfo time to start the background migration
 		time.Sleep(100 * time.Millisecond)
 
 		// 3. Concurrently call PutNarInfo with the same hash
 		//    This simulates a client uploading the same narinfo while migration is happening
-		wg.Add(1)
 
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			narInfoReader := io.NopCloser(strings.NewReader(entry.NarInfoText))
 			err := c.PutNarInfo(ctx, hash, narInfoReader)
 
 			// PutNarInfo should either succeed or handle the duplicate gracefully
 			assert.NoError(t, err)
-		}()
+		})
 
 		// Wait for both operations to complete
 		wg.Wait()
@@ -2167,7 +2146,7 @@ func testGetNarInfoMultipleConcurrentPutsDuringMigration(factory cacheFactory) f
 
 		wg.Add(numConcurrent)
 
-		for i := 0; i < numConcurrent; i++ {
+		for i := range numConcurrent {
 			go func(n int) {
 				defer wg.Done()
 

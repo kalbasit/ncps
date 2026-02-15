@@ -49,7 +49,7 @@ func TestLocker_CircuitBreakerOpensAfterFailures(t *testing.T) {
 	// In a real scenario, this would happen due to database connection failures
 	threshold := 5 // Default circuit breaker threshold
 
-	for i := 0; i < threshold; i++ {
+	for range threshold {
 		cb.RecordFailure()
 	}
 
@@ -90,7 +90,7 @@ func TestLocker_DegradedModeFallback(t *testing.T) {
 
 	// Open the circuit breaker by recording failures
 	threshold := 5
-	for i := 0; i < threshold; i++ {
+	for range threshold {
 		cb.RecordFailure()
 	}
 
@@ -116,7 +116,7 @@ func TestLocker_CircuitBreakerRecovery(t *testing.T) {
 	defer restore()
 
 	// Open the circuit breaker
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		cbShort.RecordFailure()
 	}
 
@@ -175,7 +175,7 @@ func TestRWLocker_DegradedMode(t *testing.T) {
 
 	// Open the circuit breaker
 	threshold := 5
-	for i := 0; i < threshold; i++ {
+	for range threshold {
 		cb.RecordFailure()
 	}
 
@@ -209,7 +209,7 @@ func TestLocker_CircuitBreakerReopensOnFailure(t *testing.T) {
 	defer restore()
 
 	// Open the circuit
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		cbShort.RecordFailure()
 	}
 
@@ -257,7 +257,7 @@ func TestLocker_CircuitBreaker_HealthClassification(t *testing.T) {
 	t.Run("ContextCanceledDoesNotTripCircuitBreaker", func(t *testing.T) {
 		assert.False(t, cb.IsOpen())
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			canceledCtx, cancel := context.WithCancel(ctx)
 			cancel()
 
@@ -271,7 +271,7 @@ func TestLocker_CircuitBreaker_HealthClassification(t *testing.T) {
 	t.Run("ContextTimeoutDoesNotTripCircuitBreaker", func(t *testing.T) {
 		assert.False(t, cb.IsOpen())
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Millisecond)
 			time.Sleep(5 * time.Millisecond)
 			cancel()
@@ -296,7 +296,7 @@ func TestLocker_CircuitBreaker_HealthClassification(t *testing.T) {
 
 		db2.DB().Close()
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			err = locker2.Lock(ctx, key, 1*time.Second)
 			require.Error(t, err)
 		}

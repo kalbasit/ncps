@@ -157,8 +157,6 @@ func (r *reporter) Shutdown(ctx context.Context) error {
 	var g errgroup.Group
 
 	for name, sfn := range r.shutdownFns {
-		name, sfn := name, sfn
-
 		g.Go(func() error {
 			if err := sfn(ctx); err != nil {
 				zerolog.Ctx(ctx).

@@ -39,7 +39,7 @@ func TestCDCChunker_Chunk_ErrorRace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run many times to increase chance of hitting the race if it exists
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		reader := &errorReader{
 			data: make([]byte, 1024), // At least one chunk
 			err:  errRead,

@@ -152,18 +152,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			errC := make(chan error, numWrites)
 
-			for i := 0; i < numWrites; i++ {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
-
+			for range numWrites {
+				wg.Go(func() {
 					hash := testhelper.MustRandString(128)
 
 					if _, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash}); err != nil {
 						errC <- fmt.Errorf("error creating the narinfo record: %w", err)
 					}
-				}()
+				})
 			}
 
 			wg.Wait()
@@ -1939,7 +1935,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		initialCount, err := db.GetNarInfoCount(context.Background())
 		require.NoError(t, err)
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			hash := testhelper.MustRandString(32)
 
 			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
@@ -1960,7 +1956,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		initialCount, err := db.GetNarFileCount(context.Background())
 		require.NoError(t, err)
 
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			hash := testhelper.MustRandString(32)
 
 			//nolint:gosec // G115: Safe conversion, i is small and controlled
@@ -2235,7 +2231,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		db := factory(t)
 
 		// Create 5 migrated narinfos
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			hash := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
@@ -2246,7 +2242,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		}
 
 		// Create 2 unmigrated narinfos (should not appear in results)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			hash := testhelper.MustRandString(32)
 
 			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
@@ -2492,7 +2488,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIDs := make([]int64, 3)
 			chunkIndices := make([]int64, 3)
 
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
@@ -2520,7 +2516,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			if assert.Len(t, chunks, 3) {
 				// Verify order is maintained
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					assert.Equal(t, chunkIDs[i], chunks[i].ID)
 				}
 			}
@@ -2609,7 +2605,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIDs := make([]int64, 2)
 			chunkIndices := make([]int64, 2)
 
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
@@ -2664,7 +2660,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIDs := make([]int64, numChunks)
 			chunkIndices := make([]int64, numChunks)
 
-			for i := 0; i < numChunks; i++ {
+			for i := range numChunks {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
@@ -2691,7 +2687,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, numChunks) {
-				for i := 0; i < numChunks; i++ {
+				for i := range numChunks {
 					assert.Equal(t, chunkIDs[i], chunks[i].ID, "chunk at index %d should match", i)
 				}
 			}
@@ -2715,7 +2711,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			chunkIDs := make([]int64, 3)
 			chunkIndices := []int64{10, 20, 30}
 
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
@@ -2742,7 +2738,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			if assert.Len(t, chunks, 3) {
 				// Chunks should be returned in order by index
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					assert.Equal(t, chunkIDs[i], chunks[i].ID)
 				}
 			}
@@ -2765,7 +2761,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			// Create 4 chunks
 			var allChunkIDs []int64
 
-			for i := 0; i < 4; i++ {
+			for range 4 {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
@@ -2779,7 +2775,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			}
 
 			// Link first 2 chunks individually
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
 					NarFileID:  nf.ID,
 					ChunkID:    allChunkIDs[i],
@@ -2801,7 +2797,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, 4) {
-				for i := 0; i < 4; i++ {
+				for i := range 4 {
 					assert.Equal(t, allChunkIDs[i], chunks[i].ID)
 				}
 			}
@@ -2875,7 +2871,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			// Create 3 chunks
 			var chunkIDs []int64
 
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
@@ -2982,7 +2978,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		var totalAdded int64
 
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			chunkHash := testhelper.MustRandString(32)
 
 			//nolint:gosec // G115: Safe conversion, i is small and controlled
@@ -3010,7 +3006,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		initialCount, err := db.GetChunkCount(context.Background())
 		require.NoError(t, err)
 
-		for i := 0; i < 4; i++ {
+		for range 4 {
 			chunkHash := testhelper.MustRandString(32)
 
 			_, err := db.CreateChunk(context.Background(), database.CreateChunkParams{

@@ -560,7 +560,7 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 
 			clientAccepts := make(map[string]struct{})
 
-			for _, v := range strings.Split(ae, ",") {
+			for v := range strings.SplitSeq(ae, ",") {
 				// Trim whitespace and remove q-factor if present
 				enc := strings.TrimSpace(strings.Split(v, ";")[0])
 				if enc != "" {
