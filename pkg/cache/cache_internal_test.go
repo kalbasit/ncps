@@ -938,7 +938,7 @@ func testPutNarInfoConcurrentSameHash(factory cacheFactory) func(*testing.T) {
 
 		results := make(chan result, numGoroutines)
 
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			go func() {
 				// Each goroutine gets its own reader
 				r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
@@ -951,7 +951,7 @@ func testPutNarInfoConcurrentSameHash(factory cacheFactory) func(*testing.T) {
 		// Collect results
 		var successCount int
 
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			res := <-results
 			if res.err == nil {
 				successCount++
@@ -1115,12 +1115,8 @@ func testWithWriteLock(factory cacheFactory) func(*testing.T) {
 
 			var wg sync.WaitGroup
 
-			for i := 0; i < numGoroutines; i++ {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
-
+			for range numGoroutines {
+				wg.Go(func() {
 					err := c.withWriteLock(ctx, "test", "shared-key", func() error {
 						// This critical section is now correctly protected only by withWriteLock.
 						// A temporary variable is used to simulate a read-modify-write data race.
@@ -1133,7 +1129,7 @@ func testWithWriteLock(factory cacheFactory) func(*testing.T) {
 						return nil
 					})
 					assert.NoError(t, err)
-				}()
+				})
 			}
 
 			wg.Wait()

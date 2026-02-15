@@ -345,8 +345,6 @@ to enable safe concurrent migration.`,
 
 			// Process unmigrated hashes
 			for _, hash := range unmigratedHashes {
-				hash := hash // captured for closure
-
 				g.Go(func() error {
 					atomic.AddInt32(&totalProcessed, 1)
 
@@ -403,8 +401,6 @@ to enable safe concurrent migration.`,
 
 			// Process migrated hashes (only cleanup from storage)
 			for _, hash := range migratedHashes {
-				hash := hash // captured for closure
-
 				g.Go(func() error {
 					atomic.AddInt32(&totalProcessed, 1)
 

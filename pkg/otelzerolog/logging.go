@@ -30,7 +30,7 @@ func NewOtelWriter(loggerProvider log.LoggerProvider) (*OtelWriter, error) {
 
 // Write implements io.Writer.
 func (w *OtelWriter) Write(p []byte) (n int, err error) {
-	var logEntry map[string]interface{}
+	var logEntry map[string]any
 	if err := json.Unmarshal(p, &logEntry); err != nil {
 		return 0, err
 	}
@@ -94,7 +94,7 @@ func convertLevel(level zerolog.Level) log.Severity {
 	}
 }
 
-func getKeyValueForMap(m map[string]interface{}) []log.KeyValue {
+func getKeyValueForMap(m map[string]any) []log.KeyValue {
 	kvs := make([]log.KeyValue, 0, len(m))
 
 	for k, v := range m {
@@ -109,9 +109,9 @@ func getKeyValueForMap(m map[string]interface{}) []log.KeyValue {
 			}
 		case string:
 			kvs = append(kvs, log.String(k, val))
-		case []interface{}:
+		case []any:
 			kvs = append(kvs, log.Slice(k, getValuesForSlice(val)...))
-		case map[string]interface{}:
+		case map[string]any:
 			kvs = append(kvs, log.Map(k, getKeyValueForMap(val)...))
 		default:
 			panic(fmt.Sprintf("Typeof(%q) => %T: not known", k, v))
@@ -121,7 +121,7 @@ func getKeyValueForMap(m map[string]interface{}) []log.KeyValue {
 	return kvs
 }
 
-func getValuesForSlice(vals []interface{}) []log.Value {
+func getValuesForSlice(vals []any) []log.Value {
 	var vs []log.Value
 
 	for _, v := range vals {
@@ -136,9 +136,9 @@ func getValuesForSlice(vals []interface{}) []log.Value {
 			}
 		case string:
 			vs = append(vs, log.StringValue(val))
-		case map[string]interface{}:
+		case map[string]any:
 			vs = append(vs, log.MapValue(getKeyValueForMap(val)...))
-		case []interface{}:
+		case []any:
 			vs = append(vs, log.SliceValue(getValuesForSlice(val)...))
 		default:
 			panic(fmt.Sprintf("Typeof(%#v) => %T: not known", v, v))

@@ -124,7 +124,7 @@ func TestLocalStore(t *testing.T) {
 
 		wg.Add(numGoroutines)
 
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			go func() {
 				defer wg.Done()
 

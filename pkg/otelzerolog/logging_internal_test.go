@@ -16,7 +16,7 @@ func TestGetKeyValueForMap(t *testing.T) {
 		assert.Equal(
 			t,
 			[]log.KeyValue{log.Bool("a", true)},
-			getKeyValueForMap(map[string]interface{}{"a": true}),
+			getKeyValueForMap(map[string]any{"a": true}),
 		)
 	})
 
@@ -28,7 +28,7 @@ func TestGetKeyValueForMap(t *testing.T) {
 			[]log.KeyValue{
 				log.String("a", "test"),
 			},
-			getKeyValueForMap(map[string]interface{}{
+			getKeyValueForMap(map[string]any{
 				"a": "test",
 			}),
 		)
@@ -42,7 +42,7 @@ func TestGetKeyValueForMap(t *testing.T) {
 			[]log.KeyValue{
 				log.Float64("a", 10.5),
 			},
-			getKeyValueForMap(map[string]interface{}{
+			getKeyValueForMap(map[string]any{
 				"a": 10.5,
 			}),
 		)
@@ -51,8 +51,8 @@ func TestGetKeyValueForMap(t *testing.T) {
 	t.Run("map includes a slice", func(t *testing.T) {
 		t.Parallel()
 
-		kvs := getKeyValueForMap(map[string]interface{}{
-			"a": []interface{}{"b"},
+		kvs := getKeyValueForMap(map[string]any{
+			"a": []any{"b"},
 		})
 
 		if assert.Len(t, kvs, 1) {
@@ -68,8 +68,8 @@ func TestGetKeyValueForMap(t *testing.T) {
 	t.Run("map includes a map", func(t *testing.T) {
 		t.Parallel()
 
-		kvs := getKeyValueForMap(map[string]interface{}{
-			"a": map[string]interface{}{
+		kvs := getKeyValueForMap(map[string]any{
+			"a": map[string]any{
 				"b": "c",
 			},
 		})
@@ -97,7 +97,7 @@ func TestGetValuesForSlice(t *testing.T) {
 				log.BoolValue(true),
 				log.BoolValue(false),
 			},
-			getValuesForSlice([]interface{}{true, false}),
+			getValuesForSlice([]any{true, false}),
 		)
 	})
 
@@ -110,7 +110,7 @@ func TestGetValuesForSlice(t *testing.T) {
 				log.Float64Value(10.5),
 				log.Float64Value(20.5),
 			},
-			getValuesForSlice([]interface{}{10.5, 20.5}),
+			getValuesForSlice([]any{10.5, 20.5}),
 		)
 	})
 
@@ -123,7 +123,7 @@ func TestGetValuesForSlice(t *testing.T) {
 				log.StringValue("a"),
 				log.StringValue("b"),
 			},
-			getValuesForSlice([]interface{}{"a", "b"}),
+			getValuesForSlice([]any{"a", "b"}),
 		)
 	})
 
@@ -140,9 +140,9 @@ func TestGetValuesForSlice(t *testing.T) {
 					log.Bool("b", true),
 				),
 			},
-			getValuesForSlice([]interface{}{
-				map[string]interface{}{"a": "c"},
-				map[string]interface{}{"b": true},
+			getValuesForSlice([]any{
+				map[string]any{"a": "c"},
+				map[string]any{"b": true},
 			}),
 		)
 	})

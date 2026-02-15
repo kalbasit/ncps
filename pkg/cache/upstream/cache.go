@@ -265,7 +265,7 @@ func (c *Cache) doRequest(
 		err  error
 	)
 
-	for i := 0; i < defaultHTTPRetries; i++ {
+	for i := range defaultHTTPRetries {
 		var r *http.Request
 
 		r, err = http.NewRequestWithContext(ctx, method, url, nil)

@@ -389,8 +389,6 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			}
 
 			for _, row := range narFiles {
-				row := row // captured for closure
-
 				g.Go(func() error {
 					log := logger.With().Str("nar_hash", row.Hash).Logger()
 

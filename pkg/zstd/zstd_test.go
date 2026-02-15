@@ -258,7 +258,6 @@ func TestPooledWriterAndReaderRoundTrip(t *testing.T) {
 	}
 
 	for _, testData := range testCases {
-		testData := testData
 		t.Run(testData, func(t *testing.T) {
 			t.Parallel()
 

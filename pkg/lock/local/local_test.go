@@ -41,15 +41,11 @@ func TestLocker_ConcurrentAccess(t *testing.T) {
 
 	// Start 10 goroutines that increment counter under lock
 
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			for j := 0; j < 100; j++ {
+	for range 10 {
+		wg.Go(func() {
+			for range 100 {
 				err := locker.Lock(ctx, "counter", 5*time.Second)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 
 				// Critical section
 				val := atomic.LoadInt64(&counter)
@@ -60,7 +56,7 @@ func TestLocker_ConcurrentAccess(t *testing.T) {
 				err = locker.Unlock(ctx, "counter")
 				assert.NoError(t, err)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -141,14 +137,10 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 
 	// Start 5 readers
 
-	for i := 0; i < numReaders; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+	for range numReaders {
+		wg.Go(func() {
 			err := locker.RLock(ctx, "test-key", 5*time.Second)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			// Increment active readers
 			atomic.AddInt64(&readersActive, 1)
@@ -170,7 +162,7 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 
 			err = locker.RUnlock(ctx, "test-key")
 			assert.NoError(t, err)
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -341,16 +333,12 @@ func TestLocker_ConcurrentUnlock(t *testing.T) {
 	// Use a channel to synchronize the start of all goroutines
 	start := make(chan struct{})
 
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+	for range numGoroutines {
+		wg.Go(func() {
 			<-start // Wait for signal to start
 
 			_ = locker.Unlock(ctx, "test-key")
-		}()
+		})
 	}
 
 	// Release all goroutines at once to maximize race condition probability
@@ -377,16 +365,12 @@ func TestRWLocker_ConcurrentUnlock(t *testing.T) {
 	numGoroutines := 10
 	start := make(chan struct{})
 
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+	for range numGoroutines {
+		wg.Go(func() {
 			<-start
 
 			_ = locker.Unlock(ctx, "test-key")
-		}()
+		})
 	}
 
 	close(start)
@@ -410,16 +394,12 @@ func TestRWLocker_ConcurrentRUnlock(t *testing.T) {
 	numGoroutines := 10
 	start := make(chan struct{})
 
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+	for range numGoroutines {
+		wg.Go(func() {
 			<-start
 
 			_ = locker.RUnlock(ctx, "test-key")
-		}()
+		})
 	}
 
 	close(start)

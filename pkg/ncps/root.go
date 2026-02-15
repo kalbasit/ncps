@@ -183,7 +183,7 @@ func getZeroLogger(ctx context.Context, cmd *cli.Command) (context.Context, erro
 	if cmd.Bool("log-console-writer-enabled") {
 		writer := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
 		if prefix := cmd.String("log-console-writer-prefix"); prefix != "" {
-			writer.FormatTimestamp = func(i interface{}) string {
+			writer.FormatTimestamp = func(i any) string {
 				return fmt.Sprintf("[%s] %s", prefix, i)
 			}
 		}

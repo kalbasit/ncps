@@ -39,10 +39,10 @@ func AutoMaxProcs(ctx context.Context, d time.Duration, logger zerolog.Logger) e
 	}
 }
 
-func diffInfof(logger zerolog.Logger) func(string, ...interface{}) {
+func diffInfof(logger zerolog.Logger) func(string, ...any) {
 	var last string
 
-	return func(format string, args ...interface{}) {
+	return func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
 		if msg != last {
 			logger.Info().Msg(msg)

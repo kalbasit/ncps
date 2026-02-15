@@ -847,7 +847,7 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 
 		referencesBuilder.WriteString("References:")
 
-		for i := 0; i < numReferences; i++ {
+		for i := range numReferences {
 			referencesBuilder.WriteString(fmt.Sprintf(" ref%d-abcdefgh1234567890abcdefgh1234567890", i))
 		}
 
@@ -875,7 +875,7 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		narInfoBuilder.WriteString("\n")
 
 		// Add many signatures
-		for i := 0; i < numSignatures; i++ {
+		for i := range numSignatures {
 			narInfoBuilder.WriteString(fmt.Sprintf(
 				"Sig: cache.test.org-%d:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==\n",
 				i,

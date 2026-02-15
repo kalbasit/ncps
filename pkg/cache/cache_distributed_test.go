@@ -215,7 +215,7 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 		// Create multiple cache instances
 		var caches []*cache.Cache
 
-		for i := 0; i < numInstances; i++ {
+		for range numInstances {
 			downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
 			require.NoError(t, err)
 
@@ -375,7 +375,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 		// Now create multiple instances that will read concurrently
 		var caches []*cache.Cache
 
-		for i := 0; i < numInstances; i++ {
+		for range numInstances {
 			downloadLocker := locklocal.NewLocker()
 			cacheLocker := locklocal.NewRWLocker()
 
@@ -505,7 +505,7 @@ func testPutNarInfoConcurrentSharedNar(factory distributedDBFactory) func(*testi
 		t.Parallel()
 
 		// We run this loop to increase chance of hitting the race condition.
-		for run := 0; run < 50; run++ {
+		for run := range 50 {
 			func() {
 				ctx := newContext()
 
@@ -730,12 +730,12 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 
 	// Create multiple cache instances
 	var (
-		caches         []*cache.Cache
+		caches         = make([]*cache.Cache, 0, numInstances)
 		downloadErrors []error
 		mu             sync.Mutex
 	)
 
-	for i := 0; i < numInstances; i++ {
+	for i := range numInstances {
 		downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
 		require.NoError(t, err)
 
@@ -974,7 +974,7 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 		// Create multiple cache instances with CDC enabled
 		var caches []*cache.Cache
 
-		for i := 0; i < numInstances; i++ {
+		for range numInstances {
 			downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
 			require.NoError(t, err)
 

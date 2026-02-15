@@ -64,7 +64,6 @@ func TestState_String(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.expected, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, tc.expected, tc.state.String())
