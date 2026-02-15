@@ -12,6 +12,9 @@ import sys
 import time
 from urllib.parse import urlparse
 
+# --- Path Configuration ---
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # --- Configuration Constants ---
 S3_CONFIG = {
     "bucket": "test-bucket",
@@ -25,7 +28,7 @@ S3_CONFIG = {
 DB_CONFIG = {
     "postgres": "postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable",
     "mysql": "mysql://dev-user:dev-password@127.0.0.1:3306/dev-db",
-    "sqlite": "sqlite:var/ncps/db/db.sqlite",
+    "sqlite": f"sqlite:{os.path.join(REPO_ROOT, 'var/ncps/db/db.sqlite')}",
 }
 
 REDIS_ADDR = "127.0.0.1:6379"
@@ -190,7 +193,7 @@ def _kill_tree(pid, sig):
 
 def write_state_file(instances):
     """Write state file with port and optional pid info for running instances."""
-    state_dir = os.path.abspath("var/ncps")
+    state_dir = os.path.join(REPO_ROOT, "var/ncps")
     os.makedirs(state_dir, exist_ok=True)
     state_path = os.path.join(state_dir, "state.json")
     data = {"instances": instances}
@@ -201,7 +204,7 @@ def write_state_file(instances):
 
 def remove_state_file():
     """Remove state file on clean exit."""
-    state_path = os.path.abspath("var/ncps/state.json")
+    state_path = os.path.join(REPO_ROOT, "var/ncps/state.json")
     try:
         os.remove(state_path)
     except FileNotFoundError:
@@ -492,7 +495,7 @@ def main():
     # Define base arguments
     # Note: Using a fixed path for local storage in python to allow shared local storage
     # instead of 'mktemp' which isolates instances.
-    local_storage_path = os.path.abspath("var/ncps/storage")
+    local_storage_path = os.path.join(REPO_ROOT, "var/ncps/storage")
     os.makedirs(local_storage_path, exist_ok=True)
 
     # Determine instance count
@@ -518,7 +521,7 @@ def main():
         # This wrapper handles log rotation and redirection.
         # We need the absolute path to this script and the executables to be safe.
         script_path = os.path.abspath(__file__)
-        log_file = os.path.abspath(f"var/log/ncps-{port}.log")
+        log_file = os.path.join(REPO_ROOT, f"var/log/ncps-{port}.log")
         watchexec_path = shutil.which("watchexec") or "watchexec"
         python_path = sys.executable
 
