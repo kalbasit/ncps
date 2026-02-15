@@ -26,7 +26,7 @@ def get_urls_from_state_file() -> List[str]:
         with open(STATE_FILE_PATH) as f:
             data = json.load(f)
         return [
-            f"http://localhost:{inst['port']}" for inst in data.get("instances", [])
+            f"http://127.0.0.1:{inst['port']}" for inst in data.get("instances", [])
         ]
     except (FileNotFoundError, KeyError, json.JSONDecodeError):
         return []
