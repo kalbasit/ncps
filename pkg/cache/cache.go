@@ -2630,18 +2630,40 @@ func (c *Cache) handleStorageFetchError(
 
 		var dbErr error
 
-		*narInfo, dbErr = c.getNarInfoFromDatabase(ctx, hash)
-		if dbErr == nil {
-			// Migration succeeded while we were checking storage!
-			// The source is now the database, not storage. We need to update the metric.
-			updateAttr("source", "database")
+		// Retry multiple times with a linear backoff. The file might have just been deleted,
+		// and the migration might be in progress or just about to commit its transaction.
+		const (
+			migrationRetryAttempts = 10
+			migrationRetryStep     = 10 * time.Millisecond
+		)
+		for i := range migrationRetryAttempts {
+			*narInfo, dbErr = c.getNarInfoFromDatabase(ctx, hash)
+			if dbErr == nil {
+				// Migration succeeded while we were checking storage!
+				// The source is now the database, not storage. We need to update the metric.
+				updateAttr("source", "database")
 
-			return nil // Signal success to caller
+				return nil // Signal success to caller
+			}
+
+			if !errors.Is(dbErr, storage.ErrNotFound) {
+				// If it's a real database error, don't retry.
+				break
+			}
+
+			// Wait a bit before retrying.
+			delay := (time.Duration(i) + 1) * migrationRetryStep
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+				// continue
+			}
 		}
 
 		// If the DB retry also fails with a non-NotFound error, it's a more serious issue.
 		// We should wrap this error to provide more context for debugging.
-		if !errors.Is(dbErr, storage.ErrNotFound) {
+		if dbErr != nil && !errors.Is(dbErr, storage.ErrNotFound) {
 			storageErr = fmt.Errorf("%w (db retry failed: %v)", storageErr, dbErr)
 		}
 		// Fall through to return storage error if database also fails
