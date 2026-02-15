@@ -2,6 +2,7 @@
 
 import argparse
 import gzip
+import json
 import os
 import shlex
 import shutil
@@ -10,6 +11,9 @@ import subprocess
 import sys
 import time
 from urllib.parse import urlparse
+
+# --- Path Configuration ---
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # --- Configuration Constants ---
 S3_CONFIG = {
@@ -24,7 +28,7 @@ S3_CONFIG = {
 DB_CONFIG = {
     "postgres": "postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable",
     "mysql": "mysql://dev-user:dev-password@127.0.0.1:3306/dev-db",
-    "sqlite": "sqlite:var/ncps/db/db.sqlite",
+    "sqlite": f"sqlite:{os.path.join(REPO_ROOT, 'var/ncps/db/db.sqlite')}",
 }
 
 REDIS_ADDR = "127.0.0.1:6379"
@@ -39,6 +43,7 @@ NC = "\033[0m"
 
 processes = []
 extra_panes = []  # Track tmux panes created by this script
+tmux_pids = []  # Track PIDs of processes running inside tmux panes
 
 
 class TmuxManager:
@@ -74,6 +79,15 @@ class TmuxManager:
         subprocess.run(["tmux", "select-layout", layout], check=True)
 
     @staticmethod
+    def get_pane_pid(pane_id):
+        return int(
+            subprocess.check_output(
+                ["tmux", "display-message", "-t", pane_id, "-p", "#{pane_pid}"],
+                text=True,
+            ).strip()
+        )
+
+    @staticmethod
     def kill_pane(pane_id):
         subprocess.run(["tmux", "kill-pane", "-t", pane_id], check=True)
 
@@ -88,21 +102,43 @@ def cleanup(signum, frame):
         if p.poll() is None:
             p.terminate()
 
-    # Wait for graceful exit
-    time.sleep(1)
+    # Poll until all processes exit (up to 10 seconds)
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if all(p.poll() is not None for p in processes):
+            break
+        time.sleep(0.25)
 
     for p in processes:
         if p.poll() is None:
             log(f"Force killing process {p.pid}", RED)
             p.kill()
 
-    # Kill extra tmux panes
+    # Kill extra tmux panes and their processes
     for pane_id in extra_panes:
         try:
             TmuxManager.kill_pane(pane_id)
         except subprocess.CalledProcessError:
             pass  # Pane might already be gone
 
+    # Terminate tmux-managed process trees by PID
+    for pid in tmux_pids:
+        _kill_tree(pid, signal.SIGTERM)
+
+    # Poll until tmux-managed processes exit (up to 10 seconds)
+    if tmux_pids:
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            alive = [pid for pid in tmux_pids if _pid_exists(pid)]
+            if not alive:
+                break
+            time.sleep(0.25)
+
+        # Force-kill any remaining tmux-managed process trees
+        for pid in tmux_pids:
+            _kill_tree(pid, signal.SIGKILL)
+
+    remove_state_file()
     log("All instances stopped.", GREEN)
     sys.exit(0)
 
@@ -129,6 +165,50 @@ def rotate_logs(log_path, max_backups=5):
             with gzip.open(dest, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
         os.remove(log_path)
+
+
+def _pid_exists(pid):
+    """Return True if a process with the given PID is still running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, OSError):
+        return False
+
+
+def _kill_tree(pid, sig):
+    """Send sig to pid and all its descendants (depth-first, children first)."""
+    # Find children via pgrep -P
+    try:
+        children = subprocess.check_output(["pgrep", "-P", str(pid)], text=True).split()
+        for child in children:
+            _kill_tree(int(child), sig)
+    except subprocess.CalledProcessError:
+        pass  # No children or pgrep failed
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, OSError):
+        pass
+
+
+def write_state_file(instances):
+    """Write state file with port and optional pid info for running instances."""
+    state_dir = os.path.join(REPO_ROOT, "var/ncps")
+    os.makedirs(state_dir, exist_ok=True)
+    state_path = os.path.join(state_dir, "state.json")
+    data = {"instances": instances}
+    with open(state_path, "w") as f:
+        json.dump(data, f, indent=2)
+    return state_path
+
+
+def remove_state_file():
+    """Remove state file on clean exit."""
+    state_path = os.path.join(REPO_ROOT, "var/ncps/state.json")
+    try:
+        os.remove(state_path)
+    except FileNotFoundError:
+        pass
 
 
 def internal_start_instance(args):
@@ -235,7 +315,7 @@ def check_dependencies(args):
             deps_ok = False
 
     # Check Storage/Locker
-    if args.storage == "s3" or args.mode == "ha":
+    if args.storage == "s3" or (args.replicas > 1):
         # MinIO check
         # Note: We could parse S3_CONFIG['endpoint'] here if we wanted to be strictly dynamic,
         # but the health path (/minio/health/live) is specific to MinIO anyway.
@@ -297,10 +377,10 @@ def main():
         help="Set the log level",
     )
     parser.add_argument(
-        "--mode",
-        choices=["single", "ha"],
-        default="single",
-        help="Run mode: single instance or High Availability",
+        "--replicas",
+        type=int,
+        default=1,
+        help="Number of instances to run (default: 1, use >1 for HA mode)",
     )
     parser.add_argument(
         "--db",
@@ -316,12 +396,6 @@ def main():
         choices=["local", "redis"],
         default="local",
         help="Locking mechanism",
-    )
-    parser.add_argument(
-        "--instances",
-        type=int,
-        default=3,
-        help="Number of instances for HA mode (default: 3)",
     )
     parser.add_argument(
         "--analytics-reporting-samples",
@@ -366,7 +440,13 @@ def main():
     args = parser.parse_args()
 
     # --- Guard Rails ---
-    if args.mode == "ha":
+    if args.replicas < 1:
+        log("⛔ ERROR: --replicas must be at least 1.", RED)
+        sys.exit(1)
+
+    is_ha = args.replicas > 1
+
+    if is_ha:
         if args.locker == "local":
             log(
                 "⛔ ERROR: HA mode requires a distributed locker. You cannot use '--locker local'. Switch to '--locker redis'.",
@@ -415,22 +495,24 @@ def main():
     # Define base arguments
     # Note: Using a fixed path for local storage in python to allow shared local storage
     # instead of 'mktemp' which isolates instances.
-    local_storage_path = os.path.abspath("var/ncps/storage")
+    local_storage_path = os.path.join(REPO_ROOT, "var/ncps/storage")
     os.makedirs(local_storage_path, exist_ok=True)
 
     # Determine instance count
-    num_instances = 1 if args.mode == "single" else args.instances
+    num_instances = args.replicas
 
     log(f"\nStarting {num_instances} instance(s)...", BLUE)
-    log(f"  Mode:    {args.mode}", BLUE)
+    log(f"  Mode:    {'ha' if is_ha else 'single'}", BLUE)
     log(f"  DB:      {args.db}", BLUE)
     log(f"  Storage: {args.storage}", BLUE)
     log(f"  Locker:  {args.locker}", BLUE)
     print("")
 
-    use_tmux_split = args.mode == "ha" and TmuxManager.is_in_tmux()
+    use_tmux_split = is_ha and TmuxManager.is_in_tmux()
     if use_tmux_split:
         current_pane = TmuxManager.get_pane_id()
+
+    instance_info = []
 
     for i in range(1, num_instances + 1):
         port = BASE_PORT + (i - 1)
@@ -439,7 +521,7 @@ def main():
         # This wrapper handles log rotation and redirection.
         # We need the absolute path to this script and the executables to be safe.
         script_path = os.path.abspath(__file__)
-        log_file = os.path.abspath(f"var/log/ncps-{port}.log")
+        log_file = os.path.join(REPO_ROOT, f"var/log/ncps-{port}.log")
         watchexec_path = shutil.which("watchexec") or "watchexec"
         python_path = sys.executable
 
@@ -471,7 +553,7 @@ def main():
             f"--log-level={args.log_level}",
             "serve",
             "--cache-allow-put-verb",
-            f"--cache-hostname=cache-{i}.example.com",
+            "--cache-hostname=cache.example.com",
             f"--cache-database-url='{db_url}'",
             f"--server-addr=:{port}",
         ]
@@ -536,10 +618,17 @@ def main():
             new_pane = TmuxManager.split_window(current_pane, command=cmd_str)
             extra_panes.append(new_pane)
             TmuxManager.select_layout("tiled")
+            pane_pid = TmuxManager.get_pane_pid(new_pane)
+            tmux_pids.append(pane_pid)
+            instance_info.append({"port": port, "pid": pane_pid})
         else:
             # Run locally (Instance 1 or single mode)
             p = subprocess.Popen(cmd)
             processes.append(p)
+            instance_info.append({"port": port, "pid": p.pid})
+
+    state_path = write_state_file(instance_info)
+    log(f"State written to {state_path}", BLUE)
 
     # Wait for interrupts
     signal.signal(signal.SIGINT, cleanup)
