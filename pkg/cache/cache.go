@@ -2630,9 +2630,13 @@ func (c *Cache) handleStorageFetchError(
 
 		var dbErr error
 
-		// Retry multiple times with backoff. The file might have just been deleted,
+		// Retry multiple times with a linear backoff. The file might have just been deleted,
 		// and the migration might be in progress or just about to commit its transaction.
-		for i := 0; i < 10; i++ {
+		const (
+			migrationRetryAttempts = 10
+			migrationRetryStep     = 10 * time.Millisecond
+		)
+		for i := range migrationRetryAttempts {
 			*narInfo, dbErr = c.getNarInfoFromDatabase(ctx, hash)
 			if dbErr == nil {
 				// Migration succeeded while we were checking storage!
@@ -2648,10 +2652,11 @@ func (c *Cache) handleStorageFetchError(
 			}
 
 			// Wait a bit before retrying.
+			delay := (time.Duration(i) + 1) * migrationRetryStep
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Duration(i*10+10) * time.Millisecond):
+			case <-time.After(delay):
 				// continue
 			}
 		}
