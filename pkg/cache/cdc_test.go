@@ -21,6 +21,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
+	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -67,6 +68,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
 	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
+	t.Run("PutNar does not overwrite FileSize once chunked", testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -866,5 +868,96 @@ func testCDCPutNarInfoNoContextCanceled(factory cacheFactory) func(*testing.T) {
 		assert.NotContains(t, logBuf.String(), "context canceled",
 			"PutNarInfo should not trigger 'context canceled' errors"+
 				"in background goroutines after the request context is canceled")
+	}
+}
+
+// testCDCPutNarDoesNotOverwriteFileSizeOnceChunked verifies that once a NAR
+// is fully chunked, subsequent PutNar calls (e.g., with a compressed version
+// of the same NAR) do not overwrite the correct uncompressed FileSize in the DB.
+func testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Initialize chunk store
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192) // Small sizes for testing
+		require.NoError(t, err)
+
+		// 1. Store an uncompressed NAR
+		content := "this is a test nar content that should be chunked"
+		uncompressedSize := uint64(len(content))
+		nu := nar.URL{Hash: "filesize-overwrite-test", Compression: nar.CompressionTypeNone}
+
+		err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+		require.NoError(t, err)
+
+		// Verify FileSize in DB is uncompressed size
+		narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        nu.Hash,
+			Compression: nu.Compression.String(),
+			Query:       "",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, uncompressedSize, narFile.FileSize)
+		assert.Positive(t, narFile.TotalChunks)
+
+		// 2. Try to store the same NAR again but as a compressed NAR (simulated)
+		// We'll use a smaller size to simulate compression
+		compressedContent := "smaller"
+		compressedSize := uint64(len(compressedContent))
+		require.Less(t, compressedSize, uncompressedSize)
+
+		// Create a new reader with the "compressed" content
+		// We still use CompressionTypeNone for the nu because the bug is in how
+		// findOrCreateNarFileForCDC handles the input fileSize regardless of compression normalization
+		// which happens later. Actually, normalize happens BEFORE findOrCreateNarFileForCDC.
+		// Let's re-read storeNarWithCDC logic.
+
+		// In storeNarWithCDC:
+		// fileSize := uint64(fi.Size())
+		// originalCompression := narURL.Compression
+		// narURL.Compression = nar.CompressionTypeNone
+		// narFileID, err := c.findOrCreateNarFileForCDC(ctx, narURL, fileSize)
+
+		// So if we pass a compressed NAR, it will be normalized to CompressionTypeNone
+		// but fileSize will be the compressed file size.
+
+		nuCompressed := nu
+		nuCompressed.Compression = nar.CompressionTypeZstd
+
+		// Use a real compressed reader to be more realistic
+		var buf bytes.Buffer
+
+		zw := zstd.NewPooledWriter(&buf)
+		_, err = zw.Write([]byte(content))
+		require.NoError(t, err)
+		require.NoError(t, zw.Close())
+
+		//nolint:gosec // G115: buf.Len() is non-negative
+		realCompressedSize := uint64(buf.Len())
+		require.NotEqual(t, uncompressedSize, realCompressedSize)
+
+		err = c.PutNar(ctx, nuCompressed, io.NopCloser(&buf))
+		require.NoError(t, err)
+
+		// 3. Verify FileSize in DB IS STILL the uncompressed size
+		params := database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        nu.Hash,
+			Compression: nar.CompressionTypeNone.String(),
+			Query:       "",
+		}
+		narFileAfter, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, params)
+		require.NoError(t, err)
+		assert.Equal(t, uncompressedSize, narFileAfter.FileSize,
+			"FileSize should NOT have been overwritten by compressed size")
 	}
 }

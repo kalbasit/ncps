@@ -1604,7 +1604,9 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 		}
 
 		// If the record existed but had a different size, update it to reflect the truth.
-		if nr.FileSize != fileSize {
+		// However, in CDC mode, once chunked, FileSize holds the uncompressed size.
+		// We should only update it if it's not yet fully chunked.
+		if nr.FileSize != fileSize && nr.TotalChunks == 0 {
 			if err := qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
 				ID:       nr.ID,
 				FileSize: fileSize,
