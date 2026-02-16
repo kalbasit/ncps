@@ -3170,6 +3170,45 @@ func (c *Cache) fixNarInfoFileSize(
 	})
 }
 
+// getNarActualSize returns the actual size of a NAR without triggering a
+// streaming pipeline. It avoids calling c.GetNar() which would create an
+// io.Pipe with a background goroutine, causing a spurious "pipe closed" error
+// when the reader is closed before the goroutine finishes.
+//
+// Returns -1 if the size cannot be determined (NAR not found or not yet available).
+func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL, hasNarInStore bool) (int64, error) {
+	if hasNarInStore {
+		// Read size directly from storage (no pipe, no background goroutine).
+		size, storageReader, err := c.getNarFromStore(ctx, &nu)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				zerolog.Ctx(ctx).Debug().Msg("NAR not found in store, skipping file size check")
+
+				return -1, nil
+			}
+
+			return 0, fmt.Errorf("failed to get nar from store: %w", err)
+		}
+
+		storageReader.Close()
+
+		return size, nil
+	}
+
+	// CDC path: the nar_file record's file_size is the source of truth.
+	narFileRow, err := c.getNarFileFromDB(ctx, c.db, nu)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return -1, nil
+		}
+
+		return 0, fmt.Errorf("failed to get nar file from db: %w", err)
+	}
+
+	//nolint:gosec // G115: File size is non-negative
+	return int64(narFileRow.FileSize), nil
+}
+
 // checkAndFixNarInfo checks if a NarInfo exists for the given hash, and if so,
 // ensures its FileSize matches the actual NAR size.
 func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
@@ -3194,43 +3233,29 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 		return fmt.Errorf("failed to parse nar url from narinfo: %w", err)
 	}
 
-	// Now get the actual NAR size. We only want to check the size if we already
-	// have the NAR in our store or in chunks. We don't want to pull the NAR
-	// from upstream just to check its size.
-	hasNar := c.hasNarInStore(ctx, nu)
-	if !hasNar {
-		var err error
+	// Determine the actual NAR size without triggering a streaming pipeline.
+	// We check the store first (whole-file), then chunks (CDC). In both cases
+	// we avoid calling c.GetNar() which would create an io.Pipe with a
+	// background goroutine — closing the reader before the goroutine finishes
+	// would log a spurious "pipe closed during NAR copy" error.
+	hasNarInStore := c.hasNarInStore(ctx, nu)
 
-		hasNar, err = c.HasNarInChunks(ctx, nu)
-		if err != nil {
-			return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
-		}
+	hasNarInChunks, err := c.HasNarInChunks(ctx, nu)
+	if err != nil {
+		return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 	}
 
-	if !hasNar {
+	if !hasNarInStore && !hasNarInChunks {
 		return nil
 	}
 
-	size, reader, err := c.GetNar(ctx, nu)
+	size, err := c.getNarActualSize(ctx, nu, hasNarInStore)
 	if err != nil {
-		// If the NAR is not found, we can't verify the size. This is not an
-		// error in this context, as the NAR might be uploaded later.
-		if errors.Is(err, storage.ErrNotFound) {
-			zerolog.Ctx(ctx).Debug().Msg("NAR not found, skipping file size check for now")
-
-			return nil
-		}
-		// Other errors (e.g., storage connectivity) should be reported.
-		return fmt.Errorf("failed to get nar: %w", err)
+		return err
 	}
 
-	reader.Close()
-
-	if size == -1 {
-		// A size of -1 indicates a streaming download is in progress.
-		// We can't verify the final size yet, so we'll skip the check.
-		zerolog.Ctx(ctx).Debug().Msg("cannot verify narinfo file size while nar is streaming")
-
+	if size < 0 {
+		// Size unknown or NAR not yet available; skip check.
 		return nil
 	}
 
