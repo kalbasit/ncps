@@ -1104,6 +1104,36 @@ func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.U
 	return normalizedNarURL
 }
 
+// ensureNarFileRecord ensures a NarFile record exists with the correct size.
+// It creates the record if it doesn't exist, or updates the size if it's incorrect.
+func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written int64, txName string) error {
+	return c.withTransaction(ctx, txName, func(qtx database.Querier) error {
+		nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+			//nolint:gosec // G115: conversion is safe because size is non-negative
+			FileSize:    uint64(written),
+			TotalChunks: 0, // initially 0, background job will chunk if needed
+		})
+		if err != nil {
+			return err
+		}
+
+		// If the record existed but had a different size, update it to reflect the truth.
+		//nolint:gosec // G115: conversion is safe because size is non-negative
+		if nf.FileSize != uint64(written) {
+			return qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+				ID: nf.ID,
+				//nolint:gosec // G115: conversion is safe because size is non-negative
+				FileSize: uint64(written),
+			})
+		}
+
+		return nil
+	})
+}
+
 // PutNar records the NAR (given as an io.Reader) into the store.
 func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) error {
 	ctx, span := tracer.Start(
@@ -1155,31 +1185,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 
 		// Ensure we have a NarFile record for it.
 		// fileSize is 'written'.
-		err = c.withTransaction(ctx, "PutNar.ensureNarFile", func(qtx database.Querier) error {
-			nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-				Hash:        narURL.Hash,
-				Compression: narURL.Compression.String(),
-				Query:       narURL.Query.Encode(),
-				//nolint:gosec // G115: conversion is safe because size is non-negative
-				FileSize:    uint64(written),
-				TotalChunks: 0, // initially 0, background job will chunk if needed
-			})
-			if err != nil {
-				return err
-			}
-
-			// If the record existed but had a different size, update it to reflect the truth.
-			//nolint:gosec // G115: conversion is safe because size is non-negative
-			if nf.FileSize != uint64(written) {
-				return qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
-					ID: nf.ID,
-					//nolint:gosec // G115: conversion is safe because size is non-negative
-					FileSize: uint64(written),
-				})
-			}
-
-			return nil
-		})
+		err = c.ensureNarFileRecord(ctx, narURL, written, "PutNar.ensureNarFile")
 		if err != nil {
 			zerolog.Ctx(ctx).Error().Err(err).Msg("failed to ensure nar file record in PutNar")
 
@@ -1393,31 +1399,7 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 	zerolog.Ctx(ctx).Debug().Int64("written", written).Msg("nar stored successfully")
 
 	// Ensure we have a NarFile record for it, and that it reflects the truth.
-	err = c.withTransaction(ctx, "storeNarFromTempFile.ensureNarFile", func(qtx database.Querier) error {
-		nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-			//nolint:gosec // G115: conversion is safe because size is non-negative
-			FileSize:    uint64(written),
-			TotalChunks: 0, // initially 0, background job will chunk if needed
-		})
-		if err != nil {
-			return err
-		}
-
-		// If the record existed but had a different size, update it to reflect the truth.
-		//nolint:gosec // G115: conversion is safe because size is non-negative
-		if nf.FileSize != uint64(written) {
-			return qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
-				ID: nf.ID,
-				//nolint:gosec // G115: conversion is safe because size is non-negative
-				FileSize: uint64(written),
-			})
-		}
-
-		return nil
-	})
+	err = c.ensureNarFileRecord(ctx, *narURL, written, "storeNarFromTempFile.ensureNarFile")
 	if err != nil {
 		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to ensure nar file record in storeNarFromTempFile")
 
