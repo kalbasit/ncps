@@ -2272,13 +2272,10 @@ func (c *Cache) pullNarInfo(
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
-		// FileSize == NarSize since we serve raw uncompressed data.
-		narInfo.FileSize = narInfo.NarSize
-		// For Compression:none, file IS the NAR so FileHash == NarHash.
-		// The narinfo library only serializes FileSize when FileHash is non-nil.
-		if narInfo.FileHash == nil {
-			narInfo.FileHash = narInfo.NarHash
-		}
+
+		// Set the FileHash and FileSize to null, not required for compression=none.
+		narInfo.FileHash = nil
+		narInfo.FileSize = 0
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -2362,13 +2359,10 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 				narInfo.URL = nu.String()
 				narInfo.Compression = nar.CompressionTypeNone.String()
 			}
-			// FileSize == NarSize since we serve raw uncompressed data.
-			narInfo.FileSize = narInfo.NarSize
-			// For Compression:none, file IS the NAR so FileHash == NarHash.
-			// The narinfo library only serializes FileSize when FileHash is non-nil.
-			if narInfo.FileHash == nil {
-				narInfo.FileHash = narInfo.NarHash
-			}
+
+			// Set the FileHash and FileSize to null, not required for compression=none.
+			narInfo.FileHash = nil
+			narInfo.FileSize = 0
 		}
 
 		if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -3033,8 +3027,8 @@ func (c *Cache) storeInDatabase(
 			StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
 			URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
 			Compression: sql.NullString{String: narInfo.Compression, Valid: narInfo.Compression != ""},
-			FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: true}, //nolint:gosec
-			NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true},  //nolint:gosec
+			FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: narInfo.FileSize != 0}, //nolint:gosec
+			NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true},                   //nolint:gosec
 			Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
 			System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
 			Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
@@ -3111,7 +3105,7 @@ func (c *Cache) storeInDatabase(
 
 		// Check if nar_file already exists (multiple narinfos can share the same nar_file)
 
-		narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narInfo.FileSize)
+		narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narFileSize(narInfo))
 		if err != nil {
 			return err
 		}
@@ -3252,6 +3246,18 @@ func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) e
 	}
 
 	return errors.Join(errs...)
+}
+
+// narFileSize returns the size to store in nar_files.file_size.
+// For Compression:none narinfos, FileSize is intentionally 0 (omitted from narinfo output),
+// but nar_files.file_size must hold a meaningful size for LRU eviction (GetNarTotalSize sums it).
+// NarSize equals the uncompressed NAR size and is the correct fallback for Compression:none.
+func narFileSize(ni *narinfo.NarInfo) uint64 {
+	if ni.FileSize != 0 {
+		return ni.FileSize
+	}
+
+	return ni.NarSize
 }
 
 func createOrUpdateNarFile(
@@ -3514,7 +3520,7 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 	}
 
 	// Create or get nar_file record
-	narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narInfo.FileSize)
+	narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narFileSize(narInfo))
 	if err != nil {
 		return err
 	}
