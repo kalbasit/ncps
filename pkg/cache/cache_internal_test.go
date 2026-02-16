@@ -264,7 +264,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, _, _, cleanup := factory(t)
+		c, _, _, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		ts := testdata.NewTestServer(t, 40)
@@ -479,6 +479,18 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			require.NoErrorf(t, err, "failed to get nar file for hash %s", narEntry.NarInfoHash)
 		}
 
+		// Verify nar_files.file_size is non-zero for all entries (required for LRU eviction to work).
+		// For Compression:none NARs, file_size must be > 0 so that GetNarTotalSize returns
+		// a meaningful value and the LRU algorithm can determine what to evict.
+		for _, narEntry := range allEntries {
+			var narFileSize uint64
+
+			err = c.db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM nar_files WHERE hash = ?"), narEntry.NarHash).Scan(&narFileSize)
+			require.NoErrorf(t, err, "failed to query nar_files for hash %s", narEntry.NarHash)
+			assert.Positivef(t, narFileSize, "nar_files.file_size must be > 0 for LRU to work (hash %s)", narEntry.NarHash)
+		}
+
 		c.runLRU(newContext())()
 
 		// Narinfos are now stored only in the database, not in storage.
@@ -511,7 +523,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		}
 
 		nu := nar.URL{Hash: lastEntry.NarHash, Compression: lastCompression}
-		assert.False(t, c.narStore.HasNar(newContext(), nu))
+		require.False(t, c.narStore.HasNar(newContext(), nu))
 
 		// all narinfo records except the last one are in the database
 		for _, narEntry := range entries {

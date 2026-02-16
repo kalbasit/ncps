@@ -1454,7 +1454,10 @@ func TestGetNar_NixServeUpstream(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, "none", ni.Compression)
-		assert.Equal(t, ni.NarSize, ni.FileSize)
+		assert.Equal(t, uint64(0), ni.FileSize,
+			"narinfo FileSize should be 0 (omitted) when Compression is none")
+		assert.Nil(t, ni.FileHash,
+			"narinfo FileHash should be nil (omitted) when Compression is none")
 		assert.True(t, strings.HasSuffix(ni.URL, ".nar"), "expected URL to end in .nar, got: %s", ni.URL)
 		assert.False(t, strings.HasSuffix(ni.URL, ".nar.zst"), "URL must not end in .nar.zst")
 	})

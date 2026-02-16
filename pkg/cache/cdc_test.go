@@ -3,6 +3,7 @@ package cache_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"io"
 	"os"
 	"path/filepath"
@@ -712,25 +713,36 @@ func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T)
 		// Wait for upstream to become available
 		<-c.GetHealthChecker().Trigger()
 
-		t.Run("upstream compressed FileSize != NarSize, CDC normalizes FileSize to NarSize", func(t *testing.T) {
-			// Nar2 has Compression: xz upstream with FileSize != NarSize (compressed vs uncompressed)
-			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
-			require.NoError(t, err)
+		t.Run("upstream compressed FileSize != NarSize, CDC normalizes FileSize to 0 and FileHash to empty",
+			func(t *testing.T) {
+				// Nar2 has Compression: xz upstream with FileSize != NarSize (compressed vs uncompressed)
+				ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
+				require.NoError(t, err)
 
-			// Verify FileSize == NarSize for CDC mode
-			assert.Equal(t, ni.NarSize, ni.FileSize,
-				"CDC mode should set FileSize == NarSize, not the compressed upstream size")
+				// Verify FileSize == 0 for CDC mode
+				assert.Equal(t, uint64(0), ni.FileSize,
+					"CDC mode should set FileSize == 0, not the compressed upstream size")
 
-			// Also verify in the database
-			var fileSize, narSize uint64
+				// Verify FileHash == null for CDC mode (compressed upstream FileHash must be null)
+				assert.Empty(t, ni.FileHash,
+					"CDC mode should set FileHash == null, not the compressed upstream hash")
 
-			err = db.DB().QueryRowContext(context.Background(),
-				rebind("SELECT file_size, nar_size FROM narinfos WHERE hash = ?"),
-				testdata.Nar2.NarInfoHash).Scan(&fileSize, &narSize)
-			require.NoError(t, err)
-			assert.Equal(t, narSize, fileSize,
-				"narinfo in DB should have FileSize == NarSize for CDC")
-		})
+				// Also verify in the database
+				var (
+					fileSize          sql.NullInt64
+					narSize           uint64
+					fileHash, narHash sql.NullString
+				)
+
+				err = db.DB().QueryRowContext(context.Background(),
+					rebind("SELECT file_size, nar_size, file_hash, nar_hash FROM narinfos WHERE hash = ?"),
+					testdata.Nar2.NarInfoHash).Scan(&fileSize, &narSize, &fileHash, &narHash)
+				require.NoError(t, err)
+				assert.False(t, fileSize.Valid,
+					"narinfo in DB should have FileSize == NULL for CDC")
+				assert.Equal(t, sql.NullString{}, fileHash,
+					"narinfo in DB should have FileHash == null for CDC")
+			})
 	}
 }
 
@@ -770,17 +782,23 @@ func testCDCPutNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T) 
 		err = c.PutNarInfo(ctx, hash, io.NopCloser(strings.NewReader(niText)))
 		require.NoError(t, err)
 
-		// Verify narinfo in DB has FileSize == NarSize
-		var fileSize, narSize uint64
+		// Verify narinfo in DB has FileSize == NULL and FileHash == null
+		var (
+			fileSize              sql.NullInt64
+			narSize               uint64
+			dbFileHash, dbNarHash sql.NullString
+		)
 
 		err = db.DB().QueryRowContext(ctx,
-			rebind("SELECT file_size, nar_size FROM narinfos WHERE hash = ?"),
-			hash).Scan(&fileSize, &narSize)
+			rebind("SELECT file_size, nar_size, file_hash, nar_hash FROM narinfos WHERE hash = ?"),
+			hash).Scan(&fileSize, &narSize, &dbFileHash, &dbNarHash)
 		require.NoError(t, err)
 
 		assert.Equal(t, uint64(10000), narSize, "NarSize should be 10000 from input")
-		assert.Equal(t, narSize, fileSize,
-			"CDC mode should set FileSize == NarSize (10000), not the upstream compressed size (5000)")
+		assert.False(t, fileSize.Valid,
+			"CDC mode should set FileSize == NULL, not the upstream compressed size (5000)")
+		assert.Equal(t, sql.NullString{}, dbFileHash,
+			"CDC mode should set FileHash == null, not the upstream compressed hash")
 	}
 }
 
