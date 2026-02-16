@@ -190,6 +190,11 @@ WHERE id = ?;
 DELETE FROM nar_files
 WHERE id = ?;
 
+-- name: UpdateNarFileFileSize :exec
+UPDATE nar_files
+SET file_size = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
 -- name: DeleteOrphanedNarFiles :execrows
 DELETE FROM nar_files
 WHERE id NOT IN (

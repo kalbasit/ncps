@@ -2886,6 +2886,37 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, int64(len(someContent)), dbSize, "NarInfo FileSize should be fixed immediately after PutNarInfo")
 		})
+
+		t.Run("PutNarInfo then PutNar should update nar_files table", func(t *testing.T) {
+			c, db, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// 1. Put NarInfo first
+			ni, _ := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(
+				t,
+				c.PutNarInfo(
+					context.Background(),
+					testdata.Nar1.NarInfoHash,
+					io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)),
+				),
+			)
+
+			// 2. Put Nar with actual size
+			nu, _ := nar.ParseURL(ni.URL)
+			someContent := []byte("some arbitrary content")
+			require.NoError(t, c.PutNar(context.Background(), nu, io.NopCloser(bytes.NewReader(someContent))))
+
+			// 3. Verify nar_files table has the correct size
+			var narFileSize int64
+
+			err := db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM nar_files WHERE hash = ? AND compression = ? AND query = ?"),
+				nu.Hash, nu.Compression.String(), nu.Query.Encode()).Scan(&narFileSize)
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(someContent)), narFileSize, "nar_files table should reflect the actual bytes written")
+		})
 	}
 }
 

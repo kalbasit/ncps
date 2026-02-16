@@ -413,6 +413,12 @@ type Querier interface {
 	//      updated_at = CURRENT_TIMESTAMP
 	//  WHERE hash = ?
 	TouchNarInfo(ctx context.Context, hash string) (int64, error)
+	//UpdateNarFileFileSize
+	//
+	//  UPDATE nar_files
+	//  SET file_size = ?, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = ?
+	UpdateNarFileFileSize(ctx context.Context, arg UpdateNarFileFileSizeParams) error
 	//UpdateNarFileTotalChunks
 	//
 	//  UPDATE nar_files

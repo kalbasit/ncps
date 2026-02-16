@@ -1795,6 +1795,27 @@ func (q *Queries) TouchNarInfo(ctx context.Context, hash string) (int64, error) 
 	return result.RowsAffected()
 }
 
+const updateNarFileFileSize = `-- name: UpdateNarFileFileSize :exec
+UPDATE nar_files
+SET file_size = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type UpdateNarFileFileSizeParams struct {
+	FileSize uint64
+	ID       int64
+}
+
+// UpdateNarFileFileSize
+//
+//	UPDATE nar_files
+//	SET file_size = ?, updated_at = CURRENT_TIMESTAMP
+//	WHERE id = ?
+func (q *Queries) UpdateNarFileFileSize(ctx context.Context, arg UpdateNarFileFileSizeParams) error {
+	_, err := q.db.ExecContext(ctx, updateNarFileFileSize, arg.FileSize, arg.ID)
+	return err
+}
+
 const updateNarFileTotalChunks = `-- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
 SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP
