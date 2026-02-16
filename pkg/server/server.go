@@ -98,63 +98,86 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.Se
 func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
 
-	mp := otel.GetMeterProvider()
-	baseCfg := otelchimetric.NewBaseConfig(s.cache.GetHostname(), otelchimetric.WithMeterProvider(mp))
-
 	s.router.Use(middleware.Heartbeat("/healthz"))
 	s.router.Use(middleware.RealIP)
 	s.router.Use(recoverer)
 
-	// Create a middleware skipper that excludes /metrics and /healthz from telemetry
-	skipTelemetryForInfraRoutes := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip telemetry middleware for infrastructure endpoints
-			if r.URL.Path == "/metrics" || r.URL.Path == "/healthz" {
-				next.ServeHTTP(w, r)
+	s.router.Use(s.skipTelemetryForInfraRoutes)
 
-				return
-			}
+	// 1. Register standard routes at the root
+	s.registerRoutes(s.router)
 
-			// Apply all telemetry middleware for other routes
-			telemetryChain := otelchi.Middleware(s.cache.GetHostname(), otelchi.WithChiRoutes(s.router))(
-				otelchimetric.NewRequestDurationMillis(baseCfg)(
-					otelchimetric.NewRequestInFlight(baseCfg)(
-						otelchimetric.NewResponseSizeBytes(baseCfg)(
-							requestLogger(next),
-						),
-					),
-				),
-			)
-			telemetryChain.ServeHTTP(w, r)
-		})
-	}
-
-	s.router.Use(skipTelemetryForInfraRoutes)
-
-	s.router.Get(routeIndex, s.getIndex)
-
-	s.router.Get(routeCacheInfo, s.getNixCacheInfo)
-	s.router.Get(routeCachePublicKey, s.getNixCachePublicKey)
-
-	s.router.Head(routeNarInfo, s.getNarInfo(false))
-	s.router.Get(routeNarInfo, s.getNarInfo(true))
-	s.router.Put(routeNarInfo, s.putNarInfo)
+	// 2. Register DELETE routes at the root
 	s.router.Delete(routeNarInfo, s.deleteNarInfo)
-
-	s.router.Head(routeNarCompression, s.getNar(false))
-	s.router.Get(routeNarCompression, s.getNar(true))
-	s.router.Put(routeNarCompression, s.putNar)
 	s.router.Delete(routeNarCompression, s.deleteNar)
-
-	s.router.Head(routeNar, s.getNar(false))
-	s.router.Get(routeNar, s.getNar(true))
-	s.router.Put(routeNar, s.putNar)
 	s.router.Delete(routeNar, s.deleteNar)
+
+	// 2. Register "upload only" routes under /upload
+	s.router.Route("/upload", func(r chi.Router) {
+		// Middleware to inject the UploadOnly flag
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx := cache.WithUploadOnly(r.Context())
+				next.ServeHTTP(w, r.WithContext(ctx))
+			})
+		})
+
+		// register standard routes
+		s.registerRoutes(r)
+
+		// register PUT routes
+		r.Put(routeNarInfo, s.putNarInfo)
+		r.Put(routeNarCompression, s.putNar)
+		r.Put(routeNar, s.putNar)
+	})
 
 	// Add Prometheus metrics endpoint if gatherer is configured
 	if prometheusGatherer != nil {
 		s.router.Get("/metrics", promhttp.HandlerFor(prometheusGatherer, promhttp.HandlerOpts{}).ServeHTTP)
 	}
+}
+
+// Create a middleware skipper that excludes /metrics and /healthz from telemetry.
+func (s *Server) skipTelemetryForInfraRoutes(next http.Handler) http.Handler {
+	mp := otel.GetMeterProvider()
+	baseCfg := otelchimetric.NewBaseConfig(s.cache.GetHostname(), otelchimetric.WithMeterProvider(mp))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip telemetry middleware for infrastructure endpoints
+		if r.URL.Path == "/metrics" || r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		// Apply all telemetry middleware for other routes
+		telemetryChain := otelchi.Middleware(s.cache.GetHostname(), otelchi.WithChiRoutes(s.router))(
+			otelchimetric.NewRequestDurationMillis(baseCfg)(
+				otelchimetric.NewRequestInFlight(baseCfg)(
+					otelchimetric.NewResponseSizeBytes(baseCfg)(
+						requestLogger(next),
+					),
+				),
+			),
+		)
+		telemetryChain.ServeHTTP(w, r)
+	})
+}
+
+// Extract your existing route definitions into this helper.
+func (s *Server) registerRoutes(r chi.Router) {
+	r.Get(routeIndex, s.getIndex)
+	r.Get(routeCacheInfo, s.getNixCacheInfo)
+	r.Get(routeCachePublicKey, s.getNixCachePublicKey)
+
+	r.Head(routeNarInfo, s.getNarInfo(false))
+	r.Get(routeNarInfo, s.getNarInfo(true))
+
+	r.Head(routeNarCompression, s.getNar(false))
+	r.Get(routeNarCompression, s.getNar(true))
+
+	r.Head(routeNar, s.getNar(false))
+	r.Get(routeNar, s.getNar(true))
 }
 
 func recoverer(next http.Handler) http.Handler {

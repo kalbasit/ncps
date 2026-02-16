@@ -549,7 +549,7 @@ Deriver: test.drv
 			defer ts.Close()
 
 			t.Run("narInfo", func(t *testing.T) {
-				p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
+				p := ts.URL + "/upload/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
 				r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarInfoText))
 				require.NoError(t, err)
@@ -562,7 +562,7 @@ Deriver: test.drv
 
 			t.Run("nar", func(t *testing.T) {
 				t.Run("without compression", func(t *testing.T) {
-					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar"
+					p := ts.URL + "/upload/nar/" + testdata.Nar1.NarHash + ".nar"
 
 					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
@@ -574,7 +574,7 @@ Deriver: test.drv
 				})
 
 				t.Run("with compression", func(t *testing.T) {
-					p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+					p := ts.URL + "/upload/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
 					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 					require.NoError(t, err)
@@ -602,7 +602,7 @@ Deriver: test.drv
 				})
 
 				t.Run("putNarInfo does not return an error", func(t *testing.T) {
-					p := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
+					p := ts.URL + "/upload/" + testdata.Nar1.NarInfoHash + ".narinfo"
 
 					r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarInfoText))
 					require.NoError(t, err)
@@ -679,7 +679,7 @@ Deriver: test.drv
 			})
 
 			t.Run("putNar does not return an error", func(t *testing.T) {
-				p := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+				p := ts.URL + "/upload/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 
 				r, err := http.NewRequestWithContext(newContext(), http.MethodPut, p, strings.NewReader(testdata.Nar1.NarText))
 				require.NoError(t, err)
@@ -739,7 +739,7 @@ func TestGetNar_HeadOptimization(t *testing.T) {
 	defer ts.Close()
 
 	// 1. Put a NarInfo into the cache. This will create a NarFile record in the database.
-	putURL := ts.URL + "/" + testdata.Nar1.NarInfoHash + ".narinfo"
+	putURL := ts.URL + "/upload/" + testdata.Nar1.NarInfoHash + ".narinfo"
 	req, err := http.NewRequestWithContext(
 		newContext(),
 		http.MethodPut,
@@ -757,7 +757,7 @@ func TestGetNar_HeadOptimization(t *testing.T) {
 	assert.NoFileExists(t, storePath)
 
 	// 3. Make a HEAD request for the NAR. It should return 204 No Content and the correct size.
-	narURL := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+	narURL := ts.URL + "/upload/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 	req, err = http.NewRequestWithContext(newContext(), http.MethodHead, narURL, nil)
 	require.NoError(t, err)
 	resp, err = ts.Client().Do(req)
@@ -795,7 +795,7 @@ func TestGetNarInfo_Head(t *testing.T) {
 	// 1. Put a Nar into the cache.
 	req := httptest.NewRequest(
 		http.MethodPut,
-		"/nar/"+testdata.Nar1.NarHash+".nar.xz",
+		"/upload/nar/"+testdata.Nar1.NarHash+".nar.xz",
 		strings.NewReader(testdata.Nar1.NarText),
 	)
 	w := httptest.NewRecorder()
@@ -805,7 +805,7 @@ func TestGetNarInfo_Head(t *testing.T) {
 	// 2. Put a NarInfo into the cache.
 	req = httptest.NewRequest(
 		http.MethodPut,
-		"/"+testdata.Nar1.NarInfoHash+".narinfo",
+		"/upload/"+testdata.Nar1.NarInfoHash+".narinfo",
 		strings.NewReader(testdata.Nar1.NarInfoText),
 	)
 	w = httptest.NewRecorder()
@@ -863,11 +863,10 @@ func TestGetNar_HeadFallback(t *testing.T) {
 	// 1. Put a Nar into the cache directly (skipping NarInfo to avoid optimization)
 	// Wait, to put a Nar we usually need a NarInfo if we use the cache API.
 	// We can just use the server's PUT /nar
-	narURL := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
 	req, err := http.NewRequestWithContext(
 		newContext(),
 		http.MethodPut,
-		narURL,
+		ts.URL+"/upload/nar/"+testdata.Nar1.NarHash+".nar.xz",
 		strings.NewReader(testdata.Nar1.NarText),
 	)
 	require.NoError(t, err)
@@ -878,7 +877,12 @@ func TestGetNar_HeadFallback(t *testing.T) {
 
 	// 2. Make a HEAD request for the Nar.
 	// Since there is no NarInfo, the optimization will fail and it will fall back to GetNar.
-	req, err = http.NewRequestWithContext(newContext(), http.MethodHead, narURL, nil)
+	req, err = http.NewRequestWithContext(
+		newContext(),
+		http.MethodHead,
+		ts.URL+"/nar/"+testdata.Nar1.NarHash+".nar.xz",
+		nil,
+	)
 	require.NoError(t, err)
 	resp, err = ts.Client().Do(req)
 	require.NoError(t, err)
@@ -921,7 +925,7 @@ func TestGetNar_ZstdCompression(t *testing.T) {
 	// 1. Put an uncompressed Nar into the cache.
 	narData := strings.Repeat("uncompressed nar data ", 1000)
 	narHash := "0000000000000000000000000000000000000000000000000001" // dummy 52-char hash
-	narURL := ts.URL + "/nar/" + narHash + ".nar"
+	narURL := ts.URL + "/upload/nar/" + narHash + ".nar"
 
 	req, err := http.NewRequestWithContext(
 		newContext(),
@@ -994,12 +998,11 @@ func TestGetNar_NoZstdCompression(t *testing.T) {
 	// 1. Put an uncompressed Nar into the cache.
 	narData := uncompressedNarData
 	narHash := "0000000000000000000000000000000000000000000000000002" // dummy 52-char hash
-	narURL := ts.URL + "/nar/" + narHash + ".nar"
 
 	req, err := http.NewRequestWithContext(
 		newContext(),
 		http.MethodPut,
-		narURL,
+		ts.URL+"/upload/nar/"+narHash+".nar",
 		strings.NewReader(narData),
 	)
 	require.NoError(t, err)
@@ -1011,7 +1014,7 @@ func TestGetNar_NoZstdCompression(t *testing.T) {
 	// 2. Request the NAR WITHOUT Accept-Encoding: zstd
 	// Use DisableCompression to prevent the Go HTTP client from adding Accept-Encoding: gzip
 	// automatically, which would trigger the server's transparent gzip encoding.
-	req, err = http.NewRequestWithContext(newContext(), http.MethodGet, narURL, nil)
+	req, err = http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
 	require.NoError(t, err)
 
 	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
@@ -1065,7 +1068,7 @@ func TestGetNar_ZstdCompression_Head(t *testing.T) {
 	// 1. Put an uncompressed Nar into the cache.
 	narData := uncompressedNarData
 	narHash := "0000000000000000000000000000000000000000000000000003" // dummy 52-char hash
-	narURL := ts.URL + "/nar/" + narHash + ".nar"
+	narURL := ts.URL + "/upload/nar/" + narHash + ".nar"
 
 	req, err := http.NewRequestWithContext(
 		newContext(),
@@ -1155,7 +1158,7 @@ func TestGetNar_HeaderSettingSequence(t *testing.T) {
 	narHash := "0000000000000000000000000000000000000000000000000004"
 	narURL := "/nar/" + narHash + ".nar"
 
-	req := httptest.NewRequest(http.MethodPut, narURL, strings.NewReader(narData))
+	req := httptest.NewRequest(http.MethodPut, "/upload"+narURL, strings.NewReader(narData))
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusNoContent, w.Code)
@@ -1210,7 +1213,7 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 	narHash := "0000000000000000000000000000000000000000000000000002"
 
 	putReq, err := http.NewRequestWithContext(
-		newContext(), http.MethodPut, ts.URL+"/nar/"+narHash+".nar", strings.NewReader(narData))
+		newContext(), http.MethodPut, ts.URL+"/upload/nar/"+narHash+".nar", strings.NewReader(narData))
 	require.NoError(t, err)
 
 	putResp, err := ts.Client().Do(putReq)
@@ -1353,12 +1356,11 @@ func TestGetNar_Base16Hash(t *testing.T) {
 	// 1. Put an uncompressed Nar using a 64-char base16 hash
 	narData := strings.Repeat("base16 nar data ", 100)
 	narHash := testhelper.MustRandBase16NarHash()
-	narURL := ts.URL + "/nar/" + narHash + ".nar"
 
 	req, err := http.NewRequestWithContext(
 		newContext(),
 		http.MethodPut,
-		narURL,
+		ts.URL+"/upload/nar/"+narHash+".nar",
 		strings.NewReader(narData),
 	)
 	require.NoError(t, err)
@@ -1672,4 +1674,222 @@ func TestGetNar_NixServeUpstream_PrefixedNarURL(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, prefixedEntry.NarText, string(narBody))
+}
+
+func setupUploadRouteTest(t *testing.T) (*httptest.Server, string, string, string, string) {
+	t.Helper()
+
+	// Setup upstream server with test data
+	hts := testdata.NewTestServer(t, 40)
+	t.Cleanup(hts.Close)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, hts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	require.NoError(t, err)
+
+	// Setup local cache with DB and storage
+	dir, err := os.MkdirTemp("", "cache-path-upload-")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	// Wait for upstream caches to become available
+	<-c.GetHealthChecker().Trigger()
+
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	ts := httptest.NewServer(s)
+	t.Cleanup(ts.Close)
+
+	// Pick a NAR that exists upstream
+	narHash := testdata.Nar1.NarHash
+	narPath := "/nar/" + narHash + ".nar.xz"
+	uploadPath := "/upload/nar/" + narHash + ".nar.xz"
+
+	narInfoHash := testdata.Nar1.NarInfoHash
+	narInfoPath := "/" + narInfoHash + ".narinfo"
+	uploadNarInfoPath := "/upload/" + narInfoHash + ".narinfo"
+
+	return ts, narPath, uploadPath, narInfoPath, uploadNarInfoPath
+}
+
+func TestUpload_GetReturns404WhenItemIsOnlyInUpstream(t *testing.T) {
+	t.Parallel()
+
+	ts, _, uploadPath, _, _ := setupUploadRouteTest(t)
+
+	req, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+uploadPath, nil)
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestGetNar_ReturnsOkWhenItemIsOnlyInUpstream(t *testing.T) {
+	t.Parallel()
+
+	ts, narPath, _, _, _ := setupUploadRouteTest(t)
+
+	req, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+narPath, nil)
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestUploadNarinfo_GetReturns404WhenItemIsOnlyInUpstream(t *testing.T) {
+	t.Parallel()
+
+	ts, _, _, _, uploadNarInfoPath := setupUploadRouteTest(t)
+
+	req, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+uploadNarInfoPath, nil)
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestGetNarinfo_ReturnsOkWhenItemIsOnlyInUpstream(t *testing.T) {
+	t.Parallel()
+
+	ts, _, _, narInfoPath, _ := setupUploadRouteTest(t)
+
+	req, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+narInfoPath, nil)
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestUpload_PutNarSucceeds(t *testing.T) {
+	t.Parallel()
+
+	ts, _, uploadPath, _, _ := setupUploadRouteTest(t)
+
+	req, err := http.NewRequestWithContext(newContext(),
+		http.MethodPut, ts.URL+uploadPath, strings.NewReader(testdata.Nar1.NarText))
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
+func TestUpload_PutNarinfoSucceeds(t *testing.T) {
+	t.Parallel()
+
+	ts, _, _, _, uploadNarInfoPath := setupUploadRouteTest(t)
+
+	req, err := http.NewRequestWithContext(newContext(),
+		http.MethodPut, ts.URL+uploadNarInfoPath, strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
+func TestUpload_GetNarReturnsOkAfterPut(t *testing.T) {
+	t.Parallel()
+
+	ts, _, uploadPath, _, _ := setupUploadRouteTest(t)
+
+	// First, PUT the NAR
+	putReq, err := http.NewRequestWithContext(newContext(),
+		http.MethodPut, ts.URL+uploadPath, strings.NewReader(testdata.Nar1.NarText))
+	require.NoError(t, err)
+
+	putResp, err := ts.Client().Do(putReq)
+	require.NoError(t, err)
+	putResp.Body.Close()
+
+	require.Equal(t, http.StatusNoContent, putResp.StatusCode)
+
+	// Then, GET the NAR
+	getReq, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+uploadPath, nil)
+	require.NoError(t, err)
+
+	getResp, err := ts.Client().Do(getReq)
+	require.NoError(t, err)
+
+	defer getResp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, getResp.StatusCode)
+}
+
+func TestUpload_GetNarinfoReturnsOkAfterPut(t *testing.T) {
+	t.Parallel()
+
+	ts, _, uploadPath, _, uploadNarInfoPath := setupUploadRouteTest(t)
+
+	// First, PUT the NAR
+	putNarReq, err := http.NewRequestWithContext(newContext(),
+		http.MethodPut, ts.URL+uploadPath, strings.NewReader(testdata.Nar1.NarText))
+	require.NoError(t, err)
+
+	putNarResp, err := ts.Client().Do(putNarReq)
+	require.NoError(t, err)
+	putNarResp.Body.Close()
+
+	require.Equal(t, http.StatusNoContent, putNarResp.StatusCode)
+
+	// Then, PUT the narinfo
+	putReq, err := http.NewRequestWithContext(newContext(),
+		http.MethodPut, ts.URL+uploadNarInfoPath, strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	putResp, err := ts.Client().Do(putReq)
+	require.NoError(t, err)
+	putResp.Body.Close()
+
+	require.Equal(t, http.StatusNoContent, putResp.StatusCode)
+
+	// Finally, GET the narinfo
+	getReq, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+uploadNarInfoPath, nil)
+	require.NoError(t, err)
+
+	getResp, err := ts.Client().Do(getReq)
+	require.NoError(t, err)
+
+	defer getResp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, getResp.StatusCode)
 }

@@ -188,7 +188,7 @@ See <a class="reference-link" href="../Features/CDC.md">CDC</a> for details.
 | --- | --- | --- | --- |
 | `--cache-sign-narinfo` | Sign NarInfo files with private key | `CACHE_SIGN_NARINFO` | `true` |
 | `--cache-secret-key-path` | Path to signing private key | `CACHE_SECRET_KEY_PATH` | auto-generated |
-| `--cache-allow-put-verb` | Allow PUT uploads to cache | `CACHE_ALLOW_PUT_VERB` | `false` |
+| `--cache-allow-put-verb` | Allow PUT uploads to cache (requires `/upload` prefix) | `CACHE_ALLOW_PUT_VERB` | `false` |
 | `--cache-allow-delete-verb` | Allow DELETE operations on cache | `CACHE_ALLOW_DELETE_VERB` | `false` |
 | `--netrc-file` | Path to netrc file for upstream auth | `NETRC_FILE` | `~/.netrc` |
 

@@ -453,6 +453,22 @@ func (ds *downloadState) getUpstreamHostname() string {
 	return ds.upstreamHostname
 }
 
+type contextKey string
+
+const uploadOnlyKey contextKey = "upload_only"
+
+// WithUploadOnly returns a context that instructs the cache to skip upstream checks.
+func WithUploadOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, uploadOnlyKey, true)
+}
+
+// IsUploadOnly checks if the context specifies skipping upstream checks.
+func IsUploadOnly(ctx context.Context) bool {
+	val, ok := ctx.Value(uploadOnlyKey).(bool)
+
+	return ok && val
+}
+
 // New returns a new Cache.
 func New(
 	ctx context.Context,
@@ -830,6 +846,15 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			}
 
 			return err
+		}
+
+		// If the artifact is not in the DB or Store, check if we are in "Upload Only" mode.
+		// If so, we return ErrNotFound immediately to let the client know we don't have it locally,
+		// triggering the PUT (push) operation.
+		if IsUploadOnly(ctx) {
+			metricAttrs = append(metricAttrs, attribute.String("result", "miss"))
+
+			return storage.ErrNotFound
 		}
 
 		zerolog.Ctx(ctx).
@@ -2051,10 +2076,14 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 			}
 		}
 
-		metricAttrs = append(metricAttrs,
-			attribute.String("result", "miss"),
-			attribute.String("status", "success"),
-		)
+		metricAttrs = append(metricAttrs, attribute.String("result", "miss"))
+
+		// If the artifact is not in the DB or Store, check if we are in "Upload Only" mode.
+		// If so, we return ErrNotFound immediately to let the client know we don't have it locally,
+		// triggering the PUT (push) operation.
+		if IsUploadOnly(ctx) {
+			return storage.ErrNotFound
+		}
 
 		ds := c.prePullNarInfo(ctx, hash)
 
@@ -2088,21 +2117,27 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
-				Msg("failed to fetch narinfo from database after upstream pull")
-		} else {
-			if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
-				zerolog.Ctx(ctx).
-					Debug().
-					Str("narinfo", narInfo.String()).
-					Msg("fetched narinfo from database after upstream pull")
-			}
+				Msg("failed to fetch this narinfo from the database")
+
+			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
+			return err
 		}
 
-		return err
+		if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
+			zerolog.Ctx(ctx).
+				Debug().
+				Str("narinfo", narInfo.String()).
+				Msg("fetched narinfo from database after upstream pull")
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	metricAttrs = append(metricAttrs, attribute.String("status", "success"))
 
 	return narInfo, nil
 }
