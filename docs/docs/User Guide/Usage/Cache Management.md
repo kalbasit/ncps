@@ -214,6 +214,21 @@ INFO migration completed found=10000 processed=10000 succeeded=9987 failed=13 du
 
 See [NarInfo Migration Guide](../Operations/NarInfo%20Migration.md) for comprehensive documentation.
 
+## Uploading Packages
+
+You can upload packages to your ncps cache using `nix copy`. This requires that the `--cache-allow-put-verb` flag is set to `true`.
+
+### Using nix copy
+
+To upload a package to your ncps cache, use the following command:
+
+```sh
+nix copy --to http://your-ncps-hostname:8501/upload ./your-package
+```
+
+> [!NOTE]
+> The `/upload` prefix is required for all PUT operations. This ensures that the upload is handled correctly and skips any upstream checks.
+
 ## Best Practices
 
 1. **Set reasonable max-size** - Based on available disk space

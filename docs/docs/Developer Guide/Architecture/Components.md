@@ -18,8 +18,15 @@ Detailed breakdown of ncps system components.
 - `GET /pubkey` - Public key
 - `GET /nix-cache-info` - Cache metadata
 - `GET /<hash>.narinfo` - Package metadata
-- `GET /nar/<path>` - Package archive
+- `GET /nar/<hash>.nar(.compression)?` - Package archive
 - `GET /metrics` - Prometheus metrics (if enabled)
+
+**Upload Endpoints:**
+
+- `GET /upload/<hash>.narinfo` - Retrieve narinfo metadata without pulling from upstream cache
+- `PUT /upload/<hash>.narinfo` - Store narinfo metadata in the cache
+- `GET /upload/nar/<hash>.nar(.compression)?` - Retrieve NAR archive without pulling from upstream cache
+- `PUT /upload/nar/<hash>.nar(.compression)?` - Store NAR archive in the cache
 
 ## Cache Layer (pkg/cache/)
 
