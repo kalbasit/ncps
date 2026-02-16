@@ -327,8 +327,6 @@ func init() {
 
 // Cache represents the main cache service.
 type Cache struct {
-	baseContext context.Context
-
 	hostName      string
 	secretKey     signature.SecretKey
 	healthChecker *healthcheck.HealthChecker
@@ -486,7 +484,6 @@ func New(
 	cacheLockTTL time.Duration,
 ) (*Cache, error) {
 	c := &Cache{
-		baseContext:          ctx,
 		db:                   db,
 		config:               config.New(db, cacheLocker),
 		configStore:          configStore,
@@ -525,7 +522,7 @@ func New(
 	c.healthChecker.SetHealthChangeNotifier(healthChangeCh)
 
 	// Start the health checker
-	c.healthChecker.Start(c.baseContext)
+	c.healthChecker.Start(ctx)
 
 	// Start the health change processor
 	analytics.SafeGo(ctx, func() {
@@ -870,7 +867,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		// context but with the baseContext as parent; This context will not cancel
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
-		detachedCtx := c.detachedContext(ctx)
+		detachedCtx := context.WithoutCancel(ctx)
 		ds := c.prePullNar(ctx, detachedCtx, &narURL, nil)
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
@@ -1180,7 +1177,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			return err
 		}
 
-		if err := c.checkAndFixNarInfosForNar(c.detachedContext(ctx), narURL); err != nil {
+		if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), narURL); err != nil {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfos after PutNar")
 		}
 
@@ -1213,7 +1210,7 @@ func (c *Cache) putNarWithCDC(ctx context.Context, narURL nar.URL, r io.Reader) 
 		}
 	}
 
-	if err := c.checkAndFixNarInfosForNar(c.detachedContext(ctx), narURL); err != nil {
+	if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), narURL); err != nil {
 		zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfos after PutNar")
 	}
 
@@ -1740,7 +1737,7 @@ func (c *Cache) pullNarIntoStore(
 	// This prevents the race condition where other instances check hasAsset() before storage completes
 	ds.storedOnce.Do(func() { close(ds.stored) })
 
-	if err := c.checkAndFixNarInfosForNar(c.detachedContext(ctx), *narURL); err != nil {
+	if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), *narURL); err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
 			Err(err).
@@ -2182,7 +2179,7 @@ func (c *Cache) pullNarInfo(
 		return
 	}
 
-	if err := c.downloadLocker.Unlock(ctx, migrationLockKey(hash)); err != nil {
+	if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), migrationLockKey(hash)); err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
 			Err(err).
@@ -2254,7 +2251,7 @@ func (c *Cache) pullNarInfo(
 		// The upstream package now handles transparent zstd encoding/decoding, so
 		// we always get raw bytes regardless of upstream support. FileSize = NarSize
 		// for Compression:none upstreams, so no synchronous wait is needed.
-	detachedCtx := c.detachedContext(ctx)
+	detachedCtx := context.WithoutCancel(ctx)
 
 	// create a copy of narURL to avoid a race condition when
 	// narURL is modified within a background goroutine.
@@ -2394,7 +2391,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		return err
 	}
 
-	if err := c.checkAndFixNarInfo(c.detachedContext(ctx), hash); err != nil {
+	if err := c.checkAndFixNarInfo(context.WithoutCancel(ctx), hash); err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
 			Err(err).
@@ -2697,7 +2694,7 @@ func (c *Cache) handleStorageFetchError(
 			return fmt.Errorf("failed to acquire migration lock after storage error: %w", err)
 		}
 
-		if err := c.downloadLocker.Unlock(ctx, migrationLockKey(hash)); err != nil {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), migrationLockKey(hash)); err != nil {
 			zerolog.Ctx(ctx).
 				Warn().
 				Err(err).
@@ -3338,7 +3335,7 @@ func MigrateNarInfo(
 	}
 
 	defer func() {
-		if err := locker.Unlock(ctx, lockKey); err != nil {
+		if err := locker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().Err(err).Str("narinfo_hash", hash).Msg("failed to release migration lock")
 		}
 	}()
@@ -3546,7 +3543,7 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) {
 	// We use a detached context because this is a background job.
 	// But we keep the trace from the request context.
-	detachedCtx := c.detachedContext(ctx)
+	detachedCtx := context.WithoutCancel(ctx)
 
 	c.backgroundWG.Add(1)
 	analytics.SafeGo(detachedCtx, func() {
@@ -3828,7 +3825,7 @@ func (c *Cache) coordinateDownload(
 	// Double check local jobs and asset presence under lock
 	if hasAsset(ctx) {
 		// Release the lock before returning
-		if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("hash", hash).
@@ -3889,7 +3886,7 @@ func (c *Cache) coordinateDownload(
 	//   This allows immediate streaming to clients while preventing other instances
 	//   from starting redundant downloads. The lock is held until storage completes.
 	if waitForStorage {
-		if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("hash", hash).
@@ -3906,7 +3903,7 @@ func (c *Cache) coordinateDownload(
 			case <-ds.done:
 			}
 
-			if err := c.downloadLocker.Unlock(c.baseContext, lockKey); err != nil {
+			if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 				zerolog.Ctx(ctx).Error().
 					Err(err).
 					Str("hash", hash).
@@ -4008,7 +4005,7 @@ func (c *Cache) withReadLock(ctx context.Context, operation string, lockKey stri
 	}
 
 	defer func() {
-		if err := c.cacheLocker.RUnlock(ctx, lockKey); err != nil {
+		if err := c.cacheLocker.RUnlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("operation", operation).
@@ -4033,7 +4030,7 @@ func (c *Cache) withWriteLock(ctx context.Context, operation string, lockKey str
 	}
 
 	defer func() {
-		if err := c.cacheLocker.Unlock(ctx, lockKey); err != nil {
+		if err := c.cacheLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("operation", operation).
@@ -4066,7 +4063,7 @@ func (c *Cache) withTryLock(ctx context.Context, operation string, lockKey strin
 	}
 
 	defer func() {
-		if err := c.cacheLocker.Unlock(ctx, lockKey); err != nil {
+		if err := c.cacheLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
 				Str("operation", operation).
@@ -4966,7 +4963,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 	}
 
 	defer func() {
-		if err := c.downloadLocker.Unlock(ctx, lockKey); err != nil {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().Err(err).Str("nar_hash", narURL.Hash).Msg("failed to release migration lock")
 		}
 	}()
@@ -5051,7 +5048,7 @@ func (c *Cache) maybeBackgroundMigrateNarToChunks(ctx context.Context, narURL na
 // BackgroundMigrateNarToChunks migrates a traditional NAR blob to content-defined chunks in the background.
 func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL) {
 	// Use a detached context to prevent the background migration from being aborted by the request context's cancellation.
-	ctx = c.detachedContext(ctx)
+	ctx = context.WithoutCancel(ctx)
 
 	analytics.SafeGo(ctx, func() {
 		log := zerolog.Ctx(ctx).With().
@@ -5109,11 +5106,4 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 		)
 		log.Info().Msg("successfully migrated nar to chunks")
 	})
-}
-
-func (c *Cache) detachedContext(ctx context.Context) context.Context {
-	return trace.ContextWithSpan(
-		zerolog.Ctx(ctx).WithContext(c.baseContext),
-		trace.SpanFromContext(ctx),
-	)
 }
