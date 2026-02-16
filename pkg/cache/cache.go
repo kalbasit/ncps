@@ -1180,7 +1180,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			return err
 		}
 
-		if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
+		if err := c.checkAndFixNarInfosForNar(c.detachedContext(ctx), narURL); err != nil {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfos after PutNar")
 		}
 
@@ -1213,7 +1213,7 @@ func (c *Cache) putNarWithCDC(ctx context.Context, narURL nar.URL, r io.Reader) 
 		}
 	}
 
-	if err := c.checkAndFixNarInfosForNar(ctx, narURL); err != nil {
+	if err := c.checkAndFixNarInfosForNar(c.detachedContext(ctx), narURL); err != nil {
 		zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to fix narinfos after PutNar")
 	}
 
@@ -1740,7 +1740,7 @@ func (c *Cache) pullNarIntoStore(
 	// This prevents the race condition where other instances check hasAsset() before storage completes
 	ds.storedOnce.Do(func() { close(ds.stored) })
 
-	if err := c.checkAndFixNarInfosForNar(ctx, *narURL); err != nil {
+	if err := c.checkAndFixNarInfosForNar(c.detachedContext(ctx), *narURL); err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
 			Err(err).
@@ -2400,7 +2400,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		return err
 	}
 
-	if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
+	if err := c.checkAndFixNarInfo(c.detachedContext(ctx), hash); err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
 			Err(err).

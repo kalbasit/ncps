@@ -1,6 +1,7 @@
 package cache_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -63,6 +65,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
 	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
+	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -778,5 +781,72 @@ func testCDCPutNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T) 
 		assert.Equal(t, uint64(10000), narSize, "NarSize should be 10000 from input")
 		assert.Equal(t, narSize, fileSize,
 			"CDC mode should set FileSize == NarSize (10000), not the upstream compressed size (5000)")
+	}
+}
+
+// testCDCPutNarInfoNoContextCanceled is a regression test for the bug where
+// PutNarInfo called checkAndFixNarInfo with the HTTP request context, causing
+// "context canceled" errors in background goroutines after the response was sent.
+// When a NAR is stored as CDC chunks and then a narinfo is PUT (as happens with
+// nix copy --to .../upload), checkAndFixNarInfo calls GetNar which spawns
+// background goroutines. If these goroutines use the request context, they fail
+// with "context canceled" once the HTTP response is sent and the context is canceled.
+func testCDCPutNarInfoNoContextCanceled(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Enable CDC
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// Store a NAR as CDC chunks first (simulates the upload NAR step)
+		content := strings.Repeat("test nar content for regression test of context canceled bug ", 50)
+		narHash := "1s8p1kgdms8rmxkq24q51wc7zpn0aqcwgzvc473v9cii7z2qyxq0"
+		nu := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone}
+
+		err = c.PutNar(context.Background(), nu, io.NopCloser(strings.NewReader(content)))
+		require.NoError(t, err)
+
+		// Set up a log buffer to capture error-level log lines.
+		// We inject a zerolog writer into the context that PutNarInfo will use.
+		var logBuf bytes.Buffer
+
+		logger := zerolog.New(&logBuf).Level(zerolog.ErrorLevel)
+
+		// Create a cancelable context simulating an HTTP request context.
+		reqCtx, cancel := context.WithCancel(logger.WithContext(context.Background()))
+
+		// Build a narinfo referencing the CDC-stored NAR
+		niText := "StorePath: /nix/store/0amzzlz5w7ihknr59cn0q56pvp17bqqz-test-path\n" +
+			"URL: nar/" + narHash + ".nar\n" +
+			"Compression: none\n" +
+			"FileHash: sha256:" + narHash + "\n" +
+			"FileSize: 3000\n" +
+			"NarHash: sha256:" + narHash + "\n" +
+			"NarSize: 3000\n"
+
+		// PutNarInfo with the cancelable context (simulates the HTTP handler)
+		err = c.PutNarInfo(reqCtx, "0amzzlz5w7ihknr59cn0q56pvp17bqqz", io.NopCloser(strings.NewReader(niText)))
+		require.NoError(t, err)
+
+		// Cancel the context immediately after PutNarInfo returns — simulating
+		// the HTTP server canceling the request context after sending the 204 response.
+		cancel()
+
+		// Give background goroutines time to run and potentially fail.
+		time.Sleep(200 * time.Millisecond)
+
+		// Check no "context canceled" errors were logged.
+		assert.NotContains(t, logBuf.String(), "context canceled",
+			"PutNarInfo should not trigger 'context canceled' errors"+
+				"in background goroutines after the request context is canceled")
 	}
 }
