@@ -116,7 +116,7 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `config.hostname` | Cache hostname (REQUIRED) | `ncps.example.com` |
 | `config.logLevel` | Logging level | `info` |
 | `config.server.addr` | Server listen address | `:8501` |
-| `config.permissions.allowPut` | Allow PUT requests | `false` |
+| `config.permissions.allowPut` | Allow PUT requests (requires `/upload` prefix) | `false` |
 | `config.permissions.allowDelete` | Allow DELETE requests | `false` |
 | `config.signing.enabled` | Enable NAR signing | `true` |
 | `config.signing.secretKey` | Signing secret key | `""` |
