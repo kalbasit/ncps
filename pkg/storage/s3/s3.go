@@ -266,6 +266,8 @@ func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) er
 
 	for object := range s.client.ListObjects(ctx, s.bucket, opts) {
 		if object.Err != nil {
+			zerolog.Ctx(ctx).Error().Err(object.Err).Str("prefix", prefix).Msg("error listing narinfo objects from S3")
+
 			return object.Err
 		}
 

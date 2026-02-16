@@ -1038,8 +1038,17 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 		Query:       nu.Query.Encode(),
 	})
 	if err != nil {
+		if !database.IsNotFoundError(err) {
+			zerolog.Ctx(ctx).Error().Err(err).Msg("error querying nar file size from database")
+		}
+
 		return 0, err
 	}
+
+	zerolog.Ctx(ctx).
+		Debug().
+		Uint64("file_size", nr.FileSize).
+		Msg("got nar file size from database")
 
 	//nolint:gosec // G115: File size is non-negative
 	return int64(nr.FileSize), nil
@@ -1203,7 +1212,15 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
 
-		return c.narStore.DeleteNar(ctx, narURL)
+		zerolog.Ctx(ctx).Debug().Msg("deleting nar from store")
+
+		if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+			return err
+		}
+
+		zerolog.Ctx(ctx).Debug().Msg("nar deleted from store")
+
+		return nil
 	})
 }
 
@@ -1303,6 +1320,8 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 	// extension.
 	storeURL := *narURL
 	if narURL.Compression == nar.CompressionTypeNone {
+		zerolog.Ctx(ctx).Debug().Msg("re-compressing uncompressed NAR as zstd before storing")
+
 		pr, pw := io.Pipe()
 
 		analytics.SafeGo(ctx, func() {
@@ -1339,6 +1358,8 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 
 		return 0, err
 	}
+
+	zerolog.Ctx(ctx).Debug().Int64("written", written).Msg("nar stored successfully")
 
 	return written, nil
 }
@@ -1989,10 +2010,19 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 			if narURL, err := nar.ParseURL(narInfo.URL); err == nil {
 				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
+				zerolog.Ctx(ctx).
+					Debug().
+					Str("narinfo", narInfo.String()).
+					Msg("fetched this narinfo from the database")
 			}
 
 			return nil
 		} else if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error fetching the narinfo from the database")
+
 			return fmt.Errorf("error fetching narinfo from database: %w", err)
 		}
 
@@ -2005,6 +2035,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 			narInfo, err = c.getNarInfoFromStore(ctx, hash)
 			if err == nil {
+				if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
+					zerolog.Ctx(ctx).
+						Debug().
+						Str("narinfo", narInfo.String()).
+						Msg("fetched this narinfo from the store")
+				}
+
 				return nil
 			}
 
@@ -2047,6 +2084,19 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 		// After pulling from upstream, get the narinfo from the database (where it's now stored)
 		narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
+		if err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("failed to fetch narinfo from database after upstream pull")
+		} else {
+			if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
+				zerolog.Ctx(ctx).
+					Debug().
+					Str("narinfo", narInfo.String()).
+					Msg("fetched narinfo from database after upstream pull")
+			}
+		}
 
 		return err
 	})
@@ -2344,7 +2394,15 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 			Logger().
 			WithContext(ctx)
 
-		return c.deleteNarInfoFromStore(ctx, hash)
+		zerolog.Ctx(ctx).Debug().Msg("deleting narinfo from store")
+
+		if err := c.deleteNarInfoFromStore(ctx, hash); err != nil {
+			return err
+		}
+
+		zerolog.Ctx(ctx).Debug().Msg("narinfo deleted from store")
+
+		return nil
 	})
 }
 
@@ -3481,6 +3539,11 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 
 	inDatabase := err == nil
 
+	zerolog.Ctx(ctx).Debug().
+		Bool("in_storage", inStorage).
+		Bool("in_database", inDatabase).
+		Msg("narinfo existence check before delete")
+
 	if !inStorage && !inDatabase {
 		return storage.ErrNotFound
 	}
@@ -3490,6 +3553,8 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 		if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
 			return fmt.Errorf("error deleting narinfo from the database: %w", err)
 		}
+
+		zerolog.Ctx(ctx).Debug().Msg("narinfo deleted from database")
 	}
 
 	// Delete from storage if present
@@ -3497,6 +3562,8 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 		if err := c.narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
 			return fmt.Errorf("error deleting narinfo from storage: %w", err)
 		}
+
+		zerolog.Ctx(ctx).Debug().Msg("narinfo deleted from storage backend")
 	}
 
 	return nil
@@ -3535,6 +3602,8 @@ func (c *Cache) setupSecretKey(ctx context.Context, secretKeyPath string) error 
 		if err != nil {
 			return fmt.Errorf("error loading the secret key from the database: %w", err)
 		}
+
+		zerolog.Ctx(ctx).Debug().Msg("loaded secret key from database")
 
 		return nil
 	} else if !errors.Is(err, config.ErrConfigNotFound) && !database.IsNotFoundError(err) {
@@ -3592,6 +3661,8 @@ func (c *Cache) setupSecretKeyFromFile(ctx context.Context, secretKeyPath string
 	if err != nil {
 		return fmt.Errorf("error loading the given secret key located at %q: %w", secretKeyPath, err)
 	}
+
+	zerolog.Ctx(ctx).Debug().Str("path", secretKeyPath).Msg("loaded secret key from file")
 
 	// Store it in the database if it doesn't exist or is different
 	// We ignore the error here because we don't want to fail if the DB is down or read-only

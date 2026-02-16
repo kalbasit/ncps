@@ -358,6 +358,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return nil, fmt.Errorf("error parsing the narinfo: %w", err)
 	}
 
+	if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
+		zerolog.Ctx(ctx).
+			Debug().
+			Str("narinfo", ni.String()).
+			Msg("downloaded this narinfo from upstream")
+	}
+
 	if err := ni.Check(); err != nil {
 		return ni, fmt.Errorf("error while checking the narInfo: %w", err)
 	}
@@ -560,7 +567,15 @@ func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 		resp.Body.Close()
 	}()
 
-	return resp.StatusCode < http.StatusBadRequest, nil
+	exists := resp.StatusCode < http.StatusBadRequest
+
+	zerolog.Ctx(ctx).
+		Debug().
+		Bool("exists", exists).
+		Int("status_code", resp.StatusCode).
+		Msg("nar existence check on upstream complete")
+
+	return exists, nil
 }
 
 // GetPriority returns the priority of this upstream cache.
