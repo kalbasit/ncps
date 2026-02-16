@@ -3253,6 +3253,12 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 		return fmt.Errorf("failed to parse nar url from narinfo: %w", err)
 	}
 
+	// FileSize must be null/0 for compression=none narinfos — this is correct by spec.
+	// Nix ignores FileSize/FileHash for uncompressed NARs; do not overwrite with actual size.
+	if nu.Compression == nar.CompressionTypeNone {
+		return nil
+	}
+
 	// Determine the actual NAR size without triggering a streaming pipeline.
 	// We check the store first (whole-file), then chunks (CDC). In both cases
 	// we avoid calling c.GetNar() which would create an io.Pipe with a
