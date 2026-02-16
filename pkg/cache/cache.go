@@ -1156,7 +1156,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 		// Ensure we have a NarFile record for it.
 		// fileSize is 'written'.
 		err = c.withTransaction(ctx, "PutNar.ensureNarFile", func(qtx database.Querier) error {
-			_, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+			nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
 				Hash:        narURL.Hash,
 				Compression: narURL.Compression.String(),
 				Query:       narURL.Query.Encode(),
@@ -1164,8 +1164,21 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 				FileSize:    uint64(written),
 				TotalChunks: 0, // initially 0, background job will chunk if needed
 			})
+			if err != nil {
+				return err
+			}
 
-			return err
+			// If the record existed but had a different size, update it to reflect the truth.
+			//nolint:gosec // G115: conversion is safe because size is non-negative
+			if nf.FileSize != uint64(written) {
+				return qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+					ID: nf.ID,
+					//nolint:gosec // G115: conversion is safe because size is non-negative
+					FileSize: uint64(written),
+				})
+			}
+
+			return nil
 		})
 		if err != nil {
 			zerolog.Ctx(ctx).Error().Err(err).Msg("failed to ensure nar file record in PutNar")
@@ -1379,6 +1392,38 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 
 	zerolog.Ctx(ctx).Debug().Int64("written", written).Msg("nar stored successfully")
 
+	// Ensure we have a NarFile record for it, and that it reflects the truth.
+	err = c.withTransaction(ctx, "storeNarFromTempFile.ensureNarFile", func(qtx database.Querier) error {
+		nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+			//nolint:gosec // G115: conversion is safe because size is non-negative
+			FileSize:    uint64(written),
+			TotalChunks: 0, // initially 0, background job will chunk if needed
+		})
+		if err != nil {
+			return err
+		}
+
+		// If the record existed but had a different size, update it to reflect the truth.
+		//nolint:gosec // G115: conversion is safe because size is non-negative
+		if nf.FileSize != uint64(written) {
+			return qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+				ID: nf.ID,
+				//nolint:gosec // G115: conversion is safe because size is non-negative
+				FileSize: uint64(written),
+			})
+		}
+
+		return nil
+	})
+	if err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to ensure nar file record in storeNarFromTempFile")
+
+		return 0, err
+	}
+
 	return written, nil
 }
 
@@ -1556,6 +1601,16 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 		})
 		if err != nil {
 			return err
+		}
+
+		// If the record existed but had a different size, update it to reflect the truth.
+		if nr.FileSize != fileSize {
+			if err := qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+				ID:       nr.ID,
+				FileSize: fileSize,
+			}); err != nil {
+				return err
+			}
 		}
 
 		narFileID = nr.ID
@@ -3176,26 +3231,7 @@ func (c *Cache) fixNarInfoFileSize(
 // when the reader is closed before the goroutine finishes.
 //
 // Returns -1 if the size cannot be determined (NAR not found or not yet available).
-func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL, hasNarInStore bool) (int64, error) {
-	if hasNarInStore {
-		// Read size directly from storage (no pipe, no background goroutine).
-		size, storageReader, err := c.getNarFromStore(ctx, &nu)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				zerolog.Ctx(ctx).Debug().Msg("NAR not found in store, skipping file size check")
-
-				return -1, nil
-			}
-
-			return 0, fmt.Errorf("failed to get nar from store: %w", err)
-		}
-
-		storageReader.Close()
-
-		return size, nil
-	}
-
-	// CDC path: the nar_file record's file_size is the source of truth.
+func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL) (int64, error) {
 	narFileRow, err := c.getNarFileFromDB(ctx, c.db, nu)
 	if err != nil {
 		if database.IsNotFoundError(err) {
@@ -3249,7 +3285,7 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 		return nil
 	}
 
-	size, err := c.getNarActualSize(ctx, nu, hasNarInStore)
+	size, err := c.getNarActualSize(ctx, nu)
 	if err != nil {
 		return err
 	}

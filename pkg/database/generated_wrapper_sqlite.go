@@ -1249,6 +1249,15 @@ func (w *sqliteWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, e
 	return res, nil
 }
 
+func (w *sqliteWrapper) UpdateNarFileFileSize(ctx context.Context, arg UpdateNarFileFileSizeParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarFileFileSize(ctx, sqlitedb.UpdateNarFileFileSizeParams{
+		FileSize: arg.FileSize,
+		ID:       arg.ID,
+	})
+}
+
 func (w *sqliteWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

@@ -1179,6 +1179,15 @@ func (w *mysqlWrapper) TouchNarInfo(ctx context.Context, hash string) (int64, er
 	return res, nil
 }
 
+func (w *mysqlWrapper) UpdateNarFileFileSize(ctx context.Context, arg UpdateNarFileFileSizeParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarFileFileSize(ctx, mysqldb.UpdateNarFileFileSizeParams{
+		FileSize: arg.FileSize,
+		ID:       arg.ID,
+	})
+}
+
 func (w *mysqlWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

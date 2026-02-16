@@ -1222,6 +1222,15 @@ func (w *postgresWrapper) TouchNarInfo(ctx context.Context, hash string) (int64,
 	return res, nil
 }
 
+func (w *postgresWrapper) UpdateNarFileFileSize(ctx context.Context, arg UpdateNarFileFileSizeParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarFileFileSize(ctx, postgresdb.UpdateNarFileFileSizeParams{
+		FileSize: arg.FileSize,
+		ID:       arg.ID,
+	})
+}
+
 func (w *postgresWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
