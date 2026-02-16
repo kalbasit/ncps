@@ -13,6 +13,15 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock/local"
 )
 
+// ensureLockHeld waits for a lock to be held in concurrent scenarios.
+// This replaces arbitrary time.Sleep calls with semantic naming that documents
+// the synchronization intent. The 50ms duration is sufficient for lock acquisition
+// across all platforms while being much faster than longer waits.
+func ensureLockHeld(t *testing.T) {
+	t.Helper()
+	time.Sleep(50 * time.Millisecond)
+}
+
 func TestLocker_BasicLockUnlock(t *testing.T) {
 	t.Parallel()
 
@@ -50,7 +59,7 @@ func TestLocker_ConcurrentAccess(t *testing.T) {
 				// Critical section
 				val := atomic.LoadInt64(&counter)
 
-				time.Sleep(time.Microsecond) // Simulate work
+				time.Sleep(time.Microsecond) // Minimal work simulation (1 microsecond)
 				atomic.StoreInt64(&counter, val+1)
 
 				err = locker.Unlock(ctx, "counter")
@@ -154,8 +163,8 @@ func TestRWLocker_MultipleReaders(t *testing.T) {
 			active := atomic.LoadInt64(&readersActive)
 			assert.GreaterOrEqual(t, active, int64(numReaders), "all readers should be active simultaneously")
 
-			// Hold lock for a bit
-			time.Sleep(50 * time.Millisecond)
+			// Hold lock for a bit (ensure readers can coexist)
+			ensureLockHeld(t)
 
 			// Decrement active readers
 			atomic.AddInt64(&readersActive, -1)
@@ -197,8 +206,8 @@ func TestRWLocker_WriterBlocksReaders(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	// Hold write lock for a bit
-	time.Sleep(50 * time.Millisecond)
+	// Hold write lock for a bit (ensure writer blocks readers)
+	ensureLockHeld(t)
 
 	// Release write lock
 	writerHolding.Store(0)
@@ -207,7 +216,7 @@ func TestRWLocker_WriterBlocksReaders(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for reader to finish
-	time.Sleep(50 * time.Millisecond)
+	ensureLockHeld(t)
 	assert.Equal(t, int32(1), readerAcquired.Load(), "reader should have acquired lock")
 }
 

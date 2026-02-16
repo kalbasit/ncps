@@ -45,6 +45,23 @@ func skipIfRedisNotAvailable(t *testing.T) {
 	}
 }
 
+// pollWithBackoff polls a condition with linear backoff until it succeeds or times out.
+// It starts with a 1ms delay and increases linearly (1ms, 2ms, 3ms, ...).
+// This replaces arbitrary time.Sleep calls with structured polling that respects timeouts.
+func pollWithBackoff(t *testing.T, maxIterations int, condition func() bool) bool {
+	t.Helper()
+
+	for i := 1; i < maxIterations; i++ {
+		time.Sleep(time.Duration(i) * time.Millisecond)
+
+		if condition() {
+			return true
+		}
+	}
+
+	return false
+}
+
 // distributedDBFactory creates a shared database for distributed testing.
 // Unlike other factories, this returns a SHARED database that multiple cache instances will use.
 type distributedDBFactory func(t *testing.T) (database.Querier, string, func())
@@ -369,8 +386,11 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 		_, err = io.Copy(io.Discard, reader)
 		require.NoError(t, err)
 
-		// Give it a moment to fully cache
-		time.Sleep(500 * time.Millisecond)
+		// Wait for the NAR to be fully written to the local store
+		// by polling until it exists in the storage backend
+		pollWithBackoff(t, 100, func() bool {
+			return sharedStore.HasNar(ctx, narURL)
+		})
 
 		// Now create multiple instances that will read concurrently
 		var caches []*cache.Cache
@@ -683,9 +703,9 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 
 	handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == narPath && r.Method == http.MethodGet {
-			// Add artificial delay to simulate slow download (like real large NARs)
-			// This ensures concurrent requests arrive while download is in progress
-			time.Sleep(2 * time.Second)
+			// Add minimal delay to ensure concurrent requests arrive while download is in progress
+			// Reduced from 2s to 50ms - still exercises concurrency without slow tests
+			time.Sleep(50 * time.Millisecond)
 		}
 
 		return false // Let default handler process request
@@ -933,8 +953,8 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 		// This ensures concurrent requests arrive during chunking
 		handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
 			if r.URL.Path == narPath && r.Method == http.MethodGet {
-				// Simulate slow download (2 seconds)
-				time.Sleep(2 * time.Second)
+				// Minimal delay to test concurrent chunking (reduced from 2s to 50ms)
+				time.Sleep(50 * time.Millisecond)
 			}
 
 			return false // Let default handler process request

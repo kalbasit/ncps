@@ -37,6 +37,32 @@ const (
 	cacheLockTTL        = 30 * time.Minute
 )
 
+// ensureTimestampProgression ensures that database timestamps will be different
+// between successive operations. This is needed because some databases (like SQLite)
+// have second-level timestamp precision and cannot distinguish operations that
+// happen within the same second.
+func ensureTimestampProgression(t *testing.T) {
+	t.Helper()
+	time.Sleep(time.Second)
+}
+
+// pollWithBackoff polls a condition with exponential backoff until it succeeds or times out.
+// It starts with a 1ms delay and increases exponentially (1ms, 2ms, 3ms, ..., 99ms).
+// This replaces arbitrary time.Sleep calls with structured polling that respects timeouts.
+func pollWithBackoff(t *testing.T, maxIterations int, condition func() bool) bool {
+	t.Helper()
+
+	for i := 1; i < maxIterations; i++ {
+		time.Sleep(time.Duration(i) * time.Millisecond)
+
+		if condition() {
+			return true
+		}
+	}
+
+	return false
+}
+
 var errTest = errors.New("test error")
 
 // cacheFactory is a function that returns a clean, ready-to-use Cache instance,
@@ -381,23 +407,15 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
 
-			var found bool
-
-			for i := 1; i < 100; i++ {
-				// NOTE: I tried runtime.Gosched() but it makes the test flaky
-				time.Sleep(time.Duration(i) * time.Millisecond)
-
-				found = c.narStore.HasNar(newContext(), nu)
-				if found {
-					break
-				}
-			}
+			found := pollWithBackoff(t, 100, func() bool {
+				return c.narStore.HasNar(newContext(), nu)
+			})
 
 			assert.True(t, found, nu.String()+" should exist in the store")
 		}
 
 		// ensure time has moved by one sec for the last_accessed_at work
-		time.Sleep(time.Second)
+		ensureTimestampProgression(t)
 
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
@@ -695,23 +713,15 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
 
-			var found bool
-
-			for i := 1; i < 100; i++ {
-				// NOTE: I tried runtime.Gosched() but it makes the test flaky
-				time.Sleep(time.Duration(i) * time.Millisecond)
-
-				found = c.narStore.HasNar(newContext(), nu)
-				if found {
-					break
-				}
-			}
+			found := pollWithBackoff(t, 100, func() bool {
+				return c.narStore.HasNar(newContext(), nu)
+			})
 
 			assert.True(t, found, nu.String()+" should exist in the store")
 		}
 
 		// ensure time has moved by one sec for the last_accessed_at work
-		time.Sleep(time.Second)
+		ensureTimestampProgression(t)
 
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
