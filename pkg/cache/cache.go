@@ -1054,11 +1054,7 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 	)
 	defer span.End()
 
-	nr, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	nr, err := c.getNarFileFromDB(ctx, c.db, nu)
 	if err != nil {
 		if !database.IsNotFoundError(err) {
 			zerolog.Ctx(ctx).Error().Err(err).Msg("error querying nar file size from database")
@@ -1874,11 +1870,7 @@ func (c *Cache) getNarFromStore(
 	}
 
 	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
-		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		nr, err := c.getNarFileFromDB(ctx, qtx, *narURL)
 		if err != nil {
 			// TODO: If record not found, record it instead!
 			if database.IsNotFoundError(err) {
@@ -2504,6 +2496,36 @@ func (c *Cache) prePullNar(
 			c.pullNarIntoStore(ctx, narURL, uc, ds)
 		},
 	)
+}
+
+// getNarFileFromDB looks up a nar_file record by URL using the given querier.
+// It tries the most likely compression first based on whether CDC is enabled:
+//   - CDC enabled:  try "none" first (all CDC files use none), fall back to original
+//   - CDC disabled: try original compression first, fall back to "none"
+func (c *Cache) getNarFileFromDB(ctx context.Context, q database.Querier, narURL nar.URL) (database.NarFile, error) {
+	first, second := narURL.Compression, nar.CompressionTypeNone
+	if c.isCDCEnabled() {
+		first, second = nar.CompressionTypeNone, narURL.Compression
+	}
+
+	nr, err := q.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        narURL.Hash,
+		Compression: first.String(),
+		Query:       narURL.Query.Encode(),
+	})
+	if err == nil {
+		return nr, nil
+	}
+
+	if database.IsNotFoundError(err) && first != second {
+		return q.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: second.String(),
+			Query:       narURL.Query.Encode(),
+		})
+	}
+
+	return database.NarFile{}, err
 }
 
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
@@ -4566,51 +4588,23 @@ func parseValidHash(hash sql.NullString, fieldName string) (*nixhash.HashWithEnc
 
 // HasNarInChunks returns true if the NAR is already in chunks and chunking is complete.
 func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error) {
-	nr, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        narURL.Hash,
-		Compression: narURL.Compression.String(),
-		Query:       narURL.Query.Encode(),
-	})
-	if err != nil && !database.IsNotFoundError(err) {
+	nr, err := c.getNarFileFromDB(ctx, c.db, narURL)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return false, nil
+		}
+
 		return false, err
 	}
 
-	if err == nil && nr.TotalChunks > 0 {
-		return true, nil
-	}
-
-	// CDC always normalizes compression to "none". If the original compression
-	// didn't find chunks, try again with "none" to find CDC-stored chunks.
-	if narURL.Compression != nar.CompressionTypeNone {
-		nr, err = c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: nar.CompressionTypeNone.String(),
-			Query:       narURL.Query.Encode(),
-		})
-		if err != nil {
-			if database.IsNotFoundError(err) {
-				return false, nil
-			}
-
-			return false, err
-		}
-
-		return nr.TotalChunks > 0, nil
-	}
-
-	return false, nil
+	return nr.TotalChunks > 0, nil
 }
 
 // HasNarFileRecord checks if a NAR file record exists in the database,
 // regardless of chunking completion status. This is used for coordination
 // to allow progressive streaming while chunking is in progress.
 func (c *Cache) HasNarFileRecord(ctx context.Context, narURL nar.URL) (bool, error) {
-	_, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx,
-		database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+	_, err := c.getNarFileFromDB(ctx, c.db, narURL)
 	if err != nil {
 		if database.IsNotFoundError(err) {
 			return false, nil
@@ -4641,23 +4635,7 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 	)
 
 	err := c.withTransaction(ctx, "getNarFromChunks.init", func(qtx database.Querier) error {
-		nr, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
-		if err != nil {
-			// CDC always normalizes compression to "none". If the original compression
-			// didn't match, try again with "none" to find CDC-stored chunks.
-			if database.IsNotFoundError(err) && narURL.Compression != nar.CompressionTypeNone {
-				nr, err = qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narURL.Hash,
-					Compression: nar.CompressionTypeNone.String(),
-					Query:       narURL.Query.Encode(),
-				})
-			}
-		}
-
+		nr, err := c.getNarFileFromDB(ctx, qtx, *narURL)
 		if err != nil {
 			return err
 		}
