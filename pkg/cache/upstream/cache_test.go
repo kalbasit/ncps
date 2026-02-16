@@ -171,7 +171,7 @@ func TestGetNarInfo(t *testing.T) {
 				t.Run(fmt.Sprintf("testing nar entry ID %d hash %s", i, narEntry.NarHash), func(t *testing.T) {
 					t.Run("hash is found", func(t *testing.T) {
 						ni, err := c.GetNarInfo(context.Background(), narEntry.NarInfoHash)
-						require.NoError(t, err)
+						require.NoError(t, err, "failed to get nar info:\n"+narEntry.NarInfoText)
 
 						assert.EqualValues(t, len(narEntry.NarText), ni.FileSize)
 					})
@@ -221,7 +221,7 @@ func TestGetNarInfo(t *testing.T) {
 					hash := entry.NarInfoHash
 
 					_, err = c.GetNarInfo(context.Background(), hash)
-					assert.NoError(t, err)
+					assert.NoError(t, err, "failed to get nar info:\n"+entry.NarInfoText)
 				})
 			}
 		}

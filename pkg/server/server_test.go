@@ -716,14 +716,11 @@ func TestGetNar_NixServeUpstream_PrefixedNarURL(t *testing.T) {
 	// Create a test entry with a prefixed NAR URL (nix-serve style)
 	// Based on Nar7 but with a prefixed URL
 	prefixedNarInfoHash := testdata.Nar7.NarInfoHash + "-" + testdata.Nar7.NarHash
-	prefixedNarInfoText := `StorePath: /nix/store/c12lxpykv6sld7a0sakcnr3y0la70x8w-hello-2.12.2
-URL: nar/` + prefixedNarInfoHash + `.nar
-Compression: none
-NarHash: sha256:1yf3p87fsqig07crd9sj9wh7i9jpsa0x86a22fqbls7c81lc7ws2
-NarSize: 113256
-References: 7h6icyvqv6lqd0bcx41c8h3615rjcqb2-libiconv-109.100.2
-Deriver: msnhw2b4dcn9kbswsfz63jplf7ncnxik-hello-2.12.2.drv
-Sig: cache.nixos.org-1:oPqkkDFlniUh1BaGWwWd7LY2EfUh3r/GBxriDGE7vCfvJ3fKsnIDg1L4QFkuHKWIfwWxWy4FlpO6/5FHPx00AQ==`
+	parsedNarInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar7.NarInfoText))
+	require.NoError(t, err)
+
+	parsedNarInfo.URL = "nar/" + prefixedNarInfoHash + ".nar"
+	prefixedNarInfoText := parsedNarInfo.String()
 
 	prefixedEntry := testdata.Entry{
 		NarInfoHash:    testdata.Nar7.NarInfoHash,
