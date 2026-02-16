@@ -108,7 +108,7 @@ func (s *Server) handler() http.Handler {
 			}
 
 			// If NarInfoNarHash is set (nix-serve style with prefix), only serve at that path
-			if entry.NarInfoNarHash != "" {
+			if entry.NarInfoNarHash != "" { //nolint:nestif
 				if r.URL.Path == "/nar/"+entry.NarInfoNarHash+".nar" {
 					bs = []byte(entry.NarText)
 				}
