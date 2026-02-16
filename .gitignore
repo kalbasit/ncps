@@ -55,3 +55,6 @@ charts/ncps/test-values/
 __pycache__/
 *.pyc
 *.pyo
+
+# Agents
+/.claude/settings.local.json
