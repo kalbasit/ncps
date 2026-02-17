@@ -2917,6 +2917,66 @@ func testNarInfoFileSizeFix(factory cacheFactory) func(*testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, int64(len(someContent)), narFileSize, "nar_files table should reflect the actual bytes written")
 		})
+
+		t.Run("PutNar then PutNarInfo with compression=none must keep FileSize null", func(t *testing.T) {
+			t.Parallel()
+
+			c, db, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			// 1. Put NAR (Nar7 has CompressionTypeNone)
+			nu := nar.URL{
+				Hash:        testdata.Nar7.NarHash,
+				Compression: testdata.Nar7.NarCompression, // CompressionTypeNone
+			}
+
+			someContent := []byte("some content for nar7")
+			require.NoError(t, c.PutNar(context.Background(), nu, io.NopCloser(bytes.NewReader(someContent))))
+
+			// 2. Put NarInfo (Nar7 has Compression: none, no FileSize/FileHash)
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar7.NarInfoHash,
+				io.NopCloser(strings.NewReader(testdata.Nar7.NarInfoText))))
+
+			// 3. Verify FileSize is NULL in DB — compression=none narinfos must not have FileSize set.
+			// Nix ignores FileSize/FileHash for uncompressed NARs; storing a non-zero value would be wrong.
+			var dbFileSize sql.NullInt64
+
+			err := db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar7.NarInfoHash).Scan(&dbFileSize)
+			require.NoError(t, err)
+			assert.False(t, dbFileSize.Valid, "narinfo FileSize must be NULL for compression=none")
+		})
+
+		t.Run("PutNar then PutNarInfo with compression=none must keep FileHash null", func(t *testing.T) {
+			t.Parallel()
+
+			c, db, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+
+			// 1. Put NAR (Nar7 has CompressionTypeNone)
+			nu := nar.URL{
+				Hash:        testdata.Nar7.NarHash,
+				Compression: testdata.Nar7.NarCompression, // CompressionTypeNone
+			}
+
+			someContent := []byte("some content for nar7")
+			require.NoError(t, c.PutNar(context.Background(), nu, io.NopCloser(bytes.NewReader(someContent))))
+
+			// 2. Put NarInfo (Nar7 has Compression: none, no FileSize/FileHash)
+			require.NoError(t, c.PutNarInfo(context.Background(), testdata.Nar7.NarInfoHash,
+				io.NopCloser(strings.NewReader(testdata.Nar7.NarInfoText))))
+
+			// 3. Verify FileHash is NULL in DB — compression=none narinfos must not have FileHash set.
+			// Nix ignores FileSize/FileHash for uncompressed NARs; storing a non-zero value would be wrong.
+			var dbFileHash sql.NullString
+
+			err := db.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_hash FROM narinfos WHERE hash = ?"),
+				testdata.Nar7.NarInfoHash).Scan(&dbFileHash)
+			require.NoError(t, err)
+			assert.False(t, dbFileHash.Valid, "narinfo FileHash must be NULL for compression=none")
+		})
 	}
 }
 

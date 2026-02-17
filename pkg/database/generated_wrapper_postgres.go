@@ -1318,6 +1318,15 @@ func (w *postgresWrapper) UpdateNarInfoCompressionAndURL(ctx context.Context, ar
 	return res, nil
 }
 
+func (w *postgresWrapper) UpdateNarInfoFileHash(ctx context.Context, arg UpdateNarInfoFileHashParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarInfoFileHash(ctx, postgresdb.UpdateNarInfoFileHashParams{
+		Hash:     arg.Hash,
+		FileHash: arg.FileHash,
+	})
+}
+
 func (w *postgresWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

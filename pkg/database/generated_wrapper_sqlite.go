@@ -1345,6 +1345,15 @@ func (w *sqliteWrapper) UpdateNarInfoCompressionAndURL(ctx context.Context, arg 
 	return res, nil
 }
 
+func (w *sqliteWrapper) UpdateNarInfoFileHash(ctx context.Context, arg UpdateNarInfoFileHashParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarInfoFileHash(ctx, sqlitedb.UpdateNarInfoFileHashParams{
+		FileHash: arg.FileHash,
+		Hash:     arg.Hash,
+	})
+}
+
 func (w *sqliteWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
