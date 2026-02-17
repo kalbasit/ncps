@@ -915,7 +915,19 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 			return {{.Method.ReturnElem}}{}, err
 		}
 
-		return w.Get{{.Method.ReturnElem}}ByID(ctx, id)
+		nf, err := w.Get{{.Method.ReturnElem}}ByID(ctx, id)
+		if err == nil {
+			return nf, nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return {{.Method.ReturnElem}}{}, err
+		}
+
+		// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+		// already committed this row), the current transaction's MVCC snapshot may not
+		// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+		// connection, which always reads the latest committed data.
+		return (&mysqlWrapper{adapter: {{.Engine.Package}}.NewAdapter(w.adapter.DB())}).Get{{.Method.ReturnElem}}ByID(ctx, id)
 	{{else if and .Engine.IsMySQL .Method.IsUpdate}}
 		// MySQL does not support RETURNING for UPDATEs.
 		// We update, and then fetch the object by its unique key (assumed to be the first param after context, or we try by Hash if it exists).

@@ -87,7 +87,19 @@ func (w *mysqlWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (
 		return Chunk{}, err
 	}
 
-	return w.GetChunkByID(ctx, id)
+	nf, err := w.GetChunkByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Chunk{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetChunkByID(ctx, id)
 }
 
 func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
@@ -108,7 +120,19 @@ func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams)
 		return Config{}, err
 	}
 
-	return w.GetConfigByID(ctx, id)
+	nf, err := w.GetConfigByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Config{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetConfigByID(ctx, id)
 }
 
 func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
@@ -132,7 +156,19 @@ func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParam
 		return NarFile{}, err
 	}
 
-	return w.GetNarFileByID(ctx, id)
+	nf, err := w.GetNarFileByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return NarFile{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetNarFileByID(ctx, id)
 }
 
 func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
@@ -162,7 +198,19 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParam
 		return NarInfo{}, err
 	}
 
-	return w.GetNarInfoByID(ctx, id)
+	nf, err := w.GetNarInfoByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return NarInfo{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetNarInfoByID(ctx, id)
 }
 
 func (w *mysqlWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
