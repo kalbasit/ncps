@@ -3256,7 +3256,7 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 	// FileSize must be null/0 for compression=none narinfos — this is correct by spec.
 	// Nix ignores FileSize/FileHash for uncompressed NARs; do not overwrite with actual size.
 	if nu.Compression == nar.CompressionTypeNone {
-		return nil
+		return c.checkAndFixNarInfoNoCompression(ctx, hash, niRow)
 	}
 
 	// Determine the actual NAR size without triggering a streaming pipeline.
@@ -3293,6 +3293,44 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 			Msg("mismatch detected, fixing narinfo file size")
 
 		return c.fixNarInfoFileSize(ctx, hash, size)
+	}
+
+	return nil
+}
+
+func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string, niRow database.NarInfo) error {
+	// For compression=none, FileSize must be 0. If it's not, fix it.
+	if niRow.FileSize.Valid && niRow.FileSize.Int64 != 0 {
+		zerolog.Ctx(ctx).
+			Info().
+			Int64("current_size", niRow.FileSize.Int64).
+			Msg("mismatch detected for compression=none, fixing narinfo file size to NULL")
+
+		if err := c.withTransaction(ctx, "fixNarInfoFileSizeToNull", func(qtx database.Querier) error {
+			return qtx.UpdateNarInfoFileSize(ctx, database.UpdateNarInfoFileSizeParams{
+				Hash:     hash,
+				FileSize: sql.NullInt64{Int64: 0, Valid: false},
+			})
+		}); err != nil {
+			return fmt.Errorf("failed to fix narinfo file size to NULL: %w", err)
+		}
+	}
+
+	// For compression=none, FileHash must be NULL. If it's not, fix it.
+	if niRow.FileHash.Valid || niRow.FileHash.String != "" {
+		zerolog.Ctx(ctx).
+			Info().
+			Str("current_file_hash", niRow.FileHash.String).
+			Msg("mismatch detected for compression=none, fixing narinfo file hash to NULL")
+
+		if err := c.withTransaction(ctx, "fixNarInfoFileHashToNull", func(qtx database.Querier) error {
+			return qtx.UpdateNarInfoFileHash(ctx, database.UpdateNarInfoFileHashParams{
+				Hash:     hash,
+				FileHash: sql.NullString{String: "", Valid: false},
+			})
+		}); err != nil {
+			return fmt.Errorf("failed to fix narinfo file size to NULL: %w", err)
+		}
 	}
 
 	return nil

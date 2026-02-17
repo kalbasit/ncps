@@ -1993,6 +1993,27 @@ func (q *Queries) UpdateNarInfoCompressionAndURL(ctx context.Context, arg Update
 	return result.RowsAffected()
 }
 
+const updateNarInfoFileHash = `-- name: UpdateNarInfoFileHash :exec
+UPDATE narinfos
+SET file_hash = $2, updated_at = CURRENT_TIMESTAMP
+WHERE hash = $1
+`
+
+type UpdateNarInfoFileHashParams struct {
+	Hash     string
+	FileHash sql.NullString
+}
+
+// UpdateNarInfoFileHash
+//
+//	UPDATE narinfos
+//	SET file_hash = $2, updated_at = CURRENT_TIMESTAMP
+//	WHERE hash = $1
+func (q *Queries) UpdateNarInfoFileHash(ctx context.Context, arg UpdateNarInfoFileHashParams) error {
+	_, err := q.db.ExecContext(ctx, updateNarInfoFileHash, arg.Hash, arg.FileHash)
+	return err
+}
+
 const updateNarInfoFileSize = `-- name: UpdateNarInfoFileSize :exec
 UPDATE narinfos
 SET file_size = $2, updated_at = CURRENT_TIMESTAMP

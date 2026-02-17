@@ -448,6 +448,12 @@ type Querier interface {
 	//  SET compression = ?, url = ?, updated_at = CURRENT_TIMESTAMP
 	//  WHERE url = ?
 	UpdateNarInfoCompressionAndURL(ctx context.Context, arg UpdateNarInfoCompressionAndURLParams) (int64, error)
+	//UpdateNarInfoFileHash
+	//
+	//  UPDATE narinfos
+	//  SET file_hash = ?, updated_at = CURRENT_TIMESTAMP
+	//  WHERE hash = ?
+	UpdateNarInfoFileHash(ctx context.Context, arg UpdateNarInfoFileHashParams) error
 	//UpdateNarInfoFileSize
 	//
 	//  UPDATE narinfos

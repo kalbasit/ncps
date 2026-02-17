@@ -111,6 +111,11 @@ UPDATE narinfos
 SET file_size = $2, updated_at = CURRENT_TIMESTAMP
 WHERE hash = $1;
 
+-- name: UpdateNarInfoFileHash :exec
+UPDATE narinfos
+SET file_hash = $2, updated_at = CURRENT_TIMESTAMP
+WHERE hash = $1;
+
 -- name: AddNarInfoReference :exec
 INSERT INTO narinfo_references (
     narinfo_id, reference

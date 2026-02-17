@@ -1248,6 +1248,15 @@ func (w *mysqlWrapper) UpdateNarInfoCompressionAndURL(ctx context.Context, arg U
 	return res, nil
 }
 
+func (w *mysqlWrapper) UpdateNarInfoFileHash(ctx context.Context, arg UpdateNarInfoFileHashParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarInfoFileHash(ctx, mysqldb.UpdateNarInfoFileHashParams{
+		FileHash: arg.FileHash,
+		Hash:     arg.Hash,
+	})
+}
+
 func (w *mysqlWrapper) UpdateNarInfoFileSize(ctx context.Context, arg UpdateNarInfoFileSizeParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

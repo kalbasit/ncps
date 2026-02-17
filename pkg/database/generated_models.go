@@ -252,6 +252,11 @@ type UpdateNarInfoCompressionAndURLParams struct {
 	OldUrl      sql.NullString
 }
 
+type UpdateNarInfoFileHashParams struct {
+	Hash     string
+	FileHash sql.NullString
+}
+
 type UpdateNarInfoFileSizeParams struct {
 	Hash     string
 	FileSize sql.NullInt64
