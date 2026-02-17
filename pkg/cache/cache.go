@@ -1539,6 +1539,21 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 					}
 				}
 
+				// Re-link narinfos to the new nar_file.
+				// At this point narinfos still reference the old URL (UpdateNarInfoCompressionAndURL
+				// in MigrateNarToChunks runs after storeNarWithCDC returns), so query by oldNarURL.
+				oldNarURL := nar.URL{
+					Hash:        narURL.Hash,
+					Compression: originalCompression,
+					Query:       narURL.Query,
+				}
+				if err := c.relinkNarInfosToNarFile(ctx, oldNarURL, narFileID); err != nil {
+					zerolog.Ctx(ctx).Warn().
+						Err(err).
+						Int64("nar_file_id", narFileID).
+						Msg("failed to re-link narinfos to new nar_file after CDC migration")
+				}
+
 				return totalSize, nil
 			}
 
@@ -1612,6 +1627,43 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 	}
 
 	return narFileID, nil
+}
+
+// relinkNarInfosToNarFile finds all narinfos pointing to narURL and links them
+// to narFileID. Called after CDC migration to repair narinfo_nar_files entries
+// that were CASCADE-deleted when the old nar_file record was removed.
+func (c *Cache) relinkNarInfosToNarFile(ctx context.Context, narURL nar.URL, narFileID int64) error {
+	hashes, err := c.db.GetNarInfoHashesByURL(
+		ctx,
+		sql.NullString{String: narURL.String(), Valid: true},
+	)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to query narinfo hashes by URL %q: %w", narURL.String(), err)
+	}
+
+	var errs []error
+
+	for _, hash := range hashes {
+		ni, err := c.db.GetNarInfoByHash(ctx, hash)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to get narinfo %q for re-linking: %w", hash, err))
+
+			continue
+		}
+
+		if err := c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+			NarInfoID: ni.ID,
+			NarFileID: narFileID,
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to link narinfo %q to nar_file %d: %w", hash, narFileID, err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startIndex int64, batch []chunker.Chunk) error {

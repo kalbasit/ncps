@@ -65,6 +65,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("pullNarInfo normalizes compression for CDC", testCDCPullNarInfoNormalizesCompression(factory))
 	t.Run("pullNarInfo sets FileSize == NarSize for CDC", testCDCPullNarInfoSetsFileSizeForCDC(factory))
 	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
+	t.Run("MigrateNarToChunks links narinfo_nar_files", testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory))
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
 	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
@@ -603,6 +604,89 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 			"narinfo should have Compression: none after CDC migration")
 		assert.NotContains(t, url, ".xz",
 			"narinfo URL should not contain .xz after CDC migration")
+
+		// 6. Verify narinfo_nar_files is populated after migration.
+		var narInfoNarFilesCount int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM narinfo_nar_files WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)"),
+			entry.NarInfoHash).Scan(&narInfoNarFilesCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, narInfoNarFilesCount,
+			"narinfo_nar_files must have exactly one entry after CDC migration")
+	}
+}
+
+// testCDCMigrateNarToChunksLinksNarInfoNarFiles verifies that after MigrateNarToChunks,
+// the narinfo_nar_files junction table is correctly populated so verify-data checks pass.
+func testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// 1. Store a NAR as a whole file (CDC disabled) with xz compression
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		err := c.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		// 2. Store a narinfo referencing this NAR
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// 3. Verify narinfo is linked to a nar_file before migration
+		var initialCount int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM narinfo_nar_files WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)"),
+			entry.NarInfoHash).Scan(&initialCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, initialCount, "narinfo should be linked to a nar_file before migration")
+
+		// 4. Enable CDC
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// 5. Migrate the NAR to chunks
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err)
+
+		// 6. Verify narinfo_nar_files is still populated after migration (re-linked to new nar_file)
+		var afterCount int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM narinfo_nar_files WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)"),
+			entry.NarInfoHash).Scan(&afterCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, afterCount,
+			"narinfo_nar_files must have exactly one entry after CDC migration")
+
+		// 7. Verify the linked nar_file has compression=none and total_chunks > 0
+		var linkedCompression string
+
+		var linkedTotalChunks int64
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind(`SELECT nf.compression, nf.total_chunks
+				FROM nar_files nf
+				INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
+				WHERE nnf.narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`),
+			entry.NarInfoHash).Scan(&linkedCompression, &linkedTotalChunks)
+		require.NoError(t, err)
+		assert.Equal(t, nar.CompressionTypeNone.String(), linkedCompression,
+			"linked nar_file must have compression=none after CDC migration")
+		assert.Positive(t, linkedTotalChunks,
+			"linked nar_file must be fully chunked (total_chunks > 0)")
 	}
 }
 
