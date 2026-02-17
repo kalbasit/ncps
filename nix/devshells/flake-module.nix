@@ -13,6 +13,13 @@
           (pkgs.python3.withPackages (
             ps: with ps; [
               httpx # httpx is used by dev-scripts/ttfb.py.
+
+              # used by dev-scripts/verify-data.py
+              psycopg2-binary
+              pymysql
+              boto3
+              zstandard
+              blake3
             ]
           ))
 
@@ -165,6 +172,10 @@
           # Set NCPS_DB_SCHEMA_DIR to the repo root's db/schema
           # This avoids requiring the ncps package to be built for dev shell
           export NCPS_DB_SCHEMA_DIR="$(git rev-parse --show-toplevel)/db/schema"
+
+          # Set the environment variables to help users login to MySQL and PostgreSQL
+          export NCPS_DEV_POSTGRES_URL="postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable"
+          export NCPS_DEV_MYSQL_URL="mysql://dev-user:dev-password@127.0.0.1:3306/dev-db"
 
           if [[ "$(${pkgs.gnugrep}/bin/grep '^\(go \)[0-9.]*$' go.mod)" != "go ''${_GO_VERSION}" ]]; then
             ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i go.mod

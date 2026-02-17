@@ -26,8 +26,13 @@ S3_CONFIG = {
 
 # Database URLs matching bash scripts
 DB_CONFIG = {
-    "postgres": "postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable",
-    "mysql": "mysql://dev-user:dev-password@127.0.0.1:3306/dev-db",
+    "postgres": os.environ.get(
+        "NCPS_DEV_POSTGRES_URL",
+        "postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable",
+    ),
+    "mysql": os.environ.get(
+        "NCPS_DEV_MYSQL_URL", "mysql://dev-user:dev-password@127.0.0.1:3306/dev-db"
+    ),
     "sqlite": f"sqlite:{os.path.join(REPO_ROOT, 'var/ncps/db/db.sqlite')}",
 }
 
@@ -191,12 +196,12 @@ def _kill_tree(pid, sig):
         pass
 
 
-def write_state_file(instances):
+def write_state_file(instances, config):
     """Write state file with port and optional pid info for running instances."""
     state_dir = os.path.join(REPO_ROOT, "var/ncps")
     os.makedirs(state_dir, exist_ok=True)
     state_path = os.path.join(state_dir, "state.json")
-    data = {"instances": instances}
+    data = {**config, "instances": instances}
     with open(state_path, "w") as f:
         json.dump(data, f, indent=2)
     return state_path
@@ -627,7 +632,24 @@ def main():
             processes.append(p)
             instance_info.append({"port": port, "pid": p.pid})
 
-    state_path = write_state_file(instance_info)
+    state_config = {
+        "cdc": args.enable_cdc,
+        "db": args.db,
+        "db_url": db_url,
+        "storage": args.storage,
+        "storage_path": local_storage_path,
+        "locker": args.locker,
+    }
+    if args.storage == "s3":
+        state_config["s3"] = {
+            "bucket": S3_CONFIG["bucket"],
+            "endpoint": S3_CONFIG["endpoint"],
+            "region": S3_CONFIG["region"],
+            "access_key": S3_CONFIG["access_key"],
+            "secret_key": S3_CONFIG["secret_key"],
+        }
+
+    state_path = write_state_file(instance_info, state_config)
     log(f"State written to {state_path}", BLUE)
 
     # Wait for interrupts
