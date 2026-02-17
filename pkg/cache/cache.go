@@ -3457,7 +3457,6 @@ func createOrUpdateNarFile(
 		Compression: narURL.Compression.String(),
 		Query:       narURL.Query.Encode(),
 		FileSize:    fileSize,
-		TotalChunks: 0,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("error creating or updating nar_file record in the database: %w", err)
