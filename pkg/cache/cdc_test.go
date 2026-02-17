@@ -66,6 +66,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("pullNarInfo sets FileSize == NarSize for CDC", testCDCPullNarInfoSetsFileSizeForCDC(factory))
 	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
 	t.Run("MigrateNarToChunks links narinfo_nar_files", testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory))
+	t.Run("MigrateNarToChunks deletes original whole-file NAR", testCDCMigrateNarToChunksDeletesOriginalFile(factory))
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
 	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
@@ -1043,5 +1044,61 @@ func testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory cacheFactory) func
 		require.NoError(t, err)
 		assert.Equal(t, uncompressedSize, narFileAfter.FileSize,
 			"FileSize should NOT have been overwritten by compressed size")
+	}
+}
+
+// testCDCMigrateNarToChunksDeletesOriginalFile verifies that after MigrateNarToChunks
+// completes successfully, the original whole-file NAR is deleted from narStore.
+// Without this fix, storage files accumulate after CDC migration even though NARs are
+// fully chunked and the whole-file is no longer referenced.
+func testCDCMigrateNarToChunksDeletesOriginalFile(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// 1. Store a NAR as a whole file (CDC disabled) with xz compression.
+		entry := testdata.Nar1
+		originalNarURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+		narURL := originalNarURL // MigrateNarToChunks mutates narURL.Compression in-place
+
+		err := c.PutNar(ctx, originalNarURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		// 2. Store a narinfo referencing this NAR.
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// 3. Verify the file exists in narStore before migration.
+		assert.True(t, c.HasNarInStore(ctx, originalNarURL),
+			"NAR should exist as a whole file in narStore before CDC migration")
+
+		// 4. Enable CDC.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// 5. Migrate the NAR to chunks.
+		// NOTE: MigrateNarToChunks modifies narURL.Compression in-place (sets it to none).
+		// We preserve originalNarURL to check the pre-migration storage path after migration.
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err)
+
+		// 6. Verify chunks exist (sanity check).
+		hasChunks, err := c.HasNarInChunks(ctx, narURL)
+		require.NoError(t, err)
+		assert.True(t, hasChunks, "NAR should be fully chunked after migration")
+
+		// 7. Verify the original whole-file NAR is GONE from narStore.
+		// We check the original URL (xz) — this is what was written to storage before migration.
+		assert.False(t, c.HasNarInStore(ctx, originalNarURL),
+			"original whole-file NAR (xz) must be deleted from narStore after CDC migration")
 	}
 }

@@ -12,12 +12,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
 // CheckAndFixNarInfo is a test-only export of the unexported checkAndFixNarInfo method.
 func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	return c.checkAndFixNarInfo(ctx, hash)
+}
+
+// HasNarInStore is a test-only export of the unexported hasNarInStore method.
+// It returns true if the NAR exists as a whole file in narStore (not chunks).
+func (c *Cache) HasNarInStore(ctx context.Context, narURL nar.URL) bool {
+	return c.hasNarInStore(ctx, narURL)
 }
 
 // SetupNarInfo is a test-only export.

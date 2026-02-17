@@ -5105,8 +5105,9 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 
 	// 4. Store using CDC logic
 	// storeNarWithCDC handles chunking, storing chunks, and DB updates.
-	// Save original URL before storeNarWithCDC normalizes narURL.Compression to "none".
+	// Save original URL and compression before storeNarWithCDC normalizes narURL.Compression to "none".
 	originalURL := narURL.String()
+	originalNarURL := *narURL // value copy — storeNarWithCDC mutates narURL.Compression in-place
 
 	_, err = c.storeNarWithCDC(ctx, tempPath, narURL)
 	if err != nil {
@@ -5130,6 +5131,38 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 
 			return fmt.Errorf("error updating the narinfo compression/URL: %w", err)
 		}
+	}
+
+	// 6. Delete the original whole-file NAR from narStore now that it is fully chunked.
+	// The NAR is no longer needed as a whole file — all data lives in CDC chunks.
+	// We attempt both the original compression and the zstd variant because
+	// Compression:none NARs are stored on disk as .nar.zst.
+	deletedFromStore := false
+
+	zstdNarURL := nar.URL{Hash: originalNarURL.Hash, Compression: nar.CompressionTypeZstd, Query: originalNarURL.Query}
+
+	deletedURLs := []nar.URL{originalNarURL}
+	if originalNarURL.Compression != nar.CompressionTypeZstd {
+		deletedURLs = append(deletedURLs, zstdNarURL)
+	}
+
+	for _, deleteURL := range deletedURLs {
+		if err := c.narStore.DeleteNar(ctx, deleteURL); err == nil {
+			deletedFromStore = true
+
+			break
+		} else if !errors.Is(err, storage.ErrNotFound) {
+			zerolog.Ctx(ctx).Warn().
+				Err(err).
+				Str("nar_url", deleteURL.String()).
+				Msg("failed to delete original whole-file NAR from narStore after CDC migration")
+		}
+	}
+
+	if !deletedFromStore {
+		zerolog.Ctx(ctx).Debug().
+			Str("nar_url", originalURL).
+			Msg("original whole-file NAR not found in narStore after CDC migration (already absent)")
 	}
 
 	return nil
