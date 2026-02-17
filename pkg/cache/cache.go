@@ -3329,7 +3329,7 @@ func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string
 				FileHash: sql.NullString{String: "", Valid: false},
 			})
 		}); err != nil {
-			return fmt.Errorf("failed to fix narinfo file size to NULL: %w", err)
+			return fmt.Errorf("failed to fix narinfo file hash to NULL: %w", err)
 		}
 	}
 
