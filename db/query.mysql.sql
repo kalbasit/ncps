@@ -20,12 +20,12 @@ WHERE id = ?;
 
 
 -- name: GetNarFileByHashAndCompressionAndQuery :one
-SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE hash = ? AND compression = ? AND `query` = ?;
 
 -- name: GetNarFileByID :one
-SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE id = ?;
 
@@ -355,6 +355,10 @@ WHERE nfc.chunk_id IS NULL;
 DELETE FROM chunks
 WHERE id = ?;
 
+-- name: DeleteNarFileChunksByNarFileID :exec
+DELETE FROM nar_file_chunks
+WHERE nar_file_id = ?;
+
 -- name: GetChunkByNarFileIDAndIndex :one
 SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
@@ -363,7 +367,12 @@ WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?;
 
 -- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
-SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP
+SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
+WHERE id = ?;
+
+-- name: SetNarFileChunkingStarted :exec
+UPDATE nar_files
+SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
 -- name: GetNarInfoHashesToChunk :many
@@ -397,7 +406,7 @@ ORDER BY id
 LIMIT ? OFFSET ?;
 
 -- name: GetOldCompressedNarFiles :many
-SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE compression NOT IN ('', 'none')
   AND created_at < ?

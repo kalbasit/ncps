@@ -69,6 +69,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("MigrateNarToChunks deletes original whole-file NAR", testCDCMigrateNarToChunksDeletesOriginalFile(factory))
 	t.Run("MigrateNarToChunks compression normalization is atomic",
 		testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory))
+	t.Run("MigrateNarToChunks recovers from partial chunking",
+		testCDCMigrateNarToChunksRecoversFromPartialChunking(factory))
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
 	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
@@ -1138,6 +1140,121 @@ func testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory cacheFact
 		assert.Equal(t, 1, linkCount,
 			"narinfo_nar_files must link to the none-compression nar_file after CDC migration "+
 				"(broken if DeleteNarFileByHash and relinkNarInfosToNarFile are not atomic)")
+	}
+}
+
+// testCDCMigrateNarToChunksRecoversFromPartialChunking verifies that MigrateNarToChunks
+// recovers from a previous partial chunking attempt. Before this fix, if a process was
+// killed mid-chunking (leaving nar_files.total_chunks=0 but some chunks already written),
+// findOrCreateNarFileForCDC would see len(chunks)>0 and return ErrAlreadyExists, causing
+// the NAR to be permanently stuck — never fully chunked, never recoverable.
+//
+// The fix uses chunking_started_at to track lock state: if it was set more than the TTL
+// ago, the partial chunks are cleaned up and chunking restarts from scratch.
+func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// 1. Store a NAR as a whole file (CDC disabled) with xz compression.
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		err := c.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// 2. Enable CDC.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// 3. Simulate a partial chunking state: create the nar_files record
+		// with total_chunks=0 and set chunking_started_at to a stale past time.
+		noneURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}
+		narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        noneURL.Hash,
+			Compression: noneURL.Compression.String(),
+			Query:       noneURL.Query.Encode(),
+			FileSize:    0,
+			TotalChunks: 0,
+		})
+		require.NoError(t, err)
+
+		// Insert a fake partial chunk to simulate in-progress state.
+		fakeChunk, err := db.CreateChunk(ctx, database.CreateChunkParams{
+			Hash:           "fakehash0000000000000000000000000000000000000000000000000000000000",
+			Size:           512,
+			CompressedSize: 256,
+		})
+		require.NoError(t, err)
+
+		err = db.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
+			NarFileID:  narFile.ID,
+			ChunkID:    fakeChunk.ID,
+			ChunkIndex: 0,
+		})
+		require.NoError(t, err)
+
+		// Mark chunking as started (sets chunking_started_at = CURRENT_TIMESTAMP).
+		err = db.SetNarFileChunkingStarted(ctx, narFile.ID)
+		require.NoError(t, err)
+
+		// Move chunking_started_at to 2 hours in the past to simulate a stale lock.
+		_, err = db.DB().ExecContext(ctx,
+			rebind("UPDATE nar_files SET chunking_started_at = ? WHERE id = ?"),
+			time.Now().Add(-2*time.Hour),
+			narFile.ID,
+		)
+		require.NoError(t, err)
+
+		// 4. Verify: at this point, HasNarInChunks returns false (total_chunks=0)
+		// but there ARE partial chunks in the DB — the stuck state.
+		hasChunks, err := c.HasNarInChunks(ctx, noneURL)
+		require.NoError(t, err)
+		assert.False(t, hasChunks, "NAR should not be considered fully chunked (total_chunks=0)")
+
+		chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+		require.NoError(t, err)
+		assert.Len(t, chunks, 1, "should have exactly 1 partial/fake chunk before recovery")
+
+		// 5. Call MigrateNarToChunks — should recover from partial state.
+		// Without the fix, this returns an error because findOrCreateNarFileForCDC
+		// sees chunks>0 and returns ErrAlreadyExists.
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err, "MigrateNarToChunks must succeed even after partial chunking")
+
+		// 6. Verify the NAR is now fully chunked.
+		noneURL = nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}
+
+		hasChunks, err = c.HasNarInChunks(ctx, noneURL)
+		require.NoError(t, err)
+		assert.True(t, hasChunks, "NAR must be fully chunked after recovery")
+
+		// 7. Verify the partial nar_file_chunks links are gone (replaced by real ones).
+		// The chunk data itself may still exist as an orphan (cleaned by background process),
+		// but there must be no nar_file_chunks rows linking the fake chunk to this nar_file.
+		var fakeChunkLinkCount int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind(`SELECT COUNT(*) FROM nar_file_chunks nfc
+				INNER JOIN chunks c ON c.id = nfc.chunk_id
+				WHERE c.hash = ?`),
+			"fakehash0000000000000000000000000000000000000000000000000000000000",
+		).Scan(&fakeChunkLinkCount)
+		require.NoError(t, err)
+		assert.Zero(t, fakeChunkLinkCount,
+			"partial nar_file_chunks links for fake chunk must be removed after recovery")
 	}
 }
 

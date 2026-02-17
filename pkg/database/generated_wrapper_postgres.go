@@ -154,6 +154,8 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -251,6 +253,12 @@ func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int6
 	// Return Primitive / *sql.DB / etc
 
 	return res, nil
+}
+
+func (w *postgresWrapper) DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.DeleteNarFileChunksByNarFileID(ctx, narFileID)
 }
 
 func (w *postgresWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
@@ -684,6 +692,8 @@ func (w *postgresWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Con
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -720,6 +730,8 @@ func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -1049,6 +1061,8 @@ func (w *postgresWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetO
 			LastAccessedAt: v.LastAccessedAt,
 
 			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -1199,6 +1213,12 @@ func (w *postgresWrapper) SetConfig(ctx context.Context, arg SetConfigParams) er
 		Key:   arg.Key,
 		Value: arg.Value,
 	})
+}
+
+func (w *postgresWrapper) SetNarFileChunkingStarted(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.SetNarFileChunkingStarted(ctx, id)
 }
 
 func (w *postgresWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {

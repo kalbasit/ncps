@@ -57,7 +57,17 @@ type Querier interface {
 	//  )
 	//  ON CONFLICT (hash, compression, "query") DO UPDATE SET
 	//      updated_at = excluded.updated_at
-	//  RETURNING id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
+	//  RETURNING
+	//      id,
+	//      hash,
+	//      compression,
+	//      file_size,
+	//      "query",
+	//      created_at,
+	//      updated_at,
+	//      last_accessed_at,
+	//      total_chunks,
+	//      chunking_started_at
 	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error)
 	//CreateNarInfo
 	//
@@ -96,6 +106,11 @@ type Querier interface {
 	//  DELETE FROM nar_files
 	//  WHERE id = ?
 	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
+	//DeleteNarFileChunksByNarFileID
+	//
+	//  DELETE FROM nar_file_chunks
+	//  WHERE nar_file_id = ?
+	DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error
 	//DeleteNarInfoByHash
 	//
 	//  DELETE FROM narinfos
@@ -222,13 +237,13 @@ type Querier interface {
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHashAndCompressionAndQuery
 	//
-	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE hash = ? AND compression = ? AND "query" = ?
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
 	//GetNarFileByID
 	//
-	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE id = ?
 	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
@@ -325,7 +340,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	//GetOldCompressedNarFiles
 	//
-	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE compression NOT IN ('', 'none')
 	//    AND created_at < ?
@@ -412,6 +427,12 @@ type Querier interface {
 	//    value = EXCLUDED.value,
 	//    updated_at = CURRENT_TIMESTAMP
 	SetConfig(ctx context.Context, arg SetConfigParams) error
+	//SetNarFileChunkingStarted
+	//
+	//  UPDATE nar_files
+	//  SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = ?
+	SetNarFileChunkingStarted(ctx context.Context, id int64) error
 	//TouchNarFile
 	//
 	//  UPDATE nar_files
@@ -437,7 +458,7 @@ type Querier interface {
 	//UpdateNarFileTotalChunks
 	//
 	//  UPDATE nar_files
-	//  SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP
+	//  SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
 	//  WHERE id = ?
 	UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error
 	//UpdateNarInfo

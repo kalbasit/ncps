@@ -27,15 +27,16 @@ type Config struct {
 }
 
 type NarFile struct {
-	ID             int64
-	Hash           string
-	Compression    string
-	FileSize       uint64
-	CreatedAt      time.Time
-	UpdatedAt      sql.NullTime
-	LastAccessedAt sql.NullTime
-	Query          string
-	TotalChunks    int64
+	ID                int64
+	Hash              string
+	Compression       string
+	FileSize          uint64
+	CreatedAt         time.Time
+	UpdatedAt         sql.NullTime
+	LastAccessedAt    sql.NullTime
+	Query             string
+	TotalChunks       int64
+	ChunkingStartedAt sql.NullTime
 }
 
 type NarFileChunk struct {

@@ -200,15 +200,16 @@ type LinkNarInfosByURLToNarFileParams struct {
 }
 
 type NarFile struct {
-	ID             int64
-	Hash           string
-	Compression    string
-	FileSize       uint64
-	Query          string
-	CreatedAt      time.Time
-	UpdatedAt      sql.NullTime
-	LastAccessedAt sql.NullTime
-	TotalChunks    int64
+	ID                int64
+	Hash              string
+	Compression       string
+	FileSize          uint64
+	Query             string
+	CreatedAt         time.Time
+	UpdatedAt         sql.NullTime
+	LastAccessedAt    sql.NullTime
+	TotalChunks       int64
+	ChunkingStartedAt sql.NullTime
 }
 
 type NarInfo struct {

@@ -20,12 +20,12 @@ WHERE id = $1;
 
 
 -- name: GetNarFileByHashAndCompressionAndQuery :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE hash = $1 AND compression = $2 AND query = $3;
 
 -- name: GetNarFileByID :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE id = $1;
 
@@ -169,7 +169,22 @@ INSERT INTO nar_files (
 )
 ON CONFLICT (hash, compression, query) DO UPDATE SET
     updated_at = EXCLUDED.updated_at
-RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks;
+RETURNING
+    id,
+    hash,
+    compression,
+    file_size,
+    query,
+    created_at,
+    updated_at,
+    last_accessed_at,
+    total_chunks,
+    chunking_started_at;
+
+-- name: SetNarFileChunkingStarted :exec
+UPDATE nar_files
+SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
 
 -- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
@@ -377,6 +392,10 @@ WHERE nfc.chunk_id IS NULL;
 DELETE FROM chunks
 WHERE id = $1;
 
+-- name: DeleteNarFileChunksByNarFileID :exec
+DELETE FROM nar_file_chunks
+WHERE nar_file_id = $1;
+
 -- name: GetChunkByNarFileIDAndIndex :one
 SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
@@ -385,7 +404,7 @@ WHERE nfc.nar_file_id = $1 AND nfc.chunk_index = $2;
 
 -- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
-SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP
+SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
 WHERE id = $3;
 
 -- name: GetNarInfoHashesToChunk :many
@@ -419,7 +438,7 @@ ORDER BY id
 LIMIT $1 OFFSET $2;
 
 -- name: GetOldCompressedNarFiles :many
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE compression NOT IN ('', 'none')
   AND created_at < $1

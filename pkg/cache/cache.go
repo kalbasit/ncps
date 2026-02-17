@@ -1589,6 +1589,11 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	}
 }
 
+// cdcChunkingLockTTL is the maximum time a chunking operation is allowed to hold
+// the implicit lock (chunking_started_at IS NOT NULL, total_chunks = 0) before
+// it is considered stale and a new attempt may clean up the partial state and restart.
+const cdcChunkingLockTTL = time.Hour
+
 func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, fileSize uint64) (int64, error) {
 	var narFileID int64
 
@@ -1618,10 +1623,39 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 
 		narFileID = nr.ID
 
-		// If this NAR already has chunks, we skip storage
-		chunks, err := qtx.GetChunksByNarFileID(ctx, narFileID)
-		if err == nil && len(chunks) > 0 {
+		// Determine whether chunking has already been completed or is in progress.
+		//
+		//   total_chunks > 0                          → fully chunked, skip
+		//   total_chunks = 0, chunking_started_at set → in progress or interrupted
+		//     └─ lock still fresh (< TTL)             → another goroutine is working, skip
+		//     └─ lock is stale   (≥ TTL)              → previous attempt crashed; clean up and restart
+		//   total_chunks = 0, chunking_started_at nil → not yet started, proceed
+		if nr.TotalChunks > 0 {
 			return storage.ErrAlreadyExists
+		}
+
+		if nr.ChunkingStartedAt.Valid {
+			age := time.Since(nr.ChunkingStartedAt.Time)
+			if age < cdcChunkingLockTTL {
+				// Another in-progress attempt is still within the TTL — skip.
+				return storage.ErrAlreadyExists
+			}
+
+			// Lock is stale: a previous attempt was interrupted mid-chunking.
+			// Delete the partial chunks so we can start fresh.
+			zerolog.Ctx(ctx).Warn().
+				Dur("age", age).
+				Int64("narFileID", narFileID).
+				Msg("stale CDC chunking lock detected; cleaning up partial chunks and restarting")
+
+			if err := qtx.DeleteNarFileChunksByNarFileID(ctx, narFileID); err != nil {
+				return fmt.Errorf("failed to delete partial chunks for nar_file %d: %w", narFileID, err)
+			}
+		}
+
+		// Mark this nar_file as having chunking in progress.
+		if err := qtx.SetNarFileChunkingStarted(ctx, narFileID); err != nil {
+			return fmt.Errorf("failed to set chunking_started_at for nar_file %d: %w", narFileID, err)
 		}
 
 		return nil

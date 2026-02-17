@@ -201,6 +201,12 @@ func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, 
 	return res, nil
 }
 
+func (w *mysqlWrapper) DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.DeleteNarFileChunksByNarFileID(ctx, narFileID)
+}
+
 func (w *mysqlWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -632,6 +638,8 @@ func (w *mysqlWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Contex
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -668,6 +676,8 @@ func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, e
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -997,6 +1007,8 @@ func (w *mysqlWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetOldC
 			LastAccessedAt: v.LastAccessedAt,
 
 			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -1156,6 +1168,12 @@ func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error
 		Key:   arg.Key,
 		Value: arg.Value,
 	})
+}
+
+func (w *mysqlWrapper) SetNarFileChunkingStarted(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.SetNarFileChunkingStarted(ctx, id)
 }
 
 func (w *mysqlWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {

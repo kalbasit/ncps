@@ -666,8 +666,8 @@ func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, 
 		}
 	}
 
-	// Case 2: Converting from primitive to sql.Null*
-	if isSqlNullType(targetFieldType) {
+	// Case 2: Converting from primitive to sql.Null* (skip interface{} — handled by Case 5b)
+	if isSqlNullType(targetFieldType) && sourceFieldType != "interface{}" {
 		expectedPrimitive := getPrimitiveFromNullType(targetFieldType)
 		if expectedPrimitive == sourceFieldType {
 			// Direct conversion from matching primitive
@@ -697,6 +697,21 @@ func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, 
 	// Case 5: Struct types (non-sql.Null*) - direct assignment
 	if isStructType(targetFieldType) {
 		return fmt.Sprintf("%s: %s", targetFieldName, sourceExpr)
+	}
+
+	// Case 5b: interface{} source → sql.Null* target (SQLite nullable columns come as interface{})
+	if sourceFieldType == "interface{}" && isSqlNullType(targetFieldType) {
+		primitive := getPrimitiveFromNullType(targetFieldType)
+		fieldName := getFieldNameForNullType(targetFieldType)
+		if primitive != "" && fieldName != "" {
+			return fmt.Sprintf(
+				"%s: func() %s { if %s == nil { return %s{} }; v, ok := %s.(%s); if !ok { return %s{} }; return %s{%s: v, Valid: true} }()",
+				targetFieldName, targetFieldType,
+				sourceExpr, targetFieldType,
+				sourceExpr, primitive,
+				targetFieldType, fieldName,
+			)
+		}
 	}
 
 	// Case 6: Primitive type conversion
