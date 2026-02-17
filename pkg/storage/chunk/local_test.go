@@ -87,7 +87,7 @@ func TestLocalStore(t *testing.T) {
 		_, _, err := store.PutChunk(ctx, hash, []byte(content))
 		require.NoError(t, err)
 
-		path := filepath.Join(dir, "chunks", hash[:2], hash)
+		path := filepath.Join(dir, "chunk", hash[:1], hash[:2], hash)
 		parentDir := filepath.Dir(path)
 
 		// Verify chunk and parent directory exist
@@ -106,6 +106,10 @@ func TestLocalStore(t *testing.T) {
 
 		// Verify parent directory is gone (since it should be empty)
 		_, err = os.Stat(parentDir)
+		assert.True(t, os.IsNotExist(err))
+
+		// Verify parent directory is gone (since it should be empty)
+		_, err = os.Stat(filepath.Dir(parentDir))
 		assert.True(t, os.IsNotExist(err))
 	})
 

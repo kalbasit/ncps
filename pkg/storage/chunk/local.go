@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
@@ -41,19 +42,25 @@ func NewLocalStore(baseDir string) (Store, error) {
 }
 
 func (s *localStore) storeDir() string {
-	return filepath.Join(s.baseDir, "chunks")
+	return filepath.Join(s.baseDir, "chunk")
 }
 
-func (s *localStore) chunkPath(hash string) string {
-	if len(hash) < 2 {
-		return filepath.Join(s.storeDir(), hash)
+func (s *localStore) chunkPath(hash string) (string, error) {
+	fp, err := helper.FilePathWithSharding(hash)
+	if err != nil {
+		return "", fmt.Errorf("chunkPath hash=%q: %w", hash, err)
 	}
-	// Content-addressable storage with 2-level nesting: chunks/ab/abcdef...
-	return filepath.Join(s.storeDir(), hash[:2], hash)
+
+	return filepath.Join(s.storeDir(), fp), nil
 }
 
 func (s *localStore) HasChunk(_ context.Context, hash string) (bool, error) {
-	_, err := os.Stat(s.chunkPath(hash))
+	path, err := s.chunkPath(hash)
+	if err != nil {
+		return false, err
+	}
+
+	_, err = os.Stat(path)
 	if err == nil {
 		return true, nil
 	}
@@ -66,7 +73,12 @@ func (s *localStore) HasChunk(_ context.Context, hash string) (bool, error) {
 }
 
 func (s *localStore) GetChunk(_ context.Context, hash string) (io.ReadCloser, error) {
-	f, err := os.Open(s.chunkPath(hash))
+	path, err := s.chunkPath(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrNotFound
@@ -87,7 +99,10 @@ func (s *localStore) GetChunk(_ context.Context, hash string) (io.ReadCloser, er
 }
 
 func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool, int64, error) {
-	path := s.chunkPath(hash)
+	path, err := s.chunkPath(hash)
+	if err != nil {
+		return false, 0, err
+	}
 
 	// Create parent directory
 	dir := filepath.Dir(path)
@@ -134,19 +149,28 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 }
 
 func (s *localStore) DeleteChunk(_ context.Context, hash string) error {
-	path := s.chunkPath(hash)
+	path, err := s.chunkPath(hash)
+	if err != nil {
+		return err
+	}
 
-	err := os.Remove(path)
+	err = os.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	// Attempt to remove parent directory. This will fail if it's not empty,
-	// which is the desired behavior. We can ignore the error.
-	parentDir := filepath.Dir(path)
-	if parentDir != s.storeDir() {
-		_ = os.Remove(parentDir)
+	// Attempt to remove parent directories bottom-up.
+	// These will fail silently if a directory is not empty, which is the desired behavior.
+	dir := filepath.Dir(path)
+	for dir != s.storeDir() {
+		if os.Remove(dir) != nil {
+			// Stop if we can't remove a directory (e.g., it's not empty).
+			break
+		}
+
+		dir = filepath.Dir(dir)
 	}
 
+	//nolint:nilerr // we explicitly ignore errors attempting to remove parent directories
 	return nil
 }

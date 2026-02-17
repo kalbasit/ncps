@@ -57,7 +57,7 @@ cache:
 
 When CDC is enabled:
 
-- Chunks are stored in the configured storage backend (local or S3) under a `chunks/` prefix or directory.
+- Chunks are stored in the configured storage backend (local or S3) under a `chunk/` prefix or directory.
 - `ncps` maintains a mapping between NAR files and their chunks in the database.
 - The `max-size` and LRU cleanup mechanisms still apply to the total size of the cache, including chunks.
 

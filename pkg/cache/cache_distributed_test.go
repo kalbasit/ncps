@@ -701,7 +701,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 	var chunkStore chunk.Store
 
 	if cdcEnabled {
-		chunksDir := filepath.Join(sharedDir, "chunks")
+		chunksDir := filepath.Join(sharedDir, "chunk")
 		require.NoError(t, os.MkdirAll(chunksDir, 0o755))
 
 		chunkStore, err = chunk.NewLocalStore(chunksDir)
@@ -947,7 +947,7 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 		require.NoError(t, err)
 
 		// Setup CDC chunk store
-		chunksDir := filepath.Join(sharedDir, "chunks")
+		chunksDir := filepath.Join(sharedDir, "chunk")
 		require.NoError(t, os.MkdirAll(chunksDir, 0o755))
 
 		chunkStore, err := chunk.NewLocalStore(chunksDir)
