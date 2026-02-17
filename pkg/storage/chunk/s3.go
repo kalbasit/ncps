@@ -13,6 +13,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/s3"
 	"github.com/kalbasit/ncps/pkg/zstd"
@@ -94,9 +95,12 @@ func NewS3Store(ctx context.Context, cfg s3.Config, locker lock.Locker) (Store, 
 }
 
 func (s *s3Store) HasChunk(ctx context.Context, hash string) (bool, error) {
-	key := s.chunkPath(hash)
+	key, err := s.chunkPath(hash)
+	if err != nil {
+		return false, err
+	}
 
-	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
 			return false, nil
@@ -109,7 +113,10 @@ func (s *s3Store) HasChunk(ctx context.Context, hash string) (bool, error) {
 }
 
 func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, error) {
-	key := s.chunkPath(hash)
+	key, err := s.chunkPath(hash)
+	if err != nil {
+		return nil, err
+	}
 
 	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
@@ -143,7 +150,10 @@ func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, err
 }
 
 func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool, int64, error) {
-	key := s.chunkPath(hash)
+	key, err := s.chunkPath(hash)
+	if err != nil {
+		return false, 0, err
+	}
 
 	// Acquire a lock to prevent race conditions during check-then-act.
 	// We use a prefix to avoid collisions with other locks.
@@ -189,9 +199,12 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 }
 
 func (s *s3Store) DeleteChunk(ctx context.Context, hash string) error {
-	key := s.chunkPath(hash)
+	key, err := s.chunkPath(hash)
+	if err != nil {
+		return err
+	}
 
-	err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	err = s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
 			return nil
@@ -203,10 +216,10 @@ func (s *s3Store) DeleteChunk(ctx context.Context, hash string) error {
 	return nil
 }
 
-func (s *s3Store) chunkPath(hash string) string {
-	if len(hash) < 2 {
-		return path.Join("store", "chunks", hash)
+func (s *s3Store) chunkPath(hash string) (string, error) {
+	if len(hash) < 3 {
+		return "", fmt.Errorf("chunkPath hash=%q: %w", hash, helper.ErrInputTooShort)
 	}
 
-	return path.Join("store", "chunks", hash[0:2], hash)
+	return path.Join("store", "chunk", hash[:1], hash[:2], hash), nil
 }

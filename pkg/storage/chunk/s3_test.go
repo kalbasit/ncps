@@ -283,13 +283,6 @@ func TestNewS3Store_Validation(t *testing.T) {
 func TestS3Store_ChunkPath(t *testing.T) {
 	t.Parallel()
 
-	// Since we can't easily access the unexported method without export_test.go
-	// and we are in chunk_test package, we use a trick or just test through PutChunk/GetChunk
-	// but those already use integration.
-	// However, we added export_test.go which is in package chunk.
-	// Wait, TestS3Store_ChunkPath should be in package chunk to test it directly.
-	// Or we can just call PutChunk with a short hash.
-
 	ctx := context.Background()
 
 	cfg := testhelper.S3TestConfig(t)
@@ -301,7 +294,7 @@ func TestS3Store_ChunkPath(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("short hash", func(t *testing.T) {
-		hash := "a"
+		hash := "aaa"
 		content := strings.Repeat("short hash content", 1024)
 
 		created, size, err := store.PutChunk(ctx, hash, []byte(content))

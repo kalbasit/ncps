@@ -130,7 +130,7 @@ histogram_quantile(0.99, ncps_migration_duration_seconds{migration_type="nar-to-
 
 ### Check Storage Usage
 
-You should see a decrease in total storage usage (sum of `nar/` and `chunks/` directories) after migration, as original NAR files are deleted.
+You should see a decrease in total storage usage (sum of `nar/` and `chunk/` directories) after migration, as original NAR files are deleted.
 
 ### Database Inspection
 
@@ -150,7 +150,7 @@ SELECT count(DISTINCT nar_id) FROM nar_chunks;
 
 ### "Already in Chunks" Skipping
 
-If the logs show many skipped NARs, it means they were already processed. If you believe this is in error, check if the chunks actually exist in the storage backend under the `chunks/` prefix.
+If the logs show many skipped NARs, it means they were already processed. If you believe this is in error, check if the chunks actually exist in the storage backend under the `chunk/` prefix.
 
 ### Failed Deletions
 
