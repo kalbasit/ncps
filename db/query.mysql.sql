@@ -159,6 +159,12 @@ INSERT INTO narinfo_nar_files (
 )
 ON DUPLICATE KEY UPDATE narinfo_id = narinfo_id;
 
+-- name: LinkNarInfosByURLToNarFile :exec
+INSERT IGNORE INTO narinfo_nar_files (narinfo_id, nar_file_id)
+SELECT id, ?
+FROM narinfos
+WHERE url = ?;
+
 -- name: TouchNarInfo :execrows
 UPDATE narinfos
 SET

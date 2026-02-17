@@ -405,6 +405,14 @@ type Querier interface {
 	//  )
 	//  ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
+	//LinkNarInfosByURLToNarFile
+	//
+	//  INSERT INTO narinfo_nar_files (narinfo_id, nar_file_id)
+	//  SELECT id, $1
+	//  FROM narinfos
+	//  WHERE url = $2
+	//  ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
+	LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error
 	//SetConfig
 	//
 	//  INSERT INTO config (

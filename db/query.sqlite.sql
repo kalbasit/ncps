@@ -165,6 +165,13 @@ INSERT INTO narinfo_nar_files (
 )
 ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING;
 
+-- name: LinkNarInfosByURLToNarFile :exec
+INSERT INTO narinfo_nar_files (narinfo_id, nar_file_id)
+SELECT id, ?
+FROM narinfos
+WHERE url = ?
+ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING;
+
 -- name: TouchNarInfo :execrows
 UPDATE narinfos
 SET

@@ -1210,6 +1210,15 @@ func (w *sqliteWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInf
 	})
 }
 
+func (w *sqliteWrapper) LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.LinkNarInfosByURLToNarFile(ctx, sqlitedb.LinkNarInfosByURLToNarFileParams{
+		NarFileID: arg.NarFileID,
+		URL:       arg.URL,
+	})
+}
+
 func (w *sqliteWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

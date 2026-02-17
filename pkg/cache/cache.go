@@ -1629,41 +1629,19 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 	return narFileID, nil
 }
 
-// relinkNarInfosToNarFile finds all narinfos pointing to narURL and links them
-// to narFileID. Called after CDC migration to repair narinfo_nar_files entries
-// that were CASCADE-deleted when the old nar_file record was removed.
+// relinkNarInfosToNarFile links all narinfos pointing to narURL to narFileID
+// in a single bulk INSERT ... SELECT. Called after CDC migration to repair
+// narinfo_nar_files entries that were CASCADE-deleted when the old nar_file
+// record was removed.
 func (c *Cache) relinkNarInfosToNarFile(ctx context.Context, narURL nar.URL, narFileID int64) error {
-	hashes, err := c.db.GetNarInfoHashesByURL(
-		ctx,
-		sql.NullString{String: narURL.String(), Valid: true},
-	)
-	if err != nil {
-		if database.IsNotFoundError(err) {
-			return nil
-		}
-
-		return fmt.Errorf("failed to query narinfo hashes by URL %q: %w", narURL.String(), err)
+	if err := c.db.LinkNarInfosByURLToNarFile(ctx, database.LinkNarInfosByURLToNarFileParams{
+		NarFileID: narFileID,
+		URL:       sql.NullString{String: narURL.String(), Valid: true},
+	}); err != nil {
+		return fmt.Errorf("failed to link narinfos by URL %q to nar_file %d: %w", narURL.String(), narFileID, err)
 	}
 
-	var errs []error
-
-	for _, hash := range hashes {
-		ni, err := c.db.GetNarInfoByHash(ctx, hash)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to get narinfo %q for re-linking: %w", hash, err))
-
-			continue
-		}
-
-		if err := c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
-			NarInfoID: ni.ID,
-			NarFileID: narFileID,
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to link narinfo %q to nar_file %d: %w", hash, narFileID, err))
-		}
-	}
-
-	return errors.Join(errs...)
+	return nil
 }
 
 func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startIndex int64, batch []chunker.Chunk) error {

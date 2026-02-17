@@ -1756,6 +1756,31 @@ func (q *Queries) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNar
 	return err
 }
 
+const linkNarInfosByURLToNarFile = `-- name: LinkNarInfosByURLToNarFile :exec
+INSERT INTO narinfo_nar_files (narinfo_id, nar_file_id)
+SELECT id, $1
+FROM narinfos
+WHERE url = $2
+ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
+`
+
+type LinkNarInfosByURLToNarFileParams struct {
+	NarFileID int64
+	URL       sql.NullString
+}
+
+// LinkNarInfosByURLToNarFile
+//
+//	INSERT INTO narinfo_nar_files (narinfo_id, nar_file_id)
+//	SELECT id, $1
+//	FROM narinfos
+//	WHERE url = $2
+//	ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
+func (q *Queries) LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error {
+	_, err := q.db.ExecContext(ctx, linkNarInfosByURLToNarFile, arg.NarFileID, arg.URL)
+	return err
+}
+
 const setConfig = `-- name: SetConfig :exec
 INSERT INTO config (
     key, value

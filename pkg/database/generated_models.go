@@ -194,6 +194,11 @@ type LinkNarInfoToNarFileParams struct {
 	NarFileID int64
 }
 
+type LinkNarInfosByURLToNarFileParams struct {
+	NarFileID int64
+	URL       sql.NullString
+}
+
 type NarFile struct {
 	ID             int64
 	Hash           string
