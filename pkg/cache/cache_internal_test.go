@@ -1529,6 +1529,9 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("MigrationUpsertIdempotency", testMigrationUpsertIdempotency(factory))
 	t.Run("MigrationPartialRecordWithExistingReferences", testMigrationPartialRecordWithExistingReferences(factory))
 	t.Run("DeleteNarInfoWithNullURL", testDeleteNarInfoWithNullURL(factory))
+	t.Run("StoreNarFromTempFileHealsOrphanOnErrAlreadyExists",
+		testStoreNarFromTempFileHealsOrphanOnErrAlreadyExists(factory))
+	t.Run("GetNarFromStoreHealsOrphanDBRecord", testGetNarFromStoreHealsOrphanDBRecord(factory))
 }
 
 func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
@@ -1674,4 +1677,126 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 			return db, cleanup
 		})
 	})
+}
+
+// testStoreNarFromTempFileHealsOrphanOnErrAlreadyExists verifies that when
+// storeNarFromTempFile encounters ErrAlreadyExists from narStore.PutNar (i.e.,
+// the NAR was written to storage but the process crashed before the DB record was
+// created), a subsequent call creates the missing DB record rather than silently
+// returning without fixing the orphan.
+//
+// Crash scenario:
+//  1. narStore.PutNar succeeds (NAR written to storage)
+//  2. Process crashes before ensureNarFileRecord commits
+//  3. Next call to storeNarFromTempFile gets ErrAlreadyExists from PutNar
+//  4. Without the fix, the function returns early — the orphan is never healed.
+func testStoreNarFromTempFileHealsOrphanOnErrAlreadyExists(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, localStore, _, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		ctx := newContext()
+
+		narURL := nar.URL{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression,
+		}
+
+		// 1. Write the NAR directly to narStore, simulating what narStore.PutNar does
+		//    during a normal pull. This represents the state after a crash between
+		//    narStore.PutNar and ensureNarFileRecord.
+		_, err := localStore.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+		require.NoError(t, err, "writing NAR directly to narStore should succeed")
+
+		// 2. Verify no DB record exists yet (the crash scenario).
+		_, dbErr := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+		})
+		require.Error(t, dbErr, "no DB record should exist before the healing call")
+
+		// 3. Create a temp file with the same NAR content so storeNarFromTempFile can
+		//    try to re-store it. PutNar will return ErrAlreadyExists since we already
+		//    wrote the file to storage in step 1.
+		f, err := os.CreateTemp("", "test-nar-*.nar.xz")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.Remove(f.Name()) })
+
+		_, err = io.Copy(f, strings.NewReader(testdata.Nar1.NarText))
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		// 4. Call storeNarFromTempFile — it must detect ErrAlreadyExists and
+		//    create the DB record rather than silently returning.
+		narURLCopy := narURL
+		err = c.storeNarFromTempFile(ctx, f.Name(), &narURLCopy)
+		require.NoError(t, err, "storeNarFromTempFile should succeed even when NAR already exists in storage")
+
+		// 5. Verify the DB record now exists.
+		nf, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+		})
+		require.NoError(t, err, "DB record must exist after storeNarFromTempFile healed the orphan")
+		assert.Equal(t, narURL.Hash, nf.Hash)
+	}
+}
+
+// testGetNarFromStoreHealsOrphanDBRecord verifies that when a NAR exists in the
+// narStore but has no nar_files DB record (an orphan left by a crash), calling
+// GetNar triggers creation of the missing DB record so LRU tracking works.
+//
+// Crash scenario:
+//  1. narStore.PutNar succeeds (NAR written to storage)
+//  2. Process crashes before ensureNarFileRecord commits
+//  3. Next request hits GetNar which reads from narStore successfully
+//  4. Without the fix, the DB record is never created — LRU cannot track this NAR.
+func testGetNarFromStoreHealsOrphanDBRecord(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, localStore, _, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		ctx := newContext()
+
+		narURL := nar.URL{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression,
+		}
+
+		// 1. Write the NAR directly to narStore (simulates crash-orphan state).
+		_, err := localStore.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+		require.NoError(t, err, "writing NAR directly to narStore should succeed")
+
+		// 2. Verify no DB record exists yet.
+		_, dbErr := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+		})
+		require.Error(t, dbErr, "no DB record should exist before calling getNarFromStore")
+
+		// 3. Call getNarFromStore — this should read from narStore successfully and
+		//    also create (or heal) the missing DB record.
+		size, reader, err := c.getNarFromStore(ctx, &narURL)
+		require.NoError(t, err, "getNarFromStore should succeed when NAR is in storage")
+		require.NotNil(t, reader)
+		assert.Positive(t, size)
+		reader.Close()
+
+		// 4. Verify the DB record was created (healing the orphan).
+		nf, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+		})
+		require.NoError(t, err, "DB record must exist after getNarFromStore healed the orphan")
+		assert.Equal(t, narURL.Hash, nf.Hash)
+	}
 }

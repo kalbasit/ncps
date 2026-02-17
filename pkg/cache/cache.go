@@ -1216,7 +1216,7 @@ func (c *Cache) putNarWithCDC(ctx context.Context, narURL nar.URL, r io.Reader) 
 		return fmt.Errorf("failed to write to temp file: %w", err)
 	}
 
-	_, err = c.storeNarWithCDC(ctx, tempPath, &narURL)
+	err = c.storeNarWithCDC(ctx, tempPath, &narURL)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			zerolog.Ctx(ctx).Debug().Msg("nar already exists in chunk storage, skipping")
@@ -1331,7 +1331,7 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 }
 
 // storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
-func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
+func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) error {
 	if c.isCDCEnabled() {
 		return c.storeNarWithCDC(ctx, tempPath, narURL)
 	}
@@ -1343,7 +1343,7 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 			Err(err).
 			Msg("error opening the nar from the temporary file")
 
-		return 0, err
+		return err
 	}
 
 	defer f.Close()
@@ -1382,37 +1382,48 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 	written, err := c.narStore.PutNar(ctx, storeURL, reader)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
-			// Already exists is not an error - another request stored it first
-			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, skipping")
+			// The NAR was already in storage — another request beat us to it, or the
+			// process previously crashed after writing to storage but before the DB
+			// record was committed. In both cases we still need to ensure the DB record
+			// exists, so fetch the file size and fall through to ensureNarFileRecord.
+			zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, getting size to ensure db record")
 
-			return 0, nil
+			var getErr error
+
+			var r io.ReadCloser
+
+			written, r, getErr = c.narStore.GetNar(ctx, storeURL)
+			if getErr != nil {
+				return fmt.Errorf("nar exists in storage but failed to get its metadata: %w", getErr)
+			}
+
+			r.Close()
+		} else {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("error storing the nar in the store")
+
+			return err
 		}
-
-		zerolog.Ctx(ctx).
-			Error().
-			Err(err).
-			Msg("error storing the nar in the store")
-
-		return 0, err
 	}
 
 	zerolog.Ctx(ctx).Debug().Int64("written", written).Msg("nar stored successfully")
 
 	// Ensure we have a NarFile record for it, and that it reflects the truth.
-	err = c.ensureNarFileRecord(ctx, *narURL, written, "storeNarFromTempFile.ensureNarFile")
-	if err != nil {
+	if err = c.ensureNarFileRecord(ctx, *narURL, written, "storeNarFromTempFile.ensureNarFile"); err != nil {
 		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to ensure nar file record in storeNarFromTempFile")
 
-		return 0, err
+		return err
 	}
 
-	return written, nil
+	return nil
 }
 
 // storeNarWithCDC stores the NAR from a temporary file using CDC.
 // For CDC mode, NARs are always stored as raw uncompressed chunks.
 // If the input file is compressed, it will be decompressed before chunking.
-func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *nar.URL) (int64, error) {
+func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *nar.URL) error {
 	ctx, span := tracer.Start(
 		ctx,
 		"cache.storeNarWithCDC",
@@ -1426,13 +1437,13 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 	f, err := os.Open(tempPath)
 	if err != nil {
-		return 0, fmt.Errorf("error opening temp file: %w", err)
+		return fmt.Errorf("error opening temp file: %w", err)
 	}
 	defer f.Close()
 
 	fi, err := f.Stat()
 	if err != nil {
-		return 0, fmt.Errorf("error stating temp file: %w", err)
+		return fmt.Errorf("error stating temp file: %w", err)
 	}
 
 	//nolint:gosec // G115: File size from Stat is non-negative
@@ -1449,16 +1460,16 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			zerolog.Ctx(ctx).Debug().Msg("nar already exists in chunk storage, skipping")
 
-			return 0, nil
+			return nil
 		}
 
-		return 0, err
+		return err
 	}
 
 	// 2. Start chunking
 	cdcEnabled, chunkStore, cdcChunker := c.getCDCInfo()
 	if !cdcEnabled || chunkStore == nil || cdcChunker == nil {
-		return 0, ErrCDCDisabled
+		return ErrCDCDisabled
 	}
 
 	// If the NAR is compressed, decompress it before chunking.
@@ -1478,7 +1489,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 			// Seek back to the beginning since the failed reader creation may have consumed bytes.
 			if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
-				return 0, fmt.Errorf("error seeking file after failed decompression: %w", seekErr)
+				return fmt.Errorf("error seeking file after failed decompression: %w", seekErr)
 			}
 		} else {
 			defer decompressed.Close()
@@ -1499,16 +1510,16 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	for {
 		select {
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return ctx.Err()
 		case err := <-errChan:
 			if err != nil {
-				return 0, fmt.Errorf("chunking error: %w", err)
+				return fmt.Errorf("chunking error: %w", err)
 			}
 		case chunkMetadata, ok := <-chunksChan:
 			if !ok { //nolint:nestif // TODO: Improve this later.
 				// Process remaining batch
 				if err := c.recordChunkBatch(ctx, narFileID, chunkCount, batch); err != nil {
-					return 0, err
+					return err
 				}
 
 				chunkCount += int64(len(batch))
@@ -1524,7 +1535,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 					})
 				})
 				if err != nil {
-					return 0, fmt.Errorf("error marking chunking complete: %w", err)
+					return fmt.Errorf("error marking chunking complete: %w", err)
 				}
 
 				// If compression was normalized (e.g., xz → none), atomically clean up the old
@@ -1558,7 +1569,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 					}
 				}
 
-				return totalSize, nil
+				return nil
 			}
 
 			// Store in chunkStore if new
@@ -1566,7 +1577,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			if err != nil {
 				chunkMetadata.Free()
 
-				return 0, fmt.Errorf("error storing chunk: %w", err)
+				return fmt.Errorf("error storing chunk: %w", err)
 			}
 
 			chunkMetadata.Free()
@@ -1579,7 +1590,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 			if len(batch) >= chunkBatchSize {
 				if err := c.recordChunkBatch(ctx, narFileID, chunkCount, batch); err != nil {
-					return 0, err
+					return err
 				}
 
 				chunkCount += int64(len(batch))
@@ -1836,8 +1847,7 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
-	_, err = c.storeNarFromTempFile(ctx, ds.assetPath, narURL)
-	if err != nil {
+	if err = c.storeNarFromTempFile(ctx, ds.assetPath, narURL); err != nil {
 		ds.setError(err)
 
 		return
@@ -1971,6 +1981,11 @@ func (c *Cache) getNarFromStore(
 		return 0, nil, fmt.Errorf("error fetching the nar from the store: %w", err)
 	}
 
+	// storedFileSize is the on-disk size of the stored file (the compressed size
+	// for Compression:none NARs stored as .nar.zst). Captured before size is set
+	// to -1 below so we can use it when healing a missing DB record.
+	storedFileSize := size
+
 	if decompress {
 		decompressed, decompErr := nar.DecompressReader(r, nar.CompressionTypeZstd)
 		if decompErr != nil {
@@ -1983,11 +1998,16 @@ func (c *Cache) getNarFromStore(
 		size = -1 // decompressed size is unknown
 	}
 
+	var needsDBRecord bool
+
 	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
 		nr, err := c.getNarFileFromDB(ctx, qtx, *narURL)
 		if err != nil {
-			// TODO: If record not found, record it instead!
 			if database.IsNotFoundError(err) {
+				// NAR is in storage but has no DB record — this is an orphan left by a
+				// crash between narStore.PutNar and ensureNarFileRecord. Schedule healing.
+				needsDBRecord = true
+
 				return nil
 			}
 
@@ -2008,6 +2028,15 @@ func (c *Cache) getNarFromStore(
 	})
 	if err != nil {
 		return 0, nil, err
+	}
+
+	// Heal the orphan: create the missing DB record so LRU tracking works.
+	if needsDBRecord {
+		if healErr := c.ensureNarFileRecord(ctx, *narURL, storedFileSize, "getNarFromStore.healOrphan"); healErr != nil {
+			zerolog.Ctx(ctx).Warn().Err(healErr).
+				Str("nar_url", narURL.String()).
+				Msg("failed to create missing DB record for orphan NAR in getNarFromStore")
+		}
 	}
 
 	return size, r, nil
@@ -2137,7 +2166,17 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 			)
 
 			if narURL, err := nar.ParseURL(narInfo.URL); err == nil {
-				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
+				// Only trigger CDC migration for NARs whose URL has non-none
+				// compression: these are whole-file NARs that haven't been migrated
+				// to chunks yet. NARs already stored as CDC chunks have
+				// Compression:none in their URL, so we skip the migration check to
+				// avoid a spurious distributed-lock + DB-query round-trip on every
+				// cache hit. Note: Compression:none NARs stored as .nar.zst (without
+				// CDC) will still be migrated when they are served via GetNar.
+				if narURL.Compression != nar.CompressionTypeNone {
+					c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
+				}
+
 				zerolog.Ctx(ctx).
 					Debug().
 					Str("narinfo", narInfo.String()).
@@ -5117,6 +5156,18 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 	}
 
 	if hasChunks {
+		// Chunks already exist. Run the post-chunking cleanup steps idempotently.
+		//
+		// If a previous run crashed between storeNarWithCDC (which commits the chunks
+		// atomically) and the subsequent UpdateNarInfoCompressionAndURL / DeleteNar
+		// steps, the narinfo URL may still reference the old compressed URL and the
+		// original whole-file NAR may still be in narStore.  Running these steps again
+		// is safe: UpdateNarInfoCompressionAndURL is a no-op when the URL is already
+		// correct (it updates 0 rows), and DeleteNar gracefully handles ErrNotFound.
+		if narURL.Compression != nar.CompressionTypeNone {
+			c.migrateNarToChunksCleanup(ctx, *narURL)
+		}
+
 		return ErrNarAlreadyChunked
 	}
 
@@ -5151,17 +5202,39 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 	// 4. Store using CDC logic
 	// storeNarWithCDC handles chunking, storing chunks, and DB updates.
 	// Save original URL and compression before storeNarWithCDC normalizes narURL.Compression to "none".
-	originalURL := narURL.String()
 	originalNarURL := *narURL // value copy — storeNarWithCDC mutates narURL.Compression in-place
 
-	_, err = c.storeNarWithCDC(ctx, tempPath, narURL)
-	if err != nil {
+	if err = c.storeNarWithCDC(ctx, tempPath, narURL); err != nil {
 		return fmt.Errorf("error storing nar with CDC: %w", err)
 	}
 
-	// 5. Update narinfo records in the database to reflect CDC normalization.
-	// After storeNarWithCDC, narURL.Compression is "none" and narURL.String() gives the new URL.
-	newURL := narURL.String()
+	// 5. Update narinfo records in the database and delete the original whole-file NAR.
+	// These cleanup steps are intentionally run after storeNarWithCDC commits so that
+	// a crash here leaves the system in a recoverable state: the next call to
+	// MigrateNarToChunks will detect hasChunks==true and re-run these steps via
+	// migrateNarToChunksCleanup.
+	c.migrateNarToChunksCleanup(ctx, originalNarURL)
+
+	return nil
+}
+
+// migrateNarToChunksCleanup performs the post-chunking cleanup for a NAR that has
+// been migrated from whole-file storage to CDC chunks.  It is deliberately separated
+// from storeNarWithCDC so it can be called both after a fresh migration and on
+// subsequent MigrateNarToChunks calls when chunks already exist (idempotency /
+// crash recovery).
+//
+// Both operations are idempotent:
+//   - UpdateNarInfoCompressionAndURL updates 0 rows if the URL is already correct.
+//   - DeleteNar returns ErrNotFound (ignored) if the file is already gone.
+func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL nar.URL) {
+	originalURL := originalNarURL.String()
+	newURL := nar.URL{
+		Hash:        originalNarURL.Hash,
+		Compression: nar.CompressionTypeNone,
+		Query:       originalNarURL.Query,
+	}.String()
+
 	if originalURL != newURL {
 		if _, err := c.db.UpdateNarInfoCompressionAndURL(ctx, database.UpdateNarInfoCompressionAndURLParams{
 			Compression: sql.NullString{String: nar.CompressionTypeNone.String(), Valid: true},
@@ -5173,15 +5246,12 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 				Str("old_url", originalURL).
 				Str("new_url", newURL).
 				Msg("failed to update narinfo compression/URL after CDC migration")
-
-			return fmt.Errorf("error updating the narinfo compression/URL: %w", err)
 		}
 	}
 
-	// 6. Delete the original whole-file NAR from narStore now that it is fully chunked.
-	// The NAR is no longer needed as a whole file — all data lives in CDC chunks.
-	// We attempt both the original compression and the zstd variant because
-	// Compression:none NARs are stored on disk as .nar.zst.
+	// Delete the original whole-file NAR from narStore.  We attempt both the
+	// original compression and the zstd variant because Compression:none NARs are
+	// stored on disk as .nar.zst.
 	deletedFromStore := false
 
 	zstdNarURL := nar.URL{Hash: originalNarURL.Hash, Compression: nar.CompressionTypeZstd, Query: originalNarURL.Query}
@@ -5209,8 +5279,6 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 			Str("nar_url", originalURL).
 			Msg("original whole-file NAR not found in narStore after CDC migration (already absent)")
 	}
-
-	return nil
 }
 
 // maybeBackgroundMigrateNarToChunks checks if CDC is enabled and triggers background migration.
