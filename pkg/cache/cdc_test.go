@@ -75,6 +75,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
 	t.Run("PutNar does not overwrite FileSize once chunked", testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory))
+	t.Run("MigrateNarToChunks heals stale narinfo URL on second call",
+		testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -1312,5 +1314,110 @@ func testCDCMigrateNarToChunksDeletesOriginalFile(factory cacheFactory) func(*te
 		// We check the original URL (xz) — this is what was written to storage before migration.
 		assert.False(t, c.HasNarInStore(ctx, originalNarURL),
 			"original whole-file NAR (xz) must be deleted from narStore after CDC migration")
+	}
+}
+
+// testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall verifies that
+// MigrateNarToChunks is fully idempotent: if the process previously crashed
+// between storeNarWithCDC (which commits chunks and relinks narinfos) and the
+// subsequent UpdateNarInfoCompressionAndURL call, calling MigrateNarToChunks
+// again must heal the stale narinfo URL and delete the original whole-file NAR.
+//
+// Simulated crash state (after first partial run):
+//   - nar_file record: compression=none, total_chunks=N (chunking complete)
+//   - narinfo.url still has the old URL (e.g., hash.nar.xz)
+//   - Original whole-file NAR still in narStore (deletion never ran)
+func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, localStore, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		// 1. Store NAR as whole file (no CDC) and narinfo.
+		err := c.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// 2. Enable CDC.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// 3. Run MigrateNarToChunks successfully (first migration).
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err, "first migration should succeed")
+
+		// Verify migration completed (sanity check).
+		var url, compression string
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT url, compression FROM narinfos WHERE hash = ?"),
+			entry.NarInfoHash).Scan(&url, &compression)
+		require.NoError(t, err)
+		assert.Equal(t, nar.CompressionTypeNone.String(), compression,
+			"narinfo compression should be none after first migration")
+
+		// 4. Simulate a crash between storeNarWithCDC and UpdateNarInfoCompressionAndURL:
+		//    - Reset the narinfo URL back to the original xz URL in the DB.
+		//    - Put the original whole-file NAR back in narStore.
+		oldURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}.String()
+		_, err = db.DB().ExecContext(ctx,
+			rebind("UPDATE narinfos SET url = ?, compression = ? WHERE hash = ?"),
+			oldURL, "xz", entry.NarInfoHash)
+		require.NoError(t, err, "resetting narinfo URL to simulate crash state")
+
+		_, err = localStore.PutNar(ctx, nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz},
+			io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err, "putting whole-file NAR back to simulate crash state")
+
+		// Verify the crash state is set up correctly.
+		var staleURL string
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT url FROM narinfos WHERE hash = ?"),
+			entry.NarInfoHash).Scan(&staleURL)
+		require.NoError(t, err)
+		assert.Contains(t, staleURL, ".xz", "narinfo URL should be stale (xz) before second migration")
+		assert.True(t, c.HasNarInStore(ctx, nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}),
+			"original whole-file NAR should be back in narStore before second migration")
+
+		// 5. Call MigrateNarToChunks again on the original xz URL.
+		//    Chunks already exist (total_chunks > 0), so HasNarInChunks returns true.
+		//    The fix: instead of returning immediately, perform the cleanup steps.
+		xzNarURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}
+		err = c.MigrateNarToChunks(ctx, &xzNarURL)
+		// After the fix this must succeed (either nil or ErrNarAlreadyChunked is acceptable —
+		// what matters is that the side effects are applied).
+		if err != nil {
+			require.ErrorIs(t, err, cache.ErrNarAlreadyChunked, "only ErrNarAlreadyChunked is acceptable")
+		}
+
+		// 6. Verify the narinfo URL is updated to the none URL (healing completed).
+		var healedURL, healedCompression string
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT url, compression FROM narinfos WHERE hash = ?"),
+			entry.NarInfoHash).Scan(&healedURL, &healedCompression)
+		require.NoError(t, err)
+		assert.Equal(t, nar.CompressionTypeNone.String(), healedCompression,
+			"narinfo compression must be healed to none by second MigrateNarToChunks call")
+		assert.NotContains(t, healedURL, ".xz",
+			"narinfo URL must not contain .xz after healing")
+
+		// 7. Verify the original whole-file NAR was deleted from narStore.
+		assert.False(t, c.HasNarInStore(ctx, nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}),
+			"original whole-file NAR must be deleted from narStore after healing")
 	}
 }
