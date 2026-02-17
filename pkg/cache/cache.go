@@ -1455,7 +1455,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	narURL.Compression = nar.CompressionTypeNone
 
 	// 1. Create or get NarFile record
-	narFileID, err := c.findOrCreateNarFileForCDC(ctx, narURL, fileSize)
+	narFileID, staleLockChunks, err := c.findOrCreateNarFileForCDC(ctx, narURL, fileSize)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			zerolog.Ctx(ctx).Debug().Msg("nar already exists in chunk storage, skipping")
@@ -1470,6 +1470,12 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	cdcEnabled, chunkStore, cdcChunker := c.getCDCInfo()
 	if !cdcEnabled || chunkStore == nil || cdcChunker == nil {
 		return ErrCDCDisabled
+	}
+
+	// If a stale lock was detected and cleaned up, immediately remove the orphaned chunk
+	// files and DB records. This avoids waiting for the next RunLRU GC cycle to reclaim space.
+	if len(staleLockChunks) > 0 {
+		c.cleanupStaleLockChunks(ctx, chunkStore, staleLockChunks)
 	}
 
 	// If the NAR is compressed, decompress it before chunking.
@@ -1572,7 +1578,17 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 				return nil
 			}
 
-			// Store in chunkStore if new
+			// Store in chunkStore if new.
+			//
+			// NOTE (known limitation): The physical chunk file is written here before
+			// recordChunkBatch writes the DB record. If the process crashes between these
+			// two operations, the chunk file will be an unreferenced orphan on disk with no
+			// corresponding DB record. The GC (RunLRU/GetOrphanedChunks) cannot find it
+			// because it operates on DB records, not the filesystem. However, if the same NAR
+			// is re-requested, the stale chunking_started_at lock will trigger cleanup and
+			// a fresh chunking attempt that reuses existing chunk files via PutChunk.
+			// For truly abandoned NARs (never re-requested after a crash), the orphaned
+			// chunk files will persist until a filesystem-level cleanup is performed.
 			_, compressedSize, err := chunkStore.PutChunk(ctx, chunkMetadata.Hash, chunkMetadata.Data)
 			if err != nil {
 				chunkMetadata.Free()
@@ -1605,10 +1621,17 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 // it is considered stale and a new attempt may clean up the partial state and restart.
 const cdcChunkingLockTTL = time.Hour
 
-func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, fileSize uint64) (int64, error) {
-	var narFileID int64
-
-	err := c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
+// findOrCreateNarFileForCDC creates or retrieves a nar_file record for CDC chunking.
+// It returns the narFileID, a list of chunk records that were removed from the junction
+// table during stale lock cleanup (may be orphaned and need immediate cleanup), and an error.
+// Callers should pass the returned staleLockChunks to cleanupStaleLockChunks after this
+// function returns, so orphaned chunk files are reclaimed without waiting for RunLRU.
+func (c *Cache) findOrCreateNarFileForCDC(
+	ctx context.Context,
+	narURL *nar.URL,
+	fileSize uint64,
+) (narFileID int64, staleLockChunks []database.Chunk, err error) {
+	err = c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
 		nr, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
 			Hash:        narURL.Hash,
 			Compression: narURL.Compression.String(),
@@ -1653,10 +1676,19 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 			}
 
 			// Lock is stale: a previous attempt was interrupted mid-chunking.
-			// Delete the partial chunks so we can start fresh.
+			// Collect the partial chunk records so we can clean them up after the
+			// transaction commits (chunk files live outside the DB transaction).
+			partialChunks, err := qtx.GetChunksByNarFileID(ctx, narFileID)
+			if err != nil {
+				return fmt.Errorf("failed to get chunks for stale nar_file %d: %w", narFileID, err)
+			}
+
+			staleLockChunks = partialChunks
+
 			zerolog.Ctx(ctx).Warn().
 				Dur("age", age).
 				Int64("narFileID", narFileID).
+				Int("stale_chunk_count", len(staleLockChunks)).
 				Msg("stale CDC chunking lock detected; cleaning up partial chunks and restarting")
 
 			if err := qtx.DeleteNarFileChunksByNarFileID(ctx, narFileID); err != nil {
@@ -1672,10 +1704,63 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
-	return narFileID, nil
+	return narFileID, staleLockChunks, nil
+}
+
+// cleanupStaleLockChunks immediately removes chunk files and database records that became
+// orphaned as a result of a stale CDC chunking lock cleanup. This is an optimization over
+// waiting for the regular GC cycle (RunLRU) to reclaim the space.
+//
+// A chunk is only deleted if it is truly orphaned (no remaining nar_file_chunks references),
+// to avoid accidentally removing chunks that are shared with other completed NAR files.
+func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, staleLockChunks []database.Chunk) {
+	if len(staleLockChunks) == 0 {
+		return
+	}
+
+	log := zerolog.Ctx(ctx).With().
+		Int("stale_chunk_count", len(staleLockChunks)).
+		Logger()
+
+	// Build a map from chunk ID → hash for O(1) lookup.
+	staleByID := make(map[int64]string, len(staleLockChunks))
+	for _, ch := range staleLockChunks {
+		staleByID[ch.ID] = ch.Hash
+	}
+
+	// Find all currently orphaned chunks (no nar_file_chunks references).
+	// Run this outside the previous transaction so we see the committed deletion.
+	orphanedChunks, err := c.db.GetOrphanedChunks(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
+
+		return
+	}
+
+	for _, oc := range orphanedChunks {
+		hash, ok := staleByID[oc.ID]
+		if !ok {
+			continue // Not one of our stale lock chunks.
+		}
+
+		chunkLog := log.With().Str("chunk_hash", hash).Int64("chunk_id", oc.ID).Logger()
+		chunkLog.Debug().Msg("immediately cleaning up chunk from stale CDC lock")
+
+		// Delete the DB record first; if this fails, leave the physical file for GC.
+		if err := c.db.DeleteChunkByID(ctx, oc.ID); err != nil {
+			chunkLog.Warn().Err(err).Msg("failed to delete orphaned chunk record during stale lock cleanup")
+
+			continue
+		}
+
+		// Delete the physical chunk file.
+		if err := cs.DeleteChunk(ctx, hash); err != nil && !errors.Is(err, chunk.ErrNotFound) {
+			chunkLog.Warn().Err(err).Msg("failed to delete orphaned chunk file during stale lock cleanup")
+		}
+	}
 }
 
 // relinkNarInfosToNarFileWithQuerier links all narinfos pointing to narURL to narFileID
