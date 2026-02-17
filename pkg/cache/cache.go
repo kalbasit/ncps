@@ -1527,31 +1527,35 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 					return 0, fmt.Errorf("error marking chunking complete: %w", err)
 				}
 
-				// If compression was normalized (e.g., xz → none), clean up the old NarFile record
-				// to avoid having two records for the same hash with different compressions.
+				// If compression was normalized (e.g., xz → none), atomically clean up the old
+				// NarFile record and re-link narinfos to the new one in a single transaction.
+				//
+				// ATOMICITY REQUIREMENT: DeleteNarFileByHash CASCADE-deletes narinfo_nar_files.
+				// relinkNarInfosToNarFile must run in the same transaction so that narinfos are
+				// never left without a nar_file link if the process is killed between the two ops.
 				if originalCompression != nar.CompressionTypeNone {
-					if _, err := c.db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+					oldNarURL := nar.URL{
 						Hash:        narURL.Hash,
-						Compression: originalCompression.String(),
-						Query:       narURL.Query.Encode(),
-					}); err != nil {
-						zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to clean up old NarFile record after CDC normalization")
+						Compression: originalCompression,
+						Query:       narURL.Query,
 					}
-				}
 
-				// Re-link narinfos to the new nar_file.
-				// At this point narinfos still reference the old URL (UpdateNarInfoCompressionAndURL
-				// in MigrateNarToChunks runs after storeNarWithCDC returns), so query by oldNarURL.
-				oldNarURL := nar.URL{
-					Hash:        narURL.Hash,
-					Compression: originalCompression,
-					Query:       narURL.Query,
-				}
-				if err := c.relinkNarInfosToNarFile(ctx, oldNarURL, narFileID); err != nil {
-					zerolog.Ctx(ctx).Warn().
-						Err(err).
-						Int64("nar_file_id", narFileID).
-						Msg("failed to re-link narinfos to new nar_file after CDC migration")
+					if err := c.withTransaction(ctx, "storeNarWithCDC.RelinkAndCleanup", func(qtx database.Querier) error {
+						if _, err := qtx.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+							Hash:        narURL.Hash,
+							Compression: originalCompression.String(),
+							Query:       narURL.Query.Encode(),
+						}); err != nil {
+							return fmt.Errorf("failed to delete old nar_file record: %w", err)
+						}
+
+						return c.relinkNarInfosToNarFileWithQuerier(ctx, qtx, oldNarURL, narFileID)
+					}); err != nil {
+						zerolog.Ctx(ctx).Warn().
+							Err(err).
+							Int64("nar_file_id", narFileID).
+							Msg("failed to atomically clean up old NarFile and re-link narinfos after CDC normalization")
+					}
 				}
 
 				return totalSize, nil
@@ -1629,12 +1633,19 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 	return narFileID, nil
 }
 
-// relinkNarInfosToNarFile links all narinfos pointing to narURL to narFileID
+// relinkNarInfosToNarFileWithQuerier links all narinfos pointing to narURL to narFileID
 // in a single bulk INSERT ... SELECT. Called after CDC migration to repair
 // narinfo_nar_files entries that were CASCADE-deleted when the old nar_file
-// record was removed.
-func (c *Cache) relinkNarInfosToNarFile(ctx context.Context, narURL nar.URL, narFileID int64) error {
-	if err := c.db.LinkNarInfosByURLToNarFile(ctx, database.LinkNarInfosByURLToNarFileParams{
+// record was removed. It accepts any database.Querier (including a transaction
+// querier) so the bulk re-link can be executed within the same transaction as
+// the preceding DeleteNarFileByHash call.
+func (c *Cache) relinkNarInfosToNarFileWithQuerier(
+	ctx context.Context,
+	q database.Querier,
+	narURL nar.URL,
+	narFileID int64,
+) error {
+	if err := q.LinkNarInfosByURLToNarFile(ctx, database.LinkNarInfosByURLToNarFileParams{
 		NarFileID: narFileID,
 		URL:       sql.NullString{String: narURL.String(), Valid: true},
 	}); err != nil {

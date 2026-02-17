@@ -67,6 +67,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
 	t.Run("MigrateNarToChunks links narinfo_nar_files", testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory))
 	t.Run("MigrateNarToChunks deletes original whole-file NAR", testCDCMigrateNarToChunksDeletesOriginalFile(factory))
+	t.Run("MigrateNarToChunks compression normalization is atomic",
+		testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory))
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
 	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
@@ -1044,6 +1046,98 @@ func testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory cacheFactory) func
 		require.NoError(t, err)
 		assert.Equal(t, uncompressedSize, narFileAfter.FileSize,
 			"FileSize should NOT have been overwritten by compressed size")
+	}
+}
+
+// testCDCMigrateNarToChunksCompressionNormalizationIsAtomic verifies the invariants that
+// must hold after MigrateNarToChunks when compression is normalized (xz → none):
+//
+//  1. No nar_files record with the original compression (xz) exists for the hash.
+//  2. Exactly one nar_files record with compression=none exists.
+//  3. narinfo_nar_files has exactly one link pointing to the none-compression nar_file.
+//
+// These invariants depend on DeleteNarFileByHash and relinkNarInfosToNarFile being
+// executed atomically. If they are not, a process kill between the two operations
+// leaves narinfos with no nar_file link (narinfo_nar_files empty) — a dead-end state
+// that cannot self-heal.
+func testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// 1. Store a NAR as a whole file with xz compression (CDC disabled).
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		err := c.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		// 2. Store the narinfo referencing this NAR with xz compression.
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// 3. Verify the pre-migration state: one nar_files row with xz compression.
+		var xzCountBefore int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'xz'"),
+			entry.NarHash).Scan(&xzCountBefore)
+		require.NoError(t, err)
+		require.Equal(t, 1, xzCountBefore, "should have exactly one xz nar_files record before migration")
+
+		// 4. Enable CDC.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// 5. Migrate the NAR to chunks (triggers compression normalization: xz → none).
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err)
+
+		// Invariant 1: No nar_files record with the old compression (xz) must exist.
+		var xzCountAfter int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'xz'"),
+			entry.NarHash).Scan(&xzCountAfter)
+		require.NoError(t, err)
+		assert.Equal(t, 0, xzCountAfter,
+			"old nar_files record with xz compression must be deleted after CDC migration")
+
+		// Invariant 2: Exactly one nar_files record with compression=none must exist.
+		var noneCount int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'none'"),
+			entry.NarHash).Scan(&noneCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, noneCount,
+			"exactly one nar_files record with compression=none must exist after CDC migration")
+
+		// Invariant 3: narinfo_nar_files must have exactly one link, pointing to the none-compression nar_file.
+		// If DeleteNarFileByHash and relinkNarInfosToNarFile are not atomic, a crash between them
+		// leaves this count at 0 — narinfos orphaned with no nar_file link.
+		var linkCount int
+
+		err = db.DB().QueryRowContext(ctx, rebind(`
+			SELECT COUNT(*)
+			FROM narinfo_nar_files nnf
+			INNER JOIN nar_files nf ON nf.id = nnf.nar_file_id
+			WHERE nnf.narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)
+			AND nf.compression = 'none'
+		`), entry.NarInfoHash).Scan(&linkCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, linkCount,
+			"narinfo_nar_files must link to the none-compression nar_file after CDC migration "+
+				"(broken if DeleteNarFileByHash and relinkNarInfosToNarFile are not atomic)")
 	}
 }
 
