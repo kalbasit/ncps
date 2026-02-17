@@ -77,6 +77,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("PutNar does not overwrite FileSize once chunked", testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory))
 	t.Run("MigrateNarToChunks heals stale narinfo URL on second call",
 		testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory))
+	t.Run("stale lock cleanup deletes orphaned chunk files",
+		testCDCStaleLockCleansUpChunkFiles(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -1245,8 +1247,8 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		assert.True(t, hasChunks, "NAR must be fully chunked after recovery")
 
 		// 7. Verify the partial nar_file_chunks links are gone (replaced by real ones).
-		// The chunk data itself may still exist as an orphan (cleaned by background process),
-		// but there must be no nar_file_chunks rows linking the fake chunk to this nar_file.
+		// The immediate cleanup during stale lock recovery also removes the orphaned
+		// chunks record from the DB (not just the junction table entry).
 		var fakeChunkLinkCount int
 
 		err = db.DB().QueryRowContext(ctx,
@@ -1258,6 +1260,12 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		require.NoError(t, err)
 		assert.Zero(t, fakeChunkLinkCount,
 			"partial nar_file_chunks links for fake chunk must be removed after recovery")
+
+		// Verify the orphaned chunk DB record itself is also immediately deleted
+		// (not left for the background GC).
+		_, fakeChunkErr := db.GetChunkByHash(ctx, "fakehashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+		assert.True(t, database.IsNotFoundError(fakeChunkErr),
+			"orphaned fake chunk DB record must be deleted immediately during stale lock cleanup")
 	}
 }
 
@@ -1419,5 +1427,111 @@ func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFact
 		// 7. Verify the original whole-file NAR was deleted from narStore.
 		assert.False(t, c.HasNarInStore(ctx, nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}),
 			"original whole-file NAR must be deleted from narStore after healing")
+	}
+}
+
+// testCDCStaleLockCleansUpChunkFiles verifies that when a stale CDC chunking lock is
+// detected and cleaned up, the orphaned chunk FILES in the chunkStore are immediately
+// deleted (in addition to the nar_file_chunks junction table entries and chunks DB records).
+// Without this fix, orphaned chunk files accumulate on disk until the next GC (RunLRU) run.
+func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// 1. Store a NAR as a whole file (CDC disabled) with xz compression.
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		err := c.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// 2. Enable CDC.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// 3. Simulate a partial chunking state with a REAL physical chunk file.
+		noneURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}
+
+		narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+			Hash:        noneURL.Hash,
+			Compression: noneURL.Compression.String(),
+			Query:       noneURL.Query.Encode(),
+			FileSize:    0,
+			TotalChunks: 0,
+		})
+		require.NoError(t, err)
+
+		// Write a real physical chunk file to chunkStore.
+		fakeChunkHash := testhelper.MustRandBase32NarHash()
+		fakeChunkData := []byte("fake partial chunk data that simulates a mid-chunking crash")
+		_, _, err = chunkStore.PutChunk(ctx, fakeChunkHash, fakeChunkData)
+		require.NoError(t, err)
+
+		// Create the matching DB record and junction entry.
+		fakeChunk, err := db.CreateChunk(ctx, database.CreateChunkParams{
+			Hash:           fakeChunkHash,
+			Size:           64,
+			CompressedSize: 64,
+		})
+		require.NoError(t, err)
+
+		err = db.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
+			NarFileID:  narFile.ID,
+			ChunkID:    fakeChunk.ID,
+			ChunkIndex: 0,
+		})
+		require.NoError(t, err)
+
+		// Mark chunking as started and move the timestamp 2 hours into the past.
+		err = db.SetNarFileChunkingStarted(ctx, narFile.ID)
+		require.NoError(t, err)
+
+		_, err = db.DB().ExecContext(ctx,
+			rebind("UPDATE nar_files SET chunking_started_at = ? WHERE id = ?"),
+			time.Now().Add(-2*time.Hour),
+			narFile.ID,
+		)
+		require.NoError(t, err)
+
+		// 4. Precondition: chunk file and DB record must exist before recovery.
+		hasChunk, err := chunkStore.HasChunk(ctx, fakeChunkHash)
+		require.NoError(t, err)
+		assert.True(t, hasChunk, "fake chunk file must exist in chunkStore before stale lock cleanup")
+
+		_, err = db.GetChunkByHash(ctx, fakeChunkHash)
+		require.NoError(t, err, "fake chunk DB record must exist before stale lock cleanup")
+
+		// 5. Call MigrateNarToChunks — stale lock is detected and cleaned up.
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err, "MigrateNarToChunks must succeed after stale lock cleanup")
+
+		// 6. Verify the NAR is now fully chunked.
+		hasChunks, err := c.HasNarInChunks(ctx, noneURL)
+		require.NoError(t, err)
+		assert.True(t, hasChunks, "NAR must be fully chunked after stale lock recovery")
+
+		// 7. Verify the orphaned chunk FILE was immediately deleted from chunkStore.
+		hasChunk, err = chunkStore.HasChunk(ctx, fakeChunkHash)
+		require.NoError(t, err)
+		assert.False(t, hasChunk,
+			"orphaned chunk file must be immediately deleted during stale lock cleanup, not left for GC")
+
+		// 8. Verify the orphaned chunk DB record was also immediately deleted.
+		_, fakeChunkErr := db.GetChunkByHash(ctx, fakeChunkHash)
+		assert.True(t, database.IsNotFoundError(fakeChunkErr),
+			"orphaned chunk DB record must be immediately deleted during stale lock cleanup, not left for GC")
 	}
 }
