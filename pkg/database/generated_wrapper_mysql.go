@@ -115,8 +115,7 @@ func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParam
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	// MySQL does not support RETURNING for INSERTs.
-	// We insert, get LastInsertId, and then fetch the object by ID.
-	// If LastInsertId returns 0 (due to ON DUPLICATE KEY UPDATE), fetch by unique key instead.
+	// We insert, get LastInsertId, and then fetch the object.
 	res, err := w.adapter.CreateNarFile(ctx, mysqldb.CreateNarFileParams{
 		Hash:        arg.Hash,
 		Compression: arg.Compression,
@@ -130,30 +129,10 @@ func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParam
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		// If LastInsertId fails, fetch by unique key
-		nf, getErr := w.GetNarFileByHashAndCompressionAndQuery(ctx, GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        arg.Hash,
-			Compression: arg.Compression,
-			Query:       arg.Query,
-		})
-		if getErr != nil {
-			// Return the original LastInsertId error if we can't fetch by unique key
-			return NarFile{}, err
-		}
-		return nf, nil
+		return NarFile{}, err
 	}
 
-	if id > 0 {
-		// Fetch by ID
-		return w.GetNarFileByID(ctx, id)
-	}
-
-	// If ID is 0, fetch by unique key (happens with ON DUPLICATE KEY UPDATE)
-	return w.GetNarFileByHashAndCompressionAndQuery(ctx, GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        arg.Hash,
-		Compression: arg.Compression,
-		Query:       arg.Query,
-	})
+	return w.GetNarFileByID(ctx, id)
 }
 
 func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
