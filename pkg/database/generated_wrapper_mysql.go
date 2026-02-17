@@ -87,7 +87,19 @@ func (w *mysqlWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (
 		return Chunk{}, err
 	}
 
-	return w.GetChunkByID(ctx, id)
+	nf, err := w.GetChunkByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Chunk{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetChunkByID(ctx, id)
 }
 
 func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams) (Config, error) {
@@ -108,7 +120,19 @@ func (w *mysqlWrapper) CreateConfig(ctx context.Context, arg CreateConfigParams)
 		return Config{}, err
 	}
 
-	return w.GetConfigByID(ctx, id)
+	nf, err := w.GetConfigByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Config{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetConfigByID(ctx, id)
 }
 
 func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error) {
@@ -132,7 +156,19 @@ func (w *mysqlWrapper) CreateNarFile(ctx context.Context, arg CreateNarFileParam
 		return NarFile{}, err
 	}
 
-	return w.GetNarFileByID(ctx, id)
+	nf, err := w.GetNarFileByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return NarFile{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetNarFileByID(ctx, id)
 }
 
 func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error) {
@@ -162,7 +198,19 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParam
 		return NarInfo{}, err
 	}
 
-	return w.GetNarInfoByID(ctx, id)
+	nf, err := w.GetNarInfoByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return NarInfo{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetNarInfoByID(ctx, id)
 }
 
 func (w *mysqlWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
@@ -199,6 +247,12 @@ func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, 
 	// Return Primitive / *sql.DB / etc
 
 	return res, nil
+}
+
+func (w *mysqlWrapper) DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.DeleteNarFileChunksByNarFileID(ctx, narFileID)
 }
 
 func (w *mysqlWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
@@ -490,7 +544,7 @@ func (w *mysqlWrapper) GetConfigByKey(ctx context.Context, key string) (Config, 
 	}, nil
 }
 
-func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error) {
+func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
@@ -499,9 +553,9 @@ func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]GetLeastUsedNarFilesRow, len(res))
+	items := make([]NarFile, len(res))
 	for i, v := range res {
-		items[i] = GetLeastUsedNarFilesRow{
+		items[i] = NarFile{
 			ID: v.ID,
 
 			Hash: v.Hash,
@@ -517,6 +571,10 @@ func (w *mysqlWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64
 			UpdatedAt: v.UpdatedAt,
 
 			LastAccessedAt: v.LastAccessedAt,
+
+			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -632,6 +690,8 @@ func (w *mysqlWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Contex
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -668,25 +728,27 @@ func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, e
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
-func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error) {
+func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
 	if err != nil {
 
 		if errors.Is(err, sql.ErrNoRows) {
-			return GetNarFileByNarInfoIDRow{}, ErrNotFound
+			return NarFile{}, ErrNotFound
 		}
 
-		return GetNarFileByNarInfoIDRow{}, err
+		return NarFile{}, err
 	}
 
 	// Convert Single Domain Struct
 
-	return GetNarFileByNarInfoIDRow{
+	return NarFile{
 		ID: res.ID,
 
 		Hash: res.Hash,
@@ -702,6 +764,10 @@ func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int6
 		UpdatedAt: res.UpdatedAt,
 
 		LastAccessedAt: res.LastAccessedAt,
+
+		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -997,6 +1063,8 @@ func (w *mysqlWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetOldC
 			LastAccessedAt: v.LastAccessedAt,
 
 			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -1028,7 +1096,7 @@ func (w *mysqlWrapper) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChun
 	return items, nil
 }
 
-func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error) {
+func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
@@ -1037,9 +1105,9 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNa
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]GetOrphanedNarFilesRow, len(res))
+	items := make([]NarFile, len(res))
 	for i, v := range res {
-		items[i] = GetOrphanedNarFilesRow{
+		items[i] = NarFile{
 			ID: v.ID,
 
 			Hash: v.Hash,
@@ -1055,6 +1123,10 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNa
 			UpdatedAt: v.UpdatedAt,
 
 			LastAccessedAt: v.LastAccessedAt,
+
+			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -1156,6 +1228,12 @@ func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error
 		Key:   arg.Key,
 		Value: arg.Value,
 	})
+}
+
+func (w *mysqlWrapper) SetNarFileChunkingStarted(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.SetNarFileChunkingStarted(ctx, id)
 }
 
 func (w *mysqlWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {

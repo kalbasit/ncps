@@ -92,6 +92,11 @@ type Querier interface {
 	//  DELETE FROM nar_files
 	//  WHERE id = ?
 	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
+	//DeleteNarFileChunksByNarFileID
+	//
+	//  DELETE FROM nar_file_chunks
+	//  WHERE nar_file_id = ?
+	DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error
 	//DeleteNarInfoByHash
 	//
 	//  DELETE FROM narinfos
@@ -174,7 +179,7 @@ type Querier interface {
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
 	//
-	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.`query`, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
 	//  FROM nar_files n1
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
@@ -218,19 +223,19 @@ type Querier interface {
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHashAndCompressionAndQuery
 	//
-	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE hash = ? AND compression = ? AND `query` = ?
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (GetNarFileByHashAndCompressionAndQueryRow, error)
 	//GetNarFileByID
 	//
-	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE id = ?
 	GetNarFileByID(ctx context.Context, id int64) (GetNarFileByIDRow, error)
 	//GetNarFileByNarInfoID
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.`query`, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 	//  FROM nar_files nf
 	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 	//  WHERE nnf.narinfo_id = ?
@@ -321,7 +326,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	//GetOldCompressedNarFiles
 	//
-	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE compression NOT IN ('', 'none')
 	//    AND created_at < ?
@@ -337,7 +342,7 @@ type Querier interface {
 	GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error)
 	// Find files that have no relationship to any narinfo
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.`query`, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 	//  FROM nar_files nf
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
@@ -404,6 +409,12 @@ type Querier interface {
 	//      value = VALUES(value),
 	//      updated_at = CURRENT_TIMESTAMP
 	SetConfig(ctx context.Context, arg SetConfigParams) error
+	//SetNarFileChunkingStarted
+	//
+	//  UPDATE nar_files
+	//  SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = ?
+	SetNarFileChunkingStarted(ctx context.Context, id int64) error
 	//TouchNarFile
 	//
 	//  UPDATE nar_files
@@ -429,7 +440,7 @@ type Querier interface {
 	//UpdateNarFileTotalChunks
 	//
 	//  UPDATE nar_files
-	//  SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP
+	//  SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
 	//  WHERE id = ?
 	UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error
 	//UpdateNarInfo

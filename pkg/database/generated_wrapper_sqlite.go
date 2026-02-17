@@ -172,6 +172,8 @@ func (w *sqliteWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePara
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -269,6 +271,12 @@ func (w *sqliteWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64,
 	// Return Primitive / *sql.DB / etc
 
 	return res, nil
+}
+
+func (w *sqliteWrapper) DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.DeleteNarFileChunksByNarFileID(ctx, narFileID)
 }
 
 func (w *sqliteWrapper) DeleteNarInfoByHash(ctx context.Context, hash string) (int64, error) {
@@ -560,7 +568,7 @@ func (w *sqliteWrapper) GetConfigByKey(ctx context.Context, key string) (Config,
 	}, nil
 }
 
-func (w *sqliteWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error) {
+func (w *sqliteWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
@@ -569,9 +577,9 @@ func (w *sqliteWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint6
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]GetLeastUsedNarFilesRow, len(res))
+	items := make([]NarFile, len(res))
 	for i, v := range res {
-		items[i] = GetLeastUsedNarFilesRow{
+		items[i] = NarFile{
 			ID: v.ID,
 
 			Hash: v.Hash,
@@ -587,6 +595,10 @@ func (w *sqliteWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint6
 			UpdatedAt: v.UpdatedAt,
 
 			LastAccessedAt: v.LastAccessedAt,
+
+			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -702,6 +714,8 @@ func (w *sqliteWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Conte
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -738,25 +752,27 @@ func (w *sqliteWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, 
 		LastAccessedAt: res.LastAccessedAt,
 
 		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
-func (w *sqliteWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error) {
+func (w *sqliteWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetNarFileByNarInfoID(ctx, narinfoID)
 	if err != nil {
 
 		if errors.Is(err, sql.ErrNoRows) {
-			return GetNarFileByNarInfoIDRow{}, ErrNotFound
+			return NarFile{}, ErrNotFound
 		}
 
-		return GetNarFileByNarInfoIDRow{}, err
+		return NarFile{}, err
 	}
 
 	// Convert Single Domain Struct
 
-	return GetNarFileByNarInfoIDRow{
+	return NarFile{
 		ID: res.ID,
 
 		Hash: res.Hash,
@@ -772,6 +788,10 @@ func (w *sqliteWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int
 		UpdatedAt: res.UpdatedAt,
 
 		LastAccessedAt: res.LastAccessedAt,
+
+		TotalChunks: res.TotalChunks,
+
+		ChunkingStartedAt: res.ChunkingStartedAt,
 	}, nil
 }
 
@@ -1067,6 +1087,8 @@ func (w *sqliteWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetOld
 			LastAccessedAt: v.LastAccessedAt,
 
 			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -1098,7 +1120,7 @@ func (w *sqliteWrapper) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChu
 	return items, nil
 }
 
-func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error) {
+func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetOrphanedNarFiles(ctx)
@@ -1107,9 +1129,9 @@ func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedN
 	}
 
 	// Convert Slice of Domain Structs
-	items := make([]GetOrphanedNarFilesRow, len(res))
+	items := make([]NarFile, len(res))
 	for i, v := range res {
-		items[i] = GetOrphanedNarFilesRow{
+		items[i] = NarFile{
 			ID: v.ID,
 
 			Hash: v.Hash,
@@ -1125,6 +1147,10 @@ func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedN
 			UpdatedAt: v.UpdatedAt,
 
 			LastAccessedAt: v.LastAccessedAt,
+
+			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
 		}
 	}
 	return items, nil
@@ -1226,6 +1252,12 @@ func (w *sqliteWrapper) SetConfig(ctx context.Context, arg SetConfigParams) erro
 		Key:   arg.Key,
 		Value: arg.Value,
 	})
+}
+
+func (w *sqliteWrapper) SetNarFileChunkingStarted(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.SetNarFileChunkingStarted(ctx, id)
 }
 
 func (w *sqliteWrapper) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {

@@ -666,8 +666,8 @@ func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, 
 		}
 	}
 
-	// Case 2: Converting from primitive to sql.Null*
-	if isSqlNullType(targetFieldType) {
+	// Case 2: Converting from primitive to sql.Null* (skip interface{} — handled by Case 5b)
+	if isSqlNullType(targetFieldType) && sourceFieldType != "interface{}" {
 		expectedPrimitive := getPrimitiveFromNullType(targetFieldType)
 		if expectedPrimitive == sourceFieldType {
 			// Direct conversion from matching primitive
@@ -697,6 +697,21 @@ func generateFieldConversion(targetFieldName, targetFieldType, sourceFieldType, 
 	// Case 5: Struct types (non-sql.Null*) - direct assignment
 	if isStructType(targetFieldType) {
 		return fmt.Sprintf("%s: %s", targetFieldName, sourceExpr)
+	}
+
+	// Case 5b: interface{} source → sql.Null* target (SQLite nullable columns come as interface{})
+	if sourceFieldType == "interface{}" && isSqlNullType(targetFieldType) {
+		primitive := getPrimitiveFromNullType(targetFieldType)
+		fieldName := getFieldNameForNullType(targetFieldType)
+		if primitive != "" && fieldName != "" {
+			return fmt.Sprintf(
+				"%s: func() %s { if %s == nil { return %s{} }; v, ok := %s.(%s); if !ok { return %s{} }; return %s{%s: v, Valid: true} }()",
+				targetFieldName, targetFieldType,
+				sourceExpr, targetFieldType,
+				sourceExpr, primitive,
+				targetFieldType, fieldName,
+			)
+		}
 	}
 
 	// Case 6: Primitive type conversion
@@ -900,7 +915,19 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 			return {{.Method.ReturnElem}}{}, err
 		}
 
-		return w.Get{{.Method.ReturnElem}}ByID(ctx, id)
+		nf, err := w.Get{{.Method.ReturnElem}}ByID(ctx, id)
+		if err == nil {
+			return nf, nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return {{.Method.ReturnElem}}{}, err
+		}
+
+		// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+		// already committed this row), the current transaction's MVCC snapshot may not
+		// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+		// connection, which always reads the latest committed data.
+		return (&mysqlWrapper{adapter: {{.Engine.Package}}.NewAdapter(w.adapter.DB())}).Get{{.Method.ReturnElem}}ByID(ctx, id)
 	{{else if and .Engine.IsMySQL .Method.IsUpdate}}
 		// MySQL does not support RETURNING for UPDATEs.
 		// We update, and then fetch the object by its unique key (assumed to be the first param after context, or we try by Hash if it exists).

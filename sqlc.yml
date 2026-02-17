@@ -17,6 +17,12 @@ sql:
             go_type: uint32
           - column: chunks.compressed_size
             go_type: uint32
+          - column: nar_files.chunking_started_at
+            go_type:
+              import: "database/sql"
+              type: "NullTime"
+              pointer: false
+            nullable: true
         rename:
           narinfo_id: NarInfoID
           url: URL

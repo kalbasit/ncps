@@ -68,7 +68,17 @@ type Querier interface {
 	//  )
 	//  ON CONFLICT (hash, compression, query) DO UPDATE SET
 	//      updated_at = EXCLUDED.updated_at
-	//  RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+	//  RETURNING
+	//      id,
+	//      hash,
+	//      compression,
+	//      file_size,
+	//      query,
+	//      created_at,
+	//      updated_at,
+	//      last_accessed_at,
+	//      total_chunks,
+	//      chunking_started_at
 	CreateNarFile(ctx context.Context, arg CreateNarFileParams) (NarFile, error)
 	//CreateNarInfo
 	//
@@ -107,6 +117,11 @@ type Querier interface {
 	//  DELETE FROM nar_files
 	//  WHERE id = $1
 	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
+	//DeleteNarFileChunksByNarFileID
+	//
+	//  DELETE FROM nar_file_chunks
+	//  WHERE nar_file_id = $1
+	DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error
 	//DeleteNarInfoByHash
 	//
 	//  DELETE FROM narinfos
@@ -189,7 +204,7 @@ type Querier interface {
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
 	//
-	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
 	//  FROM nar_files n1
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
@@ -197,7 +212,7 @@ type Querier interface {
 	//      WHERE n2.last_accessed_at < n1.last_accessed_at
 	//         OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 	//  ) <= $1
-	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error)
+	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
@@ -233,23 +248,23 @@ type Querier interface {
 	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHashAndCompressionAndQuery
 	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE hash = $1 AND compression = $2 AND query = $3
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
 	//GetNarFileByID
 	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE id = $1
 	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 	//GetNarFileByNarInfoID
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 	//  FROM nar_files nf
 	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 	//  WHERE nnf.narinfo_id = $1
-	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error)
+	GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error)
 	//GetNarFileCount
 	//
 	//  SELECT CAST(COUNT(*) AS BIGINT) AS count
@@ -336,7 +351,7 @@ type Querier interface {
 	GetNarTotalSize(ctx context.Context) (int64, error)
 	//GetOldCompressedNarFiles
 	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 	//  FROM nar_files
 	//  WHERE compression NOT IN ('', 'none')
 	//    AND created_at < $1
@@ -352,11 +367,11 @@ type Querier interface {
 	GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error)
 	// Find files that have no relationship to any narinfo
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 	//  FROM nar_files nf
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
-	GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error)
+	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
 	//GetTotalChunkSize
 	//
 	//  SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) AS total_size
@@ -422,6 +437,12 @@ type Querier interface {
 	//    value = EXCLUDED.value,
 	//    updated_at = CURRENT_TIMESTAMP
 	SetConfig(ctx context.Context, arg SetConfigParams) error
+	//SetNarFileChunkingStarted
+	//
+	//  UPDATE nar_files
+	//  SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = $1
+	SetNarFileChunkingStarted(ctx context.Context, id int64) error
 	//TouchNarFile
 	//
 	//  UPDATE nar_files
@@ -447,7 +468,7 @@ type Querier interface {
 	//UpdateNarFileTotalChunks
 	//
 	//  UPDATE nar_files
-	//  SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP
+	//  SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
 	//  WHERE id = $3
 	UpdateNarFileTotalChunks(ctx context.Context, arg UpdateNarFileTotalChunksParams) error
 	//UpdateNarInfo

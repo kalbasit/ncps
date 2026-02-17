@@ -20,17 +20,17 @@ WHERE id = $1;
 
 
 -- name: GetNarFileByHashAndCompressionAndQuery :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE hash = $1 AND compression = $2 AND query = $3;
 
 -- name: GetNarFileByID :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE id = $1;
 
 -- name: GetNarFileByNarInfoID :one
-SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 FROM nar_files nf
 INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 WHERE nnf.narinfo_id = $1;
@@ -169,7 +169,22 @@ INSERT INTO nar_files (
 )
 ON CONFLICT (hash, compression, query) DO UPDATE SET
     updated_at = EXCLUDED.updated_at
-RETURNING id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks;
+RETURNING
+    id,
+    hash,
+    compression,
+    file_size,
+    query,
+    created_at,
+    updated_at,
+    last_accessed_at,
+    total_chunks,
+    chunking_started_at;
+
+-- name: SetNarFileChunkingStarted :exec
+UPDATE nar_files
+SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
 
 -- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
@@ -270,7 +285,7 @@ WHERE (
 -- NOTE: This query uses a correlated subquery which is not optimal for performance.
 -- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 -- does not properly support filtering on window function results in subqueries.
-SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
 FROM nar_files n1
 WHERE (
     SELECT SUM(n2.file_size)
@@ -281,7 +296,7 @@ WHERE (
 
 -- name: GetOrphanedNarFiles :many
 -- Find files that have no relationship to any narinfo
-SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 FROM nar_files nf
 LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 WHERE ninf.narinfo_id IS NULL;
@@ -377,6 +392,10 @@ WHERE nfc.chunk_id IS NULL;
 DELETE FROM chunks
 WHERE id = $1;
 
+-- name: DeleteNarFileChunksByNarFileID :exec
+DELETE FROM nar_file_chunks
+WHERE nar_file_id = $1;
+
 -- name: GetChunkByNarFileIDAndIndex :one
 SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
@@ -385,7 +404,7 @@ WHERE nfc.nar_file_id = $1 AND nfc.chunk_index = $2;
 
 -- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
-SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP
+SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
 WHERE id = $3;
 
 -- name: GetNarInfoHashesToChunk :many
@@ -419,7 +438,7 @@ ORDER BY id
 LIMIT $1 OFFSET $2;
 
 -- name: GetOldCompressedNarFiles :many
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE compression NOT IN ('', 'none')
   AND created_at < $1
