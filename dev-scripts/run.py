@@ -26,8 +26,13 @@ S3_CONFIG = {
 
 # Database URLs matching bash scripts
 DB_CONFIG = {
-    "postgres": os.environ["NCPS_DEV_POSTGRES_URL"],
-    "mysql": os.environ["NCPS_DEV_MYSQL_URL"],
+    "postgres": os.environ.get(
+        "NCPS_DEV_POSTGRES_URL",
+        "postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable",
+    ),
+    "mysql": os.environ.get(
+        "NCPS_DEV_MYSQL_URL", "mysql://dev-user:dev-password@127.0.0.1:3306/dev-db"
+    ),
     "sqlite": f"sqlite:{os.path.join(REPO_ROOT, 'var/ncps/db/db.sqlite')}",
 }
 

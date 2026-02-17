@@ -98,7 +98,7 @@ def connect_db(state):
         import pymysql
         import pymysql.cursors
 
-        parsed = urlparse(url.replace("mysql://", "http://", 1))
+        parsed = urlparse(url)
         conn = pymysql.connect(
             host=parsed.hostname,
             port=parsed.port or 3306,
@@ -125,7 +125,7 @@ def cursor(conn, db_type):
 
 def placeholder(db_type):
     """Return the query placeholder character for the db type."""
-    return "?" if db_type in ("sqlite", "mysql") else "%s"
+    return "?" if db_type == "sqlite" else "%s"
 
 
 # ---------------------------------------------------------------------------
@@ -370,23 +370,30 @@ def verify_flat(state, nar_file_hash, compression, file_size_db, file_hash_db):
     s3 = get_s3_client(state["s3"]) if storage == "s3" else None
     bucket = state["s3"]["bucket"] if storage == "s3" else ""
 
-    # --- read raw (compressed) bytes ---
+    # --- verify physical size and SHA-256 ---
+    sha256 = hashlib.sha256()
+    actual_size = 0
     try:
         if storage == "local":
-            raw = read_local(storage_path, key)
+            full = os.path.join(storage_path, key)
+            with open(full, "rb") as f:
+                while chunk := f.read(65536):
+                    sha256.update(chunk)
+                    actual_size += len(chunk)
         else:
-            raw = read_s3(s3, bucket, key)
-    except FileNotFoundError as e:
+            obj = s3.get_object(Bucket=bucket, Key=key.replace(os.sep, "/"))
+            for chunk in obj["Body"].iter_chunks(chunk_size=65536):
+                sha256.update(chunk)
+                actual_size += len(chunk)
+    except Exception as e:
         return [str(e)]
 
-    # --- verify physical size ---
-    if len(raw) != file_size_db:
+    if actual_size != file_size_db:
         errors.append(
-            f"File size mismatch (disk {len(raw)}, DB file_size={file_size_db})"
+            f"File size mismatch (disk {actual_size}, DB file_size={file_size_db})"
         )
 
-    # --- verify SHA-256 of compressed file ---
-    sha256_hex = hashlib.sha256(raw).hexdigest()
+    sha256_hex = sha256.hexdigest()
     if not hash_matches(sha256_hex, file_hash_db):
         nix32 = to_nix32(sha256_hex)
         errors.append(
