@@ -1183,6 +1183,15 @@ func (w *postgresWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarI
 	})
 }
 
+func (w *postgresWrapper) LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.LinkNarInfosByURLToNarFile(ctx, postgresdb.LinkNarInfosByURLToNarFileParams{
+		NarFileID: arg.NarFileID,
+		URL:       arg.URL,
+	})
+}
+
 func (w *postgresWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

@@ -1539,6 +1539,21 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 					}
 				}
 
+				// Re-link narinfos to the new nar_file.
+				// At this point narinfos still reference the old URL (UpdateNarInfoCompressionAndURL
+				// in MigrateNarToChunks runs after storeNarWithCDC returns), so query by oldNarURL.
+				oldNarURL := nar.URL{
+					Hash:        narURL.Hash,
+					Compression: originalCompression,
+					Query:       narURL.Query,
+				}
+				if err := c.relinkNarInfosToNarFile(ctx, oldNarURL, narFileID); err != nil {
+					zerolog.Ctx(ctx).Warn().
+						Err(err).
+						Int64("nar_file_id", narFileID).
+						Msg("failed to re-link narinfos to new nar_file after CDC migration")
+				}
+
 				return totalSize, nil
 			}
 
@@ -1612,6 +1627,21 @@ func (c *Cache) findOrCreateNarFileForCDC(ctx context.Context, narURL *nar.URL, 
 	}
 
 	return narFileID, nil
+}
+
+// relinkNarInfosToNarFile links all narinfos pointing to narURL to narFileID
+// in a single bulk INSERT ... SELECT. Called after CDC migration to repair
+// narinfo_nar_files entries that were CASCADE-deleted when the old nar_file
+// record was removed.
+func (c *Cache) relinkNarInfosToNarFile(ctx context.Context, narURL nar.URL, narFileID int64) error {
+	if err := c.db.LinkNarInfosByURLToNarFile(ctx, database.LinkNarInfosByURLToNarFileParams{
+		NarFileID: narFileID,
+		URL:       sql.NullString{String: narURL.String(), Valid: true},
+	}); err != nil {
+		return fmt.Errorf("failed to link narinfos by URL %q to nar_file %d: %w", narURL.String(), narFileID, err)
+	}
+
+	return nil
 }
 
 func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startIndex int64, batch []chunker.Chunk) error {

@@ -1140,6 +1140,15 @@ func (w *mysqlWrapper) LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfo
 	})
 }
 
+func (w *mysqlWrapper) LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.LinkNarInfosByURLToNarFile(ctx, mysqldb.LinkNarInfosByURLToNarFileParams{
+		NarFileID: arg.NarFileID,
+		URL:       arg.URL,
+	})
+}
+
 func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

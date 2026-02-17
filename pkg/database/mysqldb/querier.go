@@ -386,6 +386,13 @@ type Querier interface {
 	//  )
 	//  ON DUPLICATE KEY UPDATE narinfo_id = narinfo_id
 	LinkNarInfoToNarFile(ctx context.Context, arg LinkNarInfoToNarFileParams) error
+	//LinkNarInfosByURLToNarFile
+	//
+	//  INSERT IGNORE INTO narinfo_nar_files (narinfo_id, nar_file_id)
+	//  SELECT id, ?
+	//  FROM narinfos
+	//  WHERE url = ?
+	LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error
 	//SetConfig
 	//
 	//  INSERT INTO config (
