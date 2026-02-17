@@ -760,7 +760,7 @@ func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error
 }
 
 const getLeastUsedNarFiles = `-- name: GetLeastUsedNarFiles :many
-SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
 FROM nar_files n1
 WHERE (
     SELECT SUM(n2.file_size)
@@ -770,22 +770,11 @@ WHERE (
 ) <= $1
 `
 
-type GetLeastUsedNarFilesRow struct {
-	ID             int64
-	Hash           string
-	Compression    string
-	FileSize       uint64
-	Query          string
-	CreatedAt      time.Time
-	UpdatedAt      sql.NullTime
-	LastAccessedAt sql.NullTime
-}
-
 // NOTE: This query uses a correlated subquery which is not optimal for performance.
 // The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 // does not properly support filtering on window function results in subqueries.
 //
-//	SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+//	SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
 //	FROM nar_files n1
 //	WHERE (
 //	    SELECT SUM(n2.file_size)
@@ -793,15 +782,15 @@ type GetLeastUsedNarFilesRow struct {
 //	    WHERE n2.last_accessed_at < n1.last_accessed_at
 //	       OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
 //	) <= $1
-func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]GetLeastUsedNarFilesRow, error) {
+func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
 	rows, err := q.db.QueryContext(ctx, getLeastUsedNarFiles, fileSize)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetLeastUsedNarFilesRow
+	var items []NarFile
 	for rows.Next() {
-		var i GetLeastUsedNarFilesRow
+		var i NarFile
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
@@ -811,6 +800,8 @@ func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LastAccessedAt,
+			&i.TotalChunks,
+			&i.ChunkingStartedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1040,32 +1031,21 @@ func (q *Queries) GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 }
 
 const getNarFileByNarInfoID = `-- name: GetNarFileByNarInfoID :one
-SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 FROM nar_files nf
 INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 WHERE nnf.narinfo_id = $1
 `
 
-type GetNarFileByNarInfoIDRow struct {
-	ID             int64
-	Hash           string
-	Compression    string
-	FileSize       uint64
-	Query          string
-	CreatedAt      time.Time
-	UpdatedAt      sql.NullTime
-	LastAccessedAt sql.NullTime
-}
-
 // GetNarFileByNarInfoID
 //
-//	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+//	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 //	FROM nar_files nf
 //	INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 //	WHERE nnf.narinfo_id = $1
-func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (GetNarFileByNarInfoIDRow, error) {
+func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (NarFile, error) {
 	row := q.db.QueryRowContext(ctx, getNarFileByNarInfoID, narinfoID)
-	var i GetNarFileByNarInfoIDRow
+	var i NarFile
 	err := row.Scan(
 		&i.ID,
 		&i.Hash,
@@ -1075,6 +1055,8 @@ func (q *Queries) GetNarFileByNarInfoID(ctx context.Context, narinfoID int64) (G
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastAccessedAt,
+		&i.TotalChunks,
+		&i.ChunkingStartedAt,
 	)
 	return i, err
 }
@@ -1586,38 +1568,27 @@ func (q *Queries) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow
 }
 
 const getOrphanedNarFiles = `-- name: GetOrphanedNarFiles :many
-SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 FROM nar_files nf
 LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 WHERE ninf.narinfo_id IS NULL
 `
 
-type GetOrphanedNarFilesRow struct {
-	ID             int64
-	Hash           string
-	Compression    string
-	FileSize       uint64
-	Query          string
-	CreatedAt      time.Time
-	UpdatedAt      sql.NullTime
-	LastAccessedAt sql.NullTime
-}
-
 // Find files that have no relationship to any narinfo
 //
-//	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+//	SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 //	FROM nar_files nf
 //	LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 //	WHERE ninf.narinfo_id IS NULL
-func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error) {
+func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	rows, err := q.db.QueryContext(ctx, getOrphanedNarFiles)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetOrphanedNarFilesRow
+	var items []NarFile
 	for rows.Next() {
-		var i GetOrphanedNarFilesRow
+		var i NarFile
 		if err := rows.Scan(
 			&i.ID,
 			&i.Hash,
@@ -1627,6 +1598,8 @@ func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFile
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LastAccessedAt,
+			&i.TotalChunks,
+			&i.ChunkingStartedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -1192,8 +1192,9 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		require.NoError(t, err)
 
 		// Insert a fake partial chunk to simulate in-progress state.
+		// Use a valid 52-character Nix base32 hash
 		fakeChunk, err := db.CreateChunk(ctx, database.CreateChunkParams{
-			Hash:           "fakehash0000000000000000000000000000000000000000000000000000000000",
+			Hash:           "fakehashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 			Size:           512,
 			CompressedSize: 256,
 		})
@@ -1250,7 +1251,7 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 			rebind(`SELECT COUNT(*) FROM nar_file_chunks nfc
 				INNER JOIN chunks c ON c.id = nfc.chunk_id
 				WHERE c.hash = ?`),
-			"fakehash0000000000000000000000000000000000000000000000000000000000",
+			"fakehashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 		).Scan(&fakeChunkLinkCount)
 		require.NoError(t, err)
 		assert.Zero(t, fakeChunkLinkCount,

@@ -179,7 +179,7 @@ type Querier interface {
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
 	//
-	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at
+	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.`query`, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
 	//  FROM nar_files n1
 	//  WHERE (
 	//      SELECT SUM(n2.file_size)
@@ -235,7 +235,7 @@ type Querier interface {
 	GetNarFileByID(ctx context.Context, id int64) (GetNarFileByIDRow, error)
 	//GetNarFileByNarInfoID
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.`query`, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 	//  FROM nar_files nf
 	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 	//  WHERE nnf.narinfo_id = ?
@@ -342,7 +342,7 @@ type Querier interface {
 	GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error)
 	// Find files that have no relationship to any narinfo
 	//
-	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at
+	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.`query`, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 	//  FROM nar_files nf
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
