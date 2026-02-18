@@ -909,12 +909,21 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		// the original (prefixed) hash (e.g., nix-serve style upstreams).
 		narURL = c.lookupOriginalNarURL(ctx, narURL)
 
+		// For CDC mode, narURL still has CompressionTypeNone after lookupOriginalNarURL
+		// because nar_files records don't exist yet for first pulls.
+		// To avoid downloading uncompressed NARs from upstream (slow TTFB due to
+		// on-the-fly decompression), look up the original compressed URL from upstream.
+		// We use this as a "preferred download URL" while keeping narURL as noneURL
+		// so the decompressor path in the streaming goroutine triggers correctly
+		// (it checks narURL.Compression == none).
+		preferredUpstreamURL := c.lookupPreferredUpstreamURL(ctx, narURL)
+
 		// create a detachedCtx that has the same span and logger as the main
 		// context but with the baseContext as parent; This context will not cancel
 		// when ctx is canceled allowing us to continue pulling the nar in the
 		// background.
 		detachedCtx := context.WithoutCancel(ctx)
-		ds := c.prePullNar(ctx, detachedCtx, &narURL, nil)
+		ds := c.prePullNar(ctx, detachedCtx, &narURL, preferredUpstreamURL, nil)
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
 		// This prevents race with cleanup goroutine calling ds.wg.Wait()
@@ -1208,6 +1217,53 @@ func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.U
 
 	// If parsing fails or URL is invalid/empty, return the normalized URL unchanged
 	return normalizedNarURL
+}
+
+// lookupPreferredUpstreamURL returns the original compressed URL for a CDC NAR
+// (e.g. the xz URL) by looking up the narinfo hash in the DB and fetching the
+// narinfo from upstream. This allows CDC first pulls to download the compressed
+// version instead of the uncompressed version, reducing TTFB significantly.
+// Returns nil if CDC is not enabled, there is an active local download, or the
+// original URL cannot be found.
+func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) *nar.URL {
+	if !c.isCDCEnabled() || narURL.Compression != nar.CompressionTypeNone || c.hasUpstreamJob(narURL.Hash) {
+		return nil
+	}
+
+	narInfoHash, err := c.db.GetNarInfoHashByNarURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
+	if err != nil {
+		if !database.IsNotFoundError(err) && !errors.Is(err, sql.ErrNoRows) {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup narinfo hash by nar URL")
+		}
+
+		return nil
+	}
+
+	if narInfoHash == "" {
+		return nil
+	}
+
+	_, upstreamNarInfo, err := c.getNarInfoFromUpstream(ctx, narInfoHash)
+	if err != nil || upstreamNarInfo == nil {
+		return nil
+	}
+
+	originalURL, err := nar.ParseURL(upstreamNarInfo.URL)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Str("url", upstreamNarInfo.URL).
+			Msg("Failed to parse preferred upstream nar URL")
+
+		return nil
+	}
+
+	if originalURL.Compression == nar.CompressionTypeNone {
+		return nil
+	}
+
+	return &originalURL
 }
 
 // ensureNarFileRecord ensures a NarFile record exists with the correct size.
@@ -1945,6 +2001,7 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 func (c *Cache) pullNarIntoStore(
 	ctx context.Context,
 	narURL *nar.URL,
+	preferredUpstreamURL *nar.URL,
 	uc *upstream.Cache,
 	ds *downloadState,
 ) {
@@ -1998,11 +2055,20 @@ func (c *Cache) pullNarIntoStore(
 
 	now := time.Now()
 
+	// Use preferredUpstreamURL for the actual HTTP download if provided.
+	// This allows CDC first pulls to download the original compressed (e.g. xz) NAR
+	// from upstream instead of the uncompressed version, reducing TTFB significantly.
+	// narURL continues to be used for job key, CDC storage, hasAsset, and serving.
+	downloadURL := narURL
+	if preferredUpstreamURL != nil {
+		downloadURL = preferredUpstreamURL
+	}
+
 	zerolog.Ctx(ctx).
 		Info().
 		Msg("downloading the nar from upstream")
 
-	resp, err := c.getNarFromUpstream(ctx, narURL, uc)
+	resp, err := c.getNarFromUpstream(ctx, downloadURL, uc)
 	if err != nil {
 		if !errors.Is(err, storage.ErrNotFound) {
 			zerolog.Ctx(ctx).
@@ -2061,11 +2127,11 @@ func (c *Cache) pullNarIntoStore(
 		os.Remove(ds.assetPath)
 	})
 
-	// Record the actual compression type of the bytes being written to the temp file.
+	// Record the actual compression type of the bytes written to the temp file.
 	// This allows the streaming goroutine to detect when it needs to decompress
-	// (e.g., when a CDC-enabled GetNar client requests compression:none but the
-	// download was started with compression:xz by a concurrent GetNarInfo call).
-	ds.tempFileCompression = narURL.Compression
+	// (e.g., when a CDC-enabled GetNar client requests compression:none but we
+	// downloaded xz from upstream via preferredUpstreamURL for better TTFB).
+	ds.tempFileCompression = downloadURL.Compression
 
 	// Signal that temp file is ready for streaming
 	ds.startOnce.Do(func() { close(ds.start) })
@@ -2704,7 +2770,7 @@ func (c *Cache) pullNarInfo(
 	// narURL is modified within a background goroutine.
 	narURLForBG := narURL
 
-	c.prePullNar(ctx, detachedCtx, &narURLForBG, uc)
+	c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc)
 
 	// For CDC mode, NARs are stored as raw uncompressed chunks.
 	// For Compression:none upstreams, NARs are stored as zstd files and served
@@ -2909,6 +2975,7 @@ func (c *Cache) prePullNar(
 	coordCtx context.Context,
 	ctx context.Context,
 	narURL *nar.URL,
+	preferredUpstreamURL *nar.URL,
 	uc *upstream.Cache,
 ) *downloadState {
 	ctx, span := tracer.Start(
@@ -2948,7 +3015,7 @@ func (c *Cache) prePullNar(
 			return false
 		},
 		func(ds *downloadState) {
-			c.pullNarIntoStore(ctx, narURL, uc, ds)
+			c.pullNarIntoStore(ctx, narURL, preferredUpstreamURL, uc, ds)
 		},
 	)
 }
