@@ -120,6 +120,7 @@ A NAR is an archive format containing the actual package files. When you install
 - Typically compressed (xz, zstd)
 - Can be very large (500MB+ for some packages)
 - Stored in the storage backend
+- `ncps` normalizes NAR compression internally: uncompressed NARs are stored as zstd to reduce storage usage, and served with transparent decompression so clients always receive the format they expect. When serving, `ncps` re-compresses on-the-fly based on the encoding the client advertises (zstd, brotli, gzip, or raw).
 
 #### NarInfo
 
