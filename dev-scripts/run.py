@@ -450,7 +450,7 @@ def main():
     parser.add_argument(
         "--clean",
         action="store_true",
-        help="Clean all previous data before starting (removes var/ncps, var/log, drops DB tables, clears S3, flushes Redis)",
+        help="Clean all previous data before starting (removes var/ncps, drops DB tables, clears S3, flushes Redis)",
     )
     parser.add_argument(
         "--enable-cdc",
