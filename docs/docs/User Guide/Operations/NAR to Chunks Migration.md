@@ -134,10 +134,10 @@ You should see a decrease in total storage usage (sum of `nar/` and `chunk/` dir
 
 ### Database Inspection
 
-You can check the `nar_chunks` table to see the mapping:
+You can check the `nar_file_chunks` table to see the mapping:
 
 ```
-SELECT count(DISTINCT nar_id) FROM nar_chunks;
+SELECT count(DISTINCT nar_file_id) FROM nar_file_chunks;
 ```
 
 ## Troubleshooting

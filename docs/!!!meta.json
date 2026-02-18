@@ -3186,6 +3186,13 @@
                                             "value": "cdc",
                                             "isInheritable": false,
                                             "position": 40
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "ZBLjSKKfK6yH",
+                                            "isInheritable": false,
+                                            "position": 50
                                         }
                                     ],
                                     "format": "markdown",

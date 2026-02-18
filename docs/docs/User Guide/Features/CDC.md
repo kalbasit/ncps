@@ -17,10 +17,12 @@ CDC solves this by splitting NAR files into smaller, variable-sized chunks based
 
 `ncps` uses the **FastCDC** algorithm to process NAR files:
 
-1. **Chunking**: When a NAR file is fetched from an upstream cache, `ncps` passes it through the CDC chunker. The chunker identifies "natural" boundaries in the data stream to split the file into variable-sized chunks.
-1. **Hashing**: Each chunk is hashed (using SHA-256) to create a unique identifier based on its content.
+1. **Preprocessing**: Before chunking, `ncps` decompresses the NAR file if it is compressed (e.g., xz, zstd). CDC always operates on the raw, uncompressed data to maximize cross-NAR deduplication.
+1. **Chunking**: The uncompressed data is passed through the [FastCDC chunker](https://github.com/kalbasit/fastcdc). The chunker identifies "natural" content-defined boundaries in the data stream to split the file into variable-sized chunks.
+1. **Hashing**: Each chunk is hashed (using [BLAKE3](https://github.com/zeebo/blake3)) to create a unique identifier based on its content.
 1. **Deduplication**: If a chunk with the same hash already exists in the store (from another NAR file), `ncps` simply references the existing chunk instead of storing it again.
-1. **Assembly**: When a client requests a store path, `ncps` assembles it on-the-fly from its constituent chunks.
+1. **Compression**: New (non-duplicate) chunks are compressed with **zstd** before being written to the storage backend.
+1. **Assembly**: When a client requests a store path, `ncps` assembles it on-the-fly from its constituent chunks, decompressing each chunk and recompressing the stream for the client using the encoding the client prefers (zstd, brotli, gzip, or raw).
 
 ### Benefits
 
@@ -68,6 +70,6 @@ Processing NAR files through the CDC chunker adds some CPU overhead during the i
 ## Related Documentation
 
 - <a class="reference-link" href="../Operations/NAR%20to%20Chunks%20Migration.md">NAR to Chunks Migration</a>
-- <a class="reference-link" href="../Configuration/Reference.md">Configuration Reference</a>
-- <a class="reference-link" href="../Configuration/Storage.md">Storage Configuration</a>
-- <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability Setup</a>
+- <a class="reference-link" href="../Configuration/Reference.md">Reference</a>
+- <a class="reference-link" href="../Configuration/Storage.md">Storage</a>
+- <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a>
