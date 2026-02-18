@@ -275,6 +275,13 @@ type Querier interface {
 	//  SELECT CAST(COUNT(*) AS SIGNED) AS count
 	//  FROM narinfos
 	GetNarInfoCount(ctx context.Context) (int64, error)
+	//GetNarInfoHashByNarURL
+	//
+	//  SELECT hash
+	//  FROM narinfos
+	//  WHERE url = ?
+	//  LIMIT 1
+	GetNarInfoHashByNarURL(ctx context.Context, url sql.NullString) (string, error)
 	//GetNarInfoHashesByNarFileID
 	//
 	//  SELECT ni.hash

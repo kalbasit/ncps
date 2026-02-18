@@ -1153,6 +1153,26 @@ func (q *Queries) GetNarInfoCount(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const getNarInfoHashByNarURL = `-- name: GetNarInfoHashByNarURL :one
+SELECT hash
+FROM narinfos
+WHERE url = ?
+LIMIT 1
+`
+
+// GetNarInfoHashByNarURL
+//
+//	SELECT hash
+//	FROM narinfos
+//	WHERE url = ?
+//	LIMIT 1
+func (q *Queries) GetNarInfoHashByNarURL(ctx context.Context, url sql.NullString) (string, error) {
+	row := q.db.QueryRowContext(ctx, getNarInfoHashByNarURL, url)
+	var hash string
+	err := row.Scan(&hash)
+	return hash, err
+}
+
 const getNarInfoHashesByNarFileID = `-- name: GetNarInfoHashesByNarFileID :many
 SELECT ni.hash
 FROM narinfos ni

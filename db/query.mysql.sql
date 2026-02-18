@@ -18,6 +18,12 @@ SELECT *
 FROM narinfos
 WHERE id = ?;
 
+-- name: GetNarInfoHashByNarURL :one
+SELECT hash
+FROM narinfos
+WHERE url = ?
+LIMIT 1;
+
 
 -- name: GetNarFileByHashAndCompressionAndQuery :one
 SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
