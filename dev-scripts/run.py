@@ -366,9 +366,91 @@ def run_db_migration(db_url):
     subprocess.run(["dbmate", "--no-dump-schema", "--url", db_url, "up"], check=True)
 
 
+def perform_clean():
+    log("Cleaning previous data...", YELLOW)
+
+    # 1. Remove var/ncps folder
+    ncps_var_dir = os.path.join(REPO_ROOT, "var/ncps")
+    if os.path.exists(ncps_var_dir):
+        log(f"  Removing {ncps_var_dir}", YELLOW)
+        shutil.rmtree(ncps_var_dir, ignore_errors=True)
+
+    # 2. Remove tables in Postgres/MySQL
+    for engine in ["postgres", "mysql"]:
+        url = DB_CONFIG[engine]
+        if shutil.which("dbmate"):
+            log(f"  Cleaning {engine} database...", YELLOW)
+            try:
+                subprocess.run(
+                    ["dbmate", "--url", url, "drop"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
+            except subprocess.TimeoutExpired:
+                log(f"  Warning: {engine} cleanup timed out", RED)
+
+    # 3. Remove all s3 files
+    if shutil.which("mc"):
+        log("  Cleaning S3 storage...", YELLOW)
+        endpoint = S3_CONFIG["endpoint"]
+        access_key = S3_CONFIG["access_key"]
+        secret_key = S3_CONFIG["secret_key"]
+        bucket = S3_CONFIG["bucket"]
+        mc_env = os.environ.copy()
+        # Construct MC_HOST_clean env var. Note: we use a specific alias 'clean'
+        # The format for MC_HOST_<alias> is http(s)://ACCESS_KEY:SECRET_KEY@HOST:PORT
+        parsed_endpoint = urlparse(endpoint)
+        mc_url = parsed_endpoint._replace(netloc=f"{access_key}:{secret_key}@{parsed_endpoint.hostname}:{parsed_endpoint.port}").geturl()
+        mc_env["MC_HOST_clean"] = mc_url
+        try:
+            subprocess.run(
+                ["mc", "rb", "--force", f"clean/{bucket}"],
+                env=mc_env,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            # Re-create the bucket
+            subprocess.run(
+                ["mc", "mb", f"clean/{bucket}"],
+                env=mc_env,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            log("  Warning: S3 cleanup timed out", RED)
+
+    # 4. Delete all redis keys
+    if shutil.which("redis-cli"):
+        log("  Cleaning Redis keys...", YELLOW)
+        r_host, r_port = REDIS_ADDR.split(":")
+        try:
+            subprocess.run(
+                ["redis-cli", "-h", r_host, "-p", r_port, "flushall"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            log("  Warning: Redis cleanup timed out", RED)
+
+    log("Cleanup complete.\n", GREEN)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run ncps instances with configurable backends."
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Clean all previous data before starting (removes var/ncps, drops DB tables, clears S3, flushes Redis)",
     )
     parser.add_argument(
         "--enable-cdc",
@@ -443,6 +525,9 @@ def main():
         return
 
     args = parser.parse_args()
+
+    if args.clean:
+        perform_clean()
 
     # --- Guard Rails ---
     if args.replicas < 1:
