@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/ulikunitz/xz"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -26,6 +28,23 @@ import (
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
+
+// compressXz compresses data using xz and returns the compressed bytes as a string.
+func compressXz(t *testing.T, data string) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	xw, err := xz.NewWriter(&buf)
+	require.NoError(t, err)
+
+	_, err = io.WriteString(xw, data)
+	require.NoError(t, err)
+
+	require.NoError(t, xw.Close())
+
+	return buf.String()
+}
 
 // slowChunker wraps a real Chunker and adds a configurable delay before producing any chunks.
 // Used to simulate slow CDC chunking in tests to verify that the HTTP response does not
@@ -1602,12 +1621,17 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 	}
 }
 
-// testCDCFirstPullCompletesBeforeChunking verifies that GetNar returns all NAR bytes to
-// the client before CDC chunking finishes on first pull. Without this fix, the HTTP
-// connection would stay open for the entire duration of CDC chunking (~18s for large NARs),
-// causing poor TTFB and total response time. The fix signals ds.stored immediately after the
-// nar_file DB record is created, allowing the streaming goroutine to close the pipe and return
-// EOF to the client without waiting for chunking.
+// testCDCFirstPullCompletesBeforeChunking verifies two properties of CDC first pull:
+//
+//  1. GetNar returns all NAR bytes to the client BEFORE CDC chunking finishes. Without
+//     this fix the HTTP connection would stay open for the full duration of CDC chunking
+//     (~18 s for large NARs). The fix (Bug 1) signals ds.stored immediately after the
+//     nar_file DB record is created.
+//
+//  2. When GetNar piggybacks on a download started by prePullNarInfo (which always fetches
+//     the upstream compression format for better TTFB), the streaming goroutine correctly
+//     decompresses the compressed temp file so the client receives uncompressed bytes
+//     (Bug 2).
 func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
@@ -1636,6 +1660,28 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 
 		c.SetChunker(&slowChunker{real: realChunker, delay: chunkingDelay})
 
+		// Create real xz-compressed NAR content.
+		// The test server will serve this at Nar2's NAR URL so that the streaming
+		// goroutine can verify decompression correctness (Bug 2).
+		originalContent := testhelper.MustRandString(50160)
+		xzContent := compressXz(t, originalContent)
+
+		// Override the default Nar2 NAR response with real xz-compressed content.
+		// The test server normally serves Nar2.NarText (random bytes pretending to
+		// be xz). We replace it so the xz decompressor can actually decompress it.
+		nar2NARPath := "/nar/" + testdata.Nar2.NarHash + ".nar.xz"
+		handlerIdx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path != nar2NARPath {
+				return false
+			}
+
+			_, _ = io.WriteString(w, xzContent)
+
+			return true
+		})
+
+		t.Cleanup(func() { ts.RemoveMaybeHandler(handlerIdx) })
+
 		// Set up upstream cache.
 		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
 			PublicKeys: testdata.PublicKeys(),
@@ -1647,13 +1693,15 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 		// Wait for upstream to become available.
 		<-c.GetHealthChecker().Trigger()
 
-		// First, pull the narinfo so the DB has the CDC-normalized URL for the NAR.
-		// This is required so GetNar can look up the upstream URL via lookupOriginalNarURL.
-		_, err = c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+		// Pull the narinfo. This triggers prePullNar in the background which downloads
+		// Nar2's xz-compressed NAR (real xz data from the MaybeHandler above).
+		// prePullNarInfo normalizes the narinfo URL to compression=none for CDC.
+		_, err = c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 		require.NoError(t, err)
 
 		// Request the NAR using the CDC-normalized URL (no compression extension).
-		narURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
+		// GetNar piggybacks on the active xz download started by prePullNarInfo.
+		narURL := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeNone}
 
 		start := time.Now()
 
@@ -1667,15 +1715,18 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 
 		elapsed := time.Since(start)
 
-		// The key assertion: reading all NAR bytes must complete BEFORE the slow chunker delay
-		// expires. If ds.stored is correctly signaled right after the nar_file DB record is
-		// created (not after chunking finishes), elapsed will be well under chunkingDelay.
+		// Bug 1 assertion: reading all NAR bytes must complete BEFORE the slow chunker
+		// delay expires. If ds.stored is correctly signaled right after the nar_file DB
+		// record is created (not after chunking finishes), elapsed will be well under
+		// chunkingDelay.
 		assert.Less(t, elapsed, chunkingDelay,
 			"GetNar response must complete before CDC chunking finishes (elapsed: %s, chunking delay: %s)",
 			elapsed, chunkingDelay)
 
-		// Verify the data is the expected NAR content (raw bytes from upstream).
-		assert.Equal(t, testdata.Nar1.NarText, string(body),
-			"NAR body must match the upstream content")
+		// Bug 2 assertion: the client must receive the ORIGINAL uncompressed content.
+		// Even though prePullNarInfo downloaded xz-compressed bytes, the streaming
+		// goroutine must decompress them before sending to the client.
+		assert.Equal(t, originalContent, string(body),
+			"NAR body must be the decompressed original content, not the raw xz bytes")
 	}
 }
