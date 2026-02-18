@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/pkg/chunker"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/zstd"
 )
@@ -19,6 +20,14 @@ import (
 // CheckAndFixNarInfo is a test-only export of the unexported checkAndFixNarInfo method.
 func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	return c.checkAndFixNarInfo(ctx, hash)
+}
+
+// SetChunker is a test-only export to inject a custom chunker implementation.
+func (c *Cache) SetChunker(ch chunker.Chunker) {
+	c.cdcMu.Lock()
+	defer c.cdcMu.Unlock()
+
+	c.chunker = ch
 }
 
 // HasNarInStore is a test-only export of the unexported hasNarInStore method.
