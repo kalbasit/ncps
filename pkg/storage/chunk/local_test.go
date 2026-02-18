@@ -3,6 +3,7 @@ package chunk_test
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,24 +13,36 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zeebo/blake3"
 
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-func TestLocalStore(t *testing.T) {
-	t.Parallel()
+func newLocalStore(t *testing.T) (chunk.Store, string) {
+	t.Helper()
 
-	ctx := context.Background()
-	dir, err := os.MkdirTemp("", "ncps-chunk-test-*")
+	h := blake3.Sum256([]byte(t.Name()))
+	hashStr := hex.EncodeToString(h[:])
+	dir, err := os.MkdirTemp("", "ncps"+hashStr+"-*")
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
 	store, err := chunk.NewLocalStore(dir)
 	require.NoError(t, err)
 
+	return store, dir
+}
+
+func TestLocalStore(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
 	t.Run("put and get chunk", func(t *testing.T) {
 		t.Parallel()
+
+		store, _ := newLocalStore(t)
 
 		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("chunk content", 1024)
@@ -56,6 +69,8 @@ func TestLocalStore(t *testing.T) {
 	t.Run("duplicate put", func(t *testing.T) {
 		t.Parallel()
 
+		store, _ := newLocalStore(t)
+
 		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("chunk content", 1024)
 
@@ -73,6 +88,8 @@ func TestLocalStore(t *testing.T) {
 	t.Run("get non-existent chunk", func(t *testing.T) {
 		t.Parallel()
 
+		store, _ := newLocalStore(t)
+
 		hash := testhelper.MustRandBase32NarHash()
 		_, err := store.GetChunk(ctx, hash)
 		require.ErrorIs(t, err, chunk.ErrNotFound)
@@ -80,6 +97,8 @@ func TestLocalStore(t *testing.T) {
 
 	t.Run("delete chunk cleans up directory", func(t *testing.T) {
 		t.Parallel()
+
+		store, dir := newLocalStore(t)
 
 		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("cleanup test", 1024)
@@ -115,6 +134,8 @@ func TestLocalStore(t *testing.T) {
 
 	t.Run("PutChunk concurrent", func(t *testing.T) {
 		t.Parallel()
+
+		store, _ := newLocalStore(t)
 
 		hash := testhelper.MustRandBase32NarHash()
 		content := strings.Repeat("concurrent content", 1024)
@@ -166,6 +187,8 @@ func TestLocalStore(t *testing.T) {
 	t.Run("stored chunk is zstd-compressed on disk", func(t *testing.T) {
 		t.Parallel()
 
+		store, _ := newLocalStore(t)
+
 		// Use highly compressible data (repeated bytes)
 		data := bytes.Repeat([]byte("compressible"), 1024)
 		isNew, compressedSize, err := store.PutChunk(ctx, testhelper.MustRandBase32NarHash(), data)
@@ -177,6 +200,8 @@ func TestLocalStore(t *testing.T) {
 
 	t.Run("compressed chunk round-trips correctly", func(t *testing.T) {
 		t.Parallel()
+
+		store, _ := newLocalStore(t)
 
 		data := []byte("hello, compressed world! hello, compressed world! hello, compressed world!")
 		hash := testhelper.MustRandBase32NarHash()
