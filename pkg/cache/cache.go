@@ -384,13 +384,14 @@ type downloadState struct {
 	cond *sync.Cond
 
 	// Information about the asset being downloaded
-	wg           sync.WaitGroup // Tracks active readers streaming from the temp file
-	cleanupWg    sync.WaitGroup // Tracks download completion to trigger cleanup
-	cdcWg        sync.WaitGroup // Tracks CDC background goroutine; zero by default (non-CDC)
-	closed       bool           // Indicates whether new readers are allowed (protected by mu)
-	assetPath    string
-	bytesWritten int64
-	finalSize    int64
+	wg                  sync.WaitGroup // Tracks active readers streaming from the temp file
+	cleanupWg           sync.WaitGroup // Tracks download completion to trigger cleanup
+	cdcWg               sync.WaitGroup // Tracks CDC background goroutine; zero by default (non-CDC)
+	closed              bool           // Indicates whether new readers are allowed (protected by mu)
+	assetPath           string
+	bytesWritten        int64
+	finalSize           int64
+	tempFileCompression nar.CompressionType // Actual compression of bytes written to the temp file
 
 	// Store any download errors in this field
 	downloadError error
@@ -418,6 +419,50 @@ func newDownloadState() *downloadState {
 	ds.cond = sync.NewCond(&ds.mu)
 
 	return ds
+}
+
+// fileAvailableReader is an io.Reader that reads from a file as bytes become available,
+// blocking (via ds.cond.Wait) when the download is still in progress. Returns io.EOF
+// once all expected bytes (ds.finalSize) have been consumed. Used to drive streaming
+// decompression from a temp file while a download is still writing to it.
+type fileAvailableReader struct {
+	f      *os.File
+	ds     *downloadState
+	offset int64
+}
+
+func (r *fileAvailableReader) Read(p []byte) (int, error) {
+	r.ds.mu.Lock()
+
+	for r.offset >= r.ds.bytesWritten && r.ds.finalSize == 0 && r.ds.downloadError == nil {
+		r.ds.cond.Wait()
+	}
+
+	if r.ds.downloadError != nil {
+		r.ds.mu.Unlock()
+
+		return 0, r.ds.downloadError
+	}
+
+	if r.ds.finalSize != 0 && r.offset >= r.ds.finalSize {
+		r.ds.mu.Unlock()
+
+		return 0, io.EOF
+	}
+
+	available := r.ds.bytesWritten - r.offset
+
+	r.ds.mu.Unlock()
+
+	toRead := int64(len(p))
+	if toRead > available {
+		toRead = available
+	}
+
+	n, readErr := r.f.ReadAt(p[:toRead], r.offset)
+	r.offset += int64(n)
+
+	return n, readErr
 }
 
 // setError safely sets the download error with mutex protection.
@@ -950,6 +995,62 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		analytics.SafeGo(ctx, func() {
 			defer ds.wg.Done()
 			defer writer.Close()
+
+			// tempFileCompression is safe to read without a lock because it is set
+			// before ds.start is closed, and this goroutine runs after <-ds.start.
+			tempFileCompression := ds.tempFileCompression
+
+			// When the temp file holds compressed data but the client expects
+			// uncompressed bytes (CDC-normalized URL), decompress on-the-fly.
+			// This happens when GetNar piggybacks on a download started by
+			// prePullNarInfo, which always downloads the upstream compression format
+			// (e.g. xz) for faster TTFB and better CDC chunk deduplication.
+			if tempFileCompression != nar.CompressionTypeNone &&
+				narURL.Compression == nar.CompressionTypeNone {
+				f, err := os.Open(ds.assetPath)
+				if err != nil {
+					zerolog.Ctx(ctx).Error().Err(err).Msg("error opening asset path for decompression")
+
+					return
+				}
+
+				defer f.Close()
+
+				fileReader := &fileAvailableReader{f: f, ds: ds}
+
+				decompReader, err := nar.DecompressReader(fileReader, tempFileCompression)
+				if err != nil {
+					zerolog.Ctx(ctx).Error().Err(err).
+						Str("compression", tempFileCompression.String()).
+						Msg("error creating decompression reader for streaming")
+
+					return
+				}
+
+				defer decompReader.Close()
+
+				if _, err := io.Copy(writer, decompReader); err != nil {
+					zerolog.Ctx(ctx).Error().Err(err).Msg("error streaming decompressed bytes to client")
+
+					return
+				}
+
+				// Wait for the asset to be recorded in storage before completing.
+				select {
+				case <-ds.stored:
+					// Asset successfully stored.
+				case <-ds.done:
+					// Download completed — check for errors.
+					if err := ds.getError(); err != nil {
+						zerolog.Ctx(ctx).Warn().
+							Err(err).
+							Str("nar_url", narURL.String()).
+							Msg("download completed with error during decompressed streaming")
+					}
+				}
+
+				return
+			}
 
 			var f *os.File
 
@@ -1959,6 +2060,12 @@ func (c *Cache) pullNarIntoStore(
 		ds.wg.Wait() // Then wait for all readers to finish
 		os.Remove(ds.assetPath)
 	})
+
+	// Record the actual compression type of the bytes being written to the temp file.
+	// This allows the streaming goroutine to detect when it needs to decompress
+	// (e.g., when a CDC-enabled GetNar client requests compression:none but the
+	// download was started with compression:xz by a concurrent GetNarInfo call).
+	ds.tempFileCompression = narURL.Compression
 
 	// Signal that temp file is ready for streaming
 	ds.startOnce.Do(func() { close(ds.start) })
