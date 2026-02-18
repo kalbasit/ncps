@@ -59,8 +59,16 @@ const (
 	migrationTypeNarInfoToDB = "narinfo-to-db"
 	migrationTypeNarToChunks = "nar-to-chunks"
 
-	// Chunk batch size for storing chunks in the database.
-	chunkBatchSize = 100
+	// cdcFirstBatchDelay is how long to wait before committing the first chunk batch to the
+	// database. Keeping this short unblocks piggybacking clients on other instances quickly.
+	cdcFirstBatchDelay = 100 * time.Millisecond
+
+	// cdcSubsequentBatchDelay is how long to wait between subsequent chunk batch commits.
+	cdcSubsequentBatchDelay = 500 * time.Millisecond
+
+	// cdcMaxBatchSize is a safety cap to avoid unbounded memory accumulation if chunks
+	// arrive faster than the timer fires.
+	cdcMaxBatchSize = 100
 )
 
 // narInfoJobKey returns the key used for tracking narinfo download jobs.
@@ -1688,6 +1696,9 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 	var batch []chunker.Chunk
 
+	flushTimer := time.NewTimer(cdcFirstBatchDelay)
+	defer flushTimer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1696,6 +1707,18 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 			if err != nil {
 				return fmt.Errorf("chunking error: %w", err)
 			}
+		case <-flushTimer.C:
+			// Timer fired — flush if we have accumulated chunks
+			if len(batch) > 0 {
+				if err := c.recordChunkBatch(ctx, narFileID, chunkCount, batch); err != nil {
+					return err
+				}
+
+				chunkCount += int64(len(batch))
+				batch = batch[:0]
+			}
+
+			flushTimer.Reset(cdcSubsequentBatchDelay)
 		case chunkMetadata, ok := <-chunksChan:
 			if !ok { //nolint:nestif // TODO: Improve this later.
 				// Process remaining batch
@@ -1779,13 +1802,16 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 			batch = append(batch, chunkMetadata)
 
-			if len(batch) >= chunkBatchSize {
+			// Flush if safety cap (cdcMaxBatchSize) reached
+			if len(batch) >= cdcMaxBatchSize {
 				if err := c.recordChunkBatch(ctx, narFileID, chunkCount, batch); err != nil {
 					return err
 				}
 
 				chunkCount += int64(len(batch))
 				batch = batch[:0]
+				// Reset timer to subsequent delay after manual flush
+				flushTimer.Reset(cdcSubsequentBatchDelay)
 			}
 		}
 	}
