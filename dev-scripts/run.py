@@ -528,7 +528,13 @@ def main():
         script_path = os.path.abspath(__file__)
         log_file = os.path.join(REPO_ROOT, f"var/log/ncps-{port}.log")
         watchexec_path = shutil.which("watchexec") or "watchexec"
-        python_path = sys.executable
+        direnv_path = shutil.which("direnv")
+        if not direnv_path:
+            log(
+                "❌ 'direnv' is not installed or not in your PATH. It is required to run instances.",
+                RED,
+            )
+            sys.exit(1)
 
         # Chunk 1: Watchexec arguments
         cmd_watchexec = [
@@ -541,9 +547,12 @@ def main():
             "--",
         ]
 
-        # Chunk 2: Python wrapper arguments
+        # Chunk 2: Python wrapper arguments (wrapped in direnv exec for correct env)
         cmd_wrapper = [
-            python_path,
+            direnv_path,
+            "exec",
+            REPO_ROOT,
+            "python3",
             script_path,
             "--internal-start-instance",
             f"--log-file={log_file}",
