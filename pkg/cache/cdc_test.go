@@ -18,6 +18,7 @@ import (
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/chunker"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
@@ -25,6 +26,69 @@ import (
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
+
+// slowChunker wraps a real Chunker and adds a configurable delay before producing any chunks.
+// Used to simulate slow CDC chunking in tests to verify that the HTTP response does not
+// block on CDC chunking completion.
+type slowChunker struct {
+	real  chunker.Chunker
+	delay time.Duration
+}
+
+func (s *slowChunker) Chunk(ctx context.Context, r io.Reader) (<-chan chunker.Chunk, <-chan error) {
+	chunksChan := make(chan chunker.Chunk)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(chunksChan)
+
+		// Simulate slow chunking by sleeping before starting.
+		timer := time.NewTimer(s.delay)
+		defer timer.Stop()
+
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			errChan <- ctx.Err()
+
+			return
+		}
+
+		// Delegate to the real chunker.
+		realChunksChan, realErrChan := s.real.Chunk(ctx, r)
+
+		for {
+			select {
+			case <-ctx.Done():
+				errChan <- ctx.Err()
+
+				return
+			case err := <-realErrChan:
+				if err != nil {
+					errChan <- err
+				}
+
+				return
+			case ch, ok := <-realChunksChan:
+				if !ok {
+					return
+				}
+
+				select {
+				case chunksChan <- ch:
+				case <-ctx.Done():
+					ch.Free()
+
+					errChan <- ctx.Err()
+
+					return
+				}
+			}
+		}
+	}()
+
+	return chunksChan, errChan
+}
 
 func TestCDCBackends(t *testing.T) {
 	t.Parallel()
@@ -79,6 +143,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 		testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory))
 	t.Run("stale lock cleanup deletes orphaned chunk files",
 		testCDCStaleLockCleansUpChunkFiles(factory))
+	t.Run("first pull completes before CDC chunking finishes",
+		testCDCFirstPullCompletesBeforeChunking(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -1533,5 +1599,83 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 		_, fakeChunkErr := db.GetChunkByHash(ctx, fakeChunkHash)
 		assert.True(t, database.IsNotFoundError(fakeChunkErr),
 			"orphaned chunk DB record must be immediately deleted during stale lock cleanup, not left for GC")
+	}
+}
+
+// testCDCFirstPullCompletesBeforeChunking verifies that GetNar returns all NAR bytes to
+// the client before CDC chunking finishes on first pull. Without this fix, the HTTP
+// connection would stay open for the entire duration of CDC chunking (~18s for large NARs),
+// causing poor TTFB and total response time. The fix signals ds.stored immediately after the
+// nar_file DB record is created, allowing the streaming goroutine to close the pipe and return
+// EOF to the client without waiting for chunking.
+func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Set up CDC with small chunk sizes for fast chunking.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// Inject a slow chunker that adds a significant delay before producing chunks.
+		// This simulates chunking a large NAR (e.g., 180 MB taking ~18 s).
+		const chunkingDelay = 2 * time.Second
+
+		realChunker, err := chunker.NewCDCChunker(1024, 4096, 8192)
+		require.NoError(t, err)
+
+		c.SetChunker(&slowChunker{real: realChunker, delay: chunkingDelay})
+
+		// Set up upstream cache.
+		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		})
+		require.NoError(t, err)
+
+		c.AddUpstreamCaches(newContext(), uc)
+
+		// Wait for upstream to become available.
+		<-c.GetHealthChecker().Trigger()
+
+		// First, pull the narinfo so the DB has the CDC-normalized URL for the NAR.
+		// This is required so GetNar can look up the upstream URL via lookupOriginalNarURL.
+		_, err = c.GetNarInfo(context.Background(), testdata.Nar1.NarInfoHash)
+		require.NoError(t, err)
+
+		// Request the NAR using the CDC-normalized URL (no compression extension).
+		narURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
+
+		start := time.Now()
+
+		_, rc, err := c.GetNar(context.Background(), narURL)
+		require.NoError(t, err)
+
+		defer rc.Close()
+
+		body, err := io.ReadAll(rc)
+		require.NoError(t, err)
+
+		elapsed := time.Since(start)
+
+		// The key assertion: reading all NAR bytes must complete BEFORE the slow chunker delay
+		// expires. If ds.stored is correctly signaled right after the nar_file DB record is
+		// created (not after chunking finishes), elapsed will be well under chunkingDelay.
+		assert.Less(t, elapsed, chunkingDelay,
+			"GetNar response must complete before CDC chunking finishes (elapsed: %s, chunking delay: %s)",
+			elapsed, chunkingDelay)
+
+		// Verify the data is the expected NAR content (raw bytes from upstream).
+		assert.Equal(t, testdata.Nar1.NarText, string(body),
+			"NAR body must match the upstream content")
 	}
 }
