@@ -87,6 +87,7 @@ class NCPSTester:
             k8s_config.load_kube_config()
             self.k8s_core_v1 = client.CoreV1Api()
             self.k8s_apps_v1 = client.AppsV1Api()
+            self.k8s_batch_v1 = client.BatchV1Api()
         except Exception as e:
             print(f"❌ Failed to initialize Kubernetes client: {e}")
             sys.exit(1)
@@ -133,6 +134,16 @@ class NCPSTester:
         results = []
         name = deployment_config["name"]
         namespace = deployment_config["namespace"]
+
+        # 0. Wait for migration job (if mode=job)
+        print("🔄 Checking migration job...")
+        migration_result = self._wait_for_migration_job(deployment_config)
+        results.append(migration_result)
+        self._print_test_result(migration_result)
+        if not migration_result.passed:
+            # If migration failed, skip remaining tests
+            print("   ⚠️  Skipping remaining tests (migration failed)")
+            return DeploymentTestResult(name, results)
 
         # 1. Check pods are running
         print("🔍 Checking pods...")
@@ -275,6 +286,211 @@ class NCPSTester:
 
         except Exception as e:
             return TestResult("Pods", False, f"Error checking pods: {e}")
+
+    def _wait_for_migration_job(self, deployment_config: dict) -> TestResult:
+        """Wait for migration job to complete (if using job mode)"""
+        namespace = deployment_config["namespace"]
+        migration_mode = deployment_config.get("migration", {}).get("mode")
+
+        # Only wait for jobs in "job" mode (not "initContainer" or "argocd")
+        if migration_mode != "job":
+            return TestResult(
+                "Migration Job",
+                True,
+                f"Migration mode is '{migration_mode}', no job to wait for",
+            )
+
+        # Job name follows pattern: {deployment-name}-migration (from _helpers.tpl line 5)
+        # Deployment name format: ncps-{permutation-name}
+        job_name = f"{deployment_config['service_name']}-migration"
+
+        self.log(
+            f"   Waiting for migration job '{job_name}' to complete...",
+            verbose_only=True,
+        )
+
+        try:
+            max_wait = 120  # 2 minutes for migration to complete
+            wait_interval = 5
+            elapsed = 0
+            job_not_found_count = 0
+
+            while elapsed < max_wait:
+                try:
+                    job = self.k8s_batch_v1.read_namespaced_job(
+                        name=job_name, namespace=namespace
+                    )
+
+                    # Check if job succeeded
+                    if job.status.succeeded and job.status.succeeded >= 1:
+                        return TestResult(
+                            "Migration Job",
+                            True,
+                            "Migration job completed successfully",
+                        )
+
+                    # Check if job failed
+                    if job.status.failed and job.status.failed > 0:
+                        # Fetch pod logs for diagnostics
+                        error_details = self._get_migration_job_logs(
+                            namespace, job_name
+                        )
+                        return TestResult(
+                            "Migration Job",
+                            False,
+                            f"Migration job failed after {job.status.failed} attempts",
+                            details=error_details,
+                        )
+
+                    # Job is still running
+                    if self.verbose:
+                        active = job.status.active or 0
+                        print(
+                            f"      Migration job running... ({active} active pods, {elapsed}s elapsed)"
+                        )
+
+                except client.exceptions.ApiException as e:
+                    if e.status == 404:
+                        job_not_found_count += 1
+
+                        # If job not found after initial wait, check if it already completed and was cleaned up
+                        if (
+                            job_not_found_count > 2
+                        ):  # After 10 seconds of not finding it
+                            # Check events to see if job completed in the past
+                            if self._check_migration_job_completed_previously(
+                                namespace, job_name
+                            ):
+                                return TestResult(
+                                    "Migration Job",
+                                    True,
+                                    "Migration job already completed (cleaned up by Kubernetes)",
+                                )
+
+                        # Job not found yet (Helm hook may still be creating it)
+                        if self.verbose:
+                            print(
+                                f"      Migration job not found yet, waiting... ({elapsed}s elapsed)"
+                            )
+                    else:
+                        raise
+
+                time.sleep(wait_interval)
+                elapsed += wait_interval
+
+            # Timeout - provide diagnostic info
+            error_details = self._get_migration_job_diagnostics(namespace, job_name)
+            return TestResult(
+                "Migration Job",
+                False,
+                f"Migration job did not complete within {max_wait}s",
+                details=error_details,
+            )
+
+        except Exception as e:
+            return TestResult(
+                "Migration Job", False, f"Error checking migration job: {e}"
+            )
+
+    def _check_migration_job_completed_previously(
+        self, namespace: str, job_name: str
+    ) -> bool:
+        """Check if migration job completed in the past by examining events"""
+        try:
+            events = self.k8s_core_v1.list_namespaced_event(
+                namespace=namespace,
+                field_selector=f"involvedObject.name={job_name}",
+            )
+
+            # Look for completion events
+            for event in events.items:
+                if event.reason == "Completed" and "completed" in event.message.lower():
+                    return True
+
+            return False
+        except Exception:
+            return False
+
+    def _get_migration_job_logs(self, namespace: str, job_name: str) -> str:
+        """Fetch logs from migration job pods for diagnostics"""
+        try:
+            # Find pods created by this job
+            pods = self.k8s_core_v1.list_namespaced_pod(
+                namespace=namespace, label_selector=f"job-name={job_name}"
+            )
+
+            if not pods.items:
+                return "No pods found for migration job"
+
+            # Get logs from the most recent pod
+            pod = pods.items[-1]  # Last pod (most recent attempt)
+            pod_name = pod.metadata.name
+
+            try:
+                logs = self.k8s_core_v1.read_namespaced_pod_log(
+                    name=pod_name, namespace=namespace, container="migration"
+                )
+                return f"Migration pod logs ({pod_name}):\n{logs}"
+            except Exception as e:
+                return f"Failed to fetch logs from pod {pod_name}: {e}"
+
+        except Exception as e:
+            return f"Error fetching migration job logs: {e}"
+
+    def _get_migration_job_diagnostics(self, namespace: str, job_name: str) -> str:
+        """Get diagnostic information about migration job"""
+        details = []
+
+        try:
+            # Try to get job status
+            try:
+                job = self.k8s_batch_v1.read_namespaced_job(
+                    name=job_name, namespace=namespace
+                )
+                details.append("Job status:")
+                details.append(f"  Active: {job.status.active or 0}")
+                details.append(f"  Succeeded: {job.status.succeeded or 0}")
+                details.append(f"  Failed: {job.status.failed or 0}")
+
+                # Get conditions
+                if job.status.conditions:
+                    details.append("  Conditions:")
+                    for cond in job.status.conditions:
+                        details.append(
+                            f"    - {cond.type}: {cond.status} ({cond.reason})"
+                        )
+            except client.exceptions.ApiException as e:
+                if e.status == 404:
+                    details.append(
+                        "Job not found - may not have been created by Helm hook"
+                    )
+                else:
+                    details.append(f"Failed to get job status: {e}")
+
+            # Get recent events
+            try:
+                events = self.k8s_core_v1.list_namespaced_event(
+                    namespace=namespace,
+                    field_selector=f"involvedObject.name={job_name}",
+                )
+                if events.items:
+                    details.append("\nRecent events:")
+                    for event in sorted(
+                        events.items, key=lambda e: e.last_timestamp or e.event_time
+                    )[-5:]:
+                        details.append(f"  - {event.reason}: {event.message}")
+            except Exception:
+                pass
+
+            # Get pod logs
+            pod_logs = self._get_migration_job_logs(namespace, job_name)
+            if pod_logs and "No pods found" not in pod_logs:
+                details.append(f"\n{pod_logs}")
+
+        except Exception as e:
+            details.append(f"Error gathering diagnostics: {e}")
+
+        return "\n".join(details)
 
     def _test_http_endpoints(self, deployment_config: dict) -> TestResult:
         """Test HTTP endpoints via port-forward"""
@@ -558,10 +774,13 @@ class NCPSTester:
             # Wait for port-forward to be ready
             time.sleep(3)
 
+            # Use per-test database name (e.g., ncps_single_s3_postgres)
+            db_name = f"ncps_{deployment_config['name'].replace('-', '_')}"
+
             conn = psycopg2.connect(
                 host="localhost",
                 port=local_port,
-                database=pg_config["database"],
+                database=db_name,
                 user=pg_config["username"],
                 password=pg_config["password"],
             )
@@ -668,10 +887,13 @@ class NCPSTester:
             # Wait for port-forward to be ready
             time.sleep(3)
 
+            # Use per-test database name (e.g., ncps_single_s3_mariadb)
+            db_name = f"ncps_{deployment_config['name'].replace('-', '_')}"
+
             conn = pymysql.connect(
                 host="localhost",
                 port=local_port,
-                database=mysql_config["database"],
+                database=db_name,
                 user=mysql_config["username"],
                 password=mysql_config["password"],
             )
