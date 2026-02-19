@@ -57,11 +57,11 @@ class K8sTestsCLI:
         print(f"❌ Error: {msg}", file=sys.stderr)
         sys.exit(1)
 
-    def run_cmd(self, cmd: List[str], capture_output: bool = False, check: bool = True, cwd: Optional[str] = None, input: Optional[Any] = None, text: bool = True):
+    def run_cmd(self, cmd: List[str], capture_output: bool = False, check: bool = True, cwd: Optional[str] = None, input: Optional[Any] = None, stdin: Optional[Any] = None, text: bool = True):
         if self.verbose:
             self.log(f"Running: {' '.join(cmd)}")
         try:
-            return subprocess.run(cmd, capture_output=capture_output, text=text, check=check, cwd=cwd, input=input)
+            return subprocess.run(cmd, capture_output=capture_output, text=text, check=check, cwd=cwd, input=input, stdin=stdin)
         except subprocess.CalledProcessError as e:
             err_msg = f"Command failed with exit code {e.returncode}: {' '.join(cmd)}"
             if e.stdout:
@@ -397,7 +397,7 @@ spec:
 
             self.log("📦 Loading image into Docker...")
             with open(build_path, "rb") as f:
-                load_output = self.run_cmd(["docker", "load"], input=f, capture_output=True, text=False).stdout.decode()
+                load_output = self.run_cmd(["docker", "load"], stdin=f, capture_output=True, text=False).stdout.decode()
             self.log(load_output)
 
             # Loaded image: 127.0.0.1:30000/ncps:p8xwc56qrjpbfssbfz7vwxs0n028sqav
