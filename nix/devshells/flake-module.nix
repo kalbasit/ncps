@@ -176,6 +176,8 @@
           # Set the environment variables to help users login to MySQL and PostgreSQL
           export NCPS_DEV_POSTGRES_URL="postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable"
           export NCPS_DEV_MYSQL_URL="mysql://dev-user:dev-password@127.0.0.1:3306/dev-db"
+          export NCPS_ADMIN_POSTGRES_URL="postgresql://postgres:@127.0.0.1:5432/postgres?sslmode=disable"
+          export NCPS_ADMIN_MYSQL_URL="mysql://root:@127.0.0.1:3306"
 
           if [[ "$(${pkgs.gnugrep}/bin/grep '^\(go \)[0-9.]*$' go.mod)" != "go ''${_GO_VERSION}" ]]; then
             ${pkgs.gnused}/bin/sed -e "s:^\(go \)[0-9.]*$:\1''${_GO_VERSION}:" -i go.mod

@@ -25,7 +25,7 @@ fi
 # SETUP: Dev User (Standard)
 # ---------------------------------------------------
 echo "Creating dev user and database..."
-psql -c "CREATE USER \"$PG_DEV_USER\" WITH PASSWORD '$PG_DEV_PASSWORD';"
+psql -c "CREATE USER \"$PG_DEV_USER\" WITH PASSWORD '$PG_DEV_PASSWORD' CREATEDB;"
 psql -c "CREATE DATABASE \"$PG_DEV_DB\" OWNER \"$PG_DEV_USER\";"
 
 # ---------------------------------------------------
