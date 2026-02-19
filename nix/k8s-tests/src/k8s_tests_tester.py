@@ -426,7 +426,11 @@ class NCPSTester:
             # When using debug with --target, access target's filesystem via /proc/1/root
             target_db_path = f"/proc/1/root{db_path}"
 
-            # Copy database to /tmp and query it (avoids permission issues with read-only directories)
+            # Copy the database and its WAL files to /tmp before querying.
+            # With WAL mode enabled, recent writes live in ncps.db-wal and are not yet
+            # checkpointed into the main ncps.db file. Copying only the .db file would
+            # show empty tables. Copying all three files (-wal and -shm may not exist if
+            # nothing is pending, hence the || true) gives SQLite a consistent view.
             # Using nouchka/sqlite3 image which has sqlite pre-installed
             result = subprocess.run(
                 [
@@ -443,7 +447,7 @@ class NCPSTester:
                     "--",
                     "sh",
                     "-c",
-                    f"cp {target_db_path} /tmp/test.db && sqlite3 /tmp/test.db '.tables'",
+                    f"cp {target_db_path} /tmp/test.db && cp {target_db_path}-wal /tmp/test.db-wal 2>/dev/null || true && cp {target_db_path}-shm /tmp/test.db-shm 2>/dev/null || true && sqlite3 /tmp/test.db '.tables'",
                 ],
                 capture_output=True,
                 text=True,
@@ -484,7 +488,7 @@ class NCPSTester:
                     "--",
                     "sh",
                     "-c",
-                    f"cp {target_db_path} /tmp/test.db && sqlite3 /tmp/test.db 'SELECT COUNT(*) FROM nar_files;'",
+                    f"cp {target_db_path} /tmp/test.db && cp {target_db_path}-wal /tmp/test.db-wal 2>/dev/null || true && cp {target_db_path}-shm /tmp/test.db-shm 2>/dev/null || true && sqlite3 /tmp/test.db 'SELECT COUNT(*) FROM nar_files;'",
                 ],
                 capture_output=True,
                 text=True,
@@ -598,9 +602,14 @@ class NCPSTester:
 
                 if attempt < max_retries - 1:
                     if cdc_enabled:
-                        self.log(f"   ⏳ Waiting for background downloads (attempt {attempt + 1}/{max_retries}, {count} chunks so far)...", verbose_only=True)
+                        self.log(
+                            f"   ⏳ Waiting for background downloads (attempt {attempt + 1}/{max_retries}, {count} chunks so far)...",
+                            verbose_only=True,
+                        )
                     time.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff, max 10s
+                    retry_delay = min(
+                        retry_delay * 1.5, 10
+                    )  # Exponential backoff, max 10s
 
             conn.close()
 
@@ -896,16 +905,23 @@ class NCPSTester:
                 chunk_count = 0
 
                 for attempt in range(max_retries):
-                    chunk_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/chunks/")
+                    chunk_objects = s3_client.list_objects_v2(
+                        Bucket=bucket, Prefix="store/chunks/"
+                    )
                     chunk_count = chunk_objects.get("KeyCount", 0)
 
                     if chunk_count > 0:
                         break
 
                     if attempt < max_retries - 1:
-                        self.log(f"   ⏳ Waiting for background downloads to S3 (attempt {attempt + 1}/{max_retries}, {chunk_count} chunks so far)...", verbose_only=True)
+                        self.log(
+                            f"   ⏳ Waiting for background downloads to S3 (attempt {attempt + 1}/{max_retries}, {chunk_count} chunks so far)...",
+                            verbose_only=True,
+                        )
                         time.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 1.5, 10)  # Exponential backoff, max 10s
+                        retry_delay = min(
+                            retry_delay * 1.5, 10
+                        )  # Exponential backoff, max 10s
 
                 if chunk_count == 0:
                     return TestResult(
@@ -922,7 +938,9 @@ class NCPSTester:
             else:
                 # List objects with prefix
                 # NARs are stored in store/nar/
-                nar_objects = s3_client.list_objects_v2(Bucket=bucket, Prefix="store/nar/")
+                nar_objects = s3_client.list_objects_v2(
+                    Bucket=bucket, Prefix="store/nar/"
+                )
                 nar_count = nar_objects.get("KeyCount", 0)
 
                 if nar_count == 0:
