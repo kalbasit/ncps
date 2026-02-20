@@ -57,6 +57,28 @@ The tool generates 13 test deployment configurations:
 01. **ha-s3-postgres-lock** - 2 replicas + S3 + PostgreSQL advisory locks
 01. **ha-s3-postgres-cdc** - 2 replicas + S3 + PostgreSQL + Redis + CDC
 
+## Database Isolation
+
+Each test permutation uses isolated backend resources to prevent data interference:
+
+- **PostgreSQL**: Unique database per test (e.g., `ncps_single_s3_postgres`, `ncps_ha_s3_postgres_redis`)
+- **MariaDB**: Unique database per test (e.g., `ncps_single_s3_mariadb`, `ncps_ha_s3_mariadb`)
+- **Redis**: Unique database number per test for distributed locking (automatically assigned based on permutation index, scales with new permutations)
+- **S3**: Unique object key prefix per test (e.g., `single-s3-postgres/`, `ha-s3-mariadb/`)
+
+This ensures:
+
+- **No data interference**: Test data from different permutations never collides
+- **Clean state**: Each test starts with an empty database
+- **Concurrent testing**: Tests can run in parallel without race conditions (future enhancement)
+- **Easier debugging**: Each test's data is isolated and easily inspectable
+- **Auto-scaling**: Adding new permutations automatically gets unique Redis database numbers
+
+Databases are automatically:
+
+- **Created** during `k8s-tests cluster create` (after deploying PostgreSQL/MariaDB)
+- **Dropped** during `k8s-tests cleanup` (after removing namespaces)
+
 ## Usage
 
 ### Prerequisites
