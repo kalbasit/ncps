@@ -20,6 +20,7 @@ import sys
 import time
 import urllib.parse
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -811,15 +812,47 @@ spec:
         image_tag = tag
 
         if last:
-            last_tag_path = os.path.join(TEST_VALUES_DIR, ".last_tag")
-            if os.path.exists(last_tag_path):
-                with open(last_tag_path, "r") as f:
-                    image_tag = f.read().strip()
-                self.log(f"⏮️  Reusing last image tag: {image_tag}")
-            else:
-                self.error("No last tag found. Run with --push or provide a tag.")
+            state_file = os.path.join(TEST_VALUES_DIR, ".last_image_state.json")
 
-        if push:
+            if not os.path.exists(state_file):
+                self.error(
+                    "No image state found. Run 'k8s-tests generate --push' first to build and track image."
+                )
+
+            with open(state_file, "r") as f:
+                state = json.load(f)
+
+            image_tag = state["image_tag"]
+            nix_store_path = state.get("nix_store_path")
+
+            self.log(f"⏮️  Reusing last image tag: {image_tag}")
+
+            # If --push is also specified, re-push the image directly from Nix store
+            if push:
+                if not nix_store_path or not os.path.exists(nix_store_path):
+                    self.error(
+                        f"Nix store path is invalid/missing: {nix_store_path}\n"
+                        f"Run 'k8s-tests generate --push' to build and track a new image."
+                    )
+
+                self.log("📤 Re-pushing previously built image to registry...")
+                full_image = f"{registry}/{repository}:{image_tag}"
+                self.log(f"📤 Pushing to registry: {full_image}")
+
+                # Push directly from docker-archive (like CI does in push-docker-image script)
+                self.run_cmd(
+                    [
+                        "skopeo",
+                        "--insecure-policy",
+                        "copy",
+                        "--dest-tls-verify=false",
+                        f"docker-archive:{nix_store_path}",
+                        f"docker://{full_image}",
+                    ]
+                )
+
+                self.log(f"✅ Successfully pushed {full_image}")
+        elif push:
             nix_platform = self._get_nix_platform()
             self.log(f"🔨 Building Docker image with Nix for {nix_platform}...")
             build_path = self.run_cmd(
@@ -861,12 +894,21 @@ spec:
             )
             self.log(f"✅ Image pushed: {full_image}")
 
+            # Save image state for re-pushing later
+            state = {
+                "image_tag": image_tag,
+                "nix_store_path": build_path,  # Path to docker-archive tarball
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "platform": nix_platform,
+            }
+
+            state_file = os.path.join(TEST_VALUES_DIR, ".last_image_state.json")
+            os.makedirs(TEST_VALUES_DIR, exist_ok=True)
+            with open(state_file, "w") as f:
+                json.dump(state, f, indent=2)
+
         if not image_tag:
             self.error("Image tag required.")
-
-        os.makedirs(TEST_VALUES_DIR, exist_ok=True)
-        with open(os.path.join(TEST_VALUES_DIR, ".last_tag"), "w") as f:
-            f.write(image_tag)
 
         creds = self.get_cluster_creds()
 

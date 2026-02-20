@@ -130,6 +130,21 @@ k8s-tests test
 k8s-tests cleanup
 ```
 
+### Re-pushing Previously Built Images
+
+If you recreate the Kind cluster (e.g., `k8s-tests cluster destroy` then `k8s-tests cluster create`), the local registry will be empty. Instead of rebuilding the image, you can re-push the last built image:
+
+```bash
+# Re-push the last built image without rebuilding
+k8s-tests generate --last --push
+
+# Then install and test as usual
+k8s-tests install
+k8s-tests test
+```
+
+This reuses the previously built Docker image directly from the Nix store tarball (using `skopeo copy docker-archive:`), which is much faster than rebuilding with `k8s-tests generate --push`.
+
 ### Working with Specific Deployments
 
 ```bash
@@ -153,6 +168,9 @@ k8s-tests generate sha-cf09394
 
 # Using custom registry and repository
 k8s-tests generate 0.5.1 docker.io kalbasit/ncps
+
+# Re-push previously built image (avoids rebuild)
+k8s-tests generate --last --push
 ```
 
 ### Cluster Management
