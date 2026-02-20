@@ -787,6 +787,24 @@ spec:
 
     # --- Generation ---
 
+    def _get_nix_platform(self) -> str:
+        """Determine the Nix platform to build for based on host OS and architecture."""
+        system = os.uname().sysname.lower()
+        machine = os.uname().machine.lower()
+
+        if system == "darwin":
+            if machine == "arm64":
+                return "aarch64-darwin"
+            elif machine == "x86_64":
+                return "x86_64-darwin"
+        elif system == "linux":
+            if machine in ("arm64", "aarch64"):
+                return "aarch64-linux"
+            elif machine in ("x86_64", "amd64"):
+                return "x86_64-linux"
+
+        self.error(f"Unsupported OS/architecture combination: {system}/{machine}")
+
     def cmd_generate(
         self, push: bool, last: bool, tag: Optional[str], registry: str, repository: str
     ):
@@ -802,12 +820,13 @@ spec:
                 self.error("No last tag found. Run with --push or provide a tag.")
 
         if push:
-            self.log("🔨 Building Docker image with Nix...")
+            nix_platform = self._get_nix_platform()
+            self.log(f"🔨 Building Docker image with Nix for {nix_platform}...")
             build_path = self.run_cmd(
                 [
                     "nix",
                     "build",
-                    f"{REPO_ROOT}#docker",
+                    f"{REPO_ROOT}#packages.{nix_platform}.docker",
                     "--print-out-paths",
                     "--no-link",
                 ],
