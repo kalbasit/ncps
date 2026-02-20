@@ -37,9 +37,9 @@ Running multiple ncps instances provides:
       │           │            │           │
       ▼           ▼            ▼           ▼
     ┌──────────┐ ┌────────┐  ┌──────────┐ ┌─────────┐
-    │  Redis / │ │   S3   │  │PostgreSQL│ │  Load   │
-    │ Database │ │Storage │  │ / MySQL  │ │Balancer │
-    │ (Locks)  │ │        │  │ (Data)   │ │         │
+    │  Redis   │ │   S3   │  │PostgreSQL│ │  Load   │
+    │  (Locks) │ │Storage │  │ / MySQL  │ │Balancer │
+    │          │ │        │  │ (Data)   │ │         │
     └──────────┘ └────────┘  └──────────┘ └─────────┘
 ```
 
@@ -50,13 +50,12 @@ Running multiple ncps instances provides:
 1. **Multiple ncps instances** (2+, recommended 3+)
 1. **Distributed locking backend**
    - **Redis server** (version 5.0+)
-   - **PostgreSQL advisory locks** (version 9.1+)
 1. **S3-compatible storage** (shared across all instances)
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
 1. **PostgreSQL or MySQL database** (shared across all instances)
    - PostgreSQL 12+ or MySQL 8.0+
    - **SQLite is NOT supported for HA**
-   - **NOTE: MySQL is only supported for data storage, NOT for distributed locking. If using MySQL, you must use Redis for locking.**
+   - **NOTE: MySQL is only supported for data storage, NOT for distributed locking.**
 1. **Load balancer** to distribute requests
    - nginx, HAProxy, cloud load balancer, etc.
 1. **CDC (Content-Defined Chunking) feature**
@@ -213,7 +212,7 @@ cache:
     password: ${REDIS_PASSWORD}  # If using auth
 
   lock:
-    backend: redis  # Options: local, redis, postgres
+    backend: redis  # Options: local, redis
     download-lock-ttl: 5m
     lru-lock-ttl: 30m
     retry:
@@ -346,7 +345,7 @@ Only one instance runs cache cleanup at a time:
 - Avoids cache corruption
 - Distributes LRU load
 
-See <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> for technical details and database advisory lock configuration (PostgreSQL).
+See <a class="reference-link" href="Distributed%20Locking.md">Distributed Locking</a> for technical details.
 
 ## Health Checks
 

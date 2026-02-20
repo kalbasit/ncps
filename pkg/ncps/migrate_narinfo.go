@@ -38,10 +38,7 @@ func migrateNarInfoCommand(
 
 This command uses distributed locking to coordinate with running ncps instances when a
 Redis lock backend is configured. This allows safe migration while the cache is serving
-requests. Without Redis, the command uses in-memory locking (no coordination with other instances).
-
-For production deployments with multiple ncps instances, configure --cache-redis-addrs
-to enable safe concurrent migration.`,
+requests. Without Redis, the command uses in-memory locking (no coordination with other instances).`,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "dry-run",
@@ -138,9 +135,8 @@ to enable safe concurrent migration.`,
 			},
 
 			&cli.StringFlag{
-				Name: "cache-lock-backend",
-				Usage: "Lock backend to use: 'local' (single instance), 'redis' (distributed), " +
-					"or 'postgres' (distributed, requires PostgreSQL)",
+				Name:    "cache-lock-backend",
+				Usage:   "Lock backend to use: 'local' (single instance) or 'redis' (distributed)",
 				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
 				Value:   "local",
 			},
@@ -148,12 +144,6 @@ to enable safe concurrent migration.`,
 				Name:    "cache-lock-redis-key-prefix",
 				Usage:   "Prefix for all Redis lock keys (only used when Redis is configured)",
 				Sources: flagSources("cache.lock.redis.key-prefix", "CACHE_LOCK_REDIS_KEY_PREFIX"),
-				Value:   "ncps:lock:",
-			},
-			&cli.StringFlag{
-				Name:    "cache-lock-postgres-key-prefix",
-				Usage:   "Prefix for all PostgreSQL advisory lock keys (only used when PostgreSQL is configured as lock backend)",
-				Sources: flagSources("cache.lock.postgres.key-prefix", "CACHE_LOCK_POSTGRES_KEY_PREFIX"),
 				Value:   "ncps:lock:",
 			},
 			&cli.DurationFlag{
@@ -219,7 +209,7 @@ to enable safe concurrent migration.`,
 			}
 
 			// 2. Setup Lockers
-			locker, rwLocker, err := getLockers(ctx, cmd, db)
+			locker, rwLocker, err := getLockers(ctx, cmd)
 			if err != nil {
 				logger.Error().Err(err).Msg("error creating the lockers")
 

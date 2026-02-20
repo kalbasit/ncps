@@ -133,9 +133,6 @@ See <a class="reference-link" href="Storage.md">Storage</a> for details.
 | `--cache-download-poll-timeout` | Timeout for polling storage when waiting for download completion | `CACHE_DOWNLOAD_POLL_TIMEOUT` | `30s` |
 | `--cache-temp-path` | Temporary download directory | `CACHE_TEMP_PATH` | system temp |
 
-> [!IMPORTANT]
-> When using PostgreSQL advisory locks (`--cache-lock-backend=postgres`), each active lock consumes one connection from this pool. A single request can use up to 3 connections. Set this value high (e.g., 50-100) to avoid deadlocks.
-
 **Database URL Formats:**
 
 - SQLite: `sqlite:/var/lib/ncps/db/db.sqlite`
@@ -277,7 +274,6 @@ Lock timing and retry configuration for distributed locking.
 | Option | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
 | `--cache-lock-redis-key-prefix` | Key prefix for all Redis locks | `CACHE_LOCK_REDIS_KEY_PREFIX` | `"ncps:lock:"` |
-| `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `CACHE_LOCK_POSTGRES_KEY_PREFIX` | `"ncps:lock:"` |
 
 ### Lock Timeouts
 
@@ -320,7 +316,7 @@ Configure anonymous usage statistics reporting to help improve ncps.
 
 - **Resource attributes**:
   - Database backend type: `sqlite`, `postgres`, or `mysql`
-  - Lock mechanism type: `local`, `redis`, or `postgres`
+  - Lock mechanism type: `local` or `redis`
   - Cluster UUID (randomly generated identifier)
 - **Metrics** (hourly): Total cache size, upstream count, upstream health
 - **Logs**: Startup events, panic/crash events with stack traces
@@ -456,8 +452,6 @@ cache:
     download-lock-ttl: 5m
     lru-lock-ttl: 30m
     redis:
-      key-prefix: "ncps:lock:"
-    postgres:
       key-prefix: "ncps:lock:"
     retry:
       max-attempts: 3

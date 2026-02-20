@@ -117,7 +117,7 @@ ncps migrate-narinfo \
 - `--cache-redis-db` - Redis database number (default: 0)
 - `--cache-redis-use-tls` - Use TLS for Redis connections (optional)
 - `--cache-redis-pool-size` - Redis connection pool size (default: 10)
-- `--cache-lock-backend` - Lock backend to use: 'local', 'redis', or 'postgres' (default: 'local')
+- `--cache-lock-backend` - Lock backend to use: 'local' or 'redis' (default: 'local')
 - `--cache-lock-redis-key-prefix` - Prefix for Redis lock keys (default: 'ncps:lock:')
 - `--cache-lock-allow-degraded-mode` - Fallback to local locks if Redis is down
 - `--cache-lock-retry-max-attempts` - Max lock retry attempts (default: 3)

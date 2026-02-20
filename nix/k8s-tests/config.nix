@@ -214,7 +214,7 @@ rec {
     }
 
     # ====================================================================
-    # High Availability Deployments (4 scenarios)
+    # High Availability Deployments (3 scenarios)
     # ====================================================================
 
     # 10. HA - S3 Storage + PostgreSQL + Redis
@@ -271,32 +271,7 @@ rec {
       ];
     }
 
-    # 12. HA - S3 Storage + PostgreSQL + PostgreSQL Advisory Locks
-    {
-      name = "ha-s3-postgres-lock";
-      description = "High availability with S3 storage and PostgreSQL (using PostgreSQL advisory locks instead of Redis)";
-      replicas = 2;
-      cdc.iLoveTimeouts = true;
-      mode = "deployment";
-      migration.mode = "job";
-      storage = {
-        type = "s3";
-        # S3 credentials injected at generation time from cluster
-      };
-      database = {
-        type = "postgresql";
-        # Credentials injected at generation time from cluster
-      };
-      lock.backend = "postgres";
-      redis.enabled = false;
-      features = [
-        "ha"
-        "pod-disruption-budget"
-        "anti-affinity"
-      ];
-    }
-
-    # 13. HA - S3 Storage + PostgreSQL + Redis + CDC
+    # 12. HA - S3 Storage + PostgreSQL + Redis + CDC
     {
       name = "ha-s3-postgres-cdc";
       description = "High availability with S3 storage, PostgreSQL, Redis locks, and CDC enabled";

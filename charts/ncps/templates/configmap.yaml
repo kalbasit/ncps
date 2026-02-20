@@ -106,8 +106,6 @@ data:
         backend: {{ include "ncps.lockBackend" . | quote }}
         redis:
           key-prefix: {{ .Values.config.lock.redis.keyPrefix | quote }}
-        postgres:
-          key-prefix: {{ .Values.config.lock.postgres.keyPrefix | quote }}
         download-lock-ttl: {{ .Values.config.lock.downloadTTL | quote }}
         lru-lock-ttl: {{ .Values.config.lock.lruTTL | quote }}
         retry:
