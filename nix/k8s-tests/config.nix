@@ -417,6 +417,28 @@ rec {
       maria = clusterObj.mariadb;
       redisInfo = clusterObj.redis;
 
+      # Automatically assign Redis database numbers based on permutation index
+      # This scales automatically as new permutations are added
+      permutationNames = builtins.map (p: p.name) permutations;
+      getRedisDbNumber =
+        permName:
+        let
+          findIndex =
+            lst: name:
+            let
+              go =
+                idx:
+                if idx >= builtins.length lst then
+                  -1
+                else if builtins.elemAt lst idx == name then
+                  idx
+                else
+                  go (idx + 1);
+            in
+            go 0;
+        in
+        findIndex permutationNames permName;
+
       # Process a single permutation
       processPermutation =
         perm:
@@ -462,6 +484,7 @@ rec {
                       inherit (s3) bucket;
                       inherit (s3) endpoint;
                       region = "us-east-1";
+                      prefix = perm.name;
                     }
                     // (
                       if (perm.storage.useExistingSecret or false) then
@@ -502,7 +525,7 @@ rec {
                     postgresql = {
                       inherit (pg) host;
                       inherit (pg) port;
-                      inherit (pg) database;
+                      database = "ncps_${builtins.replaceStrings [ "-" ] [ "_" ] perm.name}";
                       inherit (pg) username;
                       sslMode = "disable";
                     }
@@ -524,7 +547,7 @@ rec {
                     mysql = {
                       inherit (maria) host;
                       inherit (maria) port;
-                      inherit (maria) database;
+                      database = "ncps_${builtins.replaceStrings [ "-" ] [ "_" ] perm.name}";
                       inherit (maria) username;
                     }
                     // (
@@ -554,7 +577,7 @@ rec {
                   {
                     enabled = true;
                     addresses = [ "${redisInfo.host}:${toString redisInfo.port}" ];
-                    db = 0;
+                    db = getRedisDbNumber perm.name;
                     useTLS = false;
                   }
                 else

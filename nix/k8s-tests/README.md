@@ -57,6 +57,28 @@ The tool generates 13 test deployment configurations:
 01. **ha-s3-postgres-lock** - 2 replicas + S3 + PostgreSQL advisory locks
 01. **ha-s3-postgres-cdc** - 2 replicas + S3 + PostgreSQL + Redis + CDC
 
+## Database Isolation
+
+Each test permutation uses isolated backend resources to prevent data interference:
+
+- **PostgreSQL**: Unique database per test (e.g., `ncps_single_s3_postgres`, `ncps_ha_s3_postgres_redis`)
+- **MariaDB**: Unique database per test (e.g., `ncps_single_s3_mariadb`, `ncps_ha_s3_mariadb`)
+- **Redis**: Unique database number per test for distributed locking (automatically assigned based on permutation index, scales with new permutations)
+- **S3**: Unique object key prefix per test (e.g., `single-s3-postgres/`, `ha-s3-mariadb/`)
+
+This ensures:
+
+- **No data interference**: Test data from different permutations never collides
+- **Clean state**: Each test starts with an empty database
+- **Concurrent testing**: Tests can run in parallel without race conditions (future enhancement)
+- **Easier debugging**: Each test's data is isolated and easily inspectable
+- **Auto-scaling**: Adding new permutations automatically gets unique Redis database numbers
+
+Databases are automatically:
+
+- **Created** during `k8s-tests cluster create` (after deploying PostgreSQL/MariaDB)
+- **Dropped** during `k8s-tests cleanup` (after removing namespaces)
+
 ## Usage
 
 ### Prerequisites
@@ -108,6 +130,21 @@ k8s-tests test
 k8s-tests cleanup
 ```
 
+### Re-pushing Previously Built Images
+
+If you recreate the Kind cluster (e.g., `k8s-tests cluster destroy` then `k8s-tests cluster create`), the local registry will be empty. Instead of rebuilding the image, you can re-push the last built image:
+
+```bash
+# Re-push the last built image without rebuilding
+k8s-tests generate --last --push
+
+# Then install and test as usual
+k8s-tests install
+k8s-tests test
+```
+
+This reuses the previously built Docker image directly from the Nix store tarball (using `skopeo copy docker-archive:`), which is much faster than rebuilding with `k8s-tests generate --push`.
+
 ### Working with Specific Deployments
 
 ```bash
@@ -131,6 +168,9 @@ k8s-tests generate sha-cf09394
 
 # Using custom registry and repository
 k8s-tests generate 0.5.1 docker.io kalbasit/ncps
+
+# Re-push previously built image (avoids rebuild)
+k8s-tests generate --last --push
 ```
 
 ### Cluster Management
