@@ -202,6 +202,34 @@ ncps serve \
   --netrc-file=/etc/ncps/netrc
 ```
 
+## OIDC Push Authorization
+
+OIDC token validation for securing PUT and DELETE requests. Configured in the config file only (not via CLI flags). If no policies are configured, existing behavior is preserved.
+
+```yaml
+cache:
+  oidc:
+    policies:
+      - issuer: "https://token.actions.githubusercontent.com"
+        audience: "ncps.example.com"
+        claims:
+          sub:
+            - "repo:myorg/*"
+```
+
+Each policy requires:
+
+- **`issuer`** — The OIDC provider URL (used for discovery)
+- **`audience`** — Must match the token's `aud` claim
+
+Optional:
+
+- **`claims`** — Map of claim names to glob patterns. Within a key, patterns are ORed. Across keys, conditions are ANDed.
+
+Accepts both `Bearer` and `Basic` auth headers (JWT in password field for netrc compatibility).
+
+See <a class="reference-link" href="../Features/OIDC%20Push%20Authorization.md">OIDC Push Authorization</a> for details.
+
 ## Upstream Connection Timeouts
 
 Configure timeout values for upstream cache connections. Increase these if experiencing timeout errors with slow or remote upstreams.
@@ -485,5 +513,6 @@ See [config.example.yaml](https://github.com/kalbasit/ncps/blob/main/config.exam
 - <a class="reference-link" href="Storage.md">Storage</a> - Storage backend details
 - <a class="reference-link" href="Database.md">Database</a> - Database backend details
 - <a class="reference-link" href="Observability.md">Observability</a> - Monitoring and logging
+- <a class="reference-link" href="../Features/OIDC%20Push%20Authorization.md">OIDC Push Authorization</a> - Securing push access with OIDC tokens
 - <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA configuration
 - <a class="reference-link" href="../Deployment/Distributed%20Locking.md">Distributed Locking</a> - Lock tuning

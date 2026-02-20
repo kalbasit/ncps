@@ -51,6 +51,24 @@ data:
       allow-delete-verb: true
       {{- end }}
 
+      {{- if .Values.config.oidc.policies }}
+      oidc:
+        policies:
+        {{- range .Values.config.oidc.policies }}
+          - issuer: {{ .issuer | quote }}
+            audience: {{ .audience | quote }}
+            {{- if .claims }}
+            claims:
+            {{- range $key, $values := .claims }}
+              {{ $key }}:
+              {{- range $values }}
+                - {{ . | quote }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+        {{- end }}
+      {{- end }}
+
       sign-narinfo: {{ ne .Values.config.signing.enabled false }}
 
       upstream:

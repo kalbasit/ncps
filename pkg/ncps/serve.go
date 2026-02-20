@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,6 +38,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock/postgres"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 	"github.com/kalbasit/ncps/pkg/maxprocs"
+	"github.com/kalbasit/ncps/pkg/oidc"
 	"github.com/kalbasit/ncps/pkg/otel"
 	"github.com/kalbasit/ncps/pkg/prometheus"
 	"github.com/kalbasit/ncps/pkg/server"
@@ -582,7 +584,28 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 
 		analyticsReporter.GetLogger().Emit(ctx, record)
 
-		srv := server.New(cache)
+		var serverOpts []server.Option
+
+		if oidcCfg, err := parseOIDCConfig(cmd.Root().String("config")); err != nil {
+			logger.Error().Err(err).Msg("error parsing OIDC config")
+
+			return fmt.Errorf("error parsing OIDC config: %w", err)
+		} else if oidcCfg != nil && len(oidcCfg.Policies) > 0 {
+			v, err := oidc.New(ctx, oidcCfg)
+			if err != nil {
+				logger.Error().Err(err).Msg("error initializing OIDC policies")
+
+				return fmt.Errorf("error initializing OIDC policies: %w", err)
+			}
+
+			serverOpts = append(serverOpts, server.WithOIDCVerifier(v))
+
+			logger.Info().
+				Int("policy_count", len(oidcCfg.Policies)).
+				Msg("OIDC push authorization enabled")
+		}
+
+		srv := server.New(cache, serverOpts...)
 		srv.SetDeletePermitted(cmd.Bool("cache-allow-delete-verb"))
 		srv.SetPutPermitted(cmd.Bool("cache-allow-put-verb"))
 
@@ -1196,4 +1219,37 @@ func getLockers(
 	}
 
 	return locker, rwLocker, nil
+}
+
+// parseOIDCConfig reads the config file once and extracts the OIDC section.
+// Returns nil, nil if the path is empty, the file doesn't exist, or no OIDC
+// section is present (backwards-compatible).
+func parseOIDCConfig(configFilePath string) (*oidc.Config, error) {
+	if configFilePath == "" {
+		return nil, nil //nolint:nilnil
+	}
+
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil //nolint:nilnil
+		}
+
+		return nil, fmt.Errorf("reading config file: %w", err)
+	}
+
+	var format string
+
+	switch strings.ToLower(filepath.Ext(configFilePath)) {
+	case ".yaml", ".yml":
+		format = "yaml"
+	case ".toml":
+		format = "toml"
+	case ".json":
+		format = "json"
+	default:
+		format = "yaml" // default to YAML, matching urfave/cli-altsrc behavior
+	}
+
+	return oidc.ParseConfigData(data, format)
 }

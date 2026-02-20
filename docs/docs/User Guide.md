@@ -46,6 +46,7 @@ Welcome to the comprehensive documentation for ncps (Nix Cache Proxy Server). Th
 **Features**
 
 - [Content-Defined Chunking (CDC)](User%20Guide/Features/CDC.md)
+- [OIDC Push Authorization](User%20Guide/Features/OIDC%20Push%20Authorization.md)
 
 **Deploy for Production**
 
