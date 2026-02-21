@@ -130,6 +130,5 @@
             maintainers = [ lib.maintainers.kalbasit ];
           };
         };
-
     };
 }
