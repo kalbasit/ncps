@@ -61,7 +61,13 @@
             "-X github.com/kalbasit/ncps/pkg/ncps.Version=${version}"
           ];
 
+          buildInputs = [
+            pkgs.xz # required for xz decompression
+          ];
+
           nativeBuildInputs = [
+            pkgs.makeBinaryWrapper # used for wrapping the binary so it can always find the xz binary
+
             pkgs.curl # used for checking MinIO health check
             pkgs.dbmate # used for testing
             pkgs.jq # used for testing by the init-minio
@@ -107,6 +113,13 @@
           postInstall = ''
             mkdir -p $out/share/ncps
             cp -r db $out/share/ncps/db
+
+            # ncps makes use of xz for decompression as it's 15-20x faster than
+            # using the native Go implementation of xz. By wrapping ncps, and
+            # setting the XZ_BIN environment variable, we ensure that ncps can
+            # always find the xz binary. This environment variable is read by
+            # pkg/xz.
+            wrapProgram $out/bin/ncps --set XZ_BIN ${lib.getExe' pkgs.xz "xz"}
           '';
 
           meta = {

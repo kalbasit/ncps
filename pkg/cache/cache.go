@@ -1035,7 +1035,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 				fileReader := &fileAvailableReader{f: f, ds: ds}
 
-				decompReader, err := nar.DecompressReader(fileReader, tempFileCompression)
+				decompReader, err := nar.DecompressReader(ctx, fileReader, tempFileCompression)
 				if err != nil {
 					zerolog.Ctx(ctx).Error().Err(err).
 						Str("compression", tempFileCompression.String()).
@@ -1666,7 +1666,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	var reader io.Reader = f
 
 	if originalCompression != nar.CompressionTypeNone {
-		decompressed, decompErr := nar.DecompressReader(f, originalCompression)
+		decompressed, decompErr := nar.DecompressReader(ctx, f, originalCompression)
 		if decompErr != nil {
 			// If decompression fails, log a warning and proceed with raw data.
 			// This can happen if the stored metadata doesn't match the actual data compression
@@ -2381,7 +2381,7 @@ func (c *Cache) getNarFromStore(
 	storedFileSize := size
 
 	if decompress {
-		decompressed, decompErr := nar.DecompressReader(r, nar.CompressionTypeZstd)
+		decompressed, decompErr := nar.DecompressReader(ctx, r, nar.CompressionTypeZstd)
 		if decompErr != nil {
 			_ = r.Close()
 

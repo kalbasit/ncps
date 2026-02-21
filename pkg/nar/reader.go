@@ -2,6 +2,7 @@ package nar
 
 import (
 	"compress/bzip2"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,8 +10,8 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/pierrec/lz4/v4"
 	"github.com/sorairolake/lzip-go"
-	"github.com/ulikunitz/xz"
 
+	"github.com/kalbasit/ncps/pkg/xz"
 	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
@@ -19,7 +20,7 @@ var ErrUnsupportedCompressionType = errors.New("unsupported compression type")
 
 // DecompressReader returns a Reader that decompresses the data from r using the given compression type.
 // The caller is responsible for closing the returned ReadCloser.
-func DecompressReader(r io.Reader, comp CompressionType) (io.ReadCloser, error) {
+func DecompressReader(ctx context.Context, r io.Reader, comp CompressionType) (io.ReadCloser, error) {
 	switch comp {
 	case CompressionTypeNone, CompressionType(""):
 		if rc, ok := r.(io.ReadCloser); ok {
@@ -54,12 +55,7 @@ func DecompressReader(r io.Reader, comp CompressionType) (io.ReadCloser, error) 
 		return io.NopCloser(lr), nil
 
 	case CompressionTypeXz:
-		xr, err := xz.NewReader(r)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create xz reader: %w", err)
-		}
-
-		return io.NopCloser(xr), nil
+		return xz.Decompress(ctx, r)
 
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedCompressionType, comp)
