@@ -23,6 +23,9 @@ NAR to Chunks migration moves NAR files from traditional storage (filesystem or 
 
 ## CLI Migration Guide
 
+> [!WARNING]
+> This migration is memory-intensive, using approximately **5GB of memory** with the default concurrency (see below).
+
 ### Basic Migration
 
 Migrate all NAR files to chunks. Once a NAR is successfully migrated and verified, it is deleted from the original storage:
