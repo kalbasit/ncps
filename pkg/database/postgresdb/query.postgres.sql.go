@@ -391,23 +391,6 @@ func (q *Queries) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHa
 	return result.RowsAffected()
 }
 
-const deleteNarFileByID = `-- name: DeleteNarFileByID :execrows
-DELETE FROM nar_files
-WHERE id = $1
-`
-
-// DeleteNarFileByID
-//
-//	DELETE FROM nar_files
-//	WHERE id = $1
-func (q *Queries) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteNarFileByID, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const deleteNarFileChunksByNarFileID = `-- name: DeleteNarFileChunksByNarFileID :exec
 DELETE FROM nar_file_chunks
 WHERE nar_file_id = $1
@@ -498,29 +481,6 @@ WHERE id NOT IN (
 //	)
 func (q *Queries) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteOrphanedNarFiles)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const deleteOrphanedNarInfos = `-- name: DeleteOrphanedNarInfos :execrows
-DELETE FROM narinfos
-WHERE id NOT IN (
-    SELECT DISTINCT narinfo_id
-    FROM narinfo_nar_files
-)
-`
-
-// DeleteOrphanedNarInfos
-//
-//	DELETE FROM narinfos
-//	WHERE id NOT IN (
-//	    SELECT DISTINCT narinfo_id
-//	    FROM narinfo_nar_files
-//	)
-func (q *Queries) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteOrphanedNarInfos)
 	if err != nil {
 		return 0, err
 	}
@@ -652,65 +612,6 @@ func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]
 	return items, nil
 }
 
-const getCompressedNarInfos = `-- name: GetCompressedNarInfos :many
-SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
-FROM narinfos
-WHERE compression NOT IN ('', 'none')
-ORDER BY id
-LIMIT $1 OFFSET $2
-`
-
-type GetCompressedNarInfosParams struct {
-	Limit  int32
-	Offset int32
-}
-
-// GetCompressedNarInfos
-//
-//	SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
-//	FROM narinfos
-//	WHERE compression NOT IN ('', 'none')
-//	ORDER BY id
-//	LIMIT $1 OFFSET $2
-func (q *Queries) GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error) {
-	rows, err := q.db.QueryContext(ctx, getCompressedNarInfos, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []NarInfo
-	for rows.Next() {
-		var i NarInfo
-		if err := rows.Scan(
-			&i.ID,
-			&i.Hash,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.LastAccessedAt,
-			&i.StorePath,
-			&i.URL,
-			&i.Compression,
-			&i.FileHash,
-			&i.FileSize,
-			&i.NarHash,
-			&i.NarSize,
-			&i.Deriver,
-			&i.System,
-			&i.Ca,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getConfigByKey = `-- name: GetConfigByKey :one
 SELECT id, key, value, created_at, updated_at
 FROM config
@@ -733,63 +634,6 @@ func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const getLeastUsedNarFiles = `-- name: GetLeastUsedNarFiles :many
-SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
-FROM nar_files n1
-WHERE (
-    SELECT SUM(n2.file_size)
-    FROM nar_files n2
-    WHERE n2.last_accessed_at < n1.last_accessed_at
-       OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
-) <= $1
-`
-
-// NOTE: This query uses a correlated subquery which is not optimal for performance.
-// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
-// does not properly support filtering on window function results in subqueries.
-//
-//	SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
-//	FROM nar_files n1
-//	WHERE (
-//	    SELECT SUM(n2.file_size)
-//	    FROM nar_files n2
-//	    WHERE n2.last_accessed_at < n1.last_accessed_at
-//	       OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
-//	) <= $1
-func (q *Queries) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
-	rows, err := q.db.QueryContext(ctx, getLeastUsedNarFiles, fileSize)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []NarFile
-	for rows.Next() {
-		var i NarFile
-		if err := rows.Scan(
-			&i.ID,
-			&i.Hash,
-			&i.Compression,
-			&i.FileSize,
-			&i.Query,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.LastAccessedAt,
-			&i.TotalChunks,
-			&i.ChunkingStartedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getLeastUsedNarInfos = `-- name: GetLeastUsedNarInfos :many
@@ -878,49 +722,6 @@ WHERE url IS NOT NULL
 //	WHERE url IS NOT NULL
 func (q *Queries) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, getMigratedNarInfoHashes)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var hash string
-		if err := rows.Scan(&hash); err != nil {
-			return nil, err
-		}
-		items = append(items, hash)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getMigratedNarInfoHashesPaginated = `-- name: GetMigratedNarInfoHashesPaginated :many
-SELECT hash
-FROM narinfos
-WHERE url IS NOT NULL
-ORDER BY hash
-LIMIT $1 OFFSET $2
-`
-
-type GetMigratedNarInfoHashesPaginatedParams struct {
-	Limit  int32
-	Offset int32
-}
-
-// Get migrated narinfo hashes with pagination support.
-//
-//	SELECT hash
-//	FROM narinfos
-//	WHERE url IS NOT NULL
-//	ORDER BY hash
-//	LIMIT $1 OFFSET $2
-func (q *Queries) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getMigratedNarInfoHashesPaginated, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -1162,42 +963,6 @@ func (q *Queries) GetNarInfoHashByNarURL(ctx context.Context, url sql.NullString
 	return hash, err
 }
 
-const getNarInfoHashesByNarFileID = `-- name: GetNarInfoHashesByNarFileID :many
-SELECT ni.hash
-FROM narinfos ni
-INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-WHERE nnf.nar_file_id = $1
-`
-
-// GetNarInfoHashesByNarFileID
-//
-//	SELECT ni.hash
-//	FROM narinfos ni
-//	INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-//	WHERE nnf.nar_file_id = $1
-func (q *Queries) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getNarInfoHashesByNarFileID, narFileID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var hash string
-		if err := rows.Scan(&hash); err != nil {
-			return nil, err
-		}
-		items = append(items, hash)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getNarInfoHashesByURL = `-- name: GetNarInfoHashesByURL :many
 SELECT hash
 FROM narinfos
@@ -1222,53 +987,6 @@ func (q *Queries) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString)
 			return nil, err
 		}
 		items = append(items, hash)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getNarInfoHashesToChunk = `-- name: GetNarInfoHashesToChunk :many
-SELECT ni.hash, ni.url
-FROM narinfos ni
-LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
-WHERE ni.url IS NOT NULL
-  AND (nf.id IS NULL OR nf.total_chunks = 0)
-ORDER BY ni.hash
-`
-
-type GetNarInfoHashesToChunkRow struct {
-	Hash string
-	URL  sql.NullString
-}
-
-// Get all narinfo hashes that have a URL (migrated) but whose NAR is not yet chunked.
-//
-//	SELECT ni.hash, ni.url
-//	FROM narinfos ni
-//	LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-//	LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
-//	WHERE ni.url IS NOT NULL
-//	  AND (nf.id IS NULL OR nf.total_chunks = 0)
-//	ORDER BY ni.hash
-func (q *Queries) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error) {
-	rows, err := q.db.QueryContext(ctx, getNarInfoHashesToChunk)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetNarInfoHashesToChunkRow
-	for rows.Next() {
-		var i GetNarInfoHashesToChunkRow
-		if err := rows.Scan(&i.Hash, &i.URL); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1393,63 +1111,6 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 	return total_size, err
 }
 
-const getOldCompressedNarFiles = `-- name: GetOldCompressedNarFiles :many
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-FROM nar_files
-WHERE compression NOT IN ('', 'none')
-  AND created_at < $1
-ORDER BY id
-LIMIT $2 OFFSET $3
-`
-
-type GetOldCompressedNarFilesParams struct {
-	CreatedAt time.Time
-	Limit     int32
-	Offset    int32
-}
-
-// GetOldCompressedNarFiles
-//
-//	SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-//	FROM nar_files
-//	WHERE compression NOT IN ('', 'none')
-//	  AND created_at < $1
-//	ORDER BY id
-//	LIMIT $2 OFFSET $3
-func (q *Queries) GetOldCompressedNarFiles(ctx context.Context, arg GetOldCompressedNarFilesParams) ([]NarFile, error) {
-	rows, err := q.db.QueryContext(ctx, getOldCompressedNarFiles, arg.CreatedAt, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []NarFile
-	for rows.Next() {
-		var i NarFile
-		if err := rows.Scan(
-			&i.ID,
-			&i.Hash,
-			&i.Compression,
-			&i.FileSize,
-			&i.Query,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.LastAccessedAt,
-			&i.TotalChunks,
-			&i.ChunkingStartedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getOrphanedChunks = `-- name: GetOrphanedChunks :many
 SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
@@ -1547,22 +1208,6 @@ func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	return items, nil
 }
 
-const getTotalChunkSize = `-- name: GetTotalChunkSize :one
-SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) AS total_size
-FROM chunks
-`
-
-// GetTotalChunkSize
-//
-//	SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) AS total_size
-//	FROM chunks
-func (q *Queries) GetTotalChunkSize(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getTotalChunkSize)
-	var total_size int64
-	err := row.Scan(&total_size)
-	return total_size, err
-}
-
 const getUnmigratedNarInfoHashes = `-- name: GetUnmigratedNarInfoHashes :many
 SELECT hash
 FROM narinfos
@@ -1595,28 +1240,6 @@ func (q *Queries) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, err
 		return nil, err
 	}
 	return items, nil
-}
-
-const isNarInfoMigrated = `-- name: IsNarInfoMigrated :one
-SELECT EXISTS(
-    SELECT 1
-    FROM narinfos
-    WHERE hash = $1 AND url IS NOT NULL
-) AS is_migrated
-`
-
-// Check if a narinfo hash has been migrated (has a URL).
-//
-//	SELECT EXISTS(
-//	    SELECT 1
-//	    FROM narinfos
-//	    WHERE hash = $1 AND url IS NOT NULL
-//	) AS is_migrated
-func (q *Queries) IsNarInfoMigrated(ctx context.Context, hash string) (bool, error) {
-	row := q.db.QueryRowContext(ctx, isNarInfoMigrated, hash)
-	var is_migrated bool
-	err := row.Scan(&is_migrated)
-	return is_migrated, err
 }
 
 const linkNarFileToChunk = `-- name: LinkNarFileToChunk :exec

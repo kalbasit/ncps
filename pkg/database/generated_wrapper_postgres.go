@@ -242,19 +242,6 @@ func (w *postgresWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNar
 	return res, nil
 }
 
-func (w *postgresWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.DeleteNarFileByID(ctx, id)
-	if err != nil {
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
-
-	return res, nil
-}
-
 func (w *postgresWrapper) DeleteNarFileChunksByNarFileID(ctx context.Context, narFileID int64) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -304,19 +291,6 @@ func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, er
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
-
-	return res, nil
-}
-
-func (w *postgresWrapper) DeleteOrphanedNarInfos(ctx context.Context) (int64, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.DeleteOrphanedNarInfos(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -472,55 +446,6 @@ func (w *postgresWrapper) GetChunksByNarFileID(ctx context.Context, narFileID in
 	return items, nil
 }
 
-func (w *postgresWrapper) GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.GetCompressedNarInfos(ctx, postgresdb.GetCompressedNarInfosParams{
-		Limit:  arg.Limit,
-		Offset: arg.Offset,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert Slice of Domain Structs
-	items := make([]NarInfo, len(res))
-	for i, v := range res {
-		items[i] = NarInfo{
-			ID: v.ID,
-
-			Hash: v.Hash,
-
-			CreatedAt: v.CreatedAt,
-
-			UpdatedAt: v.UpdatedAt,
-
-			LastAccessedAt: v.LastAccessedAt,
-
-			StorePath: v.StorePath,
-
-			URL: v.URL,
-
-			Compression: v.Compression,
-
-			FileHash: v.FileHash,
-
-			FileSize: v.FileSize,
-
-			NarHash: v.NarHash,
-
-			NarSize: v.NarSize,
-
-			Deriver: v.Deriver,
-
-			System: v.System,
-
-			Ca: v.Ca,
-		}
-	}
-	return items, nil
-}
-
 func (w *postgresWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -589,42 +514,6 @@ func (w *postgresWrapper) GetConfigByKey(ctx context.Context, key string) (Confi
 	}, nil
 }
 
-func (w *postgresWrapper) GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.GetLeastUsedNarFiles(ctx, fileSize)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert Slice of Domain Structs
-	items := make([]NarFile, len(res))
-	for i, v := range res {
-		items[i] = NarFile{
-			ID: v.ID,
-
-			Hash: v.Hash,
-
-			Compression: v.Compression,
-
-			FileSize: v.FileSize,
-
-			Query: v.Query,
-
-			CreatedAt: v.CreatedAt,
-
-			UpdatedAt: v.UpdatedAt,
-
-			LastAccessedAt: v.LastAccessedAt,
-
-			TotalChunks: v.TotalChunks,
-
-			ChunkingStartedAt: v.ChunkingStartedAt,
-		}
-	}
-	return items, nil
-}
-
 func (w *postgresWrapper) GetLeastUsedNarInfos(ctx context.Context, fileSize uint64) ([]NarInfo, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -675,21 +564,6 @@ func (w *postgresWrapper) GetMigratedNarInfoHashes(ctx context.Context) ([]strin
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.GetMigratedNarInfoHashes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
-func (w *postgresWrapper) GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.GetMigratedNarInfoHashesPaginated(ctx, postgresdb.GetMigratedNarInfoHashesPaginatedParams{
-		Limit:  arg.Limit,
-		Offset: arg.Offset,
-	})
 	if err != nil {
 		return nil, err
 	}
@@ -1044,18 +918,6 @@ func (w *postgresWrapper) GetNarInfoHashByNarURL(ctx context.Context, url sql.Nu
 	return res, nil
 }
 
-func (w *postgresWrapper) GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.GetNarInfoHashesByNarFileID(ctx, narFileID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
 func (w *postgresWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -1066,26 +928,6 @@ func (w *postgresWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.Nul
 
 	// Return Slice of Primitives (direct match)
 	return res, nil
-}
-
-func (w *postgresWrapper) GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.GetNarInfoHashesToChunk(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert Slice of Domain Structs
-	items := make([]GetNarInfoHashesToChunkRow, len(res))
-	for i, v := range res {
-		items[i] = GetNarInfoHashesToChunkRow{
-			Hash: v.Hash,
-
-			URL: v.URL,
-		}
-	}
-	return items, nil
 }
 
 func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
@@ -1140,46 +982,6 @@ func (w *postgresWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	// Return Primitive / *sql.DB / etc
 
 	return res, nil
-}
-
-func (w *postgresWrapper) GetOldCompressedNarFiles(ctx context.Context, arg GetOldCompressedNarFilesParams) ([]NarFile, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.GetOldCompressedNarFiles(ctx, postgresdb.GetOldCompressedNarFilesParams{
-		CreatedAt: arg.CreatedAt,
-		Limit:     arg.Limit,
-		Offset:    arg.Offset,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert Slice of Domain Structs
-	items := make([]NarFile, len(res))
-	for i, v := range res {
-		items[i] = NarFile{
-			ID: v.ID,
-
-			Hash: v.Hash,
-
-			Compression: v.Compression,
-
-			FileSize: v.FileSize,
-
-			Query: v.Query,
-
-			CreatedAt: v.CreatedAt,
-
-			UpdatedAt: v.UpdatedAt,
-
-			LastAccessedAt: v.LastAccessedAt,
-
-			TotalChunks: v.TotalChunks,
-
-			ChunkingStartedAt: v.ChunkingStartedAt,
-		}
-	}
-	return items, nil
 }
 
 func (w *postgresWrapper) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error) {
@@ -1244,19 +1046,6 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 	return items, nil
 }
 
-func (w *postgresWrapper) GetTotalChunkSize(ctx context.Context) (int64, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.GetTotalChunkSize(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	// Return Primitive / *sql.DB / etc
-
-	return res, nil
-}
-
 func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -1266,19 +1055,6 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 	}
 
 	// Return Slice of Primitives (direct match)
-	return res, nil
-}
-
-func (w *postgresWrapper) IsNarInfoMigrated(ctx context.Context, hash string) (bool, error) {
-	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
-
-	res, err := w.adapter.IsNarInfoMigrated(ctx, hash)
-	if err != nil {
-		return false, err
-	}
-
-	// Return Primitive / *sql.DB / etc
-
 	return res, nil
 }
 

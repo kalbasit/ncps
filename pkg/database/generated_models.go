@@ -95,16 +95,6 @@ type GetChunkByNarFileIDAndIndexRow struct {
 	UpdatedAt sql.NullTime
 }
 
-type GetCompressedNarInfosParams struct {
-	Limit  int32
-	Offset int32
-}
-
-type GetMigratedNarInfoHashesPaginatedParams struct {
-	Limit  int32
-	Offset int32
-}
-
 type GetNarFileByHashAndCompressionAndQueryParams struct {
 	Hash        string
 	Compression string
@@ -119,21 +109,10 @@ type GetNarFilesToChunkRow struct {
 	FileSize    uint64
 }
 
-type GetNarInfoHashesToChunkRow struct {
-	Hash string
-	URL  sql.NullString
-}
-
 type GetNarInfoURLByNarFileHashParams struct {
 	Hash        string
 	Compression string
 	Query       string
-}
-
-type GetOldCompressedNarFilesParams struct {
-	CreatedAt time.Time
-	Limit     int32
-	Offset    int32
 }
 
 type GetOrphanedChunksRow struct {
