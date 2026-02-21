@@ -793,16 +793,17 @@ spec:
         system = os.uname().sysname.lower()
         machine = os.uname().machine.lower()
 
-        if system == "darwin":
-            if machine == "arm64":
-                return "aarch64-darwin"
-            elif machine == "x86_64":
-                return "x86_64-darwin"
-        elif system == "linux":
-            if machine in ("arm64", "aarch64"):
-                return "aarch64-linux"
-            elif machine in ("x86_64", "amd64"):
-                return "x86_64-linux"
+        platform_map = {
+            ("darwin", "arm64"): "aarch64-linux",
+            ("darwin", "x86_64"): "x86_64-linux",
+            ("linux", "arm64"): "aarch64-linux",
+            ("linux", "aarch64"): "aarch64-linux",
+            ("linux", "x86_64"): "x86_64-linux",
+            ("linux", "amd64"): "x86_64-linux",
+        }
+
+        if (system, machine) in platform_map:
+            return platform_map[(system, machine)]
 
         self.error(f"Unsupported OS/architecture combination: {system}/{machine}")
 

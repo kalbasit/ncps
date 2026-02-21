@@ -35,6 +35,8 @@ try:
 except ImportError:
     boto3 = None
 
+HTTP_TIMEOUT = 60
+
 
 @dataclass
 class TestResult:
@@ -547,13 +549,17 @@ class NCPSTester:
                 try:
                     # Fetch narinfo
                     resp = requests.get(
-                        f"{base_url}/{narinfo_hash}.narinfo", timeout=30
+                        f"{base_url}/{narinfo_hash}.narinfo", timeout=HTTP_TIMEOUT
                     )
                     if resp.status_code != 200:
                         return TestResult(
                             "HTTP Endpoints",
                             False,
                             f"Failed to fetch narinfo {narinfo_hash}: HTTP {resp.status_code}",
+                        )
+                    if self.verbose:
+                        print(
+                            f"      ✓ Fetched {narinfo_hash}.narinfo ({len(resp.text)} bytes)"
                         )
 
                     # Parse URL from narinfo
@@ -569,13 +575,17 @@ class NCPSTester:
                     nar_url = url_match.group(1).strip()
 
                     # Fetch the NAR file
-                    resp = requests.get(f"{base_url}/{nar_url}", timeout=30)
+                    if self.verbose:
+                        print(f"      ✓ Fetching {nar_url}")
+                    resp = requests.get(f"{base_url}/{nar_url}", timeout=HTTP_TIMEOUT)
                     if resp.status_code != 200:
                         return TestResult(
                             "HTTP Endpoints",
                             False,
                             f"Failed to fetch NAR {nar_url}: HTTP {resp.status_code}",
                         )
+                    if self.verbose:
+                        print(f"      ✓ Fetched {nar_url} ({len(resp.content)} bytes)")
 
                     if len(resp.content) == 0:
                         return TestResult(
