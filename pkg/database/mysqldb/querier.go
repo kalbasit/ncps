@@ -473,6 +473,17 @@ type Querier interface {
 	//  SET compression = ?, url = ?, updated_at = CURRENT_TIMESTAMP
 	//  WHERE url = ?
 	UpdateNarInfoCompressionAndURL(ctx context.Context, arg UpdateNarInfoCompressionAndURLParams) (int64, error)
+	// Update narinfo compression, file_size, file_hash and URL after CDC migration.
+	//
+	//  UPDATE narinfos
+	//  SET
+	//      compression = ?,
+	//      url = ?,
+	//      file_size = ?,
+	//      file_hash = ?,
+	//      updated_at = CURRENT_TIMESTAMP
+	//  WHERE url = ?
+	UpdateNarInfoCompressionFileSizeHashAndURL(ctx context.Context, arg UpdateNarInfoCompressionFileSizeHashAndURLParams) (int64, error)
 	//UpdateNarInfoFileHash
 	//
 	//  UPDATE narinfos

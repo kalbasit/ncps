@@ -5642,7 +5642,8 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 // crash recovery).
 //
 // Both operations are idempotent:
-//   - UpdateNarInfoCompressionAndURL updates 0 rows if the URL is already correct.
+//   - UpdateNarInfoCompressionFileSizeHashAndURLParams updates 0 rows if the
+//     URL/FileSize/FileHash is already correct.
 //   - DeleteNar returns ErrNotFound (ignored) if the file is already gone.
 func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL nar.URL) {
 	newNarURL := nar.URL{
@@ -5654,25 +5655,21 @@ func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL na
 	originalURL := originalNarURL.String()
 	newURL := newNarURL.String()
 
-	if originalURL != newURL {
-		if _, err := c.db.UpdateNarInfoCompressionAndURL(ctx, database.UpdateNarInfoCompressionAndURLParams{
+	if _, err := c.db.UpdateNarInfoCompressionFileSizeHashAndURL(
+		ctx,
+		database.UpdateNarInfoCompressionFileSizeHashAndURLParams{
 			Compression: sql.NullString{String: nar.CompressionTypeNone.String(), Valid: true},
 			NewUrl:      sql.NullString{String: newURL, Valid: true},
 			OldUrl:      sql.NullString{String: originalURL, Valid: true},
-		}); err != nil {
-			zerolog.Ctx(ctx).Warn().
-				Err(err).
-				Str("old_url", originalURL).
-				Str("new_url", newURL).
-				Msg("failed to update narinfo compression/URL after CDC migration")
-		}
-	}
-
-	if err := c.checkAndFixNarInfosForNar(ctx, newNarURL); err != nil {
+			FileSize:    sql.NullInt64{Valid: false},
+			FileHash:    sql.NullString{Valid: false},
+		},
+	); err != nil {
 		zerolog.Ctx(ctx).Warn().
 			Err(err).
-			Str("nar_url", newNarURL.String()).
-			Msg("failed to fix narinfo file_size/file_hash after CDC migration")
+			Str("old_url", originalURL).
+			Str("new_url", newURL).
+			Msg("failed to update narinfo compression/URL after CDC migration")
 	}
 
 	// Delete the original whole-file NAR from narStore.  We attempt both the
