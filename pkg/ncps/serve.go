@@ -34,7 +34,6 @@ import (
 	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/lock/local"
-	"github.com/kalbasit/ncps/pkg/lock/postgres"
 	"github.com/kalbasit/ncps/pkg/lock/redis"
 	"github.com/kalbasit/ncps/pkg/maxprocs"
 	"github.com/kalbasit/ncps/pkg/otel"
@@ -69,9 +68,8 @@ var (
 )
 
 const (
-	lockBackendLocal    = "local"
-	lockBackendRedis    = "redis"
-	lockBackendPostgres = "postgres"
+	lockBackendLocal = "local"
+	lockBackendRedis = "redis"
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -312,9 +310,8 @@ func serveCommand(
 			},
 
 			&cli.StringFlag{
-				Name: "cache-lock-backend",
-				Usage: "Lock backend to use: 'local' (single instance), 'redis' (distributed), " +
-					"or 'postgres' (distributed, requires PostgreSQL)",
+				Name:    "cache-lock-backend",
+				Usage:   "Lock backend to use: 'local' (single instance) or 'redis' (distributed)",
 				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
 				Value:   "local",
 			},
@@ -323,12 +320,6 @@ func serveCommand(
 				Name:    "cache-lock-redis-key-prefix",
 				Usage:   "Prefix for all Redis lock keys (only used when Redis is configured)",
 				Sources: flagSources("cache.lock.redis.key-prefix", "CACHE_LOCK_REDIS_KEY_PREFIX"),
-				Value:   "ncps:lock:",
-			},
-			&cli.StringFlag{
-				Name:    "cache-lock-postgres-key-prefix",
-				Usage:   "Prefix for all PostgreSQL advisory lock keys (only used when PostgreSQL is configured as lock backend)",
-				Sources: flagSources("cache.lock.postgres.key-prefix", "CACHE_LOCK_POSTGRES_KEY_PREFIX"),
 				Value:   "ncps:lock:",
 			},
 			&cli.DurationFlag{
@@ -447,7 +438,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		locker, rwLocker, err := getLockers(ctx, cmd, db)
+		locker, rwLocker, err := getLockers(ctx, cmd)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().
@@ -1103,7 +1094,6 @@ func determineEffectiveLockBackend(cmd *cli.Command) (backend string, validRedis
 func getLockers(
 	ctx context.Context,
 	cmd *cli.Command,
-	db database.Querier,
 ) (
 	locker lock.Locker,
 	rwLocker lock.RWLocker,
@@ -1162,25 +1152,6 @@ func getLockers(
 			Strs("addrs", redisCfg.Addrs).
 			Msg("distributed locking enabled with Redis")
 
-	case lockBackendPostgres:
-		// PostgreSQL advisory locks - use database connection
-		pgCfg := postgres.Config{
-			KeyPrefix: cmd.String("cache-lock-postgres-key-prefix"),
-		}
-
-		locker, err = postgres.NewLocker(ctx, db, pgCfg, retryCfg, allowDegradedMode)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error creating PostgreSQL advisory lock locker: %w", err)
-		}
-
-		rwLocker, err = postgres.NewRWLocker(ctx, db, pgCfg, retryCfg, allowDegradedMode)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error creating PostgreSQL advisory lock RW locker: %w", err)
-		}
-
-		zerolog.Ctx(ctx).Info().
-			Msg("distributed locking enabled with PostgreSQL advisory locks")
-
 	case lockBackendLocal:
 		// No distributed backend - use local locks (single-instance mode)
 		locker = local.NewLocker()
@@ -1191,7 +1162,7 @@ func getLockers(
 			Msg("using local locks (single-instance mode)")
 
 	default:
-		return nil, nil, fmt.Errorf("%w: %s (must be 'local', 'redis', or 'postgres')",
+		return nil, nil, fmt.Errorf("%w: %s (must be 'local' or 'redis')",
 			ErrUnknownLockBackend, backend)
 	}
 

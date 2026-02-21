@@ -15,12 +15,14 @@ _: {
           docker
           (pkgs.python3.withPackages (
             ps: with ps; [
-              requests
-              pyyaml
+              boto3
+              brotli
+              kubernetes
               psycopg2
               pymysql
-              kubernetes
-              boto3
+              pyyaml
+              requests
+              zstandard
             ]
           ))
         ];

@@ -4,7 +4,7 @@ This document provides comprehensive guidance on using distributed locking in nc
 
 ## Overview
 
-ncps supports running multiple instances in a high-availability configuration using **Redis** or **PostgreSQL advisory locks** for distributed locking. This enables:
+ncps supports running multiple instances in a high-availability configuration using **Redis** for distributed locking. This enables:
 
 - **Zero-downtime deployments** - Update instances one at a time
 - **Horizontal scaling** - Add instances to handle more traffic
@@ -20,7 +20,6 @@ ncps supports running multiple instances in a high-availability configuration us
 
 1. **Local Locks** (default) - In-memory locks using Go's `sync.Mutex`, suitable for single-instance deployments
 1. **Redis** - Distributed locks using the Redlock algorithm, ideal for HA deployments with existing Redis infrastructure
-1. **PostgreSQL Advisory Locks** - Distributed locks using PostgreSQL's native advisory lock feature
 
 ## Architecture
 
@@ -86,8 +85,6 @@ ncps supports running multiple instances in a high-availability configuration us
 - Load balancer distributes traffic
 - Instances can be added/removed dynamically
 
-### High-Availability Mode (Database Advisory Locks)
-
 ```
                     ┌──────────┐
                     │   Load   │
@@ -121,12 +118,6 @@ ncps supports running multiple instances in a high-availability configuration us
 │ Storage │
 └─────────┘
 ```
-
-- The shared database serves both as the metadata store AND the distributed lock coordinator
-- Reduces infrastructure complexity (no Redis needed)
-- Uses PostgreSQL's native advisory lock feature (`pg_advisory_lock`)
-- All instances share the same S3 storage and database
-- Load balancer distributes traffic
 
 ## When to Use Distributed Locking
 
@@ -178,7 +169,6 @@ For high-availability mode, you need:
 
 1. **Distributed Lock Backend** (one of the following):
    - **Redis** (version 5.0 or later)
-   - **PostgreSQL** (version 9.1 or later)
 1. **Shared Storage** (S3-compatible)
    - AWS S3, MinIO, DigitalOcean Spaces, etc.
    - All instances must access the same bucket
@@ -224,11 +214,10 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--cache-lock-backend` | Lock backend: `local`, `redis`, or `postgres` | `local` |
+| `--cache-lock-backend` | Lock backend: `local` or `redis` | `local` |
 
 - **local**: Uses in-memory locks. Only suitable for single-instance deployments.
 - **redis**: Uses Redis (Redlock algorithm). Best for high-traffic, multi-instance deployments.
-- **postgres**: Uses PostgreSQL advisory locks. Good balance of simplicity and HA.
 
 ### Redis Configuration Options
 
@@ -291,202 +280,6 @@ The `--cache-lock-backend` flag determines which mechanism ncps uses to coordina
 --cache-lock-retry-max-delay=5s
 ```
 
-### PostgreSQL Advisory Lock Configuration
-
-Advisory locks provide a distributed locking alternative for deployments that:
-
-- Already use PostgreSQL as the primary database
-- Want to minimize infrastructure dependencies (no Redis needed)
-- Prefer a single database for both data and coordination
-
-#### Advisory Lock Prerequisites
-
-> [!IMPORTANT]
-> Database advisory locks require PostgreSQL 9.1+. SQLite and MySQL do not support advisory locks in ncps. If you use MySQL as your database, you must use Redis for distributed locking.
-
-1. **Shared Database** (PostgreSQL)
-   - Version 9.1 or later (12+ recommended)
-   - Uses native advisory lock functions
-   - Must be shared across all ncps instances
-   - Requires no special configuration or extensions
-1. **Shared Storage** (S3-compatible)
-   - Same requirement as Redis mode
-   - All instances must access the same bucket
-
-#### Advisory Lock Configuration (CLI)
-
-**Using PostgreSQL advisory locks:**
-
-```
-ncps serve \
-  --cache-hostname=cache.example.com \
-  --cache-database-url=postgresql://user:pass@postgres:5432/ncps \
-  --cache-storage-s3-bucket=ncps-cache \
-  --cache-lock-backend=postgres
-```
-
-**Configuration file (config.yaml):**
-
-```yaml
-cache:
-  hostname: cache.example.com
-  database-url: postgresql://user:pass@postgres:5432/ncps
-
-  storage:
-    s3:
-      bucket: ncps-cache
-      region: us-east-1
-
-  lock:
-    backend: postgres  # Options: local, redis, postgres
-    postgres:
-      key-prefix: "ncps:lock:"
-    allow-degraded-mode: false
-```
-
-#### PostgreSQL Options
-
-| Option | Description | Default |
-| --- | --- | --- |
-| `--cache-lock-postgres-key-prefix` | Key prefix for all PostgreSQL locks | `"ncps:lock:"` |
-| `--cache-lock-allow-degraded-mode` | Fall back to local locks if distributed backend unavailable | `false` |
-
-> [!WARNING]
-> When `allow-degraded-mode` is enabled, ncps will fall back to local locks if the database is unavailable. This breaks HA guarantees and should only be used in specific scenarios (e.g., gradual rollout, testing).
-
-#### Lock Timing Settings (Shared with Redis)
-
-These settings apply to both Redis and PostgreSQL backends:
-
-| Option | Description | Default |
-| --- | --- | --- |
-| `--cache-lock-download-ttl` | TTL for download locks | 5m |
-| `--cache-lock-lru-ttl` | TTL for LRU cleanup lock | 30m |
-| `--cache-lock-retry-max-attempts` | Maximum retry attempts | 3 |
-| `--cache-lock-retry-initial-delay` | Initial retry delay | 100ms |
-| `--cache-lock-retry-max-delay` | Maximum retry delay (exponential backoff cap) | 2s |
-| `--cache-lock-retry-jitter` | Enable random jitter in retries | `true` |
-
-#### How Advisory Locks Work
-
-**PostgreSQL Implementation**
-
-PostgreSQL provides session-level advisory locks that are automatically released if the connection closes. PostgreSQL supports both **exclusive** and **shared** (read) locks.
-
-```
--- ncps uses these PostgreSQL functions internally:
-SELECT pg_advisory_lock(key_hash);     -- Acquire exclusive lock (blocking)
-SELECT pg_advisory_unlock(key_hash);   -- Release exclusive lock
-
-SELECT pg_try_advisory_lock(key_hash); -- Acquire exclusive lock (non-blocking)
-
-SELECT pg_advisory_lock_shared(key_hash);      -- Acquire shared (read) lock (blocking)
-SELECT pg_try_advisory_lock_shared(key_hash);  -- Acquire shared (read) lock (non-blocking)
-SELECT pg_advisory_unlock_shared(key_hash);    -- Release shared (read) lock
-```
-
-**Key Features:**
-
-- Locks are identified by 64-bit integers (ncps hashes string keys to int64)
-- Automatically released when connection closes (prevents deadlocks)
-- Native database feature - no configuration or extensions needed
-- Same connection must be used for lock() and unlock()
-
-#### Connection Management & Scalability
-
-> [!WARNING]
-> **Scalability Risk:** Each active lock consumes one database connection.
-
-PostgreSQL advisory lock implementations in ncps use a **dedicated connection model**:
-
-1. When `Lock(key)` is called, a dedicated connection is pulled from the pool (or created).
-1. The lock is acquired on that connection.
-1. The connection is **held open** and removed from the pool until `Unlock(key)` is called.
-
-**Implication:** If your database has `max_connections = 100` and you try to acquire 101 concurrent locks across your cluster, the 101st attempt will fail (and eventually trigger the circuit breaker).
-
-**Recommendation:**
-
-- Carefully monitor `pg_stat_activity` or equivalent.
-- Ensure your database's `max_connections` is comfortably higher than `(num_instances * max_concurrent_downloads) + (num_instances * pool_size)`.
-- If you need thousands of concurrent locks, **use Redis**.
-
-> [!CAUTION]
-> **Risk of Deadlock with Low Connection Pool Limits**
->
-> When using PostgreSQL advisory locks, a single request that requires a download can consume up to **3 concurrent database connections**:
->
-> 1. One connection to hold the **shared cache lock** for the duration of the request.
-> 1. One connection to hold the **exclusive download lock** while the asset is being pulled.
-> 1. One connection for the **database transaction** to store the metadata once the download completes.
->
-> If your connection pool (`--cache-database-pool-max-open-conns`) is too small (e.g., 10), as few as 4-5 concurrent requests can completely exhaust the pool, causing a deadlock where all requests are waiting for a connection to start a transaction while holding locks on other connections.
-
-#### Redis vs. Database Locking Model
-
-| Feature | Redis (Redlock) | PostgreSQL |
-| --- | --- | --- |
-| **Model** | **Connection Pooling** | **Dedicated Connection** |
-| **Connection Usage** | Borrow -> Set Key -> Return | Borrow -> Lock -> **Hold** -> Unlock -> Return |
-| **Scalability** | Very high (10 conns can handle 10k locks) | Limited by DB `max_connections` |
-| **Safety** | Good (TTL based) | Excellent (Auto-release on disconnect) |
-| **Performance** | < 1ms | 1-5ms |
-
-#### Choosing Between Redis and PostgreSQL
-
-**Use Redis when:**
-
-- ✅ You already have Redis infrastructure
-- ✅ Need the highest performance (Redis is optimized for in-memory operations)
-- ✅ Need true read-write lock semantics with high read concurrency
-- ✅ Want to use Redis for other purposes (caching, pub/sub)
-- ✅ High-traffic deployments with thousands of concurrent requests
-
-**Use PostgreSQL Advisory Locks when:**
-
-- ✅ You already use PostgreSQL as the database
-- ✅ Want to minimize infrastructure (one less service to manage)
-- ✅ Prefer keeping everything in the database
-- ✅ Need true shared read locks for concurrent cache access
-- ✅ Lock contention is moderate (database locks are fast but not as fast as Redis)
-- ✅ Want automatic cleanup when instances crash (connection closes)
-
-**Use Local Locks when:**
-
-- ✅ Running single instance only
-- ✅ Development/testing environment
-- ✅ No HA requirements
-
-#### Performance Considerations
-
-PostgreSQL advisory locks are fast, but not as fast as Redis:
-
-- **Redis** Lock acquisition: ~0.5-2ms
-- **PostgreSQL** Lock acquisition: ~1-5ms (depends on database load)
-
-For most deployments, PostgreSQL advisory locks provide excellent performance. Redis may be preferred for:
-
-- Very high lock contention (hundreds of locks/second)
-- Extremely latency-sensitive workloads
-- Geographic distribution with distant database
-
-### Recommended Stack
-
-For best performance, reliability, and scalability in production:
-
-1. **Distributed Locking:** **Redis**
-   - Why: Decouples locking load from your primary database. Handles thousands of concurrent locks with minimal connection overhead.
-1. **Metadata Database:** **PostgreSQL**
-   - Why: Robust, transactional reliability for cache metadata.
-1. **Storage:** **S3 (AWS or MinIO)**
-   - Why: Infinite scalability for binary artifacts.
-
-**Use Database Advisory Locks only if:**
-
-- You cannot maintain a functional Redis setup.
-- Your concurrency is low (< 100 concurrent downloads cluster-wide).
-- You want strict "single dependency" simplicity over scalability.
-
 ## How It Works
 
 ### Lock Types
@@ -498,9 +291,6 @@ ncps uses two types of distributed locks:
 **Purpose:** Prevent duplicate downloads of the same package
 
 **Lock Key Pattern:** `ncps:lock:download:nar:{hash}` or `ncps:lock:download:narinfo:{hash}`
-
-> [!NOTE]
-> For PostgreSQL, the key prefix is hashed along with the rest of the key to produce a 64-bit integer advisory lock ID.
 
 **Behavior:**
 

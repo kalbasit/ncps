@@ -424,7 +424,7 @@ The tool generates 13 different test configurations:
 - **High Availability (4 scenarios):**
   - 2 replicas with S3 storage
   - PostgreSQL or MariaDB database
-  - Redis locks or PostgreSQL advisory locks
+  - Redis locks
   - With/without CDC enabled
 
 **Testing Individual Deployments:**

@@ -211,7 +211,7 @@ Helm tests are automatically run in CI via `nix flake check`, which includes the
 
 ### Kind Integration Tests
 
-The project includes comprehensive Kubernetes integration testing using a local Kind cluster. A unified CLI tool (`k8s-tests`) tests 13 different deployment permutations across multiple storage backends, database engines, and high-availability configurations.
+The project includes comprehensive Kubernetes integration testing using a local Kind cluster. A unified CLI tool (`k8s-tests`) tests 12 different deployment permutations across multiple storage backends, database engines, and high-availability configurations.
 
 **Quick Start:**
 
@@ -222,16 +222,16 @@ k8s-tests all
 # Or run individual steps:
 k8s-tests cluster create     # 1. Create Kind cluster with dependencies
 k8s-tests generate --push    # 2. Build & push image, generate values
-k8s-tests install            # 3. Deploy all 13 test scenarios
+k8s-tests install            # 3. Deploy all 12 test scenarios
 k8s-tests test               # 4. Run comprehensive tests
 k8s-tests cleanup            # 5. Remove test deployments
 ```
 
-**Test Permutations (13 scenarios):**
+**Test Permutations (12 scenarios):**
 
 - **Single Instance (7)**: Local/S3 storage × SQLite/PostgreSQL/MariaDB, plus CDC variant
 - **External Secrets (2)**: S3 + PostgreSQL/MariaDB with existing Kubernetes secrets
-- **High Availability (4)**: 2 replicas with S3, databases, and Redis/PostgreSQL locks, plus CDC variant
+- **High Availability (3)**: 2 replicas with S3, databases, and Redis locks, plus CDC variant
 
 **Working with Specific Deployments:**
 
