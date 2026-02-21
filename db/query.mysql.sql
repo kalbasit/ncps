@@ -424,3 +424,14 @@ LIMIT ? OFFSET ?;
 UPDATE narinfos
 SET compression = sqlc.arg(compression), url = sqlc.arg(new_url), updated_at = CURRENT_TIMESTAMP
 WHERE url = sqlc.arg(old_url);
+
+-- name: UpdateNarInfoCompressionFileSizeHashAndURL :execrows
+-- Update narinfo compression, file_size, file_hash and URL after CDC migration.
+UPDATE narinfos
+SET
+    compression = sqlc.arg(compression),
+    url = sqlc.arg(new_url),
+    file_size = sqlc.arg(file_size),
+    file_hash = sqlc.arg(file_hash),
+    updated_at = CURRENT_TIMESTAMP
+WHERE url = sqlc.arg(old_url);

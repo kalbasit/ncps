@@ -2065,6 +2065,49 @@ func (q *Queries) UpdateNarInfoCompressionAndURL(ctx context.Context, arg Update
 	return result.RowsAffected()
 }
 
+const updateNarInfoCompressionFileSizeHashAndURL = `-- name: UpdateNarInfoCompressionFileSizeHashAndURL :execrows
+UPDATE narinfos
+SET
+    compression = $1,
+    url = $2,
+    file_size = $3,
+    file_hash = $4,
+    updated_at = CURRENT_TIMESTAMP
+WHERE url = $5
+`
+
+type UpdateNarInfoCompressionFileSizeHashAndURLParams struct {
+	Compression sql.NullString
+	NewUrl      sql.NullString
+	FileSize    sql.NullInt64
+	FileHash    sql.NullString
+	OldUrl      sql.NullString
+}
+
+// Update narinfo compression, file_size, file_hash and URL after CDC migration.
+//
+//	UPDATE narinfos
+//	SET
+//	    compression = $1,
+//	    url = $2,
+//	    file_size = $3,
+//	    file_hash = $4,
+//	    updated_at = CURRENT_TIMESTAMP
+//	WHERE url = $5
+func (q *Queries) UpdateNarInfoCompressionFileSizeHashAndURL(ctx context.Context, arg UpdateNarInfoCompressionFileSizeHashAndURLParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateNarInfoCompressionFileSizeHashAndURL,
+		arg.Compression,
+		arg.NewUrl,
+		arg.FileSize,
+		arg.FileHash,
+		arg.OldUrl,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateNarInfoFileHash = `-- name: UpdateNarInfoFileHash :exec
 UPDATE narinfos
 SET file_hash = $2, updated_at = CURRENT_TIMESTAMP
