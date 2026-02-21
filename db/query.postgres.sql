@@ -394,6 +394,14 @@ FROM chunks c
 LEFT JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.chunk_id IS NULL;
 
+-- name: DeleteOrphanedChunks :execrows
+DELETE FROM chunks
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM nar_file_chunks
+    WHERE chunk_id = chunks.id
+);
+
 -- name: DeleteChunkByID :exec
 DELETE FROM chunks
 WHERE id = $1;

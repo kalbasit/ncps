@@ -328,6 +328,31 @@ func (q *Queries) DeleteNarInfoByID(ctx context.Context, id int64) (int64, error
 	return result.RowsAffected()
 }
 
+const deleteOrphanedChunks = `-- name: DeleteOrphanedChunks :execrows
+DELETE FROM chunks
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM nar_file_chunks
+    WHERE chunk_id = chunks.id
+)
+`
+
+// DeleteOrphanedChunks
+//
+//	DELETE FROM chunks
+//	WHERE NOT EXISTS (
+//	    SELECT 1
+//	    FROM nar_file_chunks
+//	    WHERE chunk_id = chunks.id
+//	)
+func (q *Queries) DeleteOrphanedChunks(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOrphanedChunks)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteOrphanedNarFiles = `-- name: DeleteOrphanedNarFiles :execrows
 DELETE FROM nar_files
 WHERE id NOT IN (

@@ -4819,17 +4819,15 @@ func (c *Cache) deleteLRURecordsFromDB(
 				Hash:        nf.Hash,
 				Compression: nar.CompressionTypeFromString(nf.Compression),
 			})
+		}
 
-			// Delete the file record from DB
-			// Note: We use ID here since we have it, it's slightly faster/safer than Hash
-			if _, err := qtx.DeleteNarFileByID(ctx, nf.ID); err != nil {
-				log.Error().
-					Err(err).
-					Str("nar_hash", nf.Hash).
-					Msg("error deleting orphaned nar file record")
+		// Batch delete all orphaned nar files in one query
+		if _, err := qtx.DeleteOrphanedNarFiles(ctx); err != nil {
+			log.Error().
+				Err(err).
+				Msg("error deleting orphaned nar file records")
 
-				return nil, nil, nil, err
-			}
+			return nil, nil, nil, err
 		}
 	} else {
 		log.Info().Msg("no orphaned nar files found (files may be shared with active narinfos)")
@@ -4860,15 +4858,15 @@ func (c *Cache) deleteLRURecordsFromDB(
 	chunkHashesToRemove := make([]string, 0, len(orphanedChunks))
 	for _, chk := range orphanedChunks {
 		chunkHashesToRemove = append(chunkHashesToRemove, chk.Hash)
+	}
 
-		if err := qtx.DeleteChunkByID(ctx, chk.ID); err != nil {
-			log.Error().
-				Err(err).
-				Str("chunk_hash", chk.Hash).
-				Msg("error deleting orphaned chunk record")
+	// Batch delete all orphaned chunks in one query
+	if _, err := qtx.DeleteOrphanedChunks(ctx); err != nil {
+		log.Error().
+			Err(err).
+			Msg("error deleting orphaned chunk records")
 
-			return nil, nil, nil, err
-		}
+		return nil, nil, nil, err
 	}
 
 	return narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove, nil
@@ -5454,15 +5452,17 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					return
 				}
 
-				// Chunk not found, check completion status
-				nr, err := c.db.GetNarFileByID(ctx, narFileID)
-				if err != nil {
-					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", err)}
+				// Only query NarFile if we don't know total chunks yet
+				if totalChunks == 0 {
+					nr, err := c.db.GetNarFileByID(ctx, narFileID)
+					if err != nil {
+						chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", err)}
 
-					return
+						return
+					}
+
+					totalChunks = nr.TotalChunks
 				}
-
-				totalChunks = nr.TotalChunks
 
 				// Check if we're done
 				if totalChunks > 0 && chunkIndex >= totalChunks {

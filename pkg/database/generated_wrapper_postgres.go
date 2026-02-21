@@ -287,6 +287,19 @@ func (w *postgresWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int6
 	return res, nil
 }
 
+func (w *postgresWrapper) DeleteOrphanedChunks(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.DeleteOrphanedChunks(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
 func (w *postgresWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
