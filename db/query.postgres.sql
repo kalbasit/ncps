@@ -1,8 +1,3 @@
--- name: GetConfigByID :one
-SELECT *
-FROM config
-WHERE id = $1;
-
 -- name: GetConfigByKey :one
 SELECT *
 FROM config
@@ -12,11 +7,6 @@ WHERE key = $1;
 SELECT *
 FROM narinfos
 WHERE hash = $1;
-
--- name: GetNarInfoByID :one
-SELECT *
-FROM narinfos
-WHERE id = $1;
 
 -- name: GetNarInfoHashByNarURL :one
 SELECT hash
@@ -29,11 +19,6 @@ LIMIT 1;
 SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
 WHERE hash = $1 AND compression = $2 AND query = $3;
-
--- name: GetNarFileByID :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-FROM nar_files
-WHERE id = $1;
 
 -- name: GetNarFileByNarInfoID :one
 SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
@@ -339,11 +324,6 @@ LIMIT $1 OFFSET $2;
 SELECT *
 FROM chunks
 WHERE hash = $1;
-
--- name: GetChunkByID :one
-SELECT *
-FROM chunks
-WHERE id = $1;
 
 -- name: GetChunksByNarFileID :many
 SELECT c.id, c.hash, c.size, c.compressed_size, c.created_at, c.updated_at

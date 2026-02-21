@@ -30,3 +30,8 @@ func (a *Adapter) WithTx(tx *sql.Tx) *Adapter {
 		db:      a.db,
 	}
 }
+
+// DBTX returns the current database executor (can be a transaction or the pool).
+func (a *Adapter) DBTX() DBTX {
+	return a.Queries.db
+}

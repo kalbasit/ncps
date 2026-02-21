@@ -353,17 +353,31 @@ func (w *mysqlWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk, 
 func (w *mysqlWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetChunkByID(ctx, id)
-	if err != nil {
+	query := "SELECT `id`, `hash`, `size`, `compressed_size`, `created_at`, `updated_at` FROM chunks WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res mysqldb.Chunk
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Hash,
+
+		&res.Size,
+
+		&res.CompressedSize,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Chunk{}, ErrNotFound
 		}
-
 		return Chunk{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return Chunk{
 		ID: res.ID,
@@ -504,17 +518,29 @@ func (w *mysqlWrapper) GetCompressedNarInfos(ctx context.Context, arg GetCompres
 func (w *mysqlWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetConfigByID(ctx, id)
-	if err != nil {
+	query := "SELECT `id`, `key`, `value`, `created_at`, `updated_at` FROM config WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res mysqldb.Config
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Key,
+
+		&res.Value,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Config{}, ErrNotFound
 		}
-
 		return Config{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return Config{
 		ID: res.ID,
@@ -711,17 +737,39 @@ func (w *mysqlWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Contex
 func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetNarFileByID(ctx, id)
-	if err != nil {
+	query := "SELECT `id`, `hash`, `compression`, `file_size`, `created_at`, `updated_at`, `last_accessed_at`, `query`, `total_chunks`, `chunking_started_at` FROM nar_files WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res mysqldb.NarFile
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Hash,
+
+		&res.Compression,
+
+		&res.FileSize,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+
+		&res.LastAccessedAt,
+
+		&res.Query,
+
+		&res.TotalChunks,
+
+		&res.ChunkingStartedAt,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarFile{}, ErrNotFound
 		}
-
 		return NarFile{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return NarFile{
 		ID: res.ID,
@@ -887,17 +935,49 @@ func (w *mysqlWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarIn
 func (w *mysqlWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetNarInfoByID(ctx, id)
-	if err != nil {
+	query := "SELECT `id`, `hash`, `created_at`, `updated_at`, `last_accessed_at`, `store_path`, `url`, `compression`, `file_hash`, `file_size`, `nar_hash`, `nar_size`, `deriver`, `system`, `ca` FROM narinfos WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res mysqldb.NarInfo
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Hash,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+
+		&res.LastAccessedAt,
+
+		&res.StorePath,
+
+		&res.URL,
+
+		&res.Compression,
+
+		&res.FileHash,
+
+		&res.FileSize,
+
+		&res.NarHash,
+
+		&res.NarSize,
+
+		&res.Deriver,
+
+		&res.System,
+
+		&res.Ca,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarInfo{}, ErrNotFound
 		}
-
 		return NarInfo{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return NarInfo{
 		ID: res.ID,

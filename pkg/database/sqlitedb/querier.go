@@ -152,12 +152,6 @@ type Querier interface {
 	//  FROM chunks
 	//  WHERE hash = ?
 	GetChunkByHash(ctx context.Context, hash string) (Chunk, error)
-	//GetChunkByID
-	//
-	//  SELECT id, hash, size, compressed_size, created_at, updated_at
-	//  FROM chunks
-	//  WHERE id = ?
-	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
 	//GetChunkByNarFileIDAndIndex
 	//
 	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
@@ -186,12 +180,6 @@ type Querier interface {
 	//  ORDER BY id
 	//  LIMIT ? OFFSET ?
 	GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error)
-	//GetConfigByID
-	//
-	//  SELECT id, "key", value, created_at, updated_at
-	//  FROM config
-	//  WHERE id = ?
-	GetConfigByID(ctx context.Context, id int64) (Config, error)
 	//GetConfigByKey
 	//
 	//  SELECT id, "key", value, created_at, updated_at
@@ -250,12 +238,6 @@ type Querier interface {
 	//  FROM nar_files
 	//  WHERE hash = ? AND compression = ? AND "query" = ?
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
-	//GetNarFileByID
-	//
-	//  SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-	//  FROM nar_files
-	//  WHERE id = ?
-	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 	//GetNarFileByNarInfoID
 	//
 	//  SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf."query", nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
@@ -287,12 +269,6 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE hash = ?
 	GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error)
-	//GetNarInfoByID
-	//
-	//  SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
-	//  FROM narinfos
-	//  WHERE id = ?
-	GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
 	//GetNarInfoCount
 	//
 	//  SELECT CAST(COUNT(*) AS INTEGER) AS count

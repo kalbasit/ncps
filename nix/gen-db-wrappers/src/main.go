@@ -46,6 +46,7 @@ type MethodInfo struct {
 	HasValue     bool   // Does it return a value (non-error)?
 	Docs         []string
 	BulkFor      string // Extracted from @bulk-for annotation
+	IsSynthetic  bool   // Is this method automatically generated?
 }
 
 type Param struct {
@@ -122,18 +123,68 @@ func main() {
 		return sortedStructs[i].Name < sortedStructs[j].Name
 	})
 
-	// 3. Generate models.go and querier.go
+	// 3. Synthesize missing GetByID methods
+	for name := range sourceData.Structs {
+		if !isDomainStruct(name) || strings.HasSuffix(name, "Params") || strings.HasSuffix(name, "Row") {
+			continue
+		}
+		// Skip structs that don't have an ID field
+		hasID := false
+		for _, f := range sourceData.Structs[name].Fields {
+			if f.Name == "ID" {
+				hasID = true
+				break
+			}
+		}
+		if !hasID {
+			continue
+		}
+
+		methodName := "Get" + name + "ByID"
+		found := false
+		for _, m := range sourceData.Methods {
+			if m.Name == methodName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			log.Printf("Synthesizing %s\n", methodName)
+			sourceData.Methods = append(sourceData.Methods, MethodInfo{
+				Name: methodName,
+				Params: []Param{
+					{Name: "ctx", Type: "context.Context"},
+					{Name: "id", Type: "int64"},
+				},
+				Returns: []Return{
+					{Type: name},
+					{Type: "error"},
+				},
+				ReturnElem:   name,
+				ReturnsError: true,
+				HasValue:     true,
+				IsSynthetic:  true,
+				Docs:         []string{"// " + methodName + " (Synthetic)"},
+			})
+		}
+	}
+
+	sort.Slice(sourceData.Methods, func(i, j int) bool {
+		return sourceData.Methods[i].Name < sourceData.Methods[j].Name
+	})
+
+	// 4. Generate models.go and querier.go
 	generateModels(targetDir, sortedStructs)
 	generateQuerier(targetDir, sourceData.Methods)
 
-	// 4. Parse all target packages
+	// 5. Parse all target packages
 	engineData := make(map[string]PackageData)
 	for _, engine := range engines {
 		engineDir := filepath.Join(targetDir, engine.Package)
 		engineData[engine.Name] = parsePackage(engineDir)
 	}
 
-	// 5. Generate wrappers
+	// 6. Generate wrappers
 	for _, engine := range engines {
 		generateWrapper(targetDir, engine, sourceData.Methods, sourceData.Structs, engineData[engine.Name])
 	}
@@ -316,12 +367,69 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 			return dict, nil
 		},
 		"hasSuffix":               strings.HasSuffix,
+		"toSnakeCase":             toSnakeCase,
+		"quote":                   quote,
 		"generateFieldConversion": generateFieldConversion,
 		"hasParam":                hasParam,
 		"paramHasField":           paramHasField,
+		"getTableName": func(structName string) string {
+			extractTableName := func(docs []string) (string, bool) {
+				clauses := []struct {
+					keyword string
+					offset  int
+				}{
+					{"INSERT INTO ", 12},
+					{"UPDATE ", 7},
+					{"DELETE FROM ", 12},
+					{"FROM ", 5},
+				}
+
+				for _, doc := range docs {
+					doc = strings.ToUpper(doc)
+					for _, clause := range clauses {
+						if idx := strings.Index(doc, clause.keyword); idx != -1 {
+							parts := strings.Fields(doc[idx+clause.offset:])
+							if len(parts) > 0 {
+								tableName := strings.ToLower(parts[0])
+								if clause.keyword == "INSERT INTO " {
+									tableName = strings.Trim(tableName, "()")
+								}
+								return tableName, true
+							}
+						}
+					}
+				}
+				return "", false
+			}
+
+			// Find a method that operates on this struct and extract table name from its SQL
+			// Prioritize exact matches like Create<StructName> or Get<StructName>
+			prefixes := []string{"Create", "Update", "Get", "Delete"}
+			for _, p := range prefixes {
+				for _, m := range methods {
+					if m.Name == p+structName || strings.HasPrefix(m.Name, p+structName) {
+						if tableName, found := extractTableName(m.Docs); found {
+							return tableName
+						}
+					}
+				}
+			}
+
+			// Fallback: search all methods
+			for _, m := range methods {
+				if strings.Contains(m.Name, structName) {
+					if tableName, found := extractTableName(m.Docs); found {
+						return tableName
+					}
+				}
+			}
+			// Fallback: lowercase and pluralize
+			return strings.ToLower(inflection.Plural(structName))
+		},
 	}).Parse(wrapperTemplate))
 
 	var buf bytes.Buffer
+
 	data := map[string]interface{}{
 		"Engine":  engine,
 		"Methods": methods,
@@ -332,6 +440,28 @@ func generateWrapper(dir string, engine Engine, methods []MethodInfo, structs ma
 		log.Fatalf("executing wrapper template: %v", err)
 	}
 	writeFile(dir, fmt.Sprintf("%swrapper_%s.go", generatedFilePrefix, engine.Name), buf.Bytes())
+}
+
+func toSnakeCase(s string) string {
+	var res []rune
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			// Check if previous was also uppercase (e.g. ID)
+			prev := rune(s[i-1])
+			if !(prev >= 'A' && prev <= 'Z') {
+				res = append(res, '_')
+			}
+		}
+		res = append(res, []rune(strings.ToLower(string(r)))[0])
+	}
+	return string(res)
+}
+
+func quote(e Engine, s string) string {
+	if e.IsMySQL() {
+		return "`" + s + "`"
+	}
+	return `\"` + s + `\"`
 }
 
 func extractBulkFor(comment string) string {
@@ -961,6 +1091,43 @@ func (w *{{$.Engine.Name}}Wrapper) {{.Name}}({{joinParamsSignature .Params}}) ({
 		return {{.Method.ReturnElem}}{}, errors.New("cannot fetch updated object: no common unique key parameter (id, hash, key) found")
 		{{end}}
 
+	{{else if .Method.IsSynthetic}}
+		{{- $tableName := getTableName .Method.ReturnElem -}}
+		{{- $placeholder := "?" -}}
+		{{- if .Engine.IsPostgres -}}
+			{{- $placeholder = "$1" -}}
+		{{- end -}}
+		{{$targetStruct := getTargetStruct .Method.ReturnElem}}
+		query := "SELECT {{range $i, $f := $targetStruct.Fields}}{{if $i}}, {{end}}{{quote $.Engine (toSnakeCase $f.Name)}}{{end}} FROM {{$tableName}} WHERE id = {{$placeholder}}"
+		row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+		var res {{.Engine.Package}}.{{.Method.ReturnElem}}
+		err := row.Scan(
+			{{range $targetField := $targetStruct.Fields}}
+				&res.{{$targetField.Name}},
+			{{end}}
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return {{.Method.ReturnElem}}{}, ErrNotFound
+			}
+			return {{.Method.ReturnElem}}{}, err
+		}
+
+		// Convert to Domain Struct
+		{{$domainStruct := getStruct .Method.ReturnElem}}
+		return {{.Method.ReturnElem}}{
+			{{range $domainField := $domainStruct.Fields}}
+				{{$sourceField := dict "Name" ""}}
+				{{range $sf := $targetStruct.Fields}}
+					{{if eq $sf.Name $domainField.Name}}
+						{{$sourceField = $sf}}
+					{{end}}
+				{{end}}
+				{{if ne $sourceField.Name ""}}
+					{{generateFieldConversion $domainField.Name $domainField.Type $sourceField.Type (printf "res.%s" $sourceField.Name)}},
+				{{end}}
+			{{end}}
+		}, nil
 	{{else}}
 
 	{{/* --- Standard Handling --- */}}
