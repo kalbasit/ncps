@@ -2,6 +2,7 @@ package nar_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"io"
 	"testing"
@@ -160,29 +161,44 @@ func TestDecompressReader(t *testing.T) {
 				return bytes.NewReader([]byte("invalid xz data"))
 			},
 			expectError: true,
-			errorMsg:    "failed to create xz reader",
+			errorMsg:    "File format not recognized",
 		},
 	}
+
+	ctx := context.Background()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			r, err := nar.DecompressReader(tt.getInput(t), tt.comp)
+			r, err := nar.DecompressReader(ctx, tt.getInput(t), tt.comp)
+
+			var got []byte
+			// If creation succeeded, the error might happen during Read or Close
+			if err == nil {
+				// We must attempt to read the data to trigger the asynchronous xz failure
+				var readErr error
+
+				got, readErr = io.ReadAll(r)
+
+				// Close the reader to wait for the process to exit and grab its exit code/stderr
+				closeErr := r.Close()
+
+				// Aggregate the error (prefer the read error, fallback to the close error)
+				if readErr != nil {
+					err = readErr
+				} else if closeErr != nil {
+					err = closeErr
+				}
+			}
+
 			if tt.expectError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorMsg)
-
-				return
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, content, got)
 			}
-
-			require.NoError(t, err)
-
-			defer r.Close()
-
-			got, err := io.ReadAll(r)
-			require.NoError(t, err)
-			assert.Equal(t, content, got)
 		})
 	}
 }

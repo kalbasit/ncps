@@ -131,6 +131,7 @@
           pkgs.sqlc
           pkgs.sqlfluff
           pkgs.watchexec
+          pkgs.xz # used by pkgs/xz.Decompress
 
           pkgs.kubernetes-helm
           pkgs.kubernetes-helmPlugins.helm-unittest
