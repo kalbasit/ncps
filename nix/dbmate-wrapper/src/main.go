@@ -10,7 +10,10 @@ import (
 	"strings"
 )
 
-var errIncalculableMigrationDir = errors.New("error calculating the migration directory")
+var (
+	errIncalculableMigrationDir = errors.New("error calculating the migration directory")
+	errDBMateBinAbsPath         = errors.New("DBMATE_BIN must be an absolute path")
+)
 
 func main() {
 	os.Exit(run())
@@ -130,11 +133,9 @@ func getDatabaseType(dbURL string) (string, error) {
 
 // execDbmate executes the real dbmate binary with the given arguments.
 func execDbmate(args []string) int {
-	// Look for the real dbmate binary
-	// Consistently named as "dbmate.real" in both dev and Docker environments
-	dbmatePath, err := exec.LookPath("dbmate.real")
+	dbmatePath, err := getDbmateBin()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: could not find dbmate.real in PATH: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: could not find dbmate binary: %v\n", err)
 
 		return 1
 	}
@@ -157,4 +158,17 @@ func execDbmate(args []string) int {
 	}
 
 	return 0
+}
+
+func getDbmateBin() (string, error) {
+	if p := os.Getenv("DBMATE_BIN"); p != "" {
+		if !filepath.IsAbs(p) {
+			return "", errDBMateBinAbsPath
+		}
+
+		return p, nil
+	}
+
+	// backward compatible with the previous version of ncps
+	return exec.LookPath("dbmate.real")
 }

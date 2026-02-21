@@ -32,10 +32,6 @@
             ${pkgs.gnused}/bin/sed -e '/^\\restrict/d' -e '/^\\unrestrict/d'
           '')
 
-          # Use real dbmate for the wrapper to call
-          (pkgs.writeShellScriptBin "dbmate.real" ''
-            exec ${pkgs.dbmate}/bin/dbmate "$@"
-          '')
           # dbmate-wrapper provides the dbmate command
           (pkgs.writeShellScriptBin "dbmate" ''
             exec ${config.packages.dbmate-wrapper}/bin/dbmate-wrapper "$@"

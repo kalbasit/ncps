@@ -50,17 +50,6 @@
                     cp -a ${pkgs.tzdata}/share/zoneinfo $out/share/
                   '')
 
-                  # Use real dbmate for the wrapper to call
-                  (pkgs.runCommand "dbmate.real"
-                    {
-                      nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
-                    }
-                    ''
-                      mkdir -p $out/bin
-                      makeWrapper ${pkgs.dbmate}/bin/dbmate $out/bin/dbmate.real
-                    ''
-                  )
-
                   # dbmate-wrapper provides the dbmate command
                   (pkgs.runCommand "dbmate"
                     {
