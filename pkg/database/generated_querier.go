@@ -132,6 +132,15 @@ type Querier interface {
 	//  DELETE FROM narinfos
 	//  WHERE id = $1
 	DeleteNarInfoByID(ctx context.Context, id int64) (int64, error)
+	//DeleteOrphanedChunks
+	//
+	//  DELETE FROM chunks
+	//  WHERE NOT EXISTS (
+	//      SELECT 1
+	//      FROM nar_file_chunks
+	//      WHERE chunk_id = chunks.id
+	//  )
+	DeleteOrphanedChunks(ctx context.Context) (int64, error)
 	//DeleteOrphanedNarFiles
 	//
 	//  DELETE FROM nar_files

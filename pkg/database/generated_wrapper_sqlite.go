@@ -305,6 +305,19 @@ func (w *sqliteWrapper) DeleteNarInfoByID(ctx context.Context, id int64) (int64,
 	return res, nil
 }
 
+func (w *sqliteWrapper) DeleteOrphanedChunks(ctx context.Context) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.DeleteOrphanedChunks(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
 func (w *sqliteWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

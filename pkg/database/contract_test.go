@@ -1867,6 +1867,76 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 	})
 
+	t.Run("DeleteOrphanedChunks", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("no orphaned chunks", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			narHash := testhelper.MustRandString(32)
+
+			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				Hash:        narHash,
+				Compression: "xz",
+				FileSize:    512,
+			})
+			require.NoError(t, err)
+
+			chunkHash := testhelper.MustRandString(32)
+
+			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				NarFileID:  nf.ID,
+				ChunkID:    chunk.ID,
+				ChunkIndex: 0,
+			})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteOrphanedChunks(context.Background())
+			require.NoError(t, err)
+			assert.Zero(t, ra)
+		})
+
+		t.Run("orphaned chunks are deleted", func(t *testing.T) {
+			t.Parallel()
+
+			db := factory(t)
+
+			chunkHash1 := testhelper.MustRandString(32)
+
+			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash1,
+				Size: 512,
+			})
+			require.NoError(t, err)
+
+			chunkHash2 := testhelper.MustRandString(32)
+
+			chunk2, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				Hash: chunkHash2,
+				Size: 1024,
+			})
+			require.NoError(t, err)
+
+			ra, err := db.DeleteOrphanedChunks(context.Background())
+			require.NoError(t, err)
+			assert.EqualValues(t, 2, ra)
+
+			_, err = db.GetChunkByID(context.Background(), chunk1.ID)
+			require.ErrorIs(t, err, database.ErrNotFound)
+
+			_, err = db.GetChunkByID(context.Background(), chunk2.ID)
+			require.ErrorIs(t, err, database.ErrNotFound)
+		})
+	})
+
 	t.Run("DeleteOrphanedNarInfos", func(t *testing.T) {
 		t.Parallel()
 
