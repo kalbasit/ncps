@@ -5645,12 +5645,14 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 //   - UpdateNarInfoCompressionAndURL updates 0 rows if the URL is already correct.
 //   - DeleteNar returns ErrNotFound (ignored) if the file is already gone.
 func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL nar.URL) {
-	originalURL := originalNarURL.String()
-	newURL := nar.URL{
+	newNarURL := nar.URL{
 		Hash:        originalNarURL.Hash,
 		Compression: nar.CompressionTypeNone,
 		Query:       originalNarURL.Query,
-	}.String()
+	}
+
+	originalURL := originalNarURL.String()
+	newURL := newNarURL.String()
 
 	if originalURL != newURL {
 		if _, err := c.db.UpdateNarInfoCompressionAndURL(ctx, database.UpdateNarInfoCompressionAndURLParams{
@@ -5664,6 +5666,13 @@ func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL na
 				Str("new_url", newURL).
 				Msg("failed to update narinfo compression/URL after CDC migration")
 		}
+	}
+
+	if err := c.checkAndFixNarInfosForNar(ctx, newNarURL); err != nil {
+		zerolog.Ctx(ctx).Warn().
+			Err(err).
+			Str("nar_url", newNarURL.String()).
+			Msg("failed to fix narinfo file_size/file_hash after CDC migration")
 	}
 
 	// Delete the original whole-file NAR from narStore.  We attempt both the

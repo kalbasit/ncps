@@ -147,7 +147,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("decompress zstd before chunking", testCDCDecompressZstdBeforeChunking(factory))
 	t.Run("pullNarInfo normalizes compression for CDC", testCDCPullNarInfoNormalizesCompression(factory))
 	t.Run("pullNarInfo sets FileSize == NarSize for CDC", testCDCPullNarInfoSetsFileSizeForCDC(factory))
-	t.Run("MigrateNarToChunks updates narinfo compression", testCDCMigrateNarToChunksUpdatesNarInfo(factory))
+	t.Run("MigrateNarToChunks updates narinfo compression, FileSize, and FileHash",
+		testCDCMigrateNarToChunksUpdatesNarInfo(factory))
 	t.Run("MigrateNarToChunks links narinfo_nar_files", testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory))
 	t.Run("MigrateNarToChunks deletes original whole-file NAR", testCDCMigrateNarToChunksDeletesOriginalFile(factory))
 	t.Run("MigrateNarToChunks compression normalization is atomic",
@@ -155,7 +156,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("MigrateNarToChunks recovers from partial chunking",
 		testCDCMigrateNarToChunksRecoversFromPartialChunking(factory))
 	t.Run("PutNarInfo normalizes compression for CDC", testCDCPutNarInfoNormalizesCompression(factory))
-	t.Run("PutNarInfo sets FileSize == NarSize for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
+	t.Run("PutNarInfo sets FileSize == 0 and FileHash == null for CDC", testCDCPutNarInfoSetsFileSizeForCDC(factory))
 	t.Run("PutNarInfo does not log context canceled after request ends", testCDCPutNarInfoNoContextCanceled(factory))
 	t.Run("PutNar does not overwrite FileSize once chunked", testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory))
 	t.Run("MigrateNarToChunks heals stale narinfo URL on second call",
@@ -667,14 +668,20 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 		require.NoError(t, err)
 
 		// Verify narinfo in DB has original compression
-		var compression, url string
+		var (
+			compression, url string
+			fileSize         sql.NullInt64
+			fileHash         sql.NullString
+		)
 
 		err = db.DB().QueryRowContext(ctx,
-			rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
-			entry.NarInfoHash).Scan(&compression, &url)
+			rebind("SELECT compression, url, file_size, file_hash FROM narinfos WHERE hash = ?"),
+			entry.NarInfoHash).Scan(&compression, &url, &fileSize, &fileHash)
 		require.NoError(t, err)
 		assert.Equal(t, "xz", compression, "narinfo should initially have xz compression")
 		assert.Contains(t, url, ".xz", "narinfo URL should initially contain .xz")
+		assert.True(t, fileSize.Valid, "file_size should not be NULL before migration")
+		assert.True(t, fileHash.Valid, "file_hash should not be NULL before migration")
 
 		// 3. Enable CDC
 		chunkStoreDir := filepath.Join(dir, "chunks-store")
@@ -690,14 +697,17 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 		require.NoError(t, err)
 
 		// 5. Verify the narinfo in DB now says Compression: none and URL without .xz
+		// as well as FileSize = 0 and FileHash = null
 		err = db.DB().QueryRowContext(ctx,
-			rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
-			entry.NarInfoHash).Scan(&compression, &url)
+			rebind("SELECT compression, url, file_size, file_hash FROM narinfos WHERE hash = ?"),
+			entry.NarInfoHash).Scan(&compression, &url, &fileSize, &fileHash)
 		require.NoError(t, err)
 		assert.Equal(t, nar.CompressionTypeNone.String(), compression,
 			"narinfo should have Compression: none after CDC migration")
 		assert.NotContains(t, url, ".xz",
 			"narinfo URL should not contain .xz after CDC migration")
+		assert.False(t, fileSize.Valid, "file_size should be NULL after migration")
+		assert.False(t, fileHash.Valid, "file_hash should be NULL after migration")
 
 		// 6. Verify narinfo_nar_files is populated after migration.
 		var narInfoNarFilesCount int
