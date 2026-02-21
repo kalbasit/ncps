@@ -15,6 +15,8 @@ Options that apply to the entire ncps process.
 | `--otel-enabled` | Enable OpenTelemetry (logs, metrics, tracing) | `OTEL_ENABLED` | `false` |
 | `--otel-grpc-url` | OpenTelemetry gRPC collector URL (omit for stdout) | `OTEL_GRPC_URL` | - |
 | `--prometheus-enabled` | Enable Prometheus metrics endpoint at /metrics | `PROMETHEUS_ENABLED` | `false` |
+| `--use-xz-binary` | Use the xz binary instead of the Go implementation | `USE_XZ_BINARY` | `true` |
+| `--xz-binary-path` | Absolute Path to the xz binary | `XZ_BINARY_PATH` | System `xz` command |
 
 **Example:**
 
