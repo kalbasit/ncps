@@ -131,9 +131,8 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			},
 
 			&cli.StringFlag{
-				Name: "cache-lock-backend",
-				Usage: "Lock backend to use: 'local' (single instance), 'redis' (distributed), " +
-					"or 'postgres' (distributed, requires PostgreSQL)",
+				Name:    "cache-lock-backend",
+				Usage:   "Lock backend to use: 'local' (single instance) or 'redis' (distributed)",
 				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
 				Value:   "local",
 			},
@@ -141,12 +140,6 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				Name:    "cache-lock-redis-key-prefix",
 				Usage:   "Prefix for all Redis lock keys (only used when Redis is configured)",
 				Sources: flagSources("cache.lock.redis.key-prefix", "CACHE_LOCK_REDIS_KEY_PREFIX"),
-				Value:   "ncps:lock:",
-			},
-			&cli.StringFlag{
-				Name:    "cache-lock-postgres-key-prefix",
-				Usage:   "Prefix for all PostgreSQL advisory lock keys (only used when PostgreSQL is configured as lock backend)",
-				Sources: flagSources("cache.lock.postgres.key-prefix", "CACHE_LOCK_POSTGRES_KEY_PREFIX"),
 				Value:   "ncps:lock:",
 			},
 			&cli.DurationFlag{
@@ -243,7 +236,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			}
 
 			// 2. Setup Lockers
-			locker, rwLocker, err := getLockers(ctx, cmd, db)
+			locker, rwLocker, err := getLockers(ctx, cmd)
 			if err != nil {
 				return fmt.Errorf("error creating lockers: %w", err)
 			}

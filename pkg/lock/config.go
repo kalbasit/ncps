@@ -6,7 +6,7 @@ import "time"
 const DefaultJitterFactor = 0.5
 
 // RetryConfig holds retry configuration for lock acquisition.
-// This is used by both Redis and PostgreSQL distributed lock implementations.
+// This is used by the Redis distributed lock implementation.
 type RetryConfig struct {
 	// MaxAttempts is the maximum number of attempts to acquire a lock.
 	MaxAttempts int

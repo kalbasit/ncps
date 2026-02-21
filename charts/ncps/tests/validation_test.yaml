@@ -15,7 +15,7 @@ tests:
       config.redis.enabled: false
     asserts:
       - failedTemplate:
-          errorMessage: "High availability mode (replicaCount > 1) requires a distributed lock backend: 'redis' or 'postgres'."
+          errorMessage: "High availability mode (replicaCount > 1) requires a distributed lock backend: 'redis'."
 
   - it: should pass HA mode with Redis locking
     set:
@@ -38,46 +38,6 @@ tests:
     asserts:
       - isKind:
           of: ConfigMap
-
-  - it: should pass HA mode with PostgreSQL locking
-    set:
-      config.hostname: test.example.com
-      replicaCount: 2
-      mode: deployment
-      config.database.type: postgresql
-      config.database.postgresql.host: postgres
-      config.database.postgresql.password: test123
-      config.storage.type: s3
-      config.storage.s3.bucket: my-bucket
-      config.storage.s3.endpoint: https://s3.amazonaws.com
-      config.storage.s3.accessKeyId: test-key
-      config.storage.s3.secretAccessKey: test-secret
-      config.cdc.enabled: true
-      config.lock.backend: postgres
-      migration.mode: job
-    asserts:
-      - isKind:
-          of: ConfigMap
-
-  - it: should fail PostgreSQL lock with non-PostgreSQL database
-    set:
-      config.hostname: test.example.com
-      replicaCount: 2
-      mode: deployment
-      config.database.type: mysql
-      config.database.mysql.host: mysql
-      config.database.mysql.password: test123
-      config.storage.type: s3
-      config.storage.s3.bucket: my-bucket
-      config.storage.s3.endpoint: https://s3.amazonaws.com
-      config.storage.s3.accessKeyId: test-key
-      config.storage.s3.secretAccessKey: test-secret
-      config.cdc.enabled: true
-      config.lock.backend: postgres
-      migration.mode: job
-    asserts:
-      - failedTemplate:
-          errorMessage: "PostgreSQL advisory locks (config.lock.backend='postgres') require the database type to be 'postgresql' (config.database.type)"
 
   - it: should fail HA mode with SQLite database
     set:

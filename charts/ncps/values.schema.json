@@ -394,20 +394,11 @@
               "type": "string",
               "enum": [
                 "local",
-                "redis",
-                "postgres"
+                "redis"
               ],
-              "description": "Lock backend to use (local, redis, or postgres)"
+              "description": "Lock backend to use (local or redis)"
             },
             "redis": {
-              "type": "object",
-              "properties": {
-                "keyPrefix": {
-                  "type": "string"
-                }
-              }
-            },
-            "postgres": {
               "type": "object",
               "properties": {
                 "keyPrefix": {

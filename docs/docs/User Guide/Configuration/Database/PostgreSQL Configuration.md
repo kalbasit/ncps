@@ -108,11 +108,6 @@ cache:
       max-idle-conns: 10
 ```
 
-> [!WARNING]
-> **Advisory Locks and Connection Pools:** If you use PostgreSQL as your distributed lock backend (`--cache-lock-backend=postgres`), each active lock consumes a dedicated connection from the pool. A single request can consume up to 3 connections simultaneously.
->
-> To avoid deadlocks under concurrent load, ensure `--cache-database-pool-max-open-conns` is significantly higher than your expected concurrency (at least 50-100 is recommended).
-
 ### Initialization
 
 ```
