@@ -24,8 +24,7 @@
 
     trilium = {
       inputs.nixpkgs.follows = "nixpkgs";
-      # url = "github:TriliumNext/Trilium";
-      url = "github:kalbasit/Trilium/ncps-branch";
+      url = "github:TriliumNext/Trilium";
     };
   };
 
