@@ -114,12 +114,13 @@
             mkdir -p $out/share/ncps
             cp -r db $out/share/ncps/db
 
-            # ncps makes use of xz for decompression as it's 15-20x faster than
+            # ncps makes use of xz for decompression as it's 3-5x faster than
             # using the native Go implementation of xz. By wrapping ncps, and
-            # setting the XZ_BIN environment variable, we ensure that ncps can
-            # always find the xz binary. This environment variable is read by
-            # pkg/xz.
-            wrapProgram $out/bin/ncps --set XZ_BIN ${lib.getExe' pkgs.xz "xz"}
+            # setting the XZ_BINARY_PATH environment variable, we ensure that
+            # ncps can always find the xz binary. This environment variable is
+            # read by a flag in pkg/ncps and can be overriden by using calling
+            # ncps with the --xz-binary-path flag.
+            wrapProgram $out/bin/ncps --set XZ_BINARY_PATH ${lib.getExe' pkgs.xz "xz"}
           '';
 
           meta = {

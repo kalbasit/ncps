@@ -2,10 +2,12 @@ package ncps
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -20,12 +22,22 @@ import (
 	altsrc "github.com/urfave/cli-altsrc/v3"
 
 	"github.com/kalbasit/ncps/pkg/otelzerolog"
+	"github.com/kalbasit/ncps/pkg/xz"
 )
 
-// Version defines the version of the binary, and is meant to be set with ldflags at build time.
-//
-//nolint:gochecknoglobals
-var Version = "dev"
+var (
+	// ErrXZBinAbsPath is returned when the xz binary path is not an absolute
+	// path.
+	ErrXZBinAbsPath = errors.New("the path to xz binary must be an absolute path")
+
+	// ErrXZBinEmptyPath is returned when the xz binary path is empty.
+	ErrXZBinEmptyPath = errors.New("--xz-binary-path cannot be empty")
+
+	// Version defines the version of the binary, and is meant to be set with ldflags at build time.
+	//
+	//nolint:gochecknoglobals
+	Version = "dev"
+)
 
 type flagSourcesFn func(configFileKey, envVar string) cli.ValueSourceChain
 
@@ -93,6 +105,27 @@ func New() (*cli.Command, error) {
 				return ctx, err
 			}
 
+			if cmd.Bool("use-xz-binary") {
+				p := cmd.String("xz-binary-path")
+				if p == "" {
+					// If use-xz-binary is true, and path is empty, it means xz was not found in PATH.
+					return ctx, fmt.Errorf("%w: xz binary not found in PATH or --xz-binary-path not set", ErrXZBinEmptyPath)
+				}
+
+				zerolog.Ctx(ctx).
+					Info().
+					Str("xz-binary-path", p).
+					Msg("Using xz binary for xz decompression")
+
+				xz.UseXZBinary(p)
+			} else {
+				zerolog.Ctx(ctx).
+					Info().
+					Msg("Using internal Go-native library for xz decompression")
+
+				xz.UseInternal()
+			}
+
 			return ctx, nil
 		},
 		Flags: []cli.Flag{
@@ -158,6 +191,32 @@ func New() (*cli.Command, error) {
 				Name:    "prometheus-enabled",
 				Usage:   "Enable Prometheus metrics endpoint at /metrics",
 				Sources: flagSources("prometheus.enabled", "PROMETHEUS_ENABLED"),
+			},
+			&cli.StringFlag{
+				Name:    "xz-binary-path",
+				Usage:   "Absolute Path to the xz binary",
+				Sources: flagSources("xz-binary-path", "XZ_BINARY_PATH"),
+				Value: func() string {
+					p, err := exec.LookPath("xz")
+					if err != nil {
+						return ""
+					}
+
+					return p
+				}(),
+				Validator: func(p string) error {
+					if p != "" && !filepath.IsAbs(p) {
+						return ErrXZBinAbsPath
+					}
+
+					return nil
+				},
+			},
+			&cli.BoolFlag{
+				Name:    "use-xz-binary",
+				Usage:   "Use the xz binary instead of the Go implementation",
+				Sources: flagSources("use-xz-binary", "USE_XZ_BINARY"),
+				Value:   true,
 			},
 		},
 		Commands: []*cli.Command{

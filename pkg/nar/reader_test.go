@@ -161,7 +161,7 @@ func TestDecompressReader(t *testing.T) {
 				return bytes.NewReader([]byte("invalid xz data"))
 			},
 			expectError: true,
-			errorMsg:    "File format not recognized",
+			errorMsg:    "invalid header magic bytes",
 		},
 	}
 
