@@ -112,11 +112,6 @@ type Querier interface {
 	//  DELETE FROM nar_files
 	//  WHERE hash = $1 AND compression = $2 AND query = $3
 	DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error)
-	//DeleteNarFileByID
-	//
-	//  DELETE FROM nar_files
-	//  WHERE id = $1
-	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
 	//DeleteNarFileChunksByNarFileID
 	//
 	//  DELETE FROM nar_file_chunks
@@ -149,14 +144,6 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarFiles(ctx context.Context) (int64, error)
-	//DeleteOrphanedNarInfos
-	//
-	//  DELETE FROM narinfos
-	//  WHERE id NOT IN (
-	//      SELECT DISTINCT narinfo_id
-	//      FROM narinfo_nar_files
-	//  )
-	DeleteOrphanedNarInfos(ctx context.Context) (int64, error)
 	//GetChunkByHash
 	//
 	//  SELECT id, hash, size, compressed_size, created_at, updated_at
@@ -185,14 +172,6 @@ type Querier interface {
 	//  WHERE nfc.nar_file_id = $1
 	//  ORDER BY nfc.chunk_index
 	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error)
-	//GetCompressedNarInfos
-	//
-	//  SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
-	//  FROM narinfos
-	//  WHERE compression NOT IN ('', 'none')
-	//  ORDER BY id
-	//  LIMIT $1 OFFSET $2
-	GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error)
 	// GetConfigByID (Synthetic)
 	GetConfigByID(ctx context.Context, id int64) (Config, error)
 	//GetConfigByKey
@@ -201,19 +180,6 @@ type Querier interface {
 	//  FROM config
 	//  WHERE key = $1
 	GetConfigByKey(ctx context.Context, key string) (Config, error)
-	// NOTE: This query uses a correlated subquery which is not optimal for performance.
-	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
-	// does not properly support filtering on window function results in subqueries.
-	//
-	//  SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1.query, n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
-	//  FROM nar_files n1
-	//  WHERE (
-	//      SELECT SUM(n2.file_size)
-	//      FROM nar_files n2
-	//      WHERE n2.last_accessed_at < n1.last_accessed_at
-	//         OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
-	//  ) <= $1
-	GetLeastUsedNarFiles(ctx context.Context, fileSize uint64) ([]NarFile, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
 	// does not properly support filtering on window function results in subqueries.
@@ -239,14 +205,6 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url IS NOT NULL
 	GetMigratedNarInfoHashes(ctx context.Context) ([]string, error)
-	// Get migrated narinfo hashes with pagination support.
-	//
-	//  SELECT hash
-	//  FROM narinfos
-	//  WHERE url IS NOT NULL
-	//  ORDER BY hash
-	//  LIMIT $1 OFFSET $2
-	GetMigratedNarInfoHashesPaginated(ctx context.Context, arg GetMigratedNarInfoHashesPaginatedParams) ([]string, error)
 	//GetNarFileByHashAndCompressionAndQuery
 	//
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
@@ -300,29 +258,12 @@ type Querier interface {
 	//  WHERE url = $1
 	//  LIMIT 1
 	GetNarInfoHashByNarURL(ctx context.Context, url sql.NullString) (string, error)
-	//GetNarInfoHashesByNarFileID
-	//
-	//  SELECT ni.hash
-	//  FROM narinfos ni
-	//  INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-	//  WHERE nnf.nar_file_id = $1
-	GetNarInfoHashesByNarFileID(ctx context.Context, narFileID int64) ([]string, error)
 	//GetNarInfoHashesByURL
 	//
 	//  SELECT hash
 	//  FROM narinfos
 	//  WHERE url = $1
 	GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error)
-	// Get all narinfo hashes that have a URL (migrated) but whose NAR is not yet chunked.
-	//
-	//  SELECT ni.hash, ni.url
-	//  FROM narinfos ni
-	//  LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-	//  LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
-	//  WHERE ni.url IS NOT NULL
-	//    AND (nf.id IS NULL OR nf.total_chunks = 0)
-	//  ORDER BY ni.hash
-	GetNarInfoHashesToChunk(ctx context.Context) ([]GetNarInfoHashesToChunkRow, error)
 	//GetNarInfoReferences
 	//
 	//  SELECT reference
@@ -349,15 +290,6 @@ type Querier interface {
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size
 	//  FROM nar_files
 	GetNarTotalSize(ctx context.Context) (int64, error)
-	//GetOldCompressedNarFiles
-	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-	//  FROM nar_files
-	//  WHERE compression NOT IN ('', 'none')
-	//    AND created_at < $1
-	//  ORDER BY id
-	//  LIMIT $2 OFFSET $3
-	GetOldCompressedNarFiles(ctx context.Context, arg GetOldCompressedNarFilesParams) ([]NarFile, error)
 	//GetOrphanedChunks
 	//
 	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
@@ -372,25 +304,12 @@ type Querier interface {
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
 	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
-	//GetTotalChunkSize
-	//
-	//  SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) AS total_size
-	//  FROM chunks
-	GetTotalChunkSize(ctx context.Context) (int64, error)
 	// Get all narinfo hashes that have no URL (unmigrated).
 	//
 	//  SELECT hash
 	//  FROM narinfos
 	//  WHERE url IS NULL
 	GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error)
-	// Check if a narinfo hash has been migrated (has a URL).
-	//
-	//  SELECT EXISTS(
-	//      SELECT 1
-	//      FROM narinfos
-	//      WHERE hash = $1 AND url IS NOT NULL
-	//  ) AS is_migrated
-	IsNarInfoMigrated(ctx context.Context, hash string) (bool, error)
 	//LinkNarFileToChunk
 	//
 	//  INSERT INTO nar_file_chunks (

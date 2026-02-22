@@ -14,7 +14,6 @@ FROM narinfos
 WHERE url = ?
 LIMIT 1;
 
-
 -- name: GetNarFileByHashAndCompressionAndQuery :one
 SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
 FROM nar_files
@@ -25,12 +24,6 @@ SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf."query", nf.created_at, 
 FROM nar_files nf
 INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 WHERE nnf.narinfo_id = ?;
-
--- name: GetNarInfoHashesByNarFileID :many
-SELECT ni.hash
-FROM narinfos ni
-INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-WHERE nnf.nar_file_id = ?;
 
 -- name: GetNarInfoURLByNarFileHash :one
 SELECT ni.url
@@ -204,10 +197,6 @@ WHERE hash = ? AND compression = ? AND "query" = ?;
 DELETE FROM narinfos
 WHERE id = ?;
 
--- name: DeleteNarFileByID :execrows
-DELETE FROM nar_files
-WHERE id = ?;
-
 -- name: UpdateNarFileFileSize :exec
 UPDATE nar_files
 SET file_size = ?, updated_at = CURRENT_TIMESTAMP
@@ -217,13 +206,6 @@ WHERE id = ?;
 DELETE FROM nar_files
 WHERE id NOT IN (
     SELECT DISTINCT nar_file_id
-    FROM narinfo_nar_files
-);
-
--- name: DeleteOrphanedNarInfos :execrows
-DELETE FROM narinfos
-WHERE id NOT IN (
-    SELECT DISTINCT narinfo_id
     FROM narinfo_nar_files
 );
 
@@ -258,19 +240,6 @@ WHERE (
     )
 ) <= ?;
 
--- name: GetLeastUsedNarFiles :many
--- NOTE: This query uses a correlated subquery which is not optimal for performance.
--- The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
--- does not properly support filtering on window function results in subqueries.
-SELECT n1.id, n1.hash, n1.compression, n1.file_size, n1."query", n1.created_at, n1.updated_at, n1.last_accessed_at, n1.total_chunks, n1.chunking_started_at
-FROM nar_files n1
-WHERE (
-    SELECT SUM(n2.file_size)
-    FROM nar_files n2
-    WHERE n2.last_accessed_at < n1.last_accessed_at
-        OR (n2.last_accessed_at = n1.last_accessed_at AND n2.id <= n1.id)
-) <= ?;
-
 -- name: GetOrphanedNarFiles :many
 -- Find files that have no relationship to any narinfo
 SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf."query", nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
@@ -289,22 +258,6 @@ WHERE url IS NULL;
 SELECT hash
 FROM narinfos
 WHERE url IS NOT NULL;
-
--- name: IsNarInfoMigrated :one
--- Check if a narinfo hash has been migrated (has a URL).
-SELECT EXISTS(
-    SELECT 1
-    FROM narinfos
-    WHERE hash = ? AND url IS NOT NULL
-) AS is_migrated;
-
--- name: GetMigratedNarInfoHashesPaginated :many
--- Get migrated narinfo hashes with pagination support.
-SELECT hash
-FROM narinfos
-WHERE url IS NOT NULL
-ORDER BY hash
-LIMIT ? OFFSET ?;
 
 -- name: GetChunkByHash :one
 SELECT *
@@ -345,12 +298,6 @@ INSERT INTO nar_file_chunks (
 )
 ON CONFLICT (nar_file_id, chunk_index) DO NOTHING;
 
-
-
--- name: GetTotalChunkSize :one
-SELECT CAST(COALESCE(SUM(size), 0) AS INTEGER) AS total_size
-FROM chunks;
-
 -- name: GetChunkCount :one
 SELECT CAST(COUNT(*) AS INTEGER) AS count
 FROM chunks;
@@ -388,16 +335,6 @@ UPDATE nar_files
 SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
 WHERE id = ?;
 
--- name: GetNarInfoHashesToChunk :many
--- Get all narinfo hashes that have a URL (migrated) but whose NAR is not yet chunked.
-SELECT ni.hash, ni.url
-FROM narinfos ni
-LEFT JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
-LEFT JOIN nar_files nf ON nnf.nar_file_id = nf.id
-WHERE ni.url IS NOT NULL
-  AND (nf.id IS NULL OR nf.total_chunks = 0)
-ORDER BY ni.hash;
-
 -- name: GetNarFilesToChunk :many
 -- Get all NAR files that are not yet chunked.
 SELECT id, hash, compression, "query", file_size
@@ -410,21 +347,6 @@ ORDER BY id;
 SELECT COUNT(*)
 FROM nar_files
 WHERE total_chunks = 0;
-
--- name: GetCompressedNarInfos :many
-SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
-FROM narinfos
-WHERE compression NOT IN ('', 'none')
-ORDER BY id
-LIMIT ? OFFSET ?;
-
--- name: GetOldCompressedNarFiles :many
-SELECT id, hash, compression, file_size, "query", created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-FROM nar_files
-WHERE compression NOT IN ('', 'none')
-  AND created_at < ?
-ORDER BY id
-LIMIT ? OFFSET ?;
 
 -- name: UpdateNarInfoCompressionAndURL :execrows
 -- Update narinfo compression and URL after CDC migration.

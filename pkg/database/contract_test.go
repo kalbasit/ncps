@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -936,58 +935,6 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		assert.EqualValues(t, expectedSize, size)
 	})
 
-	t.Run("GetLeastAccessedNars", func(t *testing.T) {
-		t.Parallel()
-
-		db := factory(t)
-
-		// NOTE: For this test, any nar that's explicitly testing the zstd
-		// transparent compression support will not be included because its size will
-		// not be known and so the test will be more complex.
-		var allEntries []testdata.Entry
-
-		for _, narEntry := range testdata.Entries {
-			expectedCompression := fmt.Sprintf("Compression: %s", narEntry.NarCompression)
-			if strings.Contains(narEntry.NarInfoText, expectedCompression) {
-				allEntries = append(allEntries, narEntry)
-			}
-		}
-
-		for _, narEntry := range allEntries {
-			_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
-				Hash:        narEntry.NarHash,
-				Compression: nar.CompressionTypeXz.String(),
-				FileSize:    uint64(len(narEntry.NarText)),
-				Query:       "",
-			})
-			require.NoError(t, err)
-		}
-
-		time.Sleep(time.Second)
-
-		for _, narEntry := range allEntries[:len(allEntries)-1] {
-			_, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
-				Hash:        narEntry.NarHash,
-				Compression: nar.CompressionTypeXz.String(),
-				Query:       "",
-			})
-			require.NoError(t, err)
-		}
-
-		lastEntry := allEntries[len(allEntries)-1]
-
-		// Ask for nars up to the size of the last entry (the least-accessed one)
-		// This should return only the last entry since it's the least accessed
-		sizeParam := uint64(len(lastEntry.NarText))
-
-		nms, err := db.GetLeastUsedNarFiles(context.Background(), sizeParam)
-		require.NoError(t, err)
-
-		if assert.Len(t, nms, 1) {
-			assert.Equal(t, lastEntry.NarHash, nms[0].Hash)
-		}
-	})
-
 	t.Run("SetConfig", func(t *testing.T) {
 		t.Parallel()
 
@@ -1664,73 +1611,6 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 	})
 
-	t.Run("GetNarInfoHashesByNarFileID", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("no narinfos linked", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			hash := testhelper.MustRandString(32)
-
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
-				Hash:        hash,
-				Compression: "xz",
-				FileSize:    123,
-			})
-			require.NoError(t, err)
-
-			hashes, err := db.GetNarInfoHashesByNarFileID(context.Background(), nf.ID)
-			require.NoError(t, err)
-			assert.Empty(t, hashes)
-		})
-
-		t.Run("multiple narinfos linked to one nar file", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			hash1 := testhelper.MustRandString(32)
-
-			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
-			require.NoError(t, err)
-
-			hash2 := testhelper.MustRandString(32)
-
-			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
-			require.NoError(t, err)
-
-			hash3 := testhelper.MustRandString(32)
-
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
-				Hash:        hash3,
-				Compression: "xz",
-				FileSize:    123,
-			})
-			require.NoError(t, err)
-
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
-				NarInfoID: ni1.ID,
-				NarFileID: nf.ID,
-			})
-			require.NoError(t, err)
-
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
-				NarInfoID: ni2.ID,
-				NarFileID: nf.ID,
-			})
-			require.NoError(t, err)
-
-			hashes, err := db.GetNarInfoHashesByNarFileID(context.Background(), nf.ID)
-			require.NoError(t, err)
-
-			assert.Len(t, hashes, 2)
-			assert.Contains(t, hashes, hash1)
-			assert.Contains(t, hashes, hash2)
-		})
-	})
-
 	t.Run("DeleteNarInfoByID", func(t *testing.T) {
 		t.Parallel()
 
@@ -1759,42 +1639,6 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			assert.EqualValues(t, 1, ra)
 
 			_, err = db.GetNarInfoByID(context.Background(), ni.ID)
-			assert.ErrorIs(t, err, database.ErrNotFound)
-		})
-	})
-
-	t.Run("DeleteNarFileByID", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("nar file not existing", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			ra, err := db.DeleteNarFileByID(context.Background(), 999999)
-			require.NoError(t, err)
-			assert.Zero(t, ra)
-		})
-
-		t.Run("nar file existing", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			hash := testhelper.MustRandString(32)
-
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
-				Hash:        hash,
-				Compression: "xz",
-				FileSize:    123,
-			})
-			require.NoError(t, err)
-
-			ra, err := db.DeleteNarFileByID(context.Background(), nf.ID)
-			require.NoError(t, err)
-			assert.EqualValues(t, 1, ra)
-
-			_, err = db.GetNarFileByID(context.Background(), nf.ID)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 	})
@@ -1933,66 +1777,6 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.ErrorIs(t, err, database.ErrNotFound)
 
 			_, err = db.GetChunkByID(context.Background(), chunk2.ID)
-			require.ErrorIs(t, err, database.ErrNotFound)
-		})
-	})
-
-	t.Run("DeleteOrphanedNarInfos", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("no orphaned narinfos", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			hash1 := testhelper.MustRandString(32)
-
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
-			require.NoError(t, err)
-
-			hash2 := testhelper.MustRandString(32)
-
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
-				Hash:        hash2,
-				Compression: "xz",
-				FileSize:    123,
-			})
-			require.NoError(t, err)
-
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
-				NarInfoID: ni.ID,
-				NarFileID: nf.ID,
-			})
-			require.NoError(t, err)
-
-			ra, err := db.DeleteOrphanedNarInfos(context.Background())
-			require.NoError(t, err)
-			assert.Zero(t, ra)
-		})
-
-		t.Run("orphaned narinfos are deleted", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			hash1 := testhelper.MustRandString(32)
-
-			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
-			require.NoError(t, err)
-
-			hash2 := testhelper.MustRandString(32)
-
-			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
-			require.NoError(t, err)
-
-			ra, err := db.DeleteOrphanedNarInfos(context.Background())
-			require.NoError(t, err)
-			assert.EqualValues(t, 2, ra)
-
-			_, err = db.GetNarInfoByID(context.Background(), ni1.ID)
-			require.ErrorIs(t, err, database.ErrNotFound)
-
-			_, err = db.GetNarInfoByID(context.Background(), ni2.ID)
 			require.ErrorIs(t, err, database.ErrNotFound)
 		})
 	})
@@ -2254,97 +2038,6 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		assert.NotContains(t, migrated, hash1)
 		assert.Contains(t, migrated, hash2)
-	})
-
-	t.Run("IsNarInfoMigrated", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("unmigrated narinfo", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			hash := testhelper.MustRandString(32)
-
-			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
-			require.NoError(t, err)
-
-			migrated, err := db.IsNarInfoMigrated(context.Background(), hash)
-			require.NoError(t, err)
-
-			assert.False(t, migrated)
-		})
-
-		t.Run("migrated narinfo", func(t *testing.T) {
-			t.Parallel()
-
-			db := factory(t)
-
-			hash := testhelper.MustRandString(32)
-
-			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
-				Hash: hash,
-				URL:  sql.NullString{String: "nar/test.nar.xz", Valid: true},
-			})
-			require.NoError(t, err)
-
-			migrated, err := db.IsNarInfoMigrated(context.Background(), hash)
-			require.NoError(t, err)
-
-			assert.True(t, migrated)
-		})
-	})
-
-	t.Run("GetMigratedNarInfoHashesPaginated", func(t *testing.T) {
-		t.Parallel()
-
-		db := factory(t)
-
-		// Create 5 migrated narinfos
-		for i := range 5 {
-			hash := testhelper.MustRandString(32)
-
-			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
-				Hash: hash,
-				URL:  sql.NullString{String: fmt.Sprintf("nar/test%d.nar.xz", i), Valid: true},
-			})
-			require.NoError(t, err)
-		}
-
-		// Create 2 unmigrated narinfos (should not appear in results)
-		for range 2 {
-			hash := testhelper.MustRandString(32)
-
-			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
-			require.NoError(t, err)
-		}
-
-		// Get first page (limit 2, offset 0)
-		page1, err := db.GetMigratedNarInfoHashesPaginated(context.Background(),
-			database.GetMigratedNarInfoHashesPaginatedParams{
-				Limit:  2,
-				Offset: 0,
-			})
-		require.NoError(t, err)
-		assert.Len(t, page1, 2)
-
-		// Get second page (limit 2, offset 2)
-		page2, err := db.GetMigratedNarInfoHashesPaginated(context.Background(),
-			database.GetMigratedNarInfoHashesPaginatedParams{
-				Limit:  2,
-				Offset: 2,
-			})
-		require.NoError(t, err)
-		assert.Len(t, page2, 2)
-
-		// Get third page (limit 2, offset 4) - should have 1 item
-		page3, err := db.GetMigratedNarInfoHashesPaginated(context.Background(),
-			database.GetMigratedNarInfoHashesPaginatedParams{
-				Limit:  2,
-				Offset: 4,
-			})
-		require.NoError(t, err)
-		assert.Len(t, page3, 1)
 	})
 
 	t.Run("CreateChunk", func(t *testing.T) {
@@ -3038,36 +2731,6 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 	})
 
-	t.Run("GetTotalChunkSize", func(t *testing.T) {
-		t.Parallel()
-
-		db := factory(t)
-
-		initialSize, err := db.GetTotalChunkSize(context.Background())
-		require.NoError(t, err)
-
-		var totalAdded int64
-
-		for i := range 3 {
-			chunkHash := testhelper.MustRandString(32)
-
-			//nolint:gosec // G115: Safe conversion, i is small and controlled
-			size := uint32(512 * (i + 1))
-			totalAdded += int64(size)
-
-			_, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
-				Hash: chunkHash,
-				Size: size,
-			})
-			require.NoError(t, err)
-		}
-
-		totalSize, err := db.GetTotalChunkSize(context.Background())
-		require.NoError(t, err)
-
-		assert.Equal(t, initialSize+totalAdded, totalSize)
-	})
-
 	t.Run("GetChunkCount", func(t *testing.T) {
 		t.Parallel()
 
@@ -3222,72 +2885,6 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		assert.EqualValues(t, 3, nf2.TotalChunks)
 	})
 
-	t.Run("GetNarInfoHashesToChunk", func(t *testing.T) {
-		t.Parallel()
-
-		db := factory(t)
-
-		// Create a migrated narinfo without chunks
-		hash1, err := testhelper.RandString(32)
-		require.NoError(t, err)
-
-		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
-			Hash: hash1,
-			URL:  sql.NullString{String: "nar/test1.nar.xz", Valid: true},
-		})
-		require.NoError(t, err)
-
-		// Create a migrated narinfo with chunks (total_chunks > 0)
-		hash2, err := testhelper.RandString(32)
-		require.NoError(t, err)
-
-		ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
-			Hash: hash2,
-			URL:  sql.NullString{String: "nar/test2.nar.xz", Valid: true},
-		})
-		require.NoError(t, err)
-
-		nfHash2, err := testhelper.RandString(32)
-		require.NoError(t, err)
-
-		nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
-			Hash:        nfHash2,
-			Compression: "xz",
-			FileSize:    1024,
-		})
-		require.NoError(t, err)
-
-		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
-			NarInfoID: ni2.ID,
-			NarFileID: nf2.ID,
-		})
-		require.NoError(t, err)
-
-		err = db.UpdateNarFileTotalChunks(context.Background(), database.UpdateNarFileTotalChunksParams{
-			TotalChunks: 2,
-			ID:          nf2.ID,
-		})
-		require.NoError(t, err)
-
-		// Create an unmigrated narinfo (should not appear)
-		hash3, err := testhelper.RandString(32)
-		require.NoError(t, err)
-
-		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash3})
-		require.NoError(t, err)
-
-		// Get narinfos to chunk - should only return ni1
-		toChunk, err := db.GetNarInfoHashesToChunk(context.Background())
-		require.NoError(t, err)
-
-		assert.Len(t, toChunk, 1)
-
-		if len(toChunk) > 0 {
-			assert.Equal(t, hash1, toChunk[0].Hash)
-			assert.True(t, toChunk[0].URL.Valid)
-		}
-	})
-
 	t.Run("GetNarFilesToChunk", func(t *testing.T) {
 		t.Parallel()
 
@@ -3354,130 +2951,5 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		require.NoError(t, err)
 		assert.Len(t, toChunk, 1)
 		assert.Equal(t, hash2, toChunk[0].Hash)
-	})
-
-	t.Run("GetCompressedNarInfos", func(t *testing.T) {
-		t.Parallel()
-
-		db := factory(t)
-		ctx := context.Background()
-
-		// 1. Create compressed narinfos
-		hash1 := "hash1"
-		_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
-			Hash:        hash1,
-			Compression: sql.NullString{String: "zstd", Valid: true},
-		})
-		require.NoError(t, err)
-
-		hash2 := "hash2"
-		_, err = db.CreateNarInfo(ctx, database.CreateNarInfoParams{
-			Hash:        hash2,
-			Compression: sql.NullString{String: "xz", Valid: true},
-		})
-		require.NoError(t, err)
-
-		// 2. Create uncompressed narinfos
-		hash3 := "hash3"
-		_, err = db.CreateNarInfo(ctx, database.CreateNarInfoParams{
-			Hash:        hash3,
-			Compression: sql.NullString{String: "none", Valid: true},
-		})
-		require.NoError(t, err)
-
-		hash4 := "hash4"
-		_, err = db.CreateNarInfo(ctx, database.CreateNarInfoParams{
-			Hash:        hash4,
-			Compression: sql.NullString{String: "", Valid: true},
-		})
-		require.NoError(t, err)
-
-		// 3. Get compressed narinfos
-		res, err := db.GetCompressedNarInfos(ctx, database.GetCompressedNarInfosParams{
-			Limit:  10,
-			Offset: 0,
-		})
-		require.NoError(t, err)
-
-		hashes := make([]string, 0, len(res))
-		for _, ni := range res {
-			hashes = append(hashes, ni.Hash)
-		}
-
-		assert.Contains(t, hashes, hash1)
-		assert.Contains(t, hashes, hash2)
-		assert.NotContains(t, hashes, hash3)
-		assert.NotContains(t, hashes, hash4)
-	})
-
-	t.Run("GetOldCompressedNarFiles", func(t *testing.T) {
-		t.Parallel()
-
-		db := factory(t)
-		ctx := context.Background()
-
-		// 1. Create compressed nar-files
-		hash1 := "hash1"
-		_, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        hash1,
-			Compression: "zstd",
-			FileSize:    100,
-		})
-		require.NoError(t, err)
-
-		hash2 := "hash2"
-		_, err = db.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        hash2,
-			Compression: "xz",
-			FileSize:    200,
-		})
-		require.NoError(t, err)
-
-		// 2. Create uncompressed nar-files
-		hash3 := "hash3"
-		_, err = db.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        hash3,
-			Compression: "none",
-			FileSize:    300,
-		})
-		require.NoError(t, err)
-
-		hash4 := "hash4"
-		_, err = db.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        hash4,
-			Compression: "",
-			FileSize:    400,
-		})
-		require.NoError(t, err)
-
-		// Give it a tiny bit of time to make sure created_at is captured
-		time.Sleep(10 * time.Millisecond)
-
-		// 3. Get compressed nar-files
-		res, err := db.GetOldCompressedNarFiles(ctx, database.GetOldCompressedNarFilesParams{
-			CreatedAt: time.Now().UTC().Add(time.Hour),
-			Limit:     10,
-			Offset:    0,
-		})
-		require.NoError(t, err)
-
-		hashes := make([]string, 0, len(res))
-		for _, nf := range res {
-			hashes = append(hashes, nf.Hash)
-		}
-
-		assert.Contains(t, hashes, hash1)
-		assert.Contains(t, hashes, hash2)
-		assert.NotContains(t, hashes, hash3)
-		assert.NotContains(t, hashes, hash4)
-
-		// 4. Test with timestamp before insertion
-		res, err = db.GetOldCompressedNarFiles(ctx, database.GetOldCompressedNarFilesParams{
-			CreatedAt: time.Now().Add(-1 * time.Hour),
-			Limit:     10,
-			Offset:    0,
-		})
-		require.NoError(t, err)
-		assert.Empty(t, res)
 	})
 }
