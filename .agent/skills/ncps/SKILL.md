@@ -33,13 +33,15 @@ The project uses Nix to manage dependencies. Ensure you have Nix installed.
 
     This command starts a process manager (process-compose) that runs all necessary services in the foreground. Keep this running in a separate terminal.
 
-2. **Enter Development Shell**: To get all necessary tools (go, dbmate, etc.) in your PATH:
+2. **Run DevShell Tools**: When using Claude Code, run any devShell tool (go, golangci-lint, sqlc, dbmate, sqlfluff) with `nix develop --command`:
 
     ```bash
-    nix develop
+    nix develop --command go test ./...
+    nix develop --command golangci-lint run --fix
+    nix develop --command sqlc generate
     ```
 
-    Or use `direnv allow` if you have `direnv` installed.
+    This works consistently in both the main working tree and in worktrees. For interactive use, you can also use `nix develop` or `direnv allow` if you have `direnv` installed.
 
 3. **Enable Service Connectivity**: To export the environment variables required to connect to the backing services (especially for running `go test`), you must source the configuration:
 
