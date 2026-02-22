@@ -56,6 +56,7 @@ func init() {
 type Store struct {
 	client *minio.Client
 	bucket string
+	prefix string
 
 	// secretKeyMu protects the secret key storage.
 	secretKeyMu sync.Mutex
@@ -97,6 +98,7 @@ func New(ctx context.Context, cfg s3.Config) (*Store, error) {
 	return &Store{
 		client: client,
 		bucket: cfg.Bucket,
+		prefix: cfg.Prefix,
 	}, nil
 }
 
@@ -247,7 +249,7 @@ func (s *Store) HasNarInfo(ctx context.Context, hash string) bool {
 
 // WalkNarInfos walks all narinfos in the store and calls fn for each one.
 func (s *Store) WalkNarInfos(ctx context.Context, fn func(hash string) error) error {
-	prefix := "store/narinfo/"
+	prefix := s.storeNarInfoPath() + "/"
 
 	_, span := tracer.Start(
 		ctx,
@@ -560,9 +562,51 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	return nil
 }
 
+// HasNarinfoDir checks if any objects exist under the given prefix.
+func (s *Store) HasNarinfoDir(ctx context.Context) (bool, error) {
+	prefix := s.storeNarInfoPath() + "/"
+
+	opts := minio.ListObjectsOptions{
+		Prefix:  prefix,
+		MaxKeys: 1, // Crucial: Tells the S3 API to stop looking after 1 match
+	}
+
+	// It's good practice to create a cancellable context when reading from
+	// MinIO channels to prevent goroutine leaks if you exit early.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// ListObjects returns a channel that yields ObjectInfo
+	objectCh := s.client.ListObjects(ctx, s.bucket, opts)
+
+	obj, ok := <-objectCh
+	if !ok {
+		// Channel closed with no objects found
+		return false, nil
+	}
+
+	if obj.Err != nil {
+		return false, obj.Err
+	}
+
+	return true, nil
+}
+
 // Helper methods for key generation.
 func (s *Store) secretKeyPath() string {
-	return "config/cache.key"
+	if s.prefix == "" {
+		return "config/cache.key"
+	}
+
+	return s.prefix + "/config/cache.key"
+}
+
+func (s *Store) storeNarInfoPath() string {
+	if s.prefix == "" {
+		return "store/narinfo"
+	}
+
+	return s.prefix + "/store/narinfo"
 }
 
 func (s *Store) narInfoPath(hash string) (string, error) {
@@ -571,7 +615,7 @@ func (s *Store) narInfoPath(hash string) (string, error) {
 		return "", err
 	}
 
-	return "store/narinfo/" + nifP, nil
+	return s.storeNarInfoPath() + "/" + nifP, nil
 }
 
 func (s *Store) narPath(narURL nar.URL) (string, error) {
@@ -585,7 +629,11 @@ func (s *Store) narPath(narURL nar.URL) (string, error) {
 		return "", err
 	}
 
-	return "store/nar/" + tfp, nil
+	if s.prefix == "" {
+		return "store/nar/" + tfp, nil
+	}
+
+	return s.prefix + "/store/nar/" + tfp, nil
 }
 
 func testBucketAccess(ctx context.Context, client *minio.Client, bucket string) error {

@@ -70,6 +70,12 @@ var (
 const (
 	lockBackendLocal = "local"
 	lockBackendRedis = "redis"
+
+	storageTypeLocal = "local"
+	storageTypeS3    = "s3"
+
+	storageModeCDC   = "cdc"
+	storageModeWhole = "whole"
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -817,6 +823,20 @@ func createLocalStorage(
 
 	zerolog.Ctx(ctx).Info().Str("path", dataPath).Msg("using local storage")
 
+	// Check if the narinfo directory exists
+	exist, err := localStore.HasNarinfoDir()
+	if err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to check for local narinfo directory")
+	} else if exist {
+		zerolog.Ctx(ctx).
+			Warn().
+			Str("component", "storage").
+			Str("action_required", "Migrate narinfo to database").
+			Str("instructions", "Run `ncps migrate-narinfo --help`").
+			Msg("Local 'narinfo' directory detected. File-based narinfo storage" +
+				" is deprecated and will be removed in the next release.")
+	}
+
 	return localStore, localStore, localStore, nil
 }
 
@@ -841,6 +861,20 @@ func createS3Storage(
 	}
 
 	zerolog.Ctx(ctx).Info().Msg("using S3 storage")
+
+	// Check if the narinfo directory exists
+	exist, err := s3Store.HasNarinfoDir(ctx)
+	if err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to check for S3 narinfo directory")
+	} else if exist {
+		zerolog.Ctx(ctx).
+			Warn().
+			Str("component", "storage").
+			Str("action_required", "Migrate narinfo to database").
+			Str("instructions", "Run `ncps migrate-narinfo --help`").
+			Msg("S3 'narinfo' directory detected. S3-based narinfo storage" +
+				" is deprecated and will be removed in the next release.")
+	}
 
 	return s3Store, s3Store, s3Store, nil
 }
@@ -1045,16 +1079,16 @@ func detectExtraResourceAttrs(
 	}
 
 	if localDataPath != "" {
-		attrs = append(attrs, attribute.String("ncps.storage_type", "local"))
+		attrs = append(attrs, attribute.String("ncps.storage_type", storageTypeLocal))
 	} else if s3Cfg != nil {
-		attrs = append(attrs, attribute.String("ncps.storage_type", "s3"))
+		attrs = append(attrs, attribute.String("ncps.storage_type", storageTypeS3))
 	}
 
 	// 5. Add storage mode
 	if cmd.Bool("cache-cdc-enabled") {
-		attrs = append(attrs, attribute.String("ncps.storage_mode", "cdc"))
+		attrs = append(attrs, attribute.String("ncps.storage_mode", storageModeCDC))
 	} else {
-		attrs = append(attrs, attribute.String("ncps.storage_mode", "whole"))
+		attrs = append(attrs, attribute.String("ncps.storage_mode", storageModeWhole))
 	}
 
 	return attrs, nil
