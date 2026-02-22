@@ -4835,8 +4835,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 
 	// 3. CHUNK PHASE
 	// Now that files are gone, some chunks might have zero references.
-	cdcEnabled, chunkStore, _ := c.getCDCInfo()
-	if !cdcEnabled || chunkStore == nil {
+	if !c.isCDCEnabled() {
 		return narInfoHashesToRemove, narURLsToRemove, nil, nil
 	}
 
@@ -5206,6 +5205,10 @@ func parseValidHash(hash sql.NullString, fieldName string) (*nixhash.HashWithEnc
 
 // HasNarInChunks returns true if the NAR is already in chunks and chunking is complete.
 func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error) {
+	if !c.isCDCEnabled() {
+		return false, nil
+	}
+
 	nr, err := c.getNarFileFromDB(ctx, c.db, narURL)
 	if err != nil {
 		if database.IsNotFoundError(err) {
@@ -5235,6 +5238,12 @@ func (c *Cache) HasNarFileRecord(ctx context.Context, narURL nar.URL) (bool, err
 }
 
 func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, io.ReadCloser, error) {
+	// Guard: if CDC is not configured, we cannot stream from chunks even if DB records exist.
+	// This can happen if CDC was previously enabled and then disabled (config change or rollback).
+	if !c.isCDCEnabled() {
+		return 0, nil, fmt.Errorf("CDC is not enabled, cannot serve NAR from chunks: %w", storage.ErrNotFound)
+	}
+
 	ctx, span := tracer.Start(
 		ctx,
 		"cache.getNarFromChunks",
@@ -5536,8 +5545,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 // MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
 // narURL is taken by pointer because storeNarWithCDC normalizes compression to "none".
 func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
-	cdcEnabled, chunkStore, _ := c.getCDCInfo()
-	if !cdcEnabled || chunkStore == nil {
+	if !c.isCDCEnabled() {
 		return ErrCDCDisabled
 	}
 
