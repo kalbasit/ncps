@@ -25,9 +25,11 @@ These attributes are attached to all metrics and logs:
 
 | Attribute | Description | Example Values |
 | --- | --- | --- |
+| `ncps.cluster_uuid` | Unique cluster identifier | `550e8400-e29b-41d4-a716-446655440000` |
 | `ncps.db_type` | Database backend type | `sqlite`, `postgres`, `mysql` |
 | `ncps.lock_type` | Lock mechanism type | `local`, `redis` |
-| `ncps.cluster_uuid` | Unique cluster identifier | `550e8400-e29b-41d4-a716-446655440000` |
+| `ncps.storage_mode` | Storage mode | `cdc`, `whole` |
+| `ncps.storage_type` | Storage type | `local`, `s3` |
 | `service.name` | Service name | `ncps` |
 | `service.version` | ncps version | `v1.2.3` |
 
