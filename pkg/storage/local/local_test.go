@@ -965,6 +965,74 @@ func TestDeleteNarInfo_PartialCleanup(t *testing.T) {
 	assert.DirExists(t, filepath.Join(dir, "store", "narinfo", filepath.Dir(relDirAC)))
 }
 
+func TestHasNarinfoDir(t *testing.T) {
+	t.Parallel()
+
+	t.Run("narinfo directory does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.RemoveAll(dir) })
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		// The narinfo directory is not created by default
+		hasDir, err := s.HasNarinfoDir()
+		require.NoError(t, err)
+		assert.False(t, hasDir)
+	})
+
+	t.Run("narinfo directory exists and is empty", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.RemoveAll(dir) })
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		// Create an empty narinfo directory
+		narInfoDir := filepath.Join(dir, "store", "narinfo")
+		require.NoError(t, os.MkdirAll(narInfoDir, 0o700))
+
+		hasDir, err := s.HasNarinfoDir()
+		require.NoError(t, err)
+		assert.True(t, hasDir)
+	})
+
+	t.Run("narinfo directory exists with files", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.RemoveAll(dir) })
+
+		ctx := newContext()
+
+		s, err := local.New(ctx, dir)
+		require.NoError(t, err)
+
+		// Create a narinfo file
+		narInfoPath := filepath.Join(dir, "store", "narinfo", narInfoHash1)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narInfoPath), 0o700))
+		require.NoError(t, os.WriteFile(narInfoPath, []byte("test"), 0o400))
+
+		hasDir, err := s.HasNarinfoDir()
+		require.NoError(t, err)
+		assert.True(t, hasDir)
+	})
+}
+
 func TestDeleteNar_RemovesEmptyParentDirectories(t *testing.T) {
 	t.Parallel()
 

@@ -505,6 +505,18 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	return nil
 }
 
+func (s *Store) HasNarinfoDir() (bool, error) {
+	if _, err := os.Stat(s.storeNarInfoPath()); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
+
 // removeEmptyParentDirs removes empty parent directories up to and including categoryDir.
 // It starts from the parent of filePath and walks up the directory tree,
 // removing directories only if they are empty.
