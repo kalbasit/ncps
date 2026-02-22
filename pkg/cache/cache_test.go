@@ -2986,8 +2986,14 @@ func testHasNarFileRecord(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, _, _, cleanup := factory(t)
+		c, db, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
+
+		// Setup chunk store and enable CDC
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+		c.SetChunkStore(cs)
+		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
 
 		// Create a test NAR URL
 		narURL := nar.URL{
