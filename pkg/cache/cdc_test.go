@@ -165,6 +165,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 		testCDCStaleLockCleansUpChunkFiles(factory))
 	t.Run("first pull completes before CDC chunking finishes",
 		testCDCFirstPullCompletesBeforeChunking(factory))
+	t.Run("GetNar does not panic when CDC is disabled but DB has chunked NARs",
+		testCDCDisabledWithChunkedNARsInDB(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -1738,5 +1740,58 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 		// goroutine must decompress them before sending to the client.
 		assert.Equal(t, originalContent, string(body),
 			"NAR body must be the decompressed original content, not the raw xz bytes")
+	}
+}
+
+// testCDCDisabledWithChunkedNARsInDB verifies that disabling CDC after NARs have been
+// stored as chunks does not cause a nil pointer panic. When CDC is disabled, GetNar must
+// not attempt to stream from chunks (which would dereference a nil chunkStore).
+func testCDCDisabledWithChunkedNARsInDB(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Step 1: Enable CDC and store a NAR as chunks.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		content := "this is a test nar content that should be chunked by fastcdc algorithm"
+		nu := nar.URL{Hash: "testnar-cdc-disabled", Compression: nar.CompressionTypeNone}
+
+		err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+		require.NoError(t, err)
+
+		// Verify that DB has chunked NAR records.
+		count, err := db.GetChunkCount(ctx)
+		require.NoError(t, err)
+		require.Positive(t, count, "DB should have chunk records after PutNar with CDC enabled")
+
+		// Verify that HasNarInChunks returns true with CDC enabled.
+		hasChunks, err := c.HasNarInChunks(ctx, nu)
+		require.NoError(t, err)
+		require.True(t, hasChunks, "HasNarInChunks should return true while CDC is enabled")
+
+		// Step 2: Disable CDC (simulates config change or deployment rollback).
+		// The DB still has total_chunks > 0 for the NAR we stored above.
+		err = c.SetCDCConfiguration(false, 0, 0, 0)
+		require.NoError(t, err)
+
+		// Step 3: HasNarInChunks must return false when CDC is disabled,
+		// so the system does not try the chunk path.
+		hasChunks, err = c.HasNarInChunks(ctx, nu)
+		require.NoError(t, err)
+		assert.False(t, hasChunks, "HasNarInChunks should return false when CDC is disabled")
 	}
 }
