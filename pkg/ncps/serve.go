@@ -1038,6 +1038,25 @@ func detectExtraResourceAttrs(
 
 	attrs = append(attrs, attribute.String("ncps.cluster_uuid", clusterUUID))
 
+	// 4. Add storage type
+	localDataPath, s3Cfg, err := getStorageConfig(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	if localDataPath != "" {
+		attrs = append(attrs, attribute.String("ncps.storage_type", "local"))
+	} else if s3Cfg != nil {
+		attrs = append(attrs, attribute.String("ncps.storage_type", "s3"))
+	}
+
+	// 5. Add storage mode
+	if cmd.Bool("cache-cdc-enabled") {
+		attrs = append(attrs, attribute.String("ncps.storage_mode", "cdc"))
+	} else {
+		attrs = append(attrs, attribute.String("ncps.storage_mode", "whole"))
+	}
+
 	return attrs, nil
 }
 
