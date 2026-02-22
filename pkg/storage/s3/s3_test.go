@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -269,6 +270,8 @@ func getTestStore(t *testing.T) *storage_s3.Store {
 		return nil
 	}
 
+	cfg.Prefix = sanitizePrefix(t.Name())
+
 	ctx := newContext()
 
 	store, err := storage_s3.New(ctx, *cfg)
@@ -279,6 +282,10 @@ func getTestStore(t *testing.T) *storage_s3.Store {
 
 func getTestConfig(t *testing.T) *s3config.Config {
 	return testhelper.S3TestConfig(t)
+}
+
+func sanitizePrefix(name string) string {
+	return regexp.MustCompile(`[^a-zA-Z0-9_-]+`).ReplaceAllString(name, "-")
 }
 
 func TestNew(t *testing.T) {
@@ -1685,6 +1692,99 @@ func TestWalkNarInfos_Integration(t *testing.T) {
 			return nil
 		})
 		require.NoError(t, err)
+	})
+}
+
+func TestHasNarinfoDir_ErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+
+	t.Run("ListObjects returns error", func(t *testing.T) {
+		t.Parallel()
+
+		cfgBase := s3config.Config{
+			Bucket:          "test-bucket",
+			Endpoint:        "http://localhost:9000",
+			AccessKeyID:     "minioadmin",
+			SecretAccessKey: "minioadmin",
+		}
+
+		expectedErr := errListObjectsFailed
+		cfgWithMock := cfgBase
+		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			// BucketExists check in New
+			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
+				return s3OKResponse(s3LocationResponseString)
+			}
+
+			// ListObjects request fails
+			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "test-bucket") {
+				return nil, expectedErr
+			}
+
+			return s3OKResponse("")
+		})
+
+		store, err := storage_s3.New(ctx, cfgWithMock)
+		require.NoError(t, err)
+
+		hasDir, err := store.HasNarinfoDir(ctx)
+		require.Error(t, err)
+		assert.False(t, hasDir)
+	})
+}
+
+func TestHasNarinfoDir_Integration(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no narinfo directory (empty prefix)", func(t *testing.T) {
+		t.Parallel()
+
+		store := getTestStore(t)
+		if store == nil {
+			return
+		}
+
+		ctx := newContext()
+
+		// Make sure the prefix is empty by deleting any existing narinfos
+		hash := testhelper.MustRandNarInfoHash()
+		_ = store.DeleteNarInfo(ctx, hash)
+
+		hasDir, err := store.HasNarinfoDir(ctx)
+		require.NoError(t, err)
+		assert.False(t, hasDir)
+	})
+
+	t.Run("narinfo directory exists (with narinfo files)", func(t *testing.T) {
+		t.Parallel()
+
+		store := getTestStore(t)
+		if store == nil {
+			return
+		}
+
+		ctx := newContext()
+		hash := testhelper.MustRandNarInfoHash()
+
+		ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		// Clean up first
+		_ = store.DeleteNarInfo(ctx, hash)
+
+		// Put a narinfo
+		require.NoError(t, store.PutNarInfo(ctx, hash, ni))
+
+		t.Cleanup(func() {
+			//nolint:errcheck
+			store.DeleteNarInfo(ctx, hash)
+		})
+
+		hasDir, err := store.HasNarinfoDir(ctx)
+		require.NoError(t, err)
+		assert.True(t, hasDir)
 	})
 }
 

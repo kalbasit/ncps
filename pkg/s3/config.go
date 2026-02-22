@@ -40,6 +40,8 @@ type Config struct {
 	// Set to true for MinIO and other S3-compatible services
 	// Set to false for AWS S3 (default)
 	ForcePathStyle bool
+	// Prefix is an optional path prefix for all keys stored in the bucket
+	Prefix string
 	// Transport is the HTTP transport to use (optional, used for testing)
 	Transport http.RoundTripper
 }
