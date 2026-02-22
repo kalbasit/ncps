@@ -424,31 +424,6 @@ func (q *Queries) GetChunkByHash(ctx context.Context, hash string) (Chunk, error
 	return i, err
 }
 
-const getChunkByID = `-- name: GetChunkByID :one
-SELECT id, hash, size, compressed_size, created_at, updated_at
-FROM chunks
-WHERE id = ?
-`
-
-// GetChunkByID
-//
-//	SELECT id, hash, size, compressed_size, created_at, updated_at
-//	FROM chunks
-//	WHERE id = ?
-func (q *Queries) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
-	row := q.db.QueryRowContext(ctx, getChunkByID, id)
-	var i Chunk
-	err := row.Scan(
-		&i.ID,
-		&i.Hash,
-		&i.Size,
-		&i.CompressedSize,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getChunkByNarFileIDAndIndex = `-- name: GetChunkByNarFileIDAndIndex :one
 SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
 FROM chunks c
@@ -606,30 +581,6 @@ func (q *Queries) GetCompressedNarInfos(ctx context.Context, arg GetCompressedNa
 		return nil, err
 	}
 	return items, nil
-}
-
-const getConfigByID = `-- name: GetConfigByID :one
-SELECT id, ` + "`" + `key` + "`" + `, value, created_at, updated_at
-FROM config
-WHERE id = ?
-`
-
-// GetConfigByID
-//
-//	SELECT id, `key`, value, created_at, updated_at
-//	FROM config
-//	WHERE id = ?
-func (q *Queries) GetConfigByID(ctx context.Context, id int64) (Config, error) {
-	row := q.db.QueryRowContext(ctx, getConfigByID, id)
-	var i Config
-	err := row.Scan(
-		&i.ID,
-		&i.Key,
-		&i.Value,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const getConfigByKey = `-- name: GetConfigByKey :one
@@ -924,48 +875,6 @@ func (q *Queries) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, ar
 	return i, err
 }
 
-const getNarFileByID = `-- name: GetNarFileByID :one
-SELECT id, hash, compression, file_size, ` + "`" + `query` + "`" + `, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-FROM nar_files
-WHERE id = ?
-`
-
-type GetNarFileByIDRow struct {
-	ID                int64
-	Hash              string
-	Compression       string
-	FileSize          uint64
-	Query             string
-	CreatedAt         time.Time
-	UpdatedAt         sql.NullTime
-	LastAccessedAt    sql.NullTime
-	TotalChunks       int64
-	ChunkingStartedAt sql.NullTime
-}
-
-// GetNarFileByID
-//
-//	SELECT id, hash, compression, file_size, `query`, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-//	FROM nar_files
-//	WHERE id = ?
-func (q *Queries) GetNarFileByID(ctx context.Context, id int64) (GetNarFileByIDRow, error) {
-	row := q.db.QueryRowContext(ctx, getNarFileByID, id)
-	var i GetNarFileByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.Hash,
-		&i.Compression,
-		&i.FileSize,
-		&i.Query,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LastAccessedAt,
-		&i.TotalChunks,
-		&i.ChunkingStartedAt,
-	)
-	return i, err
-}
-
 const getNarFileByNarInfoID = `-- name: GetNarFileByNarInfoID :one
 SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.` + "`" + `query` + "`" + `, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
 FROM nar_files nf
@@ -1107,40 +1016,6 @@ WHERE hash = ?
 //	WHERE hash = ?
 func (q *Queries) GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error) {
 	row := q.db.QueryRowContext(ctx, getNarInfoByHash, hash)
-	var i NarInfo
-	err := row.Scan(
-		&i.ID,
-		&i.Hash,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LastAccessedAt,
-		&i.StorePath,
-		&i.URL,
-		&i.Compression,
-		&i.FileHash,
-		&i.FileSize,
-		&i.NarHash,
-		&i.NarSize,
-		&i.Deriver,
-		&i.System,
-		&i.Ca,
-	)
-	return i, err
-}
-
-const getNarInfoByID = `-- name: GetNarInfoByID :one
-SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, ` + "`" + `system` + "`" + `, ca
-FROM narinfos
-WHERE id = ?
-`
-
-// GetNarInfoByID
-//
-//	SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, `system`, ca
-//	FROM narinfos
-//	WHERE id = ?
-func (q *Queries) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
-	row := q.db.QueryRowContext(ctx, getNarInfoByID, id)
 	var i NarInfo
 	err := row.Scan(
 		&i.ID,

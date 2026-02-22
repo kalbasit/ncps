@@ -284,6 +284,8 @@ func TestWrapperTemplate(t *testing.T) {
 			return joinParamsCall(params, engPkg, targetMethod, structs, structs)
 		},
 		"hasSuffix":               strings.HasSuffix,
+		"toSnakeCase":             toSnakeCase,
+		"quote":                   quote,
 		"generateFieldConversion": generateFieldConversion,
 		"zeroReturn": func(m MethodInfo) string {
 			// simplified for test
@@ -292,6 +294,7 @@ func TestWrapperTemplate(t *testing.T) {
 			}
 			return "0"
 		},
+		"getTableName": func(structName string) string { return "users" },
 	}
 
 	tmpl, err := template.New("wrapper").Funcs(funcMap).Parse(wrapperTemplate)
@@ -450,6 +453,7 @@ func TestWrapperTemplate(t *testing.T) {
 		}
 		return joinParamsCall(params, engPkg, targetMethod, structs, structs)
 	}
+	funcMap["getTableName"] = func(structName string) string { return "users" }
 
 	tmpl, err = template.New("wrapper").Funcs(funcMap).Parse(wrapperTemplate)
 	if err != nil {

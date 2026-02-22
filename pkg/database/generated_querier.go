@@ -163,11 +163,7 @@ type Querier interface {
 	//  FROM chunks
 	//  WHERE hash = $1
 	GetChunkByHash(ctx context.Context, hash string) (Chunk, error)
-	//GetChunkByID
-	//
-	//  SELECT id, hash, size, compressed_size, created_at, updated_at
-	//  FROM chunks
-	//  WHERE id = $1
+	// GetChunkByID (Synthetic)
 	GetChunkByID(ctx context.Context, id int64) (Chunk, error)
 	//GetChunkByNarFileIDAndIndex
 	//
@@ -197,11 +193,7 @@ type Querier interface {
 	//  ORDER BY id
 	//  LIMIT $1 OFFSET $2
 	GetCompressedNarInfos(ctx context.Context, arg GetCompressedNarInfosParams) ([]NarInfo, error)
-	//GetConfigByID
-	//
-	//  SELECT id, key, value, created_at, updated_at
-	//  FROM config
-	//  WHERE id = $1
+	// GetConfigByID (Synthetic)
 	GetConfigByID(ctx context.Context, id int64) (Config, error)
 	//GetConfigByKey
 	//
@@ -261,11 +253,7 @@ type Querier interface {
 	//  FROM nar_files
 	//  WHERE hash = $1 AND compression = $2 AND query = $3
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
-	//GetNarFileByID
-	//
-	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
-	//  FROM nar_files
-	//  WHERE id = $1
+	// GetNarFileByID (Synthetic)
 	GetNarFileByID(ctx context.Context, id int64) (NarFile, error)
 	//GetNarFileByNarInfoID
 	//
@@ -298,11 +286,7 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE hash = $1
 	GetNarInfoByHash(ctx context.Context, hash string) (NarInfo, error)
-	//GetNarInfoByID
-	//
-	//  SELECT id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
-	//  FROM narinfos
-	//  WHERE id = $1
+	// GetNarInfoByID (Synthetic)
 	GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error)
 	//GetNarInfoCount
 	//

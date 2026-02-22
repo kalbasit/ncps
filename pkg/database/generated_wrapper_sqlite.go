@@ -377,17 +377,31 @@ func (w *sqliteWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk,
 func (w *sqliteWrapper) GetChunkByID(ctx context.Context, id int64) (Chunk, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetChunkByID(ctx, id)
-	if err != nil {
+	query := "SELECT \"id\", \"hash\", \"size\", \"compressed_size\", \"created_at\", \"updated_at\" FROM chunks WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res sqlitedb.Chunk
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Hash,
+
+		&res.Size,
+
+		&res.CompressedSize,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Chunk{}, ErrNotFound
 		}
-
 		return Chunk{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return Chunk{
 		ID: res.ID,
@@ -528,17 +542,29 @@ func (w *sqliteWrapper) GetCompressedNarInfos(ctx context.Context, arg GetCompre
 func (w *sqliteWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetConfigByID(ctx, id)
-	if err != nil {
+	query := "SELECT \"id\", \"key\", \"value\", \"created_at\", \"updated_at\" FROM config WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res sqlitedb.Config
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Key,
+
+		&res.Value,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Config{}, ErrNotFound
 		}
-
 		return Config{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return Config{
 		ID: res.ID,
@@ -735,17 +761,39 @@ func (w *sqliteWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Conte
 func (w *sqliteWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetNarFileByID(ctx, id)
-	if err != nil {
+	query := "SELECT \"id\", \"hash\", \"compression\", \"file_size\", \"query\", \"created_at\", \"updated_at\", \"last_accessed_at\", \"total_chunks\", \"chunking_started_at\" FROM nar_files WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res sqlitedb.NarFile
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Hash,
+
+		&res.Compression,
+
+		&res.FileSize,
+
+		&res.Query,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+
+		&res.LastAccessedAt,
+
+		&res.TotalChunks,
+
+		&res.ChunkingStartedAt,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarFile{}, ErrNotFound
 		}
-
 		return NarFile{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return NarFile{
 		ID: res.ID,
@@ -911,17 +959,49 @@ func (w *sqliteWrapper) GetNarInfoByHash(ctx context.Context, hash string) (NarI
 func (w *sqliteWrapper) GetNarInfoByID(ctx context.Context, id int64) (NarInfo, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	res, err := w.adapter.GetNarInfoByID(ctx, id)
-	if err != nil {
+	query := "SELECT \"id\", \"hash\", \"created_at\", \"updated_at\", \"last_accessed_at\", \"store_path\", \"url\", \"compression\", \"file_hash\", \"file_size\", \"nar_hash\", \"nar_size\", \"deriver\", \"system\", \"ca\" FROM narinfos WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res sqlitedb.NarInfo
+	err := row.Scan(
 
+		&res.ID,
+
+		&res.Hash,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+
+		&res.LastAccessedAt,
+
+		&res.StorePath,
+
+		&res.URL,
+
+		&res.Compression,
+
+		&res.FileHash,
+
+		&res.FileSize,
+
+		&res.NarHash,
+
+		&res.NarSize,
+
+		&res.Deriver,
+
+		&res.System,
+
+		&res.Ca,
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return NarInfo{}, ErrNotFound
 		}
-
 		return NarInfo{}, err
 	}
 
-	// Convert Single Domain Struct
+	// Convert to Domain Struct
 
 	return NarInfo{
 		ID: res.ID,
