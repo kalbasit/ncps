@@ -402,7 +402,9 @@ def perform_clean():
         # Construct MC_HOST_clean env var. Note: we use a specific alias 'clean'
         # The format for MC_HOST_<alias> is http(s)://ACCESS_KEY:SECRET_KEY@HOST:PORT
         parsed_endpoint = urlparse(endpoint)
-        mc_url = parsed_endpoint._replace(netloc=f"{access_key}:{secret_key}@{parsed_endpoint.hostname}:{parsed_endpoint.port}").geturl()
+        mc_url = parsed_endpoint._replace(
+            netloc=f"{access_key}:{secret_key}@{parsed_endpoint.hostname}:{parsed_endpoint.port}"
+        ).geturl()
         mc_env["MC_HOST_clean"] = mc_url
         try:
             subprocess.run(
@@ -679,6 +681,9 @@ def main():
         # Storage Args
         if args.enable_cdc:
             cmd_app.append("--cache-cdc-enabled")
+            cmd_app.append("--cache-cdc-min=16384")
+            cmd_app.append("--cache-cdc-avg=65536")
+            cmd_app.append("--cache-cdc-max=262144")
         if args.storage == "local":
             cmd_app.extend(["--cache-storage-local", local_storage_path])
         else:

@@ -303,7 +303,14 @@ rec {
   # These get merged into permutation configurations when features are enabled
   features = {
     cdc = {
-      config.cdc.enabled = true;
+      config = {
+        cdc = {
+          enabled = true;
+          min = 16384;
+          avg = 65536;
+          max = 262144;
+        };
+      };
     };
 
     ha = {
@@ -572,7 +579,14 @@ rec {
           # Feature Definitions (re-declared locally for safety)
           featuresDef = {
             cdc = {
-              config.cdc.enabled = true;
+              config = {
+                cdc = {
+                  enabled = true;
+                  min = 16384;
+                  avg = 65536;
+                  max = 262144;
+                };
+              };
             };
             ha = { };
             pod-disruption-budget = {

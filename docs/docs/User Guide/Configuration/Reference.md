@@ -168,9 +168,9 @@ Content-Defined Chunking (CDC) enables deduplication of NAR files by splitting t
 | Option | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
 | `--cache-cdc-enabled` | Enable CDC for deduplication | `CACHE_CDC_ENABLED` | `false` |
-| `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | `65536` (64KB) |
-| `--cache-cdc-avg` | Average chunk size in bytes | `CACHE_CDC_AVG` | `262144` (256KB) |
-| `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | `1048576` (1MB) |
+| `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | none (recommended: 16384) |
+| `--cache-cdc-avg` | Average chunk size in bytes | `CACHE_CDC_AVG` | none (recommended: 65536) |
+| `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | none (recommended: 262144) |
 
 **Example:**
 
