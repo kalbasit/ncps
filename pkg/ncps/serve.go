@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -165,21 +166,18 @@ func serveCommand(
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-min",
-				Usage:   "Minimum chunk size for CDC in bytes",
+				Usage:   "Minimum chunk size for CDC in bytes (recommended: 16384)",
 				Sources: flagSources("cache.cdc.min", "CACHE_CDC_MIN"),
-				Value:   65536, // 64KB
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-avg",
-				Usage:   "Average chunk size for CDC in bytes",
+				Usage:   "Average chunk size for CDC in bytes (recommended: 65536)",
 				Sources: flagSources("cache.cdc.avg", "CACHE_CDC_AVG"),
-				Value:   262144, // 256KB
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-max",
-				Usage:   "Maximum chunk size for CDC in bytes",
+				Usage:   "Maximum chunk size for CDC in bytes (recommended: 262144)",
 				Sources: flagSources("cache.cdc.max", "CACHE_CDC_MAX"),
-				Value:   1048576, // 1MB
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
@@ -960,14 +958,27 @@ func createCache(
 	c.SetTempDir(cmd.String("cache-temp-path"))
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 
+	cfg := config.New(db, rwLocker)
+
 	// Configure CDC
 	cdcEnabled := cmd.Bool("cache-cdc-enabled")
 	cdcMin := cmd.Uint32("cache-cdc-min")
 	cdcAvg := cmd.Uint32("cache-cdc-avg")
 	cdcMax := cmd.Uint32("cache-cdc-max")
 
-	// Validate CDC configuration against stored values
-	cfg := config.New(db, rwLocker)
+	// If CDC size flags not provided, load from database
+	// (handles commands like migrate-nar-to-chunks that don't expose CDC flags)
+	if cdcMin == 0 && cdcAvg == 0 && cdcMax == 0 {
+		var err error
+
+		cdcEnabledWasSet := cmd.IsSet("cache-cdc-enabled")
+
+		cdcEnabled, cdcMin, cdcAvg, cdcMax, err = loadCDCConfigFromDB(ctx, cfg, cdcEnabled, cdcEnabledWasSet)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := cfg.ValidateOrStoreCDCConfig(ctx, cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
 		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)
 	}
@@ -1043,6 +1054,65 @@ func createCache(
 	c.StartCron(ctx)
 
 	return c, nil
+}
+
+func loadCDCConfigFromDB(
+	ctx context.Context,
+	cfg *config.Config,
+	currentEnabled bool,
+	wasExplicitlySet bool,
+) (enabled bool, minSize, avgSize, maxSize uint32, err error) {
+	enabled = currentEnabled
+
+	cdcEnabledStr, err := cfg.GetCDCEnabled(ctx)
+	if err != nil {
+		if errors.Is(err, config.ErrConfigNotFound) {
+			return enabled, 0, 0, 0, nil
+		}
+
+		return false, 0, 0, 0, err
+	}
+
+	if cdcEnabledStr != "true" {
+		return enabled, 0, 0, 0, nil
+	}
+
+	// CDC is configured in the database.
+	// If the flag wasn't explicitly set on the command line, adopt the database value.
+	// If the user explicitly passed --cache-cdc-enabled=false, keep it as-is and let
+	// ValidateOrStoreCDCConfig return ErrCDCDisabledAfterEnabled.
+	if !wasExplicitlySet {
+		enabled = true
+	}
+
+	parseCDCValue := func(name, s string) uint32 {
+		v, parseErr := strconv.ParseUint(s, 10, 32)
+		if parseErr != nil {
+			zerolog.Ctx(ctx).Warn().Err(parseErr).Str("name", name).Str("value", s).
+				Msg("failed to parse CDC value from database")
+
+			return 0
+		}
+
+		return uint32(v)
+	}
+
+	cdcMinStr, err := cfg.GetCDCMin(ctx)
+	if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
+		return false, 0, 0, 0, fmt.Errorf("error loading CDC min value from database: %w", err)
+	}
+
+	cdcAvgStr, err := cfg.GetCDCAvg(ctx)
+	if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
+		return false, 0, 0, 0, fmt.Errorf("error loading CDC avg value from database: %w", err)
+	}
+
+	cdcMaxStr, err := cfg.GetCDCMax(ctx)
+	if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
+		return false, 0, 0, 0, fmt.Errorf("error loading CDC max value from database: %w", err)
+	}
+
+	return enabled, parseCDCValue("min", cdcMinStr), parseCDCValue("avg", cdcAvgStr), parseCDCValue("max", cdcMaxStr), nil
 }
 
 func detectExtraResourceAttrs(

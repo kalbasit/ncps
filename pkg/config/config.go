@@ -37,6 +37,7 @@ const (
 var (
 	// ErrConfigNotFound is returned if no config with this key was found.
 	ErrConfigNotFound = errors.New("no config was found for this key")
+
 	// ErrCDCDisabledAfterEnabled is returned when attempting to disable CDC after being enabled.
 	ErrCDCDisabledAfterEnabled = errors.New(
 		"CDC cannot be disabled after being enabled; existing chunked NARs would not be reconstructed",
@@ -44,6 +45,10 @@ var (
 	// ErrCDCConfigMismatch is returned when CDC configuration values differ from stored values.
 	ErrCDCConfigMismatch = errors.New(
 		"CDC config changed; different chunk sizes create new chunks without reusing old ones, causing storage duplication",
+	)
+	// ErrCDCInvalidChunkSizes is returned when CDC chunk sizes are zero or invalid.
+	ErrCDCInvalidChunkSizes = errors.New(
+		"CDC chunk sizes must be non-zero when CDC is enabled",
 	)
 )
 
@@ -219,6 +224,15 @@ func (c *Config) storeCDCConfig(
 	ctx context.Context,
 	minSize, avgSize, maxSize uint32,
 ) error {
+	// Validate that chunk sizes are non-zero
+	if minSize == 0 || avgSize == 0 || maxSize == 0 {
+		return fmt.Errorf(
+			"%w: min=%d, avg=%d, max=%d",
+			ErrCDCInvalidChunkSizes,
+			minSize, avgSize, maxSize,
+		)
+	}
+
 	minStr := fmt.Sprintf("%d", minSize)
 	avgStr := fmt.Sprintf("%d", avgSize)
 	maxStr := fmt.Sprintf("%d", maxSize)
