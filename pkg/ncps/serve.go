@@ -962,12 +962,17 @@ func createCache(
 
 	// Configure CDC
 	cdcEnabled := cmd.Bool("cache-cdc-enabled")
-	if err := c.SetCDCConfiguration(
-		cdcEnabled,
-		cmd.Uint32("cache-cdc-min"),
-		cmd.Uint32("cache-cdc-avg"),
-		cmd.Uint32("cache-cdc-max"),
-	); err != nil {
+	cdcMin := cmd.Uint32("cache-cdc-min")
+	cdcAvg := cmd.Uint32("cache-cdc-avg")
+	cdcMax := cmd.Uint32("cache-cdc-max")
+
+	// Validate CDC configuration against stored values
+	cfg := config.New(db, rwLocker)
+	if err := cfg.ValidateOrStoreCDCConfig(ctx, cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
+		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)
+	}
+
+	if err := c.SetCDCConfiguration(cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
 		return nil, fmt.Errorf("error configuring CDC: %w", err)
 	}
 
