@@ -16,6 +16,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 
 	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/otel"
@@ -189,33 +190,6 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				Sources: flagSources("cache.redis.pool-size", "CACHE_REDIS_POOL_SIZE"),
 				Value:   10,
 			},
-
-			// CDC Flags
-			&cli.BoolFlag{
-				Name:    "cache-cdc-enabled",
-				Usage:   "Enable Content-Defined Chunking (CDC) for NAR storage",
-				Sources: flagSources("cache.cdc.enabled", "CACHE_CDC_ENABLED"),
-				Value:   true,
-			},
-			&cli.Uint32Flag{
-				Name:    "cache-cdc-min",
-				Usage:   "Minimum chunk size for CDC in bytes",
-				Sources: flagSources("cache.cdc.min", "CACHE_CDC_MIN"),
-				Value:   64 * 1024, // 64KB
-			},
-			&cli.Uint32Flag{
-				Name:    "cache-cdc-avg",
-				Usage:   "Average chunk size for CDC in bytes",
-				Sources: flagSources("cache.cdc.avg", "CACHE_CDC_AVG"),
-				Value:   256 * 1024, // 256KB
-			},
-			&cli.Uint32Flag{
-				Name:    "cache-cdc-max",
-				Usage:   "Maximum chunk size for CDC in bytes",
-				Sources: flagSources("cache.cdc.max", "CACHE_CDC_MAX"),
-				Value:   1024 * 1024, // 1MB
-			},
-
 			&cli.IntFlag{
 				Name:    "concurrency",
 				Usage:   "Number of concurrent migration workers",
@@ -227,11 +201,6 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			logger := zerolog.Ctx(ctx).With().Str("cmd", "migrate-nar-to-chunks").Logger()
 			ctx = logger.WithContext(ctx)
 
-			if !cmd.Bool("cache-cdc-enabled") {
-				//nolint:err113 // no need to define package level error for this.
-				return errors.New("migrate-nar-to-chunks command requires CDC to be enabled")
-			}
-
 			dryRun := cmd.Bool("dry-run")
 
 			// 1. Setup Database
@@ -240,10 +209,31 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				return fmt.Errorf("error creating database querier: %w", err)
 			}
 
-			// 2. Setup Lockers
+			// 2a. Load CDC configuration from database (must happen after DB creation)
+			// CDC is required for migrate-nar-to-chunks command
 			locker, rwLocker, err := getLockers(ctx, cmd)
 			if err != nil {
 				return fmt.Errorf("error creating lockers: %w", err)
+			}
+
+			cfg := config.New(db, rwLocker)
+
+			cdcEnabledStr, err := cfg.GetCDCEnabled(ctx)
+			if err != nil {
+				if errors.Is(err, config.ErrConfigNotFound) {
+					//nolint:err113 // no need to define package level error for this.
+					return errors.New(
+						"migrate-nar-to-chunks command requires CDC to be enabled in the database; " +
+							"please run 'ncps serve' with CDC enabled first",
+					)
+				}
+
+				return fmt.Errorf("error loading CDC enabled flag from database: %w", err)
+			}
+
+			if cdcEnabledStr != "true" {
+				//nolint:err113 // no need to define package level error for this.
+				return errors.New("migrate-nar-to-chunks command requires CDC to be enabled in the database")
 			}
 
 			// 3. Setup OTel
@@ -277,6 +267,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 
 			// 4. Setup Cache (needed for migration logic)
 			// We recreate the cache to reuse its MigrateNarToChunks logic
+			// Note: createCache will load CDC values from the database since we don't have CDC flags
 			c, err := createCache(ctx, cmd, db, locker, rwLocker, nil)
 			if err != nil {
 				return fmt.Errorf("error creating cache: %w", err)

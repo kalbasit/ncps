@@ -216,6 +216,10 @@ func runValidateOrStoreCDCConfigTestSuite(t *testing.T, factory databaseFactory)
 
 	t.Run("first boot CDC disabled", testValidateCDCFirstBootDisabled(factory))
 	t.Run("first boot CDC enabled", testValidateCDCFirstBootEnabled(factory))
+	t.Run("first boot CDC enabled with zero min", testValidateCDCFirstBootZeroMin(factory))
+	t.Run("first boot CDC enabled with zero avg", testValidateCDCFirstBootZeroAvg(factory))
+	t.Run("first boot CDC enabled with zero max", testValidateCDCFirstBootZeroMax(factory))
+	t.Run("first boot CDC enabled with all zero", testValidateCDCFirstBootAllZero(factory))
 	t.Run("second boot same flags", testValidateCDCSameFlags(factory))
 	t.Run("second boot changed min", testValidateCDCChangedMin(factory))
 	t.Run("second boot changed avg", testValidateCDCChangedAvg(factory))
@@ -273,6 +277,93 @@ func testValidateCDCFirstBootEnabled(factory databaseFactory) func(*testing.T) {
 		maxStr, err := c.GetCDCMax(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, "1048576", maxStr)
+	}
+}
+
+func testValidateCDCFirstBootZeroMin(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled but zero min - should fail
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 0, 262144, 1048576)
+		require.Error(t, err)
+		require.ErrorIs(t, err, config.ErrCDCInvalidChunkSizes)
+		assert.Contains(t, err.Error(), "min=0")
+
+		// Verify nothing was stored
+		_, err = c.GetCDCEnabled(ctx)
+		assert.ErrorIs(t, err, config.ErrConfigNotFound)
+	}
+}
+
+func testValidateCDCFirstBootZeroAvg(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled but zero avg - should fail
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 0, 1048576)
+		require.Error(t, err)
+		require.ErrorIs(t, err, config.ErrCDCInvalidChunkSizes)
+		assert.Contains(t, err.Error(), "avg=0")
+
+		// Verify nothing was stored
+		_, err = c.GetCDCEnabled(ctx)
+		assert.ErrorIs(t, err, config.ErrConfigNotFound)
+	}
+}
+
+func testValidateCDCFirstBootZeroMax(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled but zero max - should fail
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 0)
+		require.Error(t, err)
+		require.ErrorIs(t, err, config.ErrCDCInvalidChunkSizes)
+		assert.Contains(t, err.Error(), "max=0")
+
+		// Verify nothing was stored
+		_, err = c.GetCDCEnabled(ctx)
+		assert.ErrorIs(t, err, config.ErrConfigNotFound)
+	}
+}
+
+func testValidateCDCFirstBootAllZero(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled but all zero sizes - should fail
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 0, 0, 0)
+		require.Error(t, err)
+		require.ErrorIs(t, err, config.ErrCDCInvalidChunkSizes)
+
+		// Verify nothing was stored
+		_, err = c.GetCDCEnabled(ctx)
+		assert.ErrorIs(t, err, config.ErrConfigNotFound)
 	}
 }
 

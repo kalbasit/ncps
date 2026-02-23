@@ -28,9 +28,15 @@ data:
       {{- if .Values.config.cdc.enabled }}
       cdc:
         enabled: true
+        {{- if .Values.config.cdc.min }}
         min: {{ printf "%.0f" .Values.config.cdc.min }}
+        {{- end }}
+        {{- if .Values.config.cdc.avg }}
         avg: {{ printf "%.0f" .Values.config.cdc.avg }}
+        {{- end }}
+        {{- if .Values.config.cdc.max }}
         max: {{ printf "%.0f" .Values.config.cdc.max }}
+        {{- end }}
       {{- end }}
 
       {{- if and (or (eq .Values.config.database.type "postgresql") (eq .Values.config.database.type "mysql")) (or .Values.config.database.pool.maxOpenConns .Values.config.database.pool.maxIdleConns) }}
