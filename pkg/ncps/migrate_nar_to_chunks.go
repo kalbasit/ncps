@@ -227,6 +227,11 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			logger := zerolog.Ctx(ctx).With().Str("cmd", "migrate-nar-to-chunks").Logger()
 			ctx = logger.WithContext(ctx)
 
+			if !cmd.Bool("cache-cdc-enabled") {
+				//nolint:err113 // no need to define package level error for this.
+				return errors.New("migrate-nar-to-chunks command requires CDC to be enabled")
+			}
+
 			dryRun := cmd.Bool("dry-run")
 
 			// 1. Setup Database
