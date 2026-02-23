@@ -434,7 +434,11 @@ func collectFsckSuspects(
 	}
 
 	for _, nf := range allNarFiles {
-		narURL := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
+		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
+		if err != nil {
+			return nil, fmt.Errorf("narFileRowToURL for nar_file %d: %w", nf.ID, err)
+		}
+
 		if !narStore.HasNar(ctx, narURL) {
 			// Convert GetAllNarFilesRow to NarFile
 			results.narFilesMissingInStorage = append(results.narFilesMissingInStorage, database.NarFile{
@@ -548,7 +552,11 @@ func reVerifyFsckSuspects(
 
 	// Re-verify: nar_files missing from storage
 	for _, nf := range suspects.narFilesMissingInStorage {
-		narURL := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
+		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
+		if err != nil {
+			return nil, fmt.Errorf("narFileRowToURL for nar_file %d: %w", nf.ID, err)
+		}
+
 		if !narStore.HasNar(ctx, narURL) {
 			results.narFilesMissingInStorage = append(results.narFilesMissingInStorage, nf)
 		}
@@ -575,18 +583,19 @@ func reVerifyFsckSuspects(
 	}
 
 	// Re-verify: orphaned chunks in DB
+	recheckedOrphanedChunks, err := db.GetOrphanedChunks(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("re-verify GetOrphanedChunks: %w", err)
+	}
+
+	recheckedMap := make(map[int64]struct{}, len(recheckedOrphanedChunks))
+	for _, rc := range recheckedOrphanedChunks {
+		recheckedMap[rc.ID] = struct{}{}
+	}
+
 	for _, c := range suspects.orphanedChunksInDB {
-		recheckChunks, err := db.GetOrphanedChunks(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("re-verify GetOrphanedChunks: %w", err)
-		}
-
-		for _, rc := range recheckChunks {
-			if rc.ID == c.ID {
-				results.orphanedChunksInDB = append(results.orphanedChunksInDB, c)
-
-				break
-			}
+		if _, ok := recheckedMap[c.ID]; ok {
+			results.orphanedChunksInDB = append(results.orphanedChunksInDB, c)
 		}
 	}
 
@@ -704,7 +713,11 @@ func repairFsckIssues(
 	// c. Delete nar_file DB records missing from storage
 	for _, nf := range results.narFilesMissingInStorage {
 		// Re-verify before deleting
-		narURL := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
+		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
+		if err != nil {
+			return fmt.Errorf("narFileRowToURL for nar_file %d: %w", nf.ID, err)
+		}
+
 		if narStore.HasNar(ctx, narURL) {
 			// File appeared, skip
 			continue
@@ -761,24 +774,18 @@ func repairFsckIssues(
 	}
 
 	// e. Delete orphaned chunks in DB
+	recheckChunks, err := db.GetOrphanedChunks(ctx)
+	if err != nil {
+		return fmt.Errorf("repair re-verify GetOrphanedChunks: %w", err)
+	}
+
+	recheckMap := make(map[int64]struct{}, len(recheckChunks))
+	for _, rc := range recheckChunks {
+		recheckMap[rc.ID] = struct{}{}
+	}
+
 	for _, c := range results.orphanedChunksInDB {
-		// Re-verify before deleting
-		recheckChunks, err := db.GetOrphanedChunks(ctx)
-		if err != nil {
-			return fmt.Errorf("repair re-verify GetOrphanedChunks: %w", err)
-		}
-
-		stillOrphaned := false
-
-		for _, rc := range recheckChunks {
-			if rc.ID == c.ID {
-				stillOrphaned = true
-
-				break
-			}
-		}
-
-		if !stillOrphaned {
+		if _, ok := recheckMap[c.ID]; !ok {
 			continue
 		}
 
@@ -905,12 +912,15 @@ func collectOrphanedChunksInStorage(
 }
 
 // narFileRowToURL converts nar_file fields into a nar.URL.
-func narFileRowToURL(hash, compression, query string) nar.URL {
-	parsedQuery, _ := url.ParseQuery(query)
+func narFileRowToURL(hash, compression, query string) (nar.URL, error) {
+	parsedQuery, err := url.ParseQuery(query)
+	if err != nil {
+		return nar.URL{}, fmt.Errorf("parsing query %q: %w", query, err)
+	}
 
 	return nar.URL{
 		Hash:        hash,
 		Compression: nar.CompressionTypeFromString(compression),
 		Query:       parsedQuery,
-	}
+	}, nil
 }
