@@ -216,6 +216,32 @@ func (s *s3Store) DeleteChunk(ctx context.Context, hash string) error {
 	return nil
 }
 
+func (s *s3Store) WalkChunks(ctx context.Context, fn func(hash string) error) error {
+	prefix := "store/chunk/"
+
+	opts := minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}
+
+	for object := range s.client.ListObjects(ctx, s.bucket, opts) {
+		if object.Err != nil {
+			return object.Err
+		}
+
+		hash := path.Base(object.Key)
+		if len(hash) < 3 {
+			continue
+		}
+
+		if err := fn(hash); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *s3Store) chunkPath(hash string) (string, error) {
 	if len(hash) < 3 {
 		return "", fmt.Errorf("chunkPath hash=%q: %w", hash, helper.ErrInputTooShort)

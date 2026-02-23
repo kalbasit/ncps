@@ -359,6 +359,101 @@ func (q *Queries) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	return result.RowsAffected()
 }
 
+const getAllChunks = `-- name: GetAllChunks :many
+SELECT id, hash, size, compressed_size, created_at, updated_at
+FROM chunks
+`
+
+// Returns all chunks for storage existence verification (CDC mode).
+//
+//	SELECT id, hash, size, compressed_size, created_at, updated_at
+//	FROM chunks
+func (q *Queries) GetAllChunks(ctx context.Context) ([]Chunk, error) {
+	rows, err := q.db.QueryContext(ctx, getAllChunks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Chunk
+	for rows.Next() {
+		var i Chunk
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Size,
+			&i.CompressedSize,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllNarFiles = `-- name: GetAllNarFiles :many
+SELECT id, hash, compression, ` + "`" + `query` + "`" + `, file_size, total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
+FROM nar_files
+`
+
+type GetAllNarFilesRow struct {
+	ID                int64
+	Hash              string
+	Compression       string
+	Query             string
+	FileSize          uint64
+	TotalChunks       int64
+	ChunkingStartedAt sql.NullTime
+	CreatedAt         time.Time
+	UpdatedAt         sql.NullTime
+	LastAccessedAt    sql.NullTime
+}
+
+// Returns all nar_files for storage existence verification.
+//
+//	SELECT id, hash, compression, `query`, file_size, total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
+//	FROM nar_files
+func (q *Queries) GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllNarFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllNarFilesRow
+	for rows.Next() {
+		var i GetAllNarFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Compression,
+			&i.Query,
+			&i.FileSize,
+			&i.TotalChunks,
+			&i.ChunkingStartedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastAccessedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getChunkByHash = `-- name: GetChunkByHash :one
 SELECT id, hash, size, compressed_size, created_at, updated_at
 FROM chunks
@@ -991,6 +1086,60 @@ func (q *Queries) GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNarInfo
 	var url sql.NullString
 	err := row.Scan(&url)
 	return url, err
+}
+
+const getNarInfosWithoutNarFiles = `-- name: GetNarInfosWithoutNarFiles :many
+SELECT ni.id, ni.hash, ni.created_at, ni.updated_at, ni.last_accessed_at, ni.store_path, ni.url, ni.compression, ni.file_hash, ni.file_size, ni.nar_hash, ni.nar_size, ni.deriver, ni.` + "`" + `system` + "`" + `, ni.ca
+FROM narinfos ni
+WHERE NOT EXISTS (
+    SELECT 1 FROM narinfo_nar_files nnf WHERE nnf.narinfo_id = ni.id
+)
+`
+
+// Returns narinfos that have no linked nar_file entries.
+//
+//	SELECT ni.id, ni.hash, ni.created_at, ni.updated_at, ni.last_accessed_at, ni.store_path, ni.url, ni.compression, ni.file_hash, ni.file_size, ni.nar_hash, ni.nar_size, ni.deriver, ni.`system`, ni.ca
+//	FROM narinfos ni
+//	WHERE NOT EXISTS (
+//	    SELECT 1 FROM narinfo_nar_files nnf WHERE nnf.narinfo_id = ni.id
+//	)
+func (q *Queries) GetNarInfosWithoutNarFiles(ctx context.Context) ([]NarInfo, error) {
+	rows, err := q.db.QueryContext(ctx, getNarInfosWithoutNarFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NarInfo
+	for rows.Next() {
+		var i NarInfo
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastAccessedAt,
+			&i.StorePath,
+			&i.URL,
+			&i.Compression,
+			&i.FileHash,
+			&i.FileSize,
+			&i.NarHash,
+			&i.NarSize,
+			&i.Deriver,
+			&i.System,
+			&i.Ca,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getNarTotalSize = `-- name: GetNarTotalSize :one

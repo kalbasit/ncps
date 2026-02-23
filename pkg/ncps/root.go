@@ -223,6 +223,7 @@ func New() (*cli.Command, error) {
 			serveCommand(userDirs, flagSources, registerShutdown),
 			migrateNarInfoCommand(flagSources, registerShutdown),
 			migrateNarToChunksCommand(flagSources, registerShutdown),
+			fsckCommand(flagSources, registerShutdown),
 		},
 	}
 

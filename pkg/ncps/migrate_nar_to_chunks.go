@@ -231,7 +231,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				return fmt.Errorf("error loading CDC enabled flag from database: %w", err)
 			}
 
-			if cdcEnabledStr != "true" {
+			if cdcEnabledStr != configValueTrue {
 				//nolint:err113 // no need to define package level error for this.
 				return errors.New("migrate-nar-to-chunks command requires CDC to be enabled in the database")
 			}

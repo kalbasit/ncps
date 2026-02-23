@@ -345,3 +345,21 @@ SET
     file_hash = sqlc.arg(file_hash),
     updated_at = CURRENT_TIMESTAMP
 WHERE url = sqlc.arg(old_url);
+
+-- name: GetAllNarFiles :many
+-- Returns all nar_files for storage existence verification.
+SELECT id, hash, compression, `query`, file_size, total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
+FROM nar_files;
+
+-- name: GetNarInfosWithoutNarFiles :many
+-- Returns narinfos that have no linked nar_file entries.
+SELECT ni.*
+FROM narinfos ni
+WHERE NOT EXISTS (
+    SELECT 1 FROM narinfo_nar_files nnf WHERE nnf.narinfo_id = ni.id
+);
+
+-- name: GetAllChunks :many
+-- Returns all chunks for storage existence verification (CDC mode).
+SELECT id, hash, size, compressed_size, created_at, updated_at
+FROM chunks;

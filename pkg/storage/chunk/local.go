@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -43,6 +44,28 @@ func NewLocalStore(baseDir string) (Store, error) {
 
 func (s *localStore) storeDir() string {
 	return filepath.Join(s.baseDir, "chunk")
+}
+
+func (s *localStore) WalkChunks(_ context.Context, fn func(hash string) error) error {
+	root := s.storeDir()
+
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return nil
+	}
+
+	return filepath.Walk(root, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		hash := filepath.Base(path)
+
+		return fn(hash)
+	})
 }
 
 func (s *localStore) chunkPath(hash string) (string, error) {

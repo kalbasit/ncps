@@ -77,6 +77,8 @@ const (
 
 	storageModeCDC   = "cdc"
 	storageModeWhole = "whole"
+
+	configValueTrue = "true"
 )
 
 // parseNetrcFile parses the netrc file and returns the parsed netrc object.
@@ -1073,7 +1075,7 @@ func loadCDCConfigFromDB(
 		return false, 0, 0, 0, err
 	}
 
-	if cdcEnabledStr != "true" {
+	if cdcEnabledStr != configValueTrue {
 		return enabled, 0, 0, 0, nil
 	}
 
