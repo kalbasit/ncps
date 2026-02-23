@@ -184,3 +184,201 @@ func testSetClusterUUIDExisting(factory databaseFactory) func(*testing.T) {
 		assert.Equal(t, "def-456", conf.Value)
 	}
 }
+
+func TestValidateOrStoreCDCConfigBackends(t *testing.T) {
+	t.Parallel()
+
+	backends := []struct {
+		name   string
+		envVar string
+		setup  databaseFactory
+	}{
+		{name: "SQLite", setup: setupSQLiteDatabase},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", setup: setupPostgresDatabase},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", setup: setupMySQLDatabase},
+	}
+
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			runValidateOrStoreCDCConfigTestSuite(t, b.setup)
+		})
+	}
+}
+
+func runValidateOrStoreCDCConfigTestSuite(t *testing.T, factory databaseFactory) {
+	t.Helper()
+
+	t.Run("first boot CDC disabled", testValidateCDCFirstBootDisabled(factory))
+	t.Run("first boot CDC enabled", testValidateCDCFirstBootEnabled(factory))
+	t.Run("second boot same flags", testValidateCDCSameFlags(factory))
+	t.Run("second boot changed min", testValidateCDCChangedMin(factory))
+	t.Run("second boot changed avg", testValidateCDCChangedAvg(factory))
+	t.Run("second boot changed max", testValidateCDCChangedMax(factory))
+	t.Run("second boot disable after enabled", testValidateCDCDisableAfterEnabled(factory))
+}
+
+func testValidateCDCFirstBootDisabled(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC disabled - should not store anything
+		err := c.ValidateOrStoreCDCConfig(ctx, false, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Verify nothing was stored
+		_, err = c.GetCDCEnabled(ctx)
+		assert.ErrorIs(t, err, config.ErrConfigNotFound)
+	}
+}
+
+func testValidateCDCFirstBootEnabled(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled - should store all 4 values
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Verify values were stored
+		enabledStr, err := c.GetCDCEnabled(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "true", enabledStr)
+
+		minStr, err := c.GetCDCMin(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "65536", minStr)
+
+		avgStr, err := c.GetCDCAvg(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "262144", avgStr)
+
+		maxStr, err := c.GetCDCMax(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "1048576", maxStr)
+	}
+}
+
+func testValidateCDCSameFlags(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Second boot with same flags - should succeed
+		err = c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+	}
+}
+
+func testValidateCDCChangedMin(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Second boot with changed min - should fail
+		err = c.ValidateOrStoreCDCConfig(ctx, true, 32768, 262144, 1048576)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CDC config changed")
+		assert.Contains(t, err.Error(), "cdc_min")
+	}
+}
+
+func testValidateCDCChangedAvg(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Second boot with changed avg - should fail
+		err = c.ValidateOrStoreCDCConfig(ctx, true, 65536, 131072, 1048576)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CDC config changed")
+		assert.Contains(t, err.Error(), "cdc_avg")
+	}
+}
+
+func testValidateCDCChangedMax(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Second boot with changed max - should fail
+		err = c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 2097152)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CDC config changed")
+		assert.Contains(t, err.Error(), "cdc_max")
+	}
+}
+
+func testValidateCDCDisableAfterEnabled(factory databaseFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		c := config.New(db, local.NewRWLocker())
+		ctx := context.Background()
+
+		// First boot with CDC enabled
+		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Second boot with CDC disabled - should fail
+		err = c.ValidateOrStoreCDCConfig(ctx, false, 65536, 262144, 1048576)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CDC cannot be disabled after being enabled")
+	}
+}
