@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -165,21 +166,18 @@ func serveCommand(
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-min",
-				Usage:   "Minimum chunk size for CDC in bytes",
+				Usage:   "Minimum chunk size for CDC in bytes (recommended: 16384)",
 				Sources: flagSources("cache.cdc.min", "CACHE_CDC_MIN"),
-				Value:   65536, // 64KB
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-avg",
-				Usage:   "Average chunk size for CDC in bytes",
+				Usage:   "Average chunk size for CDC in bytes (recommended: 65536)",
 				Sources: flagSources("cache.cdc.avg", "CACHE_CDC_AVG"),
-				Value:   262144, // 256KB
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-max",
-				Usage:   "Maximum chunk size for CDC in bytes",
+				Usage:   "Maximum chunk size for CDC in bytes (recommended: 262144)",
 				Sources: flagSources("cache.cdc.max", "CACHE_CDC_MAX"),
-				Value:   1048576, // 1MB
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
@@ -965,6 +963,41 @@ func createCache(
 	cdcMin := cmd.Uint32("cache-cdc-min")
 	cdcAvg := cmd.Uint32("cache-cdc-avg")
 	cdcMax := cmd.Uint32("cache-cdc-max")
+
+	// If CDC flags are not set (all zero), try to load from database
+	// This handles commands like migrate-nar-to-chunks that don't have CDC flags
+	if cdcMin == 0 && cdcAvg == 0 && cdcMax == 0 {
+		cfg := config.New(db, rwLocker)
+
+		cdcEnabledStr, err := cfg.GetCDCEnabled(ctx)
+		if err == nil && cdcEnabledStr == "true" {
+			// CDC is configured in database, load the values
+			cdcEnabled = true
+
+			cdcMinStr, _ := cfg.GetCDCMin(ctx)
+			cdcAvgStr, _ := cfg.GetCDCAvg(ctx)
+			cdcMaxStr, _ := cfg.GetCDCMax(ctx)
+
+			parseCDCValue := func(name, s string) uint32 {
+				v, err := strconv.ParseUint(s, 10, 32)
+				if err != nil {
+					zerolog.Ctx(ctx).
+						Warn().
+						Err(err).
+						Str("name", name).
+						Str("value", s).
+						Msg("failed to parse CDC value from database")
+
+					return 0
+				}
+
+				return uint32(v)
+			}
+			cdcMin = parseCDCValue("min", cdcMinStr)
+			cdcAvg = parseCDCValue("avg", cdcAvgStr)
+			cdcMax = parseCDCValue("max", cdcMaxStr)
+		}
+	}
 
 	// Validate CDC configuration against stored values
 	cfg := config.New(db, rwLocker)
