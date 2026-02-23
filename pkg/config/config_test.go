@@ -313,7 +313,7 @@ func testValidateCDCChangedMin(factory databaseFactory) func(*testing.T) {
 		// Second boot with changed min - should fail
 		err = c.ValidateOrStoreCDCConfig(ctx, true, 32768, 262144, 1048576)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "CDC configuration mismatch")
+		assert.Contains(t, err.Error(), "CDC config changed")
 		assert.Contains(t, err.Error(), "cdc_min")
 	}
 }
@@ -335,7 +335,7 @@ func testValidateCDCChangedAvg(factory databaseFactory) func(*testing.T) {
 		// Second boot with changed avg - should fail
 		err = c.ValidateOrStoreCDCConfig(ctx, true, 65536, 131072, 1048576)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "CDC configuration mismatch")
+		assert.Contains(t, err.Error(), "CDC config changed")
 		assert.Contains(t, err.Error(), "cdc_avg")
 	}
 }
@@ -357,7 +357,7 @@ func testValidateCDCChangedMax(factory databaseFactory) func(*testing.T) {
 		// Second boot with changed max - should fail
 		err = c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 2097152)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "CDC configuration mismatch")
+		assert.Contains(t, err.Error(), "CDC config changed")
 		assert.Contains(t, err.Error(), "cdc_max")
 	}
 }
@@ -379,6 +379,6 @@ func testValidateCDCDisableAfterEnabled(factory databaseFactory) func(*testing.T
 		// Second boot with CDC disabled - should fail
 		err = c.ValidateOrStoreCDCConfig(ctx, false, 65536, 262144, 1048576)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "CDC was previously enabled and cannot be disabled")
+		assert.Contains(t, err.Error(), "CDC cannot be disabled after being enabled")
 	}
 }

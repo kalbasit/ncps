@@ -39,11 +39,11 @@ var (
 	ErrConfigNotFound = errors.New("no config was found for this key")
 	// ErrCDCDisabledAfterEnabled is returned when attempting to disable CDC after being enabled.
 	ErrCDCDisabledAfterEnabled = errors.New(
-		"CDC was previously enabled and cannot be disabled; existing chunks would become inaccessible",
+		"CDC cannot be disabled after being enabled; existing chunked NARs would not be reconstructed",
 	)
 	// ErrCDCConfigMismatch is returned when CDC configuration values differ from stored values.
 	ErrCDCConfigMismatch = errors.New(
-		"CDC configuration mismatch; existing chunks would be inaccessible if values change",
+		"CDC config changed; different chunk sizes create new chunks without reusing old ones, causing storage duplication",
 	)
 )
 
