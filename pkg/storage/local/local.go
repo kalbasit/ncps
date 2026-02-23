@@ -505,6 +505,44 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	return nil
 }
 
+// WalkNars walks all NAR files in the store and calls fn for each one.
+func (s *Store) WalkNars(ctx context.Context, fn func(narURL nar.URL) error) error {
+	root := s.storeNarPath()
+
+	_, span := tracer.Start(
+		ctx,
+		"local.WalkNars",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("root", root),
+		),
+	)
+	defer span.End()
+
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return nil
+	}
+
+	return filepath.Walk(root, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		fileName := filepath.Base(path)
+
+		narURL, err := nar.ParseURL(fileName)
+		if err != nil {
+			return nil //nolint:nilerr // skip files that don't match NAR URL pattern
+		}
+
+		return fn(narURL)
+	})
+}
+
 func (s *Store) HasNarinfoDir() (bool, error) {
 	if _, err := os.Stat(s.storeNarInfoPath()); err != nil {
 		if os.IsNotExist(err) {
