@@ -8,7 +8,7 @@ This workflow guides you through generating the database wrappers for SQLite, Po
 
 ## Prerequisites
 
-- **Nix environment**: This project uses Nix for its development environment. The `gen-db-wrappers` tool is available in the Nix shell. You should run the following steps within `nix develop` or after loading `direnv`.
+- **Nix environment**: This project uses Nix for its development environment. You should run the following steps within `nix develop` or after loading `direnv`.
 
 ## Workflow Steps
 

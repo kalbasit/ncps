@@ -33,7 +33,7 @@ sqlc generate
 
 ### 2. Regenerate Database Wrappers and Models
 
-Run `go generate` for the `pkg/database` package. This command uses `gen-db-wrappers` to automatically:
+Run `go generate` for the `pkg/database` package. This command uses `sqlc-multi-db` (via `go tool`) to automatically:
 1. Extract the `Querier` interface from the `postgresdb` backend.
 2. Generate the common `Querier` interface in `pkg/database/querier.go`.
 3. Generate common domain models in `pkg/database/models.go`.
