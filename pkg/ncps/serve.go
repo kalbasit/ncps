@@ -958,6 +958,8 @@ func createCache(
 	c.SetTempDir(cmd.String("cache-temp-path"))
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 
+	cfg := config.New(db, rwLocker)
+
 	// Configure CDC
 	cdcEnabled := cmd.Bool("cache-cdc-enabled")
 	cdcMin := cmd.Uint32("cache-cdc-min")
@@ -967,16 +969,37 @@ func createCache(
 	// If CDC flags are not set (all zero), try to load from database
 	// This handles commands like migrate-nar-to-chunks that don't have CDC flags
 	if cdcMin == 0 && cdcAvg == 0 && cdcMax == 0 {
-		cfg := config.New(db, rwLocker)
-
 		cdcEnabledStr, err := cfg.GetCDCEnabled(ctx)
-		if err == nil && cdcEnabledStr == "true" {
+		if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
+			return nil, err
+		}
+
+		if !cdcEnabled && cdcEnabledStr == "true" {
+			return nil, fmt.Errorf(
+				"%w; stored cdc_enabled=%s, current cdc_enabled=%v",
+				config.ErrCDCDisabledAfterEnabled,
+				cdcEnabledStr, cdcEnabled,
+			)
+		}
+
+		if cdcEnabledStr == "true" {
 			// CDC is configured in database, load the values
 			cdcEnabled = true
 
-			cdcMinStr, _ := cfg.GetCDCMin(ctx)
-			cdcAvgStr, _ := cfg.GetCDCAvg(ctx)
-			cdcMaxStr, _ := cfg.GetCDCMax(ctx)
+			cdcMinStr, err := cfg.GetCDCMin(ctx)
+			if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
+				return nil, fmt.Errorf("error loading CDC min value from database: %w", err)
+			}
+
+			cdcAvgStr, err := cfg.GetCDCAvg(ctx)
+			if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
+				return nil, fmt.Errorf("error loading CDC avg value from database: %w", err)
+			}
+
+			cdcMaxStr, err := cfg.GetCDCMax(ctx)
+			if err != nil && !errors.Is(err, config.ErrConfigNotFound) {
+				return nil, fmt.Errorf("error loading CDC max value from database: %w", err)
+			}
 
 			parseCDCValue := func(name, s string) uint32 {
 				v, err := strconv.ParseUint(s, 10, 32)
@@ -1000,7 +1023,6 @@ func createCache(
 	}
 
 	// Validate CDC configuration against stored values
-	cfg := config.New(db, rwLocker)
 	if err := cfg.ValidateOrStoreCDCConfig(ctx, cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
 		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)
 	}

@@ -37,6 +37,7 @@ const (
 var (
 	// ErrConfigNotFound is returned if no config with this key was found.
 	ErrConfigNotFound = errors.New("no config was found for this key")
+
 	// ErrCDCDisabledAfterEnabled is returned when attempting to disable CDC after being enabled.
 	ErrCDCDisabledAfterEnabled = errors.New(
 		"CDC cannot be disabled after being enabled; existing chunked NARs would not be reconstructed",
