@@ -69,6 +69,7 @@ func runFsckSuite(t *testing.T, setup fsckSetupFn) {
 	t.Run("NarInfosWithoutNarFiles", testFsckNarInfosWithoutNarFiles(setup))
 	t.Run("OrphanedNarFilesInDB", testFsckOrphanedNarFilesInDB(setup))
 	t.Run("NarFileMissingInStorage", testFsckNarFileMissingInStorage(setup))
+	t.Run("NarFileMissingInStorageCascadeRepair", testFsckNarFileMissingCascadeRepair(setup))
 	t.Run("OrphanedNarInStorage", testFsckOrphanedNarInStorage(setup))
 	t.Run("Repair", testFsckRepair(setup))
 	t.Run("DryRun", testFsckDryRun(setup))
@@ -226,6 +227,52 @@ func testFsckNarFileMissingInStorage(setup fsckSetupFn) func(*testing.T) {
 
 		err = app.Run(ctx, args)
 		assert.ErrorIs(t, err, ncps.ErrFsckIssuesFound)
+	}
+}
+
+// testFsckNarFileMissingCascadeRepair verifies that repairing a nar_file missing from storage
+// also cleans up the parent narinfo in a single pass (no second run required).
+func testFsckNarFileMissingCascadeRepair(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, store, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		// Seed a fully consistent narinfo+narfile in DB and storage.
+		writeFsckNar1ToStorage(t, dir)
+
+		ni := getFsckNarInfo(ctx, t, store, testdata.Nar1.NarInfoHash)
+
+		require.NoError(t, testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni))
+
+		// Delete the physical NAR file to simulate missing storage.
+		narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+		require.NoError(t, os.Remove(narPath))
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// First run: repair the missing nar_file (and its now-orphaned narinfo).
+		repairArgs := []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--repair",
+		}
+
+		require.NoError(t, app.Run(ctx, repairArgs))
+
+		// Second run without --repair: must find 0 issues (repair was complete in one pass).
+		cleanArgs := []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+
+		require.NoError(t, app.Run(ctx, cleanArgs))
 	}
 }
 

@@ -710,7 +710,20 @@ func repairFsckIssues(
 		}
 	}
 
-	// c. Delete nar_file DB records missing from storage
+	// c. Delete nar_file DB records missing from storage.
+	// Snapshot which narinfos are already orphaned before our deletions so we can
+	// distinguish pre-existing orphans (handled in section a) from narinfos that
+	// become orphaned as a cascade of removing the missing nar_file record.
+	existingOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("repair pre-check GetNarInfosWithoutNarFiles: %w", err)
+	}
+
+	existingOrphanIDs := make(map[int64]struct{}, len(existingOrphans))
+	for _, ni := range existingOrphans {
+		existingOrphanIDs[ni.ID] = struct{}{}
+	}
+
 	for _, nf := range results.narFilesMissingInStorage {
 		// Re-verify before deleting
 		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
@@ -734,6 +747,31 @@ func repairFsckIssues(
 				Int64("nar_file_id", nf.ID).
 				Str("hash", nf.Hash).
 				Msg("deleted nar_file DB record (missing from storage)")
+		}
+	}
+
+	// Delete narinfos that became orphaned as a result of the nar_file deletions above.
+	// These would otherwise only be caught on a second fsck run.
+	newOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("repair post-check GetNarInfosWithoutNarFiles: %w", err)
+	}
+
+	for _, ni := range newOrphans {
+		if _, alreadyOrphaned := existingOrphanIDs[ni.ID]; alreadyOrphaned {
+			// Pre-existing orphan; handled in section a.
+			continue
+		}
+
+		if _, err := db.DeleteNarInfoByID(ctx, ni.ID); err != nil {
+			logger.Error().Err(err).
+				Int64("narinfo_id", ni.ID).
+				Msg("failed to delete narinfo orphaned by missing nar_file")
+		} else {
+			logger.Info().
+				Int64("narinfo_id", ni.ID).
+				Str("hash", ni.Hash).
+				Msg("deleted narinfo orphaned by nar_file missing from storage")
 		}
 	}
 
