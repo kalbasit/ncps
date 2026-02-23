@@ -283,13 +283,6 @@ func (c *Config) validateCDCConfig(
 
 	var mismatches []string
 
-	if fmt.Sprintf("%v", enabled) != storedEnabledStr {
-		mismatches = append(mismatches, fmt.Sprintf(
-			"cdc_enabled: stored=%s, current=%v",
-			storedEnabledStr, enabled,
-		))
-	}
-
 	if minStr != storedMinStr {
 		mismatches = append(mismatches, fmt.Sprintf(
 			"cdc_min: stored=%s, current=%s",
