@@ -204,7 +204,7 @@ func (c *Config) ValidateOrStoreCDCConfig(
 				return nil
 			}
 
-			return c.storeCDCConfig(ctx, enabled, minSize, avgSize, maxSize)
+			return c.storeCDCConfig(ctx, minSize, avgSize, maxSize)
 		}
 
 		return fmt.Errorf("failed to get CDC enabled config: %w", err)
@@ -217,7 +217,6 @@ func (c *Config) ValidateOrStoreCDCConfig(
 // storeCDCConfig stores all 4 CDC configuration values in the database.
 func (c *Config) storeCDCConfig(
 	ctx context.Context,
-	_ bool,
 	minSize, avgSize, maxSize uint32,
 ) error {
 	minStr := fmt.Sprintf("%d", minSize)
