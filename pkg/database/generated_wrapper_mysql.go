@@ -294,6 +294,70 @@ func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error
 	return res, nil
 }
 
+func (w *mysqlWrapper) GetAllChunks(ctx context.Context) ([]Chunk, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetAllChunks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]Chunk, len(res))
+	for i, v := range res {
+		items[i] = Chunk{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Size: v.Size,
+
+			CompressedSize: v.CompressedSize,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
+	}
+	return items, nil
+}
+
+func (w *mysqlWrapper) GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetAllNarFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetAllNarFilesRow, len(res))
+	for i, v := range res {
+		items[i] = GetAllNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			Query: v.Query,
+
+			FileSize: v.FileSize,
+
+			TotalChunks: v.TotalChunks,
+
+			ChunkingStartedAt: v.ChunkingStartedAt,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+		}
+	}
+	return items, nil
+}
+
 func (w *mysqlWrapper) GetChunkByHash(ctx context.Context, hash string) (Chunk, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -963,6 +1027,52 @@ func (w *mysqlWrapper) GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNa
 	// Return Primitive / *sql.DB / etc
 
 	return res, nil
+}
+
+func (w *mysqlWrapper) GetNarInfosWithoutNarFiles(ctx context.Context) ([]NarInfo, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarInfosWithoutNarFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]NarInfo, len(res))
+	for i, v := range res {
+		items[i] = NarInfo{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+
+			LastAccessedAt: v.LastAccessedAt,
+
+			StorePath: v.StorePath,
+
+			URL: v.URL,
+
+			Compression: v.Compression,
+
+			FileHash: v.FileHash,
+
+			FileSize: v.FileSize,
+
+			NarHash: v.NarHash,
+
+			NarSize: v.NarSize,
+
+			Deriver: v.Deriver,
+
+			System: v.System,
+
+			Ca: v.Ca,
+		}
+	}
+	return items, nil
 }
 
 func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {

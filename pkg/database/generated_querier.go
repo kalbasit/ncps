@@ -144,6 +144,16 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarFiles(ctx context.Context) (int64, error)
+	// Returns all chunks for storage existence verification (CDC mode).
+	//
+	//  SELECT id, hash, size, compressed_size, created_at, updated_at
+	//  FROM chunks
+	GetAllChunks(ctx context.Context) ([]Chunk, error)
+	// Returns all nar_files for storage existence verification.
+	//
+	//  SELECT id, hash, compression, query, file_size, total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
+	//  FROM nar_files
+	GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesRow, error)
 	//GetChunkByHash
 	//
 	//  SELECT id, hash, size, compressed_size, created_at, updated_at
@@ -285,6 +295,14 @@ type Querier interface {
 	//  WHERE nf.hash = $1 AND nf.compression = $2 AND nf.query = $3
 	//  LIMIT 1
 	GetNarInfoURLByNarFileHash(ctx context.Context, arg GetNarInfoURLByNarFileHashParams) (sql.NullString, error)
+	// Returns narinfos that have no linked nar_file entries.
+	//
+	//  SELECT ni.id, ni.hash, ni.created_at, ni.updated_at, ni.last_accessed_at, ni.store_path, ni.url, ni.compression, ni.file_hash, ni.file_size, ni.nar_hash, ni.nar_size, ni.deriver, ni.system, ni.ca
+	//  FROM narinfos ni
+	//  WHERE NOT EXISTS (
+	//      SELECT 1 FROM narinfo_nar_files nnf WHERE nnf.narinfo_id = ni.id
+	//  )
+	GetNarInfosWithoutNarFiles(ctx context.Context) ([]NarInfo, error)
 	//GetNarTotalSize
 	//
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) AS total_size
