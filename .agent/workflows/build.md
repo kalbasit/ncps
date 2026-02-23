@@ -5,7 +5,7 @@ description: Build the project
 1. Build with Go:
 
 ```bash
-go build .
+nix develop --command go build .
 ```
 
 2. Build with Nix:
