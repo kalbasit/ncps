@@ -9,7 +9,7 @@ The `ncps fsck` command checks for consistency issues between the database and s
 ### Standard Checks (always performed)
 
 | Issue | Description |
-|-------|-------------|
+| --- | --- |
 | **Narinfos without nar_files** | Narinfo records in the database that have no linked `nar_file` entry |
 | **Orphaned nar_files (DB only)** | `nar_file` records in the database not linked to any narinfo |
 | **Nar_files missing from storage** | `nar_file` records in the database whose physical file is absent from storage |
@@ -18,7 +18,7 @@ The `ncps fsck` command checks for consistency issues between the database and s
 ### CDC Checks (when CDC is enabled)
 
 | Issue | Description |
-|-------|-------------|
+| --- | --- |
 | **Orphaned chunks (DB only)** | Chunk records in the database not linked to any `nar_file` |
 | **Chunks missing from storage** | Chunk records in the database whose physical chunk file is absent |
 | **Orphaned chunk files** | Chunk files in storage that have no corresponding database record |
@@ -28,12 +28,15 @@ The `ncps fsck` command checks for consistency issues between the database and s
 fsck runs in three phases:
 
 1. **Phase 1 – Collect suspects**: Runs database queries and walks storage to identify potential issues.
-2. **Phase 2 – Re-verify**: Each suspected issue is individually re-checked to filter out items that were in-flight (being added or removed concurrently). This prevents false positives from in-progress cache operations.
-3. **Phase 3 – Repair** (optional): Re-verifies each item one final time before deleting, then removes all confirmed issues.
+1. **Phase 2 – Re-verify**: Each suspected issue is individually re-checked to filter out items that were in-flight (being added or removed concurrently). This prevents false positives from in-progress cache operations.
+1. **Phase 3 – Repair** (optional): Re-verifies each item one final time before deleting, then removes all confirmed issues.
 
 The double re-verify design means fsck is safe to run against a live cache without taking it offline.
 
 ## Usage
+
+> [!WARNING]
+> The **fsck** command can be expensive to run, especially when using S3 storage because it walks the storage to find orphaned NARs or Chunks.
 
 ### Check Only (Report Mode)
 
@@ -123,14 +126,14 @@ ncps fsck \
 ### Core Flags
 
 | Flag | Description |
-|------|-------------|
+| --- | --- |
 | `--repair` | Automatically fix all detected issues |
 | `--dry-run` | Show what would be fixed without making any changes |
 
 ### Storage Flags
 
 | Flag | Description |
-|------|-------------|
+| --- | --- |
 | `--cache-storage-local` | Path to local cache storage directory |
 | `--cache-storage-s3-bucket` | S3 bucket name |
 | `--cache-storage-s3-endpoint` | S3-compatible endpoint URL |
@@ -142,8 +145,8 @@ ncps fsck \
 ### Database Flags
 
 | Flag | Default | Description |
-|------|---------|-------------|
-| `--cache-database-url` | *(required)* | Database URL (`sqlite:`, `postgresql://`, or `mysql://`) |
+| --- | --- | --- |
+| `--cache-database-url` | _(required)_ | Database URL (`sqlite:`, `postgresql://`, or `mysql://`) |
 | `--cache-database-pool-max-open-conns` | — | Maximum open database connections |
 | `--cache-database-pool-max-idle-conns` | — | Maximum idle database connections |
 
@@ -152,7 +155,7 @@ ncps fsck \
 These flags are optional and only needed if you want fsck to use distributed (Redis-backed) locks during the check. For standalone use, local locking is used by default.
 
 | Flag | Default | Description |
-|------|---------|-------------|
+| --- | --- | --- |
 | `--cache-redis-addrs` | — | Redis server addresses (enables distributed locking) |
 | `--cache-redis-username` | — | Redis username |
 | `--cache-redis-password` | — | Redis password |
@@ -167,7 +170,7 @@ These flags are optional and only needed if you want fsck to use distributed (Re
 When `--repair` is used (or confirmed interactively), fsck deletes the following:
 
 | Issue | Action |
-|-------|--------|
+| --- | --- |
 | Narinfos without nar_files | Delete the narinfo DB record (and its references/signatures via cascade) |
 | Orphaned nar_files (DB only) | Delete the `nar_file` DB record |
 | Nar_files missing from storage | Delete the `nar_file` DB record; also deletes any narinfo that becomes orphaned as a result (cascade cleanup — no second run needed) |
@@ -181,7 +184,7 @@ When `--repair` is used (or confirmed interactively), fsck deletes the following
 ## Exit Codes
 
 | Exit Code | Meaning |
-|-----------|---------|
+| --- | --- |
 | `0` | All checks passed (or repair completed successfully) |
 | Non-zero | Issues were found and either `--dry-run` was used, the prompt was answered with `N`, or an error occurred |
 
@@ -205,7 +208,7 @@ ncps fsck \
 
 As a systemd timer:
 
-```ini
+```
 [Unit]
 Description=ncps integrity check
 
@@ -257,8 +260,8 @@ CDC checks are only performed when CDC is enabled in the database configuration.
 
 ## Related Documentation
 
-- <a class="reference-link" href="Backup Restore.md">Backup & Restore</a> - Back up before repairing data loss
-- <a class="reference-link" href="NarInfo Migration.md">NarInfo Migration</a> - Migrate narinfo metadata to database
-- <a class="reference-link" href="NAR to Chunks Migration.md">NAR to Chunks Migration</a> - Migrate NAR files to content-defined chunks
-- <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database configuration
-- <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backend configuration
+- <a class="reference-link" href="Backup%20Restore.md">Backup Restore</a> - Back up before repairing data loss
+- <a class="reference-link" href="NarInfo%20Migration.md">NarInfo Migration</a> - Migrate narinfo metadata to database
+- <a class="reference-link" href="NAR%20to%20Chunks%20Migration.md">NAR to Chunks Migration</a> - Migrate NAR files to content-defined chunks
+- <a class="reference-link" href="../Configuration/Database.md">Database</a> - Database configuration
+- <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backend configuration

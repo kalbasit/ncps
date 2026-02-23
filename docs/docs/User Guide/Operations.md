@@ -56,10 +56,10 @@ Operational guides for running ncps in production.
 
 ### Integrity Check (fsck)
 
-- [Check Only](Operations/Integrity%20Check%20(fsck).md)
-- [Repair](Operations/Integrity%20Check%20(fsck).md)
-- [Dry Run](Operations/Integrity%20Check%20(fsck).md)
-- [CDC Checks](Operations/Integrity%20Check%20(fsck).md)
+- [Check Only](<Operations/Integrity%20Check%20(fsck).md>)
+- [Repair](<Operations/Integrity%20Check%20(fsck).md>)
+- [Dry Run](<Operations/Integrity%20Check%20(fsck).md>)
+- [CDC Checks](<Operations/Integrity%20Check%20(fsck).md>)
 
 ## Related Documentation
 
