@@ -562,6 +562,47 @@ func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	return nil
 }
 
+// WalkNars walks all NAR files in the store and calls fn for each one.
+func (s *Store) WalkNars(ctx context.Context, fn func(narURL nar.URL) error) error {
+	prefix := s.storeNarPrefix()
+
+	_, span := tracer.Start(
+		ctx,
+		"s3.WalkNars",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("prefix", prefix),
+		),
+	)
+	defer span.End()
+
+	opts := minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}
+
+	for object := range s.client.ListObjects(ctx, s.bucket, opts) {
+		if object.Err != nil {
+			zerolog.Ctx(ctx).Error().Err(object.Err).Str("prefix", prefix).Msg("error listing nar objects from S3")
+
+			return object.Err
+		}
+
+		fileName := path.Base(object.Key)
+
+		narURL, err := nar.ParseURL(fileName)
+		if err != nil {
+			continue // skip files that don't match NAR URL pattern
+		}
+
+		if err := fn(narURL); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // HasNarinfoDir checks if any objects exist under the given prefix.
 func (s *Store) HasNarinfoDir(ctx context.Context) (bool, error) {
 	prefix := s.storeNarInfoPath() + "/"
@@ -616,6 +657,14 @@ func (s *Store) narInfoPath(hash string) (string, error) {
 	}
 
 	return s.storeNarInfoPath() + "/" + nifP, nil
+}
+
+func (s *Store) storeNarPrefix() string {
+	if s.prefix == "" {
+		return "store/nar/"
+	}
+
+	return s.prefix + "/store/nar/"
 }
 
 func (s *Store) narPath(narURL nar.URL) (string, error) {

@@ -24,4 +24,7 @@ type Store interface {
 
 	// DeleteChunk removes a chunk.
 	DeleteChunk(ctx context.Context, hash string) error
+
+	// WalkChunks walks all chunks in the store and calls fn for each hash.
+	WalkChunks(ctx context.Context, fn func(hash string) error) error
 }

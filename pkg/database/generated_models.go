@@ -82,6 +82,19 @@ type DeleteNarFileByHashParams struct {
 	Query       string
 }
 
+type GetAllNarFilesRow struct {
+	ID                int64
+	Hash              string
+	Compression       string
+	Query             string
+	FileSize          uint64
+	TotalChunks       int64
+	ChunkingStartedAt sql.NullTime
+	CreatedAt         time.Time
+	UpdatedAt         sql.NullTime
+	LastAccessedAt    sql.NullTime
+}
+
 type GetChunkByNarFileIDAndIndexParams struct {
 	NarFileID  int64
 	ChunkIndex int64

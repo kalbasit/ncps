@@ -74,4 +74,7 @@ type NarStore interface {
 
 	// DeleteNar deletes the nar from the store.
 	DeleteNar(ctx context.Context, narURL nar.URL) error
+
+	// WalkNars walks all NAR files in the store and calls fn for each one.
+	WalkNars(ctx context.Context, fn func(narURL nar.URL) error) error
 }
