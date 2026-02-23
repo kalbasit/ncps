@@ -523,16 +523,16 @@ func (s *Store) WalkNars(ctx context.Context, fn func(narURL nar.URL) error) err
 		return nil
 	}
 
-	return filepath.Walk(root, func(path string, info fs.FileInfo, err error) error {
+	return filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
-		fileName := filepath.Base(path)
+		fileName := d.Name()
 
 		narURL, err := nar.ParseURL(fileName)
 		if err != nil {
