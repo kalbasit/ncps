@@ -27,7 +27,6 @@
           # ERRO [linters_context] typechecking error: main module (github.com/kalbasit/ncps) does not contain package github.com/kalbasit/ncps/nix/dbmate-wrapper/src
           excludes = [
             "nix/dbmate-wrapper/src"
-            "nix/gen-db-wrappers/src"
           ];
         };
         no-commit-to-branch.enable = true;
