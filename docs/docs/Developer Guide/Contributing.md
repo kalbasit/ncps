@@ -592,7 +592,6 @@ ncps/
 │   ├── formatter/              # Formatter configuration
 │   ├── process-compose/        # Development services
 │   └── dbmate-wrapper/         # Database migration wrapper
-│   └── gen-db-wrappers/        # Database wrapper generator
 └── dev-scripts/                # Development helper scripts
     └── run.sh                  # Development server script
 ```

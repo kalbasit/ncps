@@ -1,4 +1,4 @@
-//go:generate gen-db-wrappers postgresdb/querier.go
+//go:generate go tool sqlc-multi-db postgresdb/querier.go
 package database
 
 import (
