@@ -12,6 +12,7 @@ Operational guides for running ncps in production.
 - <a class="reference-link" href="Operations/Upgrading.md">Upgrading</a> - Upgrade procedures and migration
 - <a class="reference-link" href="Operations/NarInfo%20Migration.md">NarInfo Migration</a> - Migrate narinfo metadata to database
 - <a class="reference-link" href="Operations/NAR%20to%20Chunks%20Migration.md">NAR to Chunks Migration</a> - Migrate NAR files to content-defined chunks
+- <a class="reference-link" href="Operations/Integrity%20Check%20(fsck).md">Integrity Check (fsck)</a> - Detect and repair database/storage inconsistencies
 
 ## Quick Links
 
@@ -52,6 +53,13 @@ Operational guides for running ncps in production.
 - [CLI Migration Guide](Operations/NAR%20to%20Chunks%20Migration.md)
 - [Progress Monitoring](Operations/NAR%20to%20Chunks%20Migration.md)
 - [Troubleshooting](Operations/NAR%20to%20Chunks%20Migration.md)
+
+### Integrity Check (fsck)
+
+- [Check Only](<Operations/Integrity%20Check%20(fsck).md>)
+- [Repair](<Operations/Integrity%20Check%20(fsck).md>)
+- [Dry Run](<Operations/Integrity%20Check%20(fsck).md>)
+- [CDC Checks](<Operations/Integrity%20Check%20(fsck).md>)
 
 ## Related Documentation
 
