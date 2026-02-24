@@ -77,6 +77,7 @@ github.com/kalbasit/fastcdc v0.0.0-20260223045500-c072edc28e41 h1:vFYOqa5ymscy1Q
 github.com/kalbasit/fastcdc v0.0.0-20260223045500-c072edc28e41/go.mod h1:A8VopLTLKIeERNhrz1WjKETOyBkVWTla/buFMAfZ11Y=
 github.com/kalbasit/sqlc-multi-db v0.0.0-20260223035154-ed0aca48346b h1:yVLpf84msltJDB9pK7ZeaH6vGwMmZV+zK4mBXX21w0M=
 github.com/kalbasit/sqlc-multi-db v0.0.0-20260223035154-ed0aca48346b/go.mod h1:wnwAfgroNVnm6Gef7P4vz2q682Bm57oddV8/NarWaAY=
+github.com/kalbasit/sqlc-multi-db v0.0.0-20260223050518-10fd7c6188e4/go.mod h1:bgdjVbPh6ldHHIW81G+j99cl0nC4aBiFSmdejbv0Ka4=
 github.com/klauspost/compress v1.18.4 h1:RPhnKRAQ4Fh8zU2FY/6ZFDwTVTxgJ/EMydqSTzE9a2c=
 github.com/klauspost/compress v1.18.4/go.mod h1:R0h/fSBs8DE4ENlcrlib3PsXS61voFxhIs2DeRhCvJ4=
 github.com/klauspost/cpuid/v2 v2.0.1/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
