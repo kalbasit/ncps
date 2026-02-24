@@ -1,0 +1,9 @@
+// https://zed.dev/docs/tasks
+[
+  {
+    "label": "Process Compose",
+    "command": "nix run .#deps",
+    "use_new_terminal": true,
+    "reveal": "no_focus",
+  },
+]
