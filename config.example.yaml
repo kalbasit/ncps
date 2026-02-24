@@ -68,12 +68,12 @@ cache:
   cdc:
     # Enable CDC chunking
     enabled: false
-    # Minimum chunk size for CDC in bytes (default: 65536)
-    min: 65536
-    # Average chunk size for CDC in bytes (default: 262144)
-    avg: 262144
-    # Maximum chunk size for CDC in bytes (default: 1048576)
-    max: 1048576
+    # Minimum chunk size for CDC in bytes (default: 16384)
+    min: 16384
+    # Average chunk size for CDC in bytes (default: 65536)
+    avg: 65536
+    # Maximum chunk size for CDC in bytes (default: 262144)
+    max: 262144
   # The maximum size of the store. It can be given with units such as 5K, 10G
   # etc. Supported units: B, K, M, G, T
   max-size: 100G

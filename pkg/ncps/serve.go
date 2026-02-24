@@ -168,18 +168,21 @@ func serveCommand(
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-min",
-				Usage:   "Minimum chunk size for CDC in bytes (recommended: 16384)",
+				Usage:   "Minimum chunk size for CDC in bytes",
 				Sources: flagSources("cache.cdc.min", "CACHE_CDC_MIN"),
+				Value:   16384,
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-avg",
-				Usage:   "Average chunk size for CDC in bytes (recommended: 65536)",
+				Usage:   "Average chunk size for CDC in bytes",
 				Sources: flagSources("cache.cdc.avg", "CACHE_CDC_AVG"),
+				Value:   65536,
 			},
 			&cli.Uint32Flag{
 				Name:    "cache-cdc-max",
-				Usage:   "Maximum chunk size for CDC in bytes (recommended: 262144)",
+				Usage:   "Maximum chunk size for CDC in bytes",
 				Sources: flagSources("cache.cdc.max", "CACHE_CDC_MAX"),
+				Value:   262144,
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",

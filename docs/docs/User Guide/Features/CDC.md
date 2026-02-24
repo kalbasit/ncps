@@ -40,7 +40,7 @@ CDC is disabled by default. You can enable it by setting `cache.cdc.enabled` to 
 cache:
   cdc:
     enabled: true
-    # Optional: Tune chunk sizes (recommended values shown)
+    # Optional: Tune chunk sizes (default values shown)
     min: 16384    # 16 KB
     avg: 65536    # 64 KB
     max: 262144   # 256 KB
@@ -51,9 +51,9 @@ cache:
 | Flag | Description | Environment Variable | Default |
 | --- | --- | --- | --- |
 | `--cache-cdc-enabled` | Enable CDC for deduplication | `CACHE_CDC_ENABLED` | `false` |
-| `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | none (recommended: 16384) |
-| `--cache-cdc-avg` | Average (target) chunk size in bytes | `CACHE_CDC_AVG` | none (recommended: 65536) |
-| `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | none (recommended: 262144) |
+| `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | 16384 |
+| `--cache-cdc-avg` | Average (target) chunk size in bytes | `CACHE_CDC_AVG` | 65536 |
+| `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | 262144 |
 
 ## Storage Considerations
 
