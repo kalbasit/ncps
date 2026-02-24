@@ -53,18 +53,16 @@ func (s *localStore) WalkChunks(_ context.Context, fn func(hash string) error) e
 		return nil
 	}
 
-	return filepath.Walk(root, func(path string, info fs.FileInfo, err error) error {
+	return filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
-		hash := filepath.Base(path)
-
-		return fn(hash)
+		return fn(d.Name())
 	})
 }
 
