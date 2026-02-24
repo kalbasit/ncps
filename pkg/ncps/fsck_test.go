@@ -548,7 +548,7 @@ func setupFsckCDCNarFile(
 
 	for i := range numChunks {
 		// Use a simple deterministic hash: replace last char with a letter based on index.
-		chunkHash := narHash[:len(narHash)-1] + string(rune('a'+i))
+		chunkHash := narHash[:len(narHash)-2] + string(rune('a'+(i/26))) + string(rune('a'+(i%26)))
 
 		data := []byte(strings.Repeat("x", 64) + string(rune(i)))
 		_, _, err := cs.PutChunk(ctx, chunkHash, data)
