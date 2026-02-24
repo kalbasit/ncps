@@ -17,10 +17,12 @@ import (
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 
+	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/otel"
 	"github.com/kalbasit/ncps/pkg/storage"
+	"github.com/kalbasit/ncps/pkg/storage/chunk"
 )
 
 // ErrFsckIssuesFound is returned when fsck finds consistency issues.
@@ -46,8 +48,8 @@ type fsckResults struct {
 	// orphanedChunksInDB: chunks in DB not linked to any nar_file.
 	orphanedChunksInDB []database.GetOrphanedChunksRow
 
-	// chunksMissingInStorage: chunks in DB whose physical file is absent.
-	chunksMissingInStorage []database.Chunk
+	// narFilesWithChunkIssues: CDC nar_files with missing or incomplete chunks.
+	narFilesWithChunkIssues []database.NarFile
 
 	// orphanedChunksInStorage: chunk files in storage with no DB record.
 	orphanedChunksInStorage []string
@@ -59,7 +61,7 @@ func (r *fsckResults) totalIssues() int {
 		len(r.narFilesMissingInStorage) +
 		len(r.orphanedNarFilesInStorage) +
 		len(r.orphanedChunksInDB) +
-		len(r.chunksMissingInStorage) +
+		len(r.narFilesWithChunkIssues) +
 		len(r.orphanedChunksInStorage)
 }
 
@@ -71,16 +73,6 @@ type NarWalker interface {
 // ChunkWalker is implemented by chunk stores that support walking chunk files.
 type ChunkWalker interface {
 	WalkChunks(ctx context.Context, fn func(hash string) error) error
-}
-
-// hasChunker is implemented by chunk stores that support HasChunk.
-type hasChunker interface {
-	HasChunk(ctx context.Context, hash string) (bool, error)
-}
-
-// chunkDeleter is implemented by chunk stores that support DeleteChunk.
-type chunkDeleter interface {
-	DeleteChunk(ctx context.Context, hash string) error
 }
 
 func fsckCommand(
@@ -320,12 +312,12 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			// 5. Detect CDC mode
 			cdcMode := false
 
-			cdcConfig, dbErr := db.GetConfigByKey(ctx, "cdc.enabled")
+			cdcConfig, dbErr := db.GetConfigByKey(ctx, config.KeyCDCEnabled)
 			if dbErr == nil && cdcConfig.Value == configValueTrue {
 				cdcMode = true
 			}
 
-			var chunkStore ChunkWalker
+			var chunkStore chunk.Store
 
 			if cdcMode {
 				cs, csErr := getChunkStorageBackend(ctx, cmd, locker)
@@ -335,7 +327,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 					return csErr
 				}
 
-				chunkStore, _ = cs.(ChunkWalker)
+				chunkStore = cs
 			}
 
 			// 6. Phase 1: Collect suspects
@@ -358,8 +350,6 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			printFsckSummary(results)
 
 			if results.totalIssues() == 0 {
-				fmt.Println("All checks passed.")
-
 				return nil
 			}
 
@@ -411,7 +401,7 @@ func collectFsckSuspects(
 	ctx context.Context,
 	db database.Querier,
 	narStore storage.NarStore,
-	chunkStore ChunkWalker,
+	chunkStore chunk.Store,
 	cdcMode bool,
 ) (*fsckResults, error) {
 	results := &fsckResults{cdcMode: cdcMode}
@@ -451,6 +441,12 @@ func collectFsckSuspects(
 	}
 
 	for _, nf := range allNarFiles {
+		// In CDC mode, chunked nar_files live in chunk storage — not as whole NAR files.
+		// They are verified separately via collectNarFilesWithChunkIssues.
+		if cdcMode && nf.TotalChunks > 0 {
+			continue
+		}
+
 		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
 		if err != nil {
 			return nil, fmt.Errorf("narFileRowToURL for nar_file %d: %w", nf.ID, err)
@@ -508,13 +504,13 @@ func collectFsckSuspects(
 
 	results.orphanedChunksInDB = orphanedChunks
 
-	// f. Chunks missing from storage
-	missing, err := collectChunksMissingFromStorage(ctx, db, chunkStore)
+	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
+	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(ctx, db, allNarFiles, chunkStore)
 	if err != nil {
 		return nil, err
 	}
 
-	results.chunksMissingInStorage = missing
+	results.narFilesWithChunkIssues = narFilesWithChunkIssues
 
 	// g. Orphaned chunk files in storage
 	orphaned, err := collectOrphanedChunksInStorage(ctx, db, chunkStore)
@@ -533,7 +529,7 @@ func reVerifyFsckSuspects(
 	ctx context.Context,
 	db database.Querier,
 	narStore storage.NarStore,
-	chunkStore ChunkWalker,
+	chunkStore chunk.Store,
 	suspects *fsckResults,
 ) (*fsckResults, error) {
 	results := &fsckResults{cdcMode: suspects.cdcMode}
@@ -616,21 +612,17 @@ func reVerifyFsckSuspects(
 		}
 	}
 
-	// Re-verify: chunks missing from storage
-	hc, _ := chunkStore.(hasChunker)
+	// Re-verify: NAR files with chunk issues
+	if chunkStore != nil {
+		for _, nf := range suspects.narFilesWithChunkIssues {
+			broken, err := isNarFileChunkBroken(ctx, db, chunkStore, nf)
+			if err != nil {
+				return nil, fmt.Errorf("re-verify narFilesWithChunkIssues(%d): %w", nf.ID, err)
+			}
 
-	for _, c := range suspects.chunksMissingInStorage {
-		if hc == nil {
-			break
-		}
-
-		exists, err := hc.HasChunk(ctx, c.Hash)
-		if err != nil {
-			return nil, fmt.Errorf("re-verify HasChunk(%s): %w", c.Hash, err)
-		}
-
-		if !exists {
-			results.chunksMissingInStorage = append(results.chunksMissingInStorage, c)
+			if broken {
+				results.narFilesWithChunkIssues = append(results.narFilesWithChunkIssues, nf)
+			}
 		}
 	}
 
@@ -650,23 +642,111 @@ func reVerifyFsckSuspects(
 }
 
 // printFsckSummary prints the fsck summary report.
+//
+// The table is built dynamically so column widths and border lines are always
+// consistent, regardless of how many digits the counts have.
+//
+// Emoji are placed outside the right border to avoid terminal-width ambiguity
+// (multi-byte emoji chars do not have a universally agreed display-column width
+// so mixing them inside a Printf format field breaks alignment).
 func printFsckSummary(r *fsckResults) {
-	fmt.Println()
-	fmt.Println("ncps fsck summary")
-	fmt.Println("=================")
-	fmt.Printf("Narinfos without nar_files:         %d\n", len(r.narinfosWithoutNarFiles))
-	fmt.Printf("Orphaned nar_files (DB only):       %d\n", len(r.orphanedNarFilesInDB))
-	fmt.Printf("Nar_files missing from storage:     %d\n", len(r.narFilesMissingInStorage))
-	fmt.Printf("Orphaned NAR files in storage:      %d\n", len(r.orphanedNarFilesInStorage))
-
-	if r.cdcMode {
-		fmt.Printf("[CDC] Orphaned chunks (DB only):    %d\n", len(r.orphanedChunksInDB))
-		fmt.Printf("[CDC] Chunks missing from storage:  %d\n", len(r.chunksMissingInStorage))
-		fmt.Printf("[CDC] Orphaned chunk files:         %d\n", len(r.orphanedChunksInStorage))
+	type fsckRow struct {
+		label string
+		count int
 	}
 
-	fmt.Println("-----------------")
-	fmt.Printf("Total issues:                       %d\n", r.totalIssues())
+	// Collect every data row so we can measure widths before printing.
+	dataRows := []fsckRow{
+		{"Narinfos without nar_files:", len(r.narinfosWithoutNarFiles)},
+		{"Orphaned nar_files (DB only):", len(r.orphanedNarFilesInDB)},
+		{"Nar_files missing from storage:", len(r.narFilesMissingInStorage)},
+		{"Orphaned NAR files in storage:", len(r.orphanedNarFilesInStorage)},
+	}
+
+	if r.cdcMode {
+		dataRows = append(dataRows,
+			fsckRow{"Orphaned chunks (DB only):", len(r.orphanedChunksInDB)},
+			fsckRow{"NAR files w/ chunk issues:", len(r.narFilesWithChunkIssues)},
+			fsckRow{"Orphaned chunk files:", len(r.orphanedChunksInStorage)},
+		)
+	}
+
+	total := r.totalIssues()
+	dataRows = append(dataRows, fsckRow{"Total issues:", total})
+
+	// Compute column widths from the actual data.
+	maxLabel := 0
+	maxCount := 1
+
+	for _, row := range dataRows {
+		if len(row.label) > maxLabel {
+			maxLabel = len(row.label)
+		}
+
+		if d := len(fmt.Sprintf("%d", row.count)); d > maxCount {
+			maxCount = d
+		}
+	}
+
+	// Inner width = 2 (left pad) + maxLabel + 1 (gap) + maxCount + 2 (right pad).
+	innerWidth := 2 + maxLabel + 1 + maxCount + 2
+
+	sep := "╠" + strings.Repeat("═", innerWidth) + "╣"
+	top := "╔" + strings.Repeat("═", innerWidth) + "╗"
+	bot := "╚" + strings.Repeat("═", innerWidth) + "╝"
+
+	titleStr := "ncps fsck summary"
+	titlePad := innerWidth - len(titleStr)
+	titleRow := "║" + strings.Repeat(" ", titlePad/2) + titleStr +
+		strings.Repeat(" ", titlePad-titlePad/2) + "║"
+
+	// row prints one data line. The emoji sits to the right of the closing border
+	// so that all box characters are pure ASCII/single-width and borders are
+	// guaranteed to align.
+	row := func(label string, n int) {
+		ic := "✅"
+		if n > 0 {
+			ic = "❌"
+		}
+
+		inner := fmt.Sprintf("  %-*s %*d  ", maxLabel, label, maxCount, n)
+		fmt.Printf("║%s║ %s\n", inner, ic)
+	}
+
+	sectionHeader := func(title string) {
+		inner := "  " + title + strings.Repeat(" ", innerWidth-2-len(title))
+		fmt.Printf("║%s║\n", inner)
+	}
+
+	fmt.Println()
+	fmt.Println(top)
+	fmt.Println(titleRow)
+	fmt.Println(sep)
+	row("Narinfos without nar_files:", len(r.narinfosWithoutNarFiles))
+	row("Orphaned nar_files (DB only):", len(r.orphanedNarFilesInDB))
+	row("Nar_files missing from storage:", len(r.narFilesMissingInStorage))
+	row("Orphaned NAR files in storage:", len(r.orphanedNarFilesInStorage))
+
+	if r.cdcMode {
+		fmt.Println(sep)
+		sectionHeader("CDC checks")
+		fmt.Println(sep)
+		row("Orphaned chunks (DB only):", len(r.orphanedChunksInDB))
+		row("NAR files w/ chunk issues:", len(r.narFilesWithChunkIssues))
+		row("Orphaned chunk files:", len(r.orphanedChunksInStorage))
+	}
+
+	fmt.Println(sep)
+	row("Total issues:", total)
+	fmt.Println(bot)
+
+	fmt.Println()
+
+	if total == 0 {
+		fmt.Println("✅ All checks passed.")
+	} else {
+		fmt.Printf("❌ %d issue(s) found.\n", total)
+	}
 }
 
 // repairFsckIssues applies fixes for each category of issue, re-verifying each item before acting.
@@ -674,7 +754,7 @@ func repairFsckIssues(
 	ctx context.Context,
 	db database.Querier,
 	narStore storage.NarStore,
-	chunkStore ChunkWalker,
+	chunkStore chunk.Store,
 	results *fsckResults,
 ) error {
 	logger := zerolog.Ctx(ctx)
@@ -851,32 +931,15 @@ func repairFsckIssues(
 		}
 	}
 
-	// f. Delete chunk DB records missing from storage
-	if hc, ok := chunkStore.(hasChunker); ok {
-		for _, c := range results.chunksMissingInStorage {
-			exists, err := hc.HasChunk(ctx, c.Hash)
-			if err != nil {
-				return fmt.Errorf("repair re-verify HasChunk(%s): %w", c.Hash, err)
-			}
-
-			if exists {
-				// File appeared, skip
-				continue
-			}
-
-			if err := db.DeleteChunkByID(ctx, c.ID); err != nil {
-				logger.Error().Err(err).Int64("chunk_id", c.ID).Msg("failed to delete chunk DB record missing from storage")
-			} else {
-				logger.Info().
-					Int64("chunk_id", c.ID).
-					Str("hash", c.Hash).
-					Msg("deleted chunk DB record (missing from storage)")
-			}
+	// f. Delete nar_files with chunk issues (broken CDC nar_files).
+	if chunkStore != nil {
+		if err := repairBrokenCDCNarFiles(ctx, db, chunkStore, results.narFilesWithChunkIssues, logger); err != nil {
+			return err
 		}
 	}
 
 	// g. Delete orphaned chunk files from storage
-	if cd, ok := chunkStore.(chunkDeleter); ok {
+	if chunkStore != nil {
 		for _, hash := range results.orphanedChunksInStorage {
 			// Re-verify before deleting
 			_, err := db.GetChunkByHash(ctx, hash)
@@ -889,7 +952,7 @@ func repairFsckIssues(
 				return fmt.Errorf("repair re-verify orphaned chunk (%s): %w", hash, err)
 			}
 
-			if err := cd.DeleteChunk(ctx, hash); err != nil {
+			if err := chunkStore.DeleteChunk(ctx, hash); err != nil {
 				logger.Error().Err(err).Str("hash", hash).Msg("failed to delete orphaned chunk from storage")
 			} else {
 				logger.Info().Str("hash", hash).Msg("deleted orphaned chunk from storage")
@@ -900,47 +963,163 @@ func repairFsckIssues(
 	return nil
 }
 
-// collectChunksMissingFromStorage returns all DB chunks that are absent from storage.
-func collectChunksMissingFromStorage(
+// repairBrokenCDCNarFiles deletes broken CDC nar_files, their orphaned narinfos, and orphaned chunks.
+func repairBrokenCDCNarFiles(
 	ctx context.Context,
 	db database.Querier,
-	chunkStore ChunkWalker,
-) ([]database.Chunk, error) {
-	if chunkStore == nil {
-		return nil, nil
-	}
-
-	present := make(map[string]struct{})
-
-	if err := chunkStore.WalkChunks(ctx, func(hash string) error {
-		present[hash] = struct{}{}
-
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("WalkChunks: %w", err)
-	}
-
-	allChunks, err := db.GetAllChunks(ctx)
+	cs chunk.Store,
+	narFilesWithChunkIssues []database.NarFile,
+	logger *zerolog.Logger,
+) error {
+	// Snapshot pre-existing narinfo orphans so we only sweep newly orphaned ones below.
+	cdcPreExistingOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("GetAllChunks: %w", err)
+		return fmt.Errorf("repair CDC pre-check GetNarInfosWithoutNarFiles: %w", err)
 	}
 
-	var missing []database.Chunk
+	cdcPreExistingOrphanIDs := make(map[int64]struct{}, len(cdcPreExistingOrphans))
+	for _, ni := range cdcPreExistingOrphans {
+		cdcPreExistingOrphanIDs[ni.ID] = struct{}{}
+	}
 
-	for _, c := range allChunks {
-		if _, ok := present[c.Hash]; !ok {
-			missing = append(missing, c)
+	for _, nf := range narFilesWithChunkIssues {
+		broken, err := isNarFileChunkBroken(ctx, db, cs, nf)
+		if err != nil {
+			return fmt.Errorf("repair re-verify narFilesWithChunkIssues(%d): %w", nf.ID, err)
+		}
+
+		if !broken {
+			continue
+		}
+
+		if _, err := db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+			Hash:        nf.Hash,
+			Compression: nf.Compression,
+			Query:       nf.Query,
+		}); err != nil {
+			logger.Error().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to delete broken CDC nar_file")
+		} else {
+			logger.Info().Int64("nar_file_id", nf.ID).Str("hash", nf.Hash).Msg("deleted broken CDC nar_file")
 		}
 	}
 
-	return missing, nil
+	// Delete narinfos orphaned by the CDC nar_file deletions above.
+	cdcNewOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("repair CDC post-check GetNarInfosWithoutNarFiles: %w", err)
+	}
+
+	for _, ni := range cdcNewOrphans {
+		if _, alreadyOrphaned := cdcPreExistingOrphanIDs[ni.ID]; alreadyOrphaned {
+			continue
+		}
+
+		if _, delErr := db.DeleteNarInfoByID(ctx, ni.ID); delErr != nil {
+			logger.Error().Err(delErr).Int64("narinfo_id", ni.ID).
+				Msg("failed to delete narinfo orphaned by broken CDC nar_file")
+		} else {
+			logger.Info().Int64("narinfo_id", ni.ID).Str("hash", ni.Hash).
+				Msg("deleted narinfo orphaned by broken CDC nar_file")
+		}
+	}
+
+	// Clean up newly-orphaned chunks after nar_file deletions.
+	orphanedChunks, err := db.GetOrphanedChunks(ctx)
+	if err != nil {
+		return fmt.Errorf("repair post-CDC GetOrphanedChunks: %w", err)
+	}
+
+	for _, c := range orphanedChunks {
+		if err := cs.DeleteChunk(ctx, c.Hash); err != nil {
+			logger.Error().Err(err).Str("hash", c.Hash).Msg("failed to delete orphaned chunk from storage after CDC repair")
+		} else {
+			logger.Info().Str("hash", c.Hash).Msg("deleted orphaned chunk from storage after CDC repair")
+		}
+
+		if err := db.DeleteChunkByID(ctx, c.ID); err != nil {
+			logger.Error().Err(err).Int64("chunk_id", c.ID).Msg("failed to delete orphaned chunk DB record after CDC repair")
+		} else {
+			logger.Info().Int64("chunk_id", c.ID).Str("hash", c.Hash).Msg("deleted orphaned chunk DB record after CDC repair")
+		}
+	}
+
+	return nil
+}
+
+// isNarFileChunkBroken returns true if the nar_file's chunks are incomplete or missing from storage.
+func isNarFileChunkBroken(ctx context.Context, db database.Querier, cs chunk.Store, nf database.NarFile) (bool, error) {
+	chunks, err := db.GetChunksByNarFileID(ctx, nf.ID)
+	if err != nil {
+		return false, fmt.Errorf("GetChunksByNarFileID(%d): %w", nf.ID, err)
+	}
+
+	if int64(len(chunks)) != nf.TotalChunks {
+		return true, nil
+	}
+
+	for _, c := range chunks {
+		exists, err := cs.HasChunk(ctx, c.Hash)
+		if err != nil {
+			return false, fmt.Errorf("HasChunk(%s): %w", c.Hash, err)
+		}
+
+		if !exists {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// collectNarFilesWithChunkIssues returns CDC nar_files whose chunks are incomplete or missing from storage.
+func collectNarFilesWithChunkIssues(
+	ctx context.Context,
+	db database.Querier,
+	allNarFiles []database.GetAllNarFilesRow,
+	cs chunk.Store,
+) ([]database.NarFile, error) {
+	if cs == nil {
+		return nil, nil
+	}
+
+	var broken []database.NarFile
+
+	for _, nf := range allNarFiles {
+		if nf.TotalChunks <= 0 {
+			continue
+		}
+
+		narFile := database.NarFile{
+			ID:                nf.ID,
+			Hash:              nf.Hash,
+			Compression:       nf.Compression,
+			Query:             nf.Query,
+			FileSize:          nf.FileSize,
+			TotalChunks:       nf.TotalChunks,
+			ChunkingStartedAt: nf.ChunkingStartedAt,
+			CreatedAt:         nf.CreatedAt,
+			UpdatedAt:         nf.UpdatedAt,
+			LastAccessedAt:    nf.LastAccessedAt,
+		}
+
+		isBroken, err := isNarFileChunkBroken(ctx, db, cs, narFile)
+		if err != nil {
+			return nil, err
+		}
+
+		if isBroken {
+			broken = append(broken, narFile)
+		}
+	}
+
+	return broken, nil
 }
 
 // collectOrphanedChunksInStorage returns all chunk files in storage that have no DB record.
 func collectOrphanedChunksInStorage(
 	ctx context.Context,
 	db database.Querier,
-	chunkStore ChunkWalker,
+	chunkStore chunk.Store,
 ) ([]string, error) {
 	if chunkStore == nil {
 		return nil, nil
