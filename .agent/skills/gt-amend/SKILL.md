@@ -16,7 +16,7 @@ Example:
 ```bash
 git commit --amend -m "feat: improve performance of storage backend
 
-By using a bunked read approach, we reduce the number of I/O operations.
+By using a batched read approach, we reduce the number of I/O operations.
 This implementation caches the most frequently accessed chunks in memory...
 "
 ```
