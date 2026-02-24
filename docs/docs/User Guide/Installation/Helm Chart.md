@@ -446,10 +446,10 @@ Content-Defined Chunking (CDC) for deduplication:
 config:
   cdc:
     enabled: true
-    # Optional: Tune chunk sizes
-    min: 65536
-    avg: 262144
-    max: 1048576
+    # Optional: Tune chunk sizes (default values)
+    min: 16384
+    avg: 65536
+    max: 262144
 ```
 
 ## Upstream Cache Configuration

@@ -139,11 +139,9 @@ config:
     # REQUIRED for HA deployments (replicaCount > 1) to prevent timeouts and instability.
     # See https://github.com/kalbasit/ncps/issues/660
     enabled: false
-    # Recommended values: min: 16384, avg: 65536, max: 262144
-    # If set to 0 (not configured) and CDC is enabled, the server will error on startup.
-    min: 0
-    avg: 0
-    max: 0
+    min: 16384
+    avg: 65536
+    max: 262144
 
     # Bypass flag for HA validation without CDC
     # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
