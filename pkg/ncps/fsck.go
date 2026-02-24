@@ -13,6 +13,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 
@@ -370,18 +371,22 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			}
 
 			if !repair {
+				if !term.IsTerminal(int(os.Stdin.Fd())) {
+					return fmt.Errorf("%w: not a terminal and --repair not set", ErrFsckIssuesFound)
+				}
+
 				fmt.Print("\nRepair all issues? [y/N]: ")
 
 				scanner := bufio.NewScanner(os.Stdin)
-				if scanner.Scan() {
-					answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
-					if answer != "y" && answer != "yes" {
-						fmt.Println("Aborted.")
-
-						return ErrFsckIssuesFound
-					}
-				} else {
+				if !scanner.Scan() {
 					fmt.Println("Aborted (no input).")
+
+					return ErrFsckIssuesFound
+				}
+
+				answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+				if answer != "y" && answer != "yes" {
+					fmt.Println("Aborted.")
 
 					return ErrFsckIssuesFound
 				}
@@ -433,13 +438,25 @@ func collectFsckSuspects(
 		return nil, fmt.Errorf("GetAllNarFiles: %w", err)
 	}
 
+	presentNars := make(map[string]struct{})
+
+	if narWalker, ok := narStore.(NarWalker); ok {
+		if err := narWalker.WalkNars(ctx, func(narURL nar.URL) error {
+			presentNars[narURL.String()] = struct{}{}
+
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("WalkNars: %w", err)
+		}
+	}
+
 	for _, nf := range allNarFiles {
 		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
 		if err != nil {
 			return nil, fmt.Errorf("narFileRowToURL for nar_file %d: %w", nf.ID, err)
 		}
 
-		if !narStore.HasNar(ctx, narURL) {
+		if _, exists := presentNars[narURL.String()]; !exists {
 			// Convert GetAllNarFilesRow to NarFile
 			results.narFilesMissingInStorage = append(results.narFilesMissingInStorage, database.NarFile{
 				ID:                nf.ID,
@@ -893,9 +910,14 @@ func collectChunksMissingFromStorage(
 		return nil, nil
 	}
 
-	hc, ok := chunkStore.(hasChunker)
-	if !ok {
-		return nil, nil
+	present := make(map[string]struct{})
+
+	if err := chunkStore.WalkChunks(ctx, func(hash string) error {
+		present[hash] = struct{}{}
+
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("WalkChunks: %w", err)
 	}
 
 	allChunks, err := db.GetAllChunks(ctx)
@@ -906,12 +928,7 @@ func collectChunksMissingFromStorage(
 	var missing []database.Chunk
 
 	for _, c := range allChunks {
-		exists, checkErr := hc.HasChunk(ctx, c.Hash)
-		if checkErr != nil {
-			return nil, fmt.Errorf("HasChunk(%s): %w", c.Hash, checkErr)
-		}
-
-		if !exists {
+		if _, ok := present[c.Hash]; !ok {
 			missing = append(missing, c)
 		}
 	}
