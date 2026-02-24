@@ -65,7 +65,7 @@ go build .
 nix build
 
 # Database Migrations
-# Use the /migrate-new, /migrate-up, or /migrate-down workflows for database changes.
+# Use the /migrate-new, /migrate-up, or /migrate-down skills for database changes.
 # /migrate-new - Creates new migration files for all engines.
 # /migrate-up - Applies all migrations and updates schema files from a clean state.
 # /migrate-down - Rolls back the last migration.
@@ -153,10 +153,6 @@ Configuration in `nix/process-compose/flake-module.nix` defines:
 - `redis-server` process - Redis server with health checks
 
 The service configurations match the test environment variables to ensure consistency between dependency setup and application configuration.
-
-### Workflows
-
-The project defines several automated workflows in the `.agent/workflows/` directory. These are referred to as `/workflow-name` (e.g., `/migrate-new`). When performing a task that has a corresponding workflow, you MUST read the workflow file and follow its steps.
 
 ### Skills
 
