@@ -1391,6 +1391,20 @@ func (q *Queries) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, err
 	return items, nil
 }
 
+const hasAnyChunkedNarFiles = `-- name: HasAnyChunkedNarFiles :one
+SELECT EXISTS(SELECT 1 FROM nar_files WHERE total_chunks > 0)
+`
+
+// Returns true if any nar_file has total_chunks > 0 (used for CDC auto-detection).
+//
+//	SELECT EXISTS(SELECT 1 FROM nar_files WHERE total_chunks > 0)
+func (q *Queries) HasAnyChunkedNarFiles(ctx context.Context) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasAnyChunkedNarFiles)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const linkNarFileToChunk = `-- name: LinkNarFileToChunk :exec
 INSERT INTO nar_file_chunks (
     nar_file_id, chunk_id, chunk_index

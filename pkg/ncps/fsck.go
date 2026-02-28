@@ -313,8 +313,29 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			cdcMode := false
 
 			cdcConfig, dbErr := db.GetConfigByKey(ctx, config.KeyCDCEnabled)
-			if dbErr == nil && cdcConfig.Value == configValueTrue {
+			if dbErr != nil {
+				logger.Warn().Err(dbErr).Msg(
+					"could not read cdc_enabled from DB config; CDC mode detection will fall back to data-based detection",
+				)
+			} else if cdcConfig.Value == configValueTrue {
 				cdcMode = true
+			}
+
+			// Fallback: if CDC not detected from config, check if any nar_file has
+			// total_chunks > 0. This handles cases where the DB config key is missing
+			// but chunked data already exists (e.g. wrong DB URL or schema mismatch).
+			if !cdcMode {
+				hasChunked, checkErr := db.HasAnyChunkedNarFiles(ctx)
+				if checkErr != nil {
+					logger.Warn().Err(checkErr).Msg("could not check for chunked nar_files")
+				} else if hasChunked {
+					logger.Warn().Msg(
+						"cdc_enabled not set in DB config but chunked nar_files exist; " +
+							"enabling CDC mode automatically — verify --cache-database-url is correct",
+					)
+
+					cdcMode = true
+				}
 			}
 
 			var chunkStore chunk.Store
@@ -441,9 +462,10 @@ func collectFsckSuspects(
 	}
 
 	for _, nf := range allNarFiles {
-		// In CDC mode, chunked nar_files live in chunk storage — not as whole NAR files.
+		// Chunked nar_files live in chunk storage — not as whole NAR files.
 		// They are verified separately via collectNarFilesWithChunkIssues.
-		if cdcMode && nf.TotalChunks > 0 {
+		// Skip regardless of cdcMode detection to avoid false "missing from storage" reports.
+		if nf.TotalChunks > 0 {
 			continue
 		}
 
