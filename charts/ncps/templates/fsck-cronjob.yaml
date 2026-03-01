@@ -1,0 +1,181 @@
+{{- if .Values.fsck.enabled -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ncps.fullname" . }}-fsck
+  labels:
+    {{- include "ncps.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fsck
+spec:
+  schedule: {{ .Values.fsck.schedule | quote }}
+  {{- if .Values.fsck.timezone }}
+  timeZone: {{ .Values.fsck.timezone | quote }}
+  {{- end }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          annotations:
+            checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+            checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+            {{- with .Values.fsck.job.annotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          labels:
+            {{- include "ncps.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: fsck
+        spec:
+          restartPolicy: OnFailure
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "ncps.serviceAccountName" . }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          {{- with .Values.fsck.job.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.fsck.job.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.fsck.job.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if eq .Values.config.database.type "sqlite" }}
+          initContainers:
+            - name: create-db-dir
+              image: {{ include "ncps.initImage" . }}
+              imagePullPolicy: {{ .Values.initImage.pullPolicy }}
+              command:
+                - sh
+                - -c
+                - |
+                  mkdir -p $(dirname {{ .Values.config.database.sqlite.path | quote }})
+              volumeMounts:
+                {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+                - name: storage
+                  mountPath: /storage
+                {{- end }}
+                - name: tmp
+                  mountPath: {{ .Values.config.cache.tempPath | quote }}
+              resources:
+                {{- toYaml .Values.initImage.resources | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+          {{- end }}
+          containers:
+            - name: fsck
+              securityContext:
+                {{- toYaml .Values.fsck.securityContext | nindent 16 }}
+              image: {{ include "ncps.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - /bin/ncps
+              args:
+                - --config
+                - /etc/ncps/config.yaml
+                - fsck
+                {{- if .Values.fsck.repair }}
+                - --repair
+                {{- end }}
+                {{- if .Values.fsck.verifiedSince }}
+                - --verified-since
+                - {{ .Values.fsck.verifiedSince | quote }}
+                {{- end }}
+              env:
+                {{- include "ncps.cacheDatabaseURLEnv" . | nindent 16 }}
+                {{- if and (eq .Values.config.storage.type "s3") (or .Values.config.storage.s3.existingSecret (and .Values.config.storage.s3.accessKeyId .Values.config.storage.s3.secretAccessKey)) }}
+                - name: CACHE_STORAGE_S3_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.config.storage.s3.existingSecret | default (include "ncps.fullname" .) }}
+                      key: {{ if .Values.config.storage.s3.existingSecret }}"access-key-id"{{ else }}"s3-access-key-id"{{ end }}
+                - name: CACHE_STORAGE_S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.config.storage.s3.existingSecret | default (include "ncps.fullname" .) }}
+                      key: {{ if .Values.config.storage.s3.existingSecret }}"secret-access-key"{{ else }}"s3-secret-access-key"{{ end }}
+                {{- end }}
+                {{- if .Values.config.redis.enabled }}
+                {{- if and .Values.config.redis.existingSecret (not .Values.config.redis.username) }}
+                - name: CACHE_REDIS_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.config.redis.existingSecret }}
+                      key: username
+                      optional: true
+                {{- end }}
+                {{- if or .Values.config.redis.existingSecret .Values.config.redis.password }}
+                - name: CACHE_REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.config.redis.existingSecret | default (include "ncps.fullname" .) }}
+                      key: {{ if .Values.config.redis.existingSecret }}"password"{{ else }}"redis-password"{{ end }}
+                {{- end }}
+                {{- end }}
+                {{- with .Values.extraEnvVars }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.fsck.resources | nindent 16 }}
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/ncps/config.yaml
+                  readOnly: true
+                  subPath: config.yaml
+                - name: tmp
+                  mountPath: {{ .Values.config.cache.tempPath | quote }}
+                {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+                - name: storage
+                  mountPath: /storage
+                {{- end }}
+                {{- if or .Values.config.upstream.netrcFile .Values.config.upstream.existingNetrcSecret }}
+                - name: netrc
+                  mountPath: /etc/ncps/netrc
+                  subPath: netrc
+                  readOnly: true
+                {{- end }}
+                {{- with .Values.extraVolumeMounts }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+          volumes:
+            - name: config
+              configMap:
+                name: {{ include "ncps.fullname" . }}
+            - name: tmp
+              emptyDir: {}
+            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+            - name: storage
+              {{- if or .Values.config.storage.local.persistence.enabled (eq .Values.config.database.type "sqlite") }}
+              persistentVolumeClaim:
+                claimName: {{ include "ncps.fullname" . }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+            {{- end }}
+            {{- if or .Values.config.upstream.netrcFile .Values.config.upstream.existingNetrcSecret }}
+            - name: netrc
+              secret:
+                secretName: {{ .Values.config.upstream.existingNetrcSecret | default (include "ncps.fullname" .) }}
+            {{- end }}
+            {{- with .Values.extraVolumes }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      {{- if not (kindIs "invalid" .Values.fsck.job.backoffLimit) }}
+      backoffLimit: {{ .Values.fsck.job.backoffLimit }}
+      {{- end }}
+      {{- if not (kindIs "invalid" .Values.fsck.job.ttlSecondsAfterFinished) }}
+      ttlSecondsAfterFinished: {{ .Values.fsck.job.ttlSecondsAfterFinished }}
+      {{- end }}
+{{- end }}
