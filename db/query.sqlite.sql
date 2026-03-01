@@ -382,3 +382,7 @@ WHERE NOT EXISTS (
 -- Returns all chunks for storage existence verification (CDC mode).
 SELECT id, hash, size, compressed_size, created_at, updated_at
 FROM chunks;
+
+-- name: HasAnyChunkedNarFiles :one
+-- Returns true if any nar_file has total_chunks > 0 (used for CDC auto-detection).
+SELECT EXISTS(SELECT 1 FROM nar_files WHERE total_chunks > 0) AS "exists";
