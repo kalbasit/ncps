@@ -680,6 +680,71 @@
           }
         }
       }
+    },
+    "fsck": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable periodic fsck"
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Cron schedule for fsck"
+        },
+        "timezone": {
+          "type": "string",
+          "description": "Timezone for cron schedule"
+        },
+        "repair": {
+          "type": "boolean",
+          "description": "Automatically repair issues"
+        },
+        "verifiedSince": {
+          "type": "string",
+          "description": "Skip checking NARs that have been verified within this duration",
+          "pattern": "^([0-9]+(ns|us|ms|s|m|h))?$"
+        },
+        "resources": {
+          "type": "object",
+          "description": "Resources for fsck container/job"
+        },
+        "securityContext": {
+          "type": "object",
+          "description": "Security context for fsck container/job"
+        },
+        "job": {
+          "type": "object",
+          "properties": {
+            "backoffLimit": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Backoff limit for job retries"
+            },
+            "ttlSecondsAfterFinished": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "TTL after job finishes (in seconds)"
+            },
+            "annotations": {
+              "type": "object",
+              "description": "Annotations for the job"
+            },
+            "nodeSelector": {
+              "type": "object",
+              "description": "Node selector for fsck job"
+            },
+            "tolerations": {
+              "type": "array",
+              "description": "Tolerations for fsck job"
+            },
+            "affinity": {
+              "type": "object",
+              "description": "Affinity for fsck job"
+            }
+          }
+        }
+      }
     }
   }
 }

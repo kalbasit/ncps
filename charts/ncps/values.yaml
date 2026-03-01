@@ -123,7 +123,7 @@ config:
 
     # Timezone for cron schedule
     # Example: "America/Los_Angeles", "UTC"
-    lruTimezone: "Local"
+    lruTimezone: ""
 
     # Timeout for polling storage when waiting for download completion
     downloadPollTimeout: "30s"
@@ -495,6 +495,67 @@ migration:
     tolerations: []
 
     # Affinity for migration job
+    affinity: {}
+
+# FSCK (File System Consistency Check)
+fsck:
+  # Enable periodic fsck
+  enabled: false
+
+  # Schedule for fsck (cron expression)
+  # Example: "0 1 * * *" (daily at 1 AM)
+  schedule: "0 1 * * *"
+
+  # Timezone for cron schedule. If empty, uses the cluster's default timezone.
+  # Example: "America/Los_Angeles", "UTC"
+  timezone: ""
+
+  # Automatically repair issues
+  repair: false
+
+  # Skip checking NARs that have been verified within this duration
+  # Examples: "24h", "7d", "30d"
+  # Default is empty (verified-since will not be passed)
+  verifiedSince: ""
+
+  # Resources for fsck container/job
+  resources: {}
+    # limits:
+    #   memory: 256Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+
+  # Security context for fsck container/job
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+
+  # Job configuration
+  job:
+    # Backoff limit for job retries
+    backoffLimit: 1
+
+    # TTL after job finishes (in seconds)
+    # Set to 0 to keep jobs indefinitely
+    ttlSecondsAfterFinished: 3600
+
+    # Annotations for the job
+    annotations: {}
+
+    # Node selector for fsck job
+    nodeSelector: {}
+
+    # Tolerations for fsck job
+    tolerations: []
+
+    # Affinity for fsck job
     affinity: {}
 
 # Helm tests
