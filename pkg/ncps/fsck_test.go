@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -76,6 +77,7 @@ func runFsckSuite(t *testing.T, setup fsckSetupFn) {
 	t.Run("OrphanedNarInStorage", testFsckOrphanedNarInStorage(setup))
 	t.Run("Repair", testFsckRepair(setup))
 	t.Run("DryRun", testFsckDryRun(setup))
+	t.Run("VerifiedSince", testFsckVerifiedSince(setup))
 	t.Run("CDC", testFsckCDCSuite(setup))
 }
 
@@ -392,6 +394,90 @@ func testFsckDryRun(setup fsckSetupFn) func(*testing.T) {
 		// Verify DB record is still there (dry-run should not delete it).
 		_, dbErr := db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
 		assert.NoError(t, dbErr, "dry-run should not delete DB records")
+	}
+}
+
+// testFsckVerifiedSince verifies that --verified-since skips recently checked NARs.
+func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, store, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		// Seed a fully consistent narinfo+narfile in DB and storage.
+		writeFsckNar1ToStorage(t, dir)
+		ni := getFsckNarInfo(ctx, t, store, testdata.Nar1.NarInfoHash)
+		require.NoError(t, testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni))
+
+		nf, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression.String(),
+			Query:       "",
+		})
+		require.NoError(t, err)
+		assert.False(t, nf.VerifiedAt.Valid, "verified_at should be NULL initially")
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// 1. Run fsck - should populate verified_at
+		args := []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+		require.NoError(t, app.Run(ctx, args))
+
+		nf, err = db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression.String(),
+			Query:       "",
+		})
+		require.NoError(t, err)
+		assert.True(t, nf.VerifiedAt.Valid, "verified_at should be populated after fsck")
+		verifiedAt1 := nf.VerifiedAt.Time
+
+		// 2. Run fsck with --verified-since 1h - should skip checking
+		// Since we don't have a direct way to check 'skipped' count from the app return value,
+		// we verify that verified_at was NOT updated.
+		// Wait a bit to ensure CURRENT_TIMESTAMP would be different if it ran.
+		time.Sleep(2 * time.Second)
+
+		args = []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verified-since", "1h",
+		}
+		require.NoError(t, app.Run(ctx, args))
+
+		nf, err = db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression.String(),
+			Query:       "",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, verifiedAt1, nf.VerifiedAt.Time, "verified_at should NOT be updated when skipped")
+
+		// 3. Run fsck with --verified-since 1ns - should NOT skip checking
+		args = []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verified-since", "1ns",
+		}
+		require.NoError(t, app.Run(ctx, args))
+
+		nf, err = db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression.String(),
+			Query:       "",
+		})
+		require.NoError(t, err)
+		assert.NotEqual(t, verifiedAt1, nf.VerifiedAt.Time, "verified_at SHOULD be updated when NOT skipped")
 	}
 }
 

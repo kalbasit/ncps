@@ -156,6 +156,8 @@ func (w *postgresWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePa
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -359,6 +361,8 @@ func (w *postgresWrapper) GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesR
 			UpdatedAt: v.UpdatedAt,
 
 			LastAccessedAt: v.LastAccessedAt,
+
+			VerifiedAt: v.VerifiedAt,
 		}
 	}
 	return items, nil
@@ -675,13 +679,15 @@ func (w *postgresWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Con
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
 func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	query := "SELECT \"id\", \"hash\", \"compression\", \"file_size\", \"query\", \"created_at\", \"updated_at\", \"last_accessed_at\", \"total_chunks\", \"chunking_started_at\" FROM nar_files WHERE id = $1"
+	query := "SELECT \"id\", \"hash\", \"compression\", \"file_size\", \"query\", \"created_at\", \"updated_at\", \"last_accessed_at\", \"total_chunks\", \"chunking_started_at\", \"verified_at\" FROM nar_files WHERE id = $1"
 	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
 	var res postgresdb.NarFile
 	err := row.Scan(
@@ -705,6 +711,8 @@ func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile
 		&res.TotalChunks,
 
 		&res.ChunkingStartedAt,
+
+		&res.VerifiedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -735,6 +743,8 @@ func (w *postgresWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -773,6 +783,8 @@ func (w *postgresWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID i
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -1151,6 +1163,8 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 			TotalChunks: v.TotalChunks,
 
 			ChunkingStartedAt: v.ChunkingStartedAt,
+
+			VerifiedAt: v.VerifiedAt,
 		}
 	}
 	return items, nil
@@ -1285,6 +1299,12 @@ func (w *postgresWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg Upda
 		FileSize:    arg.FileSize,
 		ID:          arg.ID,
 	})
+}
+
+func (w *postgresWrapper) UpdateNarFileVerifiedAt(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarFileVerifiedAt(ctx, id)
 }
 
 func (w *postgresWrapper) UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error) {

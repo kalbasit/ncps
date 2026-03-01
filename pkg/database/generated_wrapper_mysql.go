@@ -353,6 +353,8 @@ func (w *mysqlWrapper) GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesRow,
 			UpdatedAt: v.UpdatedAt,
 
 			LastAccessedAt: v.LastAccessedAt,
+
+			VerifiedAt: v.VerifiedAt,
 		}
 	}
 	return items, nil
@@ -669,13 +671,15 @@ func (w *mysqlWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Contex
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
 func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	query := "SELECT `id`, `hash`, `compression`, `file_size`, `created_at`, `updated_at`, `last_accessed_at`, `query`, `total_chunks`, `chunking_started_at` FROM nar_files WHERE id = ?"
+	query := "SELECT `id`, `hash`, `compression`, `file_size`, `created_at`, `updated_at`, `last_accessed_at`, `query`, `total_chunks`, `chunking_started_at`, `verified_at` FROM nar_files WHERE id = ?"
 	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
 	var res mysqldb.NarFile
 	err := row.Scan(
@@ -699,6 +703,8 @@ func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, e
 		&res.TotalChunks,
 
 		&res.ChunkingStartedAt,
+
+		&res.VerifiedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -729,6 +735,8 @@ func (w *mysqlWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, e
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -767,6 +775,8 @@ func (w *mysqlWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int6
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -1145,6 +1155,8 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, erro
 			TotalChunks: v.TotalChunks,
 
 			ChunkingStartedAt: v.ChunkingStartedAt,
+
+			VerifiedAt: v.VerifiedAt,
 		}
 	}
 	return items, nil
@@ -1288,6 +1300,12 @@ func (w *mysqlWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg UpdateN
 		FileSize:    arg.FileSize,
 		ID:          arg.ID,
 	})
+}
+
+func (w *mysqlWrapper) UpdateNarFileVerifiedAt(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarFileVerifiedAt(ctx, id)
 }
 
 func (w *mysqlWrapper) UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error) {

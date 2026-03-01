@@ -104,6 +104,10 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				Name:  "dry-run",
 				Usage: "Show what would be fixed without making any changes",
 			},
+			&cli.DurationFlag{
+				Name:  "verified-since",
+				Usage: "Skip checking NARs that have been verified within this duration",
+			},
 
 			// Storage Flags
 			&cli.StringFlag{
@@ -252,6 +256,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 
 			dryRun := cmd.Bool("dry-run")
 			repair := cmd.Bool("repair")
+			verifiedSince := cmd.Duration("verified-since")
 
 			// 1. Setup Database
 			db, err := createDatabaseQuerier(cmd)
@@ -355,7 +360,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			// 6. Phase 1: Collect suspects
 			logger.Info().Msg("phase 1: collecting suspects")
 
-			suspects, err := collectFsckSuspects(ctx, db, narStore, chunkStore, cdcMode)
+			suspects, err := collectFsckSuspects(ctx, db, narStore, chunkStore, cdcMode, verifiedSince)
 			if err != nil {
 				return fmt.Errorf("error collecting suspects: %w", err)
 			}
@@ -425,12 +430,13 @@ func collectFsckSuspects(
 	narStore storage.NarStore,
 	chunkStore chunk.Store,
 	cdcMode bool,
+	verifiedSince time.Duration,
 ) (*fsckResults, error) {
 	logger := zerolog.Ctx(ctx)
 	results := &fsckResults{cdcMode: cdcMode}
 
 	// Setup progress tracking
-	var checked, total, suspects atomic.Int64
+	var checked, skipped, total, suspects atomic.Int64
 
 	startTime := time.Now()
 
@@ -439,8 +445,10 @@ func collectFsckSuspects(
 		c := checked.Load()
 		t := total.Load()
 		s := suspects.Load()
+		sk := skipped.Load()
 		logProgress(*logger, startTime, c, t).
 			Int64("suspects", s).
+			Int64("skipped", sk).
 			Msg("phase 1: progress update")
 	})
 	defer stopTicker()
@@ -471,6 +479,12 @@ func collectFsckSuspects(
 	// Items checked in phase 1c and 1f (if enabled)
 	for _, nf := range allNarFiles {
 		if nf.TotalChunks <= 0 || cdcMode {
+			if !shouldCheckNar(nf, verifiedSince) {
+				skipped.Add(1)
+
+				continue
+			}
+
 			total.Add(1)
 		}
 	}
@@ -510,6 +524,10 @@ func collectFsckSuspects(
 			continue
 		}
 
+		if !shouldCheckNar(nf, verifiedSince) {
+			continue
+		}
+
 		nonChunkedCount++
 
 		checked.Add(1)
@@ -534,6 +552,11 @@ func collectFsckSuspects(
 				UpdatedAt:         nf.UpdatedAt,
 				LastAccessedAt:    nf.LastAccessedAt,
 			})
+		} else {
+			// Found and verified, update verified_at
+			if err := db.UpdateNarFileVerifiedAt(ctx, nf.ID); err != nil {
+				logger.Warn().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to update verified_at")
+			}
 		}
 	}
 
@@ -588,7 +611,9 @@ func collectFsckSuspects(
 	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
 	logger.Info().Msg("phase 1f: checking NAR files with chunk issues")
 
-	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(ctx, db, allNarFiles, chunkStore, &checked)
+	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(
+		ctx, db, allNarFiles, chunkStore, &checked, verifiedSince,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1217,6 +1242,7 @@ func collectNarFilesWithChunkIssues(
 	allNarFiles []database.GetAllNarFilesRow,
 	cs chunk.Store,
 	checked *atomic.Int64,
+	verifiedSince time.Duration,
 ) ([]database.NarFile, error) {
 	if cs == nil {
 		return nil, nil
@@ -1226,6 +1252,10 @@ func collectNarFilesWithChunkIssues(
 
 	for _, nf := range allNarFiles {
 		if nf.TotalChunks <= 0 {
+			continue
+		}
+
+		if !shouldCheckNar(nf, verifiedSince) {
 			continue
 		}
 
@@ -1253,6 +1283,11 @@ func collectNarFilesWithChunkIssues(
 
 		if isBroken {
 			broken = append(broken, narFile)
+		} else {
+			// Verified, update verified_at
+			if err := db.UpdateNarFileVerifiedAt(ctx, nf.ID); err != nil {
+				zerolog.Ctx(ctx).Warn().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to update verified_at")
+			}
 		}
 	}
 
@@ -1354,4 +1389,18 @@ func logProgress(
 	}
 
 	return evt
+}
+
+func shouldCheckNar(nf database.GetAllNarFilesRow, verifiedSince time.Duration) bool {
+	if verifiedSince <= 0 {
+		return true
+	}
+
+	verifiedAt := nf.VerifiedAt
+
+	if !verifiedAt.Valid {
+		return true
+	}
+
+	return time.Since(verifiedAt.Time) > verifiedSince
 }
