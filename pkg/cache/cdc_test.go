@@ -54,8 +54,8 @@ type slowChunker struct {
 	delay time.Duration
 }
 
-func (s *slowChunker) Chunk(ctx context.Context, r io.Reader) (<-chan chunker.Chunk, <-chan error) {
-	chunksChan := make(chan chunker.Chunk)
+func (s *slowChunker) Chunk(ctx context.Context, r io.Reader) (<-chan *chunker.Chunk, <-chan error) {
+	chunksChan := make(chan *chunker.Chunk)
 	errChan := make(chan error, 1)
 
 	go func() {
