@@ -454,6 +454,8 @@ fsck:
     requests:
       cpu: 1000m
       memory: 6Gi
+  job:
+    concurrencyPolicy: Forbid
 ```
 
 ## CDC Configuration (Experimental)

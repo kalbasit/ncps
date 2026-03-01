@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/component: fsck
 spec:
   schedule: {{ .Values.fsck.schedule | quote }}
+  concurrencyPolicy: {{ .Values.fsck.job.concurrencyPolicy }}
   {{- if .Values.fsck.timezone }}
   timeZone: {{ .Values.fsck.timezone | quote }}
   {{- end }}
