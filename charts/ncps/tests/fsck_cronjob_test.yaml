@@ -100,3 +100,24 @@ tests:
       - equal:
           path: spec.jobTemplate.spec.ttlSecondsAfterFinished
           value: 0
+
+  - it: should configure concurrency policy
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.job.concurrencyPolicy: Replace
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Replace
+
+  - it: should use default concurrency policy when not set
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
