@@ -13,7 +13,7 @@ Install ncps on Kubernetes using Helm for simplified configuration and managemen
 
 ### Install from OCI Registry
 
-```
+```sh
 # Create namespace
 kubectl create namespace ncps
 
@@ -26,7 +26,7 @@ helm install ncps oci://ghcr.io/kalbasit/helm/ncps \
 
 ### Install from Source
 
-```
+```sh
 git clone https://github.com/kalbasit/ncps.git
 cd ncps/charts/ncps
 helm install ncps . -f values.yaml --namespace ncps
@@ -41,7 +41,7 @@ This installs ncps with:
 
 ### Verify Installation
 
-```
+```sh
 # Check pod status
 kubectl -n ncps get pods
 
@@ -228,7 +228,7 @@ config:
 
 Create the secrets:
 
-```
+```sh
 # S3 credentials
 kubectl create secret generic ncps-s3-credentials -n ncps \
   --from-literal=access-key-id=YOUR_ACCESS_KEY \
@@ -438,6 +438,24 @@ config:
     allowDegradedMode: false  # Continue without Redis if connection fails
 ```
 
+## FSCK (Integrity Check) Settings
+
+Enable and configure the built-in CronJob for periodic integrity checks:
+
+```yaml
+fsck:
+  enabled: true
+  schedule: "0 1 * * *"
+  repair: true
+  verifiedSince: "168h" # 7 days
+  resources:
+    limits:
+      memory: 6Gi
+    requests:
+      cpu: 1000m
+      memory: 6Gi
+```
+
 ## CDC Configuration (Experimental)
 
 Content-Defined Chunking (CDC) for deduplication:
@@ -621,7 +639,7 @@ ingress:
 1. Enable Redis
 1. Increase replica count
 
-```
+```sh
 # Step 1: Backup SQLite database
 kubectl exec -n ncps ncps-0 -- /bin/sh -c \
   "sqlite3 /storage/db/ncps.db .dump" > backup.sql
@@ -651,7 +669,7 @@ strategy:
 
 ### Check Deployment Status
 
-```
+```sh
 # Check pod status
 kubectl -n ncps get pods
 
