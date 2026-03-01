@@ -1,0 +1,102 @@
+suite: test fsck cronjob rendering
+templates:
+  - fsck-cronjob.yaml
+  - configmap.yaml
+  - secret.yaml
+tests:
+  - it: should not create CronJob by default
+    template: fsck-cronjob.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create CronJob when enabled
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - isKind:
+          of: CronJob
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-ncps-fsck
+      - equal:
+          path: spec.schedule
+          value: "0 1 * * *"
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args
+          value:
+            - --config
+            - /etc/ncps/config.yaml
+            - fsck
+
+  - it: should add repair flag when enabled
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.repair: true
+      config.hostname: test.example.com
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args
+          content: --repair
+
+  - it: should add verified-since flag when set
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.verifiedSince: "24h"
+      config.hostname: test.example.com
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args
+          content: --verified-since
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args
+          content: "24h"
+
+  - it: should configure job settings
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.job.backoffLimit: 3
+      fsck.job.ttlSecondsAfterFinished: 600
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 3
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 600
+
+  - it: should use custom schedule and timezone
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.schedule: "0 0 * * 0"
+      fsck.timezone: "UTC"
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.schedule
+          value: "0 0 * * 0"
+      - equal:
+          path: spec.timeZone
+          value: "UTC"
+
+  - it: should handle zero values for job settings
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.job.backoffLimit: 0
+      fsck.job.ttlSecondsAfterFinished: 0
+      config.hostname: test.example.com
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 0
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 0
