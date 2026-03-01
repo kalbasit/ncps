@@ -107,6 +107,7 @@ CREATE TABLE public.nar_files (
     last_accessed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     total_chunks bigint DEFAULT 0 NOT NULL,
     chunking_started_at timestamp with time zone,
+    verified_at timestamp with time zone,
     CONSTRAINT nar_files_file_size_check CHECK ((file_size >= 0))
 );
 
@@ -451,4 +452,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260127223000'),
     ('20260131021850'),
     ('20260205063658'),
-    ('20260217071237');
+    ('20260217071237'),
+    ('20260301000000');

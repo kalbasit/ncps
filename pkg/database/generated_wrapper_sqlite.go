@@ -174,6 +174,8 @@ func (w *sqliteWrapper) CreateNarFile(ctx context.Context, arg CreateNarFilePara
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -377,6 +379,8 @@ func (w *sqliteWrapper) GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesRow
 			UpdatedAt: v.UpdatedAt,
 
 			LastAccessedAt: v.LastAccessedAt,
+
+			VerifiedAt: v.VerifiedAt,
 		}
 	}
 	return items, nil
@@ -693,13 +697,15 @@ func (w *sqliteWrapper) GetNarFileByHashAndCompressionAndQuery(ctx context.Conte
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
 func (w *sqliteWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
-	query := "SELECT \"id\", \"hash\", \"compression\", \"file_size\", \"query\", \"created_at\", \"updated_at\", \"last_accessed_at\", \"total_chunks\", \"chunking_started_at\" FROM nar_files WHERE id = ?"
+	query := "SELECT \"id\", \"hash\", \"compression\", \"file_size\", \"query\", \"created_at\", \"updated_at\", \"last_accessed_at\", \"total_chunks\", \"chunking_started_at\", \"verified_at\" FROM nar_files WHERE id = ?"
 	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
 	var res sqlitedb.NarFile
 	err := row.Scan(
@@ -723,6 +729,8 @@ func (w *sqliteWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, 
 		&res.TotalChunks,
 
 		&res.ChunkingStartedAt,
+
+		&res.VerifiedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -753,6 +761,8 @@ func (w *sqliteWrapper) GetNarFileByID(ctx context.Context, id int64) (NarFile, 
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -791,6 +801,8 @@ func (w *sqliteWrapper) GetNarFileByNarInfoID(ctx context.Context, narinfoID int
 		TotalChunks: res.TotalChunks,
 
 		ChunkingStartedAt: res.ChunkingStartedAt,
+
+		VerifiedAt: res.VerifiedAt,
 	}, nil
 }
 
@@ -1169,6 +1181,8 @@ func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, err
 			TotalChunks: v.TotalChunks,
 
 			ChunkingStartedAt: v.ChunkingStartedAt,
+
+			VerifiedAt: v.VerifiedAt,
 		}
 	}
 	return items, nil
@@ -1312,6 +1326,12 @@ func (w *sqliteWrapper) UpdateNarFileTotalChunks(ctx context.Context, arg Update
 		FileSize:    arg.FileSize,
 		ID:          arg.ID,
 	})
+}
+
+func (w *sqliteWrapper) UpdateNarFileVerifiedAt(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.UpdateNarFileVerifiedAt(ctx, id)
 }
 
 func (w *sqliteWrapper) UpdateNarInfo(ctx context.Context, arg UpdateNarInfoParams) (NarInfo, error) {
