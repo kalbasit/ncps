@@ -514,7 +514,7 @@ fsck:
   repair: false
 
   # Skip checking NARs that have been verified within this duration
-  # Examples: "24h", "7d", "30d"
+  # Examples: "24h", "1h"
   # Default is empty (verified-since will not be passed)
   verifiedSince: ""
 

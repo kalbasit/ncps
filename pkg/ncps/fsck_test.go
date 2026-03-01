@@ -462,12 +462,12 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, verifiedAt1, nf.VerifiedAt.Time, "verified_at should NOT be updated when skipped")
 
-		// 3. Run fsck with --verified-since 1ns - should NOT skip checking
+		// 3. Run fsck with --verified-since 1s - should NOT skip checking
 		args = []string{
 			"ncps", "fsck",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
-			"--verified-since", "1ns",
+			"--verified-since", "1s",
 		}
 		require.NoError(t, app.Run(ctx, args))
 
