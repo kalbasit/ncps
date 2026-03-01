@@ -101,6 +101,20 @@ ncps fsck \
 
 When issues are found in dry-run mode, the command exits with a non-zero status so it can be used in scripts.
 
+### Efficient Re-verification
+
+Use `--verified-since` to skip checking NARs that have been verified recently. This significantly speeds up subsequent checks on large caches:
+
+```sh
+ncps fsck \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps" \
+  --verified-since="168h" \
+  --repair
+```
+
+Allowed duration formats: `24h`, `168h`, etc.
+
 ### S3 Storage
 
 ```sh
@@ -129,6 +143,7 @@ ncps fsck \
 | --- | --- |
 | `--repair` | Automatically fix all detected issues |
 | `--dry-run` | Show what would be fixed without making any changes |
+| `--verified-since` | Skip checking NARs verified within this duration (e.g., `24h`, `168h`) |
 
 ### Storage Flags
 
@@ -222,6 +237,47 @@ ExecStart=ncps fsck \
 [Install]
 WantedBy=timers.target
 ```
+
+## Helm Chart CronJob
+
+When deploying with the Helm Chart, you can enable a built-in `CronJob` to run `fsck` automatically.
+
+### Configuration
+
+Enable and configure it in your `values.yaml`:
+
+```yaml
+fsck:
+  # Enable periodic fsck
+  enabled: true
+
+  # Daily at 1 AM
+  schedule: "0 1 * * *"
+
+  # Optional: Timezone for schedule
+  timezone: "UTC"
+
+  # Automatically repair issues
+  repair: true
+
+  # Skip checking NARs verified in the last 7 days
+  verifiedSince: "168h"
+
+  # Optional: Resource limits for the CronJob
+  resources:
+    limits:
+      memory: 6Gi
+    requests:
+      cpu: 1000m
+      memory: 6Gi
+
+  # Optional: Job-specific settings
+  job:
+    backoffLimit: 1
+    ttlSecondsAfterFinished: 3600
+```
+
+The CronJob uses the same database and storage configuration as the main application. If you have CDC enabled, it will also perform CDC-specific integrity checks.
 
 ## Troubleshooting
 
