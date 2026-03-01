@@ -1168,6 +1168,19 @@ func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]str
 	return res, nil
 }
 
+func (w *postgresWrapper) HasAnyChunkedNarFiles(ctx context.Context) (bool, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.HasAnyChunkedNarFiles(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
 func (w *postgresWrapper) LinkNarFileToChunk(ctx context.Context, arg LinkNarFileToChunkParams) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
