@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -425,7 +426,24 @@ func collectFsckSuspects(
 	chunkStore chunk.Store,
 	cdcMode bool,
 ) (*fsckResults, error) {
+	logger := zerolog.Ctx(ctx)
 	results := &fsckResults{cdcMode: cdcMode}
+
+	// Setup progress tracking
+	var checked, total, suspects atomic.Int64
+
+	startTime := time.Now()
+
+	// Start background progress ticker
+	stopTicker := startProgressTicker(func() {
+		c := checked.Load()
+		t := total.Load()
+		s := suspects.Load()
+		logProgress(*logger, startTime, c, t).
+			Int64("suspects", s).
+			Msg("phase 1: progress update")
+	})
+	defer stopTicker()
 
 	// a. Narinfos without nar_files
 	narinfosWithoutNarFiles, err := db.GetNarInfosWithoutNarFiles(ctx)
@@ -434,6 +452,7 @@ func collectFsckSuspects(
 	}
 
 	results.narinfosWithoutNarFiles = narinfosWithoutNarFiles
+	logger.Info().Int("count", len(narinfosWithoutNarFiles)).Msg("phase 1a: narinfos_without_nar_files found")
 
 	// b. Orphaned nar_files in DB
 	orphanedNarFiles, err := db.GetOrphanedNarFiles(ctx)
@@ -442,24 +461,46 @@ func collectFsckSuspects(
 	}
 
 	results.orphanedNarFilesInDB = orphanedNarFiles
+	logger.Info().Int("count", len(orphanedNarFiles)).Msg("phase 1b: orphaned nar_files in DB found")
 
 	// c. Nar_files missing from storage
 	allNarFiles, err := db.GetAllNarFiles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("GetAllNarFiles: %w", err)
 	}
+	// Items checked in phase 1c and 1f (if enabled)
+	for _, nf := range allNarFiles {
+		if nf.TotalChunks <= 0 || cdcMode {
+			total.Add(1)
+		}
+	}
 
 	presentNars := make(map[string]struct{})
+
+	// Walk storage to build index of present NARs
+	logger.Info().Msg("phase 1c: walking NAR storage (building index)")
+
+	var storageNarCount atomic.Int64
 
 	if narWalker, ok := narStore.(NarWalker); ok {
 		if err := narWalker.WalkNars(ctx, func(narURL nar.URL) error {
 			presentNars[narURL.String()] = struct{}{}
+			storageNarCount.Add(1)
 
 			return nil
 		}); err != nil {
 			return nil, fmt.Errorf("WalkNars: %w", err)
 		}
 	}
+
+	storageCount := storageNarCount.Load()
+	total.Add(storageCount)
+	logger.Info().Int64("count", storageCount).Msg("phase 1c: indexed NAR files from storage")
+
+	// Check for missing nar_files
+	var nonChunkedCount int64
+
+	logger.Info().Int("total", len(allNarFiles)).Msg("phase 1c: checking nar_files against storage")
 
 	for _, nf := range allNarFiles {
 		// Chunked nar_files live in chunk storage — not as whole NAR files.
@@ -469,12 +510,17 @@ func collectFsckSuspects(
 			continue
 		}
 
+		nonChunkedCount++
+
+		checked.Add(1)
+
 		narURL, err := narFileRowToURL(nf.Hash, nf.Compression, nf.Query)
 		if err != nil {
 			return nil, fmt.Errorf("narFileRowToURL for nar_file %d: %w", nf.ID, err)
 		}
 
 		if _, exists := presentNars[narURL.String()]; !exists {
+			suspects.Add(1)
 			// Convert GetAllNarFilesRow to NarFile
 			results.narFilesMissingInStorage = append(results.narFilesMissingInStorage, database.NarFile{
 				ID:                nf.ID,
@@ -491,17 +537,27 @@ func collectFsckSuspects(
 		}
 	}
 
+	logger.Info().Int("suspects", len(results.narFilesMissingInStorage)).Msg("phase 1c: done checking nar_files")
+
 	// d. Orphaned NAR files in storage
+	logger.Info().Int64("total", storageCount).Msg("phase 1d: checking storage NAR files against DB")
+
 	narWalker, ok := narStore.(NarWalker)
 	if ok {
 		if err := narWalker.WalkNars(ctx, func(narURL nar.URL) error {
-			_, dbErr := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-				Hash:        narURL.Hash,
-				Compression: narURL.Compression.String(),
-				Query:       narURL.Query.Encode(),
-			})
+			checked.Add(1)
+
+			_, dbErr := db.GetNarFileByHashAndCompressionAndQuery(
+				ctx,
+				database.GetNarFileByHashAndCompressionAndQueryParams{
+					Hash:        narURL.Hash,
+					Compression: narURL.Compression.String(),
+					Query:       narURL.Query.Encode(),
+				},
+			)
 			if dbErr != nil {
 				if database.IsNotFoundError(dbErr) {
+					suspects.Add(1)
 					results.orphanedNarFilesInStorage = append(results.orphanedNarFilesInStorage, narURL)
 				} else {
 					return fmt.Errorf("DB lookup for NAR %s: %w", narURL, dbErr)
@@ -514,6 +570,8 @@ func collectFsckSuspects(
 		}
 	}
 
+	logger.Info().Int("suspects", len(results.orphanedNarFilesInStorage)).Msg("phase 1d: done checking storage NAR files")
+
 	if !cdcMode {
 		return results, nil
 	}
@@ -525,22 +583,34 @@ func collectFsckSuspects(
 	}
 
 	results.orphanedChunksInDB = orphanedChunks
+	logger.Info().Int("count", len(orphanedChunks)).Msg("phase 1e: orphaned chunks in DB found")
 
 	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
-	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(ctx, db, allNarFiles, chunkStore)
+	logger.Info().Msg("phase 1f: checking NAR files with chunk issues")
+
+	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(ctx, db, allNarFiles, chunkStore, &checked)
 	if err != nil {
 		return nil, err
 	}
 
 	results.narFilesWithChunkIssues = narFilesWithChunkIssues
+	logger.Info().Int("count", len(narFilesWithChunkIssues)).Msg("phase 1f: NAR files with chunk issues found")
 
 	// g. Orphaned chunk files in storage
-	orphaned, err := collectOrphanedChunksInStorage(ctx, db, chunkStore)
+	logger.Info().Msg("phase 1g: checking orphaned chunk files in storage")
+
+	chunkCount, err := db.GetChunkCount(ctx)
+	if err == nil {
+		total.Add(chunkCount)
+	}
+
+	orphaned, err := collectOrphanedChunksInStorage(ctx, db, chunkStore, &checked)
 	if err != nil {
 		return nil, err
 	}
 
 	results.orphanedChunksInStorage = orphaned
+	logger.Info().Int("count", len(orphaned)).Msg("phase 1g: orphaned chunk files found")
 
 	return results, nil
 }
@@ -554,7 +624,30 @@ func reVerifyFsckSuspects(
 	chunkStore chunk.Store,
 	suspects *fsckResults,
 ) (*fsckResults, error) {
+	logger := zerolog.Ctx(ctx)
 	results := &fsckResults{cdcMode: suspects.cdcMode}
+
+	// Setup progress tracking for phase 2
+	totalSuspects := suspects.totalIssues()
+
+	var checked, remaining atomic.Int64
+
+	remaining.Store(int64(totalSuspects))
+
+	startTime := time.Now()
+
+	logger.Info().Int("total", totalSuspects).Msg("phase 2: re-verifying suspects")
+
+	// Start background progress ticker
+	stopTicker := startProgressTicker(func() {
+		c := checked.Load()
+		t := int64(totalSuspects)
+		r := remaining.Load()
+		logProgress(*logger, startTime, c, t).
+			Int64("remaining", r).
+			Msg("phase 2: progress update")
+	})
+	defer stopTicker()
 
 	// Re-verify: narinfos without nar_files
 	for _, ni := range suspects.narinfosWithoutNarFiles {
@@ -566,6 +659,9 @@ func reVerifyFsckSuspects(
 				return nil, fmt.Errorf("re-verify GetNarFileByNarInfoID(%d): %w", ni.ID, err)
 			}
 		}
+
+		checked.Add(1)
+		remaining.Add(-1)
 	}
 
 	// Re-verify: orphaned nar_files in DB
@@ -583,6 +679,9 @@ func reVerifyFsckSuspects(
 				return nil, fmt.Errorf("re-verify orphaned nar_file(%d): %w", nf.ID, err)
 			}
 		}
+
+		checked.Add(1)
+		remaining.Add(-1)
 	}
 
 	// Re-verify: nar_files missing from storage
@@ -595,15 +694,21 @@ func reVerifyFsckSuspects(
 		if !narStore.HasNar(ctx, narURL) {
 			results.narFilesMissingInStorage = append(results.narFilesMissingInStorage, nf)
 		}
+
+		checked.Add(1)
+		remaining.Add(-1)
 	}
 
 	// Re-verify: orphaned NAR files in storage
 	for _, narURL := range suspects.orphanedNarFilesInStorage {
-		_, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		_, err := db.GetNarFileByHashAndCompressionAndQuery(
+			ctx,
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narURL.Hash,
+				Compression: narURL.Compression.String(),
+				Query:       narURL.Query.Encode(),
+			},
+		)
 		if err != nil {
 			if database.IsNotFoundError(err) {
 				results.orphanedNarFilesInStorage = append(results.orphanedNarFilesInStorage, narURL)
@@ -611,6 +716,9 @@ func reVerifyFsckSuspects(
 				return nil, fmt.Errorf("re-verify orphaned NAR in storage (%s): %w", narURL, err)
 			}
 		}
+
+		checked.Add(1)
+		remaining.Add(-1)
 	}
 
 	if !suspects.cdcMode {
@@ -632,6 +740,9 @@ func reVerifyFsckSuspects(
 		if _, ok := recheckedMap[c.ID]; ok {
 			results.orphanedChunksInDB = append(results.orphanedChunksInDB, c)
 		}
+
+		checked.Add(1)
+		remaining.Add(-1)
 	}
 
 	// Re-verify: NAR files with chunk issues
@@ -645,6 +756,9 @@ func reVerifyFsckSuspects(
 			if broken {
 				results.narFilesWithChunkIssues = append(results.narFilesWithChunkIssues, nf)
 			}
+
+			checked.Add(1)
+			remaining.Add(-1)
 		}
 	}
 
@@ -658,6 +772,9 @@ func reVerifyFsckSuspects(
 				return nil, fmt.Errorf("re-verify orphaned chunk in storage (%s): %w", hash, err)
 			}
 		}
+
+		checked.Add(1)
+		remaining.Add(-1)
 	}
 
 	return results, nil
@@ -1099,6 +1216,7 @@ func collectNarFilesWithChunkIssues(
 	db database.Querier,
 	allNarFiles []database.GetAllNarFilesRow,
 	cs chunk.Store,
+	checked *atomic.Int64,
 ) ([]database.NarFile, error) {
 	if cs == nil {
 		return nil, nil
@@ -1109,6 +1227,10 @@ func collectNarFilesWithChunkIssues(
 	for _, nf := range allNarFiles {
 		if nf.TotalChunks <= 0 {
 			continue
+		}
+
+		if checked != nil {
+			checked.Add(1)
 		}
 
 		narFile := database.NarFile{
@@ -1142,6 +1264,7 @@ func collectOrphanedChunksInStorage(
 	ctx context.Context,
 	db database.Querier,
 	chunkStore chunk.Store,
+	checked *atomic.Int64,
 ) ([]string, error) {
 	if chunkStore == nil {
 		return nil, nil
@@ -1150,6 +1273,9 @@ func collectOrphanedChunksInStorage(
 	var orphaned []string
 
 	if err := chunkStore.WalkChunks(ctx, func(hash string) error {
+		if checked != nil {
+			checked.Add(1)
+		}
 		_, dbErr := db.GetChunkByHash(ctx, hash)
 		if dbErr != nil {
 			if database.IsNotFoundError(dbErr) {
@@ -1179,4 +1305,53 @@ func narFileRowToURL(hash, compression, query string) (nar.URL, error) {
 		Compression: nar.CompressionTypeFromString(compression),
 		Query:       parsedQuery,
 	}, nil
+}
+
+// startProgressTicker starts a goroutine that logs progress every 30 seconds.
+// It returns a function that should be called to stop the ticker.
+func startProgressTicker(logFn func()) (stop func()) {
+	done := make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				logFn()
+			}
+		}
+	}()
+
+	return func() { close(done) }
+}
+
+// logProgress logs common progress fields (percent, rate).
+//
+//nolint:zerologlint
+func logProgress(
+	logger zerolog.Logger,
+	startTime time.Time,
+	checked int64,
+	total int64,
+) *zerolog.Event {
+	elapsed := time.Since(startTime).Seconds()
+	evt := logger.Info().
+		Int64("checked", checked).
+		Int64("total", total)
+
+	if total > 0 {
+		pct := float64(checked) / float64(total) * 100
+		evt = evt.Str("percent", fmt.Sprintf("%.1f%%", pct))
+	}
+
+	if elapsed > 0 && checked > 0 {
+		rate := float64(checked) / elapsed
+		evt = evt.Str("rate", fmt.Sprintf("%.0f/s", rate))
+	}
+
+	return evt
 }
