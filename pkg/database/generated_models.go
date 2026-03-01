@@ -93,6 +93,7 @@ type GetAllNarFilesRow struct {
 	CreatedAt         time.Time
 	UpdatedAt         sql.NullTime
 	LastAccessedAt    sql.NullTime
+	VerifiedAt        sql.NullTime
 }
 
 type GetChunkByNarFileIDAndIndexParams struct {
@@ -169,6 +170,7 @@ type NarFile struct {
 	LastAccessedAt    sql.NullTime
 	TotalChunks       int64
 	ChunkingStartedAt sql.NullTime
+	VerifiedAt        sql.NullTime
 }
 
 type NarInfo struct {

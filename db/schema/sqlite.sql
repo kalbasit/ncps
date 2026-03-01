@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS "nar_files" (
     "query" TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP,
-    last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_chunks BIGINT NOT NULL DEFAULT 0, chunking_started_at TIMESTAMP NULL,
+    last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, total_chunks BIGINT NOT NULL DEFAULT 0, chunking_started_at TIMESTAMP NULL, verified_at TIMESTAMP,
     UNIQUE (hash, compression, "query")
 );
 CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
@@ -75,4 +75,5 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20260127223000'),
   ('20260131021850'),
   ('20260205063651'),
-  ('20260217071237');
+  ('20260217071237'),
+  ('20260301000000');
