@@ -385,4 +385,4 @@ FROM chunks;
 
 -- name: HasAnyChunkedNarFiles :one
 -- Returns true if any nar_file has total_chunks > 0 (used for CDC auto-detection).
-SELECT EXISTS(SELECT 1 FROM nar_files WHERE total_chunks > 0);
+SELECT EXISTS(SELECT 1 FROM nar_files WHERE total_chunks > 0) AS "exists";
