@@ -273,6 +273,7 @@ fsck:
 
   # Optional: Job-specific settings
   job:
+    concurrencyPolicy: Forbid
     backoffLimit: 1
     ttlSecondsAfterFinished: 3600
 ```

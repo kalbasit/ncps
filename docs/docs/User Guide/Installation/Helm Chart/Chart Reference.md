@@ -320,6 +320,7 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `fsck.resources` | Resources for fsck pod | `{}` |
 | `fsck.securityContext` | Security context for fsck pod | See values.yaml |
 | `fsck.job.backoffLimit` | Job backoff limit | `1` |
+| `fsck.job.concurrencyPolicy` | Job concurrency policy (`Allow`, `Forbid`, `Replace`) | `Forbid` |
 | `fsck.job.ttlSecondsAfterFinished` | Job TTL after finish (seconds) | `3600` |
 | `fsck.job.annotations` | Annotations for the Job | `{}` |
 | `fsck.job.nodeSelector` | Node selector for the Job | `{}` |

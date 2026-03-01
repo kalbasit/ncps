@@ -721,6 +721,16 @@
               "minimum": 0,
               "description": "Backoff limit for job retries"
             },
+            "concurrencyPolicy": {
+              "type": "string",
+              "default": "Forbid",
+              "enum": [
+                "Allow",
+                "Forbid",
+                "Replace"
+              ],
+              "description": "Concurrency policy for the job: Allow, Forbid (default), or Replace"
+            },
             "ttlSecondsAfterFinished": {
               "type": "integer",
               "minimum": 0,
