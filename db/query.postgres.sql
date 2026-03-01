@@ -15,12 +15,12 @@ WHERE url = $1
 LIMIT 1;
 
 -- name: GetNarFileByHashAndCompressionAndQuery :one
-SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at
+SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at, verified_at
 FROM nar_files
 WHERE hash = $1 AND compression = $2 AND query = $3;
 
 -- name: GetNarFileByNarInfoID :one
-SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at, nf.verified_at
 FROM nar_files nf
 INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
 WHERE nnf.narinfo_id = $1;
@@ -163,7 +163,8 @@ RETURNING
     updated_at,
     last_accessed_at,
     total_chunks,
-    chunking_started_at;
+    chunking_started_at,
+    verified_at;
 
 -- name: SetNarFileChunkingStarted :exec
 UPDATE nar_files
@@ -256,7 +257,7 @@ WHERE (
 
 -- name: GetOrphanedNarFiles :many
 -- Find files that have no relationship to any narinfo
-SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at
+SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at, nf.verified_at
 FROM nar_files nf
 LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 WHERE ninf.narinfo_id IS NULL;
@@ -348,6 +349,11 @@ UPDATE nar_files
 SET total_chunks = $1, file_size = $2, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL
 WHERE id = $3;
 
+-- name: UpdateNarFileVerifiedAt :exec
+UPDATE nar_files
+SET verified_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
 -- name: GetNarFilesToChunk :many
 -- Get all NAR files that are not yet chunked.
 SELECT id, hash, compression, query, file_size
@@ -380,7 +386,7 @@ WHERE url = sqlc.arg(old_url);
 
 -- name: GetAllNarFiles :many
 -- Returns all nar_files for storage existence verification.
-SELECT id, hash, compression, query, file_size, total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
+SELECT id, hash, compression, query, file_size, total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at, verified_at
 FROM nar_files;
 
 -- name: GetNarInfosWithoutNarFiles :many

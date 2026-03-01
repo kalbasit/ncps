@@ -37,6 +37,7 @@ type NarFile struct {
 	LastAccessedAt    sql.NullTime
 	TotalChunks       int64
 	ChunkingStartedAt sql.NullTime
+	VerifiedAt        sql.NullTime
 }
 
 type NarFileChunk struct {

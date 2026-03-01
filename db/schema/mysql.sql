@@ -85,6 +85,7 @@ CREATE TABLE `nar_files` (
   `last_accessed_at` timestamp NULL DEFAULT current_timestamp(),
   `total_chunks` bigint(20) NOT NULL DEFAULT 0,
   `chunking_started_at` timestamp NULL DEFAULT NULL,
+  `verified_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_nar_files_hash_compression_query` (`hash`,`compression`,`query`) USING HASH,
   KEY `idx_nar_files_last_accessed_at` (`last_accessed_at`)
@@ -203,5 +204,6 @@ INSERT INTO `schema_migrations` (version) VALUES
   ('20260127223000'),
   ('20260131021850'),
   ('20260205063659'),
-  ('20260217071237');
+  ('20260217071237'),
+  ('20260301000000');
 UNLOCK TABLES;
