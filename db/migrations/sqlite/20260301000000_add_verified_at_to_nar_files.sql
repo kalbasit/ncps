@@ -20,7 +20,16 @@ INSERT INTO nar_files_new (
     id, hash, compression, file_size, "query", total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
 )
 SELECT
-    id, hash, compression, file_size, "query", total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
+    id,
+    hash,
+    compression,
+    file_size,
+    "query",
+    total_chunks,
+    chunking_started_at,
+    created_at,
+    updated_at,
+    last_accessed_at
 FROM nar_files;
 
 PRAGMA foreign_keys = OFF;
