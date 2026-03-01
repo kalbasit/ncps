@@ -23,7 +23,10 @@ type Chunk struct {
 }
 
 // Free returns the chunk data to the pool.
-func (c Chunk) Free() {
+// The caller is responsible for calling Free when the chunk is no longer needed.
+// Failure to do so will result in leaking memory buffers from the pool.
+// This method is safe to call multiple times.
+func (c *Chunk) Free() {
 	if c.free != nil {
 		c.free()
 	}
@@ -33,7 +36,7 @@ func (c Chunk) Free() {
 type Chunker interface {
 	// Chunk splits the reader into content-defined chunks.
 	// Returns two channels: one for yielding chunks and one for yielding errors.
-	Chunk(ctx context.Context, r io.Reader) (<-chan Chunk, <-chan error)
+	Chunk(ctx context.Context, r io.Reader) (<-chan *Chunk, <-chan error)
 }
 
 // CDCChunker implements FastCDC algorithm.
@@ -75,8 +78,8 @@ func NewCDCChunker(minSize, avgSize, maxSize uint32) (*CDCChunker, error) {
 }
 
 // Chunk splits the reader into content-defined chunks.
-func (c *CDCChunker) Chunk(ctx context.Context, r io.Reader) (<-chan Chunk, <-chan error) {
-	chunksChan := make(chan Chunk)
+func (c *CDCChunker) Chunk(ctx context.Context, r io.Reader) (<-chan *Chunk, <-chan error) {
+	chunksChan := make(chan *Chunk)
 	errChan := make(chan error, 1)
 
 	go func() {
@@ -121,24 +124,33 @@ func (c *CDCChunker) Chunk(ctx context.Context, r io.Reader) (<-chan Chunk, <-ch
 				buf := *bufPtr
 				copy(buf, chunk.Data)
 
-				select {
-				case <-ctx.Done():
-					c.bufferPool.Put(bufPtr)
-
-					errChan <- ctx.Err()
-
-					return
-				case chunksChan <- Chunk{
+				chunkMetadata := &Chunk{
 					Hash:   hashStr,
 					Offset: offset,
 					//nolint:gosec // G115: Chunk size is bounded by maxSize (uint32)
 					Size: uint32(len(chunk.Data)),
 					Data: buf[:len(chunk.Data)],
-					free: func() {
-						c.bufferPool.Put(bufPtr)
-					},
-				}:
+				}
+
+				var once sync.Once
+
+				chunkMetadata.free = func() {
+					once.Do(func() {
+						chunkMetadata.Data = nil
+
+						c.bufferPool.Put(bufPtr) // return the buffer to the pool
+					})
+				}
+
+				select {
+				case chunksChan <- chunkMetadata:
 					offset += int64(len(chunk.Data))
+				case <-ctx.Done():
+					chunkMetadata.Free()
+
+					errChan <- ctx.Err()
+
+					return
 				}
 			}
 		}

@@ -1694,7 +1694,7 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 		chunkCount int64
 	)
 
-	var batch []chunker.Chunk
+	var batch []*chunker.Chunk
 
 	flushTimer := time.NewTimer(cdcFirstBatchDelay)
 	defer flushTimer.Stop()
@@ -1986,7 +1986,7 @@ func (c *Cache) relinkNarInfosToNarFileWithQuerier(
 	return nil
 }
 
-func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startIndex int64, batch []chunker.Chunk) error {
+func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startIndex int64, batch []*chunker.Chunk) error {
 	if len(batch) == 0 {
 		return nil
 	}
