@@ -118,10 +118,10 @@ func TestCDCChunker_Chunk(t *testing.T) {
 	})
 }
 
-func collectChunks(ctx context.Context, t *testing.T, c chunker.Chunker, r io.Reader) ([]chunker.Chunk, error) {
+func collectChunks(ctx context.Context, t *testing.T, c chunker.Chunker, r io.Reader) ([]*chunker.Chunk, error) {
 	chunksChan, errChan := c.Chunk(ctx, r)
 
-	var chunks []chunker.Chunk
+	var chunks []*chunker.Chunk
 
 	for {
 		select {
