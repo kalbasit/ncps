@@ -599,10 +599,8 @@ func collectFsckSuspects(
 	// g. Orphaned chunk files in storage
 	logger.Info().Msg("phase 1g: checking orphaned chunk files in storage")
 
-	chunkCount, err := db.GetChunkCount(ctx)
-	if err == nil {
-		total.Add(chunkCount)
-	}
+	// The total number of chunks in storage is not known beforehand, so we cannot
+	// accurately report a percentage for phase 1g. We'll rely on the checked count.
 
 	orphaned, err := collectOrphanedChunksInStorage(ctx, db, chunkStore, &checked)
 	if err != nil {
@@ -1343,7 +1341,7 @@ func logProgress(
 		Int64("checked", checked).
 		Int64("total", total)
 
-	if total > 0 {
+	if total > 0 && checked <= total {
 		pct := float64(checked) / float64(total) * 100
 		evt = evt.Str("percent", fmt.Sprintf("%.1f%%", pct))
 	}
