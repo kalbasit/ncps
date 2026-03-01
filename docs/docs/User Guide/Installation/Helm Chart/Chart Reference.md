@@ -17,7 +17,7 @@ This chart bootstraps a ncps deployment on a Kubernetes cluster using the Helm p
 
 ### Install from OCI Registry
 
-```
+```sh
 # Install with default values (single instance, local storage, SQLite)
 helm install ncps oci://ghcr.io/kalbasit/helm/ncps --version <chart-version>
 
@@ -30,7 +30,7 @@ helm install ncps oci://ghcr.io/kalbasit/helm/ncps \
 
 ### Install from Source
 
-```
+```sh
 git clone https://github.com/kalbasit/ncps.git
 cd ncps/charts/ncps
 helm install ncps . -f values.yaml
@@ -38,7 +38,7 @@ helm install ncps . -f values.yaml
 
 ## Upgrading
 
-```
+```sh
 # Upgrade to a new version
 helm upgrade ncps oci://ghcr.io/kalbasit/helm/ncps --version <new-chart-version>
 
@@ -50,7 +50,7 @@ helm upgrade ncps oci://ghcr.io/kalbasit/helm/ncps \
 
 ## Uninstalling
 
-```
+```sh
 helm uninstall ncps
 
 # To also delete PVCs (persistent volumes)
@@ -308,6 +308,27 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `migration.job.tolerations` | Tolerations for migration job | `[]` |
 | `migration.job.affinity` | Affinity for migration job | `{}` |
 
+### FSCK (Integrity Check) Settings
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `fsck.enabled` | Enable periodic fsck CronJob | `false` |
+| `fsck.schedule` | Cron schedule for fsck | `0 1 * * *` |
+| `fsck.timezone` | Timezone for cron schedule | `""` |
+| `fsck.repair` | Automatically repair issues | `false` |
+| `fsck.verifiedSince` | Skip checking NARs verified within this duration (e.g., `24h`, `168h`) | `""` |
+| `fsck.resources` | Resources for fsck pod | `{}` |
+| `fsck.securityContext` | Security context for fsck pod | See values.yaml |
+| `fsck.job.backoffLimit` | Job backoff limit | `1` |
+| `fsck.job.ttlSecondsAfterFinished` | Job TTL after finish (seconds) | `3600` |
+| `fsck.job.annotations` | Annotations for the Job | `{}` |
+| `fsck.job.nodeSelector` | Node selector for the Job | `{}` |
+| `fsck.job.tolerations` | Tolerations for the Job | `[]` |
+| `fsck.job.affinity` | Affinity for the Job | `{}` |
+
+> [!NOTE]
+> The fsck CronJob is disabled by default. When enabled, it runs the `ncps fsck` command using the same database and storage configuration as the main application.
+
 > [!WARNING]
 > **Breaking Change for HA Upgrades:** With migrations enabled by default, upgrading an existing High Availability (HA) deployment (`replicaCount > 1`) will fail if you are using the default `migration.mode: initContainer`. To avoid this, explicitly set `migration.mode: job` or `migration.mode: argocd` in your values when upgrading.
 
@@ -469,7 +490,7 @@ config:
 
 Create secrets:
 
-```
+```sh
 # S3 credentials
 kubectl create secret generic ncps-s3-credentials \
   --from-literal=access-key-id=AKIA... \
@@ -555,7 +576,7 @@ The chart includes a connection test that verifies the service is responding on 
 
 When deploying with `helm install` or `helm upgrade`, you can enable and run tests:
 
-```
+```sh
 # Install with tests enabled
 helm install ncps oci://ghcr.io/kalbasit/helm/ncps \
   --set tests.enabled=true
@@ -587,7 +608,7 @@ tests:
 
 To test your deployment when using templating, use the readiness/liveness probes or manually verify:
 
-```
+```sh
 kubectl get pod -l app.kubernetes.io/instance=<release-name>
 kubectl port-forward svc/<release-name>-ncps 8501:8501
 curl http://localhost:8501/healthz

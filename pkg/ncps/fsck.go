@@ -106,7 +106,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			},
 			&cli.DurationFlag{
 				Name:  "verified-since",
-				Usage: "Skip checking NARs that have been verified within this duration",
+				Usage: "Skip checking NARs that have been verified within this duration (e.g. 1h, 30m)",
 			},
 
 			// Storage Flags
@@ -256,6 +256,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 
 			dryRun := cmd.Bool("dry-run")
 			repair := cmd.Bool("repair")
+
 			verifiedSince := cmd.Duration("verified-since")
 
 			// 1. Setup Database

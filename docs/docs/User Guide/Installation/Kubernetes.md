@@ -13,7 +13,7 @@ Deploy ncps on Kubernetes for production-ready, scalable deployments with manual
 
 ## Quick Start
 
-For production deployments, we recommend using the <a class="reference-link" href="Helm%20Chart.md">Helm</a> for simplified management. This guide shows manual Kubernetes deployment for users who need fine-grained control.
+For production deployments, we recommend using the <a class="reference-link" href="Helm%20Chart.md">Helm Chart</a> for simplified management. This guide shows manual Kubernetes deployment for users who need fine-grained control.
 
 ## Basic Deployment (Single Instance)
 
@@ -491,11 +491,11 @@ See the <a class="reference-link" href="../Operations/Troubleshooting.md">Troub
 1. <a class="reference-link" href="../Usage/Client%20Setup.md">Client Setup</a> - Set up Nix clients
 1. <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Set up observability
 1. <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - Explore more options
-1. **Consider** <a class="reference-link" href="Helm%20Chart.md">Helm</a> - For simplified management
+1. **Consider** <a class="reference-link" href="Helm%20Chart.md">Helm Chart</a> - For simplified management
 
 ## Related Documentation
 
-- <a class="reference-link" href="Helm%20Chart.md">Helm</a> - Simplified Kubernetes deployment
+- <a class="reference-link" href="Helm%20Chart.md">Helm Chart</a> - Simplified Kubernetes deployment
 - <a class="reference-link" href="Docker%20Compose.md">Docker Compose</a> - For non-K8s environments
 - <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a> - HA setup guide
 - <a class="reference-link" href="../Configuration/Reference.md">Reference</a> - All configuration options
