@@ -434,43 +434,16 @@ func collectFsckSuspects(
 
 	startTime := time.Now()
 
-	progressDone := make(chan struct{})
-	defer close(progressDone)
-
 	// Start background progress ticker
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-progressDone:
-				return
-			case <-ticker.C:
-				c := checked.Load()
-				t := total.Load()
-				s := suspects.Load()
-				elapsed := time.Since(startTime).Seconds()
-
-				evt := logger.Info().
-					Int64("checked", c).
-					Int64("total", t).
-					Int64("suspects", s)
-
-				if t > 0 {
-					pct := float64(c) / float64(t) * 100
-					evt = evt.Str("percent", fmt.Sprintf("%.1f%%", pct))
-				}
-
-				if elapsed > 0 && c > 0 {
-					rate := float64(c) / elapsed
-					evt = evt.Str("rate", fmt.Sprintf("%.0f/s", rate))
-				}
-
-				evt.Msg("phase 1: progress update")
-			}
-		}
-	}()
+	stopTicker := startProgressTicker(func() {
+		c := checked.Load()
+		t := total.Load()
+		s := suspects.Load()
+		logProgress(*logger, startTime, c, t).
+			Int64("suspects", s).
+			Msg("phase 1: progress update")
+	})
+	defer stopTicker()
 
 	// a. Narinfos without nar_files
 	narinfosWithoutNarFiles, err := db.GetNarInfosWithoutNarFiles(ctx)
@@ -651,45 +624,18 @@ func reVerifyFsckSuspects(
 
 	startTime := time.Now()
 
-	progressDone := make(chan struct{})
-	defer close(progressDone)
-
 	logger.Info().Int("total", totalSuspects).Msg("phase 2: re-verifying suspects")
 
 	// Start background progress ticker
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-progressDone:
-				return
-			case <-ticker.C:
-				c := checked.Load()
-				t := int64(totalSuspects)
-				r := remaining.Load()
-				elapsed := time.Since(startTime).Seconds()
-
-				evt := logger.Info().
-					Int64("checked", c).
-					Int64("remaining", r).
-					Int64("total", t)
-
-				if t > 0 {
-					pct := float64(c) / float64(t) * 100
-					evt = evt.Str("percent", fmt.Sprintf("%.1f%%", pct))
-				}
-
-				if elapsed > 0 && c > 0 {
-					rate := float64(c) / elapsed
-					evt = evt.Str("rate", fmt.Sprintf("%.0f/s", rate))
-				}
-
-				evt.Msg("phase 2: progress update")
-			}
-		}
-	}()
+	stopTicker := startProgressTicker(func() {
+		c := checked.Load()
+		t := int64(totalSuspects)
+		r := remaining.Load()
+		logProgress(*logger, startTime, c, t).
+			Int64("remaining", r).
+			Msg("phase 2: progress update")
+	})
+	defer stopTicker()
 
 	// Re-verify: narinfos without nar_files
 	for _, ni := range suspects.narinfosWithoutNarFiles {
@@ -1338,4 +1284,53 @@ func narFileRowToURL(hash, compression, query string) (nar.URL, error) {
 		Compression: nar.CompressionTypeFromString(compression),
 		Query:       parsedQuery,
 	}, nil
+}
+
+// startProgressTicker starts a goroutine that logs progress every 30 seconds.
+// It returns a function that should be called to stop the ticker.
+func startProgressTicker(logFn func()) (stop func()) {
+	done := make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				logFn()
+			}
+		}
+	}()
+
+	return func() { close(done) }
+}
+
+// logProgress logs common progress fields (percent, rate).
+//
+//nolint:zerologlint
+func logProgress(
+	logger zerolog.Logger,
+	startTime time.Time,
+	checked int64,
+	total int64,
+) *zerolog.Event {
+	elapsed := time.Since(startTime).Seconds()
+	evt := logger.Info().
+		Int64("checked", checked).
+		Int64("total", total)
+
+	if total > 0 {
+		pct := float64(checked) / float64(total) * 100
+		evt = evt.Str("percent", fmt.Sprintf("%.1f%%", pct))
+	}
+
+	if elapsed > 0 && checked > 0 {
+		rate := float64(checked) / elapsed
+		evt = evt.Str("rate", fmt.Sprintf("%.0f/s", rate))
+	}
+
+	return evt
 }
