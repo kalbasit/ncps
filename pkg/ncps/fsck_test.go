@@ -585,6 +585,8 @@ func testFsckCDCSuite(setup fsckSetupFn) func(*testing.T) {
 		t.Run("OrphanedChunkInStorage", testFsckCDCOrphanedChunkInStorage(setup))
 		t.Run("RepairIncompleteNar", testFsckCDCRepairIncompleteNar(setup))
 		t.Run("RepairOrphanedChunkInStorage", testFsckCDCRepairOrphanedChunkInStorage(setup))
+		t.Run("ChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig",
+			testFsckCDCChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig(setup))
 	}
 }
 
@@ -905,5 +907,45 @@ func testFsckCDCRepairOrphanedChunkInStorage(setup fsckSetupFn) func(*testing.T)
 		}
 
 		require.NoError(t, app.Run(ctx, cleanArgs))
+	}
+}
+
+// testFsckCDCChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig is a regression test for the
+// false-positive bug: chunked nar_files (total_chunks > 0) must NOT be reported as "missing from
+// storage" even when the cdc_enabled DB config key is absent. The fix removes the cdcMode gate
+// on the TotalChunks > 0 check and adds data-based CDC auto-detection as a fallback.
+func testFsckCDCChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		// Intentionally do NOT call configureFsckCDCInDatabase — simulates a DB where the
+		// cdc_enabled config key is missing (Bug 1 trigger condition).
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// Create a chunked nar_file with total_chunks > 0 and write chunks to chunk storage.
+		// The whole NAR file does NOT exist in nar storage (correct for CDC-migrated files).
+		setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// fsck should succeed with no issues: the chunked nar_file should not be flagged as
+		// "missing from storage" and chunk verification should pass.
+		args := []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}
+
+		require.NoError(t, app.Run(ctx, args))
 	}
 }

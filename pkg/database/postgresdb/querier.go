@@ -323,6 +323,10 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url IS NULL
 	GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error)
+	// Returns true if any nar_file has total_chunks > 0 (used for CDC auto-detection).
+	//
+	//  SELECT EXISTS(SELECT 1 FROM nar_files WHERE total_chunks > 0) AS "exists"
+	HasAnyChunkedNarFiles(ctx context.Context) (bool, error)
 	//LinkNarFileToChunk
 	//
 	//  INSERT INTO nar_file_chunks (
