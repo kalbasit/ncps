@@ -12,7 +12,7 @@ require (
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
-	github.com/kalbasit/fastcdc v0.0.0-20260223045500-c072edc28e41
+	github.com/kalbasit/fastcdc v0.0.0-20260301002737-e2baee082506
 	github.com/klauspost/compress v1.18.4
 	github.com/lib/pq v1.11.2
 	github.com/mattn/go-sqlite3 v1.14.34
