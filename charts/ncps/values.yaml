@@ -539,6 +539,9 @@ fsck:
 
   # Job configuration
   job:
+    # Concurrency policy for the job: "Allow", "Forbid" (default), or "Replace"
+    concurrencyPolicy: Forbid
+
     # Backoff limit for job retries
     backoffLimit: 1
 
