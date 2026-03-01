@@ -468,6 +468,12 @@ func collectFsckSuspects(
 	if err != nil {
 		return nil, fmt.Errorf("GetAllNarFiles: %w", err)
 	}
+	// Items checked in phase 1c and 1f (if enabled)
+	for _, nf := range allNarFiles {
+		if nf.TotalChunks <= 0 || cdcMode {
+			total.Add(1)
+		}
+	}
 
 	presentNars := make(map[string]struct{})
 
@@ -488,6 +494,7 @@ func collectFsckSuspects(
 	}
 
 	storageCount := storageNarCount.Load()
+	total.Add(storageCount)
 	logger.Info().Int64("count", storageCount).Msg("phase 1c: indexed NAR files from storage")
 
 	// Check for missing nar_files
@@ -581,7 +588,7 @@ func collectFsckSuspects(
 	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
 	logger.Info().Msg("phase 1f: checking NAR files with chunk issues")
 
-	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(ctx, db, allNarFiles, chunkStore)
+	narFilesWithChunkIssues, err := collectNarFilesWithChunkIssues(ctx, db, allNarFiles, chunkStore, &checked)
 	if err != nil {
 		return nil, err
 	}
@@ -592,7 +599,12 @@ func collectFsckSuspects(
 	// g. Orphaned chunk files in storage
 	logger.Info().Msg("phase 1g: checking orphaned chunk files in storage")
 
-	orphaned, err := collectOrphanedChunksInStorage(ctx, db, chunkStore)
+	chunkCount, err := db.GetChunkCount(ctx)
+	if err == nil {
+		total.Add(chunkCount)
+	}
+
+	orphaned, err := collectOrphanedChunksInStorage(ctx, db, chunkStore, &checked)
 	if err != nil {
 		return nil, err
 	}
@@ -1204,6 +1216,7 @@ func collectNarFilesWithChunkIssues(
 	db database.Querier,
 	allNarFiles []database.GetAllNarFilesRow,
 	cs chunk.Store,
+	checked *atomic.Int64,
 ) ([]database.NarFile, error) {
 	if cs == nil {
 		return nil, nil
@@ -1214,6 +1227,10 @@ func collectNarFilesWithChunkIssues(
 	for _, nf := range allNarFiles {
 		if nf.TotalChunks <= 0 {
 			continue
+		}
+
+		if checked != nil {
+			checked.Add(1)
 		}
 
 		narFile := database.NarFile{
@@ -1247,6 +1264,7 @@ func collectOrphanedChunksInStorage(
 	ctx context.Context,
 	db database.Querier,
 	chunkStore chunk.Store,
+	checked *atomic.Int64,
 ) ([]string, error) {
 	if chunkStore == nil {
 		return nil, nil
@@ -1255,6 +1273,9 @@ func collectOrphanedChunksInStorage(
 	var orphaned []string
 
 	if err := chunkStore.WalkChunks(ctx, func(hash string) error {
+		if checked != nil {
+			checked.Add(1)
+		}
 		_, dbErr := db.GetChunkByHash(ctx, hash)
 		if dbErr != nil {
 			if database.IsNotFoundError(dbErr) {
