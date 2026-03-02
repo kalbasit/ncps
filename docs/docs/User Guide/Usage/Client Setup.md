@@ -158,7 +158,7 @@ You can configure multiple ncps caches:
 
 ## Trusted Users
 
-For multi-user Nix installations, you may need to configure trusted users:
+For multi-user Nix installations, the Nix daemon restricts certain operations (like specifying extra substituters) to **trusted users**.
 
 ```
 {
@@ -171,6 +171,34 @@ Or in `/etc/nix/nix.conf`:
 ```
 trusted-users = root youruser
 ```
+
+> [!CAUTION]
+> **Adding a user to** `**trusted-users**` **is equivalent to giving that user root access to the system.**
+>
+> Trusted users can:
+>
+> - Define arbitrary binary caches (substituters) for their own builds.
+> - Specify `sandbox-paths`, which can allow them to read files otherwise inaccessible to them.
+> - Import unsigned NARs into the Nix store.
+>
+> An inexperienced or malicious user with these privileges can easily undermine system security, potentially leading to privilege escalation or system compromise.
+
+### When to use this
+
+Configuring `trusted-users` makes sense if:
+
+- You are the primary user and administrator of your own machine.
+- You are a developer who needs the flexibility to frequently use different, project-specific binary caches without modifying the global system configuration.
+
+### Better Alternatives
+
+For most multi-user environments, it is safer to configure ncps globally in your system configuration (as shown in the [NixOS Configuration](#nixos-configuration) or [Non-NixOS Configuration](#non-nixos-configuration) sections above).
+
+By adding `substituters` and `trusted-public-keys` to the global configuration:
+
+1. **Security**: Nix will only use the caches you have explicitly trusted.
+1. **Accessibility**: The cache becomes available to all users on the system automatically.
+1. **No Root Access Required**: Regular users can benefit from the cache without needing elevated privileges.
 
 ## Per-Project Configuration
 
