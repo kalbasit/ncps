@@ -19,6 +19,15 @@ replicaCount: 1
 # - statefulset: For single instance with local storage or HA with persistent state
 mode: statefulset
 
+# Deployment strategy for the "deployment" mode
+# Only applies when mode: deployment
+# For SQLite, this is always overridden to type: Recreate
+strategy: {}
+#   type: RollingUpdate
+#   rollingUpdate:
+#     maxSurge: 25%
+#     maxUnavailable: 25%
+
 image:
   # The image is also available at docker.io/kalbasit/ncps
   registry: ghcr.io

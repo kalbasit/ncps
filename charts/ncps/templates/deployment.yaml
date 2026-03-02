@@ -11,6 +11,9 @@ spec:
   {{- if eq .Values.config.database.type "sqlite" }}
   strategy:
     type: Recreate
+  {{- else if .Values.strategy }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
   {{- else }}
   strategy:
     type: RollingUpdate

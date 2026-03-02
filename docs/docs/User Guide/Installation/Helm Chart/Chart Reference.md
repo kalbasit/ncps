@@ -68,6 +68,7 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `global.imageRegistry` | Global image registry override | `""` |
 | `replicaCount` | Number of replicas (1 for single instance, 2+ for HA) | `1` |
 | `mode` | Deployment mode: `deployment` or `statefulset` | `statefulset` |
+| `strategy` | Deployment strategy (only for `mode: deployment`, auto-set to `Recreate` for SQLite) | `{}` |
 | `image.registry` | Image registry (also available on `docker.io`) | `ghcr.io` |
 | `image.repository` | Image repository | `kalbasit/ncps` |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |

@@ -432,13 +432,36 @@ tests:
       config.storage.type: local
       config.storage.local.persistence.enabled: false # Use emptyDir for this test
     asserts:
-      - isNotEmpty:
-          path: spec.template.spec.initContainers
       - equal:
           path: spec.template.spec.initContainers[0].name
           value: create-db-dir
 
   # Strategy tests
+  - it: should render strategy.type when strategy is provided
+    template: deployment.yaml
+    set:
+      mode: deployment
+      strategy:
+        type: Recreate
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: should render RollingUpdate strategy by default when strategy is not provided and database is not sqlite
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config:
+        database:
+          type: postgresql
+          postgresql:
+            host: localhost
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+
   - it: should set strategy type to Recreate for SQLite in Deployment
     template: deployment.yaml
     set:
