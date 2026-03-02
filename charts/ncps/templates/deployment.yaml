@@ -8,6 +8,16 @@ metadata:
     {{- include "ncps.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if .Values.strategy }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  {{- else if eq .Values.config.database.type "sqlite" }}
+  strategy:
+    type: Recreate
+  {{- else }}
+  strategy:
+    type: RollingUpdate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "ncps.selectorLabels" . | nindent 6 }}

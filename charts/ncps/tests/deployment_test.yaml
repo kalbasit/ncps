@@ -432,8 +432,63 @@ tests:
       config.storage.type: local
       config.storage.local.persistence.enabled: false # Use emptyDir for this test
     asserts:
-      - isNotEmpty:
-          path: spec.template.spec.initContainers
       - equal:
           path: spec.template.spec.initContainers[0].name
           value: create-db-dir
+
+  # Strategy tests
+  - it: should render strategy.type when strategy is provided
+    template: deployment.yaml
+    set:
+      mode: deployment
+      strategy:
+        type: Recreate
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: should render RollingUpdate strategy by default when strategy is not provided and database is not sqlite
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config:
+        database:
+          type: postgresql
+          postgresql:
+            host: localhost
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+
+  - it: should set strategy type to Recreate for SQLite in Deployment
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      config.storage.type: local
+      config.storage.local.persistence.enabled: false
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: should set strategy type to RollingUpdate for PostgreSQL in Deployment
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
