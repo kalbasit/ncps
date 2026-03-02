@@ -24,6 +24,10 @@
       ],
       "description": "Deployment mode"
     },
+    "strategy": {
+      "type": "object",
+      "description": "Deployment strategy (only for mode: deployment)"
+    },
     "image": {
       "type": "object",
       "properties": {
