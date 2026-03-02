@@ -173,7 +173,7 @@ trusted-users = root youruser
 ```
 
 > [!CAUTION]
-> **Adding a user to** `**trusted-users**` **is equivalent to giving that user root access to the system.**
+> **Adding a user to** `trusted-users` **is equivalent to giving that user root access to the system.**
 >
 > Trusted users can:
 >
@@ -182,6 +182,8 @@ trusted-users = root youruser
 > - Import unsigned NARs into the Nix store.
 >
 > An inexperienced or malicious user with these privileges can easily undermine system security, potentially leading to privilege escalation or system compromise.
+>
+> Read more about [`trusted-users` in the Nix Manual](https://nix.dev/manual/nix/stable/command-ref/conf-file.html#conf-trusted-users).
 
 ### When to use this
 
