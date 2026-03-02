@@ -492,3 +492,14 @@ tests:
       - equal:
           path: spec.strategy.type
           value: RollingUpdate
+  - it: should override user strategy to Recreate for SQLite
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.database.type: sqlite
+      strategy:
+        type: RollingUpdate
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
