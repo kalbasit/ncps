@@ -2552,6 +2552,10 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		var err error
 
 		narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("error fetching narinfo from database: %w", err)
+		}
+
 		if err == nil {
 			metricAttrs = append(metricAttrs,
 				attribute.String("result", "hit"),
