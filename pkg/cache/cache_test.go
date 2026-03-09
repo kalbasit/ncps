@@ -3092,3 +3092,70 @@ func testBackgroundMigrateNarToChunksAfterCancellation(factory cacheFactory) fun
 		assert.True(t, hasChunks)
 	}
 }
+
+func TestIssue990_BackgroundJobContextCancellation(t *testing.T) {
+	t.Parallel()
+	// 1. Setup test environment
+	c, db, _, _, rebind, cleanup := setupSQLiteFactory(t)
+	defer cleanup()
+
+	// 2. Setup a slow upstream server
+	ts := testdata.NewTestServer(t, 40)
+	defer ts.Close()
+
+	// Add a handler that sleeps for 1 second before responding
+	ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+		if strings.HasSuffix(r.URL.Path, ".narinfo") {
+			time.Sleep(1 * time.Second)
+			// The default handler will handle it after we Return false here if we didn't write anything,
+			// but we want to actually respond here to be sure.
+			return false
+		}
+
+		return false
+	})
+
+	uc, err := upstream.New(context.Background(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	require.NoError(t, err)
+	c.AddUpstreamCaches(context.Background(), uc)
+
+	// Wait for upstream to be healthy
+	<-c.GetHealthChecker().Trigger()
+
+	// 3. Trigger GetNarInfo with a context that will be canceled
+	ctx, cancel := context.WithCancel(context.Background())
+
+	hash := testdata.Nar1.NarInfoHash
+
+	// Start GetNarInfo in a goroutine
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, err := c.GetNarInfo(ctx, hash)
+		errCh <- err
+	}()
+
+	// Wait a bit then cancel the context
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	// Wait for GetNarInfo to return
+	err = <-errCh
+	require.ErrorIs(t, err, context.Canceled)
+
+	// 4. Wait for the background job to (hopefully) finish
+	time.Sleep(1500 * time.Millisecond)
+
+	// 5. Check if the narinfo is in the database
+	var count int
+
+	err = db.DB().QueryRowContext(context.Background(),
+		rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash).Scan(&count)
+	require.NoError(t, err)
+
+	// In the BUGGY version, count will be 0 because pullNarInfo was canceled.
+	// In the FIXED version, count should be 1.
+	assert.Equal(t, 1, count, "NarInfo should be in database even if the original request was canceled")
+}
