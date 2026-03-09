@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3158,4 +3159,132 @@ func TestIssue990_BackgroundJobContextCancellation(t *testing.T) {
 	// In the BUGGY version, count will be 0 because pullNarInfo was canceled.
 	// In the FIXED version, count should be 1.
 	assert.Equal(t, 1, count, "NarInfo should be in database even if the original request was canceled")
+}
+
+func TestGetNarInfoDistributedCoordination(t *testing.T) {
+	t.Parallel()
+
+	// 1. Setup shared components
+	dir, err := os.MkdirTemp("", "cache-dist-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	defer db.DB().Close()
+
+	// Use a shared locker to simulate distributed locking
+	sharedDownloadLocker := locklocal.NewLocker()
+	sharedCacheLocker := locklocal.NewRWLocker()
+
+	sharedStorageDir := filepath.Join(dir, "shared")
+	require.NoError(t, os.MkdirAll(sharedStorageDir, 0o755))
+
+	localStore1, err := local.New(context.Background(), sharedStorageDir)
+	require.NoError(t, err)
+	localStore2, err := local.New(context.Background(), sharedStorageDir)
+	require.NoError(t, err)
+
+	// Custom poll timeout for testing
+	shortPollTimeout := 2 * time.Second
+
+	c1, err := cache.New(context.Background(), "instance1.example.com", db, localStore1, localStore1, localStore1, "",
+		sharedDownloadLocker, sharedCacheLocker, downloadLockTTL, shortPollTimeout, cacheLockTTL)
+	require.NoError(t, err)
+
+	defer c1.Close()
+
+	c2, err := cache.New(context.Background(), "instance2.example.com", db, localStore2, localStore2, localStore2, "",
+		sharedDownloadLocker, sharedCacheLocker, downloadLockTTL, shortPollTimeout, cacheLockTTL)
+	require.NoError(t, err)
+
+	defer c2.Close()
+
+	// 2. Setup a slow upstream server
+	ts := testdata.NewTestServer(t, 40)
+	defer ts.Close()
+
+	// Signal when upstream starts and finishes
+	upstreamStarted := make(chan struct{})
+
+	var (
+		startOnce         sync.Once
+		upstreamCallCount int32
+	)
+
+	ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+		if strings.HasSuffix(r.URL.Path, ".narinfo") {
+			atomic.AddInt32(&upstreamCallCount, 1)
+			startOnce.Do(func() { close(upstreamStarted) })
+			t.Logf("Upstream: serving %s (sleeping 1s)", r.URL.Path)
+			time.Sleep(1 * time.Second)
+			// Return false to let default handler serve the content
+			return false
+		}
+
+		if strings.HasSuffix(r.URL.Path, ".nar") {
+			t.Logf("Upstream: serving %s (sleeping 1s)", r.URL.Path)
+			time.Sleep(1 * time.Second)
+
+			return false
+		}
+
+		return false
+	})
+
+	uc1, _ := upstream.New(context.Background(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	c1.AddUpstreamCaches(context.Background(), uc1)
+	<-c1.GetHealthChecker().Trigger()
+
+	uc2, _ := upstream.New(context.Background(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	c2.AddUpstreamCaches(context.Background(), uc2)
+	<-c2.GetHealthChecker().Trigger()
+
+	hash := testdata.Nar1.NarInfoHash
+
+	// 3. Instance 1 starts download
+	errCh1 := make(chan error, 1)
+
+	go func() {
+		_, err := c1.GetNarInfo(context.Background(), hash)
+		errCh1 <- err
+	}()
+
+	// Wait for upstream to start
+	select {
+	case <-upstreamStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for upstream to start")
+	}
+
+	// 4. Instance 2 tries to download the same hash
+	// It should find the lock held and start polling.
+	errCh2 := make(chan error, 1)
+
+	go func() {
+		// Use a context that is longer than the short poll timeout
+		_, err := c2.GetNarInfo(context.Background(), hash)
+		errCh2 <- err
+	}()
+
+	// 5. Wait for both to finish
+	err1 := <-errCh1
+	require.NoError(t, err1)
+
+	err2 := <-errCh2
+	// BUG: Instance 2 should succeed, but it will timeout because it's polling
+	// narInfoStore.HasNarInfo which is false (it's only in the DB).
+	assert.NoError(t, err2, "Instance 2 should have succeeded by polling the database")
+
+	// 6. Verify only one upstream call was made
+	assert.Equal(t, int32(1), atomic.LoadInt32(&upstreamCallCount), "Only one upstream call should have been made")
 }

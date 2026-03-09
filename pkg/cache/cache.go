@@ -872,7 +872,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 			NewLogger(*zerolog.Ctx(ctx)).
 			WithContext(ctx)
 
-		hasNarInStore := c.hasNarInStore(ctx, narURL)
+		hasNarInStore := c.HasNarInStore(ctx, narURL)
 
 		var err error
 
@@ -944,7 +944,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 
 		ds.mu.Unlock()
 
-		hasNarInStore = c.hasNarInStore(ctx, narURL)
+		hasNarInStore = c.HasNarInStore(ctx, narURL)
 
 		// If download is complete (canStream=false) or NAR is already in store, serve from storage.
 		// When canStream=true (an active download is in progress), always stream from the temp file
@@ -2505,7 +2505,7 @@ func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 	// downstream HTTP request to cancel this.
 	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
 
-	if !c.hasNarInStore(ctx, *narURL) {
+	if !c.HasNarInStore(ctx, *narURL) {
 		return storage.ErrNotFound
 	}
 
@@ -2540,146 +2540,148 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		narInfoServedCount.Add(ctx, 1, metric.WithAttributes(metricAttrs...))
 	}()
 
-	var narInfo *narinfo.NarInfo
+	var (
+		narInfo *narinfo.NarInfo
+		err     error
+	)
 
-	err := c.withReadLock(ctx, "GetNarInfo", narInfoJobKey(hash), func() error {
-		ctx = zerolog.Ctx(ctx).
-			With().
-			Str("narinfo_hash", hash).
-			Logger().
-			WithContext(ctx)
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo_hash", hash).
+		Logger().
+		WithContext(ctx)
 
-		var err error
+	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, fmt.Errorf("error fetching narinfo from database: %w", err)
+	}
 
-		narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("error fetching narinfo from database: %w", err)
-		}
+	if err == nil {
+		metricAttrs = append(metricAttrs,
+			attribute.String("result", "hit"),
+			attribute.String("status", "success"),
+			attribute.String("source", "database"),
+		)
 
-		if err == nil {
-			metricAttrs = append(metricAttrs,
-				attribute.String("result", "hit"),
-				attribute.String("status", "success"),
-				attribute.String("source", "database"),
-			)
-
-			if narURL, err := nar.ParseURL(narInfo.URL); err == nil {
-				// Only trigger CDC migration for NARs whose URL has non-none
-				// compression: these are whole-file NARs that haven't been migrated
-				// to chunks yet. NARs already stored as CDC chunks have
-				// Compression:none in their URL, so we skip the migration check to
-				// avoid a spurious distributed-lock + DB-query round-trip on every
-				// cache hit. Note: Compression:none NARs stored as .nar.zst (without
-				// CDC) will still be migrated when they are served via GetNar.
-				if narURL.Compression != nar.CompressionTypeNone {
-					c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
-				}
-
-				zerolog.Ctx(ctx).
-					Debug().
-					Str("narinfo", narInfo.String()).
-					Msg("fetched this narinfo from the database")
+		if narURL, err := nar.ParseURL(narInfo.URL); err == nil {
+			// Only trigger CDC migration for NARs whose URL has non-none
+			// compression: these are whole-file NARs that haven't been migrated
+			// to chunks yet. NARs already stored as CDC chunks have
+			// Compression:none in their URL, so we skip the migration check to
+			// avoid a spurious distributed-lock + DB-query round-trip on every
+			// cache hit. Note: Compression:none NARs stored as .nar.zst (without
+			// CDC) will still be migrated when they are served via GetNar.
+			if narURL.Compression != nar.CompressionTypeNone {
+				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
 			}
 
-			return nil
-		} else if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
 			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("error fetching the narinfo from the database")
-
-			return fmt.Errorf("error fetching narinfo from database: %w", err)
+				Debug().
+				Str("narinfo", narInfo.String()).
+				Msg("fetched this narinfo from the database")
 		}
 
-		if c.narInfoStore.HasNarInfo(ctx, hash) {
-			metricAttrs = append(metricAttrs,
-				attribute.String("result", "hit"),
-				attribute.String("status", "success"),
-				attribute.String("source", "storage"),
-			)
+		metricAttrs = append(metricAttrs, attribute.String("status", "success"))
 
-			narInfo, err = c.getNarInfoFromStore(ctx, hash)
-			if err == nil {
-				if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
-					zerolog.Ctx(ctx).
-						Debug().
-						Str("narinfo", narInfo.String()).
-						Msg("fetched this narinfo from the store")
-				}
-
-				return nil
-			}
-
-			// If narinfo was purged, continue to fetch from upstream
-			if !errors.Is(err, errNarInfoPurged) {
-				return c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs)
-			}
-		}
-
-		metricAttrs = append(metricAttrs, attribute.String("result", "miss"))
-
-		// If the artifact is not in the DB or Store, check if we are in "Upload Only" mode.
-		// If so, we return ErrNotFound immediately to let the client know we don't have it locally,
-		// triggering the PUT (push) operation.
-		if IsUploadOnly(ctx) {
-			return storage.ErrNotFound
-		}
-
-		ds := c.prePullNarInfo(ctx, hash)
-
+		return narInfo, nil
+	} else if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
 		zerolog.Ctx(ctx).
-			Debug().
-			Msg("pulling nar in a go-routing and will wait for it")
+			Error().
+			Err(err).
+			Msg("error fetching the narinfo from the database")
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ds.done:
+		return nil, fmt.Errorf("error fetching narinfo from database: %w", err)
+	}
+
+	if c.narInfoStore.HasNarInfo(ctx, hash) {
+		metricAttrs = append(metricAttrs,
+			attribute.String("result", "hit"),
+			attribute.String("status", "success"),
+			attribute.String("source", "storage"),
+		)
+
+		narInfo, err = c.getNarInfoFromStore(ctx, hash)
+		if err == nil {
+			zerolog.Ctx(ctx).
+				Debug().
+				Str("narinfo", narInfo.String()).
+				Msg("fetched this narinfo from the store")
+
+			metricAttrs = append(metricAttrs, attribute.String("status", "success"))
+
+			return narInfo, nil
 		}
 
-		err = ds.getError()
-		if err != nil {
-			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
-
-			// Add upstream hostname to metrics even on error
-			if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
-				metricAttrs = append(metricAttrs,
-					attribute.String("upstream_hostname", upstreamHostname))
+		// If narinfo was purged, continue to fetch from upstream
+		if !errors.Is(err, errNarInfoPurged) {
+			if retryErr := c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs); retryErr != nil {
+				return nil, retryErr
 			}
 
-			return err
-		}
+			metricAttrs = append(metricAttrs, attribute.String("status", "success"))
 
-		// Add upstream hostname to metrics on success
+			return narInfo, nil
+		}
+	}
+
+	metricAttrs = append(metricAttrs, attribute.String("result", "miss"))
+
+	// If the artifact is not in the DB or Store, check if we are in "Upload Only" mode.
+	// If so, we return ErrNotFound immediately to let the client know we don't have it locally,
+	// triggering the PUT (push) operation.
+	if IsUploadOnly(ctx) {
+		return nil, storage.ErrNotFound
+	}
+
+	ds := c.prePullNarInfo(ctx, hash)
+
+	zerolog.Ctx(ctx).
+		Debug().
+		Msg("pulling nar in a go-routing and will wait for it")
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-ds.done:
+	}
+
+	err = ds.getError()
+	if err != nil {
+		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
+		// Add upstream hostname to metrics even on error
 		if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
 			metricAttrs = append(metricAttrs,
 				attribute.String("upstream_hostname", upstreamHostname))
 		}
 
-		// After pulling from upstream, get the narinfo from the database (where it's now stored)
-		narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
-		if err != nil {
-			zerolog.Ctx(ctx).
-				Error().
-				Err(err).
-				Msg("failed to fetch this narinfo from the database")
-
-			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
-
-			return err
-		}
-
-		if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
-			zerolog.Ctx(ctx).
-				Debug().
-				Str("narinfo", narInfo.String()).
-				Msg("fetched narinfo from database after upstream pull")
-		}
-
-		return nil
-	})
-	if err != nil {
 		return nil, err
+	}
+
+	// Add upstream hostname to metrics on success
+	if upstreamHostname := ds.getUpstreamHostname(); upstreamHostname != "" {
+		metricAttrs = append(metricAttrs,
+			attribute.String("upstream_hostname", upstreamHostname))
+	}
+
+	// After pulling from upstream, get the narinfo from the database (where it's now stored)
+	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("failed to fetch this narinfo from the database")
+
+		metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+
+		return nil, err
+	}
+
+	if zerolog.Ctx(ctx).GetLevel() <= zerolog.DebugLevel {
+		zerolog.Ctx(ctx).
+			Debug().
+			Str("narinfo", narInfo.String()).
+			Msg("fetched narinfo from database after upstream pull")
 	}
 
 	metricAttrs = append(metricAttrs, attribute.String("status", "success"))
@@ -2939,7 +2941,7 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		return err
 	}
 
-	if err := c.checkAndFixNarInfo(context.WithoutCancel(ctx), hash); err != nil {
+	if err := c.CheckAndFixNarInfo(context.WithoutCancel(ctx), hash); err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
 			Err(err).
@@ -2961,23 +2963,21 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error {
 	)
 	defer span.End()
 
-	return c.withReadLock(ctx, "DeleteNarInfo", narInfoJobKey(hash), func() error {
-		ctx = zerolog.Ctx(ctx).
-			With().
-			Str("narinfo_hash", hash).
-			Logger().
-			WithContext(ctx)
+	ctx = zerolog.Ctx(ctx).
+		With().
+		Str("narinfo_hash", hash).
+		Logger().
+		WithContext(ctx)
 
-		zerolog.Ctx(ctx).Debug().Msg("deleting narinfo from store")
+	zerolog.Ctx(ctx).Debug().Msg("deleting narinfo from store")
 
-		if err := c.deleteNarInfoFromStore(ctx, hash); err != nil {
-			return err
-		}
+	if err := c.deleteNarInfoFromStore(ctx, hash); err != nil {
+		return err
+	}
 
-		zerolog.Ctx(ctx).Debug().Msg("narinfo deleted from store")
+	zerolog.Ctx(ctx).Debug().Msg("narinfo deleted from store")
 
-		return nil
-	})
+	return nil
 }
 
 func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState {
@@ -2998,6 +2998,10 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		hash,
 		true,
 		func(ctx context.Context) bool {
+			if _, err := c.getNarInfoFromDatabase(ctx, hash); err == nil {
+				return true
+			}
+
 			return c.narInfoStore.HasNarInfo(ctx, hash)
 		},
 		func(ds *downloadState) {
@@ -3034,7 +3038,7 @@ func (c *Cache) prePullNar(
 		narURL.Hash,
 		false,
 		func(ctx context.Context) bool {
-			hasInStore := c.hasNarInStore(ctx, *narURL)
+			hasInStore := c.HasNarInStore(ctx, *narURL)
 			if hasInStore {
 				return true
 			}
@@ -3086,7 +3090,7 @@ func (c *Cache) getNarFileFromDB(ctx context.Context, q database.Querier, narURL
 }
 
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
-func (c *Cache) hasNarInStore(ctx context.Context, narURL nar.URL) bool {
+func (c *Cache) HasNarInStore(ctx context.Context, narURL nar.URL) bool {
 	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
 	if narURL.Compression == nar.CompressionTypeNone {
 		zstdURL := narURL
@@ -3367,7 +3371,7 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 
 	// Verify Nar file exists in storage.
 	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
-	hasNar := c.hasNarInStore(ctx, *narURL)
+	hasNar := c.HasNarInStore(ctx, *narURL)
 
 	if !hasNar {
 		var err error
@@ -3378,7 +3382,26 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 		}
 	}
 
-	if !hasNar && !c.hasUpstreamJob(narURL.Hash) { //nolint:nestif // deferred for a later refactoring.
+	isBeingDownloadedLocally := c.hasUpstreamJob(narURL.Hash)
+	isBeingDownloadedRemotely := false
+
+	if !hasNar && !isBeingDownloadedLocally {
+		// Try to acquire the lock. If it fails, someone else has it.
+		// We use a very short TTL since we'll release it immediately if we get it.
+		locked, err := c.downloadLocker.TryLock(ctx, narJobKey(narURL.Hash), 10*time.Second)
+		if err == nil {
+			if !locked {
+				isBeingDownloadedRemotely = true
+			} else {
+				// We got the lock! No one else was downloading it.
+				// We must release it immediately.
+				_ = c.downloadLocker.Unlock(context.WithoutCancel(ctx), narJobKey(narURL.Hash))
+			}
+		}
+	}
+
+	// Check if this narinfo should be purged
+	if !hasNar && !isBeingDownloadedLocally && !isBeingDownloadedRemotely { //nolint:nestif // deferred
 		// For CDC: if a nar_files record exists with total_chunks=0, CDC chunking is
 		// in progress in a background goroutine (the job was removed from upstreamJobs
 		// when pullNarIntoStore returned early, before chunking finished). Don't purge.
@@ -3589,7 +3612,7 @@ func (c *Cache) purgeNarInfo(
 	}
 
 	if narURL.Hash != "" {
-		if c.hasNarInStore(ctx, *narURL) {
+		if c.HasNarInStore(ctx, *narURL) {
 			if err := c.deleteNarFromStore(ctx, narURL); err != nil {
 				return fmt.Errorf("error removing nar from store: %w", err)
 			}
@@ -3770,7 +3793,7 @@ func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL) (int64, error)
 
 // checkAndFixNarInfo checks if a NarInfo exists for the given hash, and if so,
 // ensures its FileSize matches the actual NAR size.
-func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
+func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	// First check if we have the NarInfo in DB using direct DB access
 	// to avoid higher-level cache logic (like purging or storage checks)
 	niRow, err := c.db.GetNarInfoByHash(ctx, hash)
@@ -3803,7 +3826,7 @@ func (c *Cache) checkAndFixNarInfo(ctx context.Context, hash string) error {
 	// we avoid calling c.GetNar() which would create an io.Pipe with a
 	// background goroutine — closing the reader before the goroutine finishes
 	// would log a spurious "pipe closed during NAR copy" error.
-	hasNarInStore := c.hasNarInStore(ctx, nu)
+	hasNarInStore := c.HasNarInStore(ctx, nu)
 
 	hasNarInChunks, err := c.HasNarInChunks(ctx, nu)
 	if err != nil {
@@ -3887,7 +3910,7 @@ func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) e
 	var errs []error
 
 	for _, hash := range hashes {
-		if err := c.checkAndFixNarInfo(ctx, hash); err != nil {
+		if err := c.CheckAndFixNarInfo(ctx, hash); err != nil {
 			errs = append(errs, err)
 		}
 	}
