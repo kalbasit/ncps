@@ -2,6 +2,7 @@ package server
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -344,6 +345,10 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 				return
 			}
 
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+
 			zerolog.Ctx(r.Context()).
 				Error().
 				Err(err).
@@ -559,6 +564,10 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, upstream.ErrNotFound) {
 				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 
+				return
+			}
+
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
 
