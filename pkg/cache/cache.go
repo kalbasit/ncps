@@ -2552,6 +2552,10 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		var err error
 
 		narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("error fetching narinfo from database: %w", err)
+		}
+
 		if err == nil {
 			metricAttrs = append(metricAttrs,
 				attribute.String("result", "hit"),
@@ -2626,7 +2630,12 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		zerolog.Ctx(ctx).
 			Debug().
 			Msg("pulling nar in a go-routing and will wait for it")
-		<-ds.done
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ds.done:
+		}
 
 		err = ds.getError()
 		if err != nil {
@@ -2984,7 +2993,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 
 	return c.coordinateDownload(
 		ctx,
-		ctx,
+		context.WithoutCancel(ctx),
 		narInfoJobKey(hash),
 		hash,
 		true,
@@ -2992,7 +3001,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 			return c.narInfoStore.HasNarInfo(ctx, hash)
 		},
 		func(ds *downloadState) {
-			c.pullNarInfo(ctx, hash, ds)
+			c.pullNarInfo(context.WithoutCancel(ctx), hash, ds)
 		},
 	)
 }
@@ -4397,6 +4406,7 @@ func (c *Cache) coordinateDownload(
 			// Download completed (successfully or with error)
 		case <-coordCtx.Done():
 			// Caller context canceled
+			return ds
 		}
 
 		return ds
@@ -5135,6 +5145,7 @@ func (c *Cache) selectUpstream(
 	errC := make(chan error, len(ucs))
 
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	var wg sync.WaitGroup
 	for _, uc := range ucs {
@@ -5155,8 +5166,12 @@ func (c *Cache) selectUpstream(
 
 	for {
 		select {
-		case uc := <-ch:
-			cancel()
+		case <-ctx.Done():
+			return nil, errors.Join(ctx.Err(), errs)
+		case uc, ok := <-ch:
+			if !ok {
+				return nil, errs
+			}
 
 			return uc, errs
 		case err := <-errC:
