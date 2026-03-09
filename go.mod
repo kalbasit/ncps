@@ -1,6 +1,6 @@
 module github.com/kalbasit/ncps
 
-go 1.25.6
+go 1.25.7
 
 tool github.com/kalbasit/sqlc-multi-db
 
@@ -12,13 +12,13 @@ require (
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
-	github.com/kalbasit/fastcdc v0.0.0-20260301002737-e2baee082506
+	github.com/kalbasit/fastcdc v0.0.0-20260304090259-077f78eb3e17
 	github.com/klauspost/compress v1.18.4
 	github.com/lib/pq v1.11.2
 	github.com/mattn/go-sqlite3 v1.14.34
-	github.com/minio/minio-go/v7 v7.0.98
+	github.com/minio/minio-go/v7 v7.0.99
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
-	github.com/pierrec/lz4/v4 v4.1.25
+	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/riandyrn/otelchi v0.12.2
