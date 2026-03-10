@@ -3207,7 +3207,7 @@ func testGetNarWithPlaceholderNarFileRecord(factory cacheFactory) func(*testing.
 		c.SetChunkStore(cs)
 		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
 
-		entry := testdata.Nar1
+		entry := testdata.Nar7
 
 		// The nar_files record uses CompressionTypeNone because CDC stores
 		// all NARs decompressed. The hash matches the nar hash from the narinfo.
