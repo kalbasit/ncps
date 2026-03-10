@@ -976,6 +976,84 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 	}
 }
 
+func testGetNarTransparentZstd(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		})
+		require.NoError(t, err)
+
+		c.AddUpstreamCaches(newContext(), uc)
+		c.SetRecordAgeIgnoreTouch(0)
+
+		<-c.GetHealthChecker().Trigger()
+
+		// Pull the NAR into the cache by fetching its narinfo.
+		// Nar7 has CompressionTypeNone; the cache stores it internally as .nar.zst.
+		_, err = c.GetNarInfo(context.Background(), testdata.Nar7.NarInfoHash)
+		require.NoError(t, err)
+
+		// Wait until the .nar.zst file has been written to storage.
+		zstdStorePath := filepath.Join(dir, "store", "nar",
+			testdata.Nar7.NarPath+".zst")
+		waitForFile(t, zstdStorePath)
+
+		nu := nar.URL{Hash: testdata.Nar7.NarHash, Compression: nar.CompressionTypeNone}
+
+		t.Run("TransparentZstd=true returns raw zstd stream", func(t *testing.T) {
+			t.Parallel()
+
+			nuZstd := nu
+			nuZstd.TransparentZstd = true
+
+			retURL, _, rc, err := c.GetNar(context.Background(), nuZstd)
+			require.NoError(t, err)
+
+			defer rc.Close()
+
+			assert.True(t, retURL.TransparentZstd,
+				"GetNar should preserve TransparentZstd=true when .nar.zst is stored")
+
+			zr, err := zstd.NewPooledReader(rc)
+			require.NoError(t, err, "body must be a valid zstd stream")
+
+			defer zr.Close()
+
+			body, err := io.ReadAll(zr)
+			require.NoError(t, err)
+
+			assert.Equal(t, testdata.Nar7.NarText, string(body))
+		})
+
+		t.Run("TransparentZstd=false returns decompressed bytes", func(t *testing.T) {
+			t.Parallel()
+
+			nuRaw := nu
+			nuRaw.TransparentZstd = false
+
+			retURL, _, rc, err := c.GetNar(context.Background(), nuRaw)
+			require.NoError(t, err)
+
+			defer rc.Close()
+
+			assert.False(t, retURL.TransparentZstd)
+
+			body, err := io.ReadAll(rc)
+			require.NoError(t, err)
+
+			assert.Equal(t, testdata.Nar7.NarText, string(body))
+		})
+	}
+}
+
 func testPutNar(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		c, _, _, dir, _, cleanup := factory(t)
@@ -2683,6 +2761,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("PutNarInfoDeadlock", testPutNarInfoDeadlock(factory))
 	t.Run("DeleteNarInfo", testDeleteNarInfo(factory))
 	t.Run("GetNar", testGetNar(factory))
+	t.Run("GetNar_TransparentZstd", testGetNarTransparentZstd(factory))
 	t.Run("PutNar", testPutNar(factory))
 	t.Run("GetNarFileSize", testGetNarFileSize(factory))
 	t.Run("GetNarInfoMigratesInvalidURL", testGetNarInfoMigratesInvalidURL(factory))

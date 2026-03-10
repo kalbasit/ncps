@@ -1554,6 +1554,52 @@ func TestGetNar_NixServeUpstream(t *testing.T) {
 
 		assert.Equal(t, testdata.Nar7.NarText, string(narBody))
 	})
+
+	t.Run("nar with non-none compression ignores Accept-Encoding: zstd", func(t *testing.T) {
+		t.Parallel()
+
+		// Ensure the NAR is in the cache.
+		req, err := http.NewRequestWithContext(
+			newContext(),
+			http.MethodGet,
+			ts.URL+"/"+testdata.Nar1.NarInfoHash+".narinfo",
+			nil,
+		)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, resp.Body)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Nar1 has CompressionTypeXz; transparent zstd only applies to CompressionTypeNone.
+		narReqURL := ts.URL + "/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+
+		req, err = http.NewRequestWithContext(newContext(), http.MethodGet, narReqURL, nil)
+		require.NoError(t, err)
+
+		req.Header.Set("Accept-Encoding", "zstd")
+
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+		//nolint:bodyclose // closed below
+		resp, err = client.Do(req)
+		require.NoError(t, err)
+
+		defer resp.Body.Close()
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Empty(t, resp.Header.Get("Content-Encoding"),
+			"non-none NAR should not have Content-Encoding even when client accepts zstd")
+
+		narBody, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Equal(t, testdata.Nar1.NarText, string(narBody))
+	})
 }
 
 // TestGetNar_NixServeUpstream_PrefixedNarURL tests that ncps correctly proxies NARs when
