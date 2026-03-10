@@ -2487,8 +2487,13 @@ func (c *Cache) getNarFromUpstream(
 	resp, err := uc.GetNar(ctx, *narURL)
 	if err != nil {
 		if !errors.Is(err, upstream.ErrNotFound) {
+			level := zerolog.ErrorLevel
+			if errors.Is(err, context.Canceled) {
+				level = zerolog.DebugLevel
+			}
+
 			zerolog.Ctx(ctx).
-				Error().
+				WithLevel(level).
 				Err(err).
 				Str("hostname", uc.GetHostname()).
 				Msg("error fetching the nar from upstream")
@@ -2584,9 +2589,16 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		metricAttrs = append(metricAttrs, attribute.String("status", "success"))
 
 		return narInfo, nil
-	} else if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
+	}
+
+	if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
+		level := zerolog.ErrorLevel
+		if errors.Is(err, context.Canceled) {
+			level = zerolog.DebugLevel
+		}
+
 		zerolog.Ctx(ctx).
-			Error().
+			WithLevel(level).
 			Err(err).
 			Msg("error fetching the narinfo from the database")
 
@@ -2667,8 +2679,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	// After pulling from upstream, get the narinfo from the database (where it's now stored)
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
 	if err != nil {
+		level := zerolog.ErrorLevel
+		if errors.Is(err, context.Canceled) {
+			level = zerolog.DebugLevel
+		}
+
 		zerolog.Ctx(ctx).
-			Error().
+			WithLevel(level).
 			Err(err).
 			Msg("failed to fetch this narinfo from the database")
 
@@ -3544,8 +3561,13 @@ func (c *Cache) getNarInfoFromUpstream(
 	narInfo, err := uc.GetNarInfo(ctx, hash)
 	if err != nil {
 		if !errors.Is(err, upstream.ErrNotFound) {
+			level := zerolog.ErrorLevel
+			if errors.Is(err, context.Canceled) {
+				level = zerolog.DebugLevel
+			}
+
 			zerolog.Ctx(ctx).
-				Error().
+				WithLevel(level).
 				Err(err).
 				Str("hostname", uc.GetHostname()).
 				Msg("error fetching the narInfo from upstream")
