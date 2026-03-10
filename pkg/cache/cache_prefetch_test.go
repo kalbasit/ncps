@@ -519,11 +519,13 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 
-		_, _ = db.DB().ExecContext(
+		if _, err := db.DB().ExecContext(
 			context.Background(),
 			"UPDATE nar_files SET chunking_started_at = NULL WHERE id = ?",
 			narFile.ID,
-		)
+		); err != nil {
+			t.Logf("failed to abort chunking in background goroutine: %v", err)
+		}
 	}()
 
 	// Now retrieve the NAR - should use progressive streaming and fail fast when aborted

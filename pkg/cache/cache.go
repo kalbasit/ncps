@@ -1755,7 +1755,7 @@ func (c *Cache) storeNarWithCDCFromReader(
 	defer func() {
 		if !success {
 			if err := c.db.ClearNarFileChunkingStarted(context.WithoutCancel(ctx), narFileID); err != nil {
-				zerolog.Ctx(ctx).
+				zerolog.Ctx(context.WithoutCancel(ctx)).
 					Warn().
 					Err(err).
 					Int64("nar_file_id", narFileID).
