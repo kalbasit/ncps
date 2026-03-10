@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
+	"github.com/nix-community/go-nix/pkg/nixhash"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage/chunk"
 	"github.com/kalbasit/ncps/pkg/storage/local"
 	"github.com/kalbasit/ncps/pkg/zstd"
 	"github.com/kalbasit/ncps/testdata"
@@ -1532,6 +1534,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("StoreNarFromTempFileHealsOrphanOnErrAlreadyExists",
 		testStoreNarFromTempFileHealsOrphanOnErrAlreadyExists(factory))
 	t.Run("GetNarFromStoreHealsOrphanDBRecord", testGetNarFromStoreHealsOrphanDBRecord(factory))
+	t.Run("ConcurrentDecompression", testConcurrentDecompression(factory))
 }
 
 func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
@@ -1798,5 +1801,140 @@ func testGetNarFromStoreHealsOrphanDBRecord(factory cacheFactory) func(*testing.
 		})
 		require.NoError(t, err, "DB record must exist after getNarFromStore healed the orphan")
 		assert.Equal(t, narURL.Hash, nf.Hash)
+	}
+}
+
+func testConcurrentDecompression(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		ctx := context.Background()
+
+		// Setup Chunk Store
+		chunkDir := filepath.Join(dir, "chunks")
+		err := os.MkdirAll(chunkDir, 0o700)
+		require.NoError(t, err)
+		cs, err := chunk.NewLocalStore(chunkDir)
+		require.NoError(t, err)
+		c.SetChunkStore(cs)
+
+		// Setup CDC Configuration
+		err = c.SetCDCConfiguration(true, 4096, 16384, 32768)
+		require.NoError(t, err)
+
+		// Generate valid ZSTD compressed data for the test
+		narData := testhelper.MustRandString(1024 * 1024) // 1MiB
+		zstData := CompressZstd(t, narData)
+
+		// Use proper Nix hash generation helpers
+		narInfoHash := testhelper.MustRandNarInfoHash()
+		narHash := testhelper.MustRandBase16NarHash()
+
+		h, err := nixhash.ParseAny("sha256:"+narHash, nil)
+		require.NoError(t, err)
+
+		entry := testdata.Entry{
+			NarInfoHash: narInfoHash,
+			NarInfoPath: filepath.Join("n", narInfoHash[:2], narInfoHash+".narinfo"),
+			NarInfoText: fmt.Sprintf(`StorePath: /nix/store/%s-test
+URL: nar/%s.nar.zst
+Compression: zstd
+FileHash: %s
+FileSize: %d
+NarHash: %s
+NarSize: %d
+Sig: cache.nixos.org-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==`,
+				narInfoHash, narHash, h.String(), len(zstData), h.String(), len(narData)),
+			NarHash:        narHash,
+			NarCompression: nar.CompressionTypeZstd,
+			NarPath:        filepath.Join("nar", narHash+".nar.zst"),
+			NarText:        zstData,
+		}
+
+		ts := testdata.NewTestServer(t, 200)
+		t.Cleanup(ts.Close)
+
+		ts.AddEntry(entry)
+
+		uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
+		require.NoError(t, err)
+		c.AddUpstreamCaches(ctx, uc)
+		<-c.GetHealthChecker().Trigger()
+
+		// 2. Fetch narinfo first (standard Nix behavior)
+		narEntry := entry
+		_, err = c.GetNarInfo(ctx, narEntry.NarInfoHash)
+		require.NoError(t, err)
+
+		// 3. Trigger multiple concurrent GetNar requests for uncompressed bytes
+		noneURL := nar.URL{Hash: narEntry.NarHash, Compression: nar.CompressionTypeNone}
+
+		numClients := 5
+
+		var wg sync.WaitGroup
+
+		errs := make(chan error, numClients)
+
+		for i := 0; i < numClients; i++ {
+			wg.Add(1)
+
+			go func(id int) {
+				defer wg.Done()
+
+				_, reader, err := c.GetNar(ctx, noneURL)
+				if err != nil {
+					errs <- fmt.Errorf("client %d failed: %w", id, err)
+
+					return
+				}
+
+				if reader != nil {
+					if _, err := io.Copy(io.Discard, reader); err != nil {
+						errs <- fmt.Errorf("client %d failed to read: %w", id, err)
+
+						reader.Close()
+
+						return
+					}
+
+					reader.Close()
+				}
+
+				errs <- nil
+			}(i)
+		}
+
+		wg.Wait()
+		close(errs)
+
+		failed := false
+
+		for err := range errs {
+			if err != nil {
+				t.Errorf("GetNar failed: %v", err)
+
+				failed = true
+			}
+		}
+
+		if failed {
+			t.FailNow()
+		}
+
+		// 3. Verify that CDC was triggered and it worked
+		var hasChunks bool
+		for i := 0; i < 100; i++ {
+			hasChunks, _ = c.HasNarInChunks(ctx, noneURL)
+			if hasChunks {
+				break
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		assert.True(t, hasChunks, "NAR should be chunked")
 	}
 }

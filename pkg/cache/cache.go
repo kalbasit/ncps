@@ -407,6 +407,7 @@ type downloadState struct {
 	cdcWg               sync.WaitGroup // Tracks CDC background goroutine; zero by default (non-CDC)
 	closed              bool           // Indicates whether new readers are allowed (protected by mu)
 	assetPath           string
+	compressedAssetPath string // If non-empty, we are decompressing from here to assetPath
 	bytesWritten        int64
 	finalSize           int64
 	tempFileCompression nar.CompressionType // Actual compression of bytes written to the temp file
@@ -934,14 +935,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		// We use this as a "preferred download URL" while keeping narURL as noneURL
 		// so the decompressor path in the streaming goroutine triggers correctly
 		// (it checks narURL.Compression == none).
-		preferredUpstreamURL := c.lookupPreferredUpstreamURL(ctx, narURL)
-
-		// create a detachedCtx that has the same span and logger as the main
-		// context but with the baseContext as parent; This context will not cancel
-		// when ctx is canceled allowing us to continue pulling the nar in the
-		// background.
+		preferredUpstreamURL, ni := c.lookupPreferredUpstreamURL(ctx, narURL)
 		detachedCtx := context.WithoutCancel(ctx)
-		ds := c.prePullNar(ctx, detachedCtx, &narURL, preferredUpstreamURL, nil)
+		narURLCopy := narURL
+		ds := c.prePullNar(ctx, detachedCtx, &narURLCopy, preferredUpstreamURL, nil, ni)
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
 		// This prevents race with cleanup goroutine calling ds.wg.Wait()
@@ -1239,13 +1236,11 @@ func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.U
 
 // lookupPreferredUpstreamURL returns the original compressed URL for a CDC NAR
 // (e.g. the xz URL) by looking up the narinfo hash in the DB and fetching the
-// narinfo from upstream. This allows CDC first pulls to download the compressed
-// version instead of the uncompressed version, reducing TTFB significantly.
-// Returns nil if CDC is not enabled, there is an active local download, or the
+// Returns nil, nil if CDC is not enabled, there is an active local download, or the
 // original URL cannot be found.
-func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) *nar.URL {
+func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) (*nar.URL, *narinfo.NarInfo) {
 	if !c.isCDCEnabled() || narURL.Compression != nar.CompressionTypeNone || c.hasUpstreamJob(narURL.Hash) {
-		return nil
+		return nil, nil
 	}
 
 	narInfoHash, err := c.db.GetNarInfoHashByNarURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
@@ -1254,16 +1249,16 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup narinfo hash by nar URL")
 		}
 
-		return nil
+		return nil, nil
 	}
 
 	if narInfoHash == "" {
-		return nil
+		return nil, nil
 	}
 
 	_, upstreamNarInfo, err := c.getNarInfoFromUpstream(ctx, narInfoHash)
 	if err != nil || upstreamNarInfo == nil {
-		return nil
+		return nil, nil
 	}
 
 	originalURL, err := nar.ParseURL(upstreamNarInfo.URL)
@@ -1274,14 +1269,14 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 			Str("url", upstreamNarInfo.URL).
 			Msg("Failed to parse preferred upstream nar URL")
 
-		return nil
+		return nil, upstreamNarInfo
 	}
 
 	if originalURL.Compression == nar.CompressionTypeNone {
-		return nil
+		return nil, upstreamNarInfo
 	}
 
-	return &originalURL
+	return &originalURL, upstreamNarInfo
 }
 
 // ensureNarFileRecord ensures a NarFile record exists with the correct size.
@@ -1444,8 +1439,19 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 // createTempNarFile creates a temporary file for storing the NAR during download.
 // It sets up cleanup to remove the file once all readers are done.
 func (c *Cache) createTempNarFile(ctx context.Context, narURL *nar.URL, ds *downloadState) (*os.File, error) {
-	pattern := filepath.Base(narURL.Hash) + "-*.nar"
-	if cext := narURL.Compression.String(); cext != "" {
+	f, err := c.createTempFile(ctx, narURL.Hash, narURL.Compression)
+	if err != nil {
+		return nil, err
+	}
+
+	ds.assetPath = f.Name()
+
+	return f, nil
+}
+
+func (c *Cache) createTempFile(ctx context.Context, hash string, compression nar.CompressionType) (*os.File, error) {
+	pattern := filepath.Base(hash) + "-*.nar"
+	if cext := compression.String(); cext != "" {
 		pattern += "." + cext
 	}
 
@@ -1459,18 +1465,22 @@ func (c *Cache) createTempNarFile(ctx context.Context, narURL *nar.URL, ds *down
 		return nil, err
 	}
 
-	ds.assetPath = f.Name()
-
 	return f, nil
 }
 
 // streamResponseToFile streams the HTTP response body to a file in chunks,
 // updating download state and broadcasting progress to waiting clients.
 func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f *os.File, ds *downloadState) error {
+	return c.streamReaderToFile(ctx, resp.Body, f, ds)
+}
+
+// streamReaderToFile streams a reader to a file in chunks,
+// updating download state and broadcasting progress to waiting clients.
+func (c *Cache) streamReaderToFile(ctx context.Context, r io.Reader, f *os.File, ds *downloadState) error {
 	buf := make([]byte, 32*1024)
 
 	for {
-		n, err := resp.Body.Read(buf)
+		n, err := r.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
 
@@ -1501,7 +1511,7 @@ func (c *Cache) streamResponseToFile(ctx context.Context, resp *http.Response, f
 		}
 	}
 
-	// Writing the NAR to a temporary file is now done, final notification to watchers
+	// Writing to the temporary file is now done, final notification to watchers
 	ds.mu.Lock()
 	ds.finalSize = ds.bytesWritten
 	ds.mu.Unlock()
@@ -2040,6 +2050,7 @@ func (c *Cache) pullNarIntoStore(
 	preferredUpstreamURL *nar.URL,
 	uc *upstream.Cache,
 	ds *downloadState,
+	narInfo *narinfo.NarInfo, // Added
 ) {
 	// Track download completion for cleanup synchronization
 	ds.cleanupWg.Add(1)
@@ -2161,20 +2172,93 @@ func (c *Cache) pullNarIntoStore(
 
 		ds.wg.Wait() // Then wait for all readers to finish
 		os.Remove(ds.assetPath)
+
+		if ds.compressedAssetPath != "" {
+			os.Remove(ds.compressedAssetPath)
+		}
 	})
 
-	// Record the actual compression type of the bytes written to the temp file.
-	// This allows the streaming goroutine to detect when it needs to decompress
-	// (e.g., when a CDC-enabled GetNar client requests compression:none but we
-	// downloaded xz from upstream via preferredUpstreamURL for better TTFB).
-	ds.tempFileCompression = downloadURL.Compression
+	// If CDC is disabled, or we are not downloading a compressed NAR, or we don't
+	// have narInfo, or the NAR is empty, then we don't need to decompress it once.
+	if !c.isCDCEnabled() || downloadURL.Compression == nar.CompressionTypeNone || narInfo == nil || narInfo.NarSize == 0 {
+		// Record the actual compression type of the bytes written to the temp file
+		ds.tempFileCompression = downloadURL.Compression
 
-	// Signal that temp file is ready for streaming
-	ds.startOnce.Do(func() { close(ds.start) })
+		// Signal that readers can now start reading from f
+		ds.startOnce.Do(func() { close(ds.start) })
 
-	err = c.streamResponseToFile(ctx, resp, f, ds)
+		if err := c.streamResponseToFile(ctx, resp, f, ds); err != nil {
+			ds.setError(err)
+
+			return
+		}
+
+		if err = c.storeNarFromTempFile(ctx, ds.assetPath, narURL); err != nil {
+			ds.setError(err)
+
+			return
+		}
+
+		ds.storedOnce.Do(func() { close(ds.stored) })
+
+		if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), *narURL); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to fix narinfo file size after pullNarIntoStore")
+		}
+
+		return
+	}
+
+	fCompressed := f
+	ds.compressedAssetPath = fCompressed.Name()
+
+	fUncompressed, err := c.createTempFile(ctx, narURL.Hash, nar.CompressionTypeNone)
 	if err != nil {
 		ds.setError(err)
+
+		return
+	}
+
+	defer fUncompressed.Close()
+
+	// Update downloadState to track uncompressed bytes
+	ds.assetPath = fUncompressed.Name()
+	ds.tempFileCompression = nar.CompressionTypeNone
+
+	// Signal that readers can now start reading from fUncompressed
+	ds.startOnce.Do(func() { close(ds.start) })
+
+	// Start downloading compressed bytes in a background goroutine
+	dsCompressed := newDownloadState()
+	dsCompressed.tempFileCompression = downloadURL.Compression
+	dsCompressed.startOnce.Do(func() { close(dsCompressed.start) })
+
+	c.backgroundWG.Add(1)
+	analytics.SafeGo(ctx, func() {
+		defer c.backgroundWG.Done()
+		defer dsCompressed.cond.Broadcast()
+
+		if err := c.streamResponseToFile(ctx, resp, fCompressed, dsCompressed); err != nil {
+			dsCompressed.setError(err)
+		}
+	})
+
+	// Decompress from fCompressed to fUncompressed in the main pull goroutine
+	compressedReader := &fileAvailableReader{f: fCompressed, ds: dsCompressed}
+
+	decompReader, err := nar.DecompressReader(ctx, compressedReader, downloadURL.Compression)
+	if err != nil {
+		ds.setError(fmt.Errorf("failed to create decompression reader for single-decompression: %w", err))
+
+		return
+	}
+
+	defer decompReader.Close()
+
+	if err := c.streamReaderToFile(ctx, decompReader, fUncompressed, ds); err != nil {
+		ds.setError(fmt.Errorf("failed to stream decompressed bytes to file: %w", err))
 
 		return
 	}
@@ -2224,6 +2308,10 @@ func (c *Cache) pullNarIntoStore(
 			onNarFileReady := func() {
 				ds.storedOnce.Do(func() { close(ds.stored) })
 			}
+
+			// Inform storeNarWithCDC that the file is already uncompressed
+			// because we just decompressed it above.
+			narURL.Compression = nar.CompressionTypeNone
 
 			if err := c.storeNarWithCDC(ctx, ds.assetPath, narURL, onNarFileReady); err != nil {
 				zerolog.Ctx(ctx).
@@ -2820,7 +2908,7 @@ func (c *Cache) pullNarInfo(
 	// narURL is modified within a background goroutine.
 	narURLForBG := narURL
 
-	c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc)
+	c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc, narInfo)
 
 	// For CDC mode, NARs are stored as raw uncompressed chunks.
 	// For Compression:none upstreams, NARs are stored as zstd files and served
@@ -3029,6 +3117,7 @@ func (c *Cache) prePullNar(
 	narURL *nar.URL,
 	preferredUpstreamURL *nar.URL,
 	uc *upstream.Cache,
+	narInfo *narinfo.NarInfo, // Added
 ) *downloadState {
 	ctx, span := tracer.Start(
 		ctx,
@@ -3056,18 +3145,18 @@ func (c *Cache) prePullNar(
 				return true
 			}
 
-			// Check if NAR file record exists (even if chunking in progress)
-			// This allows progressive streaming to work only if CDC is enabled
+			// Check if NAR is already in chunks or being chunked.
+			// This prevents skipping the download if only a placeholder record exists.
 			if c.isCDCEnabled() {
-				hasInChunks, _ := c.HasNarFileRecord(ctx, *narURL)
+				hasInRecord, _ := c.HasNarFileRecord(ctx, *narURL)
 
-				return hasInChunks
+				return hasInRecord
 			}
 
 			return false
 		},
 		func(ds *downloadState) {
-			c.pullNarIntoStore(ctx, narURL, preferredUpstreamURL, uc, ds)
+			c.pullNarIntoStore(ctx, narURL, preferredUpstreamURL, uc, ds, narInfo)
 		},
 	)
 }
