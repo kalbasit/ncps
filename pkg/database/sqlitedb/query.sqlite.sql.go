@@ -65,6 +65,22 @@ func (q *Queries) AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatu
 	return err
 }
 
+const clearNarFileChunkingStarted = `-- name: ClearNarFileChunkingStarted :exec
+UPDATE nar_files
+SET chunking_started_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+// ClearNarFileChunkingStarted
+//
+//	UPDATE nar_files
+//	SET chunking_started_at = NULL, updated_at = CURRENT_TIMESTAMP
+//	WHERE id = ?
+func (q *Queries) ClearNarFileChunkingStarted(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, clearNarFileChunkingStarted, id)
+	return err
+}
+
 const createChunk = `-- name: CreateChunk :one
 INSERT INTO chunks (
     hash, size, compressed_size

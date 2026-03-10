@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
@@ -1937,4 +1938,37 @@ Sig: cache.nixos.org-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 		assert.True(t, hasChunks, "NAR should be chunked")
 	}
+}
+
+// TestStoreNarWithCDCCleanupOnFailure verifies that if storeNarWithCDCFromReader fails,
+// it clears the chunking_started_at lock.
+func TestStoreNarWithCDCCleanupOnFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, db, _, _, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	// CDC configuration
+	err := c.SetCDCConfiguration(true, 1024, 4096, 8192)
+	require.NoError(t, err)
+
+	// Create a dummy reader that fails
+	errReader := iotest.ErrReader(errTest)
+
+	nu := nar.URL{Hash: "failure-test", Compression: nar.CompressionTypeNone}
+
+	// Try to store the NAR - this should fail during chunking
+	err = c.storeNarWithCDCFromReader(ctx, io.NopCloser(errReader), 100, &nu, nil)
+	require.Error(t, err, "should fail on read error")
+
+	// Verify that the nar_file record has chunking_started_at set to NULL
+	nr, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        nu.Hash,
+		Compression: nu.Compression.String(),
+		Query:       nu.Query.Encode(),
+	})
+	require.NoError(t, err)
+	assert.False(t, nr.ChunkingStartedAt.Valid, "chunking_started_at should be NULL after failure")
 }
