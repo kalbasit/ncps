@@ -5569,6 +5569,15 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		return 0, nil, err
 	}
 
+	// Each CDC chunk is stored as an independent zstd frame. Serving the raw frames
+	// concatenated would produce a multi-frame zstd stream that single-stream
+	// decompressors (e.g. Python httpx using zstandard.decompressobj) cannot handle,
+	// resulting in "cannot use a decompressobj multiple times" on the second frame.
+	// Always clear TransparentZstd here so the goroutine uses GetChunk (decompressed
+	// bytes) and the HTTP layer re-encodes everything into a single zstd stream when
+	// the client accepts it.
+	narURL.TransparentZstd = false
+
 	pr, pw := io.Pipe()
 
 	analytics.SafeGo(ctx, func() {
@@ -5578,35 +5587,16 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 
 		if totalChunks > 0 {
 			// Fast path: All chunks complete
-			streamErr = c.streamCompleteChunks(ctx, pw, narFileID, totalChunks, narURL.TransparentZstd)
+			streamErr = c.streamCompleteChunks(ctx, pw, narFileID, totalChunks, false)
 		} else {
 			// Progressive path: Stream as chunks appear
-			streamErr = c.streamProgressiveChunks(ctx, pw, narFileID, narURL.TransparentZstd)
+			streamErr = c.streamProgressiveChunks(ctx, pw, narFileID, false)
 		}
 
 		if streamErr != nil {
 			pw.CloseWithError(streamErr)
 		}
 	})
-
-	if narURL.TransparentZstd && totalChunks > 0 {
-		// Calculate total compressed size
-		chunks, err := c.db.GetChunksByNarFileID(ctx, narFileID)
-		if err == nil {
-			var compressedSize int64
-			for _, ch := range chunks {
-				compressedSize += int64(ch.CompressedSize)
-			}
-
-			totalSize = compressedSize
-		} else {
-			// Fallback to unknown size if query fails
-			totalSize = -1
-		}
-	} else if narURL.TransparentZstd {
-		// Progressive streaming, size is unknown
-		totalSize = -1
-	}
 
 	return totalSize, pr, nil
 }
