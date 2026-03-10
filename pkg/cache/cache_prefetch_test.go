@@ -332,9 +332,14 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	totalChunks := int32(len(chunks))
 	t.Logf("Created NAR with %d chunks", totalChunks)
 
-	// Simulate incomplete chunking: set total_chunks to 0
-	// This forces progressive streaming mode
-	_, err = db.DB().ExecContext(ctx, "UPDATE nar_files SET total_chunks = 0 WHERE id = ?", narFile.ID)
+	// Simulate incomplete chunking: set total_chunks to 0 and chunking_started_at to NOW.
+	// This forces progressive streaming mode. chunking_started_at must be non-NULL to
+	// distinguish an active in-progress chunking from a stale placeholder record.
+	_, err = db.DB().ExecContext(
+		ctx,
+		"UPDATE nar_files SET total_chunks = 0, chunking_started_at = CURRENT_TIMESTAMP WHERE id = ?",
+		narFile.ID,
+	)
 	require.NoError(t, err)
 
 	// Start a goroutine that will "complete" the chunking after a delay
