@@ -911,8 +911,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		if !hasNar && !hasNarInStore && c.isCDCEnabled() && !hasActiveLocalJob {
 			nr, nrErr := c.getNarFileFromDB(ctx, c.db, narURL)
 			if nrErr == nil && nr.ChunkingStartedAt.Valid {
-				// Chunking is actively in progress; use progressive streaming.
-				hasNar = true
+				// Chunking is actively in progress; use progressive streaming if not stale.
+				if time.Since(nr.ChunkingStartedAt.Time) < cdcChunkingLockTTL {
+					hasNar = true
+				}
 			} else if nrErr != nil && !database.IsNotFoundError(nrErr) {
 				return fmt.Errorf("failed to check nar file record for progressive streaming: %w", nrErr)
 			}
@@ -1009,7 +1011,9 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 
 		select {
 		case <-ds.start:
-			// Download has started
+			// Download has started. Update the requested NAR URL to match what's
+			// actually being streamed from the temp file.
+			narURL.Compression = ds.tempFileCompression
 		case <-ctx.Done():
 			// Context canceled before download started
 			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
@@ -2606,6 +2610,11 @@ func (c *Cache) getNarFromStore(
 
 			return fmt.Errorf("error fetching the nar record: %w", err)
 		}
+
+		// Update narURL.Compression to match the record found in DB.
+		// For CDC mode, if we requested xz but found a none record (common), we must
+		// return none so the caller knows they're receiving uncompressed bytes.
+		narURL.Compression = nar.CompressionType(nr.Compression)
 
 		if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
 			if _, err := qtx.TouchNarFile(ctx, database.TouchNarFileParams{
@@ -5569,14 +5578,13 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		return 0, nil, err
 	}
 
-	// Each CDC chunk is stored as an independent zstd frame. Serving the raw frames
-	// concatenated would produce a multi-frame zstd stream that single-stream
-	// decompressors (e.g. Python httpx using zstandard.decompressobj) cannot handle,
-	// resulting in "cannot use a decompressobj multiple times" on the second frame.
 	// Always clear TransparentZstd here so the goroutine uses GetChunk (decompressed
 	// bytes) and the HTTP layer re-encodes everything into a single zstd stream when
 	// the client accepts it.
 	narURL.TransparentZstd = false
+
+	// Update narURL.Compression to match what we are actually serving (None).
+	narURL.Compression = nar.CompressionTypeNone
 
 	pr, pw := io.Pipe()
 
