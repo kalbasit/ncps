@@ -52,7 +52,7 @@ func TestGetNar_UploadOnly(t *testing.T) {
 	t.Run("sanity check - normal fetch works", func(t *testing.T) {
 		t.Parallel()
 
-		size, reader, err := c.GetNar(context.Background(), nu)
+		_, size, reader, err := c.GetNar(context.Background(), nu)
 		require.NoError(t, err)
 		require.NotNil(t, reader)
 		reader.Close()
@@ -76,7 +76,7 @@ func TestGetNar_UploadOnly(t *testing.T) {
 		}
 
 		ctx := cache.WithUploadOnly(context.Background())
-		_, _, err := c.GetNar(ctx, nu2)
+		_, _, _, err := c.GetNar(ctx, nu2)
 		assert.ErrorIs(t, err, storage.ErrNotFound,
 			"should return ErrNotFound when item is only upstream and UploadOnly is set")
 	})

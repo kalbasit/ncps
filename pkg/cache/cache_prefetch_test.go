@@ -88,7 +88,7 @@ func BenchmarkStreamCompleteChunks_WithPrefetch(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		latencyStore.getChunkCalls.Store(0)
 
-		_, rc, err := c.GetNar(ctx, nu)
+		_, _, rc, err := c.GetNar(ctx, nu)
 		require.NoError(b, err)
 
 		_, err = io.Copy(io.Discard, rc)
@@ -133,7 +133,7 @@ func TestPrefetchPipelineOrdering(t *testing.T) {
 	require.NoError(t, err)
 
 	// Retrieve and verify ordering
-	_, rc, err := c.GetNar(ctx, nu)
+	_, _, rc, err := c.GetNar(ctx, nu)
 	require.NoError(t, err)
 
 	defer rc.Close()
@@ -186,7 +186,7 @@ func TestPrefetchErrorPropagation(t *testing.T) {
 			require.NoError(t, err)
 
 			// Now try to retrieve the NAR - should fail with proper error
-			_, rc, err := c.GetNar(ctx, nu)
+			_, _, rc, err := c.GetNar(ctx, nu)
 			if err == nil {
 				_, err = io.Copy(io.Discard, rc)
 				rc.Close()
@@ -237,7 +237,7 @@ func TestPrefetchContextCancellation(t *testing.T) {
 	// Create a context that we'll cancel mid-stream
 	ctx, cancel := context.WithCancel(context.Background())
 
-	_, rc, err := c.GetNar(ctx, nu)
+	_, _, rc, err := c.GetNar(ctx, nu)
 	require.NoError(t, err)
 
 	// Start reading in a goroutine
@@ -354,7 +354,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 
 	// Now retrieve the NAR - should use progressive streaming with prefetch
 	startTime := time.Now()
-	_, rc, err := c.GetNar(ctx, nu)
+	_, _, rc, err := c.GetNar(ctx, nu)
 	require.NoError(t, err)
 
 	retrieved, err := io.ReadAll(rc)
@@ -438,7 +438,7 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 	for range 5 {
 		ctx, cancel := context.WithCancel(context.Background())
 
-		_, rc, err := c.GetNar(ctx, nu)
+		_, _, rc, err := c.GetNar(ctx, nu)
 		require.NoError(t, err)
 
 		// Start reading

@@ -15,9 +15,13 @@ type Store interface {
 	// Returns error for I/O or connection failures.
 	HasChunk(ctx context.Context, hash string) (bool, error)
 
-	// GetChunk retrieves a chunk by hash.
+	// GetChunk retrieves a chunk by hash and decompresses it.
 	// NOTE: The caller must close the returned io.ReadCloser!
 	GetChunk(ctx context.Context, hash string) (io.ReadCloser, error)
+
+	// GetRawChunk retrieves a chunk by hash without decompressing it.
+	// NOTE: The caller must close the returned io.ReadCloser!
+	GetRawChunk(ctx context.Context, hash string) (io.ReadCloser, error)
 
 	// PutChunk stores a chunk. Returns true if chunk was new, and the compressed size.
 	PutChunk(ctx context.Context, hash string, data []byte) (bool, int64, error)
