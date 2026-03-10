@@ -900,7 +900,15 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		// but total_chunks == 0, another instance is still chunking. Fall into the
 		// progressive streaming path. Records with chunking_started_at=NULL are
 		// placeholder records (e.g. from a failed download) and should not be served.
-		if !hasNar && !hasNarInStore && c.isCDCEnabled() {
+		//
+		// Skip this check when there is an active local download job: in that case we
+		// use the faster temp-file streaming path (prePullNar below) rather than
+		// progressive CDC streaming which blocks until chunks are produced.
+		c.upstreamJobsMu.Lock()
+		_, hasActiveLocalJob := c.upstreamJobs[narJobKey(narURL.Hash)]
+		c.upstreamJobsMu.Unlock()
+
+		if !hasNar && !hasNarInStore && c.isCDCEnabled() && !hasActiveLocalJob {
 			nr, nrErr := c.getNarFileFromDB(ctx, c.db, narURL)
 			if nrErr == nil && nr.ChunkingStartedAt.Valid {
 				// Chunking is actively in progress; use progressive streaming.
@@ -2442,27 +2450,13 @@ func (c *Cache) pullNarIntoStore(
 		Dur("elapsed", time.Since(now)).
 		Msg("download of nar complete (CDC chunking in background)")
 
-	if err = c.storeNarFromTempFile(ctx, ds.assetPath, narURL); err != nil {
-		ds.setError(err)
-
-		return
-	}
-
-	// Signal that the asset is now in final storage and the distributed lock can be released
-	// This prevents the race condition where other instances check hasAsset() before storage completes
-	ds.storedOnce.Do(func() { close(ds.stored) })
-
-	if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), *narURL); err != nil {
-		zerolog.Ctx(ctx).
-			Warn().
-			Err(err).
-			Msg("failed to fix narinfo file size after pullNarIntoStore")
-	}
-
-	zerolog.Ctx(ctx).
-		Info().
-		Dur("elapsed", time.Since(now)).
-		Msg("download of nar complete")
+	// The CDC goroutine (started above) is responsible for:
+	//   - creating the nar_file DB record (via findOrCreateNarFileForCDC)
+	//   - signalling ds.stored (via onNarFileReady) so streaming clients unblock
+	//   - chunking the NAR and calling checkAndFixNarInfosForNar when done
+	//   - removing the job from upstreamJobs and closing ds.done
+	// Do NOT call storeNarFromTempFile here: with CDC enabled it would invoke
+	// storeNarWithCDC, duplicating the chunking work already in progress.
 }
 
 // serveNarFromStorageViaPipe wraps storage reading with a pipe pattern to decouple
