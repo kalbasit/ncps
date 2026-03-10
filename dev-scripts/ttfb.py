@@ -17,7 +17,7 @@ STATE_FILE_PATH = os.path.join(
     "state.json",
 )
 
-TTFB_TIMEOUT_SECONDS = 10.0  # Adjust this value as needed
+TTFB_TIMEOUT_SECONDS = 180.0  # Adjust this value as needed
 
 
 def get_urls_from_state_file() -> List[str]:
