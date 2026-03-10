@@ -900,7 +900,15 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		// but total_chunks == 0, another instance is still chunking. Fall into the
 		// progressive streaming path. Records with chunking_started_at=NULL are
 		// placeholder records (e.g. from a failed download) and should not be served.
-		if !hasNar && !hasNarInStore && c.isCDCEnabled() {
+		//
+		// Skip this check when there is an active local download job: in that case we
+		// use the faster temp-file streaming path (prePullNar below) rather than
+		// progressive CDC streaming which blocks until chunks are produced.
+		c.upstreamJobsMu.Lock()
+		_, hasActiveLocalJob := c.upstreamJobs[narJobKey(narURL.Hash)]
+		c.upstreamJobsMu.Unlock()
+
+		if !hasNar && !hasNarInStore && c.isCDCEnabled() && !hasActiveLocalJob {
 			nr, nrErr := c.getNarFileFromDB(ctx, c.db, narURL)
 			if nrErr == nil && nr.ChunkingStartedAt.Valid {
 				// Chunking is actively in progress; use progressive streaming.
@@ -1654,6 +1662,65 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	//nolint:gosec // G115: File size from Stat is non-negative
 	fileSize := uint64(fi.Size())
 
+	return c.storeNarWithCDCFromReader(ctx, f, fileSize, narURL, onNarFileReady)
+}
+
+// maybeDecompressReader wraps r in a decompression reader if compression is not none.
+// Returns the (possibly decompressed) reader, a cleanup function, and an error.
+// If decompression setup fails, it logs a warning and returns the original reader so
+// chunking can proceed with raw data (e.g., when stored metadata mismatches actual compression).
+func maybeDecompressReader(
+	ctx context.Context, r io.Reader, compression nar.CompressionType,
+) (io.Reader, func(), error) {
+	if compression == nar.CompressionTypeNone {
+		return r, func() {}, nil
+	}
+
+	decompressed, err := nar.DecompressReader(ctx, r, compression)
+	if err != nil {
+		// If decompression setup fails, log a warning and proceed with raw data.
+		// This can happen when stored metadata doesn't match the actual data compression.
+		zerolog.Ctx(ctx).Warn().
+			Err(err).
+			Str("compression_type", compression.String()).
+			Msg("failed to create decompression reader for CDC, proceeding with raw data")
+
+		// Seek back to the beginning if the reader supports seeking,
+		// since the failed reader creation may have consumed bytes.
+		if seeker, ok := r.(io.Seeker); ok {
+			if _, seekErr := seeker.Seek(0, io.SeekStart); seekErr != nil {
+				return nil, func() {}, fmt.Errorf("error seeking reader after failed decompression: %w", seekErr)
+			}
+		}
+
+		return r, func() {}, nil
+	}
+
+	return decompressed, func() { decompressed.Close() }, nil
+}
+
+// storeNarWithCDCFromReader is the core CDC chunking implementation. It accepts an
+// io.Reader and explicit fileSize instead of opening a temp file, enabling concurrent
+// use with fileAvailableReader (where bytes arrive progressively during decompression).
+// narURL must already have Compression set to the compression of the data in r
+// (typically CompressionTypeNone when called from the concurrent decompress+chunk path).
+func (c *Cache) storeNarWithCDCFromReader(
+	ctx context.Context,
+	r io.Reader,
+	fileSize uint64,
+	narURL *nar.URL,
+	onNarFileReady func(),
+) error {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.storeNarWithCDCFromReader",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("nar_url", narURL.String()),
+		),
+	)
+	defer span.End()
+
 	// For CDC, always store raw uncompressed data in chunks.
 	// Save original compression before normalizing narURL.
 	originalCompression := narURL.Compression
@@ -1698,29 +1765,12 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 
 	// If the NAR is compressed, decompress it before chunking.
 	// For CDC, we want to chunk the raw uncompressed data, not the compressed bytes.
-	var reader io.Reader = f
-
-	if originalCompression != nar.CompressionTypeNone {
-		decompressed, decompErr := nar.DecompressReader(ctx, f, originalCompression)
-		if decompErr != nil {
-			// If decompression fails, log a warning and proceed with raw data.
-			// This can happen if the stored metadata doesn't match the actual data compression
-			// (e.g., during migration of NARs that have xz metadata but aren't actually compressed).
-			zerolog.Ctx(ctx).Warn().
-				Err(decompErr).
-				Str("compression_type", originalCompression.String()).
-				Msg("failed to create decompression reader for CDC, proceeding with raw data")
-
-			// Seek back to the beginning since the failed reader creation may have consumed bytes.
-			if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
-				return fmt.Errorf("error seeking file after failed decompression: %w", seekErr)
-			}
-		} else {
-			defer decompressed.Close()
-
-			reader = decompressed
-		}
+	reader, decompCleanup, err := maybeDecompressReader(ctx, r, originalCompression)
+	if err != nil {
+		return err
 	}
+
+	defer decompCleanup()
 
 	chunksChan, errChan := cdcChunker.Chunk(ctx, reader)
 
@@ -2297,109 +2347,116 @@ func (c *Cache) pullNarIntoStore(
 
 	defer decompReader.Close()
 
+	// For CDC+compressed NARs: start CDC chunking concurrently with decompression so
+	// the nar_file DB record (with chunking_started_at) is created as early as possible.
+	// Without this, other HA instances poll for up to downloadPollTimeout (30s) before
+	// seeing the record, because the old code only started CDC after full decompression.
+	//
+	// The CDC goroutine opens fUncompressed for reading via a fileAvailableReader, which
+	// blocks in ds.cond.Wait until bytes become available (written by streamReaderToFile).
+	// ReadAt is position-independent, so concurrent reads from the same file are safe.
+	//
+	// We keep the job in upstreamJobs (keepJobAlive=true) so concurrent GetNar calls on
+	// THIS server can find ds and stream from the temp file while chunking is in progress.
+	// The CDC goroutine is responsible for removing the job and closing ds.done when done.
+	//
+	// cdcWg prevents the temp-file cleanup goroutine from setting ds.closed=true until
+	// after the CDC goroutine is done, allowing concurrent readers to join via ds.wg.
+	keepJobAlive = true
+
+	ds.cdcWg.Add(1)
+	ds.wg.Add(1)
+
+	c.backgroundWG.Add(1)
+
+	// narURLForCDC is the URL passed to storeNarWithCDCFromReader. The data in
+	// fUncompressed is already raw (no compression), so we set CompressionTypeNone.
+	narURLForCDC := *narURL
+	narURLForCDC.Compression = nar.CompressionTypeNone
+
+	analytics.SafeGo(ctx, func() {
+		defer c.backgroundWG.Done()
+
+		// Defers execute LIFO: wg.Done fires 1st (remove CDC from reader count),
+		// then cdcWg.Done fires 2nd (unblocks cleanup goroutine to set closed=true),
+		// then the inline func fires 3rd (remove job, close ds.done, broadcast).
+		defer func() {
+			// Remove job from upstreamJobs so new GetNar calls serve from chunks.
+			c.upstreamJobsMu.Lock()
+			delete(c.upstreamJobs, narJobKey(narURL.Hash))
+			c.upstreamJobsMu.Unlock()
+
+			// Inform all waiters (e.g. distributed lock releaser) that CDC is done.
+			ds.doneOnce.Do(func() { close(ds.done) })
+			ds.cond.Broadcast()
+		}()
+		defer ds.cdcWg.Done()
+		defer ds.wg.Done()
+
+		// Open a separate file handle for reading from fUncompressed. This is
+		// necessary because fUncompressed is still being written by streamReaderToFile
+		// in the main pull goroutine. ReadAt on the separate handle is safe concurrently.
+		cdcFile, openErr := os.Open(fUncompressed.Name())
+		if openErr != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(openErr).
+				Msg("CDC goroutine failed to open fUncompressed for reading")
+			ds.setError(openErr)
+
+			return
+		}
+		defer cdcFile.Close()
+
+		// fileAvailableReader blocks until bytes are available (written by streamReaderToFile)
+		// and returns io.EOF once ds.finalSize bytes have been consumed.
+		cdcReader := &fileAvailableReader{f: cdcFile, ds: ds}
+
+		// onNarFileReady is called inside storeNarWithCDCFromReader right after
+		// findOrCreateNarFileForCDC succeeds (i.e., the nar_file DB record exists with
+		// chunking_started_at set). At that point, other HA servers can see the record
+		// and enter progressive chunk streaming instead of starting a duplicate download.
+		// We signal ds.stored here so the distributed lock can also be released.
+		onNarFileReady := func() {
+			ds.storedOnce.Do(func() { close(ds.stored) })
+		}
+
+		if err := c.storeNarWithCDCFromReader(ctx, cdcReader, narInfo.NarSize, &narURLForCDC, onNarFileReady); err != nil {
+			zerolog.Ctx(ctx).
+				Error().
+				Err(err).
+				Msg("CDC chunking failed in background after pullNarIntoStore")
+			ds.setError(err)
+
+			return // Defers will still run to clean up.
+		}
+
+		if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), narURLForCDC); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("failed to fix narinfo file size after pullNarIntoStore (CDC)")
+		}
+	})
+
 	if err := c.streamReaderToFile(ctx, decompReader, fUncompressed, ds); err != nil {
 		ds.setError(fmt.Errorf("failed to stream decompressed bytes to file: %w", err))
 
 		return
 	}
 
-	if c.isCDCEnabled() {
-		// For CDC: create the nar_file DB record synchronously (fast), signal ds.stored so
-		// the HTTP connection can close immediately, then run the actual chunking in a
-		// background goroutine. This prevents the HTTP response from waiting ~18s for CDC
-		// chunking to complete on first pull of a large NAR.
-		//
-		// We keep the job in upstreamJobs (keepJobAlive=true) so concurrent GetNar calls on
-		// THIS server can find ds and stream from the temp file while chunking is in progress.
-		// The CDC goroutine is responsible for removing the job and closing ds.done when done.
-		//
-		// cdcWg prevents the temp-file cleanup goroutine from setting ds.closed=true until
-		// after the CDC goroutine is done, allowing concurrent readers to join via ds.wg.
-		keepJobAlive = true
-
-		ds.cdcWg.Add(1)
-		ds.wg.Add(1)
-
-		c.backgroundWG.Add(1)
-
-		analytics.SafeGo(ctx, func() {
-			defer c.backgroundWG.Done()
-
-			// Defers execute LIFO: wg.Done fires 1st (remove CDC from reader count),
-			// then cdcWg.Done fires 2nd (unblocks cleanup goroutine to set closed=true),
-			// then the inline func fires 3rd (remove job, close ds.done, broadcast).
-			defer func() {
-				// Remove job from upstreamJobs so new GetNar calls serve from chunks.
-				c.upstreamJobsMu.Lock()
-				delete(c.upstreamJobs, narJobKey(narURL.Hash))
-				c.upstreamJobsMu.Unlock()
-
-				// Inform all waiters (e.g. distributed lock releaser) that CDC is done.
-				ds.doneOnce.Do(func() { close(ds.done) })
-				ds.cond.Broadcast()
-			}()
-			defer ds.cdcWg.Done()
-			defer ds.wg.Done()
-
-			// onNarFileReady is called inside storeNarWithCDC right after findOrCreateNarFileForCDC
-			// succeeds (i.e., the nar_file DB record exists). At that point, other servers can see
-			// the record and enter progressive chunk streaming instead of starting a duplicate
-			// download. We signal ds.stored here so the distributed lock can also be released.
-			onNarFileReady := func() {
-				ds.storedOnce.Do(func() { close(ds.stored) })
-			}
-
-			// Inform storeNarWithCDC that the file is already uncompressed
-			// because we just decompressed it above.
-			narURL.Compression = nar.CompressionTypeNone
-
-			if err := c.storeNarWithCDC(ctx, ds.assetPath, narURL, onNarFileReady); err != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Msg("CDC chunking failed in background after pullNarIntoStore")
-				ds.setError(err)
-
-				return // Defers will still run to clean up.
-			}
-
-			if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), *narURL); err != nil {
-				zerolog.Ctx(ctx).
-					Warn().
-					Err(err).
-					Msg("failed to fix narinfo file size after pullNarIntoStore (CDC)")
-			}
-		})
-
-		zerolog.Ctx(ctx).
-			Info().
-			Dur("elapsed", time.Since(now)).
-			Msg("download of nar complete (CDC chunking in background)")
-
-		return
-	}
-
-	if err = c.storeNarFromTempFile(ctx, ds.assetPath, narURL); err != nil {
-		ds.setError(err)
-
-		return
-	}
-
-	// Signal that the asset is now in final storage and the distributed lock can be released
-	// This prevents the race condition where other instances check hasAsset() before storage completes
-	ds.storedOnce.Do(func() { close(ds.stored) })
-
-	if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), *narURL); err != nil {
-		zerolog.Ctx(ctx).
-			Warn().
-			Err(err).
-			Msg("failed to fix narinfo file size after pullNarIntoStore")
-	}
-
 	zerolog.Ctx(ctx).
 		Info().
 		Dur("elapsed", time.Since(now)).
-		Msg("download of nar complete")
+		Msg("download of nar complete (CDC chunking in background)")
+
+	// The CDC goroutine (started above) is responsible for:
+	//   - creating the nar_file DB record (via findOrCreateNarFileForCDC)
+	//   - signalling ds.stored (via onNarFileReady) so streaming clients unblock
+	//   - chunking the NAR and calling checkAndFixNarInfosForNar when done
+	//   - removing the job from upstreamJobs and closing ds.done
+	// Do NOT call storeNarFromTempFile here: with CDC enabled it would invoke
+	// storeNarWithCDC, duplicating the chunking work already in progress.
 }
 
 // serveNarFromStorageViaPipe wraps storage reading with a pipe pattern to decouple
