@@ -15,9 +15,10 @@ var ErrInvalidURL = errors.New("invalid nar URL")
 
 // URL represents a nar URL.
 type URL struct {
-	Hash        string
-	Compression CompressionType
-	Query       url.Values
+	Hash            string
+	Compression     CompressionType
+	Query           url.Values
+	TransparentZstd bool
 }
 
 // ParseURL parses a nar URL (as present in narinfo) and returns its components.
