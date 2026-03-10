@@ -167,6 +167,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 		testCDCFirstPullCompletesBeforeChunking(factory))
 	t.Run("GetNar does not panic when CDC is disabled but DB has chunked NARs",
 		testCDCDisabledWithChunkedNARsInDB(factory))
+	t.Run("GetNar with TransparentZstd returns decompressed content from CDC chunks",
+		testCDCGetNarTransparentZstd(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -1793,5 +1795,88 @@ func testCDCDisabledWithChunkedNARsInDB(factory cacheFactory) func(*testing.T) {
 		hasChunks, err = c.HasNarInChunks(ctx, nu)
 		require.NoError(t, err)
 		assert.False(t, hasChunks, "HasNarInChunks should return false when CDC is disabled")
+	}
+}
+
+// testCDCGetNarTransparentZstd is a regression test for the bug where GetNar with
+// TransparentZstd=true returned raw concatenated per-chunk zstd frames instead of
+// decompressed NAR bytes. Clients using a single-stream zstd decompressor (e.g.
+// Python httpx with zstandard.decompressobj) would fail on the second frame with
+// "cannot use a decompressobj multiple times".
+//
+// The fix ensures that getNarFromChunks always clears TransparentZstd so that:
+//   - The goroutine uses GetChunk (decompressed) instead of GetRawChunk (raw zstd)
+//   - The returned nu.TransparentZstd=false signals to the HTTP layer to re-encode
+//     as a single zstd stream if the client accepts it
+func testCDCGetNarTransparentZstd(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		// Use content large enough to guarantee multiple chunks (well above max=8192).
+		// Varied content ensures the chunker produces real split points.
+		content := strings.Repeat("ncps-cdc-transparent-zstd-regression-test ", 300) // ~12 600 bytes
+
+		nu := nar.URL{Hash: "transpzstd1", Compression: nar.CompressionTypeNone}
+		err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+		require.NoError(t, err)
+
+		// Simulate a client that sends Accept-Encoding: zstd by setting TransparentZstd=true.
+		// Before the fix, getNarFromChunks would stream raw per-chunk zstd frames and set
+		// TransparentZstd=true on the returned nu, causing multi-frame zstd output that
+		// single-stream decompressors cannot handle.
+		nuReq := nu
+		nuReq.TransparentZstd = true
+
+		retNu, size, rc, err := c.GetNar(ctx, nuReq)
+		require.NoError(t, err)
+		require.NotNil(t, rc)
+
+		defer rc.Close()
+
+		// The cache must clear TransparentZstd so the HTTP layer knows to re-encode
+		// the decompressed bytes into a single zstd stream rather than forwarding raw frames.
+		assert.False(t, retNu.TransparentZstd,
+			"TransparentZstd must be cleared for CDC chunks to avoid multi-frame zstd output")
+
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+
+		// If TransparentZstd was not cleared, the reader would stream raw zstd-compressed
+		// bytes (not the actual NAR content), so this assertion fails before the fix.
+		assert.Equal(t, content, string(data), "GetNar must return decompressed NAR content")
+		assert.Equal(t, int64(len(content)), size)
+
+		// Second call — this is what actually failed in production:
+		// the second request tried to serve from CDC chunks with TransparentZstd=true
+		// and clients received multi-frame zstd output that could not be decoded.
+		nuReq2 := nu
+		nuReq2.TransparentZstd = true
+
+		retNu2, size2, rc2, err := c.GetNar(ctx, nuReq2)
+		require.NoError(t, err)
+		require.NotNil(t, rc2)
+
+		defer rc2.Close()
+
+		assert.False(t, retNu2.TransparentZstd,
+			"TransparentZstd must be cleared for CDC chunks on the second request too")
+
+		data2, err := io.ReadAll(rc2)
+		require.NoError(t, err)
+		assert.Equal(t, content, string(data2), "second GetNar must return identical decompressed NAR content")
+		assert.Equal(t, int64(len(content)), size2)
 	}
 }
