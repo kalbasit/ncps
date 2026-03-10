@@ -157,6 +157,11 @@ UPDATE nar_files
 SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
+-- name: ClearNarFileChunkingStarted :exec
+UPDATE nar_files
+SET chunking_started_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
 -- name: LinkNarInfoToNarFile :exec
 INSERT INTO narinfo_nar_files (
     narinfo_id, nar_file_id

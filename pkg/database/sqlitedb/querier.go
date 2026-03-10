@@ -28,6 +28,12 @@ type Querier interface {
 	//  )
 	//  ON CONFLICT (narinfo_id, signature) DO NOTHING
 	AddNarInfoSignature(ctx context.Context, arg AddNarInfoSignatureParams) error
+	//ClearNarFileChunkingStarted
+	//
+	//  UPDATE nar_files
+	//  SET chunking_started_at = NULL, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = ?
+	ClearNarFileChunkingStarted(ctx context.Context, id int64) error
 	//CreateChunk
 	//
 	//  INSERT INTO chunks (

@@ -1748,6 +1748,22 @@ func (c *Cache) storeNarWithCDCFromReader(
 		return err
 	}
 
+	// Ensure chunking_started_at is cleared if we return an error before completion.
+	// UpdateNarFileTotalChunks (on success) also clears it.
+	var success bool
+
+	defer func() {
+		if !success {
+			if err := c.db.ClearNarFileChunkingStarted(context.WithoutCancel(ctx), narFileID); err != nil {
+				zerolog.Ctx(ctx).
+					Warn().
+					Err(err).
+					Int64("nar_file_id", narFileID).
+					Msg("failed to clear chunking_started_at after chunking failure")
+			}
+		}
+	}()
+
 	// Signal the caller that the nar_file DB record has been created. This allows the
 	// HTTP response to complete (by unblocking the streaming goroutine's ds.stored wait)
 	// without waiting for the full CDC chunking process to finish.
@@ -1830,6 +1846,8 @@ func (c *Cache) storeNarWithCDCFromReader(
 				if err != nil {
 					return fmt.Errorf("error marking chunking complete: %w", err)
 				}
+
+				success = true
 
 				// If compression was normalized (e.g., xz → none), atomically clean up the old
 				// NarFile record and re-link narinfos to the new one in a single transaction.
@@ -5780,6 +5798,14 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					}
 
 					totalChunks = nr.TotalChunks
+
+					// If total_chunks is still 0 but chunking_started_at is NULL, it means
+					// the chunking process was aborted.
+					if totalChunks == 0 && !nr.ChunkingStartedAt.Valid {
+						chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
+
+						return
+					}
 				}
 
 				// Check if we're done

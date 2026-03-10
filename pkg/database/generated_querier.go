@@ -39,6 +39,12 @@ type Querier interface {
 	//  )
 	//  SELECT $1, unnest($2::text[]) ON CONFLICT (narinfo_id, signature) DO NOTHING
 	AddNarInfoSignatures(ctx context.Context, arg AddNarInfoSignaturesParams) error
+	//ClearNarFileChunkingStarted
+	//
+	//  UPDATE nar_files
+	//  SET chunking_started_at = NULL, updated_at = CURRENT_TIMESTAMP
+	//  WHERE id = $1
+	ClearNarFileChunkingStarted(ctx context.Context, id int64) error
 	//CreateChunk
 	//
 	//  INSERT INTO chunks (
