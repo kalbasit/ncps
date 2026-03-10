@@ -881,7 +881,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 
 		t.Run("nar does not exist upstream", func(t *testing.T) {
 			nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
-			_, _, err := c.GetNar(context.Background(), nu)
+			_, _, _, err := c.GetNar(context.Background(), nu)
 			assert.ErrorIs(t, err, upstream.ErrNotFound)
 		})
 
@@ -906,7 +906,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 
 			t.Run("able to get the NAR even in flight from upstream", func(t *testing.T) {
-				_, r, err := c.GetNar(context.Background(), nu)
+				_, _, r, err := c.GetNar(context.Background(), nu)
 				require.NoError(t, err)
 
 				defer r.Close()
@@ -941,7 +941,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 				defer c.SetRecordAgeIgnoreTouch(0)
 
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-				_, r, err := c.GetNar(context.Background(), nu)
+				_, _, r, err := c.GetNar(context.Background(), nu)
 				require.NoError(t, err)
 				r.Close()
 
@@ -958,7 +958,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 				time.Sleep(time.Second)
 
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-				size, r, err := c.GetNar(context.Background(), nu)
+				_, size, r, err := c.GetNar(context.Background(), nu)
 				require.NoError(t, err)
 				r.Close()
 
@@ -1358,7 +1358,7 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 			defer close(done)
 
 			nu := nar.URL{Hash: testHash + "-nar", Compression: nar.CompressionTypeXz}
-			_, r, err := c.GetNar(ctx, nu)
+			_, _, r, err := c.GetNar(ctx, nu)
 			getNarErr = err
 
 			if r != nil {
@@ -1499,7 +1499,7 @@ func testBackgroundDownloadCompletionAfterCancellation(factory cacheFactory) fun
 			defer close(doneA)
 
 			nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
-			_, r, err := c.GetNar(ctxA, nu)
+			_, _, r, err := c.GetNar(ctxA, nu)
 			getNarErrA = err
 
 			if r != nil {
@@ -1551,7 +1551,7 @@ func testBackgroundDownloadCompletionAfterCancellation(factory cacheFactory) fun
 		ctxB := newContext()
 		nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
 
-		size, readerB, err := c.GetNar(ctxB, nu)
+		_, size, readerB, err := c.GetNar(ctxB, nu)
 		require.NoError(t, err, "caller B should be able to get the NAR")
 		require.NotNil(t, readerB, "reader should not be nil")
 
@@ -1568,7 +1568,7 @@ func testBackgroundDownloadCompletionAfterCancellation(factory cacheFactory) fun
 
 		// STEP 6: Verify another concurrent request also succeeds
 		ctxC := newContext()
-		sizeC, readerC, err := c.GetNar(ctxC, nu)
+		_, sizeC, readerC, err := c.GetNar(ctxC, nu)
 		require.NoError(t, err, "caller C should also be able to get the NAR")
 		require.NotNil(t, readerC, "reader should not be nil")
 
@@ -1695,7 +1695,7 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 			defer close(doneA)
 
 			nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
-			_, r, err := c.GetNar(ctxA, nu)
+			_, _, r, err := c.GetNar(ctxA, nu)
 			getNarErrA = err
 
 			if r != nil {
@@ -1715,7 +1715,7 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 
 			var err error
 
-			sizeB, readerB, err = c.GetNar(ctxB, nu)
+			_, sizeB, readerB, err = c.GetNar(ctxB, nu)
 			getNarErrB = err
 		})
 
@@ -2254,7 +2254,7 @@ func testNarStreaming(factory cacheFactory) func(*testing.T) {
 		go func() {
 			defer wg.Done()
 
-			_, r, err := c.GetNar(context.Background(), narURL)
+			_, _, r, err := c.GetNar(context.Background(), narURL)
 			if err != nil {
 				getNarErr = err
 

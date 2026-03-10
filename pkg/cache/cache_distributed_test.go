@@ -269,7 +269,7 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 
 				// All instances request the same NAR
 				narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-				_, reader, err := cacheInstance.GetNar(ctx, narURL)
+				_, _, reader, err := cacheInstance.GetNar(ctx, narURL)
 				assert.NoError(t, err, "instance %d read failed", instanceNum)
 
 				if reader != nil {
@@ -294,7 +294,7 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 		// Verify all instances can now read the cached file
 		for i, c := range caches {
 			narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-			size, reader, err := c.GetNar(ctx, narURL)
+			_, size, reader, err := c.GetNar(ctx, narURL)
 			require.NoError(t, err, "instance %d should read cached NAR", i)
 			assert.Positive(t, size, "instance %d should have positive size", i)
 
@@ -364,7 +364,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 		narEntry := testdata.Entries[0]
 		narURL := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
 
-		_, reader, err := c1.GetNar(ctx, narURL)
+		_, _, reader, err := c1.GetNar(ctx, narURL)
 		require.NoError(t, err)
 		_, err = io.Copy(io.Discard, reader)
 		require.NoError(t, err)
@@ -411,7 +411,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 			go func(instanceNum int, cacheInstance *cache.Cache) {
 				defer wg.Done()
 
-				size, reader, err := cacheInstance.GetNar(ctx, narURL)
+				_, size, reader, err := cacheInstance.GetNar(ctx, narURL)
 				assert.NoError(t, err, "instance %d read failed", instanceNum)
 				assert.Positive(t, size, "instance %d got zero size", instanceNum)
 
@@ -808,7 +808,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 				Compression: largeNarEntry.NarCompression,
 			}
 
-			_, reader, err := cacheInstance.GetNar(requestCtx, narURL)
+			_, _, reader, err := cacheInstance.GetNar(requestCtx, narURL)
 			if err != nil {
 				mu.Lock()
 
@@ -1041,7 +1041,7 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 
 				// Measure TTFB (time to first byte)
 				ttfbStart := time.Now()
-				size, rc, err := cache.GetNar(requestCtx, narURL)
+				_, size, rc, err := cache.GetNar(requestCtx, narURL)
 				ttfb := time.Since(ttfbStart)
 
 				if err != nil {

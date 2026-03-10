@@ -119,6 +119,24 @@ func (s *localStore) GetChunk(_ context.Context, hash string) (io.ReadCloser, er
 	return &localReadCloser{pr, f}, nil
 }
 
+func (s *localStore) GetRawChunk(_ context.Context, hash string) (io.ReadCloser, error) {
+	path, err := s.chunkPath(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	return f, nil
+}
+
 func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool, int64, error) {
 	path, err := s.chunkPath(hash)
 	if err != nil {

@@ -854,9 +854,10 @@ func (c *Cache) PublicKey() signature.PublicKey { return c.secretKey.ToPublicKey
 
 // GetNar returns the nar given a hash and compression from the store. If the
 // nar is not found in the store, it's pulled from an upstream, stored in the
-// stored and finally returned.
+// stored and finally returned. The returned narURL reflects any mutations made
+// during serving (e.g. TransparentZstd cleared when zstd stream not available).
 // NOTE: It's the caller responsibility to close the body.
-func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error) {
+func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.ReadCloser, error) {
 	ctx, span := tracer.Start(
 		ctx,
 		"cache.GetNar",
@@ -1166,10 +1167,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 		return nil
 	})
 	if err != nil {
-		return 0, nil, err
+		return narURL, 0, nil, err
 	}
 
-	return size, reader, nil
+	return narURL, size, reader, nil
 }
 
 // GetNarFileSize returns the size of the NAR file from the database if it exists.
@@ -2208,6 +2209,7 @@ func (c *Cache) pullNarIntoStore(
 			return
 		}
 
+		// Signal that the asset is now in final storage and the distributed lock can be released
 		ds.storedOnce.Do(func() { close(ds.stored) })
 
 		if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), *narURL); err != nil {
@@ -2216,6 +2218,11 @@ func (c *Cache) pullNarIntoStore(
 				Err(err).
 				Msg("failed to fix narinfo file size after pullNarIntoStore")
 		}
+
+		zerolog.Ctx(ctx).
+			Info().
+			Dur("elapsed", time.Since(now)).
+			Msg("download of nar complete")
 
 		return
 	}
@@ -2497,7 +2504,7 @@ func (c *Cache) getNarFromStore(
 	// to -1 below so we can use it when healing a missing DB record.
 	storedFileSize := size
 
-	if decompress {
+	if decompress && !narURL.TransparentZstd {
 		decompressed, decompErr := nar.DecompressReader(ctx, r, nar.CompressionTypeZstd)
 		if decompErr != nil {
 			_ = r.Close()
@@ -2507,6 +2514,10 @@ func (c *Cache) getNarFromStore(
 
 		r = decompressed
 		size = -1 // decompressed size is unknown
+	} else if !decompress {
+		// File is stored as plain uncompressed .nar (not .nar.zst); we cannot
+		// serve a zstd stream even if the caller asked for one.
+		narURL.TransparentZstd = false
 	}
 
 	var needsDBRecord bool
@@ -5476,10 +5487,10 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 
 		if totalChunks > 0 {
 			// Fast path: All chunks complete
-			streamErr = c.streamCompleteChunks(ctx, pw, narFileID, totalChunks)
+			streamErr = c.streamCompleteChunks(ctx, pw, narFileID, totalChunks, narURL.TransparentZstd)
 		} else {
 			// Progressive path: Stream as chunks appear
-			streamErr = c.streamProgressiveChunks(ctx, pw, narFileID)
+			streamErr = c.streamProgressiveChunks(ctx, pw, narFileID, narURL.TransparentZstd)
 		}
 
 		if streamErr != nil {
@@ -5487,13 +5498,38 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		}
 	})
 
+	if narURL.TransparentZstd && totalChunks > 0 {
+		// Calculate total compressed size
+		chunks, err := c.db.GetChunksByNarFileID(ctx, narFileID)
+		if err == nil {
+			var compressedSize int64
+			for _, ch := range chunks {
+				compressedSize += int64(ch.CompressedSize)
+			}
+
+			totalSize = compressedSize
+		} else {
+			// Fallback to unknown size if query fails
+			totalSize = -1
+		}
+	} else if narURL.TransparentZstd {
+		// Progressive streaming, size is unknown
+		totalSize = -1
+	}
+
 	return totalSize, pr, nil
 }
 
 // streamCompleteChunks streams all chunks for a NAR that has completed chunking.
 // This is the fast path where all chunks are available immediately.
 // It uses a prefetch pipeline to overlap chunk fetching with data copying for better performance.
-func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID int64, totalChunks int64) error {
+func (c *Cache) streamCompleteChunks(
+	ctx context.Context,
+	w io.Writer,
+	narFileID int64,
+	totalChunks int64,
+	raw bool,
+) error {
 	// Get all chunks at once
 	chunkHashes := make([]string, 0, totalChunks)
 
@@ -5511,7 +5547,7 @@ func (c *Cache) streamCompleteChunks(ctx context.Context, w io.Writer, narFileID
 	}
 
 	// Use prefetch pipeline to overlap I/O operations
-	return c.streamChunksWithPrefetch(ctx, w, chunkHashes)
+	return c.streamChunksWithPrefetch(ctx, w, chunkHashes, raw)
 }
 
 // prefetchedChunk holds a chunk reader and any error from fetching it.
@@ -5524,7 +5560,7 @@ type prefetchedChunk struct {
 // streamChunksWithPrefetch implements a prefetch pipeline that fetches the next chunk
 // while the current chunk is being copied to the writer. This overlaps network/disk I/O
 // with data copying, significantly improving throughput for remote storage.
-func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunkHashes []string) error {
+func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunkHashes []string, raw bool) error {
 	if len(chunkHashes) == 0 {
 		return nil
 	}
@@ -5550,7 +5586,16 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 			}
 
 			// Fetch chunk
-			rc, err := c.getChunkStore().GetChunk(ctx, hash)
+			var (
+				rc  io.ReadCloser
+				err error
+			)
+
+			if raw {
+				rc, err = c.getChunkStore().GetRawChunk(ctx, hash)
+			} else {
+				rc, err = c.getChunkStore().GetChunk(ctx, hash)
+			}
 
 			// Send chunk or error to consumer
 			select {
@@ -5588,7 +5633,7 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 // streamProgressiveChunks streams chunks as they become available during an in-progress chunking operation.
 // This allows concurrent downloads while another instance is still chunking the NAR.
 // It uses a prefetch pipeline to overlap chunk fetching with data copying for better performance.
-func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64) error {
+func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64, raw bool) error {
 	pollInterval := 200 * time.Millisecond
 	maxWaitPerChunk := 30 * time.Second
 
@@ -5675,7 +5720,16 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 			}
 
 			// Fetch the chunk
-			rc, err := c.getChunkStore().GetChunk(ctx, chunkHash)
+			var (
+				rc  io.ReadCloser
+				err error
+			)
+
+			if raw {
+				rc, err = c.getChunkStore().GetRawChunk(ctx, chunkHash)
+			} else {
+				rc, err = c.getChunkStore().GetChunk(ctx, chunkHash)
+			}
 
 			// Send chunk or error to consumer
 			select {
