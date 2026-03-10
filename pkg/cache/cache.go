@@ -896,6 +896,20 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			}
 		}
 
+		// If CDC is enabled and we have a nar_file record with chunking_started_at set
+		// but total_chunks == 0, another instance is still chunking. Fall into the
+		// progressive streaming path. Records with chunking_started_at=NULL are
+		// placeholder records (e.g. from a failed download) and should not be served.
+		if !hasNar && !hasNarInStore && c.isCDCEnabled() {
+			nr, nrErr := c.getNarFileFromDB(ctx, c.db, narURL)
+			if nrErr == nil && nr.ChunkingStartedAt.Valid {
+				// Chunking is actively in progress; use progressive streaming.
+				hasNar = true
+			} else if nrErr != nil && !database.IsNotFoundError(nrErr) {
+				return fmt.Errorf("failed to check nar file record for progressive streaming: %w", nrErr)
+			}
+		}
+
 		if hasNar {
 			if hasNarInStore {
 				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
