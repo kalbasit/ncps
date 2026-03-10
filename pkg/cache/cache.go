@@ -83,6 +83,16 @@ func narInfoLockKey(hash string) string { return "narinfo:" + hash }
 // migrationLockKey returns the lock key used for migration operations.
 func migrationLockKey(hash string) string { return "migration:" + hash }
 
+// errorLogLevelForContextErrors returns the appropriate log level for errors,
+// downgrading context-related errors to debug level.
+func errorLogLevelForContextErrors(err error) zerolog.Level {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return zerolog.DebugLevel
+	}
+
+	return zerolog.ErrorLevel
+}
+
 var (
 	// ErrHostnameRequired is returned if the given hostName to New is not given.
 	ErrHostnameRequired = errors.New("hostName is required")
@@ -2487,11 +2497,7 @@ func (c *Cache) getNarFromUpstream(
 	resp, err := uc.GetNar(ctx, *narURL)
 	if err != nil {
 		if !errors.Is(err, upstream.ErrNotFound) {
-			level := zerolog.ErrorLevel
-			if errors.Is(err, context.Canceled) {
-				level = zerolog.DebugLevel
-			}
-
+			level := errorLogLevelForContextErrors(err)
 			zerolog.Ctx(ctx).
 				WithLevel(level).
 				Err(err).
@@ -2557,10 +2563,6 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		WithContext(ctx)
 
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, fmt.Errorf("error fetching narinfo from database: %w", err)
-	}
-
 	if err == nil {
 		metricAttrs = append(metricAttrs,
 			attribute.String("result", "hit"),
@@ -2592,10 +2594,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	}
 
 	if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
-		level := zerolog.ErrorLevel
-		if errors.Is(err, context.Canceled) {
-			level = zerolog.DebugLevel
-		}
+		level := errorLogLevelForContextErrors(err)
 
 		zerolog.Ctx(ctx).
 			WithLevel(level).
@@ -2679,10 +2678,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	// After pulling from upstream, get the narinfo from the database (where it's now stored)
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
 	if err != nil {
-		level := zerolog.ErrorLevel
-		if errors.Is(err, context.Canceled) {
-			level = zerolog.DebugLevel
-		}
+		level := errorLogLevelForContextErrors(err)
 
 		zerolog.Ctx(ctx).
 			WithLevel(level).
@@ -3561,10 +3557,7 @@ func (c *Cache) getNarInfoFromUpstream(
 	narInfo, err := uc.GetNarInfo(ctx, hash)
 	if err != nil {
 		if !errors.Is(err, upstream.ErrNotFound) {
-			level := zerolog.ErrorLevel
-			if errors.Is(err, context.Canceled) {
-				level = zerolog.DebugLevel
-			}
+			level := errorLogLevelForContextErrors(err)
 
 			zerolog.Ctx(ctx).
 				WithLevel(level).
