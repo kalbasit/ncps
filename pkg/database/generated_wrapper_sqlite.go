@@ -68,6 +68,12 @@ func (w *sqliteWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfo
 	return nil
 }
 
+func (w *sqliteWrapper) ClearNarFileChunkingStarted(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.ClearNarFileChunkingStarted(ctx, id)
+}
+
 func (w *sqliteWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

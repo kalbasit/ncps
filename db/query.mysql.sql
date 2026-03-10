@@ -321,6 +321,11 @@ UPDATE nar_files
 SET chunking_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
+-- name: ClearNarFileChunkingStarted :exec
+UPDATE nar_files
+SET chunking_started_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
 -- name: GetNarFilesToChunk :many
 -- Get all NAR files that are not yet chunked.
 SELECT id, hash, compression, `query`, file_size

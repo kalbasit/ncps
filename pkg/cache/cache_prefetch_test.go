@@ -471,3 +471,73 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 	assert.LessOrEqual(t, goroutinesAfter, goroutinesBefore+2,
 		"should not leak goroutines (before: %d, after: %d)", goroutinesBefore, goroutinesAfter)
 }
+
+// TestProgressiveStreamingAborted verifies that progressive streaming fails fast
+// if the chunking operation is aborted (chunking_started_at cleared while total_chunks is 0).
+func TestProgressiveStreamingAborted(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, db, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	// Initialize chunk store
+	chunkStoreDir := filepath.Join(dir, "chunks-store")
+	chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+	require.NoError(t, err)
+
+	c.SetChunkStore(chunkStore)
+	err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+	require.NoError(t, err)
+
+	// Create a NAR with multiple chunks
+	content := strings.Repeat("aborted test content ", 500)
+	nu := nar.URL{Hash: "aborted-test", Compression: nar.CompressionTypeNone}
+
+	// First, store the NAR completely so it exists in the system
+	err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+	require.NoError(t, err)
+
+	// Get the NAR file record
+	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+		Hash:        nu.Hash,
+		Compression: nu.Compression.String(),
+		Query:       nu.Query.Encode(),
+	})
+	require.NoError(t, err)
+
+	// Simulate incomplete chunking: set total_chunks to 0 and chunking_started_at to NOW.
+	_, err = db.DB().ExecContext(
+		ctx,
+		"UPDATE nar_files SET total_chunks = 0, chunking_started_at = CURRENT_TIMESTAMP WHERE id = ?",
+		narFile.ID,
+	)
+	require.NoError(t, err)
+
+	// Start a goroutine that will "abort" the chunking after a short delay
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+
+		_, _ = db.DB().ExecContext(
+			context.Background(),
+			"UPDATE nar_files SET chunking_started_at = NULL WHERE id = ?",
+			narFile.ID,
+		)
+	}()
+
+	// Now retrieve the NAR - should use progressive streaming and fail fast when aborted
+	startTime := time.Now()
+	_, _, rc, err := c.GetNar(ctx, nu)
+	require.NoError(t, err)
+
+	_, err = io.ReadAll(rc)
+	rc.Close()
+
+	duration := time.Since(startTime)
+
+	// Verify it failed fast (much less than 30s timeout)
+	require.Error(t, err, "streaming should fail when aborted")
+	assert.Contains(t, err.Error(), "chunking was aborted")
+	assert.Less(t, duration, 5*time.Second, "should fail fast, not wait for timeout")
+}
