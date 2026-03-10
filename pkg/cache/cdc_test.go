@@ -200,7 +200,7 @@ func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
 		assert.Positive(t, count)
 
 		// Verify reassembly
-		size, rc, err := c.GetNar(ctx, nu)
+		_, size, rc, err := c.GetNar(ctx, nu)
 		require.NoError(t, err)
 
 		defer rc.Close()
@@ -279,14 +279,14 @@ func testCDCMixedMode(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, c.PutNar(ctx, nuChunk, io.NopCloser(strings.NewReader(chunkContent))))
 
 		// 3. Retrieve both
-		_, rc1, err := c.GetNar(ctx, nuBlob)
+		_, _, rc1, err := c.GetNar(ctx, nuBlob)
 		require.NoError(t, err)
 
 		d1, _ := io.ReadAll(rc1)
 		rc1.Close()
 		assert.Equal(t, blobContent, string(d1))
 
-		_, rc2, err := c.GetNar(ctx, nuChunk)
+		_, _, rc2, err := c.GetNar(ctx, nuChunk)
 		require.NoError(t, err)
 
 		d2, _ := io.ReadAll(rc2)
@@ -399,7 +399,7 @@ func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.
 		clientCtx, cancel := context.WithCancel(ctx)
 
 		// Start reading the NAR
-		_, rc, err := c.GetNar(clientCtx, nu)
+		_, _, rc, err := c.GetNar(clientCtx, nu)
 		require.NoError(t, err)
 
 		// Read a few bytes to start the streaming
@@ -494,7 +494,7 @@ func testCDCDecompressZstdBeforeChunking(factory cacheFactory) func(*testing.T) 
 		// Verify reassembly returns the original uncompressed content
 		// We need to retrieve using CompressionTypeNone since that's what's in the DB
 		nuNone := nar.URL{Hash: nu.Hash, Compression: nar.CompressionTypeNone}
-		size, rc, err := c.GetNar(ctx, nuNone)
+		_, size, rc, err := c.GetNar(ctx, nuNone)
 		require.NoError(t, err)
 
 		defer rc.Close()
@@ -556,7 +556,7 @@ func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
 			"total compressed size should be less than total original size for compressible data")
 
 		// Verify reassembly to ensure compression is transparent
-		size, rc, err := c.GetNar(ctx, nu)
+		_, size, rc, err := c.GetNar(ctx, nu)
 		require.NoError(t, err)
 
 		defer rc.Close()
@@ -1717,7 +1717,7 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 
 		start := time.Now()
 
-		_, rc, err := c.GetNar(context.Background(), narURL)
+		_, _, rc, err := c.GetNar(context.Background(), narURL)
 		require.NoError(t, err)
 
 		defer rc.Close()

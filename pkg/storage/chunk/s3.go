@@ -149,6 +149,35 @@ func (s *s3Store) GetChunk(ctx context.Context, hash string) (io.ReadCloser, err
 	return &s3ReadCloser{pr, obj}, nil
 }
 
+func (s *s3Store) GetRawChunk(ctx context.Context, hash string) (io.ReadCloser, error) {
+	key, err := s.chunkPath(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return nil, ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	_, err = obj.Stat()
+	if err != nil {
+		obj.Close()
+
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return nil, ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	return obj, nil
+}
+
 func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool, int64, error) {
 	key, err := s.chunkPath(hash)
 	if err != nil {

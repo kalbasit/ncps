@@ -349,7 +349,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-			size, reader, err := c.GetNar(context.Background(), nu)
+			_, size, reader, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err, "unable to get nar for idx %d", i)
 
 			// If the size is zero (likely) then the download is in progress so
@@ -423,7 +423,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
-			size, reader, err := c.GetNar(context.Background(), nu)
+			_, size, reader, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
 			// If size is unknown (e.g. decompression of .nar.zst), read the body to measure.
@@ -637,7 +637,7 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: narEntry.NarCompression}
-			size, reader, err := c.GetNar(context.Background(), nu)
+			_, size, reader, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err, "unable to get nar for idx %d", i)
 
 			// If the size is zero (likely) then the download is in progress so
@@ -729,7 +729,7 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 			}
 
 			nu := nar.URL{Hash: narEntry.NarHash, Compression: compression}
-			size, reader, err := c.GetNar(context.Background(), nu)
+			_, size, reader, err := c.GetNar(context.Background(), nu)
 			require.NoError(t, err)
 
 			// If the size is zero (likely) then the download is in progress so
@@ -1884,7 +1884,7 @@ Sig: cache.nixos.org-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 			go func(id int) {
 				defer wg.Done()
 
-				_, reader, err := c.GetNar(ctx, noneURL)
+				_, _, reader, err := c.GetNar(ctx, noneURL)
 				if err != nil {
 					errs <- fmt.Errorf("client %d failed: %w", id, err)
 

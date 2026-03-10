@@ -231,7 +231,7 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz}
-				size, reader, err := c.GetNar(newContext(), nu)
+				_, size, reader, err := c.GetNar(newContext(), nu)
 				require.NoError(t, err)
 
 				// Continusly Get the NAR to ensure it finally makes it to the store
@@ -242,7 +242,7 @@ func TestServeHTTP(t *testing.T) {
 					require.NoError(t, err)
 
 					// read the NAR again
-					size, reader, err = c.GetNar(newContext(), nu)
+					_, size, reader, err = c.GetNar(newContext(), nu)
 					require.NoError(t, err)
 				}
 

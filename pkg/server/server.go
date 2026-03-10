@@ -47,6 +47,7 @@ const (
 	contentTypeNar     = "application/x-nix-nar"
 	contentTypeNarInfo = "text/x-nix-narinfo"
 	contentTypeJSON    = "application/json"
+	encodingZstd       = "zstd"
 
 	nixCacheInfo = `StoreDir: /nix/store
 WantMassQuery: 1
@@ -544,22 +545,46 @@ func (s *Server) withNarURL(
 
 func (s *Server) getNar(withBody bool) http.HandlerFunc {
 	return s.withNarURL("server.getNar", func(w http.ResponseWriter, r *http.Request, nu nar.URL) {
+		// Check for transparent zstd support (only for uncompressed NAR requests)
+		var clientAcceptsZstd bool
+
+		if nu.Compression == nar.CompressionTypeNone {
+			ae := r.Header.Get("Accept-Encoding")
+			for v := range strings.SplitSeq(ae, ",") {
+				enc := strings.TrimSpace(strings.Split(v, ";")[0])
+				if enc == encodingZstd {
+					clientAcceptsZstd = true
+
+					break
+				}
+			}
+		}
+
+		// If client accepts zstd, tell the cache to keep it compressed if possible.
+		if clientAcceptsZstd {
+			nu.TransparentZstd = true
+		}
+
 		// optimization: if this is a HEAD request, we can check if we have the
 		// narinfo for this nar and if so, return the size from there.
 		if !withBody {
+			// For HEAD requests, do NOT signal TransparentZstd — we want the
+			// raw stored file size (which may be the zstd-compressed size),
+			// not an estimate of the compressed output.
+			nu.TransparentZstd = false
+
 			size, err := s.cache.GetNarFileSize(r.Context(), nu)
 			if err == nil && size > 0 {
 				h := w.Header()
 				h.Set(contentType, contentTypeNar)
 				h.Set(contentLength, strconv.FormatInt(size, 10))
-
 				w.WriteHeader(http.StatusOK)
 
 				return
 			}
 		}
 
-		size, reader, err := s.cache.GetNar(r.Context(), nu)
+		nu, size, reader, err := s.cache.GetNar(r.Context(), nu)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) || errors.Is(err, upstream.ErrNotFound) {
 				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -585,60 +610,54 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 		h.Set(contentType, contentTypeNar)
 
 		// Check for transparent compression support (priority: zstd > br > gzip > raw)
-		var selectedEncoding string
+		var (
+			selectedEncoding string
+			servedRawZstd    bool
+		)
 
 		if nu.Compression == nar.CompressionTypeNone && withBody {
-			ae := r.Header.Get("Accept-Encoding")
-
-			clientAccepts := make(map[string]struct{})
-
-			for v := range strings.SplitSeq(ae, ",") {
-				// Trim whitespace and remove q-factor if present
-				enc := strings.TrimSpace(strings.Split(v, ";")[0])
-				if enc != "" {
-					clientAccepts[enc] = struct{}{}
-				}
-			}
-
-			if _, ok := clientAccepts["zstd"]; ok {
-				selectedEncoding = "zstd"
-			} else if _, ok := clientAccepts["br"]; ok {
-				selectedEncoding = "br"
-			} else if _, ok := clientAccepts["gzip"]; ok {
-				selectedEncoding = "gzip"
+			// If we already have a zstd stream from the cache, we're done.
+			if nu.TransparentZstd {
+				// Cache returned a zstd stream (e.g. from .nar.zst file or complete chunks)
+				selectedEncoding = encodingZstd
+				servedRawZstd = true
+			} else {
+				selectedEncoding = s.parseAcceptEncoding(r)
 			}
 		}
 
 		var out io.Writer = w
 
-		switch selectedEncoding {
-		case "zstd":
-			pw := zstd.NewPooledWriter(w)
-			out = pw
+		if selectedEncoding != "" && !servedRawZstd {
+			switch selectedEncoding {
+			case encodingZstd:
+				pw := zstd.NewPooledWriter(w)
+				out = pw
 
-			defer func() {
-				if err := pw.Close(); err != nil {
-					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close zstd writer")
-				}
-			}()
-		case "br":
-			bw := brotli.NewWriter(w)
-			out = bw
+				defer func() {
+					if err := pw.Close(); err != nil {
+						zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close zstd writer")
+					}
+				}()
+			case "br":
+				bw := brotli.NewWriter(w)
+				out = bw
 
-			defer func() {
-				if err := bw.Close(); err != nil {
-					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close brotli writer")
-				}
-			}()
-		case "gzip":
-			gw := gzip.NewWriter(w)
-			out = gw
+				defer func() {
+					if err := bw.Close(); err != nil {
+						zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close brotli writer")
+					}
+				}()
+			case "gzip":
+				gw := gzip.NewWriter(w)
+				out = gw
 
-			defer func() {
-				if err := gw.Close(); err != nil {
-					zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close gzip writer")
-				}
-			}()
+				defer func() {
+					if err := gw.Close(); err != nil {
+						zerolog.Ctx(r.Context()).Error().Err(err).Msg("failed to close gzip writer")
+					}
+				}()
+			}
 		}
 
 		if selectedEncoding != "" {
@@ -747,4 +766,29 @@ func (s *Server) deleteNar(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusNoContent)
 	}).ServeHTTP(w, r)
+}
+
+// parseAcceptEncoding parses the Accept-Encoding header and returns the preferred supported encoding.
+func (s *Server) parseAcceptEncoding(r *http.Request) string {
+	ae := r.Header.Get("Accept-Encoding")
+
+	clientAccepts := make(map[string]struct{})
+
+	for v := range strings.SplitSeq(ae, ",") {
+		// Trim whitespace and remove q-factor if present
+		enc := strings.TrimSpace(strings.Split(v, ";")[0])
+		if enc != "" {
+			clientAccepts[enc] = struct{}{}
+		}
+	}
+
+	if _, ok := clientAccepts[encodingZstd]; ok {
+		return encodingZstd
+	} else if _, ok := clientAccepts["br"]; ok {
+		return "br"
+	} else if _, ok := clientAccepts["gzip"]; ok {
+		return "gzip"
+	}
+
+	return ""
 }
