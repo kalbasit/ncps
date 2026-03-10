@@ -2134,7 +2134,16 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
+	// bodyOwned is set to true when a background goroutine takes ownership of
+	// resp.Body (CDC path). In that case the goroutine is responsible for
+	// draining and closing the body; the defer below must not touch it.
+	bodyOwned := false
+
 	defer func() {
+		if bodyOwned {
+			return
+		}
+
 		//nolint:errcheck
 		io.Copy(io.Discard, resp.Body)
 
@@ -2235,10 +2244,20 @@ func (c *Cache) pullNarIntoStore(
 	dsCompressed.tempFileCompression = downloadURL.Compression
 	dsCompressed.startOnce.Do(func() { close(dsCompressed.start) })
 
+	// Transfer resp.Body ownership to the background goroutine so the defer
+	// above does not race with this goroutine reading the same body.
+	bodyOwned = true
+
 	c.backgroundWG.Add(1)
 	analytics.SafeGo(ctx, func() {
 		defer c.backgroundWG.Done()
 		defer dsCompressed.cond.Broadcast()
+		defer func() {
+			//nolint:errcheck
+			io.Copy(io.Discard, resp.Body)
+
+			resp.Body.Close()
+		}()
 
 		if err := c.streamResponseToFile(ctx, resp, fCompressed, dsCompressed); err != nil {
 			dsCompressed.setError(err)
