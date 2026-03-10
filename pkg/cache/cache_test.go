@@ -2711,6 +2711,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
 	t.Run("HasNarFileRecord", testHasNarFileRecord(factory))
 	t.Run("BackgroundMigrateNarToChunksAfterCancellation", testBackgroundMigrateNarToChunksAfterCancellation(factory))
+	t.Run("GetNarWithPlaceholderNarFileRecord", testGetNarWithPlaceholderNarFileRecord(factory))
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
@@ -3091,6 +3092,101 @@ func testBackgroundMigrateNarToChunksAfterCancellation(factory cacheFactory) fun
 		hasChunks, err := c.HasNarInChunks(context.Background(), narURL)
 		require.NoError(t, err)
 		assert.True(t, hasChunks)
+	}
+}
+
+// testGetNarWithPlaceholderNarFileRecord tests that GetNar correctly handles a
+// placeholder nar_files DB record (total_chunks=0, chunking_started_at=NULL).
+//
+// Regression test for the bug where storeInDatabase creates a placeholder
+// nar_files record when a narinfo is pulled (before the NAR download begins).
+// If the NAR download subsequently fails, the placeholder record persists with
+// total_chunks=0 and chunking_started_at=NULL.
+//
+// Before the fix: prePullNar's hasAsset closure used HasNarFileRecord, which
+// returned true for any record — including placeholders. This caused
+// coordinateDownload to return a "completed" download state, leading GetNar
+// into getNarFromChunks → streamProgressiveChunks, which would poll for 30
+// seconds waiting for chunks that would never arrive.
+//
+// After the fix: hasAsset inspects ChunkingStartedAt. A NULL value means the
+// record is a placeholder (no active chunking), so hasAsset returns false and
+// a fresh download is triggered from the upstream.
+func testGetNarWithPlaceholderNarFileRecord(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		c, db, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Setup CDC
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+		c.SetChunkStore(cs)
+		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
+
+		entry := testdata.Nar1
+
+		// The nar_files record uses CompressionTypeNone because CDC stores
+		// all NARs decompressed. The hash matches the nar hash from the narinfo.
+		narURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}
+
+		// Insert a placeholder nar_files record: total_chunks=0, chunking_started_at=NULL.
+		// This simulates the state left behind when storeInDatabase succeeds but the
+		// subsequent NAR download fails (e.g., temp directory missing).
+		_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			Hash:        narURL.Hash,
+			Compression: narURL.Compression.String(),
+			Query:       narURL.Query.Encode(),
+			FileSize:    0,
+			TotalChunks: 0,
+			// ChunkingStartedAt is left as zero value → stored as NULL
+		})
+		require.NoError(t, err)
+
+		// Verify the placeholder record is there but not complete
+		hasChunks, err := c.HasNarInChunks(context.Background(), narURL)
+		require.NoError(t, err)
+		require.False(t, hasChunks, "placeholder record should not count as having chunks")
+
+		hasRecord, err := c.HasNarFileRecord(context.Background(), narURL)
+		require.NoError(t, err)
+		require.True(t, hasRecord, "placeholder record should exist in DB")
+
+		// Add upstream so GetNar can fetch the NAR
+		uc, err := upstream.New(context.Background(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		})
+		require.NoError(t, err)
+		c.AddUpstreamCaches(context.Background(), uc)
+		<-c.GetHealthChecker().Trigger()
+
+		// Call GetNarInfo first so the narinfo is in the database (needed for
+		// lookupOriginalNarURL / lookupPreferredUpstreamURL in the GetNar path).
+		// We do this in a way that blocks until the narinfo is stored.
+		_, err = c.GetNarInfo(context.Background(), entry.NarInfoHash)
+		require.NoError(t, err)
+
+		// Call GetNar with a short timeout. Without the fix, GetNar enters
+		// streamProgressiveChunks which waits 30s per chunk before timing out,
+		// so this context would expire well before GetNar returns.
+		// With the fix, hasAsset returns false for the placeholder, triggering a
+		// fresh download that completes quickly.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_, r, err := c.GetNar(ctx, nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression})
+		require.NoError(t, err,
+			"GetNar should succeed by triggering a fresh download, not getting stuck on the placeholder record")
+
+		defer r.Close()
+
+		body, err := io.ReadAll(r)
+		require.NoError(t, err)
+		assert.Equal(t, entry.NarText, string(body), "body should match the upstream NAR content")
 	}
 }
 

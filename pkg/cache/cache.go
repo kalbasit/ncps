@@ -3175,12 +3175,32 @@ func (c *Cache) prePullNar(
 				return true
 			}
 
-			// Check if NAR is already in chunks or being chunked.
-			// This prevents skipping the download if only a placeholder record exists.
+			// Check if NAR is already in chunks or actively being chunked.
+			// We distinguish three states using total_chunks and chunking_started_at:
+			//   - total_chunks > 0                        → fully chunked, treat as available
+			//   - total_chunks = 0, chunking_started_at set AND fresh → actively chunking on
+			//                                               another server, stream progressively
+			//   - total_chunks = 0, chunking_started_at NULL (placeholder from storeInDatabase)
+			//     OR chunking_started_at stale (>= TTL)  → not being chunked, trigger download
+			//
+			// This prevents treating placeholder nar_file records (created by storeInDatabase
+			// before NAR chunking starts) as "has asset", which would cause streamProgressiveChunks
+			// to wait 30s for chunks that never arrive, resulting in truncated NAR responses.
 			if c.isCDCEnabled() {
-				hasInRecord, _ := c.HasNarFileRecord(ctx, *narURL)
+				nr, err := c.getNarFileFromDB(ctx, c.db, *narURL)
+				if err != nil {
+					return false
+				}
 
-				return hasInRecord
+				if nr.TotalChunks > 0 {
+					return true
+				}
+
+				if nr.ChunkingStartedAt.Valid {
+					return time.Since(nr.ChunkingStartedAt.Time) < cdcChunkingLockTTL
+				}
+
+				return false
 			}
 
 			return false
