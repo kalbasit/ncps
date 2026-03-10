@@ -3386,18 +3386,7 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 	isBeingDownloadedRemotely := false
 
 	if !hasNar && !isBeingDownloadedLocally {
-		// Try to acquire the lock. If it fails, someone else has it.
-		// We use a very short TTL since we'll release it immediately if we get it.
-		locked, err := c.downloadLocker.TryLock(ctx, narJobKey(narURL.Hash), 10*time.Second)
-		if err == nil {
-			if !locked {
-				isBeingDownloadedRemotely = true
-			} else {
-				// We got the lock! No one else was downloading it.
-				// We must release it immediately.
-				_ = c.downloadLocker.Unlock(context.WithoutCancel(ctx), narJobKey(narURL.Hash))
-			}
-		}
+		isBeingDownloadedRemotely = c.isRemoteDownloadInProgress(ctx, narURL.Hash)
 	}
 
 	// Check if this narinfo should be purged
@@ -4395,6 +4384,31 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	_, narJobExists := c.upstreamJobs[narJobKey(hash)]
 
 	return narJobExists
+}
+
+func (c *Cache) isRemoteDownloadInProgress(ctx context.Context, hash string) bool {
+	// Try to acquire the lock. If it fails, someone else has it.
+	// We use a very short TTL since we'll release it immediately if we get it.
+	locked, err := c.downloadLocker.TryLock(ctx, narJobKey(hash), 10*time.Second)
+	if err != nil {
+		return false
+	}
+
+	if !locked {
+		return true
+	}
+
+	// We got the lock! No one else was downloading it remotely.
+	// We must release it immediately.
+	if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), narJobKey(hash)); err != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Str("hash", hash).
+			Msg("failed to unlock after TryLock check in isRemoteDownloadInProgress")
+	}
+
+	return false
 }
 
 // coordinateDownload manages distributed download coordination with lock acquisition,
