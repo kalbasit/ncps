@@ -73,8 +73,6 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
-github.com/kalbasit/fastcdc v0.0.0-20260304090259-077f78eb3e17 h1:qqwoPty8TbWLSzkbYLjY0MuUiabrwAoOkd0PU4gDd+I=
-github.com/kalbasit/fastcdc v0.0.0-20260304090259-077f78eb3e17/go.mod h1:A8VopLTLKIeERNhrz1WjKETOyBkVWTla/buFMAfZ11Y=
 github.com/kalbasit/fastcdc v0.0.0-20260308002450-b012891cc366 h1:aTcD8DIqMVFxhG/REUN5sExDJvniHcmipH6SNq9loew=
 github.com/kalbasit/fastcdc v0.0.0-20260308002450-b012891cc366/go.mod h1:ucTFfErjB1mkfrL4/UbuhsIluT/cyFhnEsqQMo4GPTE=
 github.com/kalbasit/sqlc-multi-db v0.0.0-20260301070214-5d0fdb8f30a6 h1:QxXks3sfoGr96sNJ4cAwBi0w7h7dzpT1HLZj47MKQD8=
