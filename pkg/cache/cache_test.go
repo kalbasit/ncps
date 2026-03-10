@@ -3178,7 +3178,7 @@ func testGetNarWithPlaceholderNarFileRecord(factory cacheFactory) func(*testing.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		_, r, err := c.GetNar(ctx, nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression})
+		_, _, r, err := c.GetNar(ctx, nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression})
 		require.NoError(t, err,
 			"GetNar should succeed by triggering a fresh download, not getting stuck on the placeholder record")
 
