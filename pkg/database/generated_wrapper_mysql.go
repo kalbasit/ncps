@@ -68,6 +68,12 @@ func (w *mysqlWrapper) AddNarInfoSignatures(ctx context.Context, arg AddNarInfoS
 	return nil
 }
 
+func (w *mysqlWrapper) ClearNarFileChunkingStarted(ctx context.Context, id int64) error {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	return w.adapter.ClearNarFileChunkingStarted(ctx, id)
+}
+
 func (w *mysqlWrapper) CreateChunk(ctx context.Context, arg CreateChunkParams) (Chunk, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
