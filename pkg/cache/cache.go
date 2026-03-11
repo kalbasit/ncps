@@ -2647,6 +2647,8 @@ func (c *Cache) getNarFromStore(
 		return nil
 	})
 	if err != nil {
+		r.Close()
+
 		return 0, nil, err
 	}
 
