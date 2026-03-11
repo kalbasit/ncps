@@ -58,8 +58,8 @@ type Locker interface {
 	// For local implementations, this is a no-op (local locks don't expire).
 	//
 	// For distributed implementations, extends the Redis key TTL using the
-	// original TTL value configured at lock acquisition time. Returns an error
-	// if the lock has already expired or is no longer held by this instance.
+	// specified TTL value. Returns an error if the lock has already expired
+	// or is no longer held by this instance.
 	//
 	// It is safe to call Extend with a key that was never locked (returns nil).
 	Extend(ctx context.Context, key string, ttl time.Duration) error

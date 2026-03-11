@@ -295,10 +295,10 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 }
 
 // Extend refreshes the TTL of an existing acquired lock.
-func (l *Locker) Extend(ctx context.Context, key string, _ time.Duration) error {
+func (l *Locker) Extend(ctx context.Context, key string, ttl time.Duration) error {
 	// If in degraded mode, delegate to fallback locker
 	if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
-		return l.fallbackLocker.Extend(ctx, key, 0)
+		return l.fallbackLocker.Extend(ctx, key, ttl)
 	}
 
 	l.mu.Lock()
