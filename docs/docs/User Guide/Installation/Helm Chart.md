@@ -519,6 +519,28 @@ serviceMonitor:
   scrapeTimeout: 10s
 ```
 
+### pprof
+
+```yaml
+config:
+  observability:
+    pprof:
+      enabled: true
+      addr: :6060
+```
+
+To access the pprof endpoint, you can use `kubectl port-forward`:
+
+```sh
+# For StatefulSet (default)
+kubectl port-forward -n ncps pod/ncps-0 6060:6060
+
+# For Deployment
+kubectl port-forward -n ncps deployment/ncps 6060:6060
+```
+
+Then you can access it at `http://localhost:6060/debug/pprof`.
+
 ## Resource Management
 
 ```yaml

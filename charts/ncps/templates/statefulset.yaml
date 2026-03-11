@@ -100,6 +100,10 @@ spec:
             - --cache-secret-key-path
             - /etc/ncps/secrets/signing-key
             {{- end }}
+            {{- if .Values.config.observability.pprof.enabled }}
+            - --pprof-addr
+            - {{ .Values.config.observability.pprof.addr | quote }}
+            {{- end }}
           env:
             {{- include "ncps.cacheDatabaseURLEnv" . | nindent 12 }}
             {{- if and (eq .Values.config.storage.type "s3") (or .Values.config.storage.s3.existingSecret (and .Values.config.storage.s3.accessKeyId .Values.config.storage.s3.secretAccessKey)) }}
@@ -150,6 +154,11 @@ spec:
             - name: http
               containerPort: {{ .Values.config.server.addr | trimPrefix ":" | regexFind "[0-9]+$" | atoi }}
               protocol: TCP
+            {{- if .Values.config.observability.pprof.enabled }}
+            - name: pprof
+              containerPort: {{ .Values.config.observability.pprof.addr | trimPrefix ":" | regexFind "[0-9]+$" | atoi }}
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
