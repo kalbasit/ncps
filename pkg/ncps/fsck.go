@@ -16,7 +16,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
