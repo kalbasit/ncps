@@ -149,13 +149,6 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 		return false, 0, err
 	}
 
-	// Use pooled encoder
-	enc := zstd.GetWriter()
-	defer zstd.PutWriter(enc)
-
-	// Compress data with zstd
-	compressed := enc.EncodeAll(data, nil)
-
 	// Write to temporary file first to ensure atomicity
 	tmpFile, err := os.CreateTemp(dir, "chunk-*")
 	if err != nil {
@@ -163,7 +156,17 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 	}
 	defer os.Remove(tmpFile.Name()) // Ensure temp file is cleaned up
 
-	if _, err = tmpFile.Write(compressed); err == nil {
+	// Use pooled encoder in streaming mode (Reset+Write+Close reuses encoder state,
+	// avoiding the per-call internal allocations that EncodeAll would create).
+	pw := zstd.NewPooledWriter(tmpFile)
+
+	if _, err = pw.Write(data); err == nil {
+		err = pw.Close()
+	} else {
+		_ = pw.Close()
+	}
+
+	if err == nil {
 		err = tmpFile.Sync()
 	}
 
@@ -175,16 +178,23 @@ func (s *localStore) PutChunk(_ context.Context, hash string, data []byte) (bool
 		return false, 0, err
 	}
 
+	fi, err := os.Stat(tmpFile.Name())
+	if err != nil {
+		return false, 0, err
+	}
+
+	compressedSize := fi.Size()
+
 	if err := os.Link(tmpFile.Name(), path); err != nil {
 		if os.IsExist(err) {
 			// Chunk already exists, which is fine. We didn't create it.
-			return false, int64(len(compressed)), nil
+			return false, compressedSize, nil
 		}
 
 		return false, 0, err // Some other error
 	}
 
-	return true, int64(len(compressed)), nil
+	return true, compressedSize, nil
 }
 
 func (s *localStore) DeleteChunk(_ context.Context, hash string) error {
