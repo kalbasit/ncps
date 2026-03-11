@@ -140,7 +140,13 @@ spec:
                   key: {{ if .Values.config.redis.existingSecret }}"password"{{ else }}"redis-password"{{ end }}
             {{- end }}
             {{- end }}
-            {{- if and .Values.resources .Values.resources.limits .Values.resources.limits.memory }}
+            {{- $scratch := dict "gomemlimitDefined" false }}
+            {{- range .Values.extraEnvVars }}
+              {{- if eq .name "GOMEMLIMIT" }}
+                {{- $_ := set $scratch "gomemlimitDefined" true }}
+              {{- end }}
+            {{- end }}
+            {{- if and .Values.resources .Values.resources.limits .Values.resources.limits.memory (not (get $scratch "gomemlimitDefined")) }}
             - name: GOMEMLIMIT
               valueFrom:
                 resourceFieldRef:
