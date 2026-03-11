@@ -26,6 +26,7 @@ import (
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 	storageS3 "github.com/kalbasit/ncps/pkg/storage/s3"
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	netpprof "net/http/pprof"
 
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache"
@@ -283,6 +284,12 @@ func serveCommand(
 				Sources: flagSources("server.addr", "SERVER_ADDR"),
 				Value:   ":8501",
 			},
+			&cli.StringFlag{
+				Name:    "pprof-addr",
+				Usage:   "Address to listen on for pprof profiling endpoints (e.g. :6060). Empty disables pprof.",
+				Sources: flagSources("pprof.addr", "PPROF_ADDR"),
+				Value:   "",
+			},
 
 			// Redis Configuration (optional - for distributed locking in HA deployments)
 			&cli.StringSliceFlag{
@@ -508,6 +515,31 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			logger.
 				Info().
 				Msg("Prometheus metrics enabled at /metrics")
+		}
+
+		if pprofAddr := cmd.String("pprof-addr"); pprofAddr != "" {
+			pprofMux := http.NewServeMux()
+			pprofMux.HandleFunc("/debug/pprof/", netpprof.Index)
+			pprofMux.HandleFunc("/debug/pprof/cmdline", netpprof.Cmdline)
+			pprofMux.HandleFunc("/debug/pprof/profile", netpprof.Profile)
+			pprofMux.HandleFunc("/debug/pprof/symbol", netpprof.Symbol)
+			pprofMux.HandleFunc("/debug/pprof/trace", netpprof.Trace)
+
+			pprofServer := &http.Server{
+				Addr:              pprofAddr,
+				Handler:           pprofMux,
+				ReadHeaderTimeout: 10 * time.Second,
+			}
+
+			go func() {
+				if err := pprofServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					logger.Error().Err(err).Msg("pprof server error")
+				}
+			}()
+
+			registerShutdown("pprof", pprofServer.Shutdown)
+
+			logger.Info().Str("pprof_addr", pprofAddr).Msg("pprof profiling enabled")
 		}
 
 		analyticsReporter := analytics.Ctx(ctx) // get the noop reporter

@@ -351,6 +351,13 @@ config:
     prometheus:
       enabled: false
 
+    # pprof profiling
+    pprof:
+      # Enable pprof profiling endpoint
+      enabled: false
+      # pprof listen address
+      addr: ":6060"
+
 service:
   type: ClusterIP
   port: 8501
