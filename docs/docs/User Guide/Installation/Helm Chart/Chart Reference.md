@@ -268,6 +268,21 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `resources.requests.cpu` | CPU request | `100m` |
 | `resources.requests.memory` | Memory request | `256Mi` |
 
+> [!NOTE]
+> **GOMEMLIMIT**
+>
+> When `resources.limits.memory` is set, the chart automatically injects a `GOMEMLIMIT` environment variable equal to the container's memory limit using the Kubernetes Downward API. This causes Go's garbage collector to run more aggressively as memory approaches the limit, preventing OOM kills.
+>
+> Setting `GOMEMLIMIT` to the full container limit is the [recommended approach](https://go.dev/doc/gc-guide#Memory_limit) for containerized Go services. The soft limit means Go targets staying _under_ the value — it does not cause the process to allocate up to that amount. Non-Go memory overhead (goroutine stacks, OS allocations) is negligible for ncps since it uses no CGo.
+>
+> If you want headroom below the container limit (e.g., to account for sidecar containers sharing the pod's memory), override the value via `extraEnvVars`:
+>
+> ```yaml
+> extraEnvVars:
+>   - name: GOMEMLIMIT
+>     value: "9663676416"  # 9GiB when container limit is 10GiB
+> ```
+
 ### Monitoring
 
 | Parameter | Description | Default |
