@@ -3,6 +3,7 @@ package zstd
 
 import (
 	"io"
+	"runtime"
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
@@ -69,6 +70,16 @@ var readerPool = sync.Pool{
 		// Not providing any options will use the default decompression settings.
 		// The error is ignored as NewReader(nil) with no options doesn't error.
 		dec, _ := zstd.NewReader(nil)
+
+		// The zstd.Decoder spawns background goroutines that hold a reference to
+		// the decoder, preventing it from being garbage collected after sync.Pool
+		// clears the entry (via the GC victim cache). Without this finalizer, cleared
+		// pool entries accumulate as orphaned decoders, causing linear memory growth
+		// proportional to throughput (~10 GB/hr under load).
+		//
+		// The finalizer calls Close() when the decoder becomes unreachable, stopping
+		// the background goroutines and allowing the decoder to be collected.
+		runtime.SetFinalizer(dec, (*zstd.Decoder).Close)
 
 		return dec
 	},
