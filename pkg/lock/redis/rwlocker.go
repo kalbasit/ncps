@@ -20,6 +20,34 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock/local"
 )
 
+const (
+	// unlockScript is a Lua script that deletes a key if its value matches the provided token.
+	// Returns 1 if deleted, 0 otherwise.
+	unlockScript = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+`
+
+	// extendScript is a Lua script that extends the TTL of a key if its value matches the provided token.
+	// Returns 1 if extended, 0 if the key doesn't exist or token mismatch.
+	extendScript = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("pexpire", KEYS[1], ARGV[2])
+else
+    return 0
+end
+`
+)
+
+// writeLockToken stores the unique token and original TTL for a write lock.
+type writeLockToken struct {
+	token string
+	ttl   time.Duration
+}
+
 // RWLocker implements lock.RWLocker using Redis sets for readers.
 type RWLocker struct {
 	client            redis.UniversalClient // Supports both single-node and cluster
@@ -40,6 +68,9 @@ type RWLocker struct {
 	// Track lock acquisition times for duration metrics (write locks only)
 	// Note: Read lock duration tracking is not supported due to concurrent access
 	writeAcquisitionTimes sync.Map
+
+	// writeLockTokens tracks unique tokens for write locks to ensure safe Unlock and Extend
+	writeLockTokens sync.Map
 }
 
 // NewRWLocker creates a new Redis-based read-write locker.
@@ -157,8 +188,11 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 			}
 		}
 
+		// Generate unique token for this write lock attempt
+		token := rw.generateToken()
+
 		// Try to acquire writer lock
-		success, err := rw.client.SetNX(ctx, writerKey, "1", ttl).Result()
+		success, err := rw.client.SetNX(ctx, writerKey, token, ttl).Result()
 		if err != nil {
 			lastErr = err
 
@@ -183,6 +217,9 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 			continue
 		}
 
+		// Store token and TTL for safe Unlock and Extend
+		rw.writeLockTokens.Store(key, &writeLockToken{token: token, ttl: ttl})
+
 		// Wait for all readers to finish
 		deadline := time.Now().Add(ttl)
 
@@ -190,7 +227,8 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 			// Get all readers and their expiration times (stored as hash)
 			readers, err := rw.client.HGetAll(ctx, readersKey).Result()
 			if err != nil {
-				rw.client.Del(ctx, writerKey) // Clean up
+				rw.client.Eval(ctx, unlockScript, []string{writerKey}, token) // Clean up safely
+				rw.writeLockTokens.Delete(key)
 
 				lastErr = fmt.Errorf("error checking readers: %w", err)
 
@@ -237,7 +275,8 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 			}
 
 			if time.Now().After(deadline) {
-				rw.client.Del(ctx, writerKey) // Clean up
+				rw.client.Eval(ctx, unlockScript, []string{writerKey}, token) // Clean up safely
+				rw.writeLockTokens.Delete(key)
 
 				lastErr = ErrReadersTimeout
 
@@ -246,7 +285,8 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 
 			select {
 			case <-ctx.Done():
-				rw.client.Del(ctx, writerKey) // Clean up
+				rw.client.Eval(ctx, unlockScript, []string{writerKey}, token) // Clean up safely
+				rw.writeLockTokens.Delete(key)
 
 				lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureContextCanceled)
 
@@ -261,6 +301,36 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 
 	return fmt.Errorf("failed to acquire write lock after %d attempts: %w",
 		rw.retryConfig.MaxAttempts, lastErr)
+}
+
+// Extend refreshes the TTL of an existing acquired write lock.
+func (rw *RWLocker) Extend(ctx context.Context, key string) error {
+	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
+		return rw.fallbackLocker.Extend(ctx, key)
+	}
+
+	// Get token to prove ownership
+	tokenVal, ok := rw.writeLockTokens.Load(key)
+	if !ok {
+		// Lock not found — already released or never acquired.
+		// Per interface documentation, this is safe and should return nil.
+		return nil
+	}
+
+	lt := tokenVal.(*writeLockToken)
+	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
+
+	// Use Lua script to extend only if we still own the lock
+	result, err := rw.client.Eval(ctx, extendScript, []string{writerKey}, lt.token, lt.ttl.Milliseconds()).Int64()
+	if err != nil {
+		return fmt.Errorf("failed to extend write lock %s: %w", key, err)
+	}
+
+	if result == 0 {
+		return fmt.Errorf("failed to extend write lock %s: %w", key, ErrExtendLockNotFound)
+	}
+
+	return nil
 }
 
 // calculateBackoff calculates the backoff delay with exponential backoff and optional jitter.
@@ -301,7 +371,18 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 	// Use hash tag to ensure key lands on same cluster node
 	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
 
-	return rw.client.Del(ctx, writerKey).Err()
+	// Get token to prove ownership
+	tokenVal, ok := rw.writeLockTokens.LoadAndDelete(key)
+	if !ok {
+		// If we don't have the token, we can't safely unlock
+		// This can happen if Lock failed but Unlock is still called
+		return nil
+	}
+
+	lt := tokenVal.(*writeLockToken)
+
+	// Use Lua script to unlock only if we still own the lock
+	return rw.client.Eval(ctx, unlockScript, []string{writerKey}, lt.token).Err()
 }
 
 // TryLock attempts to acquire an exclusive write lock without blocking.
@@ -320,8 +401,11 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
 	readersKey := fmt.Sprintf("%s{%s}:readers", rw.keyPrefix, key)
 
+	// Generate unique token for this write lock attempt
+	token := rw.generateToken()
+
 	// Try to acquire writer lock
-	success, err := rw.client.SetNX(ctx, writerKey, "1", ttl).Result()
+	success, err := rw.client.SetNX(ctx, writerKey, token, ttl).Result()
 	if err != nil {
 		if isConnectionError(err) {
 			rw.circuitBreaker.RecordFailure()
@@ -347,7 +431,7 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 	// Check if there are any active readers
 	readers, err := rw.client.HGetAll(ctx, readersKey).Result()
 	if err != nil {
-		rw.client.Del(ctx, writerKey) // Clean up
+		rw.client.Eval(ctx, unlockScript, []string{writerKey}, token) // Clean up safely
 
 		lock.RecordLockFailure(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockFailureRedisError)
 
@@ -376,12 +460,15 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 	}
 
 	if activeReaders > 0 {
-		rw.client.Del(ctx, writerKey) // Clean up, readers present
+		rw.client.Eval(ctx, unlockScript, []string{writerKey}, token) // Clean up safely, readers present
 
 		lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultContention)
 
 		return false, nil
 	}
+
+	// Store token and TTL for safe Unlock and Extend
+	rw.writeLockTokens.Store(key, &writeLockToken{token: token, ttl: ttl})
 
 	rw.circuitBreaker.RecordSuccess()
 
@@ -488,6 +575,14 @@ func (rw *RWLocker) getOrCreateReaderID() string {
 	}
 
 	return rw.readerID
+}
+
+// generateToken returns a unique token for a lock.
+func (rw *RWLocker) generateToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b) // crypto/rand.Read always returns err == nil
+
+	return hex.EncodeToString(b)
 }
 
 // isConnectionError checks if an error is a connection error.
