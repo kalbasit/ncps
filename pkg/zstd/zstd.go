@@ -3,7 +3,6 @@ package zstd
 
 import (
 	"io"
-	"runtime"
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
@@ -56,34 +55,29 @@ func PutWriter(enc *zstd.Encoder) {
 	}
 }
 
-// readerPool manages a pool of zstd.Decoder instances for reuse.
-// This pool is used to reduce allocation overhead when creating multiple
-// decompression readers. Decoders are reset before being returned to the pool
-// and are ready for immediate reuse.
+// maxIdleDecoders is the maximum number of idle zstd.Decoder instances to keep
+// in the pool. Each decoder holds ~1-2MB of memory and a background goroutine.
+// Using a bounded channel pool (instead of sync.Pool) ensures excess decoders
+// are explicitly closed, stopping their background goroutines and freeing memory.
+const maxIdleDecoders = 16
+
+// readerPool is a bounded channel pool of zstd.Decoder instances.
 //
-// The pool uses the default decompression settings (no options specified).
-// For custom decompression settings, create decoders directly with zstd.NewReader.
+// A sync.Pool was previously used here, but it caused a memory leak: each
+// zstd.Decoder (without WithDecoderConcurrency(1)) spawns a background goroutine
+// that holds a closure reference back to the decoder (circular reference). This
+// prevents the GC from ever marking the decoder as unreachable, so
+// runtime.SetFinalizer never fires and the goroutines accumulate linearly with
+// throughput.
+//
+// Decoders are now created with WithDecoderConcurrency(1), which eliminates the
+// background goroutine entirely. The bounded channel pool is still used (rather
+// than reverting to sync.Pool) to give deterministic memory bounds at idle and
+// avoid GC churn from frequent pool evictions under sustained load. When the pool
+// is full, dec.Close() is called to release decoder memory immediately.
 //
 //nolint:gochecknoglobals
-var readerPool = sync.Pool{
-	New: func() any {
-		// Not providing any options will use the default decompression settings.
-		// The error is ignored as NewReader(nil) with no options doesn't error.
-		dec, _ := zstd.NewReader(nil)
-
-		// The zstd.Decoder spawns background goroutines that hold a reference to
-		// the decoder, preventing it from being garbage collected after sync.Pool
-		// clears the entry (via the GC victim cache). Without this finalizer, cleared
-		// pool entries accumulate as orphaned decoders, causing linear memory growth
-		// proportional to throughput (~10 GB/hr under load).
-		//
-		// The finalizer calls Close() when the decoder becomes unreachable, stopping
-		// the background goroutines and allowing the decoder to be collected.
-		runtime.SetFinalizer(dec, (*zstd.Decoder).Close)
-
-		return dec
-	},
-}
+var readerPool = make(chan *zstd.Decoder, maxIdleDecoders)
 
 // GetReader retrieves a zstd.Decoder from the pool, or creates a new one
 // if the pool is empty. The caller must call PutReader or use NewPooledReader
@@ -98,7 +92,19 @@ var readerPool = sync.Pool{
 //	dec.Reset(reader)
 //	data, err := io.ReadAll(dec)
 func GetReader() *zstd.Decoder {
-	return readerPool.Get().(*zstd.Decoder)
+	select {
+	case dec := <-readerPool:
+		return dec
+	default:
+		// WithDecoderConcurrency(1) eliminates the background goroutine entirely.
+		// From the klauspost/compress docs: "If n is 1, operations are performed
+		// inline, without goroutines." This prevents per-decoder goroutine and
+		// history buffer (~8MB each) accumulation under high NAR fetch concurrency.
+		// The error is ignored as NewReader(nil) with these options doesn't error.
+		dec, _ := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+
+		return dec
+	}
 }
 
 // PutReader returns a zstd.Decoder to the pool for reuse.
@@ -108,9 +114,17 @@ func GetReader() *zstd.Decoder {
 // Always pair calls to GetReader with PutReader in a defer statement
 // or ensure it's called in all code paths.
 func PutReader(dec *zstd.Decoder) {
-	if dec != nil {
-		_ = dec.Reset(nil)
-		readerPool.Put(dec)
+	if dec == nil {
+		return
+	}
+
+	_ = dec.Reset(nil)
+
+	select {
+	case readerPool <- dec:
+		// returned to pool
+	default:
+		dec.Close() // pool full; close to stop background goroutine and free memory
 	}
 }
 
