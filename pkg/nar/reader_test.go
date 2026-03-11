@@ -216,3 +216,64 @@ func TestCloserWrapper(t *testing.T) {
 	err = cw.Close()
 	assert.NoError(t, err)
 }
+
+type trackCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (t *trackCloser) Close() error {
+	t.closed = true
+
+	return nil
+}
+
+func TestDecompressReader_ClosesUnderlyingReader(t *testing.T) {
+	t.Parallel()
+
+	content := []byte("hello world")
+
+	tests := []struct {
+		name string
+		comp nar.CompressionType
+		data func() []byte
+	}{
+		{
+			name: "None",
+			comp: nar.CompressionTypeNone,
+			data: func() []byte { return content },
+		},
+		{
+			name: "Zstd",
+			comp: nar.CompressionTypeZstd,
+			data: func() []byte {
+				var buf bytes.Buffer
+
+				pw := zstd.NewPooledWriter(&buf)
+				_, _ = pw.Write(content)
+				_ = pw.Close()
+
+				return buf.Bytes()
+			},
+		},
+		// No need to test all, the logic is generic for any dr != nil
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tc := &trackCloser{Reader: bytes.NewReader(tt.data())}
+			r, err := nar.DecompressReader(context.Background(), tc, tt.comp)
+			require.NoError(t, err)
+
+			_, err = io.ReadAll(r)
+			require.NoError(t, err)
+
+			err = r.Close()
+			require.NoError(t, err)
+
+			assert.True(t, tc.closed, "Underlying reader should be closed")
+		})
+	}
+}

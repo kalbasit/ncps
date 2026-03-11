@@ -482,6 +482,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 	if resp.StatusCode != http.StatusOK {
 		//nolint:errcheck
 		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, ErrNotFound
@@ -513,10 +514,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 			return nil, fmt.Errorf("failed to create zstd reader for NAR response: %w", err)
 		}
 
-		resp.Body = &zstdBodyCloser{
-			zstdReader: zr,
-			bodyCloser: originalBody,
-		}
+		resp.Body = helper.NewMultiReadCloser(zr, zr, originalBody)
 		resp.Header.Del("Content-Encoding")
 		resp.Header.Del("Content-Length")
 		resp.ContentLength = -1
@@ -638,26 +636,4 @@ func isTimeout(err error) bool {
 	var netErr net.Error
 
 	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
-}
-
-// zstdBodyCloser wraps a zstd reader and the original body to ensure both are closed.
-type zstdBodyCloser struct {
-	zstdReader io.ReadCloser
-	bodyCloser io.ReadCloser
-}
-
-func (z *zstdBodyCloser) Read(p []byte) (int, error) {
-	return z.zstdReader.Read(p)
-}
-
-func (z *zstdBodyCloser) Close() error {
-	// Close both. Return first error.
-	err1 := z.zstdReader.Close()
-	err2 := z.bodyCloser.Close()
-
-	if err1 != nil {
-		return err1
-	}
-
-	return err2
 }
