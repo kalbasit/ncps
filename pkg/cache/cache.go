@@ -4764,8 +4764,13 @@ func (c *Cache) coordinateDownload(
 		}
 	}
 
+	// Start a background goroutine to refresh the lock TTL periodically.
+	stopRefresher := lock.StartRefresher(ctx, c.downloadLocker, lockKey, c.downloadLockTTL)
+
 	// Double check local jobs and asset presence under lock
 	if hasAsset(ctx) {
+		stopRefresher()
+
 		// Release the lock before returning
 		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
@@ -4829,6 +4834,8 @@ func (c *Cache) coordinateDownload(
 	//   This allows immediate streaming to clients while preventing other instances
 	//   from starting redundant downloads. The lock is held until storage completes.
 	if waitForStorage {
+		stopRefresher()
+
 		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
@@ -4840,6 +4847,7 @@ func (c *Cache) coordinateDownload(
 		c.backgroundWG.Add(1)
 		analytics.SafeGo(ctx, func() {
 			defer c.backgroundWG.Done()
+			defer stopRefresher()
 
 			select {
 			case <-ds.stored:

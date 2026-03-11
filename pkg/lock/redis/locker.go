@@ -294,6 +294,29 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 	return nil
 }
 
+// Extend refreshes the TTL of an existing acquired lock.
+func (l *Locker) Extend(ctx context.Context, key string, _ time.Duration) error {
+	// If in degraded mode, delegate to fallback locker
+	if !l.circuitBreaker.AllowRequest() && l.allowDegradedMode {
+		return l.fallbackLocker.Extend(ctx, key, 0)
+	}
+
+	l.mu.Lock()
+	mutex, ok := l.mutexes[key]
+	l.mu.Unlock()
+
+	if !ok {
+		// Lock not found — already released or never acquired
+		return nil
+	}
+
+	if ok, err := mutex.ExtendContext(ctx); !ok || err != nil {
+		return fmt.Errorf("failed to extend lock %s: %w", key, err)
+	}
+
+	return nil
+}
+
 // TryLock attempts to acquire an exclusive lock without retries.
 func (l *Locker) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	// Check circuit breaker

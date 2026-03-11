@@ -475,3 +475,43 @@ func TestRWLocker_TryLockWithReaders(t *testing.T) {
 	err = locker2.Unlock(ctx, key)
 	require.NoError(t, err)
 }
+
+func TestLocker_Extend_Success(t *testing.T) {
+	t.Parallel()
+	skipIfRedisNotAvailable(t)
+
+	ctx := context.Background()
+	cfg := getTestConfig()
+	retryCfg := getTestRetryConfig()
+
+	locker, err := redis.NewLocker(ctx, cfg, retryCfg, false)
+	require.NoError(t, err)
+
+	key := getUniqueKey(t, "extend-success")
+
+	err = locker.Lock(ctx, key, 10*time.Second)
+	require.NoError(t, err)
+
+	// Extend should succeed while lock is held
+	err = locker.Extend(ctx, key, 10*time.Second)
+	require.NoError(t, err)
+
+	err = locker.Unlock(ctx, key)
+	require.NoError(t, err)
+}
+
+func TestLocker_Extend_UnknownKey(t *testing.T) {
+	t.Parallel()
+	skipIfRedisNotAvailable(t)
+
+	ctx := context.Background()
+	cfg := getTestConfig()
+	retryCfg := getTestRetryConfig()
+
+	locker, err := redis.NewLocker(ctx, cfg, retryCfg, false)
+	require.NoError(t, err)
+
+	// Extend on a key that was never locked — should return nil gracefully
+	err = locker.Extend(ctx, "never-locked-key", 10*time.Second)
+	assert.NoError(t, err)
+}

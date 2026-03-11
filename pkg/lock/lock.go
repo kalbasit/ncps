@@ -52,6 +52,17 @@ type Locker interface {
 	//   - (false, nil) if the lock is held by someone else
 	//   - (false, error) if an error occurred
 	TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error)
+
+	// Extend refreshes the TTL of an existing acquired lock.
+	//
+	// For local implementations, this is a no-op (local locks don't expire).
+	//
+	// For distributed implementations, extends the Redis key TTL using the
+	// original TTL value configured at lock acquisition time. Returns an error
+	// if the lock has already expired or is no longer held by this instance.
+	//
+	// It is safe to call Extend with a key that was never locked (returns nil).
+	Extend(ctx context.Context, key string, ttl time.Duration) error
 }
 
 // RWLocker provides read-write locking semantics.

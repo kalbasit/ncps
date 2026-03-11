@@ -114,6 +114,11 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 	return acquired, nil
 }
 
+// Extend is a no-op for local locks (they don't expire).
+func (rw *RWLocker) Extend(_ context.Context, _ string, _ time.Duration) error {
+	return nil
+}
+
 // RLock acquires a shared read lock. The ttl parameter is ignored.
 func (rw *RWLocker) RLock(ctx context.Context, key string, _ time.Duration) error {
 	kl := rw.getLock(key)

@@ -328,6 +328,10 @@ func (m *mockLocker) TryLock(_ context.Context, _ string, _ time.Duration) (bool
 	return m.lockErr == nil, m.lockErr
 }
 
+func (m *mockLocker) Extend(_ context.Context, _ string, _ time.Duration) error {
+	return nil
+}
+
 func TestS3Store_PutChunk_LockFailure(t *testing.T) {
 	t.Parallel()
 

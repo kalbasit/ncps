@@ -263,6 +263,26 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 		rw.retryConfig.MaxAttempts, lastErr)
 }
 
+// Extend refreshes the TTL of an existing acquired write lock.
+func (rw *RWLocker) Extend(ctx context.Context, key string, ttl time.Duration) error {
+	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
+		return rw.fallbackLocker.Extend(ctx, key, ttl)
+	}
+
+	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
+
+	result, err := rw.client.Expire(ctx, writerKey, ttl).Result()
+	if err != nil {
+		return fmt.Errorf("failed to extend write lock %s: %w", key, err)
+	}
+
+	if !result {
+		return fmt.Errorf("failed to extend write lock %s: %w", key, ErrExtendLockNotFound)
+	}
+
+	return nil
+}
+
 // calculateBackoff calculates the backoff delay with exponential backoff and optional jitter.
 func (rw *RWLocker) calculateBackoff(attempt int) time.Duration {
 	// Exponential backoff: initialDelay * 2^attempt

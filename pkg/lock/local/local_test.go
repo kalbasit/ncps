@@ -405,3 +405,36 @@ func TestRWLocker_ConcurrentRUnlock(t *testing.T) {
 	close(start)
 	wg.Wait()
 }
+
+func TestLocker_Extend_NoOp(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewLocker()
+
+	// Extend on a locked key — always returns nil
+	err := locker.Lock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	assert.NoError(t, locker.Extend(ctx, "test-key", 5*time.Second))
+	assert.NoError(t, locker.Extend(ctx, "unknown-key", 5*time.Second))
+
+	err = locker.Unlock(ctx, "test-key")
+	require.NoError(t, err)
+}
+
+func TestRWLocker_Extend_NoOp(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	locker := local.NewRWLocker()
+
+	err := locker.Lock(ctx, "test-key", 5*time.Second)
+	require.NoError(t, err)
+
+	assert.NoError(t, locker.Extend(ctx, "test-key", 5*time.Second))
+	assert.NoError(t, locker.Extend(ctx, "unknown-key", 5*time.Second))
+
+	err = locker.Unlock(ctx, "test-key")
+	require.NoError(t, err)
+}
