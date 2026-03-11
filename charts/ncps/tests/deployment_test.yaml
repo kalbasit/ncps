@@ -503,3 +503,70 @@ tests:
       - equal:
           path: spec.strategy.type
           value: Recreate
+
+  # GOMEMLIMIT tests
+  - it: should set GOMEMLIMIT from memory limit in Deployment
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      resources:
+        limits:
+          memory: 4Gi
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOMEMLIMIT
+            valueFrom:
+              resourceFieldRef:
+                resource: limits.memory
+
+  - it: should not set GOMEMLIMIT when no memory limit in Deployment
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOMEMLIMIT
+
+  - it: should set GOMEMLIMIT from memory limit in StatefulSet
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+      resources:
+        limits:
+          memory: 8Gi
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOMEMLIMIT
+            valueFrom:
+              resourceFieldRef:
+                resource: limits.memory
+
+  - it: should not set GOMEMLIMIT when no memory limit in StatefulSet
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOMEMLIMIT
