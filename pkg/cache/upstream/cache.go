@@ -482,6 +482,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 	if resp.StatusCode != http.StatusOK {
 		//nolint:errcheck
 		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, ErrNotFound
