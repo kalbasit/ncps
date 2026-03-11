@@ -38,6 +38,7 @@ DB_CONFIG = {
 
 REDIS_ADDR = "127.0.0.1:6379"
 BASE_PORT = 8501
+PPROF_BASE_PORT = 7501
 
 # Colors
 GREEN = "\033[0;32m"
@@ -608,6 +609,7 @@ def main():
 
     for i in range(1, num_instances + 1):
         port = BASE_PORT + (i - 1)
+        pprof_port = PPROF_BASE_PORT + (i - 1)
 
         # Instead of calling 'go run .' directly, we call ourselves with the internal flag
         # This wrapper handles log rotation and redirection.
@@ -657,6 +659,7 @@ def main():
             "--cache-hostname=cache.example.com",
             f"--cache-database-url='{db_url}'",
             f"--server-addr=:{port}",
+            f"--pprof-addr=:{pprof_port}",
         ]
 
         if bool(args.cache_url) != bool(args.cache_public_key):

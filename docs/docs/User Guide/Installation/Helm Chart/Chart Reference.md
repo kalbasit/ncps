@@ -231,6 +231,8 @@ When `config.redis.enabled=true`, the chart automatically sets the lock backend 
 | `config.observability.opentelemetry.enabled` | Enable OpenTelemetry | `false` |
 | `config.observability.opentelemetry.grpcURL` | OTLP gRPC collector URL | `""` |
 | `config.observability.prometheus.enabled` | Enable Prometheus metrics | `false` |
+| `config.observability.pprof.enabled` | Enable pprof profiling endpoint | `false` |
+| `config.observability.pprof.addr` | pprof listen address | `:6060` |
 
 ### Service Configuration
 
