@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/kalbasit/ncps/pkg/analytics"
 )
 
 // StartRefresher starts a background goroutine that periodically extends the
@@ -30,7 +32,7 @@ func StartRefresher(ctx context.Context, locker Locker, key string, ttl time.Dur
 		once.Do(func() { close(stopCh) })
 	}
 
-	go func() {
+	analytics.SafeGo(ctx, func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
@@ -50,7 +52,7 @@ func StartRefresher(ctx context.Context, locker Locker, key string, ttl time.Dur
 				}
 			}
 		}
-	}()
+	})
 
 	return stop
 }

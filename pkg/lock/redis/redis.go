@@ -25,6 +25,7 @@ var (
 	ErrReadersTimeout          = errors.New("timeout waiting for readers to finish")
 	ErrWriteLockTimeout        = errors.New("timeout waiting for write lock to clear")
 	ErrExtendLockNotFound      = errors.New("write lock key does not exist")
+	ErrInvalidTTLType          = errors.New("invalid stored TTL type")
 )
 
 // Config holds Redis configuration for distributed locking.

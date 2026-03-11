@@ -40,6 +40,9 @@ type RWLocker struct {
 	// Track lock acquisition times for duration metrics (write locks only)
 	// Note: Read lock duration tracking is not supported due to concurrent access
 	writeAcquisitionTimes sync.Map
+
+	// Track write lock TTLs for extension
+	writeLockTTLs sync.Map
 }
 
 // NewRWLocker creates a new Redis-based read-write locker.
@@ -232,6 +235,7 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 				// Record successful acquisition
 				lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultSuccess)
 				rw.writeAcquisitionTimes.Store(key, time.Now())
+				rw.writeLockTTLs.Store(key, ttl)
 
 				return nil
 			}
@@ -264,9 +268,21 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 }
 
 // Extend refreshes the TTL of an existing acquired write lock.
-func (rw *RWLocker) Extend(ctx context.Context, key string, ttl time.Duration) error {
+func (rw *RWLocker) Extend(ctx context.Context, key string, _ time.Duration) error {
 	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
-		return rw.fallbackLocker.Extend(ctx, key, ttl)
+		return rw.fallbackLocker.Extend(ctx, key, 0)
+	}
+
+	// Use original TTL if available, otherwise fallback to parameter (though parameter is ignored in Locker.Extend)
+	val, ok := rw.writeLockTTLs.Load(key)
+	if !ok {
+		// If we don't have the TTL, the lock might not be held or was acquired elsewhere
+		return fmt.Errorf("failed to extend write lock %s: %w", key, ErrExtendLockNotFound)
+	}
+
+	ttl, ok := val.(time.Duration)
+	if !ok {
+		return fmt.Errorf("failed to extend write lock %s: %w", key, ErrInvalidTTLType)
 	}
 
 	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
@@ -313,6 +329,9 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 			lock.RecordLockDuration(ctx, lock.LockTypeWrite, lock.LockModeDistributed, duration)
 		}
 	}
+
+	// Remove stored TTL
+	rw.writeLockTTLs.Delete(key)
 
 	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
 		return rw.fallbackLocker.Unlock(ctx, key)
@@ -408,6 +427,7 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 	// Record successful acquisition
 	lock.RecordLockAcquisition(ctx, lock.LockTypeWrite, lock.LockModeDistributed, lock.LockResultSuccess)
 	rw.writeAcquisitionTimes.Store(key, time.Now())
+	rw.writeLockTTLs.Store(key, ttl)
 
 	return true, nil
 }
