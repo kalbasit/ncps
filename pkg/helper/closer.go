@@ -20,7 +20,7 @@ func NewMultiReadCloser(r io.Reader, closers ...io.Closer) io.ReadCloser {
 	}
 }
 
-// Close calls Close() on all underlying closers. It returns the first error encountered.
+// Close calls Close() on all underlying closers. It returns an error that wraps all errors encountered.
 func (m *MultiReadCloser) Close() error {
 	var errs []error
 
