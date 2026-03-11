@@ -25,7 +25,7 @@ import (
 	s3config "github.com/kalbasit/ncps/pkg/s3"
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 	storageS3 "github.com/kalbasit/ncps/pkg/storage/s3"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	netpprof "net/http/pprof"
 
 	"github.com/kalbasit/ncps/pkg/analytics"
