@@ -606,6 +606,8 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			return
 		}
 
+		defer reader.Close()
+
 		h := w.Header()
 		h.Set(contentType, contentTypeNar)
 
