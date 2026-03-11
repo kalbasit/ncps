@@ -416,8 +416,8 @@ func TestLocker_Extend_NoOp(t *testing.T) {
 	err := locker.Lock(ctx, "test-key", 5*time.Second)
 	require.NoError(t, err)
 
-	assert.NoError(t, locker.Extend(ctx, "test-key", 5*time.Second))
-	assert.NoError(t, locker.Extend(ctx, "unknown-key", 5*time.Second))
+	assert.NoError(t, locker.Extend(ctx, "test-key"))
+	assert.NoError(t, locker.Extend(ctx, "unknown-key"))
 
 	err = locker.Unlock(ctx, "test-key")
 	require.NoError(t, err)
@@ -432,8 +432,8 @@ func TestRWLocker_Extend_NoOp(t *testing.T) {
 	err := locker.Lock(ctx, "test-key", 5*time.Second)
 	require.NoError(t, err)
 
-	assert.NoError(t, locker.Extend(ctx, "test-key", 5*time.Second))
-	assert.NoError(t, locker.Extend(ctx, "unknown-key", 5*time.Second))
+	assert.NoError(t, locker.Extend(ctx, "test-key"))
+	assert.NoError(t, locker.Extend(ctx, "unknown-key"))
 
 	err = locker.Unlock(ctx, "test-key")
 	require.NoError(t, err)

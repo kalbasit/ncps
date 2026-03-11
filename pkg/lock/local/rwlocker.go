@@ -115,7 +115,7 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, _ time.Duration) (b
 }
 
 // Extend is a no-op for local locks (they don't expire).
-func (rw *RWLocker) Extend(_ context.Context, _ string, _ time.Duration) error {
+func (rw *RWLocker) Extend(_ context.Context, _ string) error {
 	return nil
 }
 

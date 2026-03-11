@@ -493,7 +493,7 @@ func TestLocker_Extend_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Extend should succeed while lock is held
-	err = locker.Extend(ctx, key, 10*time.Second)
+	err = locker.Extend(ctx, key)
 	require.NoError(t, err)
 
 	err = locker.Unlock(ctx, key)
@@ -512,6 +512,6 @@ func TestLocker_Extend_UnknownKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// Extend on a key that was never locked — should return nil gracefully
-	err = locker.Extend(ctx, "never-locked-key", 10*time.Second)
+	err = locker.Extend(ctx, "never-locked-key")
 	assert.NoError(t, err)
 }

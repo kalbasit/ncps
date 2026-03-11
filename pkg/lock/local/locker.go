@@ -111,7 +111,7 @@ func (l *Locker) Unlock(ctx context.Context, key string) error {
 }
 
 // Extend is a no-op for local locks (they don't expire).
-func (l *Locker) Extend(_ context.Context, _ string, _ time.Duration) error {
+func (l *Locker) Extend(_ context.Context, _ string) error {
 	return nil
 }
 

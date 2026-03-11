@@ -58,11 +58,11 @@ type Locker interface {
 	// For local implementations, this is a no-op (local locks don't expire).
 	//
 	// For distributed implementations, extends the Redis key TTL using the
-	// specified TTL value. Returns an error if the lock has already expired
-	// or is no longer held by this instance.
+	// original TTL value set during acquisition. Returns an error if the lock
+	// has already expired or is no longer held by this instance.
 	//
 	// It is safe to call Extend with a key that was never locked (returns nil).
-	Extend(ctx context.Context, key string, ttl time.Duration) error
+	Extend(ctx context.Context, key string) error
 }
 
 // RWLocker provides read-write locking semantics.

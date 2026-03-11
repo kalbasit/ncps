@@ -43,7 +43,7 @@ func StartRefresher(ctx context.Context, locker Locker, key string, ttl time.Dur
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := locker.Extend(ctx, key, ttl); err != nil {
+				if err := locker.Extend(ctx, key); err != nil {
 					zerolog.Ctx(ctx).Warn().
 						Err(err).
 						Str("key", key).

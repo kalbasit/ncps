@@ -42,6 +42,12 @@ end
 `
 )
 
+// writeLockToken stores the unique token and original TTL for a write lock.
+type writeLockToken struct {
+	token string
+	ttl   time.Duration
+}
+
 // RWLocker implements lock.RWLocker using Redis sets for readers.
 type RWLocker struct {
 	client            redis.UniversalClient // Supports both single-node and cluster
@@ -211,8 +217,8 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 			continue
 		}
 
-		// Store token for safe Unlock and Extend
-		rw.writeLockTokens.Store(key, token)
+		// Store token and TTL for safe Unlock and Extend
+		rw.writeLockTokens.Store(key, &writeLockToken{token: token, ttl: ttl})
 
 		// Wait for all readers to finish
 		deadline := time.Now().Add(ttl)
@@ -298,9 +304,9 @@ func (rw *RWLocker) Lock(ctx context.Context, key string, ttl time.Duration) err
 }
 
 // Extend refreshes the TTL of an existing acquired write lock.
-func (rw *RWLocker) Extend(ctx context.Context, key string, ttl time.Duration) error {
+func (rw *RWLocker) Extend(ctx context.Context, key string) error {
 	if !rw.circuitBreaker.AllowRequest() && rw.allowDegradedMode {
-		return rw.fallbackLocker.Extend(ctx, key, ttl)
+		return rw.fallbackLocker.Extend(ctx, key)
 	}
 
 	// Get token to prove ownership
@@ -309,11 +315,11 @@ func (rw *RWLocker) Extend(ctx context.Context, key string, ttl time.Duration) e
 		return fmt.Errorf("failed to extend write lock %s: %w", key, ErrExtendLockNotFound)
 	}
 
-	token := tokenVal.(string)
+	lt := tokenVal.(*writeLockToken)
 	writerKey := fmt.Sprintf("%s{%s}:writer", rw.keyPrefix, key)
 
 	// Use Lua script to extend only if we still own the lock
-	result, err := rw.client.Eval(ctx, extendScript, []string{writerKey}, token, ttl.Milliseconds()).Int64()
+	result, err := rw.client.Eval(ctx, extendScript, []string{writerKey}, lt.token, lt.ttl.Milliseconds()).Int64()
 	if err != nil {
 		return fmt.Errorf("failed to extend write lock %s: %w", key, err)
 	}
@@ -371,10 +377,10 @@ func (rw *RWLocker) Unlock(ctx context.Context, key string) error {
 		return nil
 	}
 
-	token := tokenVal.(string)
+	lt := tokenVal.(*writeLockToken)
 
 	// Use Lua script to unlock only if we still own the lock
-	return rw.client.Eval(ctx, unlockScript, []string{writerKey}, token).Err()
+	return rw.client.Eval(ctx, unlockScript, []string{writerKey}, lt.token).Err()
 }
 
 // TryLock attempts to acquire an exclusive write lock without blocking.
@@ -459,8 +465,8 @@ func (rw *RWLocker) TryLock(ctx context.Context, key string, ttl time.Duration) 
 		return false, nil
 	}
 
-	// Store token for safe Unlock and Extend
-	rw.writeLockTokens.Store(key, token)
+	// Store token and TTL for safe Unlock and Extend
+	rw.writeLockTokens.Store(key, &writeLockToken{token: token, ttl: ttl})
 
 	rw.circuitBreaker.RecordSuccess()
 

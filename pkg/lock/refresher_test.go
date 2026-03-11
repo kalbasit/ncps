@@ -26,7 +26,7 @@ func (m *mockLocker) TryLock(_ context.Context, _ string, _ time.Duration) (bool
 	return true, nil
 }
 
-func (m *mockLocker) Extend(_ context.Context, _ string, _ time.Duration) error {
+func (m *mockLocker) Extend(_ context.Context, _ string) error {
 	m.extendCalls.Add(1)
 
 	return m.extendErr
