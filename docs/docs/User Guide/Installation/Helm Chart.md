@@ -531,13 +531,11 @@ config:
 
 To access the pprof endpoint, you can use `kubectl port-forward`:
 
-```sh
-# For StatefulSet (default)
-kubectl port-forward -n ncps pod/ncps-0 6060:6060
-
-# For Deployment
-kubectl port-forward -n ncps deployment/ncps 6060:6060
-```
+# This command finds a running ncps pod and forwards the pprof port.
+# It works for both StatefulSet and Deployment modes.
+POD_NAME=$(kubectl get pods -n ncps -l app.kubernetes.io/name=ncps -o jsonpath='{.items[0].metadata.name}')
+echo "Forwarding pprof port for pod: $POD_NAME"
+kubectl port-forward -n ncps "pod/$POD_NAME" 6060:6060
 
 Then you can access it at `http://localhost:6060/debug/pprof`.
 
