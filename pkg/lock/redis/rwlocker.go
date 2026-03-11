@@ -312,7 +312,9 @@ func (rw *RWLocker) Extend(ctx context.Context, key string) error {
 	// Get token to prove ownership
 	tokenVal, ok := rw.writeLockTokens.Load(key)
 	if !ok {
-		return fmt.Errorf("failed to extend write lock %s: %w", key, ErrExtendLockNotFound)
+		// Lock not found — already released or never acquired.
+		// Per interface documentation, this is safe and should return nil.
+		return nil
 	}
 
 	lt := tokenVal.(*writeLockToken)
