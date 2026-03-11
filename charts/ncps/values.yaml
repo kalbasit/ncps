@@ -138,8 +138,33 @@ config:
     downloadPollTimeout: "30s"
 
     # Temporary directory for downloads
-    # Mounted as emptyDir volume
+    # Mounted as emptyDir volume by default
     tempPath: "/tmp/ncps"
+
+    # Configuration for the temporary directory volume.
+    # The temporary directory is used for downloads and other transient tasks.
+    tempVolume:
+      # Volume type: "emptyDir" or "pvc"
+      type: "emptyDir"
+      # Configuration for emptyDir volume (when type is "emptyDir")
+      # Example:
+      # emptyDir:
+      #   sizeLimit: "10Gi"
+      #   medium: "Memory"
+      emptyDir: {}
+      # Configuration for PersistentVolumeClaim (when type is "pvc")
+      pvc:
+        # Use existing PVC instead of creating a new one
+        existingClaim: ""
+        # Storage class (leave empty for default)
+        storageClassName: ""
+        accessModes:
+          - ReadWriteOnce
+        size: 10Gi
+        # Annotations for PVC
+        annotations: {}
+        # Selector for specific PV
+        selector: {}
 
   # CDC (Content-Defined Chunking) configuration
   # Chunks are stored in the same backend as NAR files (different prefix/directory)

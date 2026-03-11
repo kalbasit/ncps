@@ -154,8 +154,7 @@ spec:
             - name: config
               configMap:
                 name: {{ include "ncps.fullname" . }}
-            - name: tmp
-              emptyDir: {}
+            {{- include "ncps.tempVolume" . | nindent 12 }}
             {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
             - name: storage
               {{- if or .Values.config.storage.local.persistence.enabled (eq .Values.config.database.type "sqlite") }}

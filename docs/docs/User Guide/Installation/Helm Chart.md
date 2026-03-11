@@ -472,6 +472,38 @@ config:
     max: 262144
 ```
 
+## Temporary Volume Configuration
+
+Configure the temporary directory used for downloads and other transient operations. By default, it uses `emptyDir` (volatile storage).
+
+### Using Persistent Storage (PVC) for Temp
+
+Useful if your node does not have enough storage for temporary NAR files:
+
+```yaml
+config:
+  cache:
+    tempVolume:
+      type: pvc
+      pvc:
+        size: 50Gi
+        storageClassName: fast-ssd
+```
+
+### Using RAM for Temp
+
+Use `emptyDir` with `medium: Memory` for faster performance (requires enough pod memory):
+
+```yaml
+config:
+  cache:
+    tempVolume:
+      type: emptyDir
+      emptyDir:
+        medium: Memory
+        sizeLimit: 4Gi
+```
+
 ## Upstream Cache Configuration
 
 ```yaml
