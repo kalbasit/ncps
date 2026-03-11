@@ -195,18 +195,30 @@ func (s *s3Store) PutChunk(ctx context.Context, hash string, data []byte) (bool,
 		_ = s.locker.Unlock(ctx, lockKey)
 	}()
 
-	// Use pooled encoder
-	enc := zstd.GetWriter()
-	defer zstd.PutWriter(enc)
-
-	// Compress data with zstd
-	compressed := enc.EncodeAll(data, nil)
-
 	// Check if exists.
 	exists, err := s.HasChunk(ctx, hash)
 	if err != nil {
 		return false, 0, err
 	}
+
+	// Compress data with a pooled encoder in streaming mode.
+	// Using Reset+Write+Close reuses encoder state; EncodeAll would allocate
+	// new internal buffers on every call, causing unbounded memory growth.
+	var buf bytes.Buffer
+
+	pw := zstd.NewPooledWriter(&buf)
+
+	if _, err = pw.Write(data); err == nil {
+		err = pw.Close()
+	} else {
+		_ = pw.Close()
+	}
+
+	if err != nil {
+		return false, 0, err
+	}
+
+	compressed := buf.Bytes()
 
 	if exists {
 		return false, int64(len(compressed)), nil
