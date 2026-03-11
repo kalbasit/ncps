@@ -64,13 +64,17 @@ const maxIdleDecoders = 16
 // readerPool is a bounded channel pool of zstd.Decoder instances.
 //
 // A sync.Pool was previously used here, but it caused a memory leak: each
-// zstd.Decoder spawns a background goroutine that holds a closure reference back
-// to the decoder (circular reference). This prevents the GC from ever marking the
-// decoder as unreachable, so runtime.SetFinalizer never fires and the goroutines
-// accumulate linearly with throughput.
+// zstd.Decoder (without WithDecoderConcurrency(1)) spawns a background goroutine
+// that holds a closure reference back to the decoder (circular reference). This
+// prevents the GC from ever marking the decoder as unreachable, so
+// runtime.SetFinalizer never fires and the goroutines accumulate linearly with
+// throughput.
 //
-// The bounded channel pool fixes this by calling dec.Close() when the pool is full,
-// which explicitly stops the background goroutine and frees its memory.
+// Decoders are now created with WithDecoderConcurrency(1), which eliminates the
+// background goroutine entirely. The bounded channel pool is still used (rather
+// than reverting to sync.Pool) to give deterministic memory bounds at idle and
+// avoid GC churn from frequent pool evictions under sustained load. When the pool
+// is full, dec.Close() is called to release decoder memory immediately.
 //
 //nolint:gochecknoglobals
 var readerPool = make(chan *zstd.Decoder, maxIdleDecoders)
@@ -92,9 +96,12 @@ func GetReader() *zstd.Decoder {
 	case dec := <-readerPool:
 		return dec
 	default:
-		// Not providing any options will use the default decompression settings.
-		// The error is ignored as NewReader(nil) with no options doesn't error.
-		dec, _ := zstd.NewReader(nil)
+		// WithDecoderConcurrency(1) eliminates the background goroutine entirely.
+		// From the klauspost/compress docs: "If n is 1, operations are performed
+		// inline, without goroutines." This prevents per-decoder goroutine and
+		// history buffer (~8MB each) accumulation under high NAR fetch concurrency.
+		// The error is ignored as NewReader(nil) with these options doesn't error.
+		dec, _ := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
 
 		return dec
 	}
