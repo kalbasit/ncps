@@ -24,6 +24,7 @@ var (
 	ErrWriteLockHeld           = errors.New("write lock already held")
 	ErrReadersTimeout          = errors.New("timeout waiting for readers to finish")
 	ErrWriteLockTimeout        = errors.New("timeout waiting for write lock to clear")
+	ErrExtendLockNotFound      = errors.New("write lock key does not exist")
 )
 
 // Config holds Redis configuration for distributed locking.
