@@ -1,0 +1,116 @@
+suite: test temporary volume rendering
+templates:
+  - deployment.yaml
+  - statefulset.yaml
+  - temp-pvc.yaml
+  - configmap.yaml
+  - secret.yaml
+  - secret-signing-key.yaml
+tests:
+  # emptyDir tests
+  - it: should use emptyDir for tmp volume by default (StatefulSet)
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: should use emptyDir for tmp volume by default (Deployment)
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: should configure emptyDir with custom options
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.emptyDir:
+        medium: Memory
+        sizeLimit: 4Gi
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              medium: Memory
+              sizeLimit: 4Gi
+
+  # PVC tests
+  - it: should use PVC for tmp volume when type is pvc
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-ncps-temp
+
+  - it: should create a PVC for tmp storage when type is pvc and no existing claim is provided
+    template: temp-pvc.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+      config.cache.tempVolume.pvc.size: 50Gi
+      config.cache.tempVolume.pvc.storageClassName: fast-ssd
+      config.cache.tempVolume.pvc.annotations:
+        custom: annotation
+    asserts:
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-ncps-temp
+      - equal:
+          path: spec.resources.requests.storage
+          value: "50Gi"
+      - equal:
+          path: spec.storageClassName
+          value: "fast-ssd"
+      - equal:
+          path: metadata.annotations.custom
+          value: "annotation"
+
+  - it: should use existing claim for tmp volume and NOT create a new PVC
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+      config.cache.tempVolume.pvc.existingClaim: my-existing-pvc
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            persistentVolumeClaim:
+              claimName: my-existing-pvc
+
+  - it: should not create a PVC for tmp storage when existing claim is provided
+    template: temp-pvc.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+      config.cache.tempVolume.pvc.existingClaim: my-existing-pvc
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -198,8 +198,7 @@ spec:
         - name: config
           configMap:
             name: {{ include "ncps.fullname" . }}
-        - name: tmp
-          emptyDir: {}
+{{- include "ncps.tempVolume" . | nindent 8 }}
         {{- if eq .Values.config.storage.type "local" }}
         {{- if .Values.config.storage.local.persistence.existingClaim }}
         - name: storage

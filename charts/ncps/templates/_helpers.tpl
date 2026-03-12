@@ -261,3 +261,17 @@ redis
 {{ .Values.config.lock.backend }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Return the temporary volume configuration
+*/}}
+{{- define "ncps.tempVolume" -}}
+- name: tmp
+  {{- if eq .Values.config.cache.tempVolume.type "pvc" }}
+  persistentVolumeClaim:
+    claimName: {{ .Values.config.cache.tempVolume.pvc.existingClaim | default (printf "%s-temp" (include "ncps.fullname" .)) }}
+  {{- else }}
+  emptyDir:
+    {{- toYaml .Values.config.cache.tempVolume.emptyDir | nindent 4 }}
+  {{- end }}
+{{- end -}}

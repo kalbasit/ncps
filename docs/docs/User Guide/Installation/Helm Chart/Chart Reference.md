@@ -136,7 +136,22 @@ The following table lists the configurable parameters of the ncps chart and thei
 | `config.cache.maxSize` | Maximum cache size (e.g., "100G") | `""` |
 | `config.cache.lruSchedule` | LRU cleanup cron schedule | `""` |
 | `config.cache.lruTimezone` | Timezone for cron schedule | `Local` |
-| `config.cache.tempPath` | Temporary directory path | `/tmp/ncps` |
+| `config.cache.tempPath` | Temporary directory path inside the container | `/tmp/ncps` |
+
+#### Temporary Volume Configuration
+
+Configuration for the temporary directory used for downloads and transient operations.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `config.cache.tempVolume.type` | Volume type (`emptyDir` or `pvc`) | `emptyDir` |
+| `config.cache.tempVolume.emptyDir` | Arbitrary `emptyDir` configuration (e.g., `medium`, `sizeLimit`) | `{}` |
+| `config.cache.tempVolume.pvc.existingClaim` | Use existing PVC for temporary storage | `""` |
+| `config.cache.tempVolume.pvc.storageClassName` | Storage class for temporary PVC | `""` |
+| `config.cache.tempVolume.pvc.accessModes` | Access modes for temporary PVC | `[ReadWriteOnce]` |
+| `config.cache.tempVolume.pvc.size` | Size for temporary PVC | `10Gi` |
+| `config.cache.tempVolume.pvc.annotations` | Annotations for temporary PVC | `{}` |
+| `config.cache.tempVolume.pvc.selector` | Selector for temporary PVC | `{}` |
 
 ### Storage Configuration
 
