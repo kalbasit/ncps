@@ -57,6 +57,55 @@ tests:
           path: data["config.yaml"]
           pattern: '[0-9]\.[0-9]+e\+[0-9]+'
 
+  - it: should configure CDC lazy chunking when enabled
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+      config.cdc.lazyChunkingEnabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'lazy-chunking-enabled: true'
+
+  - it: should configure CDC lazy chunking when disabled
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+      config.cdc.lazyChunkingEnabled: false
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'lazy-chunking-enabled: false'
+
+  - it: should not render CDC lazy chunking when nil
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'lazy-chunking-enabled'
+
+  - it: should configure CDC background workers
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+      config.cdc.backgroundWorkers: 8
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'background-workers: 8'
+
+  - it: should configure CDC delete delay
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+      config.cdc.deleteDelay: 48h
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'delete-delay: 48h'
+
   - it: should enable analytics reporting by default
     set:
       config.hostname: test.example.com

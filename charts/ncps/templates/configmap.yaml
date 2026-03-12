@@ -37,6 +37,17 @@ data:
         {{- if .Values.config.cdc.max }}
         max: {{ printf "%.0f" .Values.config.cdc.max }}
         {{- end }}
+        {{- if .Values.config.cdc.lazyChunkingEnabled }}
+        lazy-chunking-enabled: true
+        {{- else if not (eq .Values.config.cdc.lazyChunkingEnabled nil) }}
+        lazy-chunking-enabled: false
+        {{- end }}
+        {{- if .Values.config.cdc.backgroundWorkers }}
+        background-workers: {{ .Values.config.cdc.backgroundWorkers }}
+        {{- end }}
+        {{- if .Values.config.cdc.deleteDelay }}
+        delete-delay: {{ .Values.config.cdc.deleteDelay }}
+        {{- end }}
       {{- end }}
 
       {{- if and (or (eq .Values.config.database.type "postgresql") (eq .Values.config.database.type "mysql")) (or .Values.config.database.pool.maxOpenConns .Values.config.database.pool.maxIdleConns) }}

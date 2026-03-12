@@ -54,6 +54,37 @@ cache:
 | `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | 16384 |
 | `--cache-cdc-avg` | Average (target) chunk size in bytes | `CACHE_CDC_AVG` | 65536 |
 | `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | 262144 |
+| `--cache-cdc-lazy-chunking-enabled` | Enable lazy chunking: store compressed NAR first, chunk in background | `CACHE_CDC_LAZY_CHUNKING_ENABLED` | `true` |
+| `--cache-cdc-background-workers` | Number of background workers for lazy chunking | `CACHE_CDC_BACKGROUND_WORKERS` | (number of CPUs) |
+| `--cache-cdc-delete-delay` | Delay before deleting compressed NAR files after chunking completes | `CACHE_CDC_DELETE_DELAY` | `24h` |
+
+### Lazy Chunking
+
+When lazy chunking is enabled (default), NAR files are stored in their original compressed format first, then chunked in the background. This improves Time To First Byte (TTFB) by avoiding synchronous chunking during download.
+
+**Behavior:**
+
+1. A NAR is downloaded and stored in its original compressed form (e.g., xz, zstd)
+1. The narinfo is preserved with the original compression and FileSize
+1. Chunking happens asynchronously in the background
+1. After chunking completes, new requests are served from chunks
+1. The original compressed file is deleted after a configurable delay (default: 24h)
+
+The delay before deleting the original compressed file allows clients to update their cache before the file is removed.
+
+### Configuration Example
+
+```yaml
+cache:
+  cdc:
+    enabled: true
+    min: 16384    # 16 KB
+    avg: 65536    # 64 KB
+    max: 262144   # 256 KB
+    lazyChunkingEnabled: true
+    backgroundWorkers: 4
+    deleteDelay: 24h
+```
 
 ## Storage Considerations
 
