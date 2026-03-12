@@ -53,9 +53,57 @@ tests:
               sizeLimit: 4Gi
 
   # PVC tests
-  - it: should use PVC for tmp volume when type is pvc
+  - it: should NOT include tmp volume in spec.template.spec.volumes when type is pvc with NO existing claim (StatefulSet)
     template: statefulset.yaml
     set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+
+  - it: should use volumeClaimTemplate for tmp volume when type is pvc with NO existing claim (StatefulSet)
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+    asserts:
+      - contains:
+          path: spec.volumeClaimTemplates
+          content:
+            metadata:
+              name: tmp
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
+
+  - it: should use existing PVC in volumes when type is pvc with existing claim (StatefulSet)
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+      config.cache.tempVolume.pvc.existingClaim: my-existing-pvc
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            persistentVolumeClaim:
+              claimName: my-existing-pvc
+      - notContains:
+          path: spec.volumeClaimTemplates
+          content:
+            metadata:
+              name: tmp
+
+  - it: should use PVC in volumes for tmp volume when type is pvc (Deployment)
+    template: deployment.yaml
+    set:
+      mode: deployment
       config.hostname: test.example.com
       config.cache.tempVolume.type: pvc
     asserts:
@@ -66,9 +114,10 @@ tests:
             persistentVolumeClaim:
               claimName: RELEASE-NAME-ncps-temp
 
-  - it: should create a PVC for tmp storage when type is pvc and no existing claim is provided
+  - it: should create a PVC for tmp storage when type is pvc and no existing claim is provided (Deployment)
     template: temp-pvc.yaml
     set:
+      mode: deployment
       config.hostname: test.example.com
       config.cache.tempVolume.type: pvc
       config.cache.tempVolume.pvc.size: 50Gi
@@ -91,6 +140,16 @@ tests:
           path: metadata.annotations.custom
           value: "annotation"
 
+  - it: should NOT create a PVC for tmp storage in StatefulSet mode
+    template: temp-pvc.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+    asserts:
+      - hasDocuments:
+          count: 0
+
   - it: should use existing claim for tmp volume and NOT create a new PVC
     template: statefulset.yaml
     set:
@@ -108,9 +167,37 @@ tests:
   - it: should not create a PVC for tmp storage when existing claim is provided
     template: temp-pvc.yaml
     set:
+      mode: deployment
       config.hostname: test.example.com
       config.cache.tempVolume.type: pvc
       config.cache.tempVolume.pvc.existingClaim: my-existing-pvc
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: should include annotations and selector in volumeClaimTemplate for tmp (StatefulSet)
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+      config.cache.tempVolume.pvc.annotations:
+        custom: annotation
+      config.cache.tempVolume.pvc.selector:
+        matchLabels:
+          app: ncps
+    asserts:
+      - contains:
+          path: spec.volumeClaimTemplates
+          content:
+            metadata:
+              name: tmp
+              annotations:
+                custom: annotation
+            spec:
+              selector:
+                matchLabels:
+                  app: ncps
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi

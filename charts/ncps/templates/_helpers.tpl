@@ -275,3 +275,30 @@ Return the temporary volume configuration
     {{- toYaml .Values.config.cache.tempVolume.emptyDir | nindent 4 }}
   {{- end }}
 {{- end -}}
+
+{{/*
+Return the temporary volume claim template configuration
+*/}}
+{{- define "ncps.tempVolumeClaimTemplate" -}}
+- metadata:
+    name: tmp
+    {{- with .Values.config.cache.tempVolume.pvc.annotations }}
+    annotations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  spec:
+    accessModes:
+      {{- range .Values.config.cache.tempVolume.pvc.accessModes }}
+      - {{ . | quote }}
+      {{- end }}
+    resources:
+      requests:
+        storage: {{ .Values.config.cache.tempVolume.pvc.size | quote }}
+    {{- if .Values.config.cache.tempVolume.pvc.storageClassName }}
+    storageClassName: {{ .Values.config.cache.tempVolume.pvc.storageClassName | quote }}
+    {{- end }}
+    {{- with .Values.config.cache.tempVolume.pvc.selector }}
+    selector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end -}}
