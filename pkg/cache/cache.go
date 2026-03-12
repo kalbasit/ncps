@@ -106,6 +106,9 @@ var (
 	// ErrHostnameMustNotContainPath is returned if the given hostName to New contained a path.
 	ErrHostnameMustNotContainPath = errors.New("hostName must not contain a path")
 
+	// ErrMigrationInProgress is returned if a migration is already in progress.
+	ErrMigrationInProgress = errors.New("migration is already in progress")
+
 	// errNarInfoPurged is returned if the narinfo was purged.
 	errNarInfoPurged = errors.New("the narinfo was purged")
 
@@ -5870,7 +5873,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 			Str("nar_hash", narURL.Hash).
 			Msg("migration to chunks already in progress by another instance")
 
-		return nil
+		return ErrMigrationInProgress
 	}
 
 	defer func() {
@@ -6040,6 +6043,10 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 		opStartTime := time.Now()
 
 		err := c.MigrateNarToChunks(ctx, &narURL)
+		if errors.Is(err, ErrMigrationInProgress) {
+			// no need to do anything, another instance is already migrating this nar.
+			return
+		}
 
 		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(
