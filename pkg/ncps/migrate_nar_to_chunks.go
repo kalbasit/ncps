@@ -441,6 +441,11 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					opStartTime := time.Now()
 					err = c.MigrateNarToChunks(ctx, &narURL)
 
+					if errors.Is(err, cache.ErrMigrationInProgress) {
+						// no need to do anything, another instance is already migrating this nar.
+						return nil
+					}
+
 					RecordMigrationDuration(
 						ctx,
 						MigrationTypeNarToChunks,
