@@ -198,7 +198,9 @@ spec:
         - name: config
           configMap:
             name: {{ include "ncps.fullname" . }}
-{{- include "ncps.tempVolume" . | nindent 8 }}
+        {{- if or (ne .Values.config.cache.tempVolume.type "pvc") .Values.config.cache.tempVolume.pvc.existingClaim }}
+        {{- include "ncps.tempVolume" . | nindent 8 }}
+        {{- end }}
         {{- if eq .Values.config.storage.type "local" }}
         {{- if .Values.config.storage.local.persistence.existingClaim }}
         - name: storage
@@ -234,8 +236,11 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-  {{- if and (eq .Values.config.storage.type "local") .Values.config.storage.local.persistence.enabled (not .Values.config.storage.local.persistence.existingClaim) }}
+  {{- $storagePvc := and (eq .Values.config.storage.type "local") .Values.config.storage.local.persistence.enabled (not .Values.config.storage.local.persistence.existingClaim) -}}
+  {{- $tempPvc := and (eq .Values.config.cache.tempVolume.type "pvc") (not .Values.config.cache.tempVolume.pvc.existingClaim) -}}
+  {{- if or $storagePvc $tempPvc }}
   volumeClaimTemplates:
+    {{- if $storagePvc }}
     - metadata:
         name: storage
         {{- with .Values.config.storage.local.persistence.annotations }}
@@ -257,5 +262,9 @@ spec:
         selector:
           {{- toYaml . | nindent 10 }}
         {{- end }}
+    {{- end }}
+    {{- if $tempPvc }}
+    {{- include "ncps.tempVolumeClaimTemplate" . | nindent 4 }}
+    {{- end }}
   {{- end }}
 {{- end }}
