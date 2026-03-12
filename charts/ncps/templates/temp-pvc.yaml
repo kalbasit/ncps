@@ -1,0 +1,27 @@
+{{- if and (eq .Values.config.cache.tempVolume.type "pvc") (not .Values.config.cache.tempVolume.pvc.existingClaim) -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-temp" (include "ncps.fullname" .) }}
+  labels:
+    {{- include "ncps.labels" . | nindent 4 }}
+  {{- with .Values.config.cache.tempVolume.pvc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- range .Values.config.cache.tempVolume.pvc.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.config.cache.tempVolume.pvc.size | quote }}
+  {{- if .Values.config.cache.tempVolume.pvc.storageClassName }}
+  storageClassName: {{ .Values.config.cache.tempVolume.pvc.storageClassName | quote }}
+  {{- end }}
+  {{- with .Values.config.cache.tempVolume.pvc.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

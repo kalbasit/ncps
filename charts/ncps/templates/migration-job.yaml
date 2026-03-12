@@ -109,6 +109,5 @@ spec:
           emptyDir: {}
           {{- end }}
         {{- end }}
-        - name: tmp
-          emptyDir: {}
+        {{- include "ncps.tempVolume" . | nindent 8 }}
 {{- end }}
