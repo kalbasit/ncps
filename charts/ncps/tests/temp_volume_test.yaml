@@ -174,3 +174,30 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: should include annotations and selector in volumeClaimTemplate for tmp (StatefulSet)
+    template: statefulset.yaml
+    set:
+      config.hostname: test.example.com
+      config.cache.tempVolume.type: pvc
+      config.cache.tempVolume.pvc.annotations:
+        custom: annotation
+      config.cache.tempVolume.pvc.selector:
+        matchLabels:
+          app: ncps
+    asserts:
+      - contains:
+          path: spec.volumeClaimTemplates
+          content:
+            metadata:
+              name: tmp
+              annotations:
+                custom: annotation
+            spec:
+              selector:
+                matchLabels:
+                  app: ncps
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
