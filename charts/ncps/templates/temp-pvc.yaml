@@ -1,4 +1,4 @@
-{{- if and (eq .Values.config.cache.tempVolume.type "pvc") (not .Values.config.cache.tempVolume.pvc.existingClaim) -}}
+{{- if and (eq .Values.mode "deployment") (eq .Values.config.cache.tempVolume.type "pvc") (not .Values.config.cache.tempVolume.pvc.existingClaim) -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
