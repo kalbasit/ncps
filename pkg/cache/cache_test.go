@@ -2713,6 +2713,38 @@ func testGetNarInfoRaceWithPutNarInfoDeterministic(factory cacheFactory) func(*t
 	}
 }
 
+func TestSetTempDir(t *testing.T) {
+	t.Parallel()
+
+	c := &cache.Cache{}
+
+	t.Run("writable directory works fine", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, c.SetTempDir(os.TempDir()))
+	})
+
+	t.Run("non-writable directory fails", func(t *testing.T) {
+		t.Parallel()
+
+		// Create a temporary directory and make it non-writable
+		dir, err := os.MkdirTemp("", "test-temp-dir-*")
+		require.NoError(t, err)
+
+		defer func() {
+			// Restore permissions before cleanup
+			_ = os.Chmod(dir, 0o755)
+			_ = os.RemoveAll(dir)
+		}()
+
+		// Make it non-writable (chmod 000)
+		require.NoError(t, os.Chmod(dir, 0o000))
+
+		// Now SetTempDir should fail
+		require.Error(t, c.SetTempDir(dir))
+	})
+}
+
 func TestCacheBackends(t *testing.T) {
 	t.Parallel()
 

@@ -31,6 +31,7 @@ import (
 	"github.com/kalbasit/ncps/pkg/chunker"
 	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/lock"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage"
@@ -684,7 +685,15 @@ func (c *Cache) setupMetricCallbacks() error {
 }
 
 // SetTempDir sets the temporary directory.
-func (c *Cache) SetTempDir(d string) { c.tempDir = d }
+func (c *Cache) SetTempDir(d string) error {
+	if err := helper.EnsureDirWritable(d); err != nil {
+		return err
+	}
+
+	c.tempDir = d
+
+	return nil
+}
 
 // AddUpstreamCaches adds one or more upstream caches with lazy loading support.
 func (c *Cache) AddUpstreamCaches(ctx context.Context, ucs ...*upstream.Cache) {
