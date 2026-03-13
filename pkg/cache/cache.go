@@ -369,6 +369,10 @@ type Cache struct {
 	cdcEnabled bool
 	chunker    chunker.Chunker
 
+	// Lazy chunking configuration
+	cdcLazyChunkingEnabled bool
+	cdcBackgroundWorkers   int
+
 	// Should the cache sign the narinfos?
 	shouldSignNarinfo bool
 
@@ -624,6 +628,31 @@ func (c *Cache) SetChunkStore(cs chunk.Store) {
 	defer c.cdcMu.Unlock()
 
 	c.chunkStore = cs
+}
+
+// SetCDCLazyChunking configures lazy chunking behavior.
+func (c *Cache) SetCDCLazyChunking(enabled bool, workers int) {
+	c.cdcMu.Lock()
+	defer c.cdcMu.Unlock()
+
+	c.cdcLazyChunkingEnabled = enabled
+	c.cdcBackgroundWorkers = workers
+}
+
+// GetCDCLazyChunkingEnabled returns whether lazy chunking is enabled.
+func (c *Cache) GetCDCLazyChunkingEnabled() bool {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcLazyChunkingEnabled
+}
+
+// GetCDCBackgroundWorkers returns the number of background workers for lazy chunking.
+func (c *Cache) GetCDCBackgroundWorkers() int {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcBackgroundWorkers
 }
 
 func (c *Cache) setupMetricCallbacks() error {
@@ -1551,8 +1580,13 @@ func (c *Cache) streamReaderToFile(ctx context.Context, r io.Reader, f *os.File,
 }
 
 // storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
+// When CDC is enabled with lazy chunking, stores the compressed NAR directly without
+// chunking, creating a nar_file record with total_chunks=0 for background migration.
 func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) error {
-	if c.isCDCEnabled() {
+	// When CDC is enabled but lazy chunking is also enabled, store the compressed NAR
+	// directly without chunking. The nar_file record will have total_chunks=0,
+	// allowing background migration to chunk it later.
+	if c.isCDCEnabled() && !c.GetCDCLazyChunkingEnabled() {
 		return c.storeNarWithCDC(ctx, tempPath, narURL, nil)
 	}
 
@@ -2277,8 +2311,15 @@ func (c *Cache) pullNarIntoStore(
 	//
 	// Conditions: CDC enabled, NAR is compressed (plain NARs need no decompression
 	// so the simpler temp-file path below handles them), narInfo present and non-empty.
+	//
+	// Lazy Chunking: If lazy chunking is enabled, store the compressed NAR directly
+	// without chunking, then trigger background migration later for faster TTFB.
+	cdcEnabled := c.isCDCEnabled()
+	compressedNar := downloadURL.Compression != nar.CompressionTypeNone
+	hasNarInfo := narInfo != nil && narInfo.NarSize != 0
+	lazyChunkingDisabled := !c.GetCDCLazyChunkingEnabled()
 	//nolint:nestif // CDC download pipeline requires multiple sequential error checks
-	if c.isCDCEnabled() && downloadURL.Compression != nar.CompressionTypeNone && narInfo != nil && narInfo.NarSize != 0 {
+	if cdcEnabled && compressedNar && hasNarInfo && lazyChunkingDisabled {
 		// narURLForCDC uses CompressionTypeNone because the temp file holds raw
 		// uncompressed bytes (the decompressor runs in the download goroutine).
 		narURLForCDC := *narURL
@@ -2419,6 +2460,13 @@ func (c *Cache) pullNarIntoStore(
 		return
 	}
 
+	// Trigger background migration for lazy chunking
+	// This applies when CDC is enabled with lazy chunking, where the nar was stored
+	// without chunking (total_chunks=0) and needs to be chunked in the background.
+	if c.isCDCEnabled() && c.GetCDCLazyChunkingEnabled() {
+		c.maybeBackgroundMigrateNarToChunks(context.WithoutCancel(ctx), *narURL)
+	}
+
 	// Signal that the asset is now in final storage and the distributed lock can be released
 	ds.storedOnce.Do(func() { close(ds.stored) })
 
@@ -2463,10 +2511,25 @@ func (c *Cache) serveNarFromStorageViaPipe(
 		err           error
 	)
 
-	if hasInStore {
-		storageSize, storageReader, err = c.getNarFromStore(ctx, narURL)
-	} else {
+	// For CDC with lazy chunking: check if nar is chunked before deciding serving path.
+	// - If hasInStore and not chunked (total_chunks=0): serve raw from store (lazy)
+	// - If hasInStore and chunked (total_chunks>0): serve from chunks (optimized)
+	// - If not in store: serve from chunks (standard CDC path)
+	serveFromChunks := !hasInStore
+	if hasInStore && c.isCDCEnabled() {
+		// Check if the nar is chunked by looking at the nar_file record
+		nr, nrErr := c.getNarFileFromDB(ctx, c.db, *narURL)
+		if nrErr == nil && nr.TotalChunks > 0 {
+			// Nar is chunked, serve from chunks for better performance
+			serveFromChunks = true
+		}
+		// If nrErr (not found) or total_chunks=0, serve from store (raw or legacy)
+	}
+
+	if serveFromChunks {
 		storageSize, storageReader, err = c.getNarFromChunks(ctx, narURL)
+	} else {
+		storageSize, storageReader, err = c.getNarFromStore(ctx, narURL)
 	}
 
 	if err != nil {

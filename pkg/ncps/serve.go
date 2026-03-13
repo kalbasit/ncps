@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -184,6 +185,16 @@ func serveCommand(
 				Usage:   "Maximum chunk size for CDC in bytes",
 				Sources: flagSources("cache.cdc.max", "CACHE_CDC_MAX"),
 				Value:   262144,
+			},
+			&cli.BoolFlag{
+				Name:    "cache-cdc-lazy-chunking-enabled",
+				Usage:   "Enable lazy chunking: store compressed NAR first, chunk in background (default: true)",
+				Sources: flagSources("cache.cdc.lazy-chunking-enabled", "CACHE_CDC_LAZY_CHUNKING_ENABLED"),
+			},
+			&cli.IntFlag{
+				Name:    "cache-cdc-background-workers",
+				Usage:   "Number of background workers for lazy chunking (default: number of CPUs)",
+				Sources: flagSources("cache.cdc.background-workers", "CACHE_CDC_BACKGROUND_WORKERS"),
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
@@ -1023,6 +1034,20 @@ func createCache(
 	if err := c.SetCDCConfiguration(cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
 		return nil, fmt.Errorf("error configuring CDC: %w", err)
 	}
+
+	// Configure lazy chunking
+	// Default to true if not explicitly set (lazy chunking enabled by default)
+	cdcLazyChunkingEnabled := cmd.Bool("cache-cdc-lazy-chunking-enabled")
+	if !cmd.IsSet("cache-cdc-lazy-chunking-enabled") {
+		cdcLazyChunkingEnabled = true
+	}
+
+	cdcBackgroundWorkers := cmd.Int("cache-cdc-background-workers")
+	if !cmd.IsSet("cache-cdc-background-workers") {
+		cdcBackgroundWorkers = runtime.NumCPU()
+	}
+
+	c.SetCDCLazyChunking(cdcLazyChunkingEnabled, cdcBackgroundWorkers)
 
 	// Configure Chunk Store
 	if cdcEnabled {
