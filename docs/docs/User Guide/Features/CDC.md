@@ -81,9 +81,9 @@ cache:
     min: 16384    # 16 KB
     avg: 65536    # 64 KB
     max: 262144   # 256 KB
-    lazyChunkingEnabled: true
-    backgroundWorkers: 4
-    deleteDelay: 24h
+    lazy-chunking-enabled: true
+    background-workers: 4
+    delete-delay: 24h
 ```
 
 ## Storage Considerations
