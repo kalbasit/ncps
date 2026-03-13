@@ -2201,32 +2201,32 @@
                                             "mime": "text/markdown",
                                             "attributes": [
                                                 {
+                                                    "type": "label",
+                                                    "name": "shareAlias",
+                                                    "value": "reference",
+                                                    "isInheritable": false,
+                                                    "position": 30
+                                                },
+                                                {
                                                     "type": "relation",
                                                     "name": "internalLink",
                                                     "value": "0RC0xXheV6Ng",
                                                     "isInheritable": false,
-                                                    "position": 10
+                                                    "position": 80
                                                 },
                                                 {
                                                     "type": "relation",
                                                     "name": "internalLink",
                                                     "value": "Xfu0l3KoHmVw",
                                                     "isInheritable": false,
-                                                    "position": 20
+                                                    "position": 90
                                                 },
                                                 {
                                                     "type": "relation",
                                                     "name": "internalLink",
                                                     "value": "sdejt46AiLSZ",
                                                     "isInheritable": false,
-                                                    "position": 30
-                                                },
-                                                {
-                                                    "type": "label",
-                                                    "name": "shareAlias",
-                                                    "value": "reference",
-                                                    "isInheritable": false,
-                                                    "position": 30
+                                                    "position": 100
                                                 }
                                             ],
                                             "format": "markdown",

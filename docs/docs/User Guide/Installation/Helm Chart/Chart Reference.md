@@ -174,6 +174,19 @@ Configuration for the temporary directory used for downloads and transient opera
 | `config.storage.s3.secretAccessKey` | S3 secret access key | `""` |
 | `config.storage.s3.existingSecret` | Existing secret with S3 credentials | `""` |
 
+### CDC Configuration
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `config.cdc.enabled` | Enable CDC for deduplication (experimental) | `false` |
+| `config.cdc.min` | Minimum chunk size in bytes | `16384` |
+| `config.cdc.avg` | Average (target) chunk size in bytes | `65536` |
+| `config.cdc.max` | Maximum chunk size in bytes | `262144` |
+| `config.cdc.lazyChunkingEnabled` | Enable lazy chunking (store compressed NAR first, chunk in background) | `null` (server default: `true`) |
+| `config.cdc.backgroundWorkers` | Number of background workers for lazy chunking | `null` (server default: number of CPUs) |
+| `config.cdc.deleteDelay` | Delay before deleting compressed NAR files after chunking completes | `24h` |
+| `config.cdc.iLoveTimeouts` | Bypass flag for HA validation without CDC | `false` |
+
 ### Database Configuration
 
 | Parameter | Description | Default |
