@@ -989,7 +989,10 @@ func createCache(
 		return nil, fmt.Errorf("error creating a new cache: %w", err)
 	}
 
-	c.SetTempDir(cmd.String("cache-temp-path"))
+	if err := c.SetTempDir(cmd.String("cache-temp-path")); err != nil {
+		return nil, fmt.Errorf("error setting cache temp dir: %w", err)
+	}
+
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 
 	cfg := config.New(db, rwLocker)
