@@ -18,6 +18,7 @@ import (
 
 	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
 
+	"github.com/kalbasit/ncps/pkg/helper"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/narinfo"
 	"github.com/kalbasit/ncps/pkg/storage"
@@ -620,6 +621,11 @@ func (s *Store) setupDirs() error {
 		if err := os.MkdirAll(p, dirMode); err != nil {
 			return fmt.Errorf("error creating the directory %q: %w", p, err)
 		}
+	}
+
+	// Verify the tmp directory is writable before returning
+	if err := helper.EnsureDirWritable(s.storeTMPPath()); err != nil {
+		return err
 	}
 
 	return nil
