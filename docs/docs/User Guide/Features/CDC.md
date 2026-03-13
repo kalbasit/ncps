@@ -64,13 +64,16 @@ When lazy chunking is enabled (default), NAR files are stored in their original 
 
 **Behavior:**
 
-1. A NAR is downloaded and stored in its original compressed form (e.g., xz, zstd)
-1. The narinfo is preserved with the original compression and FileSize
-1. Chunking happens asynchronously in the background
-1. After chunking completes, new requests are served from chunks
-1. The original compressed file is deleted after a configurable delay (default: 24h)
+When a new NAR is added to the cache with lazy chunking enabled:
 
-The delay before deleting the original compressed file allows clients to update their cache before the file is removed.
+1. The NAR is downloaded from upstream and stored in its original compressed form (e.g., xz, zstd) in a temporary location.
+1. The associated narinfo is immediately normalized to `compression: none` and stored in the database. This signals that the NAR will eventually be served from chunks.
+1. The first client request for the NAR is served by decompressing the temporary file on the fly, ensuring a fast Time To First Byte (TTFB).
+1. In the background, the NAR is asynchronously chunked from the temporary file.
+1. Once chunking is complete, subsequent requests for the NAR are served from the newly created chunks.
+1. The temporary compressed file is deleted.
+
+The `deleteDelay` parameter applies when migrating an existing whole-file NAR to chunks, not to new NARs. It ensures the original whole file remains available for a configured period after migration to allow clients to update their caches.
 
 ### Configuration Example
 
