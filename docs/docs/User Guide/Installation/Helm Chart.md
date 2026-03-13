@@ -470,6 +470,17 @@ config:
     min: 16384
     avg: 65536
     max: 262144
+
+    # Lazy chunking: store compressed NAR first, chunk in background (default: true)
+    # This improves TTFB by avoiding synchronous chunking during download
+    lazyChunkingEnabled: true
+
+    # Number of background workers for lazy chunking (default: number of CPUs)
+    backgroundWorkers: 4
+
+    # Delay before deleting compressed NAR files after chunking completes (default: 24h)
+    # This allows clients to update their cache before the original compressed file is removed
+    deleteDelay: 24h
 ```
 
 ## Temporary Volume Configuration

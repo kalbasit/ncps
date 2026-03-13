@@ -54,6 +54,40 @@ cache:
 | `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | 16384 |
 | `--cache-cdc-avg` | Average (target) chunk size in bytes | `CACHE_CDC_AVG` | 65536 |
 | `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | 262144 |
+| `--cache-cdc-lazy-chunking-enabled` | Enable lazy chunking: store compressed NAR first, chunk in background | `CACHE_CDC_LAZY_CHUNKING_ENABLED` | `true` |
+| `--cache-cdc-background-workers` | Number of background workers for lazy chunking | `CACHE_CDC_BACKGROUND_WORKERS` | (number of CPUs) |
+| `--cache-cdc-delete-delay` | Delay before deleting compressed NAR files after chunking completes | `CACHE_CDC_DELETE_DELAY` | `24h` |
+
+### Lazy Chunking
+
+When lazy chunking is enabled (default), NAR files are stored in their original compressed format first, then chunked in the background. This improves Time To First Byte (TTFB) by avoiding synchronous chunking during download.
+
+**Behavior:**
+
+When a new NAR is added to the cache with lazy chunking enabled:
+
+1. The NAR is downloaded from upstream and stored in its original compressed form (e.g., xz, zstd) in a temporary location.
+1. The associated narinfo is immediately normalized to `compression: none` and stored in the database. This signals that the NAR will eventually be served from chunks.
+1. The first client request for the NAR is served by decompressing the temporary file on the fly, ensuring a fast Time To First Byte (TTFB).
+1. In the background, the NAR is asynchronously chunked from the temporary file.
+1. Once chunking is complete, subsequent requests for the NAR are served from the newly created chunks.
+1. The temporary compressed file is deleted.
+
+The `deleteDelay` parameter applies when migrating an existing whole-file NAR to chunks, not to new NARs. It ensures the original whole file remains available for a configured period after migration to allow clients to update their caches.
+
+### Configuration Example
+
+```yaml
+cache:
+  cdc:
+    enabled: true
+    min: 16384    # 16 KB
+    avg: 65536    # 64 KB
+    max: 262144   # 256 KB
+    lazy-chunking-enabled: true
+    background-workers: 4
+    delete-delay: 24h
+```
 
 ## Storage Considerations
 
