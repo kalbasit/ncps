@@ -1043,7 +1043,7 @@ func createCache(
 	}
 
 	cdcBackgroundWorkers := cmd.Int("cache-cdc-background-workers")
-	if cdcBackgroundWorkers == 0 {
+	if !cmd.IsSet("cache-cdc-background-workers") {
 		cdcBackgroundWorkers = runtime.NumCPU()
 	}
 
