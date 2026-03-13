@@ -227,7 +227,8 @@ def internal_start_instance(args):
 
     # Reconstruct the command to run the actual app
     # We stripped the wrapper args, now run 'go run .' with the rest
-    cmd = ["go", "run", "."] + args.rest_args
+    # Note: --log-level is consumed by the Python parser, so we must pass it explicitly to Go
+    cmd = ["go", "run", ".", f"--log-level={args.log_level}"] + args.rest_args
 
     # Ensure log directory exists
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -591,6 +592,9 @@ def main():
     local_storage_path = os.path.join(REPO_ROOT, "var/ncps/storage")
     os.makedirs(local_storage_path, exist_ok=True)
 
+    temp_dir = os.path.join(REPO_ROOT, "var/ncps/temp")
+    os.makedirs(temp_dir, exist_ok=True)
+
     # Determine instance count
     num_instances = args.replicas
 
@@ -657,6 +661,7 @@ def main():
             "serve",
             "--cache-allow-put-verb",
             "--cache-hostname=cache.example.com",
+            f"--cache-temp-path={temp_dir}",
             f"--cache-database-url='{db_url}'",
             f"--server-addr=:{port}",
             f"--pprof-addr=:{pprof_port}",
