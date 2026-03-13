@@ -7,6 +7,7 @@ package mysqldb
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 type Querier interface {
@@ -93,6 +94,11 @@ type Querier interface {
 	//  DELETE FROM nar_files
 	//  WHERE hash = ? AND compression = ? AND `query` = ?
 	DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error)
+	//DeleteNarFileByID
+	//
+	//  DELETE FROM nar_files
+	//  WHERE id = ?
+	DeleteNarFileByID(ctx context.Context, id int64) (int64, error)
 	//DeleteNarFileChunksByNarFileID
 	//
 	//  DELETE FROM nar_file_chunks
@@ -281,6 +287,18 @@ type Querier interface {
 	//  SELECT CAST(COALESCE(SUM(file_size), 0) AS SIGNED) AS total_size
 	//  FROM nar_files
 	GetNarTotalSize(ctx context.Context) (int64, error)
+	// Get compressed NAR files that have been replaced by chunked versions and are ready for deletion.
+	// This is used by the CDC delayed cleanup job to find old compressed files after chunking.
+	//
+	//  SELECT old_nf.id, old_nf.hash, old_nf.compression, old_nf.query, old_nf.file_size, old_nf.created_at
+	//  FROM nar_files old_nf
+	//  JOIN nar_files new_nf ON old_nf.hash = new_nf.hash
+	//  WHERE old_nf.total_chunks = 0
+	//    AND old_nf.compression != 'none'
+	//    AND new_nf.compression = 'none'
+	//    AND new_nf.total_chunks > 0
+	//    AND old_nf.created_at < ?
+	GetOldCompressedNarFiles(ctx context.Context, cutoffTime time.Time) ([]GetOldCompressedNarFilesRow, error)
 	//GetOrphanedChunks
 	//
 	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at

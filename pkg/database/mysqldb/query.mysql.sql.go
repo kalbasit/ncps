@@ -279,6 +279,23 @@ func (q *Queries) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHa
 	return result.RowsAffected()
 }
 
+const deleteNarFileByID = `-- name: DeleteNarFileByID :execrows
+DELETE FROM nar_files
+WHERE id = ?
+`
+
+// DeleteNarFileByID
+//
+//	DELETE FROM nar_files
+//	WHERE id = ?
+func (q *Queries) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNarFileByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteNarFileChunksByNarFileID = `-- name: DeleteNarFileChunksByNarFileID :exec
 DELETE FROM nar_file_chunks
 WHERE nar_file_id = ?
@@ -1178,6 +1195,67 @@ func (q *Queries) GetNarTotalSize(ctx context.Context) (int64, error) {
 	var total_size int64
 	err := row.Scan(&total_size)
 	return total_size, err
+}
+
+const getOldCompressedNarFiles = `-- name: GetOldCompressedNarFiles :many
+SELECT old_nf.id, old_nf.hash, old_nf.compression, old_nf.query, old_nf.file_size, old_nf.created_at
+FROM nar_files old_nf
+JOIN nar_files new_nf ON old_nf.hash = new_nf.hash
+WHERE old_nf.total_chunks = 0
+  AND old_nf.compression != 'none'
+  AND new_nf.compression = 'none'
+  AND new_nf.total_chunks > 0
+  AND old_nf.created_at < ?
+`
+
+type GetOldCompressedNarFilesRow struct {
+	ID          int64
+	Hash        string
+	Compression string
+	Query       string
+	FileSize    uint64
+	CreatedAt   time.Time
+}
+
+// Get compressed NAR files that have been replaced by chunked versions and are ready for deletion.
+// This is used by the CDC delayed cleanup job to find old compressed files after chunking.
+//
+//	SELECT old_nf.id, old_nf.hash, old_nf.compression, old_nf.query, old_nf.file_size, old_nf.created_at
+//	FROM nar_files old_nf
+//	JOIN nar_files new_nf ON old_nf.hash = new_nf.hash
+//	WHERE old_nf.total_chunks = 0
+//	  AND old_nf.compression != 'none'
+//	  AND new_nf.compression = 'none'
+//	  AND new_nf.total_chunks > 0
+//	  AND old_nf.created_at < ?
+func (q *Queries) GetOldCompressedNarFiles(ctx context.Context, cutoffTime time.Time) ([]GetOldCompressedNarFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getOldCompressedNarFiles, cutoffTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOldCompressedNarFilesRow
+	for rows.Next() {
+		var i GetOldCompressedNarFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Compression,
+			&i.Query,
+			&i.FileSize,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getOrphanedChunks = `-- name: GetOrphanedChunks :many

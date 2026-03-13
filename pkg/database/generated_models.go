@@ -129,6 +129,15 @@ type GetNarInfoURLByNarFileHashParams struct {
 	Query       string
 }
 
+type GetOldCompressedNarFilesRow struct {
+	ID          int64
+	Hash        string
+	Compression string
+	Query       string
+	FileSize    uint64
+	CreatedAt   time.Time
+}
+
 type GetOrphanedChunksRow struct {
 	ID        int64
 	Hash      string

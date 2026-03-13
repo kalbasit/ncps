@@ -196,6 +196,12 @@ func serveCommand(
 				Usage:   "Number of background workers for lazy chunking (default: number of CPUs)",
 				Sources: flagSources("cache.cdc.background-workers", "CACHE_CDC_BACKGROUND_WORKERS"),
 			},
+			&cli.DurationFlag{
+				Name:    "cache-cdc-delete-delay",
+				Usage:   "Delay before deleting compressed NAR files after chunking completes (default: 24h)",
+				Sources: flagSources("cache.cdc.delete-delay", "CACHE_CDC_DELETE_DELAY"),
+				Value:   24 * time.Hour,
+			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
 				Usage:    "The URL of the database",
@@ -1049,6 +1055,10 @@ func createCache(
 
 	c.SetCDCLazyChunking(cdcLazyChunkingEnabled, cdcBackgroundWorkers)
 
+	// Configure CDC delete delay for lazy chunking
+	cdcDeleteDelay := cmd.Duration("cache-cdc-delete-delay")
+	c.SetCDCDeleteDelay(cdcDeleteDelay)
+
 	// Configure Chunk Store
 	if cdcEnabled {
 		chunkStore, err := getChunkStorageBackend(ctx, cmd, locker)
@@ -1112,6 +1122,17 @@ func createCache(
 	}
 
 	c.AddLRUCronJob(ctx, schedule)
+
+	// Add CDC delayed cleanup cron job when lazy chunking is enabled
+	if cdcLazyChunkingEnabled && cdcEnabled {
+		// Run CDC cleanup every hour
+		cdcCleanupSchedule, err := cron.ParseStandard("@every 1h")
+		if err != nil {
+			return nil, fmt.Errorf("error parsing CDC cleanup cron spec: %w", err)
+		}
+
+		c.AddCDCDeletedCleanupCronJob(ctx, cdcCleanupSchedule)
+	}
 
 	c.StartCron(ctx)
 
