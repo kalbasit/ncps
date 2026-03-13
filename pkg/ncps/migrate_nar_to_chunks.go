@@ -274,6 +274,9 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			}
 			defer c.Close()
 
+			// Ensure lazy chunking is disabled during the migration
+			c.SetCDCLazyChunking(false, 0)
+
 			// 5. Setup Storage
 			_, narInfoStore, narStore, err := getStorageBackend(ctx, cmd)
 			if err != nil {

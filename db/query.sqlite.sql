@@ -199,6 +199,10 @@ WHERE hash = ?;
 DELETE FROM nar_files
 WHERE hash = ? AND compression = ? AND "query" = ?;
 
+-- name: DeleteNarFileByID :execrows
+DELETE FROM nar_files
+WHERE id = ?;
+
 -- name: DeleteNarInfoByID :execrows
 DELETE FROM narinfos
 WHERE id = ?;
@@ -397,3 +401,15 @@ FROM chunks;
 -- name: HasAnyChunkedNarFiles :one
 -- Returns true if any nar_file has total_chunks > 0 (used for CDC auto-detection).
 SELECT EXISTS(SELECT 1 FROM nar_files WHERE total_chunks > 0) AS "exists";
+
+-- name: GetOldCompressedNarFiles :many
+-- Get compressed NAR files that have been replaced by chunked versions and are ready for deletion.
+-- This is used by the CDC delayed cleanup job to find old compressed files after chunking.
+SELECT old_nf.id, old_nf.hash, old_nf.compression, old_nf."query", old_nf.file_size, old_nf.created_at
+FROM nar_files old_nf
+JOIN nar_files new_nf ON old_nf.hash = new_nf.hash
+WHERE old_nf.total_chunks = 0
+  AND old_nf.compression != 'none'
+  AND new_nf.compression = 'none'
+  AND new_nf.total_chunks > 0
+  AND old_nf.created_at < sqlc.arg(cutoff_time);

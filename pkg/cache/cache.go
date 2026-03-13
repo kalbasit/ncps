@@ -372,6 +372,7 @@ type Cache struct {
 	// Lazy chunking configuration
 	cdcLazyChunkingEnabled bool
 	cdcBackgroundWorkers   int
+	cdcDeleteDelay         time.Duration
 
 	// Should the cache sign the narinfos?
 	shouldSignNarinfo bool
@@ -655,6 +656,22 @@ func (c *Cache) GetCDCBackgroundWorkers() int {
 	return c.cdcBackgroundWorkers
 }
 
+// SetCDCDeleteDelay sets the delay before deleting compressed NAR files after chunking.
+func (c *Cache) SetCDCDeleteDelay(delay time.Duration) {
+	c.cdcMu.Lock()
+	defer c.cdcMu.Unlock()
+
+	c.cdcDeleteDelay = delay
+}
+
+// GetCDCDeleteDelay returns the delay before deleting compressed NAR files after chunking.
+func (c *Cache) GetCDCDeleteDelay() time.Duration {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcDeleteDelay
+}
+
 func (c *Cache) setupMetricCallbacks() error {
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
 		// Observe total size
@@ -854,6 +871,17 @@ func (c *Cache) AddLRUCronJob(ctx context.Context, schedule cron.Schedule) {
 		Msg("adding a cronjob for LRU")
 
 	c.cron.Schedule(schedule, cron.FuncJob(c.runLRU(ctx)))
+}
+
+// AddCDCDeletedCleanupCronJob adds a periodic job to delete old compressed NAR files
+// after chunking is complete and the delay has passed.
+func (c *Cache) AddCDCDeletedCleanupCronJob(ctx context.Context, schedule cron.Schedule) {
+	zerolog.Ctx(ctx).
+		Info().
+		Time("next-run", schedule.Next(time.Now())).
+		Msg("adding a cronjob for CDC delayed cleanup")
+
+	c.cron.Schedule(schedule, cron.FuncJob(c.runCDCDeletedCleanup(ctx)))
 }
 
 // StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
@@ -1341,6 +1369,12 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 // ensureNarFileRecord ensures a NarFile record exists with the correct size.
 // It creates the record if it doesn't exist, or updates the size if it's incorrect.
 func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written int64, txName string) error {
+	zerolog.Ctx(ctx).Debug().
+		Str("hash", narURL.Hash).
+		Str("compression", narURL.Compression.String()).
+		Int64("written", written).
+		Msg("ensureNarFileRecord: starting transaction")
+
 	return c.withTransaction(ctx, txName, func(qtx database.Querier) error {
 		nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
 			Hash:        narURL.Hash,
@@ -1351,8 +1385,20 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 			TotalChunks: 0, // initially 0, background job will chunk if needed
 		})
 		if err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", narURL.Hash).
+				Str("compression", narURL.Compression.String()).
+				Msg("ensureNarFileRecord: CreateNarFile failed")
+
 			return err
 		}
+
+		zerolog.Ctx(ctx).Debug().
+			Int64("nar_file_id", nf.ID).
+			Str("hash", narURL.Hash).
+			Str("compression", narURL.Compression.String()).
+			Msg("ensureNarFileRecord: CreateNarFile succeeded")
 
 		// If the record existed but had a different size, update it to reflect the truth.
 		//nolint:gosec // G115: conversion is safe because size is non-negative
@@ -1762,12 +1808,24 @@ func (c *Cache) storeNarWithCDCFromReader(
 	)
 	defer span.End()
 
+	zerolog.Ctx(ctx).Debug().
+		Str("nar_url", narURL.String()).
+		Str("original_compression", narURL.Compression.String()).
+		Uint64("file_size", fileSize).
+		Msg("storeNarWithCDCFromReader: starting")
+
 	// For CDC, always store raw uncompressed data in chunks.
 	// Save original compression before normalizing narURL.
 	originalCompression := narURL.Compression
 	narURL.Compression = nar.CompressionTypeNone
 
 	// 1. Create or get NarFile record
+	zerolog.Ctx(ctx).Debug().
+		Str("nar_url", narURL.String()).
+		Str("compression", narURL.Compression.String()).
+		Uint64("file_size", fileSize).
+		Msg("storeNarWithCDCFromReader: calling findOrCreateNarFileForCDC")
+
 	narFileID, staleLockChunks, err := c.findOrCreateNarFileForCDC(ctx, narURL, fileSize)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
@@ -1892,7 +1950,11 @@ func (c *Cache) storeNarWithCDCFromReader(
 				// ATOMICITY REQUIREMENT: DeleteNarFileByHash CASCADE-deletes narinfo_nar_files.
 				// relinkNarInfosToNarFile must run in the same transaction so that narinfos are
 				// never left without a nar_file link if the process is killed between the two ops.
-				if originalCompression != nar.CompressionTypeNone {
+				//
+				// When lazy chunking is enabled, skip the deletion of the old nar_file record
+				// to allow for delayed cleanup. The background cleanup job will handle deletion
+				// after the configured delay.
+				if originalCompression != nar.CompressionTypeNone && !c.GetCDCLazyChunkingEnabled() {
 					oldNarURL := nar.URL{
 						Hash:        narURL.Hash,
 						Compression: originalCompression,
@@ -1976,6 +2038,12 @@ func (c *Cache) findOrCreateNarFileForCDC(
 	narURL *nar.URL,
 	fileSize uint64,
 ) (narFileID int64, staleLockChunks []database.Chunk, err error) {
+	zerolog.Ctx(ctx).Debug().
+		Str("hash", narURL.Hash).
+		Str("compression", narURL.Compression.String()).
+		Uint64("file_size", fileSize).
+		Msg("findOrCreateNarFileForCDC: starting transaction")
+
 	err = c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
 		nr, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
 			Hash:        narURL.Hash,
@@ -1985,8 +2053,20 @@ func (c *Cache) findOrCreateNarFileForCDC(
 			TotalChunks: 0, // Mark as "in progress"
 		})
 		if err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("hash", narURL.Hash).
+				Str("compression", narURL.Compression.String()).
+				Msg("findOrCreateNarFileForCDC: CreateNarFile failed")
+
 			return err
 		}
+
+		zerolog.Ctx(ctx).Debug().
+			Int64("nar_file_id", nr.ID).
+			Str("hash", narURL.Hash).
+			Str("compression", narURL.Compression.String()).
+			Msg("findOrCreateNarFileForCDC: CreateNarFile succeeded")
 
 		// If the record existed but had a different size, update it to reflect the truth.
 		// However, in CDC mode, once chunked, FileSize holds the uncompressed size.
@@ -3063,7 +3143,9 @@ func (c *Cache) pullNarInfo(
 	// Normalize narInfo to reflect this regardless of upstream compression.
 	// Note: we must NOT modify narURL here since prePullNar may still be using
 	// the pointer in a background goroutine. Instead, build the normalized URL string directly.
-	if c.isCDCEnabled() || narInfo.Compression == nar.CompressionTypeNone.String() {
+	// Skip normalization when lazy chunking is enabled - preserve original compression
+	// until the NAR is actually chunked.
+	if (c.isCDCEnabled() && !c.GetCDCLazyChunkingEnabled()) || narInfo.Compression == nar.CompressionTypeNone.String() {
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
@@ -4196,6 +4278,12 @@ func createOrUpdateNarFile(
 	narURL nar.URL,
 	fileSize uint64,
 ) (int64, error) {
+	zerolog.Ctx(ctx).Debug().
+		Str("hash", narURL.Hash).
+		Str("compression", narURL.Compression.String()).
+		Uint64("file_size", fileSize).
+		Msg("createOrUpdateNarFile: creating nar_file record")
+
 	// Create (or update existing) nar_file record.
 	// The query uses ON CONFLICT DO UPDATE (or ON DUPLICATE KEY UPDATE), so duplicates are handled
 	// by updating the timestamp and returning the record.
@@ -4206,8 +4294,20 @@ func createOrUpdateNarFile(
 		FileSize:    fileSize,
 	})
 	if err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("hash", narURL.Hash).
+			Str("compression", narURL.Compression.String()).
+			Msg("createOrUpdateNarFile: CreateNarFile failed")
+
 		return 0, fmt.Errorf("error creating or updating nar_file record in the database: %w", err)
 	}
+
+	zerolog.Ctx(ctx).Debug().
+		Int64("nar_file_id", newNarFile.ID).
+		Str("hash", narURL.Hash).
+		Str("compression", narURL.Compression.String()).
+		Msg("createOrUpdateNarFile: CreateNarFile succeeded")
 
 	return newNarFile.ID, nil
 }
@@ -4932,8 +5032,17 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 }
 
 func (c *Cache) executeTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
+	zerolog.Ctx(ctx).Debug().
+		Str("operation", operation).
+		Msg("executeTransaction: starting transaction")
+
 	tx, err := c.db.DB().BeginTx(ctx, nil)
 	if err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Msg("executeTransaction: failed to begin transaction")
+
 		return fmt.Errorf("error beginning a transaction for %s: %w", operation, err)
 	}
 
@@ -4944,18 +5053,32 @@ func (c *Cache) executeTransaction(ctx context.Context, operation string, fn fun
 					Error().
 					Err(err).
 					Str("operation", operation).
-					Msg("error rolling back the transaction")
+					Msg("executeTransaction: error rolling back the transaction")
 			}
 		}
 	}()
 
 	if err := fn(c.db.WithTx(tx)); err != nil {
+		zerolog.Ctx(ctx).Debug().
+			Err(err).
+			Str("operation", operation).
+			Msg("executeTransaction: transaction function returned error (will rollback)")
+
 		return err
 	}
 
 	if err := tx.Commit(); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("operation", operation).
+			Msg("executeTransaction: failed to commit transaction")
+
 		return fmt.Errorf("error committing the transaction for %s: %w", operation, err)
 	}
+
+	zerolog.Ctx(ctx).Debug().
+		Str("operation", operation).
+		Msg("executeTransaction: transaction committed successfully")
 
 	return nil
 }
@@ -5354,6 +5477,90 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			// Another instance is running LRU, skip this run
 			zerolog.Ctx(ctx).Info().
 				Msg("another instance is running LRU, skipping")
+		}
+	}
+}
+
+// runCDCDeletedCleanup runs the CDC delayed cleanup job to delete old compressed NAR files
+// after they have been replaced by chunked versions and the delay has passed.
+func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
+	return func() {
+		startTime := time.Now()
+
+		lockKey := "cdc-deleted-cleanup"
+
+		// Try to acquire cleanup lock (non-blocking)
+		acquired, err := c.withTryLock(ctx, "runCDCDeletedCleanup", lockKey, func() error {
+			log := zerolog.Ctx(ctx).With().
+				Str("op", "cdc-deleted-cleanup").
+				Dur("delete_delay", c.GetCDCDeleteDelay()).
+				Logger()
+
+			log.Info().Msg("running CDC delayed cleanup")
+
+			// Get old compressed NAR files that are ready for deletion
+			cutoffTime := time.Now().Add(-c.GetCDCDeleteDelay())
+
+			oldFiles, err := c.db.GetOldCompressedNarFiles(ctx, cutoffTime)
+			if err != nil {
+				log.Error().Err(err).Msg("error getting old compressed NAR files for cleanup")
+
+				return err
+			}
+
+			if len(oldFiles) == 0 {
+				log.Debug().Msg("no old compressed NAR files found for cleanup")
+
+				return nil
+			}
+
+			log.Info().Int("count", len(oldFiles)).Msg("found old compressed NAR files for cleanup")
+
+			// Delete each old compressed file
+			for _, oldFile := range oldFiles {
+				narURL := nar.URL{
+					Hash:        oldFile.Hash,
+					Compression: nar.CompressionType(oldFile.Compression),
+				}
+
+				// Delete from database first. If this fails, we'll retry on the next run.
+				if _, err := c.db.DeleteNarFileByID(ctx, oldFile.ID); err != nil {
+					log.Error().Err(err).
+						Int64("id", oldFile.ID).
+						Msg("failed to delete old compressed NAR file record from database")
+
+					continue
+				}
+
+				// Now, delete from storage. If this fails, we've orphaned a file,
+				// but the DB record is gone, so we won't retry.
+				if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+					if !errors.Is(err, storage.ErrNotFound) {
+						log.Error().Err(err).
+							Str("hash", oldFile.Hash).
+							Str("compression", oldFile.Compression).
+							Msg("failed to delete old compressed NAR from storage")
+					}
+					// Continue even if file not found in storage
+				}
+
+				log.Debug().
+					Str("hash", oldFile.Hash).
+					Str("compression", oldFile.Compression).
+					Msg("deleted old compressed NAR file")
+			}
+
+			log.Info().
+				Int("count", len(oldFiles)).
+				Dur("elapsed", time.Since(startTime)).
+				Msg("CDC delayed cleanup completed")
+
+			return nil
+		})
+		if err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Msg("error running CDC delayed cleanup")
+		} else if !acquired {
+			zerolog.Ctx(ctx).Debug().Msg("another instance is running CDC delayed cleanup, skipping")
 		}
 	}
 }
@@ -6024,6 +6231,10 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 //   - UpdateNarInfoCompressionFileSizeHashAndURLParams updates 0 rows if the
 //     URL/FileSize/FileHash is already correct.
 //   - DeleteNar returns ErrNotFound (ignored) if the file is already gone.
+//
+// When lazy chunking is enabled, the compressed NAR file is NOT deleted immediately.
+// Instead, it is scheduled for delayed deletion via the background cleanup job to allow
+// clients to update their cache.
 func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL nar.URL) {
 	newNarURL := nar.URL{
 		Hash:        originalNarURL.Hash,
@@ -6049,6 +6260,18 @@ func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL na
 			Str("old_url", originalURL).
 			Str("new_url", newURL).
 			Msg("failed to update narinfo compression/URL after CDC migration")
+	}
+
+	// When lazy chunking is enabled, don't delete the compressed NAR immediately.
+	// The background cleanup job will handle deletion after the configured delay.
+	// This allows clients to continue fetching from the compressed file while
+	// new requests are served from chunks.
+	if c.GetCDCLazyChunkingEnabled() {
+		zerolog.Ctx(ctx).Debug().
+			Str("nar_url", originalURL).
+			Msg("skipping immediate deletion of compressed NAR in lazy chunking mode")
+
+		return
 	}
 
 	// Delete the original whole-file NAR from narStore.  We attempt both the

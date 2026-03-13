@@ -169,6 +169,7 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 		testCDCDisabledWithChunkedNARsInDB(factory))
 	t.Run("GetNar with TransparentZstd returns decompressed content from CDC chunks",
 		testCDCGetNarTransparentZstd(factory))
+	t.Run("lazy chunking preserves old nar_file record", testCDCLazyChunkingPreservesOldNarFile(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -1878,5 +1879,82 @@ func testCDCGetNarTransparentZstd(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, content, string(data2), "second GetNar must return identical decompressed NAR content")
 		assert.Equal(t, int64(len(content)), size2)
+	}
+}
+
+// testCDCLazyChunkingPreservesOldNarFile verifies that when lazy chunking is enabled,
+// the old nar_file record with the original compression is NOT deleted during chunking.
+// Instead, it should remain in the database for the background cleanup job to handle later.
+//
+// This tests the scenario where:
+// 1. NAR is stored as whole file (CDC disabled)
+// 2. narinfo is stored
+// 3. CDC is enabled with lazy chunking
+// 4. MigrateNarToChunks is called - should NOT delete the old nar_file record.
+func testCDCLazyChunkingPreservesOldNarFile(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, db, _, dir, rebind, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		entry := testdata.Nar1
+		narURL := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+		// 1. Store a NAR as whole file (CDC disabled) with xz compression
+		err := c.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(entry.NarText)))
+		require.NoError(t, err)
+
+		// 2. Store a narinfo referencing this NAR with xz compression
+		err = c.PutNarInfo(ctx, entry.NarInfoHash, io.NopCloser(strings.NewReader(entry.NarInfoText)))
+		require.NoError(t, err)
+
+		// Verify we have ONE nar_file record with xz compression
+		var narFileCountBefore int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ?"),
+			entry.NarHash).Scan(&narFileCountBefore)
+		require.NoError(t, err)
+		assert.Equal(t, 1, narFileCountBefore,
+			"should have 1 nar_file record before enabling CDC")
+
+		// 3. Enable CDC with lazy chunking enabled
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+		c.SetCDCLazyChunking(true, 1)
+
+		// 4. Migrate the NAR to chunks - this should NOT delete the xz nar_file
+		// because lazy chunking is enabled
+		err = c.MigrateNarToChunks(ctx, &narURL)
+		require.NoError(t, err)
+
+		// 5. Verify we still have the xz nar_file record
+		// (lazy chunking should NOT delete it immediately)
+		var narFileCountAfter int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ?"),
+			entry.NarHash).Scan(&narFileCountAfter)
+		require.NoError(t, err)
+		assert.Equal(t, 2, narFileCountAfter,
+			"should still have 2 nar_file records after lazy chunking migration (old xz + new none)")
+
+		// Verify we still have the xz compression record
+		var xzCount int
+
+		err = db.DB().QueryRowContext(ctx,
+			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'xz'"),
+			entry.NarHash).Scan(&xzCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, xzCount,
+			"should still have nar_file record with xz compression")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/kalbasit/ncps/pkg/database/mysqldb"
 )
@@ -233,6 +234,19 @@ func (w *mysqlWrapper) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFil
 		Compression: arg.Compression,
 		Query:       arg.Query,
 	})
+	if err != nil {
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
+func (w *mysqlWrapper) DeleteNarFileByID(ctx context.Context, id int64) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.DeleteNarFileByID(ctx, id)
 	if err != nil {
 		return 0, err
 	}
@@ -1102,6 +1116,34 @@ func (w *mysqlWrapper) GetNarTotalSize(ctx context.Context) (int64, error) {
 	// Return Primitive / *sql.DB / etc
 
 	return res, nil
+}
+
+func (w *mysqlWrapper) GetOldCompressedNarFiles(ctx context.Context, cutoffTime time.Time) ([]GetOldCompressedNarFilesRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetOldCompressedNarFiles(ctx, cutoffTime)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetOldCompressedNarFilesRow, len(res))
+	for i, v := range res {
+		items[i] = GetOldCompressedNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			Query: v.Query,
+
+			FileSize: v.FileSize,
+
+			CreatedAt: v.CreatedAt,
+		}
+	}
+	return items, nil
 }
 
 func (w *mysqlWrapper) GetOrphanedChunks(ctx context.Context) ([]GetOrphanedChunksRow, error) {
