@@ -899,7 +899,6 @@ func (c *Cache) AddCDCDeletedCleanupCronJob(ctx context.Context, schedule cron.S
 func (c *Cache) AddCDCLazyRecoveryCronJob(
 	ctx context.Context,
 	schedule cron.Schedule,
-	interval time.Duration,
 	batchSize int,
 ) {
 	zerolog.Ctx(ctx).
@@ -908,7 +907,7 @@ func (c *Cache) AddCDCLazyRecoveryCronJob(
 		Int("batch_size", batchSize).
 		Msg("adding a cronjob for CDC lazy recovery")
 
-	c.cron.Schedule(schedule, cron.FuncJob(c.runCDCLazyRecovery(ctx, interval, batchSize)))
+	c.cron.Schedule(schedule, cron.FuncJob(c.runCDCLazyRecovery(ctx, schedule, batchSize)))
 }
 
 // StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
@@ -5593,7 +5592,7 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 }
 
 // runCDCLazyRecovery runs the CDC lazy recovery job to recover stuck NAR files.
-func (c *Cache) runCDCLazyRecovery(ctx context.Context, interval time.Duration, batchSize int) func() {
+func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, batchSize int) func() {
 	return func() {
 		startTime := time.Now()
 
@@ -5608,20 +5607,25 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, interval time.Duration, 
 
 			log.Info().Msg("running CDC lazy recovery")
 
+			// Calculate interval dynamically to ensure it's always correct.
+			// This uses the actual interval between scheduled runs.
+			nextRun := schedule.Next(startTime)
+			nextNextRun := schedule.Next(nextRun)
+			interval := nextNextRun.Sub(nextRun)
+
 			// Get stuck NAR files - those that have total_chunks = 0,
 			// chunking_started_at = NULL, and are older than the recovery interval
-			cutoffTime := time.Now().Add(-interval)
+			cutoffTime := startTime.Add(-interval)
 
 			// Ensure batch size is within int32 bounds to avoid overflow
-			//nolint:gosec // G115: batchSize comes from CLI flag with safe default (100), overflow is practically impossible
-			batchSizeInt32 := int32(batchSize)
-			if batchSize > 0 && batchSize > int(batchSizeInt32) {
-				batchSizeInt32 = math.MaxInt32
+			if batchSize > math.MaxInt32 {
+				batchSize = math.MaxInt32
 			}
 
+			//nolint:gosec // G115: batchSize is bounded by math.MaxInt32 above
 			stuckFiles, err := c.db.GetStuckNarFiles(ctx, database.GetStuckNarFilesParams{
 				CutoffTime: cutoffTime,
-				BatchSize:  batchSizeInt32,
+				BatchSize:  int32(batchSize),
 			})
 			if err != nil {
 				log.Error().Err(err).Msg("error getting stuck NAR files for recovery")

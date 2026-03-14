@@ -1165,10 +1165,7 @@ func createCache(
 
 		// Calculate the interval from the cron schedule for cutoff time calculation
 		// We use the interval between scheduled runs as the age cutoff
-		nextRun := lazyRecoverySchedule.Next(time.Now())
-		recoveryInterval := time.Until(nextRun)
-
-		c.AddCDCLazyRecoveryCronJob(ctx, lazyRecoverySchedule, recoveryInterval, lazyRecoveryBatchSize)
+		c.AddCDCLazyRecoveryCronJob(ctx, lazyRecoverySchedule, lazyRecoveryBatchSize)
 	}
 
 	c.StartCron(ctx)
