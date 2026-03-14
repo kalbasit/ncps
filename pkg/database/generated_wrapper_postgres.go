@@ -1218,6 +1218,35 @@ func (w *postgresWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, e
 	return items, nil
 }
 
+func (w *postgresWrapper) GetStuckNarFiles(ctx context.Context, arg GetStuckNarFilesParams) ([]GetStuckNarFilesRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetStuckNarFiles(ctx, postgresdb.GetStuckNarFilesParams{
+		CutoffTime: arg.CutoffTime,
+		BatchSize:  arg.BatchSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetStuckNarFilesRow, len(res))
+	for i, v := range res {
+		items[i] = GetStuckNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			Query: v.Query,
+
+			FileSize: v.FileSize,
+		}
+	}
+	return items, nil
+}
+
 func (w *postgresWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

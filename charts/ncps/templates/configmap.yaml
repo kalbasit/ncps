@@ -46,6 +46,12 @@ data:
         {{- if .Values.config.cdc.deleteDelay }}
         delete-delay: {{ .Values.config.cdc.deleteDelay }}
         {{- end }}
+        {{- if .Values.config.cdc.lazyRecoverySchedule }}
+        lazy-recovery-schedule: {{ .Values.config.cdc.lazyRecoverySchedule }}
+        {{- end }}
+        {{- if .Values.config.cdc.lazyRecoveryBatchSize }}
+        lazy-recovery-batch-size: {{ .Values.config.cdc.lazyRecoveryBatchSize }}
+        {{- end }}
       {{- end }}
 
       {{- if and (or (eq .Values.config.database.type "postgresql") (eq .Values.config.database.type "mysql")) (or .Values.config.database.pool.maxOpenConns .Values.config.database.pool.maxIdleConns) }}

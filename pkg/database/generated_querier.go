@@ -347,6 +347,17 @@ type Querier interface {
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
 	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
+	// Get NAR files that are stuck (not chunked, no active chunking, and older than the given age).
+	// This is used by the CDC lazy recovery job to find NARs that failed to chunk due to restart.
+	//
+	//  SELECT id, hash, compression, query, file_size
+	//  FROM nar_files
+	//  WHERE total_chunks = 0
+	//    AND chunking_started_at IS NULL
+	//    AND created_at < $1
+	//  ORDER BY id
+	//  LIMIT $2
+	GetStuckNarFiles(ctx context.Context, arg GetStuckNarFilesParams) ([]GetStuckNarFilesRow, error)
 	// Get all narinfo hashes that have no URL (unmigrated).
 	//
 	//  SELECT hash
