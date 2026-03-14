@@ -191,7 +191,7 @@ config:
 
     # Cron schedule for recovering stuck NARs in lazy chunking mode (default: @every 5m)
     # Use @every X format (e.g., @every 5m, @every 10m) or standard cron expressions
-    lazyRecoverySchedule: "5m"
+    lazyRecoverySchedule: "@every 5m"
 
     # Maximum number of stuck NARs to process per recovery cron run (default: 100)
     lazyRecoveryBatchSize: 100
