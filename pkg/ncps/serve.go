@@ -203,6 +203,23 @@ func serveCommand(
 				Value:   24 * time.Hour,
 			},
 			&cli.StringFlag{
+				Name:    "cache-cdc-lazy-recovery-schedule",
+				Usage:   "Cron schedule for recovering stuck NARs in lazy chunking mode (default: @every 5m)",
+				Sources: flagSources("cache.cdc.lazy-recovery-schedule", "CACHE_CDC_LAZY_RECOVERY_SCHEDULE"),
+				Value:   "@every 5m",
+				Validator: func(s string) error {
+					_, err := cron.ParseStandard(s)
+
+					return err
+				},
+			},
+			&cli.IntFlag{
+				Name:    "cache-cdc-lazy-recovery-batch-size",
+				Usage:   "Maximum number of stuck NARs to process per recovery cron run (default: 100)",
+				Sources: flagSources("cache.cdc.lazy-recovery-batch-size", "CACHE_CDC_LAZY_RECOVERY_BATCH_SIZE"),
+				Value:   100,
+			},
+			&cli.StringFlag{
 				Name:     "cache-database-url",
 				Usage:    "The URL of the database",
 				Sources:  flagSources("cache.database-url", "CACHE_DATABASE_URL"),
@@ -1135,6 +1152,23 @@ func createCache(
 		}
 
 		c.AddCDCDeletedCleanupCronJob(ctx, cdcCleanupSchedule)
+
+		// Add CDC lazy recovery cron job to recover stuck NARs
+		lazyRecoveryScheduleStr := cmd.String("cache-cdc-lazy-recovery-schedule")
+
+		lazyRecoverySchedule, err := cron.ParseStandard(lazyRecoveryScheduleStr)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing CDC lazy recovery cron spec: %w", err)
+		}
+
+		lazyRecoveryBatchSize := cmd.Int("cache-cdc-lazy-recovery-batch-size")
+
+		// Calculate the interval from the cron schedule for cutoff time calculation
+		// We use the interval between scheduled runs as the age cutoff
+		nextRun := lazyRecoverySchedule.Next(time.Now())
+		recoveryInterval := time.Until(nextRun)
+
+		c.AddCDCLazyRecoveryCronJob(ctx, lazyRecoverySchedule, recoveryInterval, lazyRecoveryBatchSize)
 	}
 
 	c.StartCron(ctx)

@@ -146,6 +146,19 @@ type GetOrphanedChunksRow struct {
 	UpdatedAt sql.NullTime
 }
 
+type GetStuckNarFilesParams struct {
+	CutoffTime time.Time
+	BatchSize  int32
+}
+
+type GetStuckNarFilesRow struct {
+	ID          int64
+	Hash        string
+	Compression string
+	Query       string
+	FileSize    uint64
+}
+
 type LinkNarFileToChunkParams struct {
 	NarFileID  int64
 	ChunkID    int64

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -891,6 +892,23 @@ func (c *Cache) AddCDCDeletedCleanupCronJob(ctx context.Context, schedule cron.S
 		Msg("adding a cronjob for CDC delayed cleanup")
 
 	c.cron.Schedule(schedule, cron.FuncJob(c.runCDCDeletedCleanup(ctx)))
+}
+
+// AddCDCLazyRecoveryCronJob adds a periodic job to recover stuck NAR files
+// that failed to chunk due to restart or other issues.
+func (c *Cache) AddCDCLazyRecoveryCronJob(
+	ctx context.Context,
+	schedule cron.Schedule,
+	interval time.Duration,
+	batchSize int,
+) {
+	zerolog.Ctx(ctx).
+		Info().
+		Time("next-run", schedule.Next(time.Now())).
+		Int("batch_size", batchSize).
+		Msg("adding a cronjob for CDC lazy recovery")
+
+	c.cron.Schedule(schedule, cron.FuncJob(c.runCDCLazyRecovery(ctx, interval, batchSize)))
 }
 
 // StartCron starts the cron scheduler in its own go-routine, or no-op if already started.
@@ -5570,6 +5588,83 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 			zerolog.Ctx(ctx).Error().Err(err).Msg("error running CDC delayed cleanup")
 		} else if !acquired {
 			zerolog.Ctx(ctx).Debug().Msg("another instance is running CDC delayed cleanup, skipping")
+		}
+	}
+}
+
+// runCDCLazyRecovery runs the CDC lazy recovery job to recover stuck NAR files.
+func (c *Cache) runCDCLazyRecovery(ctx context.Context, interval time.Duration, batchSize int) func() {
+	return func() {
+		startTime := time.Now()
+
+		lockKey := "cdc-lazy-recovery"
+
+		// Try to acquire recovery lock (non-blocking)
+		acquired, err := c.withTryLock(ctx, "runCDCLazyRecovery", lockKey, func() error {
+			log := zerolog.Ctx(ctx).With().
+				Str("op", "cdc-lazy-recovery").
+				Int("batch_size", batchSize).
+				Logger()
+
+			log.Info().Msg("running CDC lazy recovery")
+
+			// Get stuck NAR files - those that have total_chunks = 0,
+			// chunking_started_at = NULL, and are older than the recovery interval
+			cutoffTime := time.Now().Add(-interval)
+
+			// Ensure batch size is within int32 bounds to avoid overflow
+			//nolint:gosec // G115: batchSize comes from CLI flag with safe default (100), overflow is practically impossible
+			batchSizeInt32 := int32(batchSize)
+			if batchSize > 0 && batchSize > int(batchSizeInt32) {
+				batchSizeInt32 = math.MaxInt32
+			}
+
+			stuckFiles, err := c.db.GetStuckNarFiles(ctx, database.GetStuckNarFilesParams{
+				CutoffTime: cutoffTime,
+				BatchSize:  batchSizeInt32,
+			})
+			if err != nil {
+				log.Error().Err(err).Msg("error getting stuck NAR files for recovery")
+
+				return err
+			}
+
+			if len(stuckFiles) == 0 {
+				log.Debug().Msg("no stuck NAR files found for recovery")
+
+				return nil
+			}
+
+			log.Info().Int("count", len(stuckFiles)).Msg("found stuck NAR files for recovery")
+
+			// Trigger background chunking for each stuck NAR
+			for _, stuckFile := range stuckFiles {
+				narURL := nar.URL{
+					Hash:        stuckFile.Hash,
+					Compression: nar.CompressionType(stuckFile.Compression),
+				}
+
+				// Trigger background migration - this uses distributed locking internally
+				// to prevent duplicate processing across instances
+				c.BackgroundMigrateNarToChunks(ctx, narURL)
+
+				log.Debug().
+					Str("hash", stuckFile.Hash).
+					Str("compression", stuckFile.Compression).
+					Msg("triggered background chunking for stuck NAR file")
+			}
+
+			log.Info().
+				Int("count", len(stuckFiles)).
+				Dur("elapsed", time.Since(startTime)).
+				Msg("CDC lazy recovery completed")
+
+			return nil
+		})
+		if err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Msg("error running CDC lazy recovery")
+		} else if !acquired {
+			zerolog.Ctx(ctx).Debug().Msg("another instance is running CDC lazy recovery, skipping")
 		}
 	}
 }
