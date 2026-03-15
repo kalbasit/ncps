@@ -189,6 +189,13 @@ config:
     # This allows clients to update their cache before the original compressed file is removed
     deleteDelay: 24h
 
+    # Cron schedule for recovering stuck NARs in lazy chunking mode (default: @every 5m)
+    # Use @every X format (e.g., @every 5m, @every 10m) or standard cron expressions
+    lazyRecoverySchedule: "@every 5m"
+
+    # Maximum number of stuck NARs to process per recovery cron run (default: 100)
+    lazyRecoveryBatchSize: 100
+
     # Bypass flag for HA validation without CDC
     # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
     # See https://github.com/kalbasit/ncps/issues/660 for more details.
