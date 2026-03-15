@@ -849,7 +849,7 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 		require.NoError(t, err)
 
 		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
-		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"))
+		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"), int64(len("content")))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error checking if nar exists")
 	})
@@ -881,7 +881,7 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 		require.NoError(t, err)
 
 		narURL := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: "none"}
-		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"))
+		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"), int64(len("content")))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error putting nar to S3")
 	})
@@ -902,7 +902,7 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 		require.NoError(t, err)
 
 		narURL := nar.URL{Hash: "in", Compression: "none"} // invalid hash
-		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"))
+		_, err = store.PutNar(ctx, narURL, strings.NewReader("content"), int64(len("content")))
 		require.Error(t, err)
 	})
 }
@@ -1431,7 +1431,7 @@ func TestHasNar_Integration(t *testing.T) {
 
 		// Clean up first and put the nar
 		_ = store.DeleteNar(ctx, narURL)
-		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText), int64(len(testdata.Nar1.NarText)))
 		require.NoError(t, err)
 
 		assert.True(t, store.HasNar(ctx, narURL))
@@ -1480,7 +1480,7 @@ func TestGetNar_Integration(t *testing.T) {
 
 		// Clean up first and put the nar
 		_ = store.DeleteNar(ctx, narURL)
-		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText), int64(len(testdata.Nar1.NarText)))
 		require.NoError(t, err)
 
 		// Register the Clean up
@@ -1529,7 +1529,7 @@ func TestPutNar_Integration(t *testing.T) {
 			store.DeleteNar(ctx, narURL)
 		})
 
-		written, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		written, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText), int64(len(testdata.Nar1.NarText)))
 		require.NoError(t, err)
 		assert.EqualValues(t, len(testdata.Nar1.NarText), written)
 
@@ -1560,11 +1560,11 @@ func TestPutNar_Integration(t *testing.T) {
 
 		// Clean up first and put the nar
 		_ = store.DeleteNar(ctx, narURL)
-		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText), int64(len(testdata.Nar1.NarText)))
 		require.NoError(t, err)
 
 		// Try to put again
-		_, err = store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		_, err = store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText), int64(len(testdata.Nar1.NarText)))
 		require.ErrorIs(t, err, storage.ErrAlreadyExists)
 	})
 }
@@ -1611,7 +1611,7 @@ func TestDeleteNar_Integration(t *testing.T) {
 
 		// Clean up first and put the nar
 		_ = store.DeleteNar(ctx, narURL)
-		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText))
+		_, err := store.PutNar(ctx, narURL, strings.NewReader(testdata.Nar1.NarText), int64(len(testdata.Nar1.NarText)))
 		require.NoError(t, err)
 
 		// Delete it

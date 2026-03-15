@@ -1487,7 +1487,7 @@ func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFact
 		require.NoError(t, err, "resetting narinfo URL to simulate crash state")
 
 		_, err = localStore.PutNar(ctx, nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz},
-			io.NopCloser(strings.NewReader(entry.NarText)))
+			io.NopCloser(strings.NewReader(entry.NarText)), int64(len(entry.NarText)))
 		require.NoError(t, err, "putting whole-file NAR back to simulate crash state")
 
 		// Verify the crash state is set up correctly.
