@@ -1151,7 +1151,8 @@ func testGetNarInfoMigratesInvalidURL(factory cacheFactory) func(*testing.T) {
 			Hash:        testdata.Nar1.NarHash,
 			Compression: testdata.Nar1.NarCompression,
 		}
-		_, err = localStore.PutNar(ctx, nu, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+		narSize := int64(len(testdata.Nar1.NarText))
+		_, err = localStore.PutNar(ctx, nu, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)), narSize)
 		require.NoError(t, err)
 
 		// 2. Insert a minimal record into the database
@@ -1215,7 +1216,8 @@ func testGetNarInfoConcurrentMigrationAttempts(factory cacheFactory) func(*testi
 			Hash:        testdata.Nar1.NarHash,
 			Compression: testdata.Nar1.NarCompression,
 		}
-		_, err = localStore.PutNar(ctx, nu, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+		narSize := int64(len(testdata.Nar1.NarText))
+		_, err = localStore.PutNar(ctx, nu, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)), narSize)
 		require.NoError(t, err)
 
 		query := rebind("INSERT INTO narinfos (hash, created_at) VALUES (?, ?)")

@@ -1451,7 +1451,7 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 			return c.putNarWithCDC(ctx, narURL, r)
 		}
 
-		written, err := c.narStore.PutNar(ctx, narURL, r)
+		written, err := c.narStore.PutNar(ctx, narURL, r, -1)
 		if err != nil {
 			if errors.Is(err, storage.ErrAlreadyExists) {
 				zerolog.Ctx(ctx).Debug().Msg("nar already exists in storage, getting size to ensure db record")
@@ -1645,6 +1645,19 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 		return c.storeNarWithCDC(ctx, tempPath, narURL, nil)
 	}
 
+	// Get file size before opening for use in PutNar
+	fi, err := os.Stat(tempPath)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error stating the nar temp file")
+
+		return err
+	}
+
+	fileSize := fi.Size()
+
 	f, err := os.Open(tempPath)
 	if err != nil {
 		zerolog.Ctx(ctx).
@@ -1665,8 +1678,15 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 	// Other compression types (zstd, xz, etc.) are stored as-is under their original
 	// extension.
 	storeURL := *narURL
+
+	var putSize int64
+
 	if narURL.Compression == nar.CompressionTypeNone {
 		zerolog.Ctx(ctx).Debug().Msg("re-compressing uncompressed NAR as zstd before storing")
+
+		// When re-compressing, we don't know the final compressed size,
+		// so pass -1 to trigger multipart upload path in S3 storage.
+		putSize = -1
 
 		pr, pw := io.Pipe()
 
@@ -1686,9 +1706,12 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 
 		reader = pr
 		storeURL.Compression = nar.CompressionTypeZstd
+	} else {
+		// For pre-compressed NARs, we know the file size
+		putSize = fileSize
 	}
 
-	written, err := c.narStore.PutNar(ctx, storeURL, reader)
+	written, err := c.narStore.PutNar(ctx, storeURL, reader, putSize)
 	if err != nil {
 		if errors.Is(err, storage.ErrAlreadyExists) {
 			// The NAR was already in storage — another request beat us to it, or the
