@@ -401,6 +401,6 @@ SELECT id, hash, compression, query, file_size
 FROM nar_files
 WHERE total_chunks = 0
   AND chunking_started_at IS NULL
-  AND created_at < ?
+  AND created_at < sqlc.arg(cutoff_time)
 ORDER BY id
 LIMIT ?;
