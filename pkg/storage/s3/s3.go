@@ -536,7 +536,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader, size
 		// This is needed when re-compressing on-the-fly (e.g., compression=none → zstd)
 		var err error
 
-		written, err = s.putObjectWithCountingReader(ctx, key, body, contentType)
+		written, err = s.putObjectStream(ctx, key, body, contentType)
 		if err != nil {
 			return 0, fmt.Errorf("error putting nar to S3: %w", err)
 		}
@@ -545,49 +545,27 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader, size
 	return written, nil
 }
 
-// countingReader wraps a reader and counts bytes read from it.
-type countingReader struct {
-	reader io.Reader
-	count  int64
-}
-
-func (cr *countingReader) Read(p []byte) (n int, err error) {
-	n, err = cr.reader.Read(p)
-	cr.count += int64(n)
-
-	return n, err
-}
-
-func (cr *countingReader) Count() int64 {
-	return cr.count
-}
-
-// putObjectWithCountingReader uploads an object using a counting reader.
-// This avoids the memory spike that occurs when PutObject is called with size=-1
-// (unknown size), which causes MinIO to buffer the entire stream to calculate parts.
-// Instead, we use a counting reader to track bytes as they're read, and after the
-// upload completes, we know the total size.
-func (s *Store) putObjectWithCountingReader(
+// putObjectStream uploads an object of unknown size using a streaming multipart upload.
+// This avoids the memory spike that occurs when PutObject is called with an unknown size (size=-1)
+// without a PartSize, which causes MinIO to buffer the entire stream.
+// By setting PartSize, we force a streaming multipart upload.
+func (s *Store) putObjectStream(
 	ctx context.Context,
 	key string,
 	body io.Reader,
 	contentType string,
 ) (int64, error) {
-	// Wrap the body in a counting reader to track bytes
-	cr := &countingReader{reader: body}
-
-	// Use PutObject with a large part size (5MB) to minimize memory usage
-	// The key insight is that we pass a non-negative size to prevent minio from
-	// buffering the entire stream. We use 5MB as an estimate - minio will use
-	// this to determine part boundaries, but won't buffer more than needed.
+	// Use PutObject with a part size to trigger a streaming multipart upload.
+	// When the object size is unknown (size=-1), providing a PartSize prevents
+	// the minio-go client from buffering the entire stream into memory.
 	options := minio.PutObjectOptions{
 		ContentType: contentType,
 		PartSize:    5 * 1024 * 1024, // 5MB part size
 	}
 
-	result, err := s.client.PutObject(ctx, s.bucket, key, cr, -1, options)
+	result, err := s.client.PutObject(ctx, s.bucket, key, body, -1, options)
 	if err != nil {
-		return 0, fmt.Errorf("error putting nar to S3: %w", err)
+		return 0, fmt.Errorf("error putting nar to S3 with unknown size: %w", err)
 	}
 
 	return result.Size, nil
