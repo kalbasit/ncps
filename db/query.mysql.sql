@@ -393,3 +393,14 @@ WHERE old_nf.total_chunks = 0
   AND new_nf.compression = 'none'
   AND new_nf.total_chunks > 0
   AND old_nf.created_at < sqlc.arg(cutoff_time);
+
+-- name: GetStuckNarFiles :many
+-- Get NAR files that are stuck (not chunked, no active chunking, and older than the given age).
+-- This is used by the CDC lazy recovery job to find NARs that failed to chunk due to restart.
+SELECT id, hash, compression, query, file_size
+FROM nar_files
+WHERE total_chunks = 0
+  AND chunking_started_at IS NULL
+  AND created_at < sqlc.arg(cutoff_time)
+ORDER BY id
+LIMIT ?;

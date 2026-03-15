@@ -1210,6 +1210,35 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, erro
 	return items, nil
 }
 
+func (w *mysqlWrapper) GetStuckNarFiles(ctx context.Context, arg GetStuckNarFilesParams) ([]GetStuckNarFilesRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetStuckNarFiles(ctx, mysqldb.GetStuckNarFilesParams{
+		CutoffTime: arg.CutoffTime,
+		Limit:      arg.BatchSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetStuckNarFilesRow, len(res))
+	for i, v := range res {
+		items[i] = GetStuckNarFilesRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Compression: v.Compression,
+
+			Query: v.Query,
+
+			FileSize: v.FileSize,
+		}
+	}
+	return items, nil
+}
+
 func (w *mysqlWrapper) GetUnmigratedNarInfoHashes(ctx context.Context) ([]string, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

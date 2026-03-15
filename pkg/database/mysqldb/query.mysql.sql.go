@@ -1370,6 +1370,68 @@ func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFile
 	return items, nil
 }
 
+const getStuckNarFiles = `-- name: GetStuckNarFiles :many
+SELECT id, hash, compression, query, file_size
+FROM nar_files
+WHERE total_chunks = 0
+  AND chunking_started_at IS NULL
+  AND created_at < ?
+ORDER BY id
+LIMIT ?
+`
+
+type GetStuckNarFilesParams struct {
+	CutoffTime time.Time
+	Limit      int32
+}
+
+type GetStuckNarFilesRow struct {
+	ID          int64
+	Hash        string
+	Compression string
+	Query       string
+	FileSize    uint64
+}
+
+// Get NAR files that are stuck (not chunked, no active chunking, and older than the given age).
+// This is used by the CDC lazy recovery job to find NARs that failed to chunk due to restart.
+//
+//	SELECT id, hash, compression, query, file_size
+//	FROM nar_files
+//	WHERE total_chunks = 0
+//	  AND chunking_started_at IS NULL
+//	  AND created_at < ?
+//	ORDER BY id
+//	LIMIT ?
+func (q *Queries) GetStuckNarFiles(ctx context.Context, arg GetStuckNarFilesParams) ([]GetStuckNarFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getStuckNarFiles, arg.CutoffTime, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetStuckNarFilesRow
+	for rows.Next() {
+		var i GetStuckNarFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Compression,
+			&i.Query,
+			&i.FileSize,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUnmigratedNarInfoHashes = `-- name: GetUnmigratedNarInfoHashes :many
 SELECT hash
 FROM narinfos
