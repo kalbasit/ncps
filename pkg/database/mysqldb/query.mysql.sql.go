@@ -1381,8 +1381,8 @@ LIMIT ?
 `
 
 type GetStuckNarFilesParams struct {
-	CreatedAt time.Time
-	Limit     int32
+	CutoffTime time.Time
+	Limit      int32
 }
 
 type GetStuckNarFilesRow struct {
@@ -1404,7 +1404,7 @@ type GetStuckNarFilesRow struct {
 //	ORDER BY id
 //	LIMIT ?
 func (q *Queries) GetStuckNarFiles(ctx context.Context, arg GetStuckNarFilesParams) ([]GetStuckNarFilesRow, error) {
-	rows, err := q.db.QueryContext(ctx, getStuckNarFiles, arg.CreatedAt, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, getStuckNarFiles, arg.CutoffTime, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
