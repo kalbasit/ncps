@@ -345,7 +345,8 @@ Deriver: test.drv
 					Hash:        actualNarHash,
 					Compression: nar.CompressionTypeXz,
 				}
-				narSize, err := testLocalStore.PutNar(newContext(), narURL, strings.NewReader(testdata.Nar8.NarText))
+				narSz := int64(len(testdata.Nar8.NarText))
+				narSize, err := testLocalStore.PutNar(newContext(), narURL, strings.NewReader(testdata.Nar8.NarText), narSz)
 				require.NoError(t, err)
 				require.Positive(t, narSize)
 

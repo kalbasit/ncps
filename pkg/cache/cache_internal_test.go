@@ -1711,7 +1711,8 @@ func testStoreNarFromTempFileHealsOrphanOnErrAlreadyExists(factory cacheFactory)
 		// 1. Write the NAR directly to narStore, simulating what narStore.PutNar does
 		//    during a normal pull. This represents the state after a crash between
 		//    narStore.PutNar and ensureNarFileRecord.
-		_, err := localStore.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+		narSize := int64(len(testdata.Nar1.NarText))
+		_, err := localStore.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)), narSize)
 		require.NoError(t, err, "writing NAR directly to narStore should succeed")
 
 		// 2. Verify no DB record exists yet (the crash scenario).
@@ -1775,7 +1776,8 @@ func testGetNarFromStoreHealsOrphanDBRecord(factory cacheFactory) func(*testing.
 		}
 
 		// 1. Write the NAR directly to narStore (simulates crash-orphan state).
-		_, err := localStore.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)))
+		narSize := int64(len(testdata.Nar1.NarText))
+		_, err := localStore.PutNar(ctx, narURL, io.NopCloser(strings.NewReader(testdata.Nar1.NarText)), narSize)
 		require.NoError(t, err, "writing NAR directly to narStore should succeed")
 
 		// 2. Verify no DB record exists yet.

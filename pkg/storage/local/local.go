@@ -404,7 +404,8 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 }
 
 // PutNar puts the nar in the store.
-func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
+// The size parameter is ignored for local storage since it streams efficiently with io.Copy.
+func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader, _ int64) (int64, error) {
 	// Normalize the NAR URL to handle URLs with embedded narinfo hash prefix
 	normalizedURL, err := narURL.Normalize()
 	if err != nil {

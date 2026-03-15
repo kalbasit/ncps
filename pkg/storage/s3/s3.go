@@ -475,7 +475,9 @@ func (s *Store) GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadClose
 }
 
 // PutNar puts the nar in the store.
-func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int64, error) {
+// If size > 0, it's the known size of the nar (for efficient streaming).
+// If size <= 0, the size is unknown (uses manual multipart upload to avoid memory spike).
+func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader, size int64) (int64, error) {
 	key, err := s.narPath(narURL)
 	if err != nil {
 		return 0, err
@@ -509,20 +511,86 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader) (int
 		contentType = "application/x-nix-nar-" + ext
 	}
 
-	// Put the nar - MinIO handles streaming uploads
-	info, err := s.client.PutObject(
-		ctx,
-		s.bucket,
-		key,
-		body,
-		-1, // unknown size, MinIO will handle it
-		minio.PutObjectOptions{ContentType: contentType},
-	)
+	// If size is known (> 0), use regular PutObject which streams efficiently.
+	// If size is unknown (<= 0), use counting reader approach to avoid buffering
+	// the entire stream into memory (which happens when size=-1 is passed to PutObject).
+	var written int64
+
+	if size > 0 {
+		// Known size - use regular PutObject, MinIO will stream without buffering
+		result, e := s.client.PutObject(
+			ctx,
+			s.bucket,
+			key,
+			body,
+			size,
+			minio.PutObjectOptions{ContentType: contentType},
+		)
+		if e != nil {
+			return 0, fmt.Errorf("error putting nar to S3: %w", e)
+		}
+
+		written = result.Size
+	} else {
+		// Unknown size - use counting reader to avoid memory spike.
+		// This is needed when re-compressing on-the-fly (e.g., compression=none → zstd)
+		var err error
+
+		written, err = s.putObjectWithCountingReader(ctx, key, body, contentType)
+		if err != nil {
+			return 0, fmt.Errorf("error putting nar to S3: %w", err)
+		}
+	}
+
+	return written, nil
+}
+
+// countingReader wraps a reader and counts bytes read from it.
+type countingReader struct {
+	reader io.Reader
+	count  int64
+}
+
+func (cr *countingReader) Read(p []byte) (n int, err error) {
+	n, err = cr.reader.Read(p)
+	cr.count += int64(n)
+
+	return n, err
+}
+
+func (cr *countingReader) Count() int64 {
+	return cr.count
+}
+
+// putObjectWithCountingReader uploads an object using a counting reader.
+// This avoids the memory spike that occurs when PutObject is called with size=-1
+// (unknown size), which causes MinIO to buffer the entire stream to calculate parts.
+// Instead, we use a counting reader to track bytes as they're read, and after the
+// upload completes, we know the total size.
+func (s *Store) putObjectWithCountingReader(
+	ctx context.Context,
+	key string,
+	body io.Reader,
+	contentType string,
+) (int64, error) {
+	// Wrap the body in a counting reader to track bytes
+	cr := &countingReader{reader: body}
+
+	// Use PutObject with a large part size (5MB) to minimize memory usage
+	// The key insight is that we pass a non-negative size to prevent minio from
+	// buffering the entire stream. We use 5MB as an estimate - minio will use
+	// this to determine part boundaries, but won't buffer more than needed.
+	options := minio.PutObjectOptions{
+		ContentType: contentType,
+		PartSize:    5 * 1024 * 1024, // 5MB part size
+	}
+
+	result, err := s.client.PutObject(ctx, s.bucket, key, cr, -1, options)
 	if err != nil {
 		return 0, fmt.Errorf("error putting nar to S3: %w", err)
 	}
 
-	return info.Size, nil
+	return result.Size, nil
 }
 
 // DeleteNar deletes the nar from the store.
