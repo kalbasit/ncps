@@ -44,10 +44,10 @@ data:
         background-workers: {{ .Values.config.cdc.backgroundWorkers }}
         {{- end }}
         {{- if .Values.config.cdc.deleteDelay }}
-        delete-delay: {{ .Values.config.cdc.deleteDelay }}
+        delete-delay: {{ .Values.config.cdc.deleteDelay | quote}}
         {{- end }}
         {{- if .Values.config.cdc.lazyRecoverySchedule }}
-        lazy-recovery-schedule: {{ .Values.config.cdc.lazyRecoverySchedule }}
+        lazy-recovery-schedule: {{ .Values.config.cdc.lazyRecoverySchedule | quote }}
         {{- end }}
         {{- if .Values.config.cdc.lazyRecoveryBatchSize }}
         lazy-recovery-batch-size: {{ .Values.config.cdc.lazyRecoveryBatchSize }}

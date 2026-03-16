@@ -692,6 +692,8 @@ def main():
             cmd_app.append("--cache-cdc-min=16384")
             cmd_app.append("--cache-cdc-avg=65536")
             cmd_app.append("--cache-cdc-max=262144")
+            cmd_app.append("--cache-cdc-lazy-recovery-schedule='@every 5m'")
+            cmd_app.append("--cache-cdc-delete-delay=5m")
         if args.storage == "local":
             cmd_app.extend(["--cache-storage-local", local_storage_path])
         else:

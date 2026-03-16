@@ -5666,9 +5666,18 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 
 			// Trigger background chunking for each stuck NAR
 			for _, stuckFile := range stuckFiles {
+				// Parse the query string from the database
+				parsedQuery, err := url.ParseQuery(stuckFile.Query)
+				if err != nil {
+					log.Error().Err(err).Str("query", stuckFile.Query).Msg("failed to parse query string for stuck NAR file")
+
+					continue
+				}
+
 				narURL := nar.URL{
 					Hash:        stuckFile.Hash,
 					Compression: nar.CompressionType(stuckFile.Compression),
+					Query:       parsedQuery,
 				}
 
 				// Trigger background migration - this uses distributed locking internally
