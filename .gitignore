@@ -58,3 +58,4 @@ __pycache__/
 
 # Agents
 /.claude/settings.local.json
+/.container-use/environment.json
