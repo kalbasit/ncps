@@ -25,13 +25,13 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'min: 65536'
+          pattern: "min: 65536"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'avg: 262144'
+          pattern: "avg: 262144"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'max: 1048576'
+          pattern: "max: 1048576"
       - notMatchRegex:
           path: data["config.yaml"]
           pattern: '[0-9]\.[0-9]+e\+[0-9]+'
@@ -46,13 +46,13 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'min: 1000000'
+          pattern: "min: 1000000"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'avg: 10000000'
+          pattern: "avg: 10000000"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'max: 100000000'
+          pattern: "max: 100000000"
       - notMatchRegex:
           path: data["config.yaml"]
           pattern: '[0-9]\.[0-9]+e\+[0-9]+'
@@ -65,7 +65,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'lazy-chunking-enabled: true'
+          pattern: "lazy-chunking-enabled: true"
 
   - it: should configure CDC lazy chunking when disabled
     set:
@@ -75,7 +75,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'lazy-chunking-enabled: false'
+          pattern: "lazy-chunking-enabled: false"
 
   - it: should not render CDC lazy chunking when nil
     set:
@@ -84,7 +84,7 @@ tests:
     asserts:
       - notMatchRegex:
           path: data["config.yaml"]
-          pattern: 'lazy-chunking-enabled'
+          pattern: "lazy-chunking-enabled"
 
   - it: should configure CDC background workers
     set:
@@ -94,7 +94,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'background-workers: 8'
+          pattern: "background-workers: 8"
 
   - it: should configure CDC delete delay
     set:
@@ -104,7 +104,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'delete-delay: 48h'
+          pattern: 'delete-delay: "48h"'
 
   - it: should enable analytics reporting by default
     set:
@@ -112,7 +112,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'enabled: true'
+          pattern: "enabled: true"
 
   - it: should disable analytics reporting when set to false
     set:
@@ -121,7 +121,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'enabled: false'
+          pattern: "enabled: false"
 
   - it: should configure LRU settings
     set:
@@ -183,7 +183,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'force-path-style: true'
+          pattern: "force-path-style: true"
 
   - it: should configure database pool settings for PostgreSQL
     set:
@@ -196,10 +196,10 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'max-open-conns: 50'
+          pattern: "max-open-conns: 50"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'max-idle-conns: 10'
+          pattern: "max-idle-conns: 10"
 
   - it: should configure database pool settings for MySQL
     set:
@@ -212,10 +212,10 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'max-open-conns: 50'
+          pattern: "max-open-conns: 50"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'max-idle-conns: 10'
+          pattern: "max-idle-conns: 10"
 
   - it: should not configure database pool settings for SQLite
     set:
@@ -226,7 +226,7 @@ tests:
     asserts:
       - notMatchRegex:
           path: data["config.yaml"]
-          pattern: 'max-open-conns'
+          pattern: "max-open-conns"
 
   - it: should configure permissions
     set:
@@ -236,10 +236,10 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'allow-put-verb: true'
+          pattern: "allow-put-verb: true"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'allow-delete-verb: true'
+          pattern: "allow-delete-verb: true"
 
   - it: should configure narinfo signing
     set:
@@ -248,7 +248,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'sign-narinfo: true'
+          pattern: "sign-narinfo: true"
 
   - it: should configure upstream caches
     set:
@@ -285,13 +285,13 @@ tests:
           pattern: 'username: "test-user"'
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'db: 5'
+          pattern: "db: 5"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'use-tls: true'
+          pattern: "use-tls: true"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'pool-size: 20'
+          pattern: "pool-size: 20"
 
   - it: should configure lock backend
     set:
@@ -315,7 +315,7 @@ tests:
           pattern: 'lru-lock-ttl: "60m"'
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'max-attempts: 5'
+          pattern: "max-attempts: 5"
       - matchRegex:
           path: data["config.yaml"]
           pattern: 'initial-delay: "200ms"'
@@ -324,7 +324,7 @@ tests:
           pattern: 'max-delay: "5s"'
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'jitter: true'
+          pattern: "jitter: true"
 
   - it: should use redis lock backend when redis is enabled
     set:
@@ -346,10 +346,10 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'opentelemetry:'
+          pattern: "opentelemetry:"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'enabled: true'
+          pattern: "enabled: true"
       - matchRegex:
           path: data["config.yaml"]
           pattern: 'grpc-url: "http://otel-collector:4317"'
@@ -361,10 +361,10 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'prometheus:'
+          pattern: "prometheus:"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'enabled: true'
+          pattern: "enabled: true"
 
   - it: should configure log level
     set:
@@ -391,4 +391,4 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'allow-degraded-mode: true'
+          pattern: "allow-degraded-mode: true"
