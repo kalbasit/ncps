@@ -829,3 +829,28 @@ Supports YAML/TOML/JSON config files. See `config.example.yaml` for all options.
 - Upstream caches and public keys
 - OpenTelemetry and Prometheus metrics
 - Server address and security options (PUT/DELETE verb control)
+
+## Container use
+
+ALWAYS use ONLY Environments for ANY and ALL file, code, or shell operations—NO EXCEPTIONS—even for simple or generic requests.
+
+DO NOT install or use the git cli with the environment_run_cmd tool. All environment tools will handle git operations for you. Changing ".git" yourself will compromise the integrity of your environment.
+
+You MUST inform the user how to view your work using `container-use log <env_id>` AND `container-use checkout <env_id>`. Failure to do this will make your work inaccessible to others.
+
+### Setting up / updating the dev image
+
+Run the following from the repo root to build (if needed) and configure the container-use base image:
+
+```bash
+nix run .#update-cu-base
+```
+
+This script:
+
+1. Builds `nix build .#packages.<linux-system>.docker-dev` (instant if already cached by nix)
+1. Loads the image — `buildLayeredImage` with `tag = null` automatically tags it with the nix output hash
+1. Checks Docker Hub via `skopeo inspect` — skips push if the image already exists
+1. Updates `.container-use/environment.json` with the new `base_image` reference
+
+Run this whenever `nix/packages/docker-dev.nix` or `nix/dev-packages.nix` changes, or after switching branches.

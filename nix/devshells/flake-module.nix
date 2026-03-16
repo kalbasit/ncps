@@ -8,149 +8,133 @@
     }:
     {
       devShells.default = pkgs.mkShell {
-        buildInputs = [
-          # python environment for dev-scripts.
-          (pkgs.python3.withPackages (
-            ps: with ps; [
-              httpx # httpx is used by dev-scripts/ttfb.py.
+        buildInputs =
+          (import ../dev-packages.nix pkgs)
+          ++ [
+            # python environment for dev-scripts.
+            (pkgs.python3.withPackages (
+              ps: with ps; [
+                httpx # httpx is used by dev-scripts/ttfb.py.
 
-              # used by dev-scripts/verify-data.py
-              psycopg2-binary
-              pymysql
-              boto3
-              zstandard
-              blake3
-            ]
-          ))
+                # used by dev-scripts/verify-data.py
+                psycopg2-binary
+                pymysql
+                boto3
+                zstandard
+                blake3
+              ]
+            ))
 
-          # the postgres dump contains \restrict and \unrestrict commands that
-          # contain a randomly generated string that are noisy to git commands;
-          # Strip them.
-          (pkgs.writeShellScriptBin "pg_dump" ''
-            # Call the real pg_dump from the nix store, pipe through sed to strip restrict/unrestrict
-            ${pkgs.postgresql}/bin/pg_dump "$@" | \
-            ${pkgs.gnused}/bin/sed -e '/^\\restrict/d' -e '/^\\unrestrict/d'
-          '')
-
-          # dbmate-wrapper provides the dbmate command
-          (pkgs.writeShellScriptBin "dbmate" ''
-            exec ${config.packages.dbmate-wrapper}/bin/dbmate-wrapper "$@"
-          '')
-          # Helper scripts for enabling integration tests
-          (pkgs.writeShellScriptBin "enable-s3-tests" ''
-            if [ -t 1 ]; then
-              echo "🛑 Run 'eval \"\$(enable-s3-tests)\"' to enable S3 tests." >&2
-              exit 0
-            fi
-
-            echo "✅ S3 tests enabled, don't forget to run 'nix run .#deps' to start MinIO." >&2
-            cat <<'EOF'
-              export NCPS_TEST_S3_BUCKET="test-bucket"
-              export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
-              export NCPS_TEST_S3_REGION="us-east-1"
-              export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
-              export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
-            EOF
-          '')
-          (pkgs.writeShellScriptBin "enable-postgres-tests" ''
-            if [ -t 1 ]; then
-              echo "🛑 Run 'eval \"\$(enable-postgres-tests)\"' to enable PostgreSQL tests." >&2
-              exit 0
-            fi
-
-            echo "✅ PostgreSQL tests enabled, don't forget to run 'nix run .#deps' to start PostgreSQL." >&2
-            cat <<'EOF'
-            export NCPS_TEST_ADMIN_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
-            EOF
-          '')
-          (pkgs.writeShellScriptBin "enable-mysql-tests" ''
-            if [ -t 1 ]; then
-              echo "🛑 Run 'eval \"\$(enable-mysql-tests)\"' to enable MySQL tests." >&2
-              exit 0
-            fi
-
-            echo "✅ MySQL tests enabled, don't forget to run 'nix run .#deps' to start MySQL." >&2
-            cat <<'EOF'
-            export NCPS_TEST_ADMIN_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
-            EOF
-          '')
-          (pkgs.writeShellScriptBin "enable-redis-tests" ''
-            if [ -t 1 ]; then
-              echo "🛑 Run 'eval \"\$(enable-redis-tests)\"' to enable Redis tests." >&2
-              exit 0
-            fi
-
-            echo "✅ Redis tests enabled, don't forget to run 'nix run .#deps' to start Redis." >&2
-            cat <<'EOF'
-            export NCPS_ENABLE_REDIS_TESTS=1
-            EOF
-          '')
-          (pkgs.writeShellScriptBin "enable-integration-tests" ''
-            if [ -t 1 ]; then
-              echo "🛑 Run 'eval \"\$(enable-integration-tests)\"' to enable all integration tests." >&2
-              exit 0
-            fi
-
-            enable-s3-tests
-            enable-postgres-tests
-            enable-mysql-tests
-            enable-redis-tests
-          '')
-          (pkgs.writeShellScriptBin "disable-integration-tests" ''
-            if [ -t 1 ]; then
-              echo "🛑 Run 'eval \"\$(disable-integration-tests)\"' to disable all integration tests." >&2
-              exit 0
-            fi
-
-            vars_to_unset=$(env | grep '^NCPS_TEST_' | cut -d= -f1)
-            if [ -n "$vars_to_unset" ]; then
-              echo "✅ Integration tests disabled." >&2
-              echo unset $vars_to_unset
-            else
-              echo "✅ No integration test variables to disable." >&2
-            fi
-          '')
-
-          config.packages.k8s-tests
-
-          pkgs.delve
-          pkgs.go
-          pkgs.golangci-lint
-          pkgs.mariadb
-          pkgs.minio
-          pkgs.minio-client
-          pkgs.postgresql
-          pkgs.pre-commit
-          pkgs.redis
-          pkgs.skopeo
-          pkgs.sqlc
-          pkgs.sqlfluff
-          pkgs.watchexec
-          pkgs.xz # used by pkgs/xz.Decompress
-
-          pkgs.kubernetes-helm
-          pkgs.kubernetes-helmPlugins.helm-unittest
-        ]
-        ++ (
-          let
-            # Construct the URI for the trilium package lazily.
-            # We use inputs.trilium.rev to pin it to the same version as the flake.lock.
-            # If rev is not available (e.g. local input), we fall back to the URL.
-            rev = inputs.trilium.rev or null;
-            uri = if rev != null then "github:TriliumNext/Trilium/${rev}" else "github:TriliumNext/Trilium";
-          in
-          [
-            # Provide trilium-edit-docs in the environment so the user can easily edit the docs using Trilium.
-            (pkgs.writeShellScriptBin "trilium-edit-docs" ''
-              exec nix run "${uri}#edit-docs" -- "$@"
+            # the postgres dump contains \restrict and \unrestrict commands that
+            # contain a randomly generated string that are noisy to git commands;
+            # Strip them.
+            (pkgs.writeShellScriptBin "pg_dump" ''
+              # Call the real pg_dump from the nix store, pipe through sed to strip restrict/unrestrict
+              ${pkgs.postgresql}/bin/pg_dump "$@" | \
+              ${pkgs.gnused}/bin/sed -e '/^\\restrict/d' -e '/^\\unrestrict/d'
             '')
 
-            # Provide trilium-build-docs in the environment so the user can easily edit the docs using Trilium.
-            (pkgs.writeShellScriptBin "trilium-build-docs" ''
-              exec nix run "${uri}#build-docs" -- "$@"
+            # dbmate-wrapper provides the dbmate command
+            (pkgs.writeShellScriptBin "dbmate" ''
+              exec ${config.packages.dbmate-wrapper}/bin/dbmate-wrapper "$@"
             '')
+            # Helper scripts for enabling integration tests
+            (pkgs.writeShellScriptBin "enable-s3-tests" ''
+              if [ -t 1 ]; then
+                echo "🛑 Run 'eval \"\$(enable-s3-tests)\"' to enable S3 tests." >&2
+                exit 0
+              fi
+
+              echo "✅ S3 tests enabled, don't forget to run 'nix run .#deps' to start MinIO." >&2
+              cat <<'EOF'
+                export NCPS_TEST_S3_BUCKET="test-bucket"
+                export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
+                export NCPS_TEST_S3_REGION="us-east-1"
+                export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
+                export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
+              EOF
+            '')
+            (pkgs.writeShellScriptBin "enable-postgres-tests" ''
+              if [ -t 1 ]; then
+                echo "🛑 Run 'eval \"\$(enable-postgres-tests)\"' to enable PostgreSQL tests." >&2
+                exit 0
+              fi
+
+              echo "✅ PostgreSQL tests enabled, don't forget to run 'nix run .#deps' to start PostgreSQL." >&2
+              cat <<'EOF'
+              export NCPS_TEST_ADMIN_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
+              EOF
+            '')
+            (pkgs.writeShellScriptBin "enable-mysql-tests" ''
+              if [ -t 1 ]; then
+                echo "🛑 Run 'eval \"\$(enable-mysql-tests)\"' to enable MySQL tests." >&2
+                exit 0
+              fi
+
+              echo "✅ MySQL tests enabled, don't forget to run 'nix run .#deps' to start MySQL." >&2
+              cat <<'EOF'
+              export NCPS_TEST_ADMIN_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
+              EOF
+            '')
+            (pkgs.writeShellScriptBin "enable-redis-tests" ''
+              if [ -t 1 ]; then
+                echo "🛑 Run 'eval \"\$(enable-redis-tests)\"' to enable Redis tests." >&2
+                exit 0
+              fi
+
+              echo "✅ Redis tests enabled, don't forget to run 'nix run .#deps' to start Redis." >&2
+              cat <<'EOF'
+              export NCPS_ENABLE_REDIS_TESTS=1
+              EOF
+            '')
+            (pkgs.writeShellScriptBin "enable-integration-tests" ''
+              if [ -t 1 ]; then
+                echo "🛑 Run 'eval \"\$(enable-integration-tests)\"' to enable all integration tests." >&2
+                exit 0
+              fi
+
+              enable-s3-tests
+              enable-postgres-tests
+              enable-mysql-tests
+              enable-redis-tests
+            '')
+            (pkgs.writeShellScriptBin "disable-integration-tests" ''
+              if [ -t 1 ]; then
+                echo "🛑 Run 'eval \"\$(disable-integration-tests)\"' to disable all integration tests." >&2
+                exit 0
+              fi
+
+              vars_to_unset=$(env | grep '^NCPS_TEST_' | cut -d= -f1)
+              if [ -n "$vars_to_unset" ]; then
+                echo "✅ Integration tests disabled." >&2
+                echo unset $vars_to_unset
+              else
+                echo "✅ No integration test variables to disable." >&2
+              fi
+            '')
+
+            config.packages.k8s-tests
           ]
-        );
+          ++ (
+            let
+              # Construct the URI for the trilium package lazily.
+              # We use inputs.trilium.rev to pin it to the same version as the flake.lock.
+              # If rev is not available (e.g. local input), we fall back to the URL.
+              rev = inputs.trilium.rev or null;
+              uri = if rev != null then "github:TriliumNext/Trilium/${rev}" else "github:TriliumNext/Trilium";
+            in
+            [
+              # Provide trilium-edit-docs in the environment so the user can easily edit the docs using Trilium.
+              (pkgs.writeShellScriptBin "trilium-edit-docs" ''
+                exec nix run "${uri}#edit-docs" -- "$@"
+              '')
+
+              # Provide trilium-build-docs in the environment so the user can easily edit the docs using Trilium.
+              (pkgs.writeShellScriptBin "trilium-build-docs" ''
+                exec nix run "${uri}#build-docs" -- "$@"
+              '')
+            ]
+          );
 
         _GO_VERSION = "${pkgs.go.version}";
         _DBMATE_VERSION = "${pkgs.dbmate.version}";
