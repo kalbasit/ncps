@@ -336,6 +336,14 @@ FROM chunks c
 INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
 WHERE nfc.nar_file_id = ? AND nfc.chunk_index = ?;
 
+-- name: GetChunksByNarFileIDFromIndex :many
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+FROM chunks c
+INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.nar_file_id = ? AND nfc.chunk_index >= ?
+ORDER BY nfc.chunk_index
+LIMIT ?;
+
 -- name: UpdateNarFileTotalChunks :exec
 UPDATE nar_files
 SET total_chunks = ?, file_size = ?, updated_at = CURRENT_TIMESTAMP, chunking_started_at = NULL

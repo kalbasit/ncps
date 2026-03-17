@@ -728,6 +728,66 @@ func (q *Queries) GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]
 	return items, nil
 }
 
+const getChunksByNarFileIDFromIndex = `-- name: GetChunksByNarFileIDFromIndex :many
+SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+FROM chunks c
+INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+WHERE nfc.nar_file_id = $1 AND nfc.chunk_index >= $2
+ORDER BY nfc.chunk_index
+LIMIT $3
+`
+
+type GetChunksByNarFileIDFromIndexParams struct {
+	NarFileID  int64
+	ChunkIndex int64
+	Limit      int32
+}
+
+type GetChunksByNarFileIDFromIndexRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
+// GetChunksByNarFileIDFromIndex
+//
+//	SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+//	FROM chunks c
+//	INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+//	WHERE nfc.nar_file_id = $1 AND nfc.chunk_index >= $2
+//	ORDER BY nfc.chunk_index
+//	LIMIT $3
+func (q *Queries) GetChunksByNarFileIDFromIndex(ctx context.Context, arg GetChunksByNarFileIDFromIndexParams) ([]GetChunksByNarFileIDFromIndexRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChunksByNarFileIDFromIndex, arg.NarFileID, arg.ChunkIndex, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChunksByNarFileIDFromIndexRow
+	for rows.Next() {
+		var i GetChunksByNarFileIDFromIndexRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Size,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConfigByKey = `-- name: GetConfigByKey :one
 SELECT id, key, value, created_at, updated_at
 FROM config
