@@ -44,8 +44,15 @@ const (
 	otelPackageName      = "github.com/kalbasit/ncps/pkg/cache"
 	cacheLockKey         = "cache"
 
-	// Buffer size of 2 allows one chunk to be copied while the next is being fetched.
-	prefetchBufferSize = 2
+	// Buffer size of 16 allows multiple chunks to be fetched ahead while earlier
+	// chunks are being copied, overlapping I/O latency with data transfer.
+	prefetchBufferSize = 16
+
+	// progressivePollBatchSize is the number of chunks to query at once when
+	// polling for newly-available chunks in streamProgressiveChunks.
+	// A larger value reduces the number of DB round-trips for large NARs,
+	// which is critical for databases like MySQL under parallel test load.
+	progressivePollBatchSize = 256
 
 	// Migration operation constants for metrics.
 	migrationOperationMigrate = "migrate"
@@ -370,6 +377,10 @@ type Cache struct {
 	cdcEnabled bool
 	chunker    chunker.Chunker
 
+	// Lazy chunking configuration (backport stub - always disabled in 0.9)
+	cdcLazyChunkingEnabled bool
+	cdcBackgroundWorkers   int
+
 	// Should the cache sign the narinfos?
 	shouldSignNarinfo bool
 
@@ -625,6 +636,24 @@ func (c *Cache) SetChunkStore(cs chunk.Store) {
 	defer c.cdcMu.Unlock()
 
 	c.chunkStore = cs
+}
+
+// GetCDCLazyChunkingEnabled returns whether lazy chunking is enabled.
+// In release 0.9, lazy chunking is not available, so this always returns false.
+func (c *Cache) GetCDCLazyChunkingEnabled() bool {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcLazyChunkingEnabled
+}
+
+// GetCDCBackgroundWorkers returns the number of background workers for lazy chunking.
+// In release 0.9, lazy chunking is not available, so this always returns 0.
+func (c *Cache) GetCDCBackgroundWorkers() int {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.cdcBackgroundWorkers
 }
 
 func (c *Cache) setupMetricCallbacks() error {
@@ -1560,11 +1589,9 @@ func (c *Cache) streamReaderToFile(ctx context.Context, r io.Reader, f *os.File,
 }
 
 // storeNarFromTempFile reopens the temporary file and stores it in the NAR store.
+// Used for non-CDC paths and CDC lazy-chunking (where the nar_file record is written
+// directly without chunking and a background job chunks it later).
 func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narURL *nar.URL) error {
-	if c.isCDCEnabled() {
-		return c.storeNarWithCDC(ctx, tempPath, narURL, nil)
-	}
-
 	// Get file size before opening for use in PutNar
 	fi, err := os.Stat(tempPath)
 	if err != nil {
@@ -2441,6 +2468,68 @@ func (c *Cache) pullNarIntoStore(
 
 	if err := c.streamResponseToFile(ctx, resp, f, ds); err != nil {
 		ds.setError(err)
+
+		return
+	}
+
+	// CDC eager mode: determine if we should use async chunking
+	cdcEnabled := c.isCDCEnabled()
+	compressedNar := downloadURL.Compression != nar.CompressionTypeNone
+	hasNarInfo := narInfo != nil && narInfo.NarSize != 0
+	lazyChunkingDisabled := !c.GetCDCLazyChunkingEnabled()
+
+	// CDC eager mode: after download is complete, run CDC chunking asynchronously so
+	// the HTTP response can complete immediately while chunking continues in the background.
+	// This mirrors the CDC compressed path above and avoids blocking the client.
+	if cdcEnabled && compressedNar && hasNarInfo && lazyChunkingDisabled {
+		keepJobAlive = true
+
+		ds.cdcWg.Add(1)
+		ds.wg.Add(1)
+
+		c.backgroundWG.Add(1)
+
+		analytics.SafeGo(ctx, func() {
+			defer c.backgroundWG.Done()
+
+			defer func() {
+				c.upstreamJobsMu.Lock()
+				delete(c.upstreamJobs, narJobKey(narURL.Hash))
+				c.upstreamJobsMu.Unlock()
+
+				ds.doneOnce.Do(func() { close(ds.done) })
+				ds.cond.Broadcast()
+			}()
+			defer ds.cdcWg.Done()
+			defer ds.wg.Done()
+
+			onNarFileReady := func() {
+				ds.storedOnce.Do(func() { close(ds.stored) })
+			}
+
+			cdcErr := c.storeNarWithCDC(context.WithoutCancel(ctx), ds.assetPath, narURL, onNarFileReady)
+			if cdcErr != nil {
+				zerolog.Ctx(ctx).
+					Error().
+					Err(cdcErr).
+					Msg("CDC chunking failed in background after pullNarIntoStore (simple path)")
+				ds.setError(cdcErr)
+
+				return
+			}
+
+			if err := c.checkAndFixNarInfosForNar(context.WithoutCancel(ctx), *narURL); err != nil {
+				zerolog.Ctx(ctx).
+					Warn().
+					Err(err).
+					Msg("failed to fix narinfo file size after pullNarIntoStore (CDC simple path)")
+			}
+		})
+
+		zerolog.Ctx(ctx).
+			Info().
+			Dur("elapsed", time.Since(now)).
+			Msg("download of nar complete (CDC chunking in background)")
 
 		return
 	}
@@ -5735,15 +5824,15 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 
 // streamProgressiveChunks streams chunks as they become available during an in-progress chunking operation.
 // This allows concurrent downloads while another instance is still chunking the NAR.
-// It uses a prefetch pipeline to overlap chunk fetching with data copying for better performance.
+// It uses a batch query to fetch multiple available chunks at once, eliminating per-chunk
+// poll latency when chunks are already created. Only polls (200ms) when no new chunks are available yet.
 func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64, raw bool) error {
 	pollInterval := 200 * time.Millisecond
 	maxWaitPerChunk := 30 * time.Second
 
-	// Buffer size of 2 allows one chunk to be copied while the next is being fetched
-	chunkChan := make(chan *prefetchedChunk, 2)
+	chunkChan := make(chan *prefetchedChunk, prefetchBufferSize)
 
-	// Start prefetch goroutine that polls for chunks and fetches them
+	// Start prefetch goroutine that batch-queries available chunks and fetches them.
 	analytics.SafeGo(ctx, func() {
 		defer close(chunkChan)
 
@@ -5755,61 +5844,171 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 			// Check if context is cancelled before polling
 			select {
 			case <-ctx.Done():
-				// Send context error and stop prefetching
 				chunkChan <- &prefetchedChunk{err: ctx.Err()}
 
 				return
 			default:
 			}
 
-			// Try to get chunk at current index
-			var chunkHash string
+			// Batch-query chunks from current index to avoid per-chunk poll overhead.
+			// When multiple chunks are already written by the CDC goroutine, this returns
+			// all of them at once, eliminating the 200ms wait between each chunk.
+			batch, err := c.db.GetChunksByNarFileIDFromIndex(ctx, database.GetChunksByNarFileIDFromIndexParams{
+				NarFileID:  narFileID,
+				ChunkIndex: chunkIndex,
+				Limit:      progressivePollBatchSize,
+			})
+			if err != nil && !database.IsNotFoundError(err) {
+				chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunks from index %d: %w", chunkIndex, err)}
 
-			chunkWaitStart := time.Now()
+				return
+			}
 
-			// Poll for chunk availability
-			for {
-				chunk, err := c.db.GetChunkByNarFileIDAndIndex(ctx, database.GetChunkByNarFileIDAndIndexParams{
-					NarFileID:  narFileID,
-					ChunkIndex: chunkIndex,
-				})
-				if err == nil {
-					chunkHash = chunk.Hash
+			if len(batch) > 0 {
+				// Feed all available chunks from the batch into the pipeline.
+				for _, ch := range batch {
+					var (
+						rc       io.ReadCloser
+						fetchErr error
+					)
 
-					break // Got the chunk, proceed to fetch it
-				} else if !database.IsNotFoundError(err) {
-					// Database error
-					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunk %d: %w", chunkIndex, err)}
+					if raw {
+						rc, fetchErr = c.getChunkStore().GetRawChunk(ctx, ch.Hash)
+					} else {
+						rc, fetchErr = c.getChunkStore().GetChunk(ctx, ch.Hash)
+					}
+
+					select {
+					case chunkChan <- &prefetchedChunk{reader: rc, hash: ch.Hash, err: fetchErr}:
+					case <-ctx.Done():
+						if rc != nil {
+							rc.Close()
+						}
+
+						return
+					}
+
+					chunkIndex++
+				}
+
+				// Check if we've streamed all chunks (only meaningful once total is known).
+				if totalChunks > 0 && chunkIndex >= totalChunks {
+					return
+				}
+
+				// More chunks may be available; loop immediately without sleeping.
+				continue
+			}
+
+			// No chunks at current index yet — the CDC goroutine hasn't written them.
+			// Check whether chunking is complete or still in progress before waiting.
+			if totalChunks == 0 {
+				nr, queryErr := c.db.GetNarFileByID(ctx, narFileID)
+				if queryErr != nil {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", queryErr)}
 
 					return
 				}
 
-				// Only query NarFile if we don't know total chunks yet
-				if totalChunks == 0 {
-					nr, err := c.db.GetNarFileByID(ctx, narFileID)
-					if err != nil {
-						chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", err)}
+				totalChunks = nr.TotalChunks
 
+				// If total_chunks is still 0 but chunking_started_at is NULL, chunking was aborted.
+				if totalChunks == 0 && !nr.ChunkingStartedAt.Valid {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
+
+					return
+				}
+			}
+
+			// Check if we're already done (batch returned empty after total is known).
+			if totalChunks > 0 && chunkIndex >= totalChunks {
+				return
+			}
+
+			// Check wait timeout before sleeping.
+			// chunkWaitStart is reset each time we enter the wait phase for a new index.
+			chunkWaitStart := time.Now()
+
+			for {
+				select {
+				case <-time.After(pollInterval):
+				case <-ctx.Done():
+					chunkChan <- &prefetchedChunk{err: ctx.Err()}
+
+					return
+				}
+
+				// Re-check: try a batch query again after the sleep.
+				batch2, batchErr := c.db.GetChunksByNarFileIDFromIndex(ctx, database.GetChunksByNarFileIDFromIndexParams{
+					NarFileID:  narFileID,
+					ChunkIndex: chunkIndex,
+					Limit:      progressivePollBatchSize,
+				})
+				if batchErr != nil && !database.IsNotFoundError(batchErr) {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunks from index %d: %w", chunkIndex, batchErr)}
+
+					return
+				}
+
+				if len(batch2) > 0 {
+					// Feed the newly-available chunks and break out of the wait loop.
+					for _, ch := range batch2 {
+						var (
+							rc       io.ReadCloser
+							fetchErr error
+						)
+
+						if raw {
+							rc, fetchErr = c.getChunkStore().GetRawChunk(ctx, ch.Hash)
+						} else {
+							rc, fetchErr = c.getChunkStore().GetChunk(ctx, ch.Hash)
+						}
+
+						select {
+						case chunkChan <- &prefetchedChunk{reader: rc, hash: ch.Hash, err: fetchErr}:
+						case <-ctx.Done():
+							if rc != nil {
+								rc.Close()
+							}
+
+							return
+						}
+
+						chunkIndex++
+					}
+
+					if totalChunks > 0 && chunkIndex >= totalChunks {
 						return
 					}
 
-					totalChunks = nr.TotalChunks
+					break // Break inner wait loop; outer loop will batch-query again.
+				}
 
-					// If total_chunks is still 0 but chunking_started_at is NULL, it means
-					// the chunking process was aborted.
-					if totalChunks == 0 && !nr.ChunkingStartedAt.Valid {
-						chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
+				// Re-check NarFile record for abort or completion since the last
+				// empty batch; the CDC goroutine may have updated these fields.
+				nr2, narFileErr := c.db.GetNarFileByID(ctx, narFileID)
+				if narFileErr != nil {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", narFileErr)}
 
+					return
+				}
+
+				if nr2.TotalChunks > 0 {
+					totalChunks = nr2.TotalChunks
+
+					if chunkIndex >= totalChunks {
 						return
 					}
+
+					break // More chunks now recorded; loop to batch-query them.
 				}
 
-				// Check if we're done
-				if totalChunks > 0 && chunkIndex >= totalChunks {
-					return // All chunks processed
+				if !nr2.ChunkingStartedAt.Valid {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
+
+					return
 				}
 
-				// Check timeout
 				if time.Since(chunkWaitStart) > maxWaitPerChunk {
 					chunkChan <- &prefetchedChunk{
 						err: fmt.Errorf("timeout waiting for chunk %d after %v: %w",
@@ -5818,58 +6017,16 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 					return
 				}
-
-				// Wait and retry
-				select {
-				case <-time.After(pollInterval):
-					// Continue polling
-				case <-ctx.Done():
-					chunkChan <- &prefetchedChunk{err: ctx.Err()}
-
-					return
-				}
-			}
-
-			// Fetch the chunk
-			var (
-				rc  io.ReadCloser
-				err error
-			)
-
-			if raw {
-				rc, err = c.getChunkStore().GetRawChunk(ctx, chunkHash)
-			} else {
-				rc, err = c.getChunkStore().GetChunk(ctx, chunkHash)
-			}
-
-			// Send chunk or error to consumer
-			select {
-			case chunkChan <- &prefetchedChunk{reader: rc, hash: chunkHash, err: err}:
-			case <-ctx.Done():
-				// Context cancelled while sending, close the reader if we got one
-				if rc != nil {
-					rc.Close()
-				}
-
-				return
-			}
-
-			chunkIndex++
-
-			// After successfully fetching a chunk, check if we're done
-			if totalChunks > 0 && chunkIndex >= totalChunks {
-				return // All chunks fetched
 			}
 		}
 	})
 
-	// Stream chunks as they arrive from the prefetch pipeline
+	// Stream chunks as they arrive from the prefetch pipeline.
 	for chunk := range chunkChan {
 		if chunk.err != nil {
 			return chunk.err
 		}
 
-		// Copy chunk data to writer
 		if _, err := io.Copy(w, chunk.reader); err != nil {
 			chunk.reader.Close()
 
