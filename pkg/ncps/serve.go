@@ -68,6 +68,14 @@ var (
 
 	// ErrUnknownLockBackend is returned when an unknown lock backend is specified.
 	ErrUnknownLockBackend = errors.New("unknown lock backend")
+
+	// ErrCDCCleanupScheduleRequired is returned when CDC lazy cleanup schedule is not provided.
+	//nolint:lll
+	ErrCDCCleanupScheduleRequired = errors.New("--cache-cdc-lazy-cleanup-schedule is required when CDC lazy chunking is enabled")
+
+	// ErrCDCLazyRecoveryScheduleRequired is returned when CDC lazy recovery schedule is not provided.
+	//nolint:lll
+	ErrCDCLazyRecoveryScheduleRequired = errors.New("--cache-cdc-lazy-recovery-schedule is required when CDC lazy chunking is enabled")
 )
 
 const (
@@ -220,6 +228,17 @@ func serveCommand(
 				Usage:   "Maximum number of stuck NARs to process per recovery cron run (default: 100)",
 				Sources: flagSources("cache.cdc.lazy-recovery-batch-size", "CACHE_CDC_LAZY_RECOVERY_BATCH_SIZE"),
 				Value:   100,
+			},
+			&cli.StringFlag{
+				Name:    "cache-cdc-lazy-cleanup-schedule",
+				Usage:   "Cron schedule for cleaning up deleted NAR files after lazy chunking (default: @every 1h)",
+				Sources: flagSources("cache.cdc.lazy-cleanup-schedule", "CACHE_CDC_LAZY_CLEANUP_SCHEDULE"),
+				Value:   "@every 1h",
+				Validator: func(s string) error {
+					_, err := cron.ParseStandard(s)
+
+					return err
+				},
 			},
 			&cli.StringFlag{
 				Name:     "cache-database-url",
@@ -1059,6 +1078,14 @@ func createCache(
 		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)
 	}
 
+	zerolog.Ctx(ctx).
+		Info().
+		Bool("cdc-enabled", cdcEnabled).
+		Uint32("cdc-min", cdcMin).
+		Uint32("cdc-avg", cdcAvg).
+		Uint32("cdc-max", cdcMax).
+		Msg("configuring Content-Defined-Chunking (CDC)")
+
 	if err := c.SetCDCConfiguration(cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
 		return nil, fmt.Errorf("error configuring CDC: %w", err)
 	}
@@ -1068,11 +1095,13 @@ func createCache(
 
 	cdcBackgroundWorkers := cmd.Int("cache-cdc-background-workers")
 
-	c.SetCDCLazyChunking(cdcLazyChunkingEnabled, cdcBackgroundWorkers)
+	zerolog.Ctx(ctx).
+		Info().
+		Bool("lazy-cdc", cdcLazyChunkingEnabled).
+		Int("lazy-cdc-workers", cdcBackgroundWorkers).
+		Msg("configuring lazy Content-Defined-Chunking (CDC)")
 
-	// Configure CDC delete delay for lazy chunking
-	cdcDeleteDelay := cmd.Duration("cache-cdc-delete-delay")
-	c.SetCDCDeleteDelay(cdcDeleteDelay)
+	c.SetCDCLazyChunking(cdcLazyChunkingEnabled, cdcBackgroundWorkers)
 
 	// Configure Chunk Store
 	if cdcEnabled {
@@ -1089,12 +1118,25 @@ func createCache(
 	// Trigger the health-checker to speed-up the boot but do not wait for the check to complete.
 	c.GetHealthChecker().Trigger()
 
-	lruScheduleStr := cmd.String("cache-lru-schedule")
-	if lruScheduleStr == "" {
-		return c, nil
+	var loc *time.Location
+
+	if cronTimezone := cmd.String("cache-lru-schedule-timezone"); cronTimezone != "" {
+		var err error
+
+		loc, err = time.LoadLocation(cronTimezone)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
+		}
 	}
 
-	var loc *time.Location
+	zerolog.Ctx(ctx).
+		Info().
+		Str("time_zone", loc.String()).
+		Msg("setting up the cache timezone location")
+
+	c.SetupCron(ctx, loc)
+
+	lruScheduleStr := cmd.String("cache-lru-schedule")
 
 	if lruScheduleStr != "" {
 		maxSizeStr := cmd.String("cache-max-size")
@@ -1113,43 +1155,46 @@ func createCache(
 			Msg("setting up the cache max-size")
 
 		c.SetMaxSize(maxSize)
-	}
 
-	if cronTimezone := cmd.String("cache-lru-schedule-timezone"); cronTimezone != "" {
-		var err error
-
-		loc, err = time.LoadLocation(cronTimezone)
+		schedule, err := cron.ParseStandard(lruScheduleStr)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing the timezone %q: %w", cronTimezone, err)
+			return nil, fmt.Errorf("error parsing the cron spec %q: %w", lruScheduleStr, err)
 		}
+
+		c.AddLRUCronJob(ctx, schedule)
 	}
-
-	zerolog.Ctx(ctx).
-		Info().
-		Str("time_zone", loc.String()).
-		Msg("setting up the cache timezone location")
-
-	c.SetupCron(ctx, loc)
-
-	schedule, err := cron.ParseStandard(lruScheduleStr)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing the cron spec %q: %w", lruScheduleStr, err)
-	}
-
-	c.AddLRUCronJob(ctx, schedule)
 
 	// Add CDC delayed cleanup cron job when lazy chunking is enabled
-	if cdcLazyChunkingEnabled && cdcEnabled {
-		// Run CDC cleanup every hour
-		cdcCleanupSchedule, err := cron.ParseStandard("@every 1h")
+	if cdcEnabled && cdcLazyChunkingEnabled {
+		// Configure CDC delete delay for lazy chunking
+		cdcDeleteDelay := cmd.Duration("cache-cdc-delete-delay")
+		c.SetCDCDeleteDelay(cdcDeleteDelay)
+
+		cdcCleanupScheduleStr := cmd.String("cache-cdc-lazy-cleanup-schedule")
+
+		if cdcCleanupScheduleStr == "" {
+			return nil, ErrCDCCleanupScheduleRequired
+		}
+
+		cdcCleanupSchedule, err := cron.ParseStandard(cdcCleanupScheduleStr)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing CDC cleanup cron spec: %w", err)
 		}
+
+		zerolog.Ctx(ctx).
+			Info().
+			Str("cleanup-schedule", cdcCleanupScheduleStr).
+			Dur("delay-delete", cdcDeleteDelay).
+			Msg("setting up cleanup cron job")
 
 		c.AddCDCDeletedCleanupCronJob(ctx, cdcCleanupSchedule)
 
 		// Add CDC lazy recovery cron job to recover stuck NARs
 		lazyRecoveryScheduleStr := cmd.String("cache-cdc-lazy-recovery-schedule")
+
+		if lazyRecoveryScheduleStr == "" {
+			return nil, ErrCDCLazyRecoveryScheduleRequired
+		}
 
 		lazyRecoverySchedule, err := cron.ParseStandard(lazyRecoveryScheduleStr)
 		if err != nil {
@@ -1157,6 +1202,12 @@ func createCache(
 		}
 
 		lazyRecoveryBatchSize := cmd.Int("cache-cdc-lazy-recovery-batch-size")
+
+		zerolog.Ctx(ctx).
+			Info().
+			Str("recovery-schedule", lazyRecoveryScheduleStr).
+			Int("batch-size", lazyRecoveryBatchSize).
+			Msg("setting up recovery cron job")
 
 		// Calculate the interval from the cron schedule for cutoff time calculation
 		// We use the interval between scheduled runs as the age cutoff

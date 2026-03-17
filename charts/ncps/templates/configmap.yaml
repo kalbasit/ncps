@@ -52,6 +52,9 @@ data:
         {{- if .Values.config.cdc.lazyRecoveryBatchSize }}
         lazy-recovery-batch-size: {{ .Values.config.cdc.lazyRecoveryBatchSize }}
         {{- end }}
+        {{- if .Values.config.cdc.lazyCleanupSchedule }}
+        lazy-cleanup-schedule: {{ .Values.config.cdc.lazyCleanupSchedule | quote }}
+        {{- end }}
       {{- end }}
 
       {{- if and (or (eq .Values.config.database.type "postgresql") (eq .Values.config.database.type "mysql")) (or .Values.config.database.pool.maxOpenConns .Values.config.database.pool.maxIdleConns) }}
