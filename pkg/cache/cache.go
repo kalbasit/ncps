@@ -63,10 +63,12 @@ const (
 
 	// cdcFirstBatchDelay is how long to wait before committing the first chunk batch to the
 	// database. Keeping this short unblocks piggybacking clients on other instances quickly.
-	cdcFirstBatchDelay = 100 * time.Millisecond
+	// Reduced from 100ms to 10ms for faster CDC chunk recording.
+	cdcFirstBatchDelay = 10 * time.Millisecond
 
 	// cdcSubsequentBatchDelay is how long to wait between subsequent chunk batch commits.
-	cdcSubsequentBatchDelay = 500 * time.Millisecond
+	// Reduced from 500ms to 50ms for faster batch processing.
+	cdcSubsequentBatchDelay = 50 * time.Millisecond
 
 	// cdcMaxBatchSize is a safety cap to avoid unbounded memory accumulation if chunks
 	// arrive faster than the timer fires.
@@ -458,6 +460,66 @@ type fileAvailableReader struct {
 	f      *os.File
 	ds     *downloadState
 	offset int64
+}
+
+// directFileReader reads directly from a growing file without blocking on condition
+// variable. Unlike fileAvailableReader which waits for ds.cond signal, this reader
+// lets the OS handle blocking when reading past EOF. This enables true pipelining
+// between decompression (writing to file) and CDC chunking (reading from file).
+type directFileReader struct {
+	f           *os.File
+	ds          *downloadState
+	offset      int64
+	readBufSize int
+}
+
+// newDirectFileReader creates a reader that reads directly from the growing file.
+func newDirectFileReader(f *os.File, ds *downloadState) *directFileReader {
+	return &directFileReader{
+		f:           f,
+		ds:          ds,
+		offset:      0,
+		readBufSize: 64 * 1024, // 64KB read buffer for efficient chunking
+	}
+}
+
+func (r *directFileReader) Read(p []byte) (int, error) {
+	for {
+		// Try to read directly from the file
+		n, readErr := r.f.ReadAt(p, r.offset)
+
+		if n > 0 {
+			r.offset += int64(n)
+
+			return n, readErr
+		}
+
+		// No bytes read - check why
+		r.ds.mu.Lock()
+		finalSize := r.ds.finalSize
+		downloadErr := r.ds.downloadError
+		r.ds.mu.Unlock()
+
+		// Check for download error
+		if downloadErr != nil {
+			return 0, downloadErr
+		}
+
+		// Check if download is complete
+		if finalSize > 0 && r.offset >= finalSize {
+			return 0, io.EOF
+		}
+
+		// Download is still in progress but no bytes available yet
+		// Sleep briefly to avoid busy looping, then retry
+		// This is better than blocking on a condition variable because
+		// it allows the decompressor to write at its own pace
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func (r *directFileReader) Close() error {
+	return r.f.Close()
 }
 
 func (r *fileAvailableReader) Read(p []byte) (int, error) {
@@ -2505,9 +2567,11 @@ func (c *Cache) pullNarIntoStore(
 
 			defer fForCDC.Close()
 
-			// fileAvailableReader blocks until bytes are available and returns
-			// EOF when ds.finalSize is set (download goroutine finished writing).
-			cdcReader := &fileAvailableReader{f: fForCDC, ds: ds}
+			// directFileReader reads directly from the growing file without blocking
+			// on condition variable. This enables true pipelining between decompression
+			// (writing to file) and CDC chunking (reading from file). The OS handles
+			// blocking when reading past EOF, eliminating the sequential dependency.
+			cdcReader := newDirectFileReader(fForCDC, ds)
 
 			// onNarFileReady fires right after the nar_file DB record is created
 			// (before chunking starts). Concurrent GetNar clients waiting for
