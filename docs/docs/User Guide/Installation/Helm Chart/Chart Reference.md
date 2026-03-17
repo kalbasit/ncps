@@ -182,7 +182,7 @@ Configuration for the temporary directory used for downloads and transient opera
 | `config.cdc.min` | Minimum chunk size in bytes | `16384` |
 | `config.cdc.avg` | Average (target) chunk size in bytes | `65536` |
 | `config.cdc.max` | Maximum chunk size in bytes | `262144` |
-| `config.cdc.lazyChunkingEnabled` | Enable lazy chunking (store compressed NAR first, chunk in background) | `null` (server default: `true`) |
+| `config.cdc.lazyChunkingEnabled` | Enable lazy chunking (store compressed NAR first, chunk in background) | `true` |
 | `config.cdc.backgroundWorkers` | Number of background workers for lazy chunking | `null` (server default: number of CPUs) |
 | `config.cdc.deleteDelay` | Delay before deleting compressed NAR files after chunking completes | `24h` |
 | `config.cdc.iLoveTimeouts` | Bypass flag for HA validation without CDC | `false` |

@@ -179,8 +179,7 @@ config:
 
     # Enable lazy chunking: store compressed NAR first, chunk in background (default: true)
     # This improves TTFB by avoiding synchronous chunking during download
-    # Set to true or false to explicitly configure, or leave null to use server default
-    lazyChunkingEnabled: null
+    lazyChunkingEnabled: true
 
     # Number of background workers for lazy chunking (default: number of CPUs)
     backgroundWorkers: null
