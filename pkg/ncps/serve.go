@@ -190,11 +190,13 @@ func serveCommand(
 				Name:    "cache-cdc-lazy-chunking-enabled",
 				Usage:   "Enable lazy chunking: store compressed NAR first, chunk in background (default: true)",
 				Sources: flagSources("cache.cdc.lazy-chunking-enabled", "CACHE_CDC_LAZY_CHUNKING_ENABLED"),
+				Value:   true,
 			},
 			&cli.IntFlag{
 				Name:    "cache-cdc-background-workers",
 				Usage:   "Number of background workers for lazy chunking (default: number of CPUs)",
 				Sources: flagSources("cache.cdc.background-workers", "CACHE_CDC_BACKGROUND_WORKERS"),
+				Value:   runtime.NumCPU(),
 			},
 			&cli.DurationFlag{
 				Name:    "cache-cdc-delete-delay",
@@ -1062,16 +1064,9 @@ func createCache(
 	}
 
 	// Configure lazy chunking
-	// Default to true if not explicitly set (lazy chunking enabled by default)
 	cdcLazyChunkingEnabled := cmd.Bool("cache-cdc-lazy-chunking-enabled")
-	if !cmd.IsSet("cache-cdc-lazy-chunking-enabled") {
-		cdcLazyChunkingEnabled = true
-	}
 
 	cdcBackgroundWorkers := cmd.Int("cache-cdc-background-workers")
-	if !cmd.IsSet("cache-cdc-background-workers") {
-		cdcBackgroundWorkers = runtime.NumCPU()
-	}
 
 	c.SetCDCLazyChunking(cdcLazyChunkingEnabled, cdcBackgroundWorkers)
 

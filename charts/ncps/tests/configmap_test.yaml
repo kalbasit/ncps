@@ -77,14 +77,14 @@ tests:
           path: data["config.yaml"]
           pattern: "lazy-chunking-enabled: false"
 
-  - it: should not render CDC lazy chunking when nil
+  - it: should default CDC lazy chunking to true
     set:
       config.hostname: test.example.com
       config.cdc.enabled: true
     asserts:
-      - notMatchRegex:
+      - matchRegex:
           path: data["config.yaml"]
-          pattern: "lazy-chunking-enabled"
+          pattern: "lazy-chunking-enabled: true"
 
   - it: should configure CDC background workers
     set:
