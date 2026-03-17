@@ -700,7 +700,7 @@ def main():
             cmd_app.append(
                 f"--cache-cdc-lazy-chunking-enabled={'true' if args.enable_lazy_cdc else 'false'}"
             )
-            if args.enabled_lazy_cdc:
+            if args.enable_lazy_cdc:
                 cmd_app.append("--cache-cdc-lazy-recovery-schedule='@every 1m'")
                 cmd_app.append("--cache-cdc-delete-delay=1m")
                 cmd_app.append("--cache-cdc-lazy-cleanup-schedule='@every 1m'")
