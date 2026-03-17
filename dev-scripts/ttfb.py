@@ -54,8 +54,9 @@ def nix_hash_to_hex(hash_str: str) -> str:
         )
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback: return as-is if nix-hash is not available
-        return encoded
+        # nix-hash is required for verification.
+        print("Error: 'nix-hash' command not found or failed. It is required for hash verification.", file=sys.stderr)
+        sys.exit(1)
 
 
 def parse_narinfo(text: str) -> dict:
@@ -85,14 +86,14 @@ def get_expected_hash_info(info: dict) -> tuple[str, str]:
     return expected_hash, hash_type
 
 
-async def verify_nar_hash(client: httpx.AsyncClient, nar_url: str, info: dict) -> tuple[bool, str, str]:
+def verify_nar_hash(content: bytes, info: dict) -> tuple[bool, str, str]:
     """
-    Download NAR and verify its hash matches the narinfo.
+    Verify NAR content hash against the narinfo.
 
     Returns:
         tuple of (passed: bool, expected_hex: str, actual_hash: str)
     """
-    expected_hash, hash_type = get_expected_hash_info(info)
+    expected_hash, _ = get_expected_hash_info(info)
 
     if not expected_hash:
         return True, "", ""
@@ -100,20 +101,12 @@ async def verify_nar_hash(client: httpx.AsyncClient, nar_url: str, info: dict) -
     # Parse the expected hash to get hex digest
     expected_hex = nix_hash_to_hex(expected_hash)
 
-    try:
-        # Download the NAR
-        resp = await client.get(nar_url)
-        resp.raise_for_status()
+    # Compute SHA256 hash of the content
+    actual_hash = hashlib.sha256(content).hexdigest()
 
-        # Compute SHA256 hash of the content
-        actual_hash = hashlib.sha256(resp.content).hexdigest()
-
-        # Compare
-        passed = actual_hash == expected_hex
-        return passed, expected_hex, actual_hash
-    except Exception as e:
-        # Return empty strings to indicate unable to verify
-        return True, "", ""
+    # Compare
+    passed = actual_hash == expected_hex
+    return passed, expected_hex, actual_hash
 
 
 def get_urls_from_state_file() -> List[str]:
@@ -158,8 +151,7 @@ async def fetch_with_verification(client, base_url, path, narinfo, do_verify: bo
 
             # Verify hash if requested
             if do_verify:
-                nar_url = f"{base_url}/{path}"
-                passed, expected, actual = await verify_nar_hash(client, nar_url, narinfo)
+                passed, expected, actual = verify_nar_hash(bytes(content), narinfo)
                 result["hash_passed"] = "PASSED" if passed else "FAILED"
                 result["expected_hash"] = expected
                 result["actual_hash"] = actual
