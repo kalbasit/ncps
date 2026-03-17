@@ -57,5 +57,6 @@ __pycache__/
 *.pyo
 
 # Agents
+/.claude/plans/
 /.claude/settings.local.json
 /.container-use/environment.json

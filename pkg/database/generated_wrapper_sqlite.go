@@ -552,6 +552,36 @@ func (w *sqliteWrapper) GetChunksByNarFileID(ctx context.Context, narFileID int6
 	return items, nil
 }
 
+func (w *sqliteWrapper) GetChunksByNarFileIDFromIndex(ctx context.Context, arg GetChunksByNarFileIDFromIndexParams) ([]GetChunksByNarFileIDFromIndexRow, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetChunksByNarFileIDFromIndex(ctx, sqlitedb.GetChunksByNarFileIDFromIndexParams{
+		NarFileID:  arg.NarFileID,
+		ChunkIndex: arg.ChunkIndex,
+		Limit:      int64(arg.Limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]GetChunksByNarFileIDFromIndexRow, len(res))
+	for i, v := range res {
+		items[i] = GetChunksByNarFileIDFromIndexRow{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			Size: v.Size,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
+	}
+	return items, nil
+}
+
 func (w *sqliteWrapper) GetConfigByID(ctx context.Context, id int64) (Config, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 

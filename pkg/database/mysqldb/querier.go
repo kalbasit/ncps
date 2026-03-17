@@ -167,6 +167,15 @@ type Querier interface {
 	//  WHERE nfc.nar_file_id = ?
 	//  ORDER BY nfc.chunk_index
 	GetChunksByNarFileID(ctx context.Context, narFileID int64) ([]Chunk, error)
+	//GetChunksByNarFileIDFromIndex
+	//
+	//  SELECT c.id, c.hash, c.size, c.created_at, c.updated_at
+	//  FROM chunks c
+	//  INNER JOIN nar_file_chunks nfc ON c.id = nfc.chunk_id
+	//  WHERE nfc.nar_file_id = ? AND nfc.chunk_index >= ?
+	//  ORDER BY nfc.chunk_index
+	//  LIMIT ?
+	GetChunksByNarFileIDFromIndex(ctx context.Context, arg GetChunksByNarFileIDFromIndexParams) ([]GetChunksByNarFileIDFromIndexRow, error)
 	//GetConfigByKey
 	//
 	//  SELECT id, `key`, value, created_at, updated_at

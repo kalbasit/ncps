@@ -109,6 +109,20 @@ type GetChunkByNarFileIDAndIndexRow struct {
 	UpdatedAt sql.NullTime
 }
 
+type GetChunksByNarFileIDFromIndexParams struct {
+	NarFileID  int64
+	ChunkIndex int64
+	Limit      int32
+}
+
+type GetChunksByNarFileIDFromIndexRow struct {
+	ID        int64
+	Hash      string
+	Size      uint32
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
 type GetNarFileByHashAndCompressionAndQueryParams struct {
 	Hash        string
 	Compression string
