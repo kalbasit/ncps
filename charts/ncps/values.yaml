@@ -195,6 +195,10 @@ config:
     # Maximum number of stuck NARs to process per recovery cron run (default: 100)
     lazyRecoveryBatchSize: 100
 
+    # Cron schedule for cleaning up deleted NAR files after lazy chunking (default: @every 1h)
+    # Use @every X format (e.g., @every 1h, @every 30m) or standard cron expressions
+    lazyCleanupSchedule: "@every 1h"
+
     # Bypass flag for HA validation without CDC
     # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
     # See https://github.com/kalbasit/ncps/issues/660 for more details.

@@ -462,6 +462,11 @@ def main():
         help="Enable the CDC feature",
     )
     parser.add_argument(
+        "--enable-lazy-cdc",
+        action="store_true",
+        help="Enable the lazy CDC feature",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["debug", "info", "warn", "error", "fatal", "panic"],
         default="debug",
@@ -687,13 +692,18 @@ def main():
             cmd_app.append("--analytics-reporting-samples")
 
         # Storage Args
-        if args.enable_cdc:
+        if args.enable_cdc or args.enable_lazy_cdc:
             cmd_app.append("--cache-cdc-enabled")
             cmd_app.append("--cache-cdc-min=16384")
             cmd_app.append("--cache-cdc-avg=65536")
             cmd_app.append("--cache-cdc-max=262144")
-            cmd_app.append("--cache-cdc-lazy-recovery-schedule='@every 5m'")
-            cmd_app.append("--cache-cdc-delete-delay=5m")
+            cmd_app.append(
+                f"--cache-cdc-lazy-chunking-enabled={'true' if args.enable_lazy_cdc else 'false'}"
+            )
+            if args.enabled_lazy_cdc:
+                cmd_app.append("--cache-cdc-lazy-recovery-schedule='@every 1m'")
+                cmd_app.append("--cache-cdc-delete-delay=1m")
+                cmd_app.append("--cache-cdc-lazy-cleanup-schedule='@every 1m'")
         if args.storage == "local":
             cmd_app.extend(["--cache-storage-local", local_storage_path])
         else:
