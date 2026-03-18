@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
-	"github.com/lib/pq"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/nix-community/go-nix/pkg/nixhash"
@@ -5316,15 +5314,8 @@ func (c *Cache) deleteLRURecordsFromDB(
 	qtx database.Querier,
 	log zerolog.Logger,
 	cleanupSize uint64,
+	pinnedHashes map[string]struct{},
 ) ([]string, []nar.URL, []string, error) {
-	// 0. Get pinned closure hashes to exclude from eviction
-	pinnedHashes, err := c.GetPinnedClosureHashes(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("error getting pinned closure hashes")
-
-		return nil, nil, nil, err
-	}
-
 	// 1. METADATA PHASE
 	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
 	// We may need to fetch more than cleanupSize to skip pinned closures.
@@ -5336,7 +5327,10 @@ func (c *Cache) deleteLRURecordsFromDB(
 
 	fetchIncrement := fetchSize // double fetch size each iteration
 
-	var narInfosToDelete []database.NarInfo
+	var (
+		narInfosToDelete []database.NarInfo
+		err              error
+	)
 
 	for {
 		narInfosToDelete, err = qtx.GetLeastUsedNarInfos(ctx, fetchSize)
@@ -5421,12 +5415,22 @@ func (c *Cache) deleteLRURecordsFromDB(
 		}
 
 		// Stop if we've collected enough to meet cleanupSize
-		if totalSize >= cleanupSize {
-			break
+		// Note: cleanupSize = 0 means "delete all", so we don't break early in that case
+		// Also, if totalSize >= cleanupSize AND this is the last narinfo in the list,
+		// we should continue to ensure all are deleted (handles edge case where
+		// cleanupSize equals total unique size)
+		if cleanupSize > 0 && totalSize >= cleanupSize {
+			// Only break if this is not the last narinfo we're processing
+			// (i.e., there are more narinfos to process after this one)
+			idx := len(narInfoHashesToRemove)
+			if idx < len(narInfosToDelete)-1 {
+				break
+			}
 		}
 	}
 
-	if totalSize < cleanupSize {
+	// Only warn if we actually needed to delete something (cleanupSize > 0)
+	if cleanupSize > 0 && totalSize < cleanupSize {
 		log.Warn().
 			Uint64("collected", totalSize).
 			Uint64("requested", cleanupSize).
@@ -5602,6 +5606,15 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 
 			log.Info().Msg("running LRU")
 
+			// Get pinned closure hashes BEFORE starting the transaction to avoid
+			// deadlock issues with SQLite (concurrent reads while transaction is active)
+			pinnedHashes, err := c.GetPinnedClosureHashes(ctx)
+			if err != nil {
+				log.Error().Err(err).Msg("error getting pinned closure hashes")
+
+				return err
+			}
+
 			tx, err := c.db.DB().BeginTx(ctx, nil)
 			if err != nil {
 				log.Error().Err(err).Msg("error beginning a transaction")
@@ -5629,6 +5642,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 				qtx,
 				log,
 				cleanupSize,
+				pinnedHashes,
 			)
 			if err != nil || (len(narInfoHashesToRemove) == 0 && len(chunkHashesToRemove) == 0) {
 				return err
@@ -6747,20 +6761,7 @@ func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 	_, err := c.db.CreatePinnedClosure(ctx, hash)
 	if err != nil {
 		// Check if it's a duplicate key error (already pinned)
-		var (
-			pgErr *pq.Error
-			myErr *mysql.MySQLError
-		)
-
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // PostgreSQL duplicate key
-			return nil
-		}
-
-		if errors.As(err, &myErr) && myErr.Number == 1062 { // MySQL duplicate key
-			return nil
-		}
-		// SQLite uses generic error, check for "UNIQUE constraint"
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		if database.IsDuplicateKeyError(err) {
 			return nil
 		}
 
