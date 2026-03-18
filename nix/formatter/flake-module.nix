@@ -7,9 +7,11 @@
       settings.global.excludes = [
         ".agent/skills/**/*.md"
         ".agent/workflows/*.md"
+        ".claude/commands/**/*.md"
         ".env"
         ".envrc"
         "LICENSE"
+        "openspec/**/*.md"
         "renovate.json"
       ];
 
