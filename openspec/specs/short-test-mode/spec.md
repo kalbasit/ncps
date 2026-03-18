@@ -1,7 +1,8 @@
 # short-test-mode Specification
 
 ## Purpose
-TBD - created by archiving change enable-short-tests-with-integration. Update Purpose after archive.
+
+This feature enables fast local development by allowing developers to skip slow tests during iterative development. When running `go test -short`, tests that take longer than 500ms are automatically skipped, enabling faster feedback loops without needing to modify test files or remember which tests to exclude.
 ## Requirements
 ### Requirement: -short flag skips slow tests
 When `go test -short -race ./...` is run, tests SHALL check `testing.Short()` and skip slow subtests regardless of whether they are integration tests or unit tests.
