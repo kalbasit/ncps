@@ -104,6 +104,10 @@ func BenchmarkStreamCompleteChunks_WithPrefetch(b *testing.B) {
 func TestPrefetchPipelineOrdering(t *testing.T) {
 	t.Parallel()
 
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	ctx := context.Background()
 
 	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
@@ -286,6 +290,10 @@ func TestPrefetchMemoryBounds(t *testing.T) {
 // This is the main test for the performance optimization.
 func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
 
 	ctx := context.Background()
 
@@ -476,6 +484,10 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 // if the chunking operation is aborted (chunking_started_at cleared while total_chunks is 0).
 func TestProgressiveStreamingAborted(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
 
 	ctx := context.Background()
 

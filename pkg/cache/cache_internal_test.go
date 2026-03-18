@@ -1948,6 +1948,10 @@ Sig: cache.nixos.org-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 func TestStoreNarWithCDCCleanupOnFailure(t *testing.T) {
 	t.Parallel()
 
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	ctx := context.Background()
 
 	c, db, _, _, _, cleanup := setupSQLiteFactory(t)
@@ -1980,6 +1984,10 @@ func TestStoreNarWithCDCCleanupOnFailure(t *testing.T) {
 // correctly identifies stuck NAR files and triggers background chunking for them.
 func TestRunCDCLazyRecovery(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
 
 	ctx := context.Background()
 
@@ -2060,6 +2068,10 @@ func TestRunCDCLazyRecovery(t *testing.T) {
 func TestRunCDCLazyRecoveryNoStuckFiles(t *testing.T) {
 	t.Parallel()
 
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	ctx := context.Background()
 
 	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
@@ -2095,6 +2107,10 @@ func TestRunCDCLazyRecoveryNoStuckFiles(t *testing.T) {
 // newer than the recovery interval are NOT picked up by the recovery job.
 func TestRunCDCLazyRecoveryWithFilesNewerThanCutoff(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
 
 	ctx := context.Background()
 

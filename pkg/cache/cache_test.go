@@ -3312,6 +3312,11 @@ func testGetNarWithPlaceholderNarFileRecord(factory cacheFactory) func(*testing.
 
 func TestIssue990_BackgroundJobContextCancellation(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	// 1. Setup test environment
 	c, db, _, _, rebind, cleanup := setupSQLiteFactory(t)
 	defer cleanup()
@@ -3584,6 +3589,10 @@ func testLRUEvictionSkipsPinnedClosures(factory cacheFactory) func(*testing.T) {
 
 func TestGetNarInfoDistributedCoordination(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
 
 	// 1. Setup shared components
 	dir, err := os.MkdirTemp("", "cache-dist-")

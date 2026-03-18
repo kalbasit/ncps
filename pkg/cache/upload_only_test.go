@@ -22,6 +22,10 @@ import (
 func TestGetNar_UploadOnly(t *testing.T) {
 	t.Parallel()
 
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	// Setup necessary components
 	ts := testdata.NewTestServer(t, 40)
 	t.Cleanup(ts.Close)
@@ -132,6 +136,10 @@ func TestGetNarInfo_UploadOnly(t *testing.T) {
 // no race occurs, and the "pipe closed" message is never logged.
 func TestPutNarInfo_DoesNotTriggerNARStreaming(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
 
 	db, localStore, _, _, cleanup := setupTestComponents(t)
 	t.Cleanup(cleanup)
