@@ -227,6 +227,13 @@ type NarInfo struct {
 	Ca             sql.NullString
 }
 
+type PinnedClosure struct {
+	ID        int64
+	Hash      string
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}
+
 type SetConfigParams struct {
 	Key   string
 	Value string

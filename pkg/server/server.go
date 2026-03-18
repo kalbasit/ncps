@@ -41,6 +41,8 @@ const (
 	routeNarInfo        = "/{hash:" + narinfo.HashPattern + "}.narinfo"
 	routeCacheInfo      = "/nix-cache-info"
 	routeCachePublicKey = "/pubkey"
+	routePinClosure     = "/pin/{hash:" + narinfo.HashPattern + "}.narinfo"
+	routePins           = "/pins"
 
 	contentLength      = "Content-Length"
 	contentType        = "Content-Type"
@@ -113,6 +115,11 @@ func (s *Server) createRouter() {
 	s.router.Delete(routeNarInfo, s.deleteNarInfo)
 	s.router.Delete(routeNarCompression, s.deleteNar)
 	s.router.Delete(routeNar, s.deleteNar)
+
+	// Pin endpoints
+	s.router.Post(routePinClosure, s.pinClosure)
+	s.router.Delete(routePinClosure, s.unpinClosure)
+	s.router.Get(routePins, s.listPins)
 
 	// 2. Register "upload only" routes under /upload
 	s.router.Route("/upload", func(r chi.Router) {
@@ -499,6 +506,116 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) pinClosure(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+
+	ctx, span := tracer.Start(
+		r.Context(),
+		"server.pinClosure",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
+	r = r.WithContext(
+		zerolog.Ctx(ctx).
+			With().
+			Str("narinfo_hash", hash).
+			Logger().
+			WithContext(ctx))
+
+	if err := s.cache.PinClosure(r.Context(), hash); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+
+			return
+		}
+
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error pinning the closure")
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) unpinClosure(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+
+	ctx, span := tracer.Start(
+		r.Context(),
+		"server.unpinClosure",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+		),
+	)
+	defer span.End()
+
+	r = r.WithContext(
+		zerolog.Ctx(ctx).
+			With().
+			Str("narinfo_hash", hash).
+			Logger().
+			WithContext(ctx))
+
+	if err := s.cache.UnpinClosure(r.Context(), hash); err != nil {
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error unpinning the closure")
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) listPins(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracer.Start(
+		r.Context(),
+		"server.listPins",
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+	defer span.End()
+
+	closures, err := s.cache.ListPinnedClosures(ctx)
+	if err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error listing pinned closures")
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	// Build response with just the hashes
+	hashes := make([]string, len(closures))
+	for i, c := range closures {
+		hashes[i] = c.Hash
+	}
+
+	w.Header().Set(contentType, contentTypeJSON)
+
+	if err := json.NewEncoder(w).Encode(hashes); err != nil {
+		zerolog.Ctx(ctx).
+			Error().
+			Err(err).
+			Msg("error encoding response")
+	}
 }
 
 // withNarURL extracts NAR URL parameters, sets up context with logging and tracing,

@@ -220,6 +220,36 @@ func (w *mysqlWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoParam
 	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetNarInfoByID(ctx, id)
 }
 
+func (w *mysqlWrapper) CreatePinnedClosure(ctx context.Context, hash string) (PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	// MySQL does not support RETURNING for INSERTs.
+	// We insert, get LastInsertId, and then fetch the object.
+	res, err := w.adapter.CreatePinnedClosure(ctx, hash)
+	if err != nil {
+		return PinnedClosure{}, err
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return PinnedClosure{}, err
+	}
+
+	nf, err := w.GetPinnedClosureByID(ctx, id)
+	if err == nil {
+		return nf, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return PinnedClosure{}, err
+	}
+
+	// MySQL REPEATABLE READ: if ON DUPLICATE KEY UPDATE fired (another transaction
+	// already committed this row), the current transaction's MVCC snapshot may not
+	// see it via GetByID. Fall back to a non-transactional lookup on the raw DB
+	// connection, which always reads the latest committed data.
+	return (&mysqlWrapper{adapter: mysqldb.NewAdapter(w.adapter.DB())}).GetPinnedClosureByID(ctx, id)
+}
+
 func (w *mysqlWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -305,6 +335,19 @@ func (w *mysqlWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, error
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
+func (w *mysqlWrapper) DeletePinnedClosure(ctx context.Context, hash string) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.DeletePinnedClosure(ctx, hash)
 	if err != nil {
 		return 0, err
 	}
@@ -1240,6 +1283,68 @@ func (w *mysqlWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, erro
 	return items, nil
 }
 
+func (w *mysqlWrapper) GetPinnedClosure(ctx context.Context, hash string) (PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetPinnedClosure(ctx, hash)
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return PinnedClosure{}, ErrNotFound
+		}
+
+		return PinnedClosure{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return PinnedClosure{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
+}
+
+func (w *mysqlWrapper) GetPinnedClosureByID(ctx context.Context, id int64) (PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	query := "SELECT `id`, `hash`, `created_at`, `updated_at` FROM pinned_closures WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res mysqldb.PinnedClosure
+	err := row.Scan(
+
+		&res.ID,
+
+		&res.Hash,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PinnedClosure{}, ErrNotFound
+		}
+		return PinnedClosure{}, err
+	}
+
+	// Convert to Domain Struct
+
+	return PinnedClosure{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
+}
+
 func (w *mysqlWrapper) GetStuckNarFiles(ctx context.Context, arg GetStuckNarFilesParams) ([]GetStuckNarFilesRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -1343,6 +1448,30 @@ func (w *mysqlWrapper) LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkN
 		NarFileID: arg.NarFileID,
 		URL:       arg.URL,
 	})
+}
+
+func (w *mysqlWrapper) ListPinnedClosures(ctx context.Context) ([]PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.ListPinnedClosures(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]PinnedClosure, len(res))
+	for i, v := range res {
+		items[i] = PinnedClosure{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
+	}
+	return items, nil
 }
 
 func (w *mysqlWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {

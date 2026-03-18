@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
 	"github.com/nix-community/go-nix/pkg/nixhash"
@@ -5315,20 +5317,63 @@ func (c *Cache) deleteLRURecordsFromDB(
 	log zerolog.Logger,
 	cleanupSize uint64,
 ) ([]string, []nar.URL, []string, error) {
-	// 1. METADATA PHASE
-	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
-	// We use the query you provided in the first prompt.
-	narInfosToDelete, err := qtx.GetLeastUsedNarInfos(ctx, cleanupSize)
+	// 0. Get pinned closure hashes to exclude from eviction
+	pinnedHashes, err := c.GetPinnedClosureHashes(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("error getting least used narinfos")
+		log.Error().Err(err).Msg("error getting pinned closure hashes")
 
 		return nil, nil, nil, err
 	}
 
-	if len(narInfosToDelete) == 0 {
-		log.Warn().Msg("cleanup required but no reclaimable narinfos found")
+	// 1. METADATA PHASE
+	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
+	// We may need to fetch more than cleanupSize to skip pinned closures.
+	// Use a loop to fetch more candidates until we meet the target or exhaust the table.
+	fetchSize := cleanupSize * 2
+	if fetchSize == 0 {
+		fetchSize = 100 // minimum fetch
+	}
 
-		return nil, nil, nil, nil
+	fetchIncrement := fetchSize // double fetch size each iteration
+
+	var narInfosToDelete []database.NarInfo
+
+	for {
+		narInfosToDelete, err = qtx.GetLeastUsedNarInfos(ctx, fetchSize)
+		if err != nil {
+			log.Error().Err(err).Msg("error getting least used narinfos")
+
+			return nil, nil, nil, err
+		}
+
+		if len(narInfosToDelete) == 0 {
+			log.Warn().Msg("cleanup required but no reclaimable narinfos found")
+
+			return nil, nil, nil, nil
+		}
+
+		// Check if we have enough eligible candidates (excluding pinned)
+		eligibleCount := 0
+
+		for _, info := range narInfosToDelete {
+			if _, isPinned := pinnedHashes[info.Hash]; !isPinned {
+				eligibleCount++
+			}
+		}
+
+		// If we have enough eligible candidates, proceed
+		if eligibleCount > 0 {
+			break
+		}
+
+		// Not enough eligible candidates, fetch more
+		log.Debug().
+			Int("fetched", len(narInfosToDelete)).
+			Int("eligible", eligibleCount).
+			Msg("no eligible narinfos in batch, fetching more")
+
+		fetchSize += fetchIncrement
+		fetchIncrement *= 2 // geometric growth to avoid too many iterations
 	}
 
 	log.Info().Int("count", len(narInfosToDelete)).Msg("found narinfos to expire")
@@ -5336,10 +5381,34 @@ func (c *Cache) deleteLRURecordsFromDB(
 	// Track hashes to remove from the in-memory/disk store later
 	narInfoHashesToRemove := make([]string, 0, len(narInfosToDelete))
 
+	var totalSize uint64
+
 	// Delete the NarInfos from the database.
 	// This breaks the link between the Metadata and the Storage.
+	// Skip any narinfos that are in the pinned closure.
 	for _, info := range narInfosToDelete {
+		// Skip if this narinfo is in the pinned closure
+		if _, isPinned := pinnedHashes[info.Hash]; isPinned {
+			log.Debug().Str("hash", info.Hash).Msg("skipping pinned narinfo during eviction")
+
+			continue
+		}
+
+		// Get the file size for this narinfo to track cleanup size
+		narFile, err := qtx.GetNarFileByNarInfoID(ctx, info.ID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			log.Error().Err(err).Str("hash", info.Hash).Msg("error getting narfile size")
+
+			continue
+		}
+
+		fileSize := uint64(0)
+		if err == nil {
+			fileSize = narFile.FileSize
+		}
+
 		narInfoHashesToRemove = append(narInfoHashesToRemove, info.Hash)
+		totalSize += fileSize
 
 		// We delete by ID since we have the full object from the previous query
 		if _, err := qtx.DeleteNarInfoByID(ctx, info.ID); err != nil {
@@ -5350,7 +5419,24 @@ func (c *Cache) deleteLRURecordsFromDB(
 
 			return nil, nil, nil, err
 		}
+
+		// Stop if we've collected enough to meet cleanupSize
+		if totalSize >= cleanupSize {
+			break
+		}
 	}
+
+	if totalSize < cleanupSize {
+		log.Warn().
+			Uint64("collected", totalSize).
+			Uint64("requested", cleanupSize).
+			Msg("could not collect enough narinfos for cleanup, all may be pinned or database exhausted")
+	}
+
+	log.Info().
+		Int("count", len(narInfoHashesToRemove)).
+		Uint64("total_size", totalSize).
+		Msg("narinfos to be deleted")
 
 	// 2. STORAGE PHASE
 	// Now that metadata is gone, some files might have zero references.
@@ -6642,4 +6728,164 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 		)
 		log.Info().Msg("successfully migrated nar to chunks")
 	})
+}
+
+// PinClosure pins a closure by its narinfo hash.
+// The narinfo and all its transitive references will be protected from LRU eviction.
+func (c *Cache) PinClosure(ctx context.Context, hash string) error {
+	// Verify the narinfo exists before pinning, as per the spec.
+	// Return 404 if the narinfo doesn't exist in the database.
+	if _, err := c.db.GetNarInfoByHash(ctx, hash); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return storage.ErrNotFound
+		}
+
+		return fmt.Errorf("failed to verify narinfo existence: %w", err)
+	}
+
+	// Try to create the pinned closure (idempotent - ignore duplicate key errors)
+	_, err := c.db.CreatePinnedClosure(ctx, hash)
+	if err != nil {
+		// Check if it's a duplicate key error (already pinned)
+		var (
+			pgErr *pq.Error
+			myErr *mysql.MySQLError
+		)
+
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // PostgreSQL duplicate key
+			return nil
+		}
+
+		if errors.As(err, &myErr) && myErr.Number == 1062 { // MySQL duplicate key
+			return nil
+		}
+		// SQLite uses generic error, check for "UNIQUE constraint"
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return nil
+		}
+
+		return fmt.Errorf("failed to pin closure: %w", err)
+	}
+
+	return nil
+}
+
+// UnpinClosure unpins a closure by its narinfo hash.
+func (c *Cache) UnpinClosure(ctx context.Context, hash string) error {
+	_, err := c.db.DeletePinnedClosure(ctx, hash)
+	if err != nil {
+		return fmt.Errorf("failed to unpin closure: %w", err)
+	}
+
+	return nil
+}
+
+// ListPinnedClosures returns all pinned closures.
+func (c *Cache) ListPinnedClosures(ctx context.Context) ([]database.PinnedClosure, error) {
+	closures, err := c.db.ListPinnedClosures(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pinned closures: %w", err)
+	}
+
+	return closures, nil
+}
+
+// IsNarInfoPinned checks if a narinfo hash is pinned.
+func (c *Cache) IsNarInfoPinned(ctx context.Context, hash string) (bool, error) {
+	_, err := c.db.GetPinnedClosure(ctx, hash)
+	if err == nil {
+		return true, nil
+	}
+
+	if errors.Is(err, database.ErrNotFound) {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("failed to check if narinfo is pinned: %w", err)
+}
+
+// narInfoHashLength is the length of a Nix base32 hash (52 characters).
+const narInfoHashLength = 52
+
+// GetPinnedClosureHashes computes all hashes that are protected by pinned closures.
+// This includes the pinned root hashes and all their transitive references.
+func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}, error) {
+	// Get all pinned closure roots
+	pinnedClosures, err := c.db.ListPinnedClosures(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pinned closures: %w", err)
+	}
+
+	if len(pinnedClosures) == 0 {
+		return make(map[string]struct{}), nil
+	}
+
+	// Build initial set with pinned roots
+	excluded := make(map[string]struct{})
+	queue := make([]string, 0, len(pinnedClosures))
+
+	for _, pc := range pinnedClosures {
+		excluded[pc.Hash] = struct{}{}
+		queue = append(queue, pc.Hash)
+	}
+
+	// BFS traversal to find all references
+	visited := make(map[string]struct{})
+	for _, hash := range queue {
+		visited[hash] = struct{}{}
+	}
+
+	maxDepth := 1000
+	depth := 0
+
+	for len(queue) > 0 && depth < maxDepth {
+		levelSize := len(queue)
+		depth++
+
+		for i := 0; i < levelSize; i++ {
+			currentHash := queue[0]
+			queue = queue[1:]
+
+			// Get the narinfo by hash
+			ni, err := c.db.GetNarInfoByHash(ctx, currentHash)
+			if err != nil {
+				if database.IsNotFoundError(err) {
+					continue // Narinfo not in database, skip
+				}
+
+				return nil, fmt.Errorf("failed to get narinfo %s: %w", currentHash, err)
+			}
+
+			// Get references for this narinfo
+			refs, err := c.db.GetNarInfoReferences(ctx, ni.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get references for narinfo %s: %w", currentHash, err)
+			}
+
+			for _, ref := range refs {
+				// Extract hash from reference (format: <hash>-<name>-<version>)
+				// Hash is the first 52 characters
+				if len(ref) < narInfoHashLength {
+					continue
+				}
+
+				refHash := ref[:narInfoHashLength]
+
+				// Skip if already visited
+				if _, exists := visited[refHash]; exists {
+					continue
+				}
+
+				visited[refHash] = struct{}{}
+				excluded[refHash] = struct{}{}
+				queue = append(queue, refHash)
+			}
+		}
+	}
+
+	if depth >= maxDepth {
+		zerolog.Ctx(ctx).Warn().Msg("max closure traversal depth reached, some pinned references may not be protected")
+	}
+
+	return excluded, nil
 }

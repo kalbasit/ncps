@@ -84,6 +84,11 @@ type Querier interface {
 	//      url = IF(url IS NULL, VALUES(url), url),
 	//      updated_at = IF(url IS NULL, CURRENT_TIMESTAMP, updated_at)
 	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (sql.Result, error)
+	//CreatePinnedClosure
+	//
+	//  INSERT INTO pinned_closures (hash)
+	//  VALUES (?)
+	CreatePinnedClosure(ctx context.Context, hash string) (sql.Result, error)
 	//DeleteChunkByID
 	//
 	//  DELETE FROM chunks
@@ -131,6 +136,11 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarFiles(ctx context.Context) (int64, error)
+	//DeletePinnedClosure
+	//
+	//  DELETE FROM pinned_closures
+	//  WHERE hash = ?
+	DeletePinnedClosure(ctx context.Context, hash string) (int64, error)
 	// Returns all chunks for storage existence verification (CDC mode).
 	//
 	//  SELECT id, hash, size, compressed_size, created_at, updated_at
@@ -322,6 +332,12 @@ type Querier interface {
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
 	GetOrphanedNarFiles(ctx context.Context) ([]GetOrphanedNarFilesRow, error)
+	//GetPinnedClosure
+	//
+	//  SELECT id, hash, created_at, updated_at
+	//  FROM pinned_closures
+	//  WHERE hash = ?
+	GetPinnedClosure(ctx context.Context, hash string) (PinnedClosure, error)
 	// Get NAR files that are stuck (not chunked, no active chunking, and older than the given age).
 	// This is used by the CDC lazy recovery job to find NARs that failed to chunk due to restart.
 	//
@@ -375,6 +391,12 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url = ?
 	LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error
+	//ListPinnedClosures
+	//
+	//  SELECT id, hash, created_at, updated_at
+	//  FROM pinned_closures
+	//  ORDER BY created_at DESC
+	ListPinnedClosures(ctx context.Context) ([]PinnedClosure, error)
 	//SetConfig
 	//
 	//  INSERT INTO config (

@@ -246,6 +246,32 @@ func (w *sqliteWrapper) CreateNarInfo(ctx context.Context, arg CreateNarInfoPara
 	}, nil
 }
 
+func (w *sqliteWrapper) CreatePinnedClosure(ctx context.Context, hash string) (PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.CreatePinnedClosure(ctx, hash)
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return PinnedClosure{}, ErrNotFound
+		}
+
+		return PinnedClosure{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return PinnedClosure{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
+}
+
 func (w *sqliteWrapper) DeleteChunkByID(ctx context.Context, id int64) error {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -331,6 +357,19 @@ func (w *sqliteWrapper) DeleteOrphanedNarFiles(ctx context.Context) (int64, erro
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
 	res, err := w.adapter.DeleteOrphanedNarFiles(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
+func (w *sqliteWrapper) DeletePinnedClosure(ctx context.Context, hash string) (int64, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.DeletePinnedClosure(ctx, hash)
 	if err != nil {
 		return 0, err
 	}
@@ -1266,6 +1305,68 @@ func (w *sqliteWrapper) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, err
 	return items, nil
 }
 
+func (w *sqliteWrapper) GetPinnedClosure(ctx context.Context, hash string) (PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetPinnedClosure(ctx, hash)
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return PinnedClosure{}, ErrNotFound
+		}
+
+		return PinnedClosure{}, err
+	}
+
+	// Convert Single Domain Struct
+
+	return PinnedClosure{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
+}
+
+func (w *sqliteWrapper) GetPinnedClosureByID(ctx context.Context, id int64) (PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	query := "SELECT \"id\", \"hash\", \"created_at\", \"updated_at\" FROM pinned_closures WHERE id = ?"
+	row := w.adapter.DBTX().QueryRowContext(ctx, query, id)
+	var res sqlitedb.PinnedClosure
+	err := row.Scan(
+
+		&res.ID,
+
+		&res.Hash,
+
+		&res.CreatedAt,
+
+		&res.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PinnedClosure{}, ErrNotFound
+		}
+		return PinnedClosure{}, err
+	}
+
+	// Convert to Domain Struct
+
+	return PinnedClosure{
+		ID: res.ID,
+
+		Hash: res.Hash,
+
+		CreatedAt: res.CreatedAt,
+
+		UpdatedAt: res.UpdatedAt,
+	}, nil
+}
+
 func (w *sqliteWrapper) GetStuckNarFiles(ctx context.Context, arg GetStuckNarFilesParams) ([]GetStuckNarFilesRow, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
@@ -1369,6 +1470,30 @@ func (w *sqliteWrapper) LinkNarInfosByURLToNarFile(ctx context.Context, arg Link
 		NarFileID: arg.NarFileID,
 		URL:       arg.URL,
 	})
+}
+
+func (w *sqliteWrapper) ListPinnedClosures(ctx context.Context) ([]PinnedClosure, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.ListPinnedClosures(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Slice of Domain Structs
+	items := make([]PinnedClosure, len(res))
+	for i, v := range res {
+		items[i] = PinnedClosure{
+			ID: v.ID,
+
+			Hash: v.Hash,
+
+			CreatedAt: v.CreatedAt,
+
+			UpdatedAt: v.UpdatedAt,
+		}
+	}
+	return items, nil
 }
 
 func (w *sqliteWrapper) SetConfig(ctx context.Context, arg SetConfigParams) error {

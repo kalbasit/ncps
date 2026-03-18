@@ -325,6 +325,29 @@ func (q *Queries) CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (N
 	return i, err
 }
 
+const createPinnedClosure = `-- name: CreatePinnedClosure :one
+INSERT INTO "pinned_closures" ("hash")
+VALUES (?)
+RETURNING id, hash, created_at, updated_at
+`
+
+// CreatePinnedClosure
+//
+//	INSERT INTO "pinned_closures" ("hash")
+//	VALUES (?)
+//	RETURNING id, hash, created_at, updated_at
+func (q *Queries) CreatePinnedClosure(ctx context.Context, hash string) (PinnedClosure, error) {
+	row := q.db.QueryRowContext(ctx, createPinnedClosure, hash)
+	var i PinnedClosure
+	err := row.Scan(
+		&i.ID,
+		&i.Hash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteChunkByID = `-- name: DeleteChunkByID :exec
 DELETE FROM chunks
 WHERE id = ?
@@ -469,6 +492,23 @@ WHERE id NOT IN (
 //	)
 func (q *Queries) DeleteOrphanedNarFiles(ctx context.Context) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteOrphanedNarFiles)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deletePinnedClosure = `-- name: DeletePinnedClosure :execrows
+DELETE FROM "pinned_closures"
+WHERE "hash" = ?
+`
+
+// DeletePinnedClosure
+//
+//	DELETE FROM "pinned_closures"
+//	WHERE "hash" = ?
+func (q *Queries) DeletePinnedClosure(ctx context.Context, hash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deletePinnedClosure, hash)
 	if err != nil {
 		return 0, err
 	}
@@ -1471,6 +1511,29 @@ func (q *Queries) GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error) {
 	return items, nil
 }
 
+const getPinnedClosure = `-- name: GetPinnedClosure :one
+SELECT id, hash, created_at, updated_at
+FROM "pinned_closures"
+WHERE "hash" = ?
+`
+
+// GetPinnedClosure
+//
+//	SELECT id, hash, created_at, updated_at
+//	FROM "pinned_closures"
+//	WHERE "hash" = ?
+func (q *Queries) GetPinnedClosure(ctx context.Context, hash string) (PinnedClosure, error) {
+	row := q.db.QueryRowContext(ctx, getPinnedClosure, hash)
+	var i PinnedClosure
+	err := row.Scan(
+		&i.ID,
+		&i.Hash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getStuckNarFiles = `-- name: GetStuckNarFiles :many
 SELECT id, hash, compression, "query", file_size
 FROM nar_files
@@ -1687,6 +1750,45 @@ type LinkNarInfosByURLToNarFileParams struct {
 func (q *Queries) LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error {
 	_, err := q.db.ExecContext(ctx, linkNarInfosByURLToNarFile, arg.NarFileID, arg.URL)
 	return err
+}
+
+const listPinnedClosures = `-- name: ListPinnedClosures :many
+SELECT id, hash, created_at, updated_at
+FROM "pinned_closures"
+ORDER BY "created_at" DESC
+`
+
+// ListPinnedClosures
+//
+//	SELECT id, hash, created_at, updated_at
+//	FROM "pinned_closures"
+//	ORDER BY "created_at" DESC
+func (q *Queries) ListPinnedClosures(ctx context.Context) ([]PinnedClosure, error) {
+	rows, err := q.db.QueryContext(ctx, listPinnedClosures)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PinnedClosure
+	for rows.Next() {
+		var i PinnedClosure
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setConfig = `-- name: SetConfig :exec
