@@ -5403,6 +5403,8 @@ func (c *Cache) deleteLRURecordsFromDB(
 		}
 
 		// Get the file size for this narinfo to track cleanup size
+		// TODO: This is an N+1 query pattern. Consider optimizing by fetching all
+		// nar_files in a batch query or modifying GetLeastUsedNarInfos to include file_size.
 		narFile, err := qtx.GetNarFileByNarInfoID(ctx, info.ID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			log.Error().Err(err).Str("hash", info.Hash).Msg("error getting narfile size")
@@ -6825,6 +6827,10 @@ const narInfoHashLength = 52
 // GetPinnedClosureHashes computes all hashes that are protected by pinned closures.
 // This includes the pinned root hashes and all their transitive references.
 func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}, error) {
+	// TODO: This BFS implementation makes multiple database calls per level.
+	// Consider optimizing with batched queries or a recursive CTE for better performance
+	// with deep or wide closure graphs.
+
 	// Get all pinned closure roots
 	pinnedClosures, err := c.db.ListPinnedClosures(ctx)
 	if err != nil {
