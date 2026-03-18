@@ -5320,9 +5320,22 @@ func (c *Cache) deleteLRURecordsFromDB(
 	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
 	// We may need to fetch more than cleanupSize to skip pinned closures.
 	// Use a loop to fetch more candidates until we meet the target or exhaust the table.
-	fetchSize := cleanupSize * 2
-	if fetchSize == 0 {
-		fetchSize = 100 // minimum fetch
+	const maxFetchSize = 10000 // Cap fetch size to prevent excessive memory usage
+
+	var fetchSize uint64
+
+	if cleanupSize > 0 {
+		fetchSize = cleanupSize * 2
+		// Check for overflow
+		if fetchSize < cleanupSize {
+			fetchSize = maxFetchSize
+		}
+	} else {
+		fetchSize = 100 // minimum fetch for "delete all" case
+	}
+
+	if fetchSize > maxFetchSize {
+		fetchSize = maxFetchSize
 	}
 
 	fetchIncrement := fetchSize // double fetch size each iteration
@@ -5356,7 +5369,8 @@ func (c *Cache) deleteLRURecordsFromDB(
 		}
 
 		// If we have enough eligible candidates, proceed
-		if eligibleCount > 0 {
+		// If cleanupSize is 0 (meaning "delete all"), continue until we've fetched all narinfos
+		if eligibleCount > 0 && (cleanupSize > 0 || len(narInfosToDelete) == 0) {
 			break
 		}
 
