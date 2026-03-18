@@ -389,7 +389,7 @@ func (q *Queries) DeleteChunkByID(ctx context.Context, id int64) error {
 
 const deleteNarFileByHash = `-- name: DeleteNarFileByHash :execrows
 DELETE FROM nar_files
-WHERE hash = $1 AND compression = $2 AND query = $3
+WHERE hash = $1 AND compression = $2 AND "query" = $3
 `
 
 type DeleteNarFileByHashParams struct {
@@ -401,7 +401,7 @@ type DeleteNarFileByHashParams struct {
 // DeleteNarFileByHash
 //
 //	DELETE FROM nar_files
-//	WHERE hash = $1 AND compression = $2 AND query = $3
+//	WHERE hash = $1 AND compression = $2 AND "query" = $3
 func (q *Queries) DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteNarFileByHash, arg.Hash, arg.Compression, arg.Query)
 	if err != nil {
@@ -808,14 +808,14 @@ func (q *Queries) GetChunksByNarFileIDFromIndex(ctx context.Context, arg GetChun
 const getConfigByKey = `-- name: GetConfigByKey :one
 SELECT id, key, value, created_at, updated_at
 FROM config
-WHERE key = $1
+WHERE "key" = $1
 `
 
 // GetConfigByKey
 //
 //	SELECT id, key, value, created_at, updated_at
 //	FROM config
-//	WHERE key = $1
+//	WHERE "key" = $1
 func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error) {
 	row := q.db.QueryRowContext(ctx, getConfigByKey, key)
 	var i Config
@@ -939,7 +939,7 @@ func (q *Queries) GetMigratedNarInfoHashes(ctx context.Context) ([]string, error
 const getNarFileByHashAndCompressionAndQuery = `-- name: GetNarFileByHashAndCompressionAndQuery :one
 SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at, verified_at
 FROM nar_files
-WHERE hash = $1 AND compression = $2 AND query = $3
+WHERE hash = $1 AND compression = $2 AND "query" = $3
 `
 
 type GetNarFileByHashAndCompressionAndQueryParams struct {
@@ -952,7 +952,7 @@ type GetNarFileByHashAndCompressionAndQueryParams struct {
 //
 //	SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at, verified_at
 //	FROM nar_files
-//	WHERE hash = $1 AND compression = $2 AND query = $3
+//	WHERE hash = $1 AND compression = $2 AND "query" = $3
 func (q *Queries) GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error) {
 	row := q.db.QueryRowContext(ctx, getNarFileByHashAndCompressionAndQuery, arg.Hash, arg.Compression, arg.Query)
 	var i NarFile
@@ -1789,7 +1789,7 @@ UPDATE nar_files
 SET
     last_accessed_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
-WHERE hash = $1 AND compression = $2 AND query = $3
+WHERE hash = $1 AND compression = $2 AND "query" = $3
 `
 
 type TouchNarFileParams struct {
@@ -1804,7 +1804,7 @@ type TouchNarFileParams struct {
 //	SET
 //	    last_accessed_at = CURRENT_TIMESTAMP,
 //	    updated_at = CURRENT_TIMESTAMP
-//	WHERE hash = $1 AND compression = $2 AND query = $3
+//	WHERE hash = $1 AND compression = $2 AND "query" = $3
 func (q *Queries) TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, touchNarFile, arg.Hash, arg.Compression, arg.Query)
 	if err != nil {

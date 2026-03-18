@@ -195,7 +195,7 @@ type Querier interface {
 	//
 	//  SELECT id, "key", value, created_at, updated_at
 	//  FROM config
-	//  WHERE key = ?
+	//  WHERE "key" = ?
 	GetConfigByKey(ctx context.Context, key string) (Config, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
