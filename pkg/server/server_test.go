@@ -1977,6 +1977,11 @@ func TestPinClosure(t *testing.T) {
 		t.Cleanup(ts.Close)
 
 		hash := testdata.Nar1.NarInfoHash
+
+		// First, store the narinfo in the cache (required before pinning)
+		err = c.PutNarInfo(newContext(), hash, io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)))
+		require.NoError(t, err, "should store narinfo before pinning")
+
 		pinURL := ts.URL + "/pin/" + hash + ".narinfo"
 
 		// Pin the closure
@@ -2027,6 +2032,11 @@ func TestPinClosure(t *testing.T) {
 		t.Cleanup(ts.Close)
 
 		hash := testdata.Nar1.NarInfoHash
+
+		// First, store the narinfo in the cache (required before pinning)
+		err = c.PutNarInfo(newContext(), hash, io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)))
+		require.NoError(t, err, "should store narinfo before pinning")
+
 		pinURL := ts.URL + "/pin/" + hash + ".narinfo"
 
 		// First pin the closure
