@@ -121,7 +121,7 @@ type Querier interface {
 	//DeleteNarFileByHash
 	//
 	//  DELETE FROM nar_files
-	//  WHERE hash = $1 AND compression = $2 AND query = $3
+	//  WHERE hash = $1 AND compression = $2 AND "query" = $3
 	DeleteNarFileByHash(ctx context.Context, arg DeleteNarFileByHashParams) (int64, error)
 	//DeleteNarFileByID
 	//
@@ -209,7 +209,7 @@ type Querier interface {
 	//
 	//  SELECT id, key, value, created_at, updated_at
 	//  FROM config
-	//  WHERE key = $1
+	//  WHERE "key" = $1
 	GetConfigByKey(ctx context.Context, key string) (Config, error)
 	// NOTE: This query uses a correlated subquery which is not optimal for performance.
 	// The ideal implementation would use a window function (SUM OVER), but sqlc v1.30.0
@@ -240,7 +240,7 @@ type Querier interface {
 	//
 	//  SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at, verified_at
 	//  FROM nar_files
-	//  WHERE hash = $1 AND compression = $2 AND query = $3
+	//  WHERE hash = $1 AND compression = $2 AND "query" = $3
 	GetNarFileByHashAndCompressionAndQuery(ctx context.Context, arg GetNarFileByHashAndCompressionAndQueryParams) (NarFile, error)
 	//GetNarFileByNarInfoID
 	//
@@ -430,7 +430,7 @@ type Querier interface {
 	//  SET
 	//      last_accessed_at = CURRENT_TIMESTAMP,
 	//      updated_at = CURRENT_TIMESTAMP
-	//  WHERE hash = $1 AND compression = $2 AND query = $3
+	//  WHERE hash = $1 AND compression = $2 AND "query" = $3
 	TouchNarFile(ctx context.Context, arg TouchNarFileParams) (int64, error)
 	//TouchNarInfo
 	//

@@ -62,7 +62,7 @@ Returns the Nix cache configuration text.
 ```
 StoreDir: /nix/store
 WantMassQuery: 1
-Priority: 30
+Priority: 10
 ```
 
 #### `GET /pubkey`
@@ -219,9 +219,6 @@ func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) err
 
 // DeleteNar removes a NAR from storage and the database.
 func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error
-
-// HasNar checks if a NAR is available (whole file or chunks).
-func (c *Cache) HasNar(ctx context.Context, narURL nar.URL) bool
 
 // HasNarInChunks checks the database for CDC chunk records.
 func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error)

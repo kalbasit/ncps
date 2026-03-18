@@ -130,7 +130,7 @@ The three packages are never mixed at runtime. `database.Open()` inspects the UR
 
 - Controlled by `Cache.SetMaxSize(bytes)`.
 - Scheduled via `Cache.AddLRUCronJob(ctx, schedule)` using an internal cron runner.
-- `runLRU` queries `GetLeastUsedNarFiles` from the database (ordered by `last_accessed_at`).
+- `runLRU` queries `GetLeastUsedNarInfos` from the database (ordered by `last_accessed_at`).
 - For each evicted `nar_file`: deletes chunks (CDC) or whole file (non-CDC) from storage, removes DB records.
 - `narinfos` orphaned after nar_file deletion are cascade-deleted via FK constraints.
 - OTel counters: `ncps_lru_narinfos_evicted_total`, `ncps_lru_nar_files_evicted_total`, `ncps_lru_chunks_evicted_total`, `ncps_lru_bytes_freed_total`.

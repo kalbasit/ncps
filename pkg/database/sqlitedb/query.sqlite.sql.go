@@ -760,14 +760,14 @@ func (q *Queries) GetChunksByNarFileIDFromIndex(ctx context.Context, arg GetChun
 const getConfigByKey = `-- name: GetConfigByKey :one
 SELECT id, "key", value, created_at, updated_at
 FROM config
-WHERE key = ?
+WHERE "key" = ?
 `
 
 // GetConfigByKey
 //
 //	SELECT id, "key", value, created_at, updated_at
 //	FROM config
-//	WHERE key = ?
+//	WHERE "key" = ?
 func (q *Queries) GetConfigByKey(ctx context.Context, key string) (Config, error) {
 	row := q.db.QueryRowContext(ctx, getConfigByKey, key)
 	var i Config

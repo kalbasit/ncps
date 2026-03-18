@@ -1,7 +1,7 @@
 -- name: GetConfigByKey :one
 SELECT *
 FROM config
-WHERE key = $1;
+WHERE "key" = $1;
 
 -- name: GetNarInfoByHash :one
 SELECT *
@@ -17,7 +17,7 @@ LIMIT 1;
 -- name: GetNarFileByHashAndCompressionAndQuery :one
 SELECT id, hash, compression, file_size, query, created_at, updated_at, last_accessed_at, total_chunks, chunking_started_at, verified_at
 FROM nar_files
-WHERE hash = $1 AND compression = $2 AND query = $3;
+WHERE hash = $1 AND compression = $2 AND "query" = $3;
 
 -- name: GetNarFileByNarInfoID :one
 SELECT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at, nf.verified_at
@@ -203,7 +203,7 @@ UPDATE nar_files
 SET
     last_accessed_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
-WHERE hash = $1 AND compression = $2 AND query = $3;
+WHERE hash = $1 AND compression = $2 AND "query" = $3;
 
 -- name: DeleteNarInfoByHash :execrows
 DELETE FROM narinfos
@@ -211,7 +211,7 @@ WHERE hash = $1;
 
 -- name: DeleteNarFileByHash :execrows
 DELETE FROM nar_files
-WHERE hash = $1 AND compression = $2 AND query = $3;
+WHERE hash = $1 AND compression = $2 AND "query" = $3;
 
 -- name: DeleteNarFileByID :execrows
 DELETE FROM nar_files
