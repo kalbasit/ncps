@@ -31,6 +31,10 @@ func (r *errorReader) Read(p []byte) (n int, err error) {
 func TestCDCChunker_Chunk_ErrorRace(t *testing.T) {
 	t.Parallel()
 
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	// We want to ensure that if an error occurs, it's ALWAYS returned,
 	// even if the chunks channel is also closed.
 
