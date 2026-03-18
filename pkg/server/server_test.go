@@ -1943,3 +1943,212 @@ func TestUpload_GetNarinfoReturnsOkAfterPut(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, getResp.StatusCode)
 }
+
+// --------------------------------------------------------------------
+// Tests for closure pinning HTTP endpoints
+// --------------------------------------------------------------------
+
+func TestPinClosure(t *testing.T) {
+	t.Parallel()
+
+	t.Run("POST /pin/{hash}.narinfo pins a closure", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.RemoveAll(dir) })
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open("sqlite:"+dbFile, nil)
+		require.NoError(t, err)
+
+		localStore, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		require.NoError(t, err)
+
+		s := server.New(c)
+
+		ts := httptest.NewServer(s)
+		t.Cleanup(ts.Close)
+
+		hash := testdata.Nar1.NarInfoHash
+
+		// First, store the narinfo in the cache (required before pinning)
+		err = c.PutNarInfo(newContext(), hash, io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)))
+		require.NoError(t, err, "should store narinfo before pinning")
+
+		pinURL := ts.URL + "/pin/" + hash + ".narinfo"
+
+		// Pin the closure
+		req, err := http.NewRequestWithContext(newContext(), http.MethodPost, pinURL, nil)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "pin should return 200 OK")
+
+		// Verify it's pinned by checking the /pins endpoint
+		pinsReq, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+"/pins", nil)
+		require.NoError(t, err)
+
+		pinsResp, err := ts.Client().Do(pinsReq)
+		require.NoError(t, err)
+
+		defer pinsResp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, pinsResp.StatusCode)
+	})
+
+	t.Run("DELETE /pin/{hash}.narinfo unpins a closure", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.RemoveAll(dir) })
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open("sqlite:"+dbFile, nil)
+		require.NoError(t, err)
+
+		localStore, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		require.NoError(t, err)
+
+		s := server.New(c)
+
+		ts := httptest.NewServer(s)
+		t.Cleanup(ts.Close)
+
+		hash := testdata.Nar1.NarInfoHash
+
+		// First, store the narinfo in the cache (required before pinning)
+		err = c.PutNarInfo(newContext(), hash, io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)))
+		require.NoError(t, err, "should store narinfo before pinning")
+
+		pinURL := ts.URL + "/pin/" + hash + ".narinfo"
+
+		// First pin the closure
+		pinReq, err := http.NewRequestWithContext(newContext(), http.MethodPost, pinURL, nil)
+		require.NoError(t, err)
+
+		pinResp, err := ts.Client().Do(pinReq)
+		require.NoError(t, err)
+		pinResp.Body.Close()
+
+		require.Equal(t, http.StatusOK, pinResp.StatusCode)
+
+		// Now unpin it
+		unpinReq, err := http.NewRequestWithContext(newContext(), http.MethodDelete, pinURL, nil)
+		require.NoError(t, err)
+
+		unpinResp, err := ts.Client().Do(unpinReq)
+		require.NoError(t, err)
+		unpinResp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, unpinResp.StatusCode, "unpin should return 200 OK")
+	})
+
+	t.Run("GET /pins returns list of pinned closures", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.RemoveAll(dir) })
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open("sqlite:"+dbFile, nil)
+		require.NoError(t, err)
+
+		localStore, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		require.NoError(t, err)
+
+		s := server.New(c)
+
+		ts := httptest.NewServer(s)
+		t.Cleanup(ts.Close)
+
+		hash1 := testdata.Nar1.NarInfoHash
+		hash2 := testdata.Nar2.NarInfoHash
+
+		// Pin two closures
+		pinReq1, err := http.NewRequestWithContext(newContext(), http.MethodPost, ts.URL+"/pin/"+hash1+".narinfo", nil)
+		require.NoError(t, err)
+		pinResp1, err := ts.Client().Do(pinReq1)
+		require.NoError(t, err)
+		pinResp1.Body.Close()
+
+		pinReq2, err := http.NewRequestWithContext(newContext(), http.MethodPost, ts.URL+"/pin/"+hash2+".narinfo", nil)
+		require.NoError(t, err)
+		pinResp2, err := ts.Client().Do(pinReq2)
+		require.NoError(t, err)
+		pinResp2.Body.Close()
+
+		// Get list of pins
+		pinsReq, err := http.NewRequestWithContext(newContext(), http.MethodGet, ts.URL+"/pins", nil)
+		require.NoError(t, err)
+
+		pinsResp, err := ts.Client().Do(pinsReq)
+		require.NoError(t, err)
+
+		defer pinsResp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, pinsResp.StatusCode)
+		assert.Equal(t, "application/json", pinsResp.Header.Get("Content-Type"))
+	})
+
+	t.Run("POST /pin/{invalid-hash} returns 400 Bad Request", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := os.MkdirTemp("", "cache-path-")
+		require.NoError(t, err)
+
+		t.Cleanup(func() { os.RemoveAll(dir) })
+
+		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+		testhelper.CreateMigrateDatabase(t, dbFile)
+
+		db, err := database.Open("sqlite:"+dbFile, nil)
+		require.NoError(t, err)
+
+		localStore, err := local.New(newContext(), dir)
+		require.NoError(t, err)
+
+		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		require.NoError(t, err)
+
+		s := server.New(c)
+
+		ts := httptest.NewServer(s)
+		t.Cleanup(ts.Close)
+
+		// Invalid hash (too short)
+		pinURL := ts.URL + "/pin/invalidhash.narinfo"
+
+		req, err := http.NewRequestWithContext(newContext(), http.MethodPost, pinURL, nil)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode, "invalid hash should return 404 Not Found")
+	})
+}

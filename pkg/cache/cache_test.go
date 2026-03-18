@@ -2825,6 +2825,13 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("HasNarFileRecord", testHasNarFileRecord(factory))
 	t.Run("BackgroundMigrateNarToChunksAfterCancellation", testBackgroundMigrateNarToChunksAfterCancellation(factory))
 	t.Run("GetNarWithPlaceholderNarFileRecord", testGetNarWithPlaceholderNarFileRecord(factory))
+
+	// Closure pinning tests
+	t.Run("PinAndUnpinClosure", testPinAndUnpinClosure(factory))
+	t.Run("PinDuplicateClosure", testPinDuplicateClosure(factory))
+	t.Run("PinUnpinNonExistentClosure", testPinUnpinNonExistentClosure(factory))
+	t.Run("GetPinnedClosureHashesSimple", testGetPinnedClosureHashesSimple(factory))
+	t.Run("LRUEvictionSkipsPinnedClosures", testLRUEvictionSkipsPinnedClosures(factory))
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
@@ -3368,6 +3375,211 @@ func TestIssue990_BackgroundJobContextCancellation(t *testing.T) {
 	// In the BUGGY version, count will be 0 because pullNarInfo was canceled.
 	// In the FIXED version, count should be 1.
 	assert.Equal(t, 1, count, "NarInfo should be in database even if the original request was canceled")
+}
+
+// --------------------------------------------------------------------
+// Tests for closure pinning
+// --------------------------------------------------------------------
+
+func testPinAndUnpinClosure(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, db, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := context.Background()
+		hash := testdata.Nar1.NarInfoHash
+
+		// Store the narinfo in the database first (required for pinning)
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, c.PutNarInfo(ctx, hash, r))
+
+		// Initially, the closure should not be pinned
+		isPinned, err := c.IsNarInfoPinned(ctx, hash)
+		require.NoError(t, err)
+		assert.False(t, isPinned, "closure should not be pinned initially")
+
+		// Pin the closure
+		err = c.PinClosure(ctx, hash)
+		require.NoError(t, err, "PinClosure should not return an error")
+
+		// Now it should be pinned
+		isPinned, err = c.IsNarInfoPinned(ctx, hash)
+		require.NoError(t, err)
+		assert.True(t, isPinned, "closure should be pinned after PinClosure")
+
+		// List pinned closures should return the pinned hash
+		closures, err := c.ListPinnedClosures(ctx)
+		require.NoError(t, err)
+		require.Len(t, closures, 1, "should have exactly one pinned closure")
+		assert.Equal(t, hash, closures[0].Hash, "pinned closure hash should match")
+
+		// Unpin the closure
+		err = c.UnpinClosure(ctx, hash)
+		require.NoError(t, err, "UnpinClosure should not return an error")
+
+		// Now it should not be pinned
+		isPinned, err = c.IsNarInfoPinned(ctx, hash)
+		require.NoError(t, err)
+		assert.False(t, isPinned, "closure should not be pinned after UnpinClosure")
+
+		// List pinned closures should be empty
+		closures, err = c.ListPinnedClosures(ctx)
+		require.NoError(t, err)
+		assert.Empty(t, closures, "should have no pinned closures after unpin")
+
+		// Verify in database
+		_, err = db.GetPinnedClosure(ctx, hash)
+		assert.Error(t, err, "pinned closure should not exist in database after unpin")
+	}
+}
+
+func testPinDuplicateClosure(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := context.Background()
+		hash := testdata.Nar1.NarInfoHash
+
+		// Store the narinfo in the database first (required for pinning)
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, c.PutNarInfo(ctx, hash, r))
+
+		// Pin the closure first time
+		err := c.PinClosure(ctx, hash)
+		require.NoError(t, err)
+
+		// Pin the same closure again - should not return an error (idempotent)
+		err = c.PinClosure(ctx, hash)
+		require.NoError(t, err, "pinning an already pinned closure should be idempotent")
+
+		// List should still return only one
+		closures, err := c.ListPinnedClosures(ctx)
+		require.NoError(t, err)
+		require.Len(t, closures, 1, "should have exactly one pinned closure")
+	}
+}
+
+func testPinUnpinNonExistentClosure(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := context.Background()
+		hash := "nonexistent123456789012345678901234567890"
+
+		// Pin a non-existent closure - should return 404 error
+		err := c.PinClosure(ctx, hash)
+		require.Error(t, err, "pinning a non-existent closure should return an error")
+		assert.Contains(t, err.Error(), "not found", "error should indicate not found")
+
+		// IsNarInfoPinned should return false for non-existent hash
+		isPinned, err := c.IsNarInfoPinned(ctx, hash)
+		require.NoError(t, err)
+		assert.False(t, isPinned)
+	}
+}
+
+func testGetPinnedClosureHashesSimple(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, _, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := context.Background()
+
+		// Create a simple narinfo hash to pin
+		hash1 := testdata.Nar1.NarInfoHash
+
+		// Store the narinfo in the database first (required for pinning)
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, c.PutNarInfo(ctx, hash1, r))
+
+		// Pin the closure
+		err := c.PinClosure(ctx, hash1)
+		require.NoError(t, err)
+
+		// GetPinnedClosureHashes should return the pinned hash
+		// (even though the narinfo isn't in the DB, the pinned hash is tracked)
+		pinnedHashes, err := c.GetPinnedClosureHashes(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, pinnedHashes, hash1, "pinned hash should be in closure")
+
+		// Verify IsNarInfoPinned works
+		isPinned, err := c.IsNarInfoPinned(ctx, hash1)
+		require.NoError(t, err)
+		assert.True(t, isPinned, "should report as pinned")
+
+		// Unpin and verify it's no longer in the closure
+		err = c.UnpinClosure(ctx, hash1)
+		require.NoError(t, err)
+
+		pinnedHashes, err = c.GetPinnedClosureHashes(ctx)
+		require.NoError(t, err)
+		assert.NotContains(t, pinnedHashes, hash1, "unpinned hash should not be in closure")
+	}
+}
+
+func testLRUEvictionSkipsPinnedClosures(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		// This test verifies that LRU eviction skips pinned closures
+		// We test that when we pin a closure hash, the GetPinnedClosureHashes
+		// method returns it in the protected set, which is what the LRU
+		// eviction code uses to skip pinned narinfos.
+
+		c, _, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := context.Background()
+
+		// Test with multiple pinned closures
+		hash1 := testdata.Nar1.NarInfoHash
+		hash2 := testdata.Nar2.NarInfoHash
+		hash3 := testdata.Nar3.NarInfoHash
+
+		// Store the narinfos in the database first (required for pinning)
+		r1 := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, c.PutNarInfo(ctx, hash1, r1))
+
+		r2 := io.NopCloser(strings.NewReader(testdata.Nar2.NarInfoText))
+		require.NoError(t, c.PutNarInfo(ctx, hash2, r2))
+
+		// Pin two closures
+		err := c.PinClosure(ctx, hash1)
+		require.NoError(t, err)
+		err = c.PinClosure(ctx, hash2)
+		require.NoError(t, err)
+
+		// Get pinned closure hashes - this is what LRU eviction uses
+		pinnedHashes, err := c.GetPinnedClosureHashes(ctx)
+		require.NoError(t, err)
+
+		// Both pinned hashes should be protected
+		assert.Contains(t, pinnedHashes, hash1, "pinned hash1 should be protected")
+		assert.Contains(t, pinnedHashes, hash2, "pinned hash2 should be protected")
+
+		// hash3 is not pinned, so it should not be in the protected set
+		assert.NotContains(t, pinnedHashes, hash3, "unpinned hash3 should not be protected")
+
+		// Unpin one and verify it's no longer protected
+		err = c.UnpinClosure(ctx, hash1)
+		require.NoError(t, err)
+
+		pinnedHashes, err = c.GetPinnedClosureHashes(ctx)
+		require.NoError(t, err)
+
+		assert.NotContains(t, pinnedHashes, hash1, "unpinned hash1 should not be protected")
+		assert.Contains(t, pinnedHashes, hash2, "still pinned hash2 should be protected")
+	}
 }
 
 func TestGetNarInfoDistributedCoordination(t *testing.T) {

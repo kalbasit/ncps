@@ -445,3 +445,22 @@ WHERE total_chunks = 0
   AND created_at < sqlc.arg(cutoff_time)
 ORDER BY id
 LIMIT sqlc.arg(batch_size);
+
+-- name: CreatePinnedClosure :one
+INSERT INTO pinned_closures (hash)
+VALUES (sqlc.arg(hash))
+RETURNING *;
+
+-- name: GetPinnedClosure :one
+SELECT *
+FROM pinned_closures
+WHERE hash = sqlc.arg(hash);
+
+-- name: DeletePinnedClosure :execrows
+DELETE FROM pinned_closures
+WHERE hash = sqlc.arg(hash);
+
+-- name: ListPinnedClosures :many
+SELECT *
+FROM pinned_closures
+ORDER BY created_at DESC;

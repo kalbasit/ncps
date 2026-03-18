@@ -78,3 +78,10 @@ type NarinfoSignature struct {
 	NarInfoID int64
 	Signature string
 }
+
+type PinnedClosure struct {
+	ID        int64
+	Hash      string
+	CreatedAt time.Time
+	UpdatedAt sql.NullTime
+}

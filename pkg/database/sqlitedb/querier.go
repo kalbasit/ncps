@@ -99,6 +99,12 @@ type Querier interface {
 	//  WHERE narinfos.url IS NULL
 	//  RETURNING id, hash, created_at, updated_at, last_accessed_at, store_path, url, compression, file_hash, file_size, nar_hash, nar_size, deriver, system, ca
 	CreateNarInfo(ctx context.Context, arg CreateNarInfoParams) (NarInfo, error)
+	//CreatePinnedClosure
+	//
+	//  INSERT INTO "pinned_closures" ("hash")
+	//  VALUES (?)
+	//  RETURNING id, hash, created_at, updated_at
+	CreatePinnedClosure(ctx context.Context, hash string) (PinnedClosure, error)
 	//DeleteChunkByID
 	//
 	//  DELETE FROM chunks
@@ -146,6 +152,11 @@ type Querier interface {
 	//      FROM narinfo_nar_files
 	//  )
 	DeleteOrphanedNarFiles(ctx context.Context) (int64, error)
+	//DeletePinnedClosure
+	//
+	//  DELETE FROM "pinned_closures"
+	//  WHERE "hash" = ?
+	DeletePinnedClosure(ctx context.Context, hash string) (int64, error)
 	// Returns all chunks for storage existence verification (CDC mode).
 	//
 	//  SELECT id, hash, size, compressed_size, created_at, updated_at
@@ -337,6 +348,12 @@ type Querier interface {
 	//  LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 	//  WHERE ninf.narinfo_id IS NULL
 	GetOrphanedNarFiles(ctx context.Context) ([]NarFile, error)
+	//GetPinnedClosure
+	//
+	//  SELECT id, hash, created_at, updated_at
+	//  FROM "pinned_closures"
+	//  WHERE "hash" = ?
+	GetPinnedClosure(ctx context.Context, hash string) (PinnedClosure, error)
 	// Get NAR files that are stuck (not chunked, no active chunking, and older than the given age).
 	// This is used by the CDC lazy recovery job to find NARs that failed to chunk due to restart.
 	//
@@ -393,6 +410,12 @@ type Querier interface {
 	//  WHERE url = ?
 	//  ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING
 	LinkNarInfosByURLToNarFile(ctx context.Context, arg LinkNarInfosByURLToNarFileParams) error
+	//ListPinnedClosures
+	//
+	//  SELECT id, hash, created_at, updated_at
+	//  FROM "pinned_closures"
+	//  ORDER BY "created_at" DESC
+	ListPinnedClosures(ctx context.Context) ([]PinnedClosure, error)
 	//SetConfig
 	//
 	//  INSERT INTO config (
