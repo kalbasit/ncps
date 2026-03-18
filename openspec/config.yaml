@@ -1,0 +1,51 @@
+schema: spec-driven
+# Project context
+# This is shown to AI when creating artifacts.
+context: |
+  Project: ncps (Nix Cache Proxy Service)
+  Tech stack: Go, Nix flakes with direnv
+  Database: SQLite (default), PostgreSQL, MySQL/MariaDB via sqlc
+  Storage: Local filesystem, S3-compatible (MinIO)
+  Additional tools: golangci-lint, sqlc, sqlfluff, dbmate, testify
+
+  Domain: High-performance binary cache proxying for NixOS/Nix ecosystems. Handles NAR and .narinfo file fetching, caching, and serving.
+  Architecture: Concurrent proxy design prioritizing memory efficiency and fast I/O for binary streams.
+
+  Key conventions:
+  - Uses process-compose-flake for dev dependencies (MinIO, PostgreSQL, MariaDB, Redis).
+  - Test files use `_test` package suffix.
+  - Parallel tests encouraged (paralleltest linter). All tests and subtests must call t.Parallel().
+  - Race detector enabled for all tests.
+  - Formatting: gofumpt, goimports, gci for Go. sqlfluff for SQL. `nix fmt` for all project files.
+  - Database migrations via dbmate wrapper (auto-detects engine from URL scheme).
+  - All column names must be quoted in every SQL query and schema definition, without exception.
+  - sqlc generates three completely separate Querier interfaces (sqlitedb, postgresdb, mysqldb); never mix them.
+  - CDC (content-defined chunking) may be enabled; NARs can be stored as whole files or as chunk sequences.
+  - zstd readers/writers are pooled via sync.Pool to avoid GC pressure on high-throughput NAR streams.
+
+  Important skills (.agent/skills/):
+  - test: Run tests with race detector
+  - lint: Lint with golangci-lint (use --fix flag)
+  - migrate-new, migrate-up, migrate-down: Database migration workflows
+  - generate-db-wrappers: Run sqlc generate after query changes
+
+  Code Quality:
+  - Use `golangci-lint run --fix` before manual fixes.
+  - Use testify: require.NoError for fatal errors, assert for others.
+  - Test files must be in `package_test` (testpackage linter).
+# Per-artifact rules
+rules:
+  proposal:
+    - Keep proposals under 500 words.
+    - Always include a "Non-goals" section to strictly scope the feature.
+    - Explicitly state any expected impact on I/O, network latency, or memory usage.
+  design:
+    - Always use Test-Driven Development (TDD).
+    - Write failing tests first before implementing code.
+    - Run tests frequently to verify implementation matches requirements.
+  specs:
+    - Define clear Go interfaces and data structures before implementation details.
+    - Document expected state changes, edge cases, and failure modes (e.g., upstream cache misses, timeouts).
+  tasks:
+    - Break tasks into chunks of max 2 hours.
+    - Ensure tasks are atomic and testable.
