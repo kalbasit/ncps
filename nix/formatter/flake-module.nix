@@ -8,6 +8,8 @@
         ".agent/skills/**/*.md"
         ".agent/workflows/*.md"
         ".claude/commands/**/*.md"
+        ".github/prompts/*.md"
+        ".github/skills/**/*.md"
         ".env"
         ".envrc"
         "LICENSE"

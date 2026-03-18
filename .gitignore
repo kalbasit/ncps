@@ -58,5 +58,6 @@ __pycache__/
 
 # Agents
 /.claude/plans/
+/.claude/worktrees/
 /.claude/settings.local.json
 /.container-use/environment.json
