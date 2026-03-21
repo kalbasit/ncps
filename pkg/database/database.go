@@ -1,4 +1,4 @@
-//go:generate go tool sqlc-multi-db postgresdb/querier.go
+//go:generate go tool sqlc-multi-db --engine sqlite:sqlitedb --engine postgres:postgresdb --engine mysql:mysqldb postgresdb/querier.go
 package database
 
 import (
