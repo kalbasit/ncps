@@ -74,7 +74,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/kalbasit/sqlc-multi-db v0.0.0-20260315230919-c725291d9d69 // indirect
+	github.com/kalbasit/sqlc-multi-db v0.0.0-20260321060018-0c497ea7e1ff // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
