@@ -75,8 +75,7 @@ github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/kalbasit/fastcdc v0.0.0-20260315002918-a42396baa9b5 h1:BF5yzJnkbRdC4YKFfjYVUVJq64IMTYve/H7lv8eln5M=
 github.com/kalbasit/fastcdc v0.0.0-20260315002918-a42396baa9b5/go.mod h1:ucTFfErjB1mkfrL4/UbuhsIluT/cyFhnEsqQMo4GPTE=
-github.com/kalbasit/sqlc-multi-db v0.0.0-20260321060018-0c497ea7e1ff h1:SAMs1D5OrevENbjRjn/gZNi6SDGhJ7UqUHSPBPibQPc=
-github.com/kalbasit/sqlc-multi-db v0.0.0-20260321060018-0c497ea7e1ff/go.mod h1:D8A2YDstcPNLvxkEExoEPR6acW1trGSzJW+MjzfSI94=
+github.com/kalbasit/sqlc-multi-db v0.0.0-20260321072509-3c9b4b272d4a h1:QSMdX6zYl76Sm0+t1s1r3jgQ+ZnRznx839StRJbakZo=
 github.com/kalbasit/sqlc-multi-db v0.0.0-20260321072509-3c9b4b272d4a/go.mod h1:D8A2YDstcPNLvxkEExoEPR6acW1trGSzJW+MjzfSI94=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
 github.com/klauspost/compress v1.18.5/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
