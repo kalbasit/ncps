@@ -67,7 +67,7 @@ jobs:
         run: nix build .#ncps.coverage -L
       - name: Upload coverage reports to Codecov
         if: github.event.pull_request.head.repo.fork == false
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.codecov_token }}
           files: result-coverage
