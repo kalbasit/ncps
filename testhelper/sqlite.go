@@ -12,6 +12,7 @@ import (
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -60,7 +61,7 @@ func CreateMigrateDatabase(t testing.TB, dbFile string) {
 	// While not strictly necessary for correctness (SQLite handles this automatically), it ensures
 	// that all migration changes are immediately visible to new connections without relying on
 	// WAL file reads. This can prevent subtle issues in test environments with rapid database
-	// create/destroy cycles. See: https://www.sqlite.org/wal.html#checkpointing
+	// create-destroy cycles. See: https://www.sqlite.org/wal.html#checkpointing
 	db, err := sql.Open("sqlite3", dbFile)
 	require.NoError(t, err)
 
@@ -72,89 +73,76 @@ func CreateMigrateDatabase(t testing.TB, dbFile string) {
 
 // MigrateNarInfoToDatabase migrates a single narinfo to the database.
 // This is a test helper that mimics the migration logic in pkg/ncps/migrate_narinfo.go.
-func MigrateNarInfoToDatabase(ctx context.Context, db database.Querier, hash string, ni *narinfo.NarInfo) error {
-	// Explicit transaction
-	sqlDB := db.DB()
-
-	tx, err := sqlDB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	qtx := db.WithTx(tx)
-
-	// Get or Create NarInfo
-	nir, err := getOrCreateNarInfo(ctx, qtx, hash, ni)
-	if err != nil {
-		return err
-	}
-
-	// References
-	if len(ni.References) > 0 {
-		err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
-			NarInfoID: nir.ID,
-			Reference: ni.References,
-		})
+func MigrateNarInfoToDatabase(ctx context.Context, db *bun.DB, hash string, ni *narinfo.NarInfo) error {
+	return database.RunInTx(ctx, db, func(ctx context.Context, tx bun.Tx) error {
+		// Get or Create NarInfo
+		nir, err := getOrCreateNarInfo(ctx, tx, hash, ni)
 		if err != nil {
-			// This can fail with a duplicate key error if the narinfo already existed, which is fine.
-			if !database.IsDuplicateKeyError(err) {
-				return fmt.Errorf("failed to add references: %w", err)
+			return err
+		}
+
+		// References
+		if len(ni.References) > 0 {
+			err := database.AddNarInfoReferences(ctx, tx, database.AddNarInfoReferencesParams{
+				NarInfoID: nir.ID,
+				Reference: ni.References,
+			})
+			if err != nil {
+				// This can fail with a duplicate key error if the narinfo already existed, which is fine.
+				if !database.IsDuplicateKeyError(err) {
+					return fmt.Errorf("failed to add references: %w", err)
+				}
 			}
 		}
-	}
 
-	// Signatures
-	sigStrings := make([]string, len(ni.Signatures))
-	for i, sig := range ni.Signatures {
-		sigStrings[i] = sig.String()
-	}
+		// Signatures
+		sigStrings := make([]string, len(ni.Signatures))
+		for i, sig := range ni.Signatures {
+			sigStrings[i] = sig.String()
+		}
 
-	if len(sigStrings) > 0 {
-		err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
-			NarInfoID: nir.ID,
-			Signature: sigStrings,
-		})
-		if err != nil {
-			// This can fail with a duplicate key error if the narinfo already existed, which is fine.
-			if !database.IsDuplicateKeyError(err) {
-				return fmt.Errorf("failed to add signatures: %w", err)
+		if len(sigStrings) > 0 {
+			err := database.AddNarInfoSignatures(ctx, tx, database.AddNarInfoSignaturesParams{
+				NarInfoID: nir.ID,
+				Signature: sigStrings,
+			})
+			if err != nil {
+				// This can fail with a duplicate key error if the narinfo already existed, which is fine.
+				if !database.IsDuplicateKeyError(err) {
+					return fmt.Errorf("failed to add signatures: %w", err)
+				}
 			}
 		}
-	}
 
-	// NarFile
-	narURL, err := nar.ParseURL(ni.URL)
-	if err != nil {
-		return fmt.Errorf("error parsing the nar URL: %w", err)
-	}
-
-	// Get or Create NarFile
-	narFile, err := getOrCreateNarFile(ctx, qtx, &narURL, ni.FileSize)
-	if err != nil {
-		return err
-	}
-
-	// Link NarInfo to NarFile
-	if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
-		NarInfoID: nir.ID,
-		NarFileID: narFile.ID,
-	}); err != nil {
-		if !database.IsDuplicateKeyError(err) {
-			return fmt.Errorf("failed to link narinfo to narfile: %w", err)
+		// NarFile
+		narURL, err := nar.ParseURL(ni.URL)
+		if err != nil {
+			return fmt.Errorf("error parsing the nar URL: %w", err)
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
+		// Get or Create NarFile
+		narFile, err := getOrCreateNarFile(ctx, tx, &narURL, ni.FileSize)
+		if err != nil {
+			return err
+		}
 
-	return nil
+		// Link NarInfo to NarFile
+		if err := database.LinkNarInfoToNarFile(ctx, tx, database.LinkNarInfoToNarFileParams{
+			NarInfoID: nir.ID,
+			NarFileID: narFile.ID,
+		}); err != nil {
+			if !database.IsDuplicateKeyError(err) {
+				return fmt.Errorf("failed to link narinfo to narfile: %w", err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // RegisterNarInfoAsUnmigrated registers a narinfo in the database as unmigrated (no URL).
-func RegisterNarInfoAsUnmigrated(ctx context.Context, db database.Querier, hash string, ni *narinfo.NarInfo) error {
-	_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+func RegisterNarInfoAsUnmigrated(ctx context.Context, db *bun.DB, hash string, ni *narinfo.NarInfo) error {
+	_, err := database.CreateNarInfo(ctx, db, database.CreateNarInfoParams{
 		Hash:        hash,
 		StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
 		Compression: sql.NullString{String: ni.Compression, Valid: ni.Compression != ""},
@@ -173,12 +161,12 @@ func RegisterNarInfoAsUnmigrated(ctx context.Context, db database.Querier, hash 
 
 func getOrCreateNarInfo(
 	ctx context.Context,
-	qtx database.Querier,
+	db bun.IDB,
 	hash string,
 	ni *narinfo.NarInfo,
 ) (database.NarInfo, error) {
 	// First, try to get the record.
-	existing, err := qtx.GetNarInfoByHash(ctx, hash)
+	existing, err := database.GetNarInfoByHash(ctx, db, hash)
 	if err == nil {
 		// Found it, return.
 		return existing, nil
@@ -190,7 +178,7 @@ func getOrCreateNarInfo(
 	}
 
 	// Not found, so let's create it.
-	nir, err := qtx.CreateNarInfo(ctx, database.CreateNarInfoParams{
+	nir, err := database.CreateNarInfo(ctx, db, database.CreateNarInfoParams{
 		Hash:        hash,
 		StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
 		URL:         sql.NullString{String: ni.URL, Valid: ni.URL != ""},
@@ -207,7 +195,7 @@ func getOrCreateNarInfo(
 		// If we get a duplicate key error, it means another worker created it between our GET and CREATE.
 		if database.IsDuplicateKeyError(err) {
 			// Fetch the record again. This time it should exist.
-			existing, errGet := qtx.GetNarInfoByHash(ctx, hash)
+			existing, errGet := database.GetNarInfoByHash(ctx, db, hash)
 			if errGet != nil {
 				return database.NarInfo{}, fmt.Errorf("failed to get existing record after race: %w", errGet)
 			}
@@ -224,16 +212,14 @@ func getOrCreateNarInfo(
 
 func getOrCreateNarFile(
 	ctx context.Context,
-	qtx database.Querier,
+	db bun.IDB,
 	narURL *nar.URL,
 	narSize uint64,
 ) (database.NarFile, error) {
 	// First, try to get the record.
-	existing, err := qtx.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        narURL.Hash,
-		Compression: narURL.Compression.String(),
-		Query:       narURL.Query.Encode(),
-	})
+	existing, err := database.GetNarFileByHashAndCompressionAndQuery(
+		ctx, db, narURL.Hash, narURL.Compression.String(), narURL.Query.Encode(),
+	)
 	if err == nil {
 		// Found it, return.
 		return existing, nil
@@ -245,7 +231,7 @@ func getOrCreateNarFile(
 	}
 
 	// Not found, so let's create it.
-	narFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+	narFile, err := database.CreateNarFile(ctx, db, database.CreateNarFileParams{
 		Hash:        narURL.Hash,
 		Compression: narURL.Compression.String(),
 		Query:       narURL.Query.Encode(),
@@ -255,13 +241,9 @@ func getOrCreateNarFile(
 		// If we get a duplicate key error, it means another worker created it.
 		if database.IsDuplicateKeyError(err) {
 			// Fetch the record again. This time it should exist.
-			existing, errGet := qtx.GetNarFileByHashAndCompressionAndQuery(
-				ctx,
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narURL.Hash,
-					Compression: narURL.Compression.String(),
-					Query:       narURL.Query.Encode(),
-				})
+			existing, errGet := database.GetNarFileByHashAndCompressionAndQuery(
+				ctx, db, narURL.Hash, narURL.Compression.String(), narURL.Query.Encode(),
+			)
 			if errGet != nil {
 				return database.NarFile{}, fmt.Errorf("failed to get existing nar file record after race: %w", errGet)
 			}
@@ -279,7 +261,7 @@ func getOrCreateNarFile(
 // SetupSQLite sets up a new temporary SQLite database for testing.
 // It returns a database connection and a cleanup function.
 // This function has the same signature as SetupPostgres and SetupMySQL for consistency.
-func SetupSQLite(t *testing.T) (database.Querier, func()) {
+func SetupSQLite(t *testing.T) (*bun.DB, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "sqlite-test-")
@@ -292,7 +274,7 @@ func SetupSQLite(t *testing.T) (database.Querier, func()) {
 	require.NoError(t, err)
 
 	cleanup := func() {
-		db.DB().Close()
+		db.DB.Close()
 		os.RemoveAll(dir)
 	}
 

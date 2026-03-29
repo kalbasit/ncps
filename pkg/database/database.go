@@ -1,4 +1,3 @@
-//go:generate go tool sqlc-multi-db --engine sqlite:sqlitedb --engine postgres:postgresdb --engine mysql:mysqldb postgresdb/querier.go
 package database
 
 import (
@@ -11,12 +10,13 @@ import (
 
 	"github.com/XSAM/otelsql"
 	"github.com/go-sql-driver/mysql"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/mysqldialect"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/dialect/sqlitedialect"
+	"github.com/uptrace/bun/schema"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
-
-	"github.com/kalbasit/ncps/pkg/database/mysqldb"
-	"github.com/kalbasit/ncps/pkg/database/postgresdb"
-	"github.com/kalbasit/ncps/pkg/database/sqlitedb"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver
@@ -40,7 +40,7 @@ type PoolConfig struct {
 	MaxIdleConns int
 }
 
-// Open opens a database connection and returns a Querier implementation.
+// Open opens a database connection and returns a *bun.DB.
 // The database type is determined from the URL scheme:
 //   - sqlite:// or sqlite3:// for SQLite
 //   - postgres:// or postgresql:// for PostgreSQL
@@ -48,46 +48,93 @@ type PoolConfig struct {
 //
 // The poolCfg parameter is optional. If nil, sensible defaults are used based on
 // the database type. SQLite uses MaxOpenConns=1, PostgreSQL and MySQL use higher values.
-func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
+func Open(dbURL string, poolCfg *PoolConfig) (*bun.DB, error) {
 	dbType, err := DetectFromDatabaseURL(dbURL)
 	if err != nil {
 		return nil, err
 	}
 
-	var sdb *sql.DB
-
 	switch dbType {
 	case TypeMySQL:
-		sdb, err = openMySQL(dbURL, poolCfg)
+		return openBunMySQL(dbURL, poolCfg)
 	case TypePostgreSQL:
-		sdb, err = openPostgreSQL(dbURL, poolCfg)
+		return openBunPostgreSQL(dbURL, poolCfg)
 	case TypeSQLite:
-		sdb, err = openSQLite(dbURL, poolCfg)
+		return openBunSQLite(dbURL, poolCfg)
 	case TypeUnknown:
 		fallthrough
 	default:
-		// This should never happen due to detection above, but included for safety
 		return nil, ErrUnsupportedDriver
 	}
+}
 
+// NewDatabase creates a new bun.DB from an existing sql.DB.
+// This is useful when you already have a database connection
+// and want to wrap it with Bun.
+func NewDatabase(sdb *sql.DB, dbType Type) *bun.DB {
+	var dialect schema.Dialect
+
+	switch dbType {
+	case TypeMySQL:
+		dialect = mysqldialect.New()
+	case TypePostgreSQL:
+		dialect = pgdialect.New()
+	case TypeSQLite:
+		dialect = sqlitedialect.New()
+	case TypeUnknown:
+		fallthrough
+	default:
+		return nil
+	}
+
+	return bun.NewDB(sdb, dialect)
+}
+
+func openBunSQLite(dbURL string, poolCfg *PoolConfig) (*bun.DB, error) {
+	sdb, err := openSQLiteRaw(dbURL, poolCfg)
 	if err != nil {
-		return nil, fmt.Errorf("error opening the database at %q: %w", dbURL, err)
+		return nil, err
 	}
 
-	// Return the appropriate wrapper based on the scheme
-	switch dbType {
-	case TypeMySQL:
-		return &mysqlWrapper{adapter: mysqldb.NewAdapter(sdb)}, nil
-	case TypePostgreSQL:
-		return &postgresWrapper{adapter: postgresdb.NewAdapter(sdb)}, nil
-	case TypeSQLite:
-		return &sqliteWrapper{adapter: sqlitedb.NewAdapter(sdb)}, nil
-	case TypeUnknown:
-		fallthrough
-	default:
-		// This should never happen due to detection above, but included for safety
-		return nil, ErrUnsupportedDriver
+	return bun.NewDB(sdb, sqlitedialect.New()), nil
+}
+
+func openBunPostgreSQL(dbURL string, poolCfg *PoolConfig) (*bun.DB, error) {
+	processedURL, err := parsePostgreSQLURL(dbURL)
+	if err != nil {
+		return nil, err
 	}
+
+	sdb, err := otelsql.Open("pgx", processedURL, otelsql.WithAttributes(
+		semconv.DBSystemPostgreSQL,
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	applyPoolSettings(sdb, poolCfg, 25, 5)
+
+	return bun.NewDB(sdb, pgdialect.New()), nil
+}
+
+func openBunMySQL(dbURL string, poolCfg *PoolConfig) (*bun.DB, error) {
+	cfg, err := parseMySQLConfig(dbURL)
+	if err != nil {
+		return nil, err
+	}
+
+	dsn := cfg.FormatDSN()
+
+	sdb, err := otelsql.Open("mysql", dsn, otelsql.WithAttributes(
+		semconv.DBSystemMySQL,
+	))
+	if err != nil {
+		return nil, err
+	}
+
+	applyPoolSettings(sdb, poolCfg, 25, 5)
+
+	return bun.NewDB(sdb, mysqldialect.New()), nil
 }
 
 // applyPoolSettings applies connection pool settings to the database connection.
@@ -115,7 +162,7 @@ func applyPoolSettings(sdb *sql.DB, poolCfg *PoolConfig, defaultMaxOpen, default
 	}
 }
 
-func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
+func openSQLiteRaw(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	u, err := url.Parse(dbURL)
 	if err != nil {
 		return nil, err
@@ -166,26 +213,6 @@ func openSQLite(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
 	return sdb, nil
 }
 
-func openPostgreSQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
-	processedURL, err := parsePostgreSQLURL(dbURL)
-	if err != nil {
-		return nil, err
-	}
-
-	sdb, err := otelsql.Open("pgx", processedURL, otelsql.WithAttributes(
-		semconv.DBSystemPostgreSQL,
-	))
-	if err != nil {
-		return nil, err
-	}
-
-	// PostgreSQL can handle concurrent connections well
-	// Set reasonable defaults for connection pooling
-	applyPoolSettings(sdb, poolCfg, 25, 5)
-
-	return sdb, nil
-}
-
 func parsePostgreSQLURL(dbURL string) (string, error) {
 	u, err := url.Parse(dbURL)
 	if err != nil {
@@ -224,26 +251,6 @@ func parsePostgreSQLURL(dbURL string) (string, error) {
 	}
 
 	return u.String(), nil
-}
-
-func openMySQL(dbURL string, poolCfg *PoolConfig) (*sql.DB, error) {
-	cfg, err := parseMySQLConfig(dbURL)
-	if err != nil {
-		return nil, err
-	}
-
-	dsn := cfg.FormatDSN()
-
-	sdb, err := otelsql.Open("mysql", dsn, otelsql.WithAttributes(
-		semconv.DBSystemMySQL,
-	))
-	if err != nil {
-		return nil, err
-	}
-
-	applyPoolSettings(sdb, poolCfg, 25, 5)
-
-	return sdb, nil
 }
 
 func parseMySQLConfig(dbURL string) (*mysql.Config, error) {

@@ -1,0 +1,1 @@
+ALTER TABLE nars DROP COLUMN `query`;

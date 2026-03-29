@@ -5,7 +5,6 @@
 pkgs: with pkgs; [
   go
   golangci-lint
-  sqlc
   sqlfluff
   watchexec
   xz

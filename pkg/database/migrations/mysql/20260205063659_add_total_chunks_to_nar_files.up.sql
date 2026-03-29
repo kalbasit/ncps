@@ -1,0 +1,1 @@
+ALTER TABLE nar_files ADD COLUMN total_chunks BIGINT(20) NOT NULL DEFAULT 0;

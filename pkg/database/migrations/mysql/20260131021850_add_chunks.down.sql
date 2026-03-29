@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS nar_file_chunks;
+DROP TABLE IF EXISTS chunks;

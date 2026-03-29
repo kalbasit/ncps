@@ -14,6 +14,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/kalbasit/ncps/pkg/cache"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/otel"
 )
 
@@ -268,12 +269,12 @@ requests. Without Redis, the command uses in-memory locking (no coordination wit
 
 			startTime := time.Now()
 
-			unmigratedHashes, err := db.GetUnmigratedNarInfoHashes(ctx)
+			unmigratedHashes, err := database.GetUnmigratedNarInfoHashes(ctx, db)
 			if err != nil {
 				return fmt.Errorf("failed to fetch unmigrated hashes from database: %w", err)
 			}
 
-			migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
+			migratedHashes, err := database.GetMigratedNarInfoHashes(ctx, db)
 			if err != nil {
 				return fmt.Errorf("failed to fetch migrated hashes from database: %w", err)
 			}

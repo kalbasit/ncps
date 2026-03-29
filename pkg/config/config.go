@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
@@ -55,12 +56,12 @@ var (
 // Config provides access to the persistent configuration stored in the database.
 // It uses an RWLocker to ensure thread-safe access to configuration keys.
 type Config struct {
-	db       database.Querier
+	db       *bun.DB
 	rwLocker lock.RWLocker
 }
 
 // New returns a new Config instance.
-func New(db database.Querier, rwLocker lock.RWLocker) *Config {
+func New(db *bun.DB, rwLocker lock.RWLocker) *Config {
 	return &Config{
 		db:       db,
 		rwLocker: rwLocker,
@@ -149,7 +150,7 @@ func (c *Config) getConfig(ctx context.Context, key string) (string, error) {
 		}
 	}()
 
-	cu, err := c.db.GetConfigByKey(ctx, key)
+	cu, err := database.GetConfigByKey(ctx, c.db, key)
 	if err != nil {
 		if database.IsNotFoundError(err) {
 			return "", fmt.Errorf("%w: %s", ErrConfigNotFound, key)
@@ -183,10 +184,7 @@ func (c *Config) setConfig(ctx context.Context, key, value string) error {
 		}
 	}()
 
-	return c.db.SetConfig(ctx, database.SetConfigParams{
-		Key:   key,
-		Value: value,
-	})
+	return database.SetConfig(ctx, c.db, key, value)
 }
 
 // ValidateOrStoreCDCConfig validates CDC configuration against stored values or stores them if not yet configured.

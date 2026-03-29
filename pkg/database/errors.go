@@ -88,6 +88,12 @@ func IsNotFoundError(err error) bool {
 }
 
 var (
+	// ErrNotFound is returned when a query returns no rows.
+	ErrNotFound = errors.New("not found")
+
+	// ErrMismatchedSlices is returned when bulk operations receive slices of different lengths.
+	ErrMismatchedSlices = errors.New("mismatched slice lengths")
+
 	// ErrUnsupportedDriver is returned when the database driver is not recognized.
 	ErrUnsupportedDriver = errors.New("unsupported database driver")
 

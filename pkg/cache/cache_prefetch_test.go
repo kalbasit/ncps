@@ -174,7 +174,7 @@ func TestPrefetchErrorPropagation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the chunks and delete one from storage (but not from DB)
-	chunks, err := db.GetChunksByNarFileID(ctx, 1)
+	chunks, err := database.GetChunksByNarFileID(ctx, db, 1)
 	require.NoError(t, err)
 	require.NotEmpty(t, chunks)
 
@@ -324,15 +324,13 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the NAR file record
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	narFile, err := database.GetNarFileByHashAndCompressionAndQuery(
+		ctx, db, nu.Hash, nu.Compression.String(), nu.Query.Encode(),
+	)
 	require.NoError(t, err)
 
 	// Get all chunks
-	chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+	chunks, err := database.GetChunksByNarFileID(ctx, db, narFile.ID)
 	require.NoError(t, err)
 	require.Greater(t, len(chunks), 2, "need at least 3 chunks for meaningful test")
 
@@ -343,7 +341,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	// Simulate incomplete chunking: set total_chunks to 0 and chunking_started_at to NOW.
 	// This forces progressive streaming mode. chunking_started_at must be non-NULL to
 	// distinguish an active in-progress chunking from a stale placeholder record.
-	_, err = db.DB().ExecContext(
+	_, err = db.DB.ExecContext(
 		ctx,
 		"UPDATE nar_files SET total_chunks = 0, chunking_started_at = CURRENT_TIMESTAMP WHERE id = ?",
 		narFile.ID,
@@ -355,7 +353,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond) // Reduced delay to speed up test
 
-		_, _ = db.DB().ExecContext(
+		_, _ = db.DB.ExecContext(
 			context.Background(),
 			"UPDATE nar_files SET total_chunks = ? WHERE id = ?",
 			totalChunks, narFile.ID,
@@ -430,15 +428,13 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the NAR file record and simulate incomplete chunking
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	narFile, err := database.GetNarFileByHashAndCompressionAndQuery(
+		ctx, db, nu.Hash, nu.Compression.String(), nu.Query.Encode(),
+	)
 	require.NoError(t, err)
 
 	// Set total_chunks to 0 to force progressive streaming
-	_, err = db.DB().ExecContext(ctx, "UPDATE nar_files SET total_chunks = 0 WHERE id = ?", narFile.ID)
+	_, err = db.DB.ExecContext(ctx, "UPDATE nar_files SET total_chunks = 0 WHERE id = ?", narFile.ID)
 	require.NoError(t, err)
 
 	// Count goroutines before
@@ -512,15 +508,13 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the NAR file record
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	narFile, err := database.GetNarFileByHashAndCompressionAndQuery(
+		ctx, db, nu.Hash, nu.Compression.String(), nu.Query.Encode(),
+	)
 	require.NoError(t, err)
 
 	// Simulate incomplete chunking: set total_chunks to 0 and chunking_started_at to NOW.
-	_, err = db.DB().ExecContext(
+	_, err = db.DB.ExecContext(
 		ctx,
 		"UPDATE nar_files SET total_chunks = 0, chunking_started_at = CURRENT_TIMESTAMP WHERE id = ?",
 		narFile.ID,
@@ -531,7 +525,7 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 
-		if _, err := db.DB().ExecContext(
+		if _, err := db.DB.ExecContext(
 			context.Background(),
 			"UPDATE nar_files SET chunking_started_at = NULL WHERE id = ?",
 			narFile.ID,

@@ -21,6 +21,7 @@ import (
 	"github.com/nix-community/go-nix/pkg/nixhash"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -361,7 +362,7 @@ type Cache struct {
 	secretKey     signature.SecretKey
 	healthChecker *healthcheck.HealthChecker
 	maxSize       uint64
-	db            database.Querier
+	db            *bun.DB
 
 	// tempDir is used to store nar files temporarily.
 	tempDir string
@@ -553,7 +554,7 @@ func IsUploadOnly(ctx context.Context) bool {
 func New(
 	ctx context.Context,
 	hostName string,
-	db database.Querier,
+	db *bun.DB,
 	//nolint:staticcheck // deprecated: migration support
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
@@ -684,7 +685,7 @@ func (c *Cache) GetCDCDeleteDelay() time.Duration {
 func (c *Cache) setupMetricCallbacks() error {
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
 		// Observe total size
-		size, err := c.db.GetNarTotalSize(ctx)
+		size, err := database.GetNarTotalSize(ctx, c.db)
 		if err != nil {
 			// Log error but don't fail the scrape entirely
 			zerolog.Ctx(ctx).
@@ -696,7 +697,7 @@ func (c *Cache) setupMetricCallbacks() error {
 		}
 
 		// Observe narinfo count
-		narInfoCount, err := c.db.GetNarInfoCount(ctx)
+		narInfoCount, err := database.GetNarInfoCount(ctx, c.db)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Warn().
@@ -707,7 +708,7 @@ func (c *Cache) setupMetricCallbacks() error {
 		}
 
 		// Observe nar file count
-		narFileCount, err := c.db.GetNarFileCount(ctx)
+		narFileCount, err := database.GetNarFileCount(ctx, c.db)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Warn().
@@ -1003,7 +1004,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 
 		if !hasNar && !hasNarInStore && c.isCDCEnabled() && !hasActiveLocalJob {
 			nr, nrErr := c.getNarFileFromDB(ctx, c.db, narURL)
-			if nrErr == nil && nr.ChunkingStartedAt.Valid {
+			if nrErr == nil && !nr.ChunkingStartedAt.IsZero() {
 				// Chunking is actively in progress; use progressive streaming if not stale.
 				if time.Since(nr.ChunkingStartedAt.Time) < cdcChunkingLockTTL {
 					hasNar = true
@@ -1327,7 +1328,7 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 // This is used to recover the original upstream URL (with prefix) when fetching from
 // nix-serve style upstreams that use prefixed URLs (e.g., narinfohash-narhash).
 func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.URL) nar.URL {
-	urlStr, err := c.db.GetNarInfoURLByNarFileHash(ctx, database.GetNarInfoURLByNarFileHashParams{
+	urlStr, err := database.GetNarInfoURLByNarFileHash(ctx, c.db, database.GetNarInfoURLByNarFileHashParams{
 		Hash:        normalizedNarURL.Hash,
 		Compression: normalizedNarURL.Compression.String(),
 		Query:       normalizedNarURL.Query.Encode(),
@@ -1363,7 +1364,7 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 		return nil, nil
 	}
 
-	narInfoHash, err := c.db.GetNarInfoHashByNarURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
+	narInfoHash, err := database.GetNarInfoHashByNarURL(ctx, c.db, sql.NullString{String: narURL.String(), Valid: true})
 	if err != nil {
 		if !database.IsNotFoundError(err) && !errors.Is(err, sql.ErrNoRows) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup narinfo hash by nar URL")
@@ -1408,8 +1409,8 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 		Int64("written", written).
 		Msg("ensureNarFileRecord: starting transaction")
 
-	return c.withTransaction(ctx, txName, func(qtx database.Querier) error {
-		nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+	return c.withTransaction(ctx, txName, func(qtx bun.Tx) error {
+		nf, err := database.CreateNarFile(ctx, qtx, database.CreateNarFileParams{
 			Hash:        narURL.Hash,
 			Compression: narURL.Compression.String(),
 			Query:       narURL.Query.Encode(),
@@ -1436,7 +1437,7 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 		// If the record existed but had a different size, update it to reflect the truth.
 		//nolint:gosec // G115: conversion is safe because size is non-negative
 		if nf.FileSize != uint64(written) {
-			return qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+			return database.UpdateNarFileFileSize(ctx, qtx, database.UpdateNarFileFileSizeParams{
 				ID: nf.ID,
 				//nolint:gosec // G115: conversion is safe because size is non-negative
 				FileSize: uint64(written),
@@ -1898,7 +1899,7 @@ func (c *Cache) storeNarWithCDCFromReader(
 
 	defer func() {
 		if !success {
-			if err := c.db.ClearNarFileChunkingStarted(context.WithoutCancel(ctx), narFileID); err != nil {
+			if err := database.ClearNarFileChunkingStarted(context.WithoutCancel(ctx), c.db, narFileID); err != nil {
 				zerolog.Ctx(context.WithoutCancel(ctx)).
 					Warn().
 					Err(err).
@@ -1979,8 +1980,8 @@ func (c *Cache) storeNarWithCDCFromReader(
 
 				// All chunks processed - mark as complete and update file_size
 				// to the actual uncompressed size (may differ from original compressed file size).
-				err := c.withTransaction(ctx, "storeNarWithCDC.MarkComplete", func(qtx database.Querier) error {
-					return qtx.UpdateNarFileTotalChunks(ctx, database.UpdateNarFileTotalChunksParams{
+				err := c.withTransaction(ctx, "storeNarWithCDC.MarkComplete", func(qtx bun.Tx) error {
+					return database.UpdateNarFileTotalChunks(ctx, qtx, database.UpdateNarFileTotalChunksParams{
 						ID:          narFileID,
 						TotalChunks: chunkCount,
 						//nolint:gosec // G115: totalSize is non-negative
@@ -2010,8 +2011,8 @@ func (c *Cache) storeNarWithCDCFromReader(
 						Query:       narURL.Query,
 					}
 
-					if err := c.withTransaction(ctx, "storeNarWithCDC.RelinkAndCleanup", func(qtx database.Querier) error {
-						if _, err := qtx.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+					if err := c.withTransaction(ctx, "storeNarWithCDC.RelinkAndCleanup", func(qtx bun.Tx) error {
+						if _, err := database.DeleteNarFileByHash(ctx, qtx, database.DeleteNarFileByHashParams{
 							Hash:        narURL.Hash,
 							Compression: originalCompression.String(),
 							Query:       narURL.Query.Encode(),
@@ -2093,8 +2094,8 @@ func (c *Cache) findOrCreateNarFileForCDC(
 		Uint64("file_size", fileSize).
 		Msg("findOrCreateNarFileForCDC: starting transaction")
 
-	err = c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
-		nr, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+	err = c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx bun.Tx) error {
+		nr, err := database.CreateNarFile(ctx, qtx, database.CreateNarFileParams{
 			Hash:        narURL.Hash,
 			Compression: narURL.Compression.String(),
 			Query:       narURL.Query.Encode(),
@@ -2121,7 +2122,7 @@ func (c *Cache) findOrCreateNarFileForCDC(
 		// However, in CDC mode, once chunked, FileSize holds the uncompressed size.
 		// We should only update it if it's not yet fully chunked.
 		if nr.FileSize != fileSize && nr.TotalChunks == 0 {
-			if err := qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+			if err := database.UpdateNarFileFileSize(ctx, qtx, database.UpdateNarFileFileSizeParams{
 				ID:       nr.ID,
 				FileSize: fileSize,
 			}); err != nil {
@@ -2142,7 +2143,7 @@ func (c *Cache) findOrCreateNarFileForCDC(
 			return storage.ErrAlreadyExists
 		}
 
-		if nr.ChunkingStartedAt.Valid {
+		if !nr.ChunkingStartedAt.IsZero() {
 			age := time.Since(nr.ChunkingStartedAt.Time)
 			if age < cdcChunkingLockTTL {
 				// Another in-progress attempt is still within the TTL — skip.
@@ -2152,7 +2153,7 @@ func (c *Cache) findOrCreateNarFileForCDC(
 			// Lock is stale: a previous attempt was interrupted mid-chunking.
 			// Collect the partial chunk records so we can clean them up after the
 			// transaction commits (chunk files live outside the DB transaction).
-			partialChunks, err := qtx.GetChunksByNarFileID(ctx, narFileID)
+			partialChunks, err := database.GetChunksByNarFileID(ctx, qtx, narFileID)
 			if err != nil {
 				return fmt.Errorf("failed to get chunks for stale nar_file %d: %w", narFileID, err)
 			}
@@ -2165,13 +2166,13 @@ func (c *Cache) findOrCreateNarFileForCDC(
 				Int("stale_chunk_count", len(staleLockChunks)).
 				Msg("stale CDC chunking lock detected; cleaning up partial chunks and restarting")
 
-			if err := qtx.DeleteNarFileChunksByNarFileID(ctx, narFileID); err != nil {
+			if err := database.DeleteNarFileChunksByNarFileID(ctx, qtx, narFileID); err != nil {
 				return fmt.Errorf("failed to delete partial chunks for nar_file %d: %w", narFileID, err)
 			}
 		}
 
 		// Mark this nar_file as having chunking in progress.
-		if err := qtx.SetNarFileChunkingStarted(ctx, narFileID); err != nil {
+		if err := database.SetNarFileChunkingStarted(ctx, qtx, narFileID); err != nil {
 			return fmt.Errorf("failed to set chunking_started_at for nar_file %d: %w", narFileID, err)
 		}
 
@@ -2207,7 +2208,7 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 
 	// Find all currently orphaned chunks (no nar_file_chunks references).
 	// Run this outside the previous transaction so we see the committed deletion.
-	orphanedChunks, err := c.db.GetOrphanedChunks(ctx)
+	orphanedChunks, err := database.GetOrphanedChunks(ctx, c.db)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
 
@@ -2224,7 +2225,7 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 		chunkLog.Debug().Msg("immediately cleaning up chunk from stale CDC lock")
 
 		// Delete the DB record first; if this fails, leave the physical file for GC.
-		if err := c.db.DeleteChunkByID(ctx, oc.ID); err != nil {
+		if err := database.DeleteChunkByID(ctx, c.db, oc.ID); err != nil {
 			chunkLog.Warn().Err(err).Msg("failed to delete orphaned chunk record during stale lock cleanup")
 
 			continue
@@ -2240,16 +2241,16 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 // relinkNarInfosToNarFileWithQuerier links all narinfos pointing to narURL to narFileID
 // in a single bulk INSERT ... SELECT. Called after CDC migration to repair
 // narinfo_nar_files entries that were CASCADE-deleted when the old nar_file
-// record was removed. It accepts any database.Querier (including a transaction
+// record was removed. It accepts any bun.IDB (including a transaction
 // querier) so the bulk re-link can be executed within the same transaction as
 // the preceding DeleteNarFileByHash call.
 func (c *Cache) relinkNarInfosToNarFileWithQuerier(
 	ctx context.Context,
-	q database.Querier,
+	q bun.IDB,
 	narURL nar.URL,
 	narFileID int64,
 ) error {
-	if err := q.LinkNarInfosByURLToNarFile(ctx, database.LinkNarInfosByURLToNarFileParams{
+	if err := database.LinkNarInfosByURLToNarFile(ctx, q, database.LinkNarInfosByURLToNarFileParams{
 		NarFileID: narFileID,
 		URL:       sql.NullString{String: narURL.String(), Valid: true},
 	}); err != nil {
@@ -2264,13 +2265,13 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 		return nil
 	}
 
-	return c.withTransaction(ctx, "recordChunkBatch", func(qtx database.Querier) error {
+	return c.withTransaction(ctx, "recordChunkBatch", func(qtx bun.Tx) error {
 		chunkIDs := make([]int64, len(batch))
 		chunkIndices := make([]int64, len(batch))
 
 		for i, chunkMetadata := range batch {
 			// Create or increment ref count.
-			ch, err := qtx.CreateChunk(ctx, database.CreateChunkParams{
+			ch, err := database.CreateChunk(ctx, qtx, database.CreateChunkParams{
 				Hash:           chunkMetadata.Hash,
 				Size:           chunkMetadata.Size,
 				CompressedSize: chunkMetadata.CompressedSize,
@@ -2284,7 +2285,7 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 		}
 
 		// Link to NAR file in bulk
-		err := qtx.LinkNarFileToChunks(ctx, database.LinkNarFileToChunksParams{
+		err := database.LinkNarFileToChunks(ctx, qtx, database.LinkNarFileToChunksParams{
 			NarFileID:  narFileID,
 			ChunkID:    chunkIDs,
 			ChunkIndex: chunkIndices,
@@ -2817,7 +2818,7 @@ func (c *Cache) getNarFromStore(
 
 	var needsDBRecord bool
 
-	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
+	err = c.withTransaction(ctx, "getNarFromStore", func(qtx bun.Tx) error {
 		nr, err := c.getNarFileFromDB(ctx, qtx, *narURL)
 		if err != nil {
 			if database.IsNotFoundError(err) {
@@ -2836,8 +2837,8 @@ func (c *Cache) getNarFromStore(
 		// return none so the caller knows they're receiving uncompressed bytes.
 		narURL.Compression = nar.CompressionType(nr.Compression)
 
-		if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNarFile(ctx, database.TouchNarFileParams{
+		if !nr.LastAccessedAt.IsZero() && time.Since(nr.LastAccessedAt.Time) > c.recordAgeIgnoreTouch {
+			if _, err := database.TouchNarFile(ctx, qtx, database.TouchNarFileParams{
 				Hash:        narURL.Hash,
 				Compression: narURL.Compression.String(),
 				Query:       narURL.Query.Encode(),
@@ -2940,7 +2941,7 @@ func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 		return storage.ErrNotFound
 	}
 
-	if _, err := c.db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+	if _, err := database.DeleteNarFileByHash(ctx, c.db, database.DeleteNarFileByHashParams{
 		Hash:        narURL.Hash,
 		Compression: narURL.Compression.String(),
 		Query:       narURL.Query.Encode(),
@@ -3500,7 +3501,7 @@ func (c *Cache) prePullNar(
 					return true
 				}
 
-				if nr.ChunkingStartedAt.Valid {
+				if !nr.ChunkingStartedAt.IsZero() {
 					return time.Since(nr.ChunkingStartedAt.Time) < cdcChunkingLockTTL
 				}
 
@@ -3519,27 +3520,19 @@ func (c *Cache) prePullNar(
 // It tries the most likely compression first based on whether CDC is enabled:
 //   - CDC enabled:  try "none" first (all CDC files use none), fall back to original
 //   - CDC disabled: try original compression first, fall back to "none"
-func (c *Cache) getNarFileFromDB(ctx context.Context, q database.Querier, narURL nar.URL) (database.NarFile, error) {
+func (c *Cache) getNarFileFromDB(ctx context.Context, q bun.IDB, narURL nar.URL) (database.NarFile, error) {
 	first, second := narURL.Compression, nar.CompressionTypeNone
 	if c.isCDCEnabled() {
 		first, second = nar.CompressionTypeNone, narURL.Compression
 	}
 
-	nr, err := q.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        narURL.Hash,
-		Compression: first.String(),
-		Query:       narURL.Query.Encode(),
-	})
+	nr, err := database.GetNarFileByHashAndCompressionAndQuery(ctx, q, narURL.Hash, first.String(), narURL.Query.Encode())
 	if err == nil {
 		return nr, nil
 	}
 
 	if database.IsNotFoundError(err) && first != second {
-		return q.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: second.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		return database.GetNarFileByHashAndCompressionAndQuery(ctx, q, narURL.Hash, second.String(), narURL.Query.Encode())
 	}
 
 	return database.NarFile{}, err
@@ -3659,8 +3652,8 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return nil, errNarInfoPurged
 	}
 
-	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
-		nir, err := qtx.GetNarInfoByHash(ctx, hash)
+	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx bun.Tx) error {
+		nir, err := database.GetNarInfoByHash(ctx, qtx, hash)
 		if err != nil {
 			if database.IsNotFoundError(err) {
 				c.backgroundMigrateNarInfo(ctx, hash, ni)
@@ -3680,8 +3673,8 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 			c.BackgroundMigrateNarToChunks(ctx, narURL)
 		}
 
-		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
+		if !nir.LastAccessedAt.IsZero() && time.Since(nir.LastAccessedAt.Time) > c.recordAgeIgnoreTouch {
+			if _, err := database.TouchNarInfo(ctx, qtx, hash); err != nil {
 				return fmt.Errorf("error touching the narinfo record: %w", err)
 			}
 		}
@@ -3814,7 +3807,7 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 		narURL *nar.URL
 	)
 
-	err := c.withTransaction(ctx, "getNarInfoFromDatabase", func(qtx database.Querier) error {
+	err := c.withTransaction(ctx, "getNarInfoFromDatabase", func(qtx bun.Tx) error {
 		var populateErr error
 
 		ni, narURL, populateErr = c.populateNarInfoFromDatabase(ctx, qtx, hash, true)
@@ -3884,11 +3877,11 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 
 func (c *Cache) populateNarInfoFromDatabase(
 	ctx context.Context,
-	qtx database.Querier,
+	qtx bun.Tx,
 	hash string,
 	touch bool,
 ) (*narinfo.NarInfo, *nar.URL, error) {
-	nir, err := qtx.GetNarInfoByHash(ctx, hash)
+	nir, err := database.GetNarInfoByHash(ctx, qtx, hash)
 	if err != nil {
 		if database.IsNotFoundError(err) {
 			return nil, nil, storage.ErrNotFound
@@ -3923,13 +3916,13 @@ func (c *Cache) populateNarInfoFromDatabase(
 	}
 
 	// Fetch references
-	ni.References, err = qtx.GetNarInfoReferences(ctx, nir.ID)
+	ni.References, err = database.GetNarInfoReferences(ctx, qtx, nir.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error fetching narinfo references: %w", err)
 	}
 
 	// Fetch signatures
-	sigs, err := qtx.GetNarInfoSignatures(ctx, nir.ID)
+	sigs, err := database.GetNarInfoSignatures(ctx, qtx, nir.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error fetching narinfo signatures: %w", err)
 	}
@@ -3951,8 +3944,8 @@ func (c *Cache) populateNarInfoFromDatabase(
 
 	// Touch the record if needed
 	if touch {
-		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
+		if !nir.LastAccessedAt.IsZero() && time.Since(nir.LastAccessedAt.Time) > c.recordAgeIgnoreTouch {
+			if _, err := database.TouchNarInfo(ctx, qtx, hash); err != nil {
 				return nil, nil, fmt.Errorf("error touching the narinfo record: %w", err)
 			}
 		}
@@ -4031,13 +4024,13 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
-	err := c.withTransaction(ctx, "purgeNarInfo", func(qtx database.Querier) error {
-		if _, err := qtx.DeleteNarInfoByHash(ctx, hash); err != nil {
+	err := c.withTransaction(ctx, "purgeNarInfo", func(qtx bun.Tx) error {
+		if _, err := database.DeleteNarInfoByHash(ctx, qtx, hash); err != nil {
 			return fmt.Errorf("error deleting the narinfo record: %w", err)
 		}
 
 		if narURL.Hash != "" {
-			if _, err := qtx.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+			if _, err := database.DeleteNarFileByHash(ctx, qtx, database.DeleteNarFileByHashParams{
 				Hash:        narURL.Hash,
 				Compression: narURL.Compression.String(),
 				Query:       narURL.Query.Encode(),
@@ -4088,7 +4081,7 @@ func (c *Cache) storeInDatabase(
 		Info().
 		Msg("storing narinfo and nar_file record in the database")
 
-	return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
+	return c.withTransaction(ctx, "storeInDatabase", func(qtx bun.Tx) error {
 		createNarInfoParams := database.CreateNarInfoParams{
 			Hash:        hash,
 			StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
@@ -4109,7 +4102,7 @@ func (c *Cache) storeInDatabase(
 			createNarInfoParams.NarHash = sql.NullString{String: narInfo.NarHash.String(), Valid: true}
 		}
 
-		nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
+		nir, err := database.CreateNarInfo(ctx, qtx, createNarInfoParams)
 		if err != nil {
 			// Database-specific UPSERT behavior:
 			//
@@ -4125,7 +4118,7 @@ func (c *Cache) storeInDatabase(
 			//
 			// In both cases, if a record exists with valid URL, we fetch it instead.
 			if database.IsNotFoundError(err) {
-				nir, err = qtx.GetNarInfoByHash(ctx, hash)
+				nir, err = database.GetNarInfoByHash(ctx, qtx, hash)
 				if err != nil {
 					return fmt.Errorf("upsert returned no rows (record exists with valid URL), failed to fetch: %w", err)
 				}
@@ -4135,7 +4128,7 @@ func (c *Cache) storeInDatabase(
 		}
 
 		if len(narInfo.References) > 0 {
-			if err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
+			if err := database.AddNarInfoReferences(ctx, qtx, database.AddNarInfoReferencesParams{
 				NarInfoID: nir.ID,
 				Reference: narInfo.References,
 			}); err != nil {
@@ -4150,7 +4143,7 @@ func (c *Cache) storeInDatabase(
 		}
 
 		if len(sigStrings) > 0 {
-			if err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
+			if err := database.AddNarInfoSignatures(ctx, qtx, database.AddNarInfoSignaturesParams{
 				NarInfoID: nir.ID,
 				Signature: sigStrings,
 			}); err != nil {
@@ -4178,7 +4171,7 @@ func (c *Cache) storeInDatabase(
 		}
 
 		// Link narinfo to nar_file
-		if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		if err := database.LinkNarInfoToNarFile(ctx, qtx, database.LinkNarInfoToNarFileParams{
 			NarInfoID: nir.ID,
 			NarFileID: narFileID,
 		}); err != nil {
@@ -4210,11 +4203,8 @@ func (c *Cache) fixNarInfoFileSize(
 		Int64("correct_size", correctSize).
 		Msg("updating narinfo file size in the database")
 
-	return c.withTransaction(ctx, "fixNarInfoFileSize", func(qtx database.Querier) error {
-		return qtx.UpdateNarInfoFileSize(ctx, database.UpdateNarInfoFileSizeParams{
-			Hash:     hash,
-			FileSize: sql.NullInt64{Int64: correctSize, Valid: true},
-		})
+	return c.withTransaction(ctx, "fixNarInfoFileSize", func(qtx bun.Tx) error {
+		return database.UpdateNarInfoFileSize(ctx, qtx, hash, sql.NullInt64{Int64: correctSize, Valid: true})
 	})
 }
 
@@ -4243,7 +4233,7 @@ func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL) (int64, error)
 func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	// First check if we have the NarInfo in DB using direct DB access
 	// to avoid higher-level cache logic (like purging or storage checks)
-	niRow, err := c.db.GetNarInfoByHash(ctx, hash)
+	niRow, err := database.GetNarInfoByHash(ctx, c.db, hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -4315,11 +4305,8 @@ func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string
 			Int64("current_size", niRow.FileSize.Int64).
 			Msg("mismatch detected for compression=none, fixing narinfo file size to NULL")
 
-		if err := c.withTransaction(ctx, "fixNarInfoFileSizeToNull", func(qtx database.Querier) error {
-			return qtx.UpdateNarInfoFileSize(ctx, database.UpdateNarInfoFileSizeParams{
-				Hash:     hash,
-				FileSize: sql.NullInt64{Int64: 0, Valid: false},
-			})
+		if err := c.withTransaction(ctx, "fixNarInfoFileSizeToNull", func(qtx bun.Tx) error {
+			return database.UpdateNarInfoFileSize(ctx, qtx, hash, sql.NullInt64{Int64: 0, Valid: false})
 		}); err != nil {
 			return fmt.Errorf("failed to fix narinfo file size to NULL: %w", err)
 		}
@@ -4332,11 +4319,8 @@ func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string
 			Str("current_file_hash", niRow.FileHash.String).
 			Msg("mismatch detected for compression=none, fixing narinfo file hash to NULL")
 
-		if err := c.withTransaction(ctx, "fixNarInfoFileHashToNull", func(qtx database.Querier) error {
-			return qtx.UpdateNarInfoFileHash(ctx, database.UpdateNarInfoFileHashParams{
-				Hash:     hash,
-				FileHash: sql.NullString{String: "", Valid: false},
-			})
+		if err := c.withTransaction(ctx, "fixNarInfoFileHashToNull", func(qtx bun.Tx) error {
+			return database.UpdateNarInfoFileHash(ctx, qtx, hash, sql.NullString{String: "", Valid: false})
 		}); err != nil {
 			return fmt.Errorf("failed to fix narinfo file hash to NULL: %w", err)
 		}
@@ -4349,7 +4333,7 @@ func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string
 // and fixes their file size if needed.
 func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) error {
 	// The NarInfo URL usually matches the NAR URL.
-	hashes, err := c.db.GetNarInfoHashesByURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
+	hashes, err := database.GetNarInfoHashesByURL(ctx, c.db, sql.NullString{String: narURL.String(), Valid: true})
 	if err != nil {
 		return fmt.Errorf("failed to get narinfo hashes by url: %w", err)
 	}
@@ -4379,7 +4363,7 @@ func narFileSize(ni *narinfo.NarInfo) uint64 {
 
 func createOrUpdateNarFile(
 	ctx context.Context,
-	qtx database.Querier,
+	qtx bun.Tx,
 	narURL nar.URL,
 	fileSize uint64,
 ) (int64, error) {
@@ -4392,7 +4376,7 @@ func createOrUpdateNarFile(
 	// Create (or update existing) nar_file record.
 	// The query uses ON CONFLICT DO UPDATE (or ON DUPLICATE KEY UPDATE), so duplicates are handled
 	// by updating the timestamp and returning the record.
-	newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
+	newNarFile, err := database.CreateNarFile(ctx, qtx, database.CreateNarFileParams{
 		Hash:        narURL.Hash,
 		Compression: narURL.Compression.String(),
 		Query:       narURL.Query.Encode(),
@@ -4451,7 +4435,7 @@ func (c *Cache) MigrateNarInfoToDatabase(
 func MigrateNarInfo(
 	ctx context.Context,
 	locker lock.Locker,
-	db database.Querier,
+	db bun.IDB,
 	narInfoStore storage.NarInfoStore,
 	hash string,
 	ni *narinfo.NarInfo,
@@ -4480,7 +4464,7 @@ func MigrateNarInfo(
 
 	// Double check if already migrated after acquiring the lock.
 	// This prevents multiple sequential migrations for the same narinfo.
-	nir, err := db.GetNarInfoByHash(ctx, hash)
+	nir, err := database.GetNarInfoByHash(ctx, db, hash)
 	if err == nil && nir.URL.Valid {
 		zerolog.Ctx(ctx).Debug().
 			Str("narinfo_hash", hash).
@@ -4563,21 +4547,19 @@ func MigrateNarInfo(
 
 // storeNarInfoInDatabase is extracted from Cache.storeInDatabase for use by migration.
 // It contains the core UPSERT logic without Cache dependencies.
-func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash string, narInfo *narinfo.NarInfo) error {
-	tx, err := db.DB().BeginTx(ctx, nil)
+func storeNarInfoInDatabase(ctx context.Context, db bun.IDB, hash string, narInfo *narinfo.NarInfo) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error beginning transaction: %w", err)
 	}
 
 	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				zerolog.Ctx(ctx).Error().Err(err).Msg("error rolling back transaction")
+		if rbErr := tx.Rollback(); rbErr != nil {
+			if !errors.Is(rbErr, sql.ErrTxDone) {
+				zerolog.Ctx(ctx).Error().Err(rbErr).Msg("error rolling back transaction")
 			}
 		}
 	}()
-
-	qtx := db.WithTx(tx)
 
 	createNarInfoParams := database.CreateNarInfoParams{
 		Hash:        hash,
@@ -4599,11 +4581,11 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 		createNarInfoParams.NarHash = sql.NullString{String: narInfo.NarHash.String(), Valid: true}
 	}
 
-	nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
+	nir, err := database.CreateNarInfo(ctx, tx, createNarInfoParams)
 	if err != nil {
 		// Handle UPSERT behavior (see Cache.storeInDatabase for full comments)
 		if database.IsNotFoundError(err) {
-			nir, err = qtx.GetNarInfoByHash(ctx, hash)
+			nir, err = database.GetNarInfoByHash(ctx, tx, hash)
 			if err != nil {
 				return fmt.Errorf("upsert returned no rows (record exists with valid URL), failed to fetch: %w", err)
 			}
@@ -4613,7 +4595,7 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 	}
 
 	if len(narInfo.References) > 0 {
-		if err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
+		if err := database.AddNarInfoReferences(ctx, tx, database.AddNarInfoReferencesParams{
 			NarInfoID: nir.ID,
 			Reference: narInfo.References,
 		}); err != nil {
@@ -4631,7 +4613,7 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 	}
 
 	if len(sigStrings) > 0 {
-		if err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
+		if err := database.AddNarInfoSignatures(ctx, tx, database.AddNarInfoSignaturesParams{
 			NarInfoID: nir.ID,
 			Signature: sigStrings,
 		}); err != nil {
@@ -4655,13 +4637,13 @@ func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash strin
 	}
 
 	// Create or get nar_file record
-	narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narFileSize(narInfo))
+	narFileID, err := createOrUpdateNarFile(ctx, tx, normalizedNarURL, narFileSize(narInfo))
 	if err != nil {
 		return err
 	}
 
 	// Link narinfo to nar_file
-	if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+	if err := database.LinkNarInfoToNarFile(ctx, tx, database.LinkNarInfoToNarFileParams{
 		NarInfoID: nir.ID,
 		NarFileID: narFileID,
 	}); err != nil {
@@ -4708,7 +4690,7 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 	// Check if narinfo exists in storage or database
 	inStorage := c.narInfoStore.HasNarInfo(ctx, hash)
 
-	_, err := c.db.GetNarInfoByHash(ctx, hash)
+	_, err := database.GetNarInfoByHash(ctx, c.db, hash)
 	if err != nil && !database.IsNotFoundError(err) {
 		return fmt.Errorf("error checking for narinfo in database: %w", err)
 	}
@@ -4726,7 +4708,7 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 
 	// Delete from database (includes cascading deletes for references, signatures, and links)
 	if inDatabase {
-		if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
+		if _, err := database.DeleteNarInfoByHash(ctx, c.db, hash); err != nil {
 			return fmt.Errorf("error deleting narinfo from the database: %w", err)
 		}
 
@@ -5091,7 +5073,7 @@ func (c *Cache) coordinateDownload(
 
 // withTransaction executes fn within a database transaction.
 // It automatically handles transaction lifecycle: BeginTx, Rollback (on error or panic), and Commit.
-func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
+func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(qtx bun.Tx) error) error {
 	const (
 		maxAttempts  = 5
 		initialDelay = 50 * time.Millisecond
@@ -5136,12 +5118,12 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 	return fmt.Errorf("transaction for %s failed after %d attempts: %w", operation, maxAttempts, err)
 }
 
-func (c *Cache) executeTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
+func (c *Cache) executeTransaction(ctx context.Context, operation string, fn func(qtx bun.Tx) error) error {
 	zerolog.Ctx(ctx).Debug().
 		Str("operation", operation).
 		Msg("executeTransaction: starting transaction")
 
-	tx, err := c.db.DB().BeginTx(ctx, nil)
+	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		zerolog.Ctx(ctx).Error().
 			Err(err).
@@ -5152,18 +5134,18 @@ func (c *Cache) executeTransaction(ctx context.Context, operation string, fn fun
 	}
 
 	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			if !errors.Is(rbErr, sql.ErrTxDone) {
 				zerolog.Ctx(ctx).
 					Error().
-					Err(err).
+					Err(rbErr).
 					Str("operation", operation).
 					Msg("executeTransaction: error rolling back the transaction")
 			}
 		}
 	}()
 
-	if err := fn(c.db.WithTx(tx)); err != nil {
+	if err := fn(tx); err != nil {
 		zerolog.Ctx(ctx).Debug().
 			Err(err).
 			Str("operation", operation).
@@ -5275,8 +5257,8 @@ func (c *Cache) withTryLock(ctx context.Context, operation string, lockKey strin
 
 // calculateCleanupSize validates the total NAR size and calculates how much needs to be cleaned up.
 // Returns 0 if no cleanup is needed.
-func (c *Cache) calculateCleanupSize(ctx context.Context, qtx database.Querier, log zerolog.Logger) (uint64, error) {
-	narTotalSize, err := qtx.GetNarTotalSize(ctx)
+func (c *Cache) calculateCleanupSize(ctx context.Context, qtx bun.Tx, log zerolog.Logger) (uint64, error) {
+	narTotalSize, err := database.GetNarTotalSize(ctx, qtx)
 	if err != nil {
 		log.Error().Err(err).Msg("error fetching the total nar size")
 
@@ -5311,7 +5293,7 @@ func (c *Cache) calculateCleanupSize(ctx context.Context, qtx database.Querier, 
 // and then cleans up any NarFiles that became orphaned as a result.
 func (c *Cache) deleteLRURecordsFromDB(
 	ctx context.Context,
-	qtx database.Querier,
+	qtx bun.Tx,
 	log zerolog.Logger,
 	cleanupSize uint64,
 	pinnedHashes map[string]struct{},
@@ -5346,7 +5328,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 	)
 
 	for {
-		narInfosToDelete, err = qtx.GetLeastUsedNarInfos(ctx, fetchSize)
+		narInfosToDelete, err = database.GetLeastUsedNarInfos(ctx, qtx, fetchSize)
 		if err != nil {
 			log.Error().Err(err).Msg("error getting least used narinfos")
 
@@ -5405,7 +5387,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 		// Get the file size for this narinfo to track cleanup size
 		// TODO: This is an N+1 query pattern. Consider optimizing by fetching all
 		// nar_files in a batch query or modifying GetLeastUsedNarInfos to include file_size.
-		narFile, err := qtx.GetNarFileByNarInfoID(ctx, info.ID)
+		narFile, err := database.GetNarFileByNarInfoID(ctx, qtx, info.ID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			log.Error().Err(err).Str("hash", info.Hash).Msg("error getting narfile size")
 
@@ -5421,7 +5403,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 		totalSize += fileSize
 
 		// We delete by ID since we have the full object from the previous query
-		if _, err := qtx.DeleteNarInfoByID(ctx, info.ID); err != nil {
+		if _, err := database.DeleteNarInfoByID(ctx, qtx, info.ID); err != nil {
 			log.Error().
 				Err(err).
 				Str("hash", info.Hash).
@@ -5461,7 +5443,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 	// 2. STORAGE PHASE
 	// Now that metadata is gone, some files might have zero references.
 	// We find those truly orphaned files.
-	orphanedNarFiles, err := qtx.GetOrphanedNarFiles(ctx)
+	orphanedNarFiles, err := database.GetOrphanedNarFiles(ctx, qtx)
 	if err != nil {
 		log.Error().Err(err).Msg("error identifying orphaned nar files")
 
@@ -5482,7 +5464,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 		}
 
 		// Batch delete all orphaned nar files in one query
-		if _, err := qtx.DeleteOrphanedNarFiles(ctx); err != nil {
+		if _, err := database.DeleteOrphanedNarFiles(ctx, qtx); err != nil {
 			log.Error().
 				Err(err).
 				Msg("error deleting orphaned nar file records")
@@ -5499,7 +5481,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 		return narInfoHashesToRemove, narURLsToRemove, nil, nil
 	}
 
-	orphanedChunks, err := qtx.GetOrphanedChunks(ctx)
+	orphanedChunks, err := database.GetOrphanedChunks(ctx, qtx)
 	if err != nil {
 		log.Error().Err(err).Msg("error identifying orphaned chunks")
 
@@ -5520,7 +5502,7 @@ func (c *Cache) deleteLRURecordsFromDB(
 	}
 
 	// Batch delete all orphaned chunks in one query
-	if _, err := qtx.DeleteOrphanedChunks(ctx); err != nil {
+	if _, err := database.DeleteOrphanedChunks(ctx, qtx); err != nil {
 		log.Error().
 			Err(err).
 			Msg("error deleting orphaned chunk records")
@@ -5631,7 +5613,7 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 				return err
 			}
 
-			tx, err := c.db.DB().BeginTx(ctx, nil)
+			tx, err := c.db.BeginTx(ctx, nil)
 			if err != nil {
 				log.Error().Err(err).Msg("error beginning a transaction")
 
@@ -5639,23 +5621,21 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			}
 
 			defer func() {
-				if err := tx.Rollback(); err != nil {
-					if !errors.Is(err, sql.ErrTxDone) {
-						log.Error().Err(err).Msg("error rolling back the transaction")
+				if rbErr := tx.Rollback(); rbErr != nil {
+					if !errors.Is(rbErr, sql.ErrTxDone) {
+						log.Error().Err(rbErr).Msg("error rolling back the transaction")
 					}
 				}
 			}()
 
-			qtx := c.db.WithTx(tx)
-
-			cleanupSize, err := c.calculateCleanupSize(ctx, qtx, log)
+			cleanupSize, err := c.calculateCleanupSize(ctx, tx, log)
 			if err != nil || cleanupSize == 0 {
 				return err
 			}
 
 			narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove, err := c.deleteLRURecordsFromDB(
 				ctx,
-				qtx,
+				tx,
 				log,
 				cleanupSize,
 				pinnedHashes,
@@ -5722,7 +5702,7 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 			// Get old compressed NAR files that are ready for deletion
 			cutoffTime := time.Now().Add(-c.GetCDCDeleteDelay())
 
-			oldFiles, err := c.db.GetOldCompressedNarFiles(ctx, cutoffTime)
+			oldFiles, err := database.GetOldCompressedNarFiles(ctx, c.db, cutoffTime)
 			if err != nil {
 				log.Error().Err(err).Msg("error getting old compressed NAR files for cleanup")
 
@@ -5745,7 +5725,7 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 				}
 
 				// Delete from database first. If this fails, we'll retry on the next run.
-				if _, err := c.db.DeleteNarFileByID(ctx, oldFile.ID); err != nil {
+				if _, err := database.DeleteNarFileByID(ctx, c.db, oldFile.ID); err != nil {
 					log.Error().Err(err).
 						Int64("id", oldFile.ID).
 						Msg("failed to delete old compressed NAR file record from database")
@@ -5818,7 +5798,7 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			}
 
 			//nolint:gosec // G115: batchSize is bounded by math.MaxInt32 above
-			stuckFiles, err := c.db.GetStuckNarFiles(ctx, database.GetStuckNarFilesParams{
+			stuckFiles, err := database.GetStuckNarFiles(ctx, c.db, database.GetStuckNarFilesParams{
 				CutoffTime: cutoffTime,
 				BatchSize:  int32(batchSize),
 			})
@@ -6111,7 +6091,7 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		totalChunks int64
 	)
 
-	err := c.withTransaction(ctx, "getNarFromChunks.init", func(qtx database.Querier) error {
+	err := c.withTransaction(ctx, "getNarFromChunks.init", func(qtx bun.Tx) error {
 		nr, err := c.getNarFileFromDB(ctx, qtx, *narURL)
 		if err != nil {
 			return err
@@ -6123,16 +6103,13 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		totalChunks = nr.TotalChunks
 
 		// Touch the NAR file
-		latValue, err := nr.LastAccessedAt.Value()
-		if err == nil {
-			if lat, ok := latValue.(time.Time); ok && time.Since(lat) > c.recordAgeIgnoreTouch {
-				if _, err := qtx.TouchNarFile(ctx, database.TouchNarFileParams{
-					Hash:        narURL.Hash,
-					Compression: narURL.Compression.String(),
-					Query:       narURL.Query.Encode(),
-				}); err != nil {
-					return fmt.Errorf("error touching the nar record: %w", err)
-				}
+		if !nr.LastAccessedAt.IsZero() && time.Since(nr.LastAccessedAt.Time) > c.recordAgeIgnoreTouch {
+			if _, err := database.TouchNarFile(ctx, qtx, database.TouchNarFileParams{
+				Hash:        narURL.Hash,
+				Compression: narURL.Compression.String(),
+				Query:       narURL.Query.Encode(),
+			}); err != nil {
+				return fmt.Errorf("error touching the nar record: %w", err)
 			}
 		}
 
@@ -6186,7 +6163,7 @@ func (c *Cache) streamCompleteChunks(
 	// Get all chunks at once
 	chunkHashes := make([]string, 0, totalChunks)
 
-	chunks, err := c.db.GetChunksByNarFileID(ctx, narFileID)
+	chunks, err := database.GetChunksByNarFileID(ctx, c.db, narFileID)
 	if err != nil {
 		return fmt.Errorf("error getting chunks: %w", err)
 	}
@@ -6314,7 +6291,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 			// Batch-query chunks from current index to avoid per-chunk poll overhead.
 			// When multiple chunks are already written by the CDC goroutine, this returns
 			// all of them at once, eliminating the 200ms wait between each chunk.
-			batch, err := c.db.GetChunksByNarFileIDFromIndex(ctx, database.GetChunksByNarFileIDFromIndexParams{
+			batch, err := database.GetChunksByNarFileIDFromIndex(ctx, c.db, database.GetChunksByNarFileIDFromIndexParams{
 				NarFileID:  narFileID,
 				ChunkIndex: chunkIndex,
 				Limit:      progressivePollBatchSize,
@@ -6364,7 +6341,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 			// No chunks at current index yet — the CDC goroutine hasn't written them.
 			// Check whether chunking is complete or still in progress before waiting.
 			if totalChunks == 0 {
-				nr, queryErr := c.db.GetNarFileByID(ctx, narFileID)
+				nr, queryErr := database.GetNarFileByID(ctx, c.db, narFileID)
 				if queryErr != nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", queryErr)}
 
@@ -6374,7 +6351,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				totalChunks = nr.TotalChunks
 
 				// If total_chunks is still 0 but chunking_started_at is NULL, chunking was aborted.
-				if totalChunks == 0 && !nr.ChunkingStartedAt.Valid {
+				if totalChunks == 0 && nr.ChunkingStartedAt.IsZero() {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
 
 					return
@@ -6400,7 +6377,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				}
 
 				// Re-check: try a batch query again after the sleep.
-				batch2, batchErr := c.db.GetChunksByNarFileIDFromIndex(ctx, database.GetChunksByNarFileIDFromIndexParams{
+				batch2, batchErr := database.GetChunksByNarFileIDFromIndex(ctx, c.db, database.GetChunksByNarFileIDFromIndexParams{
 					NarFileID:  narFileID,
 					ChunkIndex: chunkIndex,
 					Limit:      progressivePollBatchSize,
@@ -6447,7 +6424,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 				// Re-check NarFile record for abort or completion since the last
 				// empty batch; the CDC goroutine may have updated these fields.
-				nr2, narFileErr := c.db.GetNarFileByID(ctx, narFileID)
+				nr2, narFileErr := database.GetNarFileByID(ctx, c.db, narFileID)
 				if narFileErr != nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", narFileErr)}
 
@@ -6464,7 +6441,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					break // More chunks now recorded; loop to batch-query them.
 				}
 
-				if !nr2.ChunkingStartedAt.Valid {
+				if nr2.ChunkingStartedAt.IsZero() {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
 
 					return
@@ -6625,12 +6602,13 @@ func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL na
 	originalURL := originalNarURL.String()
 	newURL := newNarURL.String()
 
-	if _, err := c.db.UpdateNarInfoCompressionFileSizeHashAndURL(
+	if _, err := database.UpdateNarInfoCompressionFileSizeHashAndURL(
 		ctx,
+		c.db,
 		database.UpdateNarInfoCompressionFileSizeHashAndURLParams{
 			Compression: sql.NullString{String: nar.CompressionTypeNone.String(), Valid: true},
-			NewUrl:      sql.NullString{String: newURL, Valid: true},
-			OldUrl:      sql.NullString{String: originalURL, Valid: true},
+			NewURL:      sql.NullString{String: newURL, Valid: true},
+			OldURL:      sql.NullString{String: originalURL, Valid: true},
 			FileSize:    sql.NullInt64{Valid: false},
 			FileHash:    sql.NullString{Valid: false},
 		},
@@ -6765,7 +6743,7 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 	// Verify the narinfo exists before pinning, as per the spec.
 	// Return 404 if the narinfo doesn't exist in the database.
-	if _, err := c.db.GetNarInfoByHash(ctx, hash); err != nil {
+	if _, err := database.GetNarInfoByHash(ctx, c.db, hash); err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			return storage.ErrNotFound
 		}
@@ -6774,7 +6752,7 @@ func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 	}
 
 	// Try to create the pinned closure (idempotent - ignore duplicate key errors)
-	_, err := c.db.CreatePinnedClosure(ctx, hash)
+	_, err := database.CreatePinnedClosure(ctx, c.db, hash)
 	if err != nil {
 		// Check if it's a duplicate key error (already pinned)
 		if database.IsDuplicateKeyError(err) {
@@ -6789,7 +6767,7 @@ func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 
 // UnpinClosure unpins a closure by its narinfo hash.
 func (c *Cache) UnpinClosure(ctx context.Context, hash string) error {
-	_, err := c.db.DeletePinnedClosure(ctx, hash)
+	_, err := database.DeletePinnedClosure(ctx, c.db, hash)
 	if err != nil {
 		return fmt.Errorf("failed to unpin closure: %w", err)
 	}
@@ -6799,7 +6777,7 @@ func (c *Cache) UnpinClosure(ctx context.Context, hash string) error {
 
 // ListPinnedClosures returns all pinned closures.
 func (c *Cache) ListPinnedClosures(ctx context.Context) ([]database.PinnedClosure, error) {
-	closures, err := c.db.ListPinnedClosures(ctx)
+	closures, err := database.ListPinnedClosures(ctx, c.db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pinned closures: %w", err)
 	}
@@ -6809,7 +6787,7 @@ func (c *Cache) ListPinnedClosures(ctx context.Context) ([]database.PinnedClosur
 
 // IsNarInfoPinned checks if a narinfo hash is pinned.
 func (c *Cache) IsNarInfoPinned(ctx context.Context, hash string) (bool, error) {
-	_, err := c.db.GetPinnedClosure(ctx, hash)
+	_, err := database.GetPinnedClosure(ctx, c.db, hash)
 	if err == nil {
 		return true, nil
 	}
@@ -6832,7 +6810,7 @@ func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}
 	// with deep or wide closure graphs.
 
 	// Get all pinned closure roots
-	pinnedClosures, err := c.db.ListPinnedClosures(ctx)
+	pinnedClosures, err := database.ListPinnedClosures(ctx, c.db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pinned closures: %w", err)
 	}
@@ -6868,7 +6846,7 @@ func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}
 			queue = queue[1:]
 
 			// Get the narinfo by hash
-			ni, err := c.db.GetNarInfoByHash(ctx, currentHash)
+			ni, err := database.GetNarInfoByHash(ctx, c.db, currentHash)
 			if err != nil {
 				if database.IsNotFoundError(err) {
 					continue // Narinfo not in database, skip
@@ -6878,7 +6856,7 @@ func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}
 			}
 
 			// Get references for this narinfo
-			refs, err := c.db.GetNarInfoReferences(ctx, ni.ID)
+			refs, err := database.GetNarInfoReferences(ctx, c.db, ni.ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get references for narinfo %s: %w", currentHash, err)
 			}

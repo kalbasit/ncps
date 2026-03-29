@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
@@ -47,10 +48,10 @@ func skipIfRedisNotAvailable(t *testing.T) {
 
 // distributedDBFactory creates a shared database for distributed testing.
 // Unlike other factories, this returns a SHARED database that multiple cache instances will use.
-type distributedDBFactory func(t *testing.T) (database.Querier, string, func())
+type distributedDBFactory func(t *testing.T) (*bun.DB, string, func())
 
 // setupDistributedSQLite creates a shared SQLite database for distributed testing.
-func setupDistributedSQLite(t *testing.T) (database.Querier, string, func()) {
+func setupDistributedSQLite(t *testing.T) (*bun.DB, string, func()) {
 	t.Helper()
 
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
@@ -63,7 +64,7 @@ func setupDistributedSQLite(t *testing.T) (database.Querier, string, func()) {
 	require.NoError(t, err)
 
 	cleanup := func() {
-		db.DB().Close()
+		db.DB.Close()
 		os.RemoveAll(sharedDir)
 	}
 
@@ -71,7 +72,7 @@ func setupDistributedSQLite(t *testing.T) (database.Querier, string, func()) {
 }
 
 // setupDistributedPostgres creates a shared PostgreSQL database for distributed testing.
-func setupDistributedPostgres(t *testing.T) (database.Querier, string, func()) {
+func setupDistributedPostgres(t *testing.T) (*bun.DB, string, func()) {
 	t.Helper()
 
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
@@ -88,7 +89,7 @@ func setupDistributedPostgres(t *testing.T) (database.Querier, string, func()) {
 }
 
 // setupDistributedMySQL creates a shared MySQL database for distributed testing.
-func setupDistributedMySQL(t *testing.T) (database.Querier, string, func()) {
+func setupDistributedMySQL(t *testing.T) (*bun.DB, string, func()) {
 	t.Helper()
 
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")

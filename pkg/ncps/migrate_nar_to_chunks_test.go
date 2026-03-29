@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	storagelocal "github.com/kalbasit/ncps/pkg/storage/local"
@@ -25,7 +26,7 @@ import (
 // narToChunksMigrationFactory is a function that returns a clean, ready-to-use database,
 // local store, directory path, and database URL string for CLI commands,
 // and takes care of cleaning up once the test is done.
-type narToChunksMigrationFactory func(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func())
+type narToChunksMigrationFactory func(t *testing.T) (*bun.DB, *storagelocal.Store, string, string, func())
 
 // TestMigrateNarToChunksBackends runs all NAR-to-chunks migration tests against all supported database backends.
 func TestMigrateNarToChunksBackends(t *testing.T) {
@@ -67,7 +68,7 @@ func TestMigrateNarToChunksBackends(t *testing.T) {
 
 // configureCDCInDatabase sets up CDC configuration in the database for testing.
 // This must be called before running migrate-nar-to-chunks command.
-func configureCDCInDatabase(ctx context.Context, t *testing.T, db database.Querier) {
+func configureCDCInDatabase(ctx context.Context, t *testing.T, db *bun.DB) {
 	t.Helper()
 
 	// Create a local RW locker for config access
@@ -143,7 +144,7 @@ func testMigrateNarToChunksSuccess(factory narToChunksMigrationFactory) func(*te
 		// Chunks should be created in the database
 		var count int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count)
 		require.NoError(t, err)
 		assert.Positive(t, count, "Chunks should have been created")
 
@@ -235,7 +236,7 @@ func testMigrateNarToChunksDryRun(factory narToChunksMigrationFactory) func(*tes
 		// Verification
 		var count int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count, "No chunks should have been created in dry-run")
 
@@ -293,7 +294,7 @@ func testMigrateNarToChunksIdempotency(factory narToChunksMigrationFactory) func
 		// Verify chunks created
 		var count1 int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count1)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count1)
 		require.NoError(t, err)
 		assert.Positive(t, count1)
 
@@ -306,7 +307,7 @@ func testMigrateNarToChunksIdempotency(factory narToChunksMigrationFactory) func
 		// Verify chunks count remains same
 		var count2 int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count2)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count2)
 		require.NoError(t, err)
 		assert.Equal(t, count1, count2, "Chunks count should remain same after second run")
 	}
@@ -370,11 +371,11 @@ func testMigrateNarToChunksDeduplication(factory narToChunksMigrationFactory) fu
 		// Verify we have 2 narinfos but 1 nar_file
 		var niCount, nfCount int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM narinfos").Scan(&niCount)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM narinfos").Scan(&niCount)
 		require.NoError(t, err)
 		assert.Equal(t, 2, niCount)
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM nar_files").Scan(&nfCount)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM nar_files").Scan(&nfCount)
 		require.NoError(t, err)
 		assert.Equal(t, 1, nfCount)
 
@@ -392,14 +393,14 @@ func testMigrateNarToChunksDeduplication(factory narToChunksMigrationFactory) fu
 		// Chunks should be created for ONE file
 		var chunkCount int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&chunkCount)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&chunkCount)
 		require.NoError(t, err)
 		assert.Positive(t, chunkCount, "Chunks should have been created")
 
 		// The NAR file record should have total_chunks > 0
 		var totalChunks int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT total_chunks FROM nar_files LIMIT 1").Scan(&totalChunks)
+		err = db.DB.QueryRowContext(ctx, "SELECT total_chunks FROM nar_files LIMIT 1").Scan(&totalChunks)
 		require.NoError(t, err)
 		assert.Positive(t, totalChunks)
 	}
@@ -458,7 +459,7 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 		// Verification
 		var count int
 
-		err = db.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count)
+		err = db.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM chunks").Scan(&count)
 		require.NoError(t, err)
 		assert.Positive(t, count)
 
@@ -469,7 +470,7 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 	}
 }
 
-func setupNarToChunksMigrationSQLite(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func()) {
+func setupNarToChunksMigrationSQLite(t *testing.T) (*bun.DB, *storagelocal.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -486,13 +487,13 @@ func setupNarToChunksMigrationSQLite(t *testing.T) (database.Querier, *storagelo
 	dbURL := "sqlite:" + dbFile
 
 	cleanup := func() {
-		db.DB().Close()
+		db.DB.Close()
 	}
 
 	return db, store, dir, dbURL, cleanup
 }
 
-func setupNarToChunksMigrationPostgres(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func()) {
+func setupNarToChunksMigrationPostgres(t *testing.T) (*bun.DB, *storagelocal.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -510,7 +511,7 @@ func setupNarToChunksMigrationPostgres(t *testing.T) (database.Querier, *storage
 	return db, store, dir, dbURL, cleanup
 }
 
-func setupNarToChunksMigrationMySQL(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func()) {
+func setupNarToChunksMigrationMySQL(t *testing.T) (*bun.DB, *storagelocal.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
