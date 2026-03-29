@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -17,9 +18,9 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-// querierFactory is a function that returns a clean, ready-to-use Querier and
+// querierFactory is a function that returns a clean, ready-to-use *bun.DB and
 // it takes care of cleaning up once the test is done.
-type querierFactory func(t *testing.T) database.Querier
+type querierFactory func(t *testing.T) (*bun.DB, func())
 
 func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Helper()
@@ -30,30 +31,29 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("key not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			key := testhelper.MustRandString(32)
 
-			_, err := db.GetConfigByKey(context.Background(), key)
+			_, err := database.GetConfigByKey(context.Background(), db, key)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("key existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			key := testhelper.MustRandString(32)
 
 			value := testhelper.MustRandString(32)
 
-			conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
-				Key:   key,
-				Value: value,
-			})
+			conf1, err := database.CreateConfig(context.Background(), db, key, value)
 			require.NoError(t, err)
 
-			conf2, err := db.GetConfigByKey(context.Background(), key)
+			conf2, err := database.GetConfigByKey(context.Background(), db, key)
 			require.NoError(t, err)
 
 			assert.Equal(t, conf1, conf2)
@@ -66,25 +66,27 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("narinfo not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			_, err := db.GetNarInfoByHash(context.Background(), hash)
+			_, err := database.GetNarInfoByHash(context.Background(), db, hash)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("narinfo existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni1, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			ni2, err := db.GetNarInfoByHash(context.Background(), hash)
+			ni2, err := database.GetNarInfoByHash(context.Background(), db, hash)
 			require.NoError(t, err)
 
 			assert.Equal(t, ni1.Hash, ni2.Hash)
@@ -92,15 +94,16 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	})
 
 	t.Run("InsertNarInfo", func(t *testing.T) {
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		t.Run("inserting one record", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
-			nio, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			nio, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			rows, err := db.DB().QueryContext(
+			rows, err := db.DB.QueryContext(
 				context.Background(),
 				"SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos",
 			)
@@ -127,7 +130,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				assert.Equal(t, nio.ID, nims[0].ID)
 				assert.Equal(t, hash, nims[0].Hash)
 				assert.Less(t, time.Since(nims[0].CreatedAt), 3*time.Second)
-				assert.False(t, nims[0].UpdatedAt.Valid)
+				assert.True(t, nims[0].UpdatedAt.IsZero())
 				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
 			}
 		})
@@ -135,10 +138,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("hash is unique", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
-			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni1, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni2, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			assert.Equal(t, ni1.ID, ni2.ID)
@@ -155,7 +158,9 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				wg.Go(func() {
 					hash := testhelper.MustRandString(128)
 
-					if _, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash}); err != nil {
+					if _, err := database.CreateNarInfo(
+						context.Background(), db, database.CreateNarInfoParams{Hash: hash},
+					); err != nil {
 						errC <- fmt.Errorf("error creating the narinfo record: %w", err)
 					}
 				})
@@ -173,7 +178,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash := testhelper.MustRandString(32)
 
 			// 1. Create a placeholder (url IS NULL)
-			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			_, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
 				Hash: hash,
 			})
 			require.NoError(t, err)
@@ -181,7 +186,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			// 2. Perform the "migration" upsert
 			fileHash := "sha256:1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri"
 			narURL := "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz"
-			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			_, err = database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
 				Hash:     hash,
 				URL:      sql.NullString{String: narURL, Valid: true},
 				FileHash: sql.NullString{String: fileHash, Valid: true},
@@ -189,7 +194,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// 3. Verify it was correctly updated
-			ni, err := db.GetNarInfoByHash(context.Background(), hash)
+			ni, err := database.GetNarInfoByHash(context.Background(), db, hash)
 			require.NoError(t, err)
 
 			assert.True(t, ni.URL.Valid)
@@ -200,14 +205,16 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	})
 
 	t.Run("UpdateNarInfo", func(t *testing.T) {
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
 		ctx := context.Background()
 
 		t.Run("updating an existing narinfo", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
 			// 1. Create a narinfo
-			_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+			_, err := database.CreateNarInfo(ctx, db, database.CreateNarInfoParams{
 				Hash: hash,
 			})
 			require.NoError(t, err)
@@ -227,7 +234,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				Ca:          sql.NullString{String: "ca", Valid: true},
 			}
 
-			updated, err := db.UpdateNarInfo(ctx, params)
+			updated, err := database.UpdateNarInfo(ctx, db, params)
 			require.NoError(t, err)
 
 			// helper function to verify narinfo fields
@@ -250,7 +257,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			verifyFields(t, updated)
 
 			// 3. Verify the updates by fetching
-			ni, err := db.GetNarInfoByHash(ctx, hash)
+			ni, err := database.GetNarInfoByHash(ctx, db, hash)
 			require.NoError(t, err)
 
 			verifyFields(t, ni)
@@ -262,18 +269,19 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				Hash: hash,
 			}
 
-			_, err := db.UpdateNarInfo(ctx, params)
+			_, err := database.UpdateNarInfo(ctx, db, params)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 	})
 
 	t.Run("TouchNarInfo", func(t *testing.T) {
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		t.Run("narinfo not existing", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
-			ra, err := db.TouchNarInfo(context.Background(), hash)
+			ra, err := database.TouchNarInfo(context.Background(), db, hash)
 			require.NoError(t, err)
 
 			assert.Zero(t, ra)
@@ -282,11 +290,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("narinfo existing", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
-			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			_, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			t.Run("confirm created_at == last_accessed_at, and no updated_at", func(t *testing.T) {
-				rows, err := db.DB().QueryContext(
+				rows, err := db.DB.QueryContext(
 					context.Background(),
 					"SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos",
 				)
@@ -309,19 +317,19 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 				assert.Len(t, nims, 1)
 				assert.Equal(t, nims[0].CreatedAt, nims[0].LastAccessedAt.Time)
-				assert.False(t, nims[0].UpdatedAt.Valid)
+				assert.True(t, nims[0].UpdatedAt.IsZero())
 			})
 
 			t.Run("touch the narinfo", func(t *testing.T) {
 				time.Sleep(time.Second)
 
-				ra, err := db.TouchNarInfo(context.Background(), hash)
+				ra, err := database.TouchNarInfo(context.Background(), db, hash)
 				require.NoError(t, err)
 				assert.EqualValues(t, 1, ra)
 			})
 
 			t.Run("confirm created_at != last_accessed_at and updated_at == last_accessed_at", func(t *testing.T) {
-				rows, err := db.DB().QueryContext(
+				rows, err := db.DB.QueryContext(
 					context.Background(),
 					"SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos",
 				)
@@ -345,7 +353,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 				assert.NotEqual(t, nims[0].CreatedAt, nims[0].LastAccessedAt)
 
-				if assert.True(t, nims[0].UpdatedAt.Valid) {
+				if assert.False(t, nims[0].UpdatedAt.IsZero()) {
 					assert.Equal(t, nims[0].UpdatedAt.Time, nims[0].LastAccessedAt.Time)
 				}
 			})
@@ -353,12 +361,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	})
 
 	t.Run("DeleteNarInfo", func(t *testing.T) {
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		t.Run("narinfo not existing", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
-			ra, err := db.DeleteNarInfoByHash(context.Background(), hash)
+			ra, err := database.DeleteNarInfoByHash(context.Background(), db, hash)
 			require.NoError(t, err)
 
 			assert.Zero(t, ra)
@@ -368,21 +377,21 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash := testhelper.MustRandString(32)
 
 			t.Run("create the narinfo", func(t *testing.T) {
-				_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+				_, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 				require.NoError(t, err)
 			})
 
 			t.Run("delete the narinfo", func(t *testing.T) {
 				time.Sleep(time.Second)
 
-				ra, err := db.DeleteNarInfoByHash(context.Background(), hash)
+				ra, err := database.DeleteNarInfoByHash(context.Background(), db, hash)
 				require.NoError(t, err)
 
 				assert.EqualValues(t, 1, ra)
 			})
 
 			t.Run("confirm it has been removed", func(t *testing.T) {
-				rows, err := db.DB().QueryContext(
+				rows, err := db.DB.QueryContext(
 					context.Background(),
 					"SELECT id, hash, created_at, updated_at, last_accessed_at FROM narinfos",
 				)
@@ -413,19 +422,17 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful creation", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			key := testhelper.MustRandString(32)
 
 			value := testhelper.MustRandString(32)
 
-			createdConf, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
-				Key:   key,
-				Value: value,
-			})
+			createdConf, err := database.CreateConfig(context.Background(), db, key, value)
 			require.NoError(t, err)
 
-			fetchedConf, err := db.GetConfigByKey(context.Background(), key)
+			fetchedConf, err := database.GetConfigByKey(context.Background(), db, key)
 			require.NoError(t, err)
 
 			assert.Equal(t, createdConf, fetchedConf)
@@ -434,23 +441,18 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate key", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			key := testhelper.MustRandString(32)
 
 			value := testhelper.MustRandString(32)
 
-			_, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
-				Key:   key,
-				Value: value,
-			})
+			_, err := database.CreateConfig(context.Background(), db, key, value)
 			require.NoError(t, err)
 
 			// Try to create again with the same key
-			_, err = db.CreateConfig(context.Background(), database.CreateConfigParams{
-				Key:   key,
-				Value: "another value",
-			})
+			_, err = database.CreateConfig(context.Background(), db, key, "another value")
 			assert.True(t, database.IsDuplicateKeyError(err))
 		})
 	})
@@ -461,11 +463,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("can store multiple representations of same hash", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: nar.CompressionTypeXz.String(),
 				Query:       "hash=123&key=value",
@@ -473,13 +476,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			nf2, err := db.GetNarFileByHashAndCompressionAndQuery(
+			nf2, err := database.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narHash,
-					Compression: nar.CompressionTypeXz.String(),
-					Query:       "hash=123&key=value",
-				},
+				db,
+				narHash,
+				nar.CompressionTypeXz.String(),
+				"hash=123&key=value",
 			)
 			require.NoError(t, err)
 
@@ -488,7 +490,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			assert.Equal(t, nf1.Query, nf2.Query)
 
 			// Store another one with different compression
-			nf3, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf3, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: nar.CompressionTypeNone.String(),
 				Query:       "hash=123&key=value",
@@ -498,7 +500,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			assert.NotEqual(t, nf1.ID, nf3.ID)
 
 			// Store another one with different query
-			nf4, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf4, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: nar.CompressionTypeXz.String(),
 				Query:       "different=query",
@@ -511,17 +513,18 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("nar not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			_, err := db.GetNarFileByHashAndCompressionAndQuery(
+			_, err := database.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narHash,
-					Compression: "xz",
-					Query:       "",
-				})
+				db,
+				narHash,
+				"xz",
+				"",
+			)
 			require.Error(t, err)
 			assert.True(t, database.IsNotFoundError(err))
 		})
@@ -529,24 +532,25 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("nar existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "zstd",
 				FileSize:    123,
 			})
 			require.NoError(t, err)
 
-			nf2, err := db.GetNarFileByHashAndCompressionAndQuery(
+			nf2, err := database.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narHash,
-					Compression: "zstd",
-					Query:       "",
-				})
+				db,
+				narHash,
+				"zstd",
+				"",
+			)
 			require.NoError(t, err)
 
 			assert.Equal(t, nf1.ID, nf2.ID)
@@ -555,7 +559,8 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	})
 
 	t.Run("InsertNar", func(t *testing.T) {
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		allCompressions := []nar.CompressionType{
 			nar.CompressionTypeNone,
@@ -569,14 +574,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		for _, compression := range allCompressions {
 			t.Run(fmt.Sprintf("compression=%q", compression), func(t *testing.T) {
-				_, err := db.DB().ExecContext(context.Background(), "DELETE FROM nar_files")
+				_, err := db.DB.ExecContext(context.Background(), "DELETE FROM nar_files")
 				require.NoError(t, err)
 
 				t.Run("inserting one record", func(t *testing.T) {
 					hash, err := testhelper.RandString(32)
 					require.NoError(t, err)
 
-					narFile, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+					narFile, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 						Hash:        hash,
 						Compression: compression.String(),
 						FileSize:    123,
@@ -588,7 +593,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
  				FROM nar_files
  				`
 
-					rows, err := db.DB().QueryContext(context.Background(), query)
+					rows, err := db.DB.QueryContext(context.Background(), query)
 					require.NoError(t, err)
 
 					defer rows.Close()
@@ -621,7 +626,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 						assert.Equal(t, compression.String(), narFiles[0].Compression)
 						assert.EqualValues(t, 123, narFiles[0].FileSize)
 						assert.Less(t, time.Since(narFiles[0].CreatedAt), 3*time.Second)
-						assert.False(t, narFiles[0].UpdatedAt.Valid)
+						assert.True(t, narFiles[0].UpdatedAt.IsZero())
 						assert.Equal(t, narFiles[0].CreatedAt, narFiles[0].LastAccessedAt.Time)
 					}
 				})
@@ -630,21 +635,21 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 					hash, err := testhelper.RandString(32)
 					require.NoError(t, err)
 
-					nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+					nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 						Hash:        hash,
 						Compression: "",
 						FileSize:    123,
 					})
 					require.NoError(t, err)
 
-					nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+					nf2, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 						Hash:        hash,
 						Compression: "",
 						FileSize:    123,
 					})
 					require.NoError(t, err)
 
-					nf3, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+					nf3, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 						Hash:        hash,
 						Compression: "",
 						FileSize:    123,
@@ -659,12 +664,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	})
 
 	t.Run("TouchNarFile", func(t *testing.T) {
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		t.Run("nar not existing", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
-			ra, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
+			ra, err := database.TouchNarFile(context.Background(), db, database.TouchNarFileParams{
 				Hash: hash,
 			})
 			require.NoError(t, err)
@@ -676,7 +682,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash := testhelper.MustRandString(32)
 
 			t.Run("create the nar", func(t *testing.T) {
-				_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				_, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 					Hash:        hash,
 					Compression: "zstd",
 					Query:       "foo=bar",
@@ -691,7 +697,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
  				FROM nar_files
  				`
 
-				rows, err := db.DB().QueryContext(context.Background(), query)
+				rows, err := db.DB.QueryContext(context.Background(), query)
 				require.NoError(t, err)
 
 				defer rows.Close()
@@ -719,7 +725,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				require.NoError(t, rows.Err())
 
 				if assert.Len(t, narFiles, 1) {
-					assert.False(t, narFiles[0].UpdatedAt.Valid)
+					assert.True(t, narFiles[0].UpdatedAt.IsZero())
 					assert.Equal(t, narFiles[0].CreatedAt, narFiles[0].LastAccessedAt.Time)
 				}
 			})
@@ -727,7 +733,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			t.Run("touch the nar", func(t *testing.T) {
 				time.Sleep(time.Second)
 
-				ra, err := db.TouchNarFile(context.Background(), database.TouchNarFileParams{
+				ra, err := database.TouchNarFile(context.Background(), db, database.TouchNarFileParams{
 					Hash:        hash,
 					Compression: "zstd",
 					Query:       "foo=bar",
@@ -743,7 +749,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
  				FROM nar_files
  				`
 
-				rows, err := db.DB().QueryContext(context.Background(), query)
+				rows, err := db.DB.QueryContext(context.Background(), query)
 				require.NoError(t, err)
 
 				defer rows.Close()
@@ -773,7 +779,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				if assert.Len(t, narFiles, 1) {
 					assert.NotEqual(t, narFiles[0].CreatedAt, narFiles[0].LastAccessedAt)
 
-					if assert.True(t, narFiles[0].UpdatedAt.Valid) {
+					if assert.False(t, narFiles[0].UpdatedAt.IsZero()) {
 						assert.Equal(t, narFiles[0].UpdatedAt.Time, narFiles[0].LastAccessedAt.Time)
 					}
 				}
@@ -782,12 +788,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	})
 
 	t.Run("DeleteNar", func(t *testing.T) {
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		t.Run("nar not existing", func(t *testing.T) {
 			hash := testhelper.MustRandString(32)
 
-			ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
+			ra, err := database.DeleteNarFileByHash(context.Background(), db, database.DeleteNarFileByHashParams{
 				Hash: hash,
 			})
 			require.NoError(t, err)
@@ -799,7 +806,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash := testhelper.MustRandString(32)
 
 			t.Run("create the nar", func(t *testing.T) {
-				_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+				_, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 					Hash:        hash,
 					Compression: "zstd",
 					Query:       "foo=bar",
@@ -811,7 +818,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			t.Run("delete the narinfo", func(t *testing.T) {
 				time.Sleep(time.Second)
 
-				ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
+				ra, err := database.DeleteNarFileByHash(context.Background(), db, database.DeleteNarFileByHashParams{
 					Hash:        hash,
 					Compression: "zstd",
 					Query:       "foo=bar",
@@ -827,7 +834,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				FROM nar_files
 				`
 
-				rows, err := db.DB().QueryContext(context.Background(), query)
+				rows, err := db.DB.QueryContext(context.Background(), query)
 				require.NoError(t, err)
 
 				defer rows.Close()
@@ -861,7 +868,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			hash := testhelper.MustRandString(32)
 
 			// Create two variants
-			_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			_, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash,
 				Compression: "xz",
 				Query:       "q1",
@@ -869,7 +876,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			})
 			require.NoError(t, err)
 
-			v2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			v2, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash,
 				Compression: "zstd",
 				Query:       "q2",
@@ -878,7 +885,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Delete only v1
-			ra, err := db.DeleteNarFileByHash(context.Background(), database.DeleteNarFileByHashParams{
+			ra, err := database.DeleteNarFileByHash(context.Background(), db, database.DeleteNarFileByHashParams{
 				Hash:        hash,
 				Compression: "xz",
 				Query:       "q1",
@@ -887,24 +894,22 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			assert.EqualValues(t, 1, ra)
 
 			// Confirm v1 is gone
-			_, err = db.GetNarFileByHashAndCompressionAndQuery(
+			_, err = database.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        hash,
-					Compression: "xz",
-					Query:       "q1",
-				},
+				db,
+				hash,
+				"xz",
+				"q1",
 			)
 			assert.True(t, database.IsNotFoundError(err))
 
 			// Confirm v2 still exists
-			retV2, err := db.GetNarFileByHashAndCompressionAndQuery(
+			retV2, err := database.GetNarFileByHashAndCompressionAndQuery(
 				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        hash,
-					Compression: "zstd",
-					Query:       "q2",
-				},
+				db,
+				hash,
+				"zstd",
+				"q2",
 			)
 			require.NoError(t, err)
 			assert.Equal(t, v2.ID, retV2.ID)
@@ -914,25 +919,26 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("NarTotalSize", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
-		var expectedSize uint64
+		var expectedSize int64
+
 		for _, narEntry := range testdata.Entries {
-			expectedSize += uint64(len(narEntry.NarText))
+			narSize := int64(len(narEntry.NarText))
+			expectedSize += narSize
 
-			_, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
-				Hash:        narEntry.NarHash,
-				Compression: nar.CompressionTypeXz.String(),
-				FileSize:    uint64(len(narEntry.NarText)),
-				Query:       "",
+			_, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
+				Hash:    narEntry.NarHash,
+				NarSize: sql.NullInt64{Int64: narSize, Valid: true},
 			})
 			require.NoError(t, err)
 		}
 
-		size, err := db.GetNarTotalSize(context.Background())
+		size, err := database.GetNarTotalSize(context.Background(), db)
 		require.NoError(t, err)
 
-		assert.EqualValues(t, expectedSize, size)
+		assert.Equal(t, expectedSize, size)
 	})
 
 	t.Run("SetConfig", func(t *testing.T) {
@@ -941,19 +947,17 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("key not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			key := testhelper.MustRandString(32)
 
 			value := testhelper.MustRandString(32)
 
-			err := db.SetConfig(context.Background(), database.SetConfigParams{
-				Key:   key,
-				Value: value,
-			})
+			err := database.SetConfig(context.Background(), db, key, value)
 			require.NoError(t, err)
 
-			conf, err := db.GetConfigByKey(context.Background(), key)
+			conf, err := database.GetConfigByKey(context.Background(), db, key)
 			require.NoError(t, err)
 
 			assert.Equal(t, key, conf.Key)
@@ -963,27 +967,22 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("key existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			key := testhelper.MustRandString(32)
 
 			value := testhelper.MustRandString(32)
 
-			err := db.SetConfig(context.Background(), database.SetConfigParams{
-				Key:   key,
-				Value: value,
-			})
+			err := database.SetConfig(context.Background(), db, key, value)
 			require.NoError(t, err)
 
 			value2 := testhelper.MustRandString(32)
 
-			err = db.SetConfig(context.Background(), database.SetConfigParams{
-				Key:   key,
-				Value: value2,
-			})
+			err = database.SetConfig(context.Background(), db, key, value2)
 			require.NoError(t, err)
 
-			conf, err := db.GetConfigByKey(context.Background(), key)
+			conf, err := database.GetConfigByKey(context.Background(), db, key)
 			require.NoError(t, err)
 
 			assert.Equal(t, key, conf.Key)
@@ -997,22 +996,23 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful insertion", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			reference := testhelper.MustRandString(32)
 
-			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
+			err = database.AddNarInfoReference(context.Background(), db, database.AddNarInfoReferenceParams{
 				NarInfoID: ni.ID,
 				Reference: reference,
 			})
 			require.NoError(t, err)
 
-			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			refs, err := database.GetNarInfoReferences(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, refs, 1) {
@@ -1023,31 +1023,32 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate reference is idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			reference := testhelper.MustRandString(32)
 
 			// Insert first time
-			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
+			err = database.AddNarInfoReference(context.Background(), db, database.AddNarInfoReferenceParams{
 				NarInfoID: ni.ID,
 				Reference: reference,
 			})
 			require.NoError(t, err)
 
 			// Insert duplicate - should not error
-			err = db.AddNarInfoReference(context.Background(), database.AddNarInfoReferenceParams{
+			err = database.AddNarInfoReference(context.Background(), db, database.AddNarInfoReferenceParams{
 				NarInfoID: ni.ID,
 				Reference: reference,
 			})
 			require.NoError(t, err, "duplicate reference insertion should be idempotent")
 
 			// Verify only one reference exists
-			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			refs, err := database.GetNarInfoReferences(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, refs, 1) {
@@ -1062,11 +1063,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful bulk insertion", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			references := make([]string, 3)
@@ -1077,13 +1079,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				references[i] = ref
 			}
 
-			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+			err = database.AddNarInfoReferences(context.Background(), db, database.AddNarInfoReferencesParams{
 				NarInfoID: ni.ID,
 				Reference: references,
 			})
 			require.NoError(t, err)
 
-			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			refs, err := database.GetNarInfoReferences(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			assert.Len(t, refs, 3)
@@ -1092,11 +1094,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate references in same batch are idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			reference := testhelper.MustRandString(32)
@@ -1104,14 +1107,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			// Insert same reference multiple times in one batch
 			references := []string{reference, reference, reference}
 
-			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+			err = database.AddNarInfoReferences(context.Background(), db, database.AddNarInfoReferencesParams{
 				NarInfoID: ni.ID,
 				Reference: references,
 			})
 			require.NoError(t, err, "duplicate references in batch should be idempotent")
 
 			// Verify only one reference exists
-			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			refs, err := database.GetNarInfoReferences(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, refs, 1) {
@@ -1122,11 +1125,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate references across batches are idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			ref1 := testhelper.MustRandString(32)
@@ -1134,21 +1138,21 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			ref2 := testhelper.MustRandString(32)
 
 			// First batch
-			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+			err = database.AddNarInfoReferences(context.Background(), db, database.AddNarInfoReferencesParams{
 				NarInfoID: ni.ID,
 				Reference: []string{ref1, ref2},
 			})
 			require.NoError(t, err)
 
 			// Second batch with duplicates
-			err = db.AddNarInfoReferences(context.Background(), database.AddNarInfoReferencesParams{
+			err = database.AddNarInfoReferences(context.Background(), db, database.AddNarInfoReferencesParams{
 				NarInfoID: ni.ID,
 				Reference: []string{ref1, ref2},
 			})
 			require.NoError(t, err, "duplicate references across batches should be idempotent")
 
 			// Verify only two unique references exist
-			refs, err := db.GetNarInfoReferences(context.Background(), ni.ID)
+			refs, err := database.GetNarInfoReferences(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			assert.Len(t, refs, 2)
@@ -1161,22 +1165,23 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful insertion", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			signature := testhelper.MustRandString(32)
 
-			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
+			err = database.AddNarInfoSignature(context.Background(), db, database.AddNarInfoSignatureParams{
 				NarInfoID: ni.ID,
 				Signature: signature,
 			})
 			require.NoError(t, err)
 
-			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			sigs, err := database.GetNarInfoSignatures(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, sigs, 1) {
@@ -1187,31 +1192,32 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate signature is idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			signature := testhelper.MustRandString(32)
 
 			// Insert first time
-			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
+			err = database.AddNarInfoSignature(context.Background(), db, database.AddNarInfoSignatureParams{
 				NarInfoID: ni.ID,
 				Signature: signature,
 			})
 			require.NoError(t, err)
 
 			// Insert duplicate - should not error
-			err = db.AddNarInfoSignature(context.Background(), database.AddNarInfoSignatureParams{
+			err = database.AddNarInfoSignature(context.Background(), db, database.AddNarInfoSignatureParams{
 				NarInfoID: ni.ID,
 				Signature: signature,
 			})
 			require.NoError(t, err, "duplicate signature insertion should be idempotent")
 
 			// Verify only one signature exists
-			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			sigs, err := database.GetNarInfoSignatures(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, sigs, 1) {
@@ -1226,11 +1232,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful bulk insertion", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			signatures := make([]string, 3)
@@ -1241,13 +1248,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				signatures[i] = sig
 			}
 
-			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+			err = database.AddNarInfoSignatures(context.Background(), db, database.AddNarInfoSignaturesParams{
 				NarInfoID: ni.ID,
 				Signature: signatures,
 			})
 			require.NoError(t, err)
 
-			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			sigs, err := database.GetNarInfoSignatures(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			assert.Len(t, sigs, 3)
@@ -1256,11 +1263,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate signatures in same batch are idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			signature := testhelper.MustRandString(32)
@@ -1268,14 +1276,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			// Insert same signature multiple times in one batch
 			signatures := []string{signature, signature, signature}
 
-			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+			err = database.AddNarInfoSignatures(context.Background(), db, database.AddNarInfoSignaturesParams{
 				NarInfoID: ni.ID,
 				Signature: signatures,
 			})
 			require.NoError(t, err, "duplicate signatures in batch should be idempotent")
 
 			// Verify only one signature exists
-			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			sigs, err := database.GetNarInfoSignatures(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, sigs, 1) {
@@ -1286,11 +1294,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate signatures across batches are idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			sig1 := testhelper.MustRandString(32)
@@ -1298,21 +1307,21 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			sig2 := testhelper.MustRandString(32)
 
 			// First batch
-			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+			err = database.AddNarInfoSignatures(context.Background(), db, database.AddNarInfoSignaturesParams{
 				NarInfoID: ni.ID,
 				Signature: []string{sig1, sig2},
 			})
 			require.NoError(t, err)
 
 			// Second batch with duplicates
-			err = db.AddNarInfoSignatures(context.Background(), database.AddNarInfoSignaturesParams{
+			err = database.AddNarInfoSignatures(context.Background(), db, database.AddNarInfoSignaturesParams{
 				NarInfoID: ni.ID,
 				Signature: []string{sig1, sig2},
 			})
 			require.NoError(t, err, "duplicate signatures across batches should be idempotent")
 
 			// Verify only two unique signatures exist
-			sigs, err := db.GetNarInfoSignatures(context.Background(), ni.ID)
+			sigs, err := database.GetNarInfoSignatures(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			assert.Len(t, sigs, 2)
@@ -1325,28 +1334,27 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("config not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
-			_, err := db.GetConfigByID(context.Background(), 999999)
+			_, err := database.GetConfigByID(context.Background(), db, 999999)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("config existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			key := testhelper.MustRandString(32)
 
 			value := testhelper.MustRandString(32)
 
-			conf1, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
-				Key:   key,
-				Value: value,
-			})
+			conf1, err := database.CreateConfig(context.Background(), db, key, value)
 			require.NoError(t, err)
 
-			conf2, err := db.GetConfigByID(context.Background(), conf1.ID)
+			conf2, err := database.GetConfigByID(context.Background(), db, conf1.ID)
 			require.NoError(t, err)
 
 			assert.Equal(t, conf1, conf2)
@@ -1359,23 +1367,25 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("narinfo not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
-			_, err := db.GetNarInfoByID(context.Background(), 999999)
+			_, err := database.GetNarInfoByID(context.Background(), db, 999999)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("narinfo existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni1, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			ni2, err := db.GetNarInfoByID(context.Background(), ni1.ID)
+			ni2, err := database.GetNarInfoByID(context.Background(), db, ni1.ID)
 			require.NoError(t, err)
 
 			assert.Equal(t, ni1.ID, ni2.ID)
@@ -1389,27 +1399,29 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("nar file not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
-			_, err := db.GetNarFileByID(context.Background(), 999999)
+			_, err := database.GetNarFileByID(context.Background(), db, 999999)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("nar file existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash,
 				Compression: "xz",
 				FileSize:    123,
 			})
 			require.NoError(t, err)
 
-			nf2, err := db.GetNarFileByID(context.Background(), nf1.ID)
+			nf2, err := database.GetNarFileByID(context.Background(), db, nf1.ID)
 			require.NoError(t, err)
 
 			assert.Equal(t, nf1.ID, nf2.ID)
@@ -1423,22 +1435,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("update file size", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
 			assert.False(t, ni.FileSize.Valid)
 
-			err = db.UpdateNarInfoFileSize(context.Background(), database.UpdateNarInfoFileSizeParams{
-				Hash:     hash,
-				FileSize: sql.NullInt64{Int64: 456, Valid: true},
-			})
+			err = database.UpdateNarInfoFileSize(context.Background(), db, hash, sql.NullInt64{Int64: 456, Valid: true})
 			require.NoError(t, err)
 
-			ni2, err := db.GetNarInfoByHash(context.Background(), hash)
+			ni2, err := database.GetNarInfoByHash(context.Background(), db, hash)
 			require.NoError(t, err)
 
 			if assert.True(t, ni2.FileSize.Valid) {
@@ -1453,10 +1463,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("no narinfos with url", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
-			hashes, err := db.GetNarInfoHashesByURL(context.Background(),
-				sql.NullString{String: "nonexistent.nar", Valid: true})
+			hashes, err := database.GetNarInfoHashesByURL(context.Background(),
+				db, sql.NullString{String: "nonexistent.nar", Valid: true})
 			require.NoError(t, err)
 			assert.Empty(t, hashes)
 		})
@@ -1464,27 +1475,28 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("multiple narinfos with same url", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			url := "nar/test.nar.xz"
 			hash1 := testhelper.MustRandString(32)
 
 			hash2 := testhelper.MustRandString(32)
 
-			_, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			_, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
 				Hash: hash1,
 				URL:  sql.NullString{String: url, Valid: true},
 			})
 			require.NoError(t, err)
 
-			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+			_, err = database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
 				Hash: hash2,
 				URL:  sql.NullString{String: url, Valid: true},
 			})
 			require.NoError(t, err)
 
-			hashes, err := db.GetNarInfoHashesByURL(context.Background(),
-				sql.NullString{String: url, Valid: true})
+			hashes, err := database.GetNarInfoHashesByURL(context.Background(),
+				db, sql.NullString{String: url, Valid: true})
 			require.NoError(t, err)
 
 			assert.Len(t, hashes, 2)
@@ -1499,30 +1511,31 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful linking", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash1 := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
 			hash2 := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash2,
 				Compression: "xz",
 				FileSize:    123,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 				NarInfoID: ni.ID,
 				NarFileID: nf.ID,
 			})
 			require.NoError(t, err)
 
 			// Verify the link by fetching nar file by narinfo id
-			nf2, err := db.GetNarFileByNarInfoID(context.Background(), ni.ID)
+			nf2, err := database.GetNarFileByNarInfoID(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			assert.Equal(t, nf.ID, nf2.ID)
@@ -1531,30 +1544,31 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate link is idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash1 := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
 			hash2 := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash2,
 				Compression: "xz",
 				FileSize:    123,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 				NarInfoID: ni.ID,
 				NarFileID: nf.ID,
 			})
 			require.NoError(t, err)
 
 			// Link again - should not error
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 				NarInfoID: ni.ID,
 				NarFileID: nf.ID,
 			})
@@ -1568,43 +1582,45 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("no link exists", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			_, err = db.GetNarFileByNarInfoID(context.Background(), ni.ID)
+			_, err = database.GetNarFileByNarInfoID(context.Background(), db, ni.ID)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("link exists", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash1 := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
 			hash2 := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash2,
 				Compression: "xz",
 				FileSize:    123,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 				NarInfoID: ni.ID,
 				NarFileID: nf.ID,
 			})
 			require.NoError(t, err)
 
-			nf2, err := db.GetNarFileByNarInfoID(context.Background(), ni.ID)
+			nf2, err := database.GetNarFileByNarInfoID(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 
 			assert.Equal(t, nf.ID, nf2.ID)
@@ -1617,9 +1633,10 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("narinfo not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
-			ra, err := db.DeleteNarInfoByID(context.Background(), 999999)
+			ra, err := database.DeleteNarInfoByID(context.Background(), db, 999999)
 			require.NoError(t, err)
 			assert.Zero(t, ra)
 		})
@@ -1627,18 +1644,19 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("narinfo existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 
-			ra, err := db.DeleteNarInfoByID(context.Background(), ni.ID)
+			ra, err := database.DeleteNarInfoByID(context.Background(), db, ni.ID)
 			require.NoError(t, err)
 			assert.EqualValues(t, 1, ra)
 
-			_, err = db.GetNarInfoByID(context.Background(), ni.ID)
+			_, err = database.GetNarInfoByID(context.Background(), db, ni.ID)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 	})
@@ -1649,29 +1667,30 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("no orphaned nar files", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash1 := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
 			hash2 := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash2,
 				Compression: "xz",
 				FileSize:    123,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 				NarInfoID: ni.ID,
 				NarFileID: nf.ID,
 			})
 			require.NoError(t, err)
 
-			ra, err := db.DeleteOrphanedNarFiles(context.Background())
+			ra, err := database.DeleteOrphanedNarFiles(context.Background(), db)
 			require.NoError(t, err)
 			assert.Zero(t, ra)
 		})
@@ -1679,11 +1698,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("orphaned nar files are deleted", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash1 := testhelper.MustRandString(32)
 
-			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash1,
 				Compression: "xz",
 				FileSize:    123,
@@ -1692,21 +1712,21 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			hash2 := testhelper.MustRandString(32)
 
-			nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf2, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash2,
 				Compression: "xz",
 				FileSize:    456,
 			})
 			require.NoError(t, err)
 
-			ra, err := db.DeleteOrphanedNarFiles(context.Background())
+			ra, err := database.DeleteOrphanedNarFiles(context.Background(), db)
 			require.NoError(t, err)
 			assert.EqualValues(t, 2, ra)
 
-			_, err = db.GetNarFileByID(context.Background(), nf1.ID)
+			_, err = database.GetNarFileByID(context.Background(), db, nf1.ID)
 			require.ErrorIs(t, err, database.ErrNotFound)
 
-			_, err = db.GetNarFileByID(context.Background(), nf2.ID)
+			_, err = database.GetNarFileByID(context.Background(), db, nf2.ID)
 			require.ErrorIs(t, err, database.ErrNotFound)
 		})
 	})
@@ -1717,11 +1737,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("no orphaned chunks", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    512,
@@ -1730,20 +1751,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 512,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+			err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunk.ID,
 				ChunkIndex: 0,
 			})
 			require.NoError(t, err)
 
-			ra, err := db.DeleteOrphanedChunks(context.Background())
+			ra, err := database.DeleteOrphanedChunks(context.Background(), db)
 			require.NoError(t, err)
 			assert.Zero(t, ra)
 		})
@@ -1751,11 +1772,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("orphaned chunks are deleted", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			chunkHash1 := testhelper.MustRandString(32)
 
-			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk1, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash1,
 				Size: 512,
 			})
@@ -1763,20 +1785,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash2 := testhelper.MustRandString(32)
 
-			chunk2, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk2, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash2,
 				Size: 1024,
 			})
 			require.NoError(t, err)
 
-			ra, err := db.DeleteOrphanedChunks(context.Background())
+			ra, err := database.DeleteOrphanedChunks(context.Background(), db)
 			require.NoError(t, err)
 			assert.EqualValues(t, 2, ra)
 
-			_, err = db.GetChunkByID(context.Background(), chunk1.ID)
+			_, err = database.GetChunkByID(context.Background(), db, chunk1.ID)
 			require.ErrorIs(t, err, database.ErrNotFound)
 
-			_, err = db.GetChunkByID(context.Background(), chunk2.ID)
+			_, err = database.GetChunkByID(context.Background(), db, chunk2.ID)
 			require.ErrorIs(t, err, database.ErrNotFound)
 		})
 	})
@@ -1784,19 +1806,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetNarInfoCount", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
-		initialCount, err := db.GetNarInfoCount(context.Background())
+		initialCount, err := database.GetNarInfoCount(context.Background(), db)
 		require.NoError(t, err)
 
 		for range 5 {
 			hash := testhelper.MustRandString(32)
 
-			_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash})
+			_, err = database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash})
 			require.NoError(t, err)
 		}
 
-		count, err := db.GetNarInfoCount(context.Background())
+		count, err := database.GetNarInfoCount(context.Background(), db)
 		require.NoError(t, err)
 
 		assert.Equal(t, initialCount+5, count)
@@ -1805,16 +1828,17 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetNarFileCount", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
-		initialCount, err := db.GetNarFileCount(context.Background())
+		initialCount, err := database.GetNarFileCount(context.Background(), db)
 		require.NoError(t, err)
 
 		for i := range 3 {
 			hash := testhelper.MustRandString(32)
 
 			//nolint:gosec // G115: Safe conversion, i is small and controlled
-			_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			_, err = database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash,
 				Compression: "xz",
 				FileSize:    uint64(100 * (i + 1)),
@@ -1822,7 +1846,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 		}
 
-		count, err := db.GetNarFileCount(context.Background())
+		count, err := database.GetNarFileCount(context.Background(), db)
 		require.NoError(t, err)
 
 		assert.Equal(t, initialCount+3, count)
@@ -1831,25 +1855,29 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetLeastUsedNarInfos", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		// Create 3 narinfos with different nar files of different sizes
 		hash1 := testhelper.MustRandString(32)
 
-		ni1, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+		ni1, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
+			Hash:     hash1,
+			FileSize: sql.NullInt64{Int64: 100, Valid: true},
+		})
 		require.NoError(t, err)
 
 		nfHash1, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+		nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 			Hash:        nfHash1,
 			Compression: "xz",
 			FileSize:    100,
 		})
 		require.NoError(t, err)
 
-		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+		err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 			NarInfoID: ni1.ID,
 			NarFileID: nf1.ID,
 		})
@@ -1858,20 +1886,23 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		hash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		ni2, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash2})
+		ni2, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
+			Hash:     hash2,
+			FileSize: sql.NullInt64{Int64: 200, Valid: true},
+		})
 		require.NoError(t, err)
 
 		nfHash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+		nf2, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 			Hash:        nfHash2,
 			Compression: "xz",
 			FileSize:    200,
 		})
 		require.NoError(t, err)
 
-		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+		err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 			NarInfoID: ni2.ID,
 			NarFileID: nf2.ID,
 		})
@@ -1880,20 +1911,23 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		hash3, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		ni3, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash3})
+		ni3, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
+			Hash:     hash3,
+			FileSize: sql.NullInt64{Int64: 300, Valid: true},
+		})
 		require.NoError(t, err)
 
 		nfHash3, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		nf3, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+		nf3, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 			Hash:        nfHash3,
 			Compression: "xz",
 			FileSize:    300,
 		})
 		require.NoError(t, err)
 
-		err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+		err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 			NarInfoID: ni3.ID,
 			NarFileID: nf3.ID,
 		})
@@ -1905,16 +1939,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		time.Sleep(time.Second)
 
 		// Touch ni2 and ni3, making ni1 the least used
-		_, err = db.TouchNarInfo(context.Background(), hash2)
+		_, err = database.TouchNarInfo(context.Background(), db, hash2)
 		require.NoError(t, err)
 
-		_, err = db.TouchNarInfo(context.Background(), hash3)
+		_, err = database.TouchNarInfo(context.Background(), db, hash3)
 		require.NoError(t, err)
 
-		// Ask for narinfos up to 100 bytes - should return only ni1
-		narInfos, err := db.GetLeastUsedNarInfos(context.Background(), 100)
+		// Query for narinfos with cumulative file_size <= 200 - should return ni1
+		// because ni1 was never touched (least recently used) and its file_size=100
+		// is less than the threshold. ni2 and ni3 have cumulative sums (including
+		// ni1's file_size) that exceed 200.
+		narInfos, err := database.GetLeastUsedNarInfos(context.Background(), db, 200)
 		require.NoError(t, err)
 
+		// ni1 is the only one with cumulative sum <= 200 (0 + 100 = 100)
 		if assert.Len(t, narInfos, 1) {
 			assert.Equal(t, hash1, narInfos[0].Hash)
 		}
@@ -1926,29 +1964,30 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("no orphaned nar files", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash1 := testhelper.MustRandString(32)
 
-			ni, err := db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+			ni, err := database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash1})
 			require.NoError(t, err)
 
 			hash2 := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash2,
 				Compression: "xz",
 				FileSize:    123,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarInfoToNarFile(context.Background(), database.LinkNarInfoToNarFileParams{
+			err = database.LinkNarInfoToNarFile(context.Background(), db, database.LinkNarInfoToNarFileParams{
 				NarInfoID: ni.ID,
 				NarFileID: nf.ID,
 			})
 			require.NoError(t, err)
 
-			orphaned, err := db.GetOrphanedNarFiles(context.Background())
+			orphaned, err := database.GetOrphanedNarFiles(context.Background(), db)
 			require.NoError(t, err)
 			assert.Empty(t, orphaned)
 		})
@@ -1956,11 +1995,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("orphaned nar files are returned", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash1 := testhelper.MustRandString(32)
 
-			nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash1,
 				Compression: "xz",
 				FileSize:    123,
@@ -1969,14 +2009,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			hash2 := testhelper.MustRandString(32)
 
-			nf2, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf2, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        hash2,
 				Compression: "xz",
 				FileSize:    456,
 			})
 			require.NoError(t, err)
 
-			orphaned, err := db.GetOrphanedNarFiles(context.Background())
+			orphaned, err := database.GetOrphanedNarFiles(context.Background(), db)
 			require.NoError(t, err)
 
 			assert.Len(t, orphaned, 2)
@@ -1989,24 +2029,25 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetUnmigratedNarInfoHashes", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		hash1, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+		_, err = database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash1})
 		require.NoError(t, err)
 
 		hash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+		_, err = database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
 			Hash: hash2,
 			URL:  sql.NullString{String: "nar/test.nar.xz", Valid: true},
 		})
 		require.NoError(t, err)
 
-		unmigrated, err := db.GetUnmigratedNarInfoHashes(context.Background())
+		unmigrated, err := database.GetUnmigratedNarInfoHashes(context.Background(), db)
 		require.NoError(t, err)
 
 		assert.Contains(t, unmigrated, hash1)
@@ -2016,24 +2057,25 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetMigratedNarInfoHashes", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		hash1, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{Hash: hash1})
+		_, err = database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{Hash: hash1})
 		require.NoError(t, err)
 
 		hash2, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		_, err = db.CreateNarInfo(context.Background(), database.CreateNarInfoParams{
+		_, err = database.CreateNarInfo(context.Background(), db, database.CreateNarInfoParams{
 			Hash: hash2,
 			URL:  sql.NullString{String: "nar/test.nar.xz", Valid: true},
 		})
 		require.NoError(t, err)
 
-		migrated, err := db.GetMigratedNarInfoHashes(context.Background())
+		migrated, err := database.GetMigratedNarInfoHashes(context.Background(), db)
 		require.NoError(t, err)
 
 		assert.NotContains(t, migrated, hash1)
@@ -2046,11 +2088,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("create new chunk", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
 			})
@@ -2063,17 +2106,18 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate chunk is idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk1, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
 			})
 			require.NoError(t, err)
 
-			chunk2, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk2, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
 			})
@@ -2089,28 +2133,30 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("chunk not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			hash := testhelper.MustRandString(32)
 
-			_, err := db.GetChunkByHash(context.Background(), hash)
+			_, err := database.GetChunkByHash(context.Background(), db, hash)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("chunk existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk1, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
 			})
 			require.NoError(t, err)
 
-			chunk2, err := db.GetChunkByHash(context.Background(), chunkHash)
+			chunk2, err := database.GetChunkByHash(context.Background(), db, chunkHash)
 			require.NoError(t, err)
 
 			assert.Equal(t, chunk1.ID, chunk2.ID)
@@ -2124,26 +2170,28 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("chunk not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
-			_, err := db.GetChunkByID(context.Background(), 999999)
+			_, err := database.GetChunkByID(context.Background(), db, 999999)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 
 		t.Run("chunk existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk1, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
 			})
 			require.NoError(t, err)
 
-			chunk2, err := db.GetChunkByID(context.Background(), chunk1.ID)
+			chunk2, err := database.GetChunkByID(context.Background(), db, chunk1.ID)
 			require.NoError(t, err)
 
 			assert.Equal(t, chunk1.ID, chunk2.ID)
@@ -2157,11 +2205,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful linking", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1024,
@@ -2170,20 +2219,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 512,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+			err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunk.ID,
 				ChunkIndex: 0,
 			})
 			require.NoError(t, err)
 
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, 1) {
@@ -2194,11 +2243,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate link is idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1024,
@@ -2207,13 +2257,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 512,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+			err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunk.ID,
 				ChunkIndex: 0,
@@ -2221,7 +2271,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Link again - should not error
-			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+			err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunk.ID,
 				ChunkIndex: 0,
@@ -2236,11 +2286,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("successful bulk linking of multiple chunks", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    3072,
@@ -2255,7 +2306,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
-				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 					Hash: chunkHash,
 					Size: 1024,
 				})
@@ -2266,7 +2317,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			}
 
 			// Link all chunks in bulk
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunkIDs,
 				ChunkIndex: chunkIndices,
@@ -2274,7 +2325,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Verify all chunks are linked
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, 3) {
@@ -2288,11 +2339,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("bulk link with single chunk", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1024,
@@ -2301,21 +2353,21 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
 			})
 			require.NoError(t, err)
 
 			// Link single chunk using bulk operation
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    []int64{chunk.ID},
 				ChunkIndex: []int64{0},
 			})
 			require.NoError(t, err)
 
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, 1) {
@@ -2326,11 +2378,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("bulk link with empty arrays", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    0,
@@ -2338,14 +2391,14 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Link with empty arrays - should not error
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    []int64{},
 				ChunkIndex: []int64{},
 			})
 			require.NoError(t, err)
 
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 			assert.Empty(t, chunks)
 		})
@@ -2353,11 +2406,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("duplicate bulk links are idempotent", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    2048,
@@ -2372,7 +2426,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
-				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 					Hash: chunkHash,
 					Size: 1024,
 				})
@@ -2383,7 +2437,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			}
 
 			// Link chunks first time
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunkIDs,
 				ChunkIndex: chunkIndices,
@@ -2391,7 +2445,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Link same chunks again - should be idempotent
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunkIDs,
 				ChunkIndex: chunkIndices,
@@ -2399,7 +2453,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err, "duplicate bulk link should be idempotent")
 
 			// Verify we still have only 2 chunks
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 			assert.Len(t, chunks, 2)
 		})
@@ -2407,11 +2461,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("bulk link maintains correct chunk order", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    5120,
@@ -2427,7 +2482,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
-				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 					Hash: chunkHash,
 					Size: 1024,
 				})
@@ -2438,7 +2493,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			}
 
 			// Link all chunks in bulk
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunkIDs,
 				ChunkIndex: chunkIndices,
@@ -2446,7 +2501,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Verify chunks are in correct order
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, numChunks) {
@@ -2459,11 +2514,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("bulk link with non-sequential indices", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    3072,
@@ -2478,7 +2534,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
-				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 					Hash: chunkHash,
 					Size: 1024,
 				})
@@ -2488,7 +2544,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			}
 
 			// Link chunks with non-sequential indices
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunkIDs,
 				ChunkIndex: chunkIndices,
@@ -2496,7 +2552,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Verify chunks are linked
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, 3) {
@@ -2510,11 +2566,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("bulk link mixed with individual links", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    4096,
@@ -2528,7 +2585,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
-				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 					Hash: chunkHash,
 					Size: 1024,
 				})
@@ -2539,7 +2596,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			// Link first 2 chunks individually
 			for i := range 2 {
-				err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 					NarFileID:  nf.ID,
 					ChunkID:    allChunkIDs[i],
 					ChunkIndex: int64(i),
@@ -2548,7 +2605,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			}
 
 			// Link last 2 chunks in bulk
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    allChunkIDs[2:],
 				ChunkIndex: []int64{2, 3},
@@ -2556,7 +2613,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			// Verify all chunks are linked in correct order
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, 4) {
@@ -2569,10 +2626,11 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("bulk link with mismatched arrays", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1024,
@@ -2580,13 +2638,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 			require.NoError(t, err)
 
 			chunkHash := testhelper.MustRandString(32)
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 1024,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarFileToChunks(context.Background(), database.LinkNarFileToChunksParams{
+			err = database.LinkNarFileToChunks(context.Background(), db, database.LinkNarFileToChunksParams{
 				NarFileID:  nf.ID,
 				ChunkID:    []int64{chunk.ID},
 				ChunkIndex: []int64{}, // Mismatched length
@@ -2601,18 +2659,19 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("no chunks linked", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1024,
 			})
 			require.NoError(t, err)
 
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 			assert.Empty(t, chunks)
 		})
@@ -2620,11 +2679,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("multiple chunks linked in order", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1536,
@@ -2638,7 +2698,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				chunkHash, err := testhelper.RandString(32)
 				require.NoError(t, err)
 
-				chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+				chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 					Hash: chunkHash,
 					Size: 512,
 				})
@@ -2646,7 +2706,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 				chunkIDs = append(chunkIDs, chunk.ID)
 
-				err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+				err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 					NarFileID:  nf.ID,
 					ChunkID:    chunk.ID,
 					ChunkIndex: int64(i),
@@ -2654,7 +2714,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 				require.NoError(t, err)
 			}
 
-			chunks, err := db.GetChunksByNarFileID(context.Background(), nf.ID)
+			chunks, err := database.GetChunksByNarFileID(context.Background(), db, nf.ID)
 			require.NoError(t, err)
 
 			if assert.Len(t, chunks, 3) {
@@ -2672,18 +2732,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("chunk not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1024,
 			})
 			require.NoError(t, err)
 
-			_, err = db.GetChunkByNarFileIDAndIndex(context.Background(),
+			_, err = database.GetChunkByNarFileIDAndIndex(context.Background(),
+				db,
 				database.GetChunkByNarFileIDAndIndexParams{
 					NarFileID:  nf.ID,
 					ChunkIndex: 0,
@@ -2694,11 +2756,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("chunk existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    1024,
@@ -2707,20 +2770,21 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 512,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+			err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunk.ID,
 				ChunkIndex: 0,
 			})
 			require.NoError(t, err)
 
-			chunk2, err := db.GetChunkByNarFileIDAndIndex(context.Background(),
+			chunk2, err := database.GetChunkByNarFileIDAndIndex(context.Background(),
+				db,
 				database.GetChunkByNarFileIDAndIndexParams{
 					NarFileID:  nf.ID,
 					ChunkIndex: 0,
@@ -2734,22 +2798,23 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetChunkCount", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
-		initialCount, err := db.GetChunkCount(context.Background())
+		initialCount, err := database.GetChunkCount(context.Background(), db)
 		require.NoError(t, err)
 
 		for range 4 {
 			chunkHash := testhelper.MustRandString(32)
 
-			_, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			_, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 512,
 			})
 			require.NoError(t, err)
 		}
 
-		count, err := db.GetChunkCount(context.Background())
+		count, err := database.GetChunkCount(context.Background(), db)
 		require.NoError(t, err)
 
 		assert.Equal(t, initialCount+4, count)
@@ -2761,11 +2826,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("no orphaned chunks", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			narHash := testhelper.MustRandString(32)
 
-			nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+			nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 				Hash:        narHash,
 				Compression: "xz",
 				FileSize:    512,
@@ -2774,20 +2840,20 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 512,
 			})
 			require.NoError(t, err)
 
-			err = db.LinkNarFileToChunk(context.Background(), database.LinkNarFileToChunkParams{
+			err = database.LinkNarFileToChunk(context.Background(), db, database.LinkNarFileToChunkParams{
 				NarFileID:  nf.ID,
 				ChunkID:    chunk.ID,
 				ChunkIndex: 0,
 			})
 			require.NoError(t, err)
 
-			orphaned, err := db.GetOrphanedChunks(context.Background())
+			orphaned, err := database.GetOrphanedChunks(context.Background(), db)
 			require.NoError(t, err)
 			assert.Empty(t, orphaned)
 		})
@@ -2795,11 +2861,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("orphaned chunks are returned", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			chunkHash1 := testhelper.MustRandString(32)
 
-			chunk1, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk1, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash1,
 				Size: 512,
 			})
@@ -2807,13 +2874,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 			chunkHash2 := testhelper.MustRandString(32)
 
-			chunk2, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk2, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash2,
 				Size: 1024,
 			})
 			require.NoError(t, err)
 
-			orphaned, err := db.GetOrphanedChunks(context.Background())
+			orphaned, err := database.GetOrphanedChunks(context.Background(), db)
 			require.NoError(t, err)
 
 			assert.Len(t, orphaned, 2)
@@ -2829,29 +2896,31 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		t.Run("chunk not existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
-			err := db.DeleteChunkByID(context.Background(), 999999)
+			err := database.DeleteChunkByID(context.Background(), db, 999999)
 			require.NoError(t, err)
 		})
 
 		t.Run("chunk existing", func(t *testing.T) {
 			t.Parallel()
 
-			db := factory(t)
+			db, cleanup := factory(t)
+			t.Cleanup(cleanup)
 
 			chunkHash := testhelper.MustRandString(32)
 
-			chunk, err := db.CreateChunk(context.Background(), database.CreateChunkParams{
+			chunk, err := database.CreateChunk(context.Background(), db, database.CreateChunkParams{
 				Hash: chunkHash,
 				Size: 512,
 			})
 			require.NoError(t, err)
 
-			err = db.DeleteChunkByID(context.Background(), chunk.ID)
+			err = database.DeleteChunkByID(context.Background(), db, chunk.ID)
 			require.NoError(t, err)
 
-			_, err = db.GetChunkByID(context.Background(), chunk.ID)
+			_, err = database.GetChunkByID(context.Background(), db, chunk.ID)
 			assert.ErrorIs(t, err, database.ErrNotFound)
 		})
 	})
@@ -2859,12 +2928,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("UpdateNarFileTotalChunks", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		narHash, err := testhelper.RandString(32)
 		require.NoError(t, err)
 
-		nf, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+		nf, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 			Hash:        narHash,
 			Compression: "xz",
 			FileSize:    1536,
@@ -2873,13 +2943,13 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 
 		assert.EqualValues(t, 0, nf.TotalChunks)
 
-		err = db.UpdateNarFileTotalChunks(context.Background(), database.UpdateNarFileTotalChunksParams{
+		err = database.UpdateNarFileTotalChunks(context.Background(), db, database.UpdateNarFileTotalChunksParams{
 			TotalChunks: 3,
 			ID:          nf.ID,
 		})
 		require.NoError(t, err)
 
-		nf2, err := db.GetNarFileByID(context.Background(), nf.ID)
+		nf2, err := database.GetNarFileByID(context.Background(), db, nf.ID)
 		require.NoError(t, err)
 
 		assert.EqualValues(t, 3, nf2.TotalChunks)
@@ -2888,14 +2958,15 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 	t.Run("GetNarFilesToChunk", func(t *testing.T) {
 		t.Parallel()
 
-		db := factory(t)
+		db, cleanup := factory(t)
+		t.Cleanup(cleanup)
 
 		// Create some nar files
 		hash1 := testhelper.MustRandString(32)
 		hash2 := testhelper.MustRandString(32)
 		hash3 := testhelper.MustRandString(32)
 
-		nf1, err := db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+		nf1, err := database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 			Hash:        hash1,
 			Compression: "xz",
 			FileSize:    1024,
@@ -2903,7 +2974,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 		require.NoError(t, err)
 
-		_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+		_, err = database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 			Hash:        hash2,
 			Compression: "xz",
 			FileSize:    1024,
@@ -2911,7 +2982,7 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		})
 		require.NoError(t, err)
 
-		_, err = db.CreateNarFile(context.Background(), database.CreateNarFileParams{
+		_, err = database.CreateNarFile(context.Background(), db, database.CreateNarFileParams{
 			Hash:        hash3,
 			Compression: "xz",
 			FileSize:    1024,
@@ -2920,12 +2991,12 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		require.NoError(t, err)
 
 		// Check count
-		count, err := db.GetNarFilesToChunkCount(context.Background())
+		count, err := database.GetNarFilesToChunkCount(context.Background(), db)
 		require.NoError(t, err)
 		assert.EqualValues(t, 2, count)
 
 		// Get files
-		toChunk, err := db.GetNarFilesToChunk(context.Background())
+		toChunk, err := database.GetNarFilesToChunk(context.Background(), db)
 		require.NoError(t, err)
 		assert.Len(t, toChunk, 2)
 
@@ -2935,19 +3006,19 @@ func runComplianceSuite(t *testing.T, factory querierFactory) {
 		assert.NotContains(t, hashes, hash3)
 
 		// Update one of them to be chunked
-		err = db.UpdateNarFileTotalChunks(context.Background(), database.UpdateNarFileTotalChunksParams{
+		err = database.UpdateNarFileTotalChunks(context.Background(), db, database.UpdateNarFileTotalChunksParams{
 			TotalChunks: 10,
 			ID:          nf1.ID,
 		})
 		require.NoError(t, err)
 
 		// Check count again
-		count, err = db.GetNarFilesToChunkCount(context.Background())
+		count, err = database.GetNarFilesToChunkCount(context.Background(), db)
 		require.NoError(t, err)
 		assert.EqualValues(t, 1, count)
 
 		// Get files again
-		toChunk, err = db.GetNarFilesToChunk(context.Background())
+		toChunk, err = database.GetNarFilesToChunk(context.Background(), db)
 		require.NoError(t, err)
 		assert.Len(t, toChunk, 1)
 		assert.Equal(t, hash2, toChunk[0].Hash)

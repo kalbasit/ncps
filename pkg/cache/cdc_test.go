@@ -198,7 +198,7 @@ func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Verify chunks exist in DB
-		count, err := db.GetChunkCount(ctx)
+		count, err := database.GetChunkCount(ctx, db)
 		require.NoError(t, err)
 		assert.Positive(t, count)
 
@@ -239,13 +239,13 @@ func testCDCDeduplication(factory cacheFactory) func(*testing.T) {
 		err = c.PutNar(ctx, nu1, io.NopCloser(strings.NewReader(content)))
 		require.NoError(t, err)
 
-		count1, _ := db.GetChunkCount(ctx)
+		count1, _ := database.GetChunkCount(ctx, db)
 
 		nu2 := nar.URL{Hash: "dedup2", Compression: nar.CompressionTypeNone}
 		err = c.PutNar(ctx, nu2, io.NopCloser(strings.NewReader(content)))
 		require.NoError(t, err)
 
-		count2, _ := db.GetChunkCount(ctx)
+		count2, _ := database.GetChunkCount(ctx, db)
 
 		assert.Equal(t, count1, count2, "no new chunks should be created for duplicate content")
 	}
@@ -328,7 +328,7 @@ func testCDCGetNarInfo(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Verify chunks exist in database
-		count, err := db.GetChunkCount(ctx)
+		count, err := database.GetChunkCount(ctx, db)
 		require.NoError(t, err)
 		assert.Positive(t, count, "chunks should exist in database")
 
@@ -471,16 +471,14 @@ func testCDCDecompressZstdBeforeChunking(factory cacheFactory) func(*testing.T) 
 		// Verify the nar_files record stores Compression: none (not zstd)
 		// After CDC decompression, the narURL should have been normalized
 
-		narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        nu.Hash,
-			Compression: nar.CompressionTypeNone.String(),
-			Query:       "",
-		})
+		narFile, err := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, nu.Hash, nar.CompressionTypeNone.String(), "",
+		)
 		require.NoError(t, err, "nar_files should have Compression: none after CDC decompression")
 		assert.Equal(t, nar.CompressionTypeNone.String(), narFile.Compression)
 
 		// Verify chunks exist
-		chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+		chunks, err := database.GetChunksByNarFileID(ctx, db, narFile.ID)
 		require.NoError(t, err)
 		require.NotEmpty(t, chunks, "should have chunks in the database")
 
@@ -536,14 +534,12 @@ func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Verify chunks exist in DB and have compressed_size set
-		narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        nu.Hash,
-			Compression: nu.Compression.String(),
-			Query:       nu.Query.Encode(),
-		})
+		narFile, err := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, nu.Hash, nu.Compression.String(), nu.Query.Encode(),
+		)
 		require.NoError(t, err)
 
-		chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+		chunks, err := database.GetChunksByNarFileID(ctx, db, narFile.ID)
 		require.NoError(t, err)
 		require.NotEmpty(t, chunks, "should have chunks in the database")
 
@@ -623,7 +619,7 @@ func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing
 			// Verify the narinfo in the database also says Compression: none
 			var compression, url string
 
-			err = db.DB().QueryRowContext(context.Background(),
+			err = db.DB.QueryRowContext(context.Background(),
 				rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
 				testdata.Nar2.NarInfoHash).Scan(&compression, &url)
 			require.NoError(t, err)
@@ -679,7 +675,7 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 			fileHash         sql.NullString
 		)
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT compression, url, file_size, file_hash FROM narinfos WHERE hash = ?"),
 			entry.NarInfoHash).Scan(&compression, &url, &fileSize, &fileHash)
 		require.NoError(t, err)
@@ -703,7 +699,7 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 
 		// 5. Verify the narinfo in DB now says Compression: none and URL without .xz
 		// as well as FileSize = 0 and FileHash = null
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT compression, url, file_size, file_hash FROM narinfos WHERE hash = ?"),
 			entry.NarInfoHash).Scan(&compression, &url, &fileSize, &fileHash)
 		require.NoError(t, err)
@@ -717,7 +713,7 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 		// 6. Verify narinfo_nar_files is populated after migration.
 		var narInfoNarFilesCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM narinfo_nar_files WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)"),
 			entry.NarInfoHash).Scan(&narInfoNarFilesCount)
 		require.NoError(t, err)
@@ -751,7 +747,7 @@ func testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory cacheFactory) func(*t
 		// 3. Verify narinfo is linked to a nar_file before migration
 		var initialCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM narinfo_nar_files WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)"),
 			entry.NarInfoHash).Scan(&initialCount)
 		require.NoError(t, err)
@@ -773,7 +769,7 @@ func testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory cacheFactory) func(*t
 		// 6. Verify narinfo_nar_files is still populated after migration (re-linked to new nar_file)
 		var afterCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM narinfo_nar_files WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)"),
 			entry.NarInfoHash).Scan(&afterCount)
 		require.NoError(t, err)
@@ -785,7 +781,7 @@ func testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory cacheFactory) func(*t
 
 		var linkedTotalChunks int64
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind(`SELECT nf.compression, nf.total_chunks
 				FROM nar_files nf
 				INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
@@ -855,7 +851,7 @@ func testCDCPutNarInfoNormalizesCompression(factory cacheFactory) func(*testing.
 				// Verify narinfo in DB has Compression: none
 				var compression, url string
 
-				err = db.DB().QueryRowContext(ctx,
+				err = db.DB.QueryRowContext(ctx,
 					rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
 					hash).Scan(&compression, &url)
 				require.NoError(t, err)
@@ -929,7 +925,7 @@ func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T)
 					fileHash, narHash sql.NullString
 				)
 
-				err = db.DB().QueryRowContext(context.Background(),
+				err = db.DB.QueryRowContext(context.Background(),
 					rebind("SELECT file_size, nar_size, file_hash, nar_hash FROM narinfos WHERE hash = ?"),
 					testdata.Nar2.NarInfoHash).Scan(&fileSize, &narSize, &fileHash, &narHash)
 				require.NoError(t, err)
@@ -984,7 +980,7 @@ func testCDCPutNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T) 
 			dbFileHash, dbNarHash sql.NullString
 		)
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT file_size, nar_size, file_hash, nar_hash FROM narinfos WHERE hash = ?"),
 			hash).Scan(&fileSize, &narSize, &dbFileHash, &dbNarHash)
 		require.NoError(t, err)
@@ -1094,11 +1090,7 @@ func testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory cacheFactory) func
 		require.NoError(t, err)
 
 		// Verify FileSize in DB is uncompressed size
-		narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        nu.Hash,
-			Compression: nu.Compression.String(),
-			Query:       "",
-		})
+		narFile, err := database.GetNarFileByHashAndCompressionAndQuery(ctx, db, nu.Hash, nu.Compression.String(), "")
 		require.NoError(t, err)
 		assert.Equal(t, uncompressedSize, narFile.FileSize)
 		assert.Positive(t, narFile.TotalChunks)
@@ -1143,12 +1135,9 @@ func testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory cacheFactory) func
 		require.NoError(t, err)
 
 		// 3. Verify FileSize in DB IS STILL the uncompressed size
-		params := database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        nu.Hash,
-			Compression: nar.CompressionTypeNone.String(),
-			Query:       "",
-		}
-		narFileAfter, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, params)
+		narFileAfter, err := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, nu.Hash, nar.CompressionTypeNone.String(), "",
+		)
 		require.NoError(t, err)
 		assert.Equal(t, uncompressedSize, narFileAfter.FileSize,
 			"FileSize should NOT have been overwritten by compressed size")
@@ -1189,7 +1178,7 @@ func testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory cacheFact
 		// 3. Verify the pre-migration state: one nar_files row with xz compression.
 		var xzCountBefore int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'xz'"),
 			entry.NarHash).Scan(&xzCountBefore)
 		require.NoError(t, err)
@@ -1211,7 +1200,7 @@ func testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory cacheFact
 		// Invariant 1: No nar_files record with the old compression (xz) must exist.
 		var xzCountAfter int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'xz'"),
 			entry.NarHash).Scan(&xzCountAfter)
 		require.NoError(t, err)
@@ -1221,7 +1210,7 @@ func testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory cacheFact
 		// Invariant 2: Exactly one nar_files record with compression=none must exist.
 		var noneCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'none'"),
 			entry.NarHash).Scan(&noneCount)
 		require.NoError(t, err)
@@ -1233,7 +1222,7 @@ func testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory cacheFact
 		// leaves this count at 0 — narinfos orphaned with no nar_file link.
 		var linkCount int
 
-		err = db.DB().QueryRowContext(ctx, rebind(`
+		err = db.DB.QueryRowContext(ctx, rebind(`
 			SELECT COUNT(*)
 			FROM narinfo_nar_files nnf
 			INNER JOIN nar_files nf ON nf.id = nnf.nar_file_id
@@ -1286,7 +1275,7 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		// 3. Simulate a partial chunking state: create the nar_files record
 		// with total_chunks=0 and set chunking_started_at to a stale past time.
 		noneURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}
-		narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+		narFile, err := database.CreateNarFile(ctx, db, database.CreateNarFileParams{
 			Hash:        noneURL.Hash,
 			Compression: noneURL.Compression.String(),
 			Query:       noneURL.Query.Encode(),
@@ -1297,14 +1286,14 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 
 		// Insert a fake partial chunk to simulate in-progress state.
 		// Use a valid 52-character Nix base32 hash
-		fakeChunk, err := db.CreateChunk(ctx, database.CreateChunkParams{
+		fakeChunk, err := database.CreateChunk(ctx, db, database.CreateChunkParams{
 			Hash:           "fakehashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 			Size:           512,
 			CompressedSize: 256,
 		})
 		require.NoError(t, err)
 
-		err = db.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
+		err = database.LinkNarFileToChunk(ctx, db, database.LinkNarFileToChunkParams{
 			NarFileID:  narFile.ID,
 			ChunkID:    fakeChunk.ID,
 			ChunkIndex: 0,
@@ -1312,11 +1301,11 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		require.NoError(t, err)
 
 		// Mark chunking as started (sets chunking_started_at = CURRENT_TIMESTAMP).
-		err = db.SetNarFileChunkingStarted(ctx, narFile.ID)
+		err = database.SetNarFileChunkingStarted(ctx, db, narFile.ID)
 		require.NoError(t, err)
 
 		// Move chunking_started_at to 2 hours in the past to simulate a stale lock.
-		_, err = db.DB().ExecContext(ctx,
+		_, err = db.DB.ExecContext(ctx,
 			rebind("UPDATE nar_files SET chunking_started_at = ? WHERE id = ?"),
 			time.Now().Add(-2*time.Hour),
 			narFile.ID,
@@ -1329,7 +1318,7 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		require.NoError(t, err)
 		assert.False(t, hasChunks, "NAR should not be considered fully chunked (total_chunks=0)")
 
-		chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+		chunks, err := database.GetChunksByNarFileID(ctx, db, narFile.ID)
 		require.NoError(t, err)
 		assert.Len(t, chunks, 1, "should have exactly 1 partial/fake chunk before recovery")
 
@@ -1351,7 +1340,7 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		// chunks record from the DB (not just the junction table entry).
 		var fakeChunkLinkCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind(`SELECT COUNT(*) FROM nar_file_chunks nfc
 				INNER JOIN chunks c ON c.id = nfc.chunk_id
 				WHERE c.hash = ?`),
@@ -1363,7 +1352,7 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 
 		// Verify the orphaned chunk DB record itself is also immediately deleted
 		// (not left for the background GC).
-		_, fakeChunkErr := db.GetChunkByHash(ctx, "fakehashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+		_, fakeChunkErr := database.GetChunkByHash(ctx, db, "fakehashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 		assert.True(t, database.IsNotFoundError(fakeChunkErr),
 			"orphaned fake chunk DB record must be deleted immediately during stale lock cleanup")
 	}
@@ -1470,7 +1459,7 @@ func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFact
 		// Verify migration completed (sanity check).
 		var url, compression string
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT url, compression FROM narinfos WHERE hash = ?"),
 			entry.NarInfoHash).Scan(&url, &compression)
 		require.NoError(t, err)
@@ -1481,7 +1470,7 @@ func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFact
 		//    - Reset the narinfo URL back to the original xz URL in the DB.
 		//    - Put the original whole-file NAR back in narStore.
 		oldURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}.String()
-		_, err = db.DB().ExecContext(ctx,
+		_, err = db.DB.ExecContext(ctx,
 			rebind("UPDATE narinfos SET url = ?, compression = ? WHERE hash = ?"),
 			oldURL, "xz", entry.NarInfoHash)
 		require.NoError(t, err, "resetting narinfo URL to simulate crash state")
@@ -1493,7 +1482,7 @@ func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFact
 		// Verify the crash state is set up correctly.
 		var staleURL string
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT url FROM narinfos WHERE hash = ?"),
 			entry.NarInfoHash).Scan(&staleURL)
 		require.NoError(t, err)
@@ -1515,7 +1504,7 @@ func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFact
 		// 6. Verify the narinfo URL is updated to the none URL (healing completed).
 		var healedURL, healedCompression string
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT url, compression FROM narinfos WHERE hash = ?"),
 			entry.NarInfoHash).Scan(&healedURL, &healedCompression)
 		require.NoError(t, err)
@@ -1565,7 +1554,7 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 		// 3. Simulate a partial chunking state with a REAL physical chunk file.
 		noneURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}
 
-		narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+		narFile, err := database.CreateNarFile(ctx, db, database.CreateNarFileParams{
 			Hash:        noneURL.Hash,
 			Compression: noneURL.Compression.String(),
 			Query:       noneURL.Query.Encode(),
@@ -1581,14 +1570,14 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Create the matching DB record and junction entry.
-		fakeChunk, err := db.CreateChunk(ctx, database.CreateChunkParams{
+		fakeChunk, err := database.CreateChunk(ctx, db, database.CreateChunkParams{
 			Hash:           fakeChunkHash,
 			Size:           64,
 			CompressedSize: 64,
 		})
 		require.NoError(t, err)
 
-		err = db.LinkNarFileToChunk(ctx, database.LinkNarFileToChunkParams{
+		err = database.LinkNarFileToChunk(ctx, db, database.LinkNarFileToChunkParams{
 			NarFileID:  narFile.ID,
 			ChunkID:    fakeChunk.ID,
 			ChunkIndex: 0,
@@ -1596,10 +1585,10 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Mark chunking as started and move the timestamp 2 hours into the past.
-		err = db.SetNarFileChunkingStarted(ctx, narFile.ID)
+		err = database.SetNarFileChunkingStarted(ctx, db, narFile.ID)
 		require.NoError(t, err)
 
-		_, err = db.DB().ExecContext(ctx,
+		_, err = db.DB.ExecContext(ctx,
 			rebind("UPDATE nar_files SET chunking_started_at = ? WHERE id = ?"),
 			time.Now().Add(-2*time.Hour),
 			narFile.ID,
@@ -1611,7 +1600,7 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 		assert.True(t, hasChunk, "fake chunk file must exist in chunkStore before stale lock cleanup")
 
-		_, err = db.GetChunkByHash(ctx, fakeChunkHash)
+		_, err = database.GetChunkByHash(ctx, db, fakeChunkHash)
 		require.NoError(t, err, "fake chunk DB record must exist before stale lock cleanup")
 
 		// 5. Call MigrateNarToChunks — stale lock is detected and cleaned up.
@@ -1630,7 +1619,7 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 			"orphaned chunk file must be immediately deleted during stale lock cleanup, not left for GC")
 
 		// 8. Verify the orphaned chunk DB record was also immediately deleted.
-		_, fakeChunkErr := db.GetChunkByHash(ctx, fakeChunkHash)
+		_, fakeChunkErr := database.GetChunkByHash(ctx, db, fakeChunkHash)
 		assert.True(t, database.IsNotFoundError(fakeChunkErr),
 			"orphaned chunk DB record must be immediately deleted during stale lock cleanup, not left for GC")
 	}
@@ -1777,7 +1766,7 @@ func testCDCDisabledWithChunkedNARsInDB(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Verify that DB has chunked NAR records.
-		count, err := db.GetChunkCount(ctx)
+		count, err := database.GetChunkCount(ctx, db)
 		require.NoError(t, err)
 		require.Positive(t, count, "DB should have chunk records after PutNar with CDC enabled")
 
@@ -1914,7 +1903,7 @@ func testCDCLazyChunkingPreservesOldNarFile(factory cacheFactory) func(*testing.
 		// Verify we have ONE nar_file record with xz compression
 		var narFileCountBefore int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ?"),
 			entry.NarHash).Scan(&narFileCountBefore)
 		require.NoError(t, err)
@@ -1940,7 +1929,7 @@ func testCDCLazyChunkingPreservesOldNarFile(factory cacheFactory) func(*testing.
 		// (lazy chunking should NOT delete it immediately)
 		var narFileCountAfter int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ?"),
 			entry.NarHash).Scan(&narFileCountAfter)
 		require.NoError(t, err)
@@ -1950,7 +1939,7 @@ func testCDCLazyChunkingPreservesOldNarFile(factory cacheFactory) func(*testing.
 		// Verify we still have the xz compression record
 		var xzCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = db.DB.QueryRowContext(ctx,
 			rebind("SELECT COUNT(*) FROM nar_files WHERE hash = ? AND compression = 'xz'"),
 			entry.NarHash).Scan(&xzCount)
 		require.NoError(t, err)

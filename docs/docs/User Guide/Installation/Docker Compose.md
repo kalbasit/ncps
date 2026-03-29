@@ -38,7 +38,7 @@ services:
     volumes:
       - ncps-storage:/storage
     command: >
-      /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+      /bin/ncps migrate up --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
     restart: "no"
 
   ncps:
@@ -168,7 +168,7 @@ services:
       postgres:
         condition: service_healthy
     command: >
-      /bin/dbmate --url=postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable migrate up
+      /bin/ncps migrate up --cache-database-url=postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable
     restart: "no"
 
   # ncps instance 1

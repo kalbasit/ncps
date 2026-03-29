@@ -287,7 +287,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			var unmigratedHashesCount int32
 
 			err = narInfoStore.WalkNarInfos(ctx, func(hash string) error {
-				ni, err := db.GetNarInfoByHash(ctx, hash)
+				ni, err := database.GetNarInfoByHash(ctx, db, hash)
 				if err != nil {
 					if database.IsNotFoundError(err) {
 						atomic.AddInt32(&unmigratedHashesCount, 1)
@@ -317,7 +317,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 
 			startTime := time.Now()
 
-			totalToChunk, err := db.GetNarFilesToChunkCount(ctx)
+			totalToChunk, err := database.GetNarFilesToChunkCount(ctx, db)
 			if err != nil {
 				return fmt.Errorf("failed to fetch total count of NAR files to chunk: %w", err)
 			}
@@ -375,7 +375,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				}
 			}()
 
-			narFiles, err := db.GetNarFilesToChunk(ctx)
+			narFiles, err := database.GetNarFilesToChunk(ctx, db)
 			if err != nil {
 				return fmt.Errorf("failed to fetch candidate NAR files from database: %w", err)
 			}

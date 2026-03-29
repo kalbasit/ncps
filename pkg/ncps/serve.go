@@ -18,6 +18,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"github.com/sysbot/go-netrc"
+	"github.com/uptrace/bun"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -969,7 +970,7 @@ func createS3Storage(
 	return s3Store, s3Store, s3Store, nil
 }
 
-func createDatabaseQuerier(cmd *cli.Command) (database.Querier, error) {
+func createDatabaseQuerier(cmd *cli.Command) (*bun.DB, error) {
 	dbURL := cmd.String("cache-database-url")
 
 	// Build pool configuration from flags
@@ -1014,7 +1015,7 @@ func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.L
 func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
-	db database.Querier,
+	db *bun.DB,
 	locker lock.Locker,
 	rwLocker lock.RWLocker,
 	ucs []*upstream.Cache,
@@ -1281,7 +1282,7 @@ func loadCDCConfigFromDB(
 func detectExtraResourceAttrs(
 	ctx context.Context,
 	cmd *cli.Command,
-	db database.Querier,
+	db *bun.DB,
 	rwLocker lock.RWLocker,
 ) ([]attribute.KeyValue, error) {
 	var attrs []attribute.KeyValue
@@ -1332,7 +1333,7 @@ func detectExtraResourceAttrs(
 	return attrs, nil
 }
 
-func getOrSetClusterUUID(ctx context.Context, db database.Querier, rwLocker lock.RWLocker) (string, error) {
+func getOrSetClusterUUID(ctx context.Context, db *bun.DB, rwLocker lock.RWLocker) (string, error) {
 	c := config.New(db, rwLocker)
 
 	cu, err := c.GetClusterUUID(ctx)

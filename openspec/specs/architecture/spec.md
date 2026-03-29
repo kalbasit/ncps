@@ -9,16 +9,14 @@ ncps (Nix Cache Proxy Server) is a Go HTTP proxy that sits between Nix clients a
 ## Package Structure
 
 ```
-cmd/                        CLI entrypoints (serve, migrate-narinfo, global flags, OTel bootstrap)
+cmd/                        CLI entrypoints (serve, migrate-narinfo, migrate, global flags, OTel bootstrap)
 pkg/
   cache/                    Core cache logic: fetch, store, evict, CDC, LRU
     upstream/               Upstream cache HTTP client
     healthcheck/            Health-check helpers
   server/                   HTTP server (chi router), handler functions
-  database/                 Database abstraction layer
-    sqlitedb/               sqlc-generated SQLite querier + adapter
-    postgresdb/             sqlc-generated PostgreSQL querier + adapter
-    mysqldb/                sqlc-generated MySQL/MariaDB querier + adapter
+  database/                 Database layer: *bun.DB construction, model structs, Bun queries
+  ncps/                     CLI commands (serve, migrate, migrate-narinfo)
   storage/
     local/                  Local filesystem NarInfoStore + NarStore
     s3/                     S3-compatible NarInfoStore + NarStore (MinIO)
@@ -33,10 +31,17 @@ pkg/
   zstd/                     Pooled zstd reader/writer helpers
   analytics/                Analytics middleware types
 db/
-  migrations/{sqlite,postgres,mysql}/   dbmate migration files per engine
-  query.{sqlite,postgres,mysql}.sql     sqlc query files per engine
-  schema/{sqlite,postgres,mysql}.sql    Derived schema snapshots (via migrate-up)
+  migrations/{sqlite,postgres,mysql}/   bun/migrate SQL files (.up.sql / .down.sql pairs per engine)
+  schema/{sqlite,postgres,mysql}.sql    Derived schema snapshots (via ncps migrate up)
 ```
+
+**Removed from the repository:**
+- `db/query.{sqlite,postgres,mysql}.sql` — sqlc query files
+- `pkg/database/sqlitedb/` — sqlc-generated SQLite querier
+- `pkg/database/postgresdb/` — sqlc-generated PostgreSQL querier
+- `pkg/database/mysqldb/` — sqlc-generated MySQL/MariaDB querier
+- `pkg/database/generated_*.go` — all generated wrapper/model/querier files
+- `nix/dbmate-wrapper/` — external dbmate wrapper binary
 
 ---
 
@@ -112,17 +117,11 @@ To address this, `pkg/zstd` provides pooled `PooledReader` and `PooledWriter` ty
 
 ## Database Architecture
 
-ncps deliberately avoids ORMs. All database access goes through hand-written SQL queries stored in `db/query.{sqlite,postgres,mysql}.sql`. This keeps queries explicit, auditable, and engine-specific — we use the right SQL dialect per engine rather than a lowest-common-denominator abstraction.
+ncps uses `github.com/uptrace/bun` for all database access. `database.Open()` returns `*bun.DB` with the correct dialect applied for the detected engine. All callers accept `*bun.DB` directly — no `Querier` interface wraps it.
 
-**sqlc** reads those query files along with the migration-derived schema and generates three completely separate, engine-specific `Querier` interfaces and implementations:
+Query logic is written directly using the Bun query builder or `db.NewRaw(…)` for complex engine-specific SQL. All three engines are supported from a single code path; dialect differences are handled within `pkg/database/` using Bun's built-in dialect awareness.
 
-- `pkg/database/sqlitedb` — SQLite-specific generated code; exploits SQLite's `RETURNING` clause and `ON CONFLICT` syntax.
-- `pkg/database/postgresdb` — PostgreSQL-specific; uses `pgx/v5` driver, native `RETURNING`, and array types where applicable.
-- `pkg/database/mysqldb` — MySQL/MariaDB-specific; handles `LAST_INSERT_ID()` and MySQL's lack of `RETURNING`.
-
-The three packages are never mixed at runtime. `database.Open()` inspects the URL scheme and returns the matching engine wrapper as the shared `database.Querier` interface used by `pkg/cache`. This guarantees that engine-specific features (e.g., `RETURNING`, `ON CONFLICT`, transaction isolation) are used correctly per engine, not papered over.
-
-**dbmate** manages schema migrations. The `dbmate` binary in dev and Docker is actually a thin Go wrapper (`nix/dbmate-wrapper/`) that reads the `--url` flag, auto-selects the migrations directory (`db/migrations/{sqlite,postgres,mysql}`) and schema output path (`db/schema/{engine}.sql`) from the URL scheme, and then delegates to the real `dbmate` binary. This means developers never need to specify `--migrations-dir` manually, and the same `dbmate` command works correctly across all three engines.
+**bun/migrate** manages schema migrations with SQL files embedded at build time. The `ncps migrate` command is the sole interface for running migrations.
 
 ---
 

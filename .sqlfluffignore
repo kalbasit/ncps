@@ -11,3 +11,6 @@ db/query.*.sql
 
 # exclude schema file
 db/schema/*.sql
+
+# bun migrate migration files have syntax sqlfluff cannot parse
+pkg/database/migrations

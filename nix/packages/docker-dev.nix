@@ -1,7 +1,6 @@
 {
   perSystem =
     {
-      config,
       pkgs,
       ...
     }:
@@ -57,11 +56,6 @@
                   ]
                 ))
 
-                # dbmate-wrapper provides the dbmate command
-                (pkgs.runCommand "dbmate" { nativeBuildInputs = [ pkgs.makeBinaryWrapper ]; } ''
-                  mkdir -p $out/bin
-                  makeWrapper ${config.packages.dbmate-wrapper}/bin/dbmate-wrapper $out/bin/dbmate
-                '')
               ];
             };
           in
@@ -73,7 +67,7 @@
           Env = [
             "HOME=/home/ncps"
             "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            # Point dbmate-wrapper at the mounted repo's migration/schema dirs
+            # Point ncps at the mounted repo's migration/schema dirs
             "NCPS_DB_MIGRATIONS_DIR=/workdir/db/migrations"
             "NCPS_DB_SCHEMA_DIR=/workdir/db/schema"
             # Integration test service endpoints — assumes `nix run .#deps` is running on the host.

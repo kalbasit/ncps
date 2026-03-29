@@ -10,7 +10,7 @@ ncps (Nix Cache Proxy Server) is a Go application that acts as a local binary ca
 
 ### Prerequisites
 
-Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, golangci-lint, sqlc, sqlfluff, dbmate, delve, watchexec.
+Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, golangci-lint, sqlfluff, delve, watchexec.
 
 ### Common Commands
 
@@ -37,26 +37,20 @@ golangci-lint run --fix  # Automatically fix fixable linter issues
 nix fmt                  # Format all project files (Go, Nix, SQL, etc.)
 
 # Lint SQL files
-sqlfluff lint db/query.*.sql              # Lint all SQL query files
 sqlfluff lint db/migrations/              # Lint all migration files
 
 # Format SQL files
-sqlfluff format db/query.*.sql            # Format all SQL query files
 sqlfluff format db/migrations/            # Format all migration files
 
-# Generate SQL code and Database Wrappers (after modifying db/query.sql or migrations)
-sqlc generate
-go generate ./pkg/database
-
 # Create new database migrations (creates timestamped migration files)
-dbmate --migrations-dir db/migrations/sqlite new migration_name
-dbmate --migrations-dir db/migrations/postgres new migration_name
-dbmate --migrations-dir db/migrations/mysql new migration_name
+ncps migrate new --engine sqlite --name migration_name
+ncps migrate new --engine postgres --name migration_name
+ncps migrate new --engine mysql --name migration_name
 
 # Run database migrations manually
-dbmate --url "sqlite:/path/to/your/db.sqlite" --migrations-dir db/migrations/sqlite up
-dbmate --url "postgresql://user:pass@localhost:5432/ncps" --migrations-dir db/migrations/postgres up
-dbmate --url "mysql://user:pass@localhost:3306/ncps" --migrations-dir db/migrations/mysql up
+ncps migrate up --cache-database-url=sqlite:/path/to/your/db.sqlite
+ncps migrate up --cache-database-url=postgresql://user:pass@localhost:5432/ncps
+ncps migrate up --cache-database-url=mysql://user:pass@localhost:3306/ncps
 
 # Build
 go build .
@@ -159,8 +153,8 @@ The service configurations match the test environment variables to ensure consis
 The project uses "Skills" to provide detailed instructions and best practices for specific tools or domains. These are located in `.agent/skills/<skill-name>/SKILL.md`.
 
 - **graphite**: Instructions for using Graphite (`gt`) for branch management and restacking.
-- **dbmate**: Detailed rules and best practices for writing and applying database migrations.
-- **sqlc**: Workflow for modifying database queries, generating code, and updating wrappers.
+- **bun**: Workflow for using Bun query builder for database operations.
+- **bun-migrate**: Detailed rules and best practices for writing and applying database migrations with `bun migrate`.
 
 When working with these tools, you SHOULD read the corresponding `SKILL.md` to ensure compliance with project-specific rules.
 
@@ -636,7 +630,7 @@ go test -race -run "TestGetNarInfo.*Concurrent" ./pkg/cache -v
   - `storage/local/` - Local filesystem storage
   - `storage/s3/` - S3-compatible storage (including MinIO)
 - `pkg/server/` - HTTP server using Chi router
-- `pkg/database/` - Database abstraction layer supporting multiple engines (sqlc-generated code)
+- `pkg/database/` - Database abstraction layer supporting multiple engines (bun-based queries)
   - `database/sqlitedb/` - SQLite-specific implementation
   - `database/postgresdb/` - PostgreSQL-specific implementation
   - `database/mysqldb/` - MySQL/MariaDB-specific implementation
@@ -645,9 +639,6 @@ go test -race -run "TestGetNarInfo.*Concurrent" ./pkg/cache -v
   - `migrations/sqlite/` - SQLite migration files
   - `migrations/postgres/` - PostgreSQL migration files
   - `migrations/mysql/` - MySQL/MariaDB migration files
-- `db/query.sqlite.sql` - SQLite queries for sqlc code generation
-- `db/query.postgres.sql` - PostgreSQL queries for sqlc code generation
-- `db/query.mysql.sql` - MySQL/MariaDB queries for sqlc code generation
 
 ### Key Interfaces (pkg/storage/store.go)
 
@@ -661,7 +652,7 @@ Both local and S3 backends implement these interfaces.
 
 ### Database
 
-Supports multiple database engines via sqlc for type-safe SQL:
+Supports multiple database engines via Bun query builder for type-safe SQL operations:
 
 - **SQLite** (default): Embedded database, no external dependencies
 - **PostgreSQL**: Scalable relational database for production deployments
@@ -675,54 +666,15 @@ Database selection is done via URL scheme in the `--cache-database-url` flag:
 
 - MySQL/MariaDB: `mysql://user:password@host:port/database`
 
-Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db/query.postgres.sql`, and `db/query.mysql.sql`. Run `sqlc generate` after modifying queries.
-
-- This keeps the wrapper simple and doesn't require rebuilding ncps to update it
-
 **Creating Database Migrations:**
 
 For ANY database changes, you MUST use one of the migration workflows:
 
 - **/migrate-new**: To create new timestamped migration files for all engines.
-- **/migrate-up**: To apply migrations and update schema files properly using `./dev-scripts/migrate-all.py`.
-- **/migrate-down**: To roll back migrations.
+- **/migrate-up**: To apply migrations and update schema files properly using `./dev-scripts/migrate-all.py` or `ncps migrate up`.
+- **/migrate-down**: To roll back migrations using `ncps migrate down`.
 
-**Implementation details:**
-
-The `dbmate` command in the development environment and Docker images is actually a wrapper (separate `dbmate-wrapper` binary in `nix/dbmate-wrapper/`). The wrapper automatically detects the migrations directory based on the database URL scheme:
-
-- `sqlite:` → uses `db/migrations/sqlite`
-- `postgresql:` or `postgres:` → uses `db/migrations/postgres`
-- `mysql:` → uses `db/migrations/mysql`
-
-This means you **don't need to specify `--migrations-dir` manually** - the wrapper handles it automatically!
-
-If you need to override the auto-detection, you can still provide `--migrations-dir` explicitly.
-
-**Implementation details:**
-
-The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
-
-- Parses the `--url` flag to determine the database type (sqlite, postgres, mysql)
-- Uses the `NCPS_DB_MIGRATIONS_DIR` environment variable to locate the base migrations directory
-  - In Docker: set to `/share/ncps/db/migrations` (static path in container)
-  - In dev shell: set dynamically via `shellHook` to `$(git rev-parse --show-toplevel)/db/migrations` (repo root)
-  - This ensures migration changes are immediately visible without rebuilding
-- Automatically sets the `DBMATE_MIGRATIONS_DIR` environment variable to the appropriate database-specific path:
-  - Example: `${NCPS_DB_MIGRATIONS_DIR}/sqlite` or `${NCPS_DB_MIGRATIONS_DIR}/postgres`
-- Uses the `NCPS_DB_SCHEMA_DIR` environment variable to locate the base schema directory
-  - In Docker: set to `/share/ncps/db/schema` (static path in container)
-  - In dev shell: set dynamically via `shellHook` to `$(git rev-parse --show-toplevel)/db/schema` (repo root)
-  - This ensures migration changes are immediately visible without rebuilding
-- Automatically sets the `DBMATE_SCHEMA_FILE` environment variable to the appropriate database-specific path:
-  - Example: `${NCPS_DB_SCHEMA_DIR}/sqlite.sql` or `${NCPS_DB_SCHEMA_DIR}/postgres.sql`
-- Calls the real `dbmate` binary (consistently renamed to `dbmate.real` in both dev and Docker)
-- Respects user overrides:
-  - if `DBMATE_MIGRATIONS_DIR` is already set or `--migrations-dir` is provided, the wrapper passes through without modification
-  - if `DBMATE_SCHEMA_FILE` is already set or `--schema-file` is provided, the wrapper passes through without modification
-- This keeps the wrapper simple and doesn't require rebuilding ncps to update it
-
-**IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `dbmate new` to ensure proper chronological ordering.
+**IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `ncps migrate new` to ensure proper chronological ordering.
 
 ## Code Quality
 

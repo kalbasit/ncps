@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	chunkstore "github.com/kalbasit/ncps/pkg/storage/chunk"
@@ -27,7 +28,7 @@ import (
 )
 
 // fsckSetupFn returns (db, localStore, storageDir, dbURL, cleanup).
-type fsckSetupFn func(t *testing.T) (database.Querier, *localstorage.Store, string, string, func())
+type fsckSetupFn func(t *testing.T) (*bun.DB, *localstorage.Store, string, string, func())
 
 func TestFsckBackends(t *testing.T) {
 	t.Parallel()
@@ -126,7 +127,7 @@ func testFsckNarInfosWithoutNarFiles(setup fsckSetupFn) func(*testing.T) {
 		ni := parseFsckNarInfoText(t, testdata.Nar1.NarInfoText)
 
 		// Create narinfo in DB with a URL (migrated) but not yet linked to nar_file.
-		_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+		_, err := database.CreateNarInfo(ctx, db, database.CreateNarInfoParams{
 			Hash:        testdata.Nar1.NarInfoHash,
 			StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
 			URL:         sql.NullString{String: ni.URL, Valid: ni.URL != ""},
@@ -172,7 +173,7 @@ func testFsckOrphanedNarFilesInDB(setup fsckSetupFn) func(*testing.T) {
 			Compression: testdata.Nar1.NarCompression,
 		}
 
-		_, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+		_, err := database.CreateNarFile(ctx, db, database.CreateNarFileParams{
 			Hash:        narURL.Hash,
 			Compression: narURL.Compression.String(),
 			Query:       narURL.Query.Encode(),
@@ -392,7 +393,7 @@ func testFsckDryRun(setup fsckSetupFn) func(*testing.T) {
 		require.ErrorIs(t, err, ncps.ErrFsckIssuesFound)
 
 		// Verify DB record is still there (dry-run should not delete it).
-		_, dbErr := db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		_, dbErr := database.GetNarInfoByHash(ctx, db, testdata.Nar1.NarInfoHash)
 		assert.NoError(t, dbErr, "dry-run should not delete DB records")
 	}
 }
@@ -412,13 +413,11 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		ni := getFsckNarInfo(ctx, t, store, testdata.Nar1.NarInfoHash)
 		require.NoError(t, testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni))
 
-		nf, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        testdata.Nar1.NarHash,
-			Compression: testdata.Nar1.NarCompression.String(),
-			Query:       "",
-		})
+		nf, err := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, testdata.Nar1.NarHash, testdata.Nar1.NarCompression.String(), "",
+		)
 		require.NoError(t, err)
-		assert.False(t, nf.VerifiedAt.Valid, "verified_at should be NULL initially")
+		assert.True(t, nf.VerifiedAt.IsZero(), "verified_at should be NULL initially")
 
 		app, err := ncps.New()
 		require.NoError(t, err)
@@ -431,13 +430,11 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		}
 		require.NoError(t, app.Run(ctx, args))
 
-		nf, err = db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        testdata.Nar1.NarHash,
-			Compression: testdata.Nar1.NarCompression.String(),
-			Query:       "",
-		})
+		nf, err = database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, testdata.Nar1.NarHash, testdata.Nar1.NarCompression.String(), "",
+		)
 		require.NoError(t, err)
-		assert.True(t, nf.VerifiedAt.Valid, "verified_at should be populated after fsck")
+		assert.False(t, nf.VerifiedAt.IsZero(), "verified_at should be populated after fsck")
 		verifiedAt1 := nf.VerifiedAt.Time
 
 		// 2. Run fsck with --verified-since 1h - should skip checking
@@ -454,11 +451,9 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		}
 		require.NoError(t, app.Run(ctx, args))
 
-		nf, err = db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        testdata.Nar1.NarHash,
-			Compression: testdata.Nar1.NarCompression.String(),
-			Query:       "",
-		})
+		nf, err = database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, testdata.Nar1.NarHash, testdata.Nar1.NarCompression.String(), "",
+		)
 		require.NoError(t, err)
 		assert.Equal(t, verifiedAt1, nf.VerifiedAt.Time, "verified_at should NOT be updated when skipped")
 
@@ -471,18 +466,16 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		}
 		require.NoError(t, app.Run(ctx, args))
 
-		nf, err = db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        testdata.Nar1.NarHash,
-			Compression: testdata.Nar1.NarCompression.String(),
-			Query:       "",
-		})
+		nf, err = database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, testdata.Nar1.NarHash, testdata.Nar1.NarCompression.String(), "",
+		)
 		require.NoError(t, err)
 		assert.NotEqual(t, verifiedAt1, nf.VerifiedAt.Time, "verified_at SHOULD be updated when NOT skipped")
 	}
 }
 
 // setupFsckSQLite creates a SQLite-backed test environment.
-func setupFsckSQLite(t *testing.T) (database.Querier, *localstorage.Store, string, string, func()) {
+func setupFsckSQLite(t *testing.T) (*bun.DB, *localstorage.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -497,14 +490,14 @@ func setupFsckSQLite(t *testing.T) (database.Querier, *localstorage.Store, strin
 	require.NoError(t, err)
 
 	cleanup := func() {
-		db.DB().Close()
+		db.Close()
 	}
 
 	return db, store, dir, "sqlite:" + dbFile, cleanup
 }
 
 // setupFsckPostgres creates a PostgreSQL-backed test environment.
-func setupFsckPostgres(t *testing.T) (database.Querier, *localstorage.Store, string, string, func()) {
+func setupFsckPostgres(t *testing.T) (*bun.DB, *localstorage.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -519,7 +512,7 @@ func setupFsckPostgres(t *testing.T) (database.Querier, *localstorage.Store, str
 }
 
 // setupFsckMySQL creates a MySQL-backed test environment.
-func setupFsckMySQL(t *testing.T) (database.Querier, *localstorage.Store, string, string, func()) {
+func setupFsckMySQL(t *testing.T) (*bun.DB, *localstorage.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -567,7 +560,7 @@ func parseFsckNarInfoText(t *testing.T, text string) *narinfopkg.NarInfo {
 }
 
 // configureFsckCDCInDatabase sets up CDC configuration in the database for fsck tests.
-func configureFsckCDCInDatabase(ctx context.Context, t *testing.T, db database.Querier) {
+func configureFsckCDCInDatabase(ctx context.Context, t *testing.T, db *bun.DB) {
 	t.Helper()
 
 	rwLocker := locklocal.NewRWLocker()
@@ -584,7 +577,7 @@ func configureFsckCDCInDatabase(ctx context.Context, t *testing.T, db database.Q
 func setupFsckCDCNarFile(
 	ctx context.Context,
 	t *testing.T,
-	db database.Querier,
+	db *bun.DB,
 	cs chunkstore.Store,
 	narInfoHash string,
 	narInfoText string,
@@ -597,7 +590,7 @@ func setupFsckCDCNarFile(
 	ni := parseFsckNarInfoText(t, narInfoText)
 
 	// Create narinfo in DB.
-	narInfo, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+	narInfo, err := database.CreateNarInfo(ctx, db, database.CreateNarInfoParams{
 		Hash:        narInfoHash,
 		StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
 		URL:         sql.NullString{String: ni.URL, Valid: ni.URL != ""},
@@ -613,7 +606,7 @@ func setupFsckCDCNarFile(
 	require.NoError(t, err)
 
 	// Create nar_file in DB.
-	narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+	narFile, err := database.CreateNarFile(ctx, db, database.CreateNarFileParams{
 		Hash:        narHash,
 		Compression: narCompression.String(),
 		Query:       "",
@@ -623,7 +616,7 @@ func setupFsckCDCNarFile(
 	require.NoError(t, err)
 
 	// Link narinfo to nar_file.
-	require.NoError(t, db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+	require.NoError(t, database.LinkNarInfoToNarFile(ctx, db, database.LinkNarInfoToNarFileParams{
 		NarInfoID: narInfo.ID,
 		NarFileID: narFile.ID,
 	}))
@@ -640,7 +633,7 @@ func setupFsckCDCNarFile(
 		_, _, err := cs.PutChunk(ctx, chunkHash, data)
 		require.NoError(t, err, "failed to put chunk %d", i)
 
-		chunk, err := db.CreateChunk(ctx, database.CreateChunkParams{
+		chunk, err := database.CreateChunk(ctx, db, database.CreateChunkParams{
 			Hash:           chunkHash,
 			Size:           uint32(len(data)),     //nolint:gosec
 			CompressedSize: uint32(len(data) / 2), //nolint:gosec
@@ -651,7 +644,7 @@ func setupFsckCDCNarFile(
 		chunkIndexes[i] = int64(i)
 	}
 
-	require.NoError(t, db.LinkNarFileToChunks(ctx, database.LinkNarFileToChunksParams{
+	require.NoError(t, database.LinkNarFileToChunks(ctx, db, database.LinkNarFileToChunksParams{
 		NarFileID:  narFile.ID,
 		ChunkID:    chunkIDs,
 		ChunkIndex: chunkIndexes,
@@ -729,7 +722,7 @@ func testFsckCDCNarFileChunkCountMismatch(setup fsckSetupFn) func(*testing.T) {
 			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 1)
 
 		// Force total_chunks to 2 while only 1 chunk is linked.
-		require.NoError(t, db.UpdateNarFileTotalChunks(ctx, database.UpdateNarFileTotalChunksParams{
+		require.NoError(t, database.UpdateNarFileTotalChunks(ctx, db, database.UpdateNarFileTotalChunksParams{
 			TotalChunks: 2,
 			FileSize:    narFile.FileSize,
 			ID:          narFile.ID,
@@ -771,7 +764,7 @@ func testFsckCDCChunkMissingFromStorage(setup fsckSetupFn) func(*testing.T) {
 			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
 
 		// Delete one chunk file from storage.
-		allChunks, err := db.GetAllChunks(ctx)
+		allChunks, err := database.GetAllChunks(ctx, db)
 		require.NoError(t, err)
 		require.Len(t, allChunks, 2)
 
@@ -850,12 +843,12 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
 
 		// Get the chunks for Nar1.
-		nar1Chunks, err := db.GetAllChunks(ctx)
+		nar1Chunks, err := database.GetAllChunks(ctx, db)
 		require.NoError(t, err)
 		require.Len(t, nar1Chunks, 2)
 
 		// Create Nar2 sharing one chunk with Nar1.
-		nar2File, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+		nar2File, err := database.CreateNarFile(ctx, db, database.CreateNarFileParams{
 			Hash:        testdata.Nar2.NarHash,
 			Compression: testdata.Nar2.NarCompression.String(),
 			Query:       "",
@@ -865,7 +858,7 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 		require.NoError(t, err)
 
 		ni2 := parseFsckNarInfoText(t, testdata.Nar2.NarInfoText)
-		narInfo2, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+		narInfo2, err := database.CreateNarInfo(ctx, db, database.CreateNarInfoParams{
 			Hash:        testdata.Nar2.NarInfoHash,
 			StorePath:   sql.NullString{String: ni2.StorePath, Valid: ni2.StorePath != ""},
 			URL:         sql.NullString{String: ni2.URL, Valid: ni2.URL != ""},
@@ -880,7 +873,7 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		require.NoError(t, database.LinkNarInfoToNarFile(ctx, db, database.LinkNarInfoToNarFileParams{
 			NarInfoID: narInfo2.ID,
 			NarFileID: nar2File.ID,
 		}))
@@ -888,7 +881,7 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 		// Link Nar2 to the first chunk of Nar1 (shared chunk).
 		sharedChunk := nar1Chunks[0]
 
-		require.NoError(t, db.LinkNarFileToChunks(ctx, database.LinkNarFileToChunksParams{
+		require.NoError(t, database.LinkNarFileToChunks(ctx, db, database.LinkNarFileToChunksParams{
 			NarFileID:  nar2File.ID,
 			ChunkID:    []int64{sharedChunk.ID},
 			ChunkIndex: []int64{0},
@@ -911,18 +904,16 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 		require.NoError(t, app.Run(ctx, repairArgs))
 
 		// Verify Nar1 narinfo and nar_file are deleted.
-		_, err = db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		_, err = database.GetNarInfoByHash(ctx, db, testdata.Nar1.NarInfoHash)
 		assert.True(t, database.IsNotFoundError(err), "Nar1 narinfo should be deleted")
 
-		_, err = db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        testdata.Nar1.NarHash,
-			Compression: testdata.Nar1.NarCompression.String(),
-			Query:       "",
-		})
+		_, err = database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, testdata.Nar1.NarHash, testdata.Nar1.NarCompression.String(), "",
+		)
 		assert.True(t, database.IsNotFoundError(err), "Nar1 nar_file should be deleted")
 
 		// Verify the broken chunk (chunk[1]) is removed from DB and storage.
-		_, err = db.GetChunkByHash(ctx, brokenChunk.Hash)
+		_, err = database.GetChunkByHash(ctx, db, brokenChunk.Hash)
 		assert.True(t, database.IsNotFoundError(err), "broken chunk should be deleted from DB")
 
 		exists, err := cs.HasChunk(ctx, brokenChunk.Hash)
@@ -930,7 +921,7 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 		assert.False(t, exists, "broken chunk file should not exist in storage")
 
 		// Verify Nar2 and its shared chunk still exist.
-		_, err = db.GetNarInfoByHash(ctx, testdata.Nar2.NarInfoHash)
+		_, err = database.GetNarInfoByHash(ctx, db, testdata.Nar2.NarInfoHash)
 		require.NoError(t, err, "Nar2 narinfo should still exist")
 
 		exists, err = cs.HasChunk(ctx, sharedChunk.Hash)

@@ -19,7 +19,6 @@ jobs:
   filter:
     runs-on: ubuntu-24.04
     outputs:
-      database: ${{ steps.filter.outputs.database }}
       docs: ${{ steps.filter.outputs.docs }}
       go_deps: ${{ steps.filter.outputs.go_deps }}
     steps:
@@ -28,11 +27,6 @@ jobs:
         id: filter
         with:
           filters: |
-            database:
-              - "db/migrations/**"
-              - "db/query.*.sql"
-              - "sqlc.yml"
-              - "pkg/database/**"
             go_deps:
               - "go.mod"
               - "go.sum"
@@ -91,19 +85,6 @@ jobs:
         if: needs.filter.outputs.go_deps == 'true'
         with:
           commit_message: "Auto Update Vendor Hash for ncps"
-      - name: Generate Database Code
-        if: needs.filter.outputs.database == 'true'
-        run: nix develop --command sqlc generate
-      - name: Generate Go Code
-        if: needs.filter.outputs.database == 'true'
-        run: nix develop --command go generate ./pkg/database
-      - name: Format Code
-        if: needs.filter.outputs.database == 'true'
-        run: nix fmt
-      - uses: stefanzweifel/git-auto-commit-action@v7
-        if: needs.filter.outputs.database == 'true'
-        with:
-          commit_message: "Auto Generate Database Code"
   deploy-docs-pages:
     permissions:
       contents: read

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 
@@ -319,7 +320,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			// 5. Detect CDC mode
 			cdcMode := false
 
-			cdcConfig, dbErr := db.GetConfigByKey(ctx, config.KeyCDCEnabled)
+			cdcConfig, dbErr := database.GetConfigByKey(ctx, db, config.KeyCDCEnabled)
 			if dbErr != nil {
 				logger.Warn().Err(dbErr).Msg(
 					"could not read cdc_enabled from DB config; CDC mode detection will fall back to data-based detection",
@@ -332,7 +333,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			// total_chunks > 0. This handles cases where the DB config key is missing
 			// but chunked data already exists (e.g. wrong DB URL or schema mismatch).
 			if !cdcMode {
-				hasChunked, checkErr := db.HasAnyChunkedNarFiles(ctx)
+				hasChunked, checkErr := database.HasAnyChunkedNarFiles(ctx, db)
 				if checkErr != nil {
 					logger.Warn().Err(checkErr).Msg("could not check for chunked nar_files")
 				} else if hasChunked {
@@ -427,7 +428,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 // collectFsckSuspects runs all DB queries and storage walks to collect potential issues.
 func collectFsckSuspects(
 	ctx context.Context,
-	db database.Querier,
+	db bun.IDB,
 	narStore storage.NarStore,
 	chunkStore chunk.Store,
 	cdcMode bool,
@@ -455,7 +456,7 @@ func collectFsckSuspects(
 	defer stopTicker()
 
 	// a. Narinfos without nar_files
-	narinfosWithoutNarFiles, err := db.GetNarInfosWithoutNarFiles(ctx)
+	narinfosWithoutNarFiles, err := database.GetNarInfosWithoutNarFiles(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("GetNarInfosWithoutNarFiles: %w", err)
 	}
@@ -464,7 +465,7 @@ func collectFsckSuspects(
 	logger.Info().Int("count", len(narinfosWithoutNarFiles)).Msg("phase 1a: narinfos_without_nar_files found")
 
 	// b. Orphaned nar_files in DB
-	orphanedNarFiles, err := db.GetOrphanedNarFiles(ctx)
+	orphanedNarFiles, err := database.GetOrphanedNarFiles(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("GetOrphanedNarFiles: %w", err)
 	}
@@ -473,7 +474,7 @@ func collectFsckSuspects(
 	logger.Info().Int("count", len(orphanedNarFiles)).Msg("phase 1b: orphaned nar_files in DB found")
 
 	// c. Nar_files missing from storage
-	allNarFiles, err := db.GetAllNarFiles(ctx)
+	allNarFiles, err := database.GetAllNarFiles(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("GetAllNarFiles: %w", err)
 	}
@@ -555,7 +556,7 @@ func collectFsckSuspects(
 			})
 		} else {
 			// Found and verified, update verified_at
-			if err := db.UpdateNarFileVerifiedAt(ctx, nf.ID); err != nil {
+			if err := database.UpdateNarFileVerifiedAt(ctx, db, nf.ID); err != nil {
 				logger.Warn().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to update verified_at")
 			}
 		}
@@ -571,13 +572,12 @@ func collectFsckSuspects(
 		if err := narWalker.WalkNars(ctx, func(narURL nar.URL) error {
 			checked.Add(1)
 
-			_, dbErr := db.GetNarFileByHashAndCompressionAndQuery(
+			_, dbErr := database.GetNarFileByHashAndCompressionAndQuery(
 				ctx,
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narURL.Hash,
-					Compression: narURL.Compression.String(),
-					Query:       narURL.Query.Encode(),
-				},
+				db,
+				narURL.Hash,
+				narURL.Compression.String(),
+				narURL.Query.Encode(),
 			)
 			if dbErr != nil {
 				if database.IsNotFoundError(dbErr) {
@@ -601,7 +601,7 @@ func collectFsckSuspects(
 	}
 
 	// e. Orphaned chunks in DB
-	orphanedChunks, err := db.GetOrphanedChunks(ctx)
+	orphanedChunks, err := database.GetOrphanedChunks(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("GetOrphanedChunks: %w", err)
 	}
@@ -643,7 +643,7 @@ func collectFsckSuspects(
 // Items that are no longer issues are silently removed from the results.
 func reVerifyFsckSuspects(
 	ctx context.Context,
-	db database.Querier,
+	db bun.IDB,
 	narStore storage.NarStore,
 	chunkStore chunk.Store,
 	suspects *fsckResults,
@@ -675,7 +675,7 @@ func reVerifyFsckSuspects(
 
 	// Re-verify: narinfos without nar_files
 	for _, ni := range suspects.narinfosWithoutNarFiles {
-		_, err := db.GetNarFileByNarInfoID(ctx, ni.ID)
+		_, err := database.GetNarFileByNarInfoID(ctx, db, ni.ID)
 		if err != nil {
 			if database.IsNotFoundError(err) {
 				results.narinfosWithoutNarFiles = append(results.narinfosWithoutNarFiles, ni)
@@ -691,7 +691,7 @@ func reVerifyFsckSuspects(
 	// Re-verify: orphaned nar_files in DB
 	for _, nf := range suspects.orphanedNarFilesInDB {
 		// Check if it's still orphaned by checking for narinfo link
-		_, err := db.GetNarInfoURLByNarFileHash(ctx, database.GetNarInfoURLByNarFileHashParams{
+		_, err := database.GetNarInfoURLByNarFileHash(ctx, db, database.GetNarInfoURLByNarFileHashParams{
 			Hash:        nf.Hash,
 			Compression: nf.Compression,
 			Query:       nf.Query,
@@ -725,13 +725,12 @@ func reVerifyFsckSuspects(
 
 	// Re-verify: orphaned NAR files in storage
 	for _, narURL := range suspects.orphanedNarFilesInStorage {
-		_, err := db.GetNarFileByHashAndCompressionAndQuery(
+		_, err := database.GetNarFileByHashAndCompressionAndQuery(
 			ctx,
-			database.GetNarFileByHashAndCompressionAndQueryParams{
-				Hash:        narURL.Hash,
-				Compression: narURL.Compression.String(),
-				Query:       narURL.Query.Encode(),
-			},
+			db,
+			narURL.Hash,
+			narURL.Compression.String(),
+			narURL.Query.Encode(),
 		)
 		if err != nil {
 			if database.IsNotFoundError(err) {
@@ -750,7 +749,7 @@ func reVerifyFsckSuspects(
 	}
 
 	// Re-verify: orphaned chunks in DB
-	recheckedOrphanedChunks, err := db.GetOrphanedChunks(ctx)
+	recheckedOrphanedChunks, err := database.GetOrphanedChunks(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("re-verify GetOrphanedChunks: %w", err)
 	}
@@ -788,7 +787,7 @@ func reVerifyFsckSuspects(
 
 	// Re-verify: orphaned chunk files in storage
 	for _, hash := range suspects.orphanedChunksInStorage {
-		_, err := db.GetChunkByHash(ctx, hash)
+		_, err := database.GetChunkByHash(ctx, db, hash)
 		if err != nil {
 			if database.IsNotFoundError(err) {
 				results.orphanedChunksInStorage = append(results.orphanedChunksInStorage, hash)
@@ -915,7 +914,7 @@ func printFsckSummary(r *fsckResults) {
 // repairFsckIssues applies fixes for each category of issue, re-verifying each item before acting.
 func repairFsckIssues(
 	ctx context.Context,
-	db database.Querier,
+	db bun.IDB,
 	narStore storage.NarStore,
 	chunkStore chunk.Store,
 	results *fsckResults,
@@ -925,7 +924,7 @@ func repairFsckIssues(
 	// a. Delete narinfos without nar_files
 	for _, ni := range results.narinfosWithoutNarFiles {
 		// Re-verify before deleting
-		_, err := db.GetNarFileByNarInfoID(ctx, ni.ID)
+		_, err := database.GetNarFileByNarInfoID(ctx, db, ni.ID)
 		if err == nil {
 			// Now has a nar_file, skip
 			continue
@@ -935,7 +934,7 @@ func repairFsckIssues(
 			return fmt.Errorf("repair re-verify narinfo(%d): %w", ni.ID, err)
 		}
 
-		if _, err := db.DeleteNarInfoByID(ctx, ni.ID); err != nil {
+		if _, err := database.DeleteNarInfoByID(ctx, db, ni.ID); err != nil {
 			logger.Error().Err(err).Int64("narinfo_id", ni.ID).Msg("failed to delete narinfo without nar_file")
 		} else {
 			logger.Info().Int64("narinfo_id", ni.ID).Str("hash", ni.Hash).Msg("deleted narinfo without nar_file")
@@ -945,7 +944,7 @@ func repairFsckIssues(
 	// b. Delete orphaned nar_files in DB
 	for _, nf := range results.orphanedNarFilesInDB {
 		// Re-verify before deleting
-		_, err := db.GetNarInfoURLByNarFileHash(ctx, database.GetNarInfoURLByNarFileHashParams{
+		_, err := database.GetNarInfoURLByNarFileHash(ctx, db, database.GetNarInfoURLByNarFileHashParams{
 			Hash:        nf.Hash,
 			Compression: nf.Compression,
 			Query:       nf.Query,
@@ -959,7 +958,7 @@ func repairFsckIssues(
 			return fmt.Errorf("repair re-verify nar_file(%d): %w", nf.ID, err)
 		}
 
-		if _, err := db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+		if _, err := database.DeleteNarFileByHash(ctx, db, database.DeleteNarFileByHashParams{
 			Hash:        nf.Hash,
 			Compression: nf.Compression,
 			Query:       nf.Query,
@@ -974,7 +973,7 @@ func repairFsckIssues(
 	// Snapshot which narinfos are already orphaned before our deletions so we can
 	// distinguish pre-existing orphans (handled in section a) from narinfos that
 	// become orphaned as a cascade of removing the missing nar_file record.
-	existingOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	existingOrphans, err := database.GetNarInfosWithoutNarFiles(ctx, db)
 	if err != nil {
 		return fmt.Errorf("repair pre-check GetNarInfosWithoutNarFiles: %w", err)
 	}
@@ -996,7 +995,7 @@ func repairFsckIssues(
 			continue
 		}
 
-		if _, err := db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+		if _, err := database.DeleteNarFileByHash(ctx, db, database.DeleteNarFileByHashParams{
 			Hash:        nf.Hash,
 			Compression: nf.Compression,
 			Query:       nf.Query,
@@ -1012,7 +1011,7 @@ func repairFsckIssues(
 
 	// Delete narinfos that became orphaned as a result of the nar_file deletions above.
 	// These would otherwise only be caught on a second fsck run.
-	newOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	newOrphans, err := database.GetNarInfosWithoutNarFiles(ctx, db)
 	if err != nil {
 		return fmt.Errorf("repair post-check GetNarInfosWithoutNarFiles: %w", err)
 	}
@@ -1023,7 +1022,7 @@ func repairFsckIssues(
 			continue
 		}
 
-		if _, err := db.DeleteNarInfoByID(ctx, ni.ID); err != nil {
+		if _, err := database.DeleteNarInfoByID(ctx, db, ni.ID); err != nil {
 			logger.Error().Err(err).
 				Int64("narinfo_id", ni.ID).
 				Msg("failed to delete narinfo orphaned by missing nar_file")
@@ -1044,11 +1043,9 @@ func repairFsckIssues(
 
 	for _, narURL := range results.orphanedNarFilesInStorage {
 		// Re-verify before deleting
-		_, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		_, err := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, db, narURL.Hash, narURL.Compression.String(), narURL.Query.Encode(),
+		)
 		if err == nil {
 			// Now in DB, skip
 			continue
@@ -1072,7 +1069,7 @@ func repairFsckIssues(
 	}
 
 	// e. Delete orphaned chunks in DB
-	recheckChunks, err := db.GetOrphanedChunks(ctx)
+	recheckChunks, err := database.GetOrphanedChunks(ctx, db)
 	if err != nil {
 		return fmt.Errorf("repair re-verify GetOrphanedChunks: %w", err)
 	}
@@ -1087,7 +1084,7 @@ func repairFsckIssues(
 			continue
 		}
 
-		if err := db.DeleteChunkByID(ctx, c.ID); err != nil {
+		if err := database.DeleteChunkByID(ctx, db, c.ID); err != nil {
 			logger.Error().Err(err).Int64("chunk_id", c.ID).Msg("failed to delete orphaned chunk from DB")
 		} else {
 			logger.Info().Int64("chunk_id", c.ID).Str("hash", c.Hash).Msg("deleted orphaned chunk from DB")
@@ -1105,7 +1102,7 @@ func repairFsckIssues(
 	if chunkStore != nil {
 		for _, hash := range results.orphanedChunksInStorage {
 			// Re-verify before deleting
-			_, err := db.GetChunkByHash(ctx, hash)
+			_, err := database.GetChunkByHash(ctx, db, hash)
 			if err == nil {
 				// Now in DB, skip
 				continue
@@ -1129,13 +1126,13 @@ func repairFsckIssues(
 // repairBrokenCDCNarFiles deletes broken CDC nar_files, their orphaned narinfos, and orphaned chunks.
 func repairBrokenCDCNarFiles(
 	ctx context.Context,
-	db database.Querier,
+	db bun.IDB,
 	cs chunk.Store,
 	narFilesWithChunkIssues []database.NarFile,
 	logger *zerolog.Logger,
 ) error {
 	// Snapshot pre-existing narinfo orphans so we only sweep newly orphaned ones below.
-	cdcPreExistingOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	cdcPreExistingOrphans, err := database.GetNarInfosWithoutNarFiles(ctx, db)
 	if err != nil {
 		return fmt.Errorf("repair CDC pre-check GetNarInfosWithoutNarFiles: %w", err)
 	}
@@ -1155,7 +1152,7 @@ func repairBrokenCDCNarFiles(
 			continue
 		}
 
-		if _, err := db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+		if _, err := database.DeleteNarFileByHash(ctx, db, database.DeleteNarFileByHashParams{
 			Hash:        nf.Hash,
 			Compression: nf.Compression,
 			Query:       nf.Query,
@@ -1167,7 +1164,7 @@ func repairBrokenCDCNarFiles(
 	}
 
 	// Delete narinfos orphaned by the CDC nar_file deletions above.
-	cdcNewOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	cdcNewOrphans, err := database.GetNarInfosWithoutNarFiles(ctx, db)
 	if err != nil {
 		return fmt.Errorf("repair CDC post-check GetNarInfosWithoutNarFiles: %w", err)
 	}
@@ -1177,7 +1174,7 @@ func repairBrokenCDCNarFiles(
 			continue
 		}
 
-		if _, delErr := db.DeleteNarInfoByID(ctx, ni.ID); delErr != nil {
+		if _, delErr := database.DeleteNarInfoByID(ctx, db, ni.ID); delErr != nil {
 			logger.Error().Err(delErr).Int64("narinfo_id", ni.ID).
 				Msg("failed to delete narinfo orphaned by broken CDC nar_file")
 		} else {
@@ -1187,7 +1184,7 @@ func repairBrokenCDCNarFiles(
 	}
 
 	// Clean up newly-orphaned chunks after nar_file deletions.
-	orphanedChunks, err := db.GetOrphanedChunks(ctx)
+	orphanedChunks, err := database.GetOrphanedChunks(ctx, db)
 	if err != nil {
 		return fmt.Errorf("repair post-CDC GetOrphanedChunks: %w", err)
 	}
@@ -1199,7 +1196,7 @@ func repairBrokenCDCNarFiles(
 			logger.Info().Str("hash", c.Hash).Msg("deleted orphaned chunk from storage after CDC repair")
 		}
 
-		if err := db.DeleteChunkByID(ctx, c.ID); err != nil {
+		if err := database.DeleteChunkByID(ctx, db, c.ID); err != nil {
 			logger.Error().Err(err).Int64("chunk_id", c.ID).Msg("failed to delete orphaned chunk DB record after CDC repair")
 		} else {
 			logger.Info().Int64("chunk_id", c.ID).Str("hash", c.Hash).Msg("deleted orphaned chunk DB record after CDC repair")
@@ -1210,8 +1207,8 @@ func repairBrokenCDCNarFiles(
 }
 
 // isNarFileChunkBroken returns true if the nar_file's chunks are incomplete or missing from storage.
-func isNarFileChunkBroken(ctx context.Context, db database.Querier, cs chunk.Store, nf database.NarFile) (bool, error) {
-	chunks, err := db.GetChunksByNarFileID(ctx, nf.ID)
+func isNarFileChunkBroken(ctx context.Context, db bun.IDB, cs chunk.Store, nf database.NarFile) (bool, error) {
+	chunks, err := database.GetChunksByNarFileID(ctx, db, nf.ID)
 	if err != nil {
 		return false, fmt.Errorf("GetChunksByNarFileID(%d): %w", nf.ID, err)
 	}
@@ -1237,7 +1234,7 @@ func isNarFileChunkBroken(ctx context.Context, db database.Querier, cs chunk.Sto
 // collectNarFilesWithChunkIssues returns CDC nar_files whose chunks are incomplete or missing from storage.
 func collectNarFilesWithChunkIssues(
 	ctx context.Context,
-	db database.Querier,
+	db bun.IDB,
 	allNarFiles []database.GetAllNarFilesRow,
 	cs chunk.Store,
 	checked *atomic.Int64,
@@ -1284,7 +1281,7 @@ func collectNarFilesWithChunkIssues(
 			broken = append(broken, narFile)
 		} else {
 			// Verified, update verified_at
-			if err := db.UpdateNarFileVerifiedAt(ctx, nf.ID); err != nil {
+			if err := database.UpdateNarFileVerifiedAt(ctx, db, nf.ID); err != nil {
 				zerolog.Ctx(ctx).Warn().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to update verified_at")
 			}
 		}
@@ -1296,7 +1293,7 @@ func collectNarFilesWithChunkIssues(
 // collectOrphanedChunksInStorage returns all chunk files in storage that have no DB record.
 func collectOrphanedChunksInStorage(
 	ctx context.Context,
-	db database.Querier,
+	db bun.IDB,
 	chunkStore chunk.Store,
 	checked *atomic.Int64,
 ) ([]string, error) {
@@ -1310,7 +1307,7 @@ func collectOrphanedChunksInStorage(
 		if checked != nil {
 			checked.Add(1)
 		}
-		_, dbErr := db.GetChunkByHash(ctx, hash)
+		_, dbErr := database.GetChunkByHash(ctx, db, hash)
 		if dbErr != nil {
 			if database.IsNotFoundError(dbErr) {
 				orphaned = append(orphaned, hash)
@@ -1397,7 +1394,7 @@ func shouldCheckNar(nf database.GetAllNarFilesRow, verifiedSince time.Duration) 
 
 	verifiedAt := nf.VerifiedAt
 
-	if !verifiedAt.Valid {
+	if verifiedAt.IsZero() {
 		return true
 	}
 

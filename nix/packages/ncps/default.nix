@@ -16,7 +16,7 @@
             in
             if tag != "" then tag else rev;
 
-          vendorHash = "sha256-hr1EW/PgAA3h+xPtrGbX6Tb1pJGyzz4rgAPP+kBXjmM=";
+          vendorHash = "sha256-M53xDEB08UQ6t2+KUkM5XTREIB3/YFgSjqt9o/xeh94=";
         in
         pkgs.buildGoModule {
           inherit version vendorHash;
@@ -69,7 +69,6 @@
             pkgs.makeBinaryWrapper # used for wrapping the binary so it can always find the xz binary
 
             pkgs.curl # used for checking MinIO health check
-            pkgs.dbmate # used for testing
             pkgs.jq # used for testing by the init-minio
             pkgs.mariadb # MySQL/MariaDB for integration tests
             pkgs.minio # S3-compatible storage for integration tests

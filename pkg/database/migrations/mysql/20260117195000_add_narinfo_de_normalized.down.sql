@@ -1,0 +1,12 @@
+DROP TABLE narinfo_signatures;
+DROP TABLE narinfo_references;
+ALTER TABLE narinfos DROP COLUMN ca;
+ALTER TABLE narinfos DROP COLUMN system;
+ALTER TABLE narinfos DROP COLUMN deriver;
+ALTER TABLE narinfos DROP COLUMN nar_size;
+ALTER TABLE narinfos DROP COLUMN nar_hash;
+ALTER TABLE narinfos DROP COLUMN file_size;
+ALTER TABLE narinfos DROP COLUMN file_hash;
+ALTER TABLE narinfos DROP COLUMN compression;
+ALTER TABLE narinfos DROP COLUMN url;
+ALTER TABLE narinfos DROP COLUMN store_path;

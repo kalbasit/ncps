@@ -6,49 +6,29 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	"github.com/kalbasit/ncps/pkg/database"
 )
 
-// MigrateMySQLDatabase will migrate the MySQL database using dbmate.
+// MigrateMySQLDatabase will migrate the MySQL database using bun migrate via ncps.
 // The database URL should be in the format: mysql://user:password@host:port/database
 func MigrateMySQLDatabase(t *testing.T, dbURL string) {
 	t.Helper()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-
-	dbMigrationsDir := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"migrations",
-		"mysql",
-	)
-
-	dbSchema := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"schema",
-		"mysql.sql",
-	)
-
 	//nolint:gosec
 	cmd := exec.CommandContext(context.Background(),
-		"dbmate",
-		"--no-dump-schema",
-		"--url="+dbURL,
-		"--migrations-dir="+dbMigrationsDir,
-		"--schema-file="+dbSchema,
+		"ncps",
+		"migrate",
 		"up",
+		"--cache-database-url="+dbURL,
 	)
 
 	output, err := cmd.CombinedOutput()
-	require.NoErrorf(t, err, "Running %q has failed", cmd.String())
+	require.NoErrorf(t, err, "Running %q has failed. Output:\n%s", cmd.String(), string(output))
 
 	t.Logf("%s: %s", cmd.String(), output)
 }
@@ -56,7 +36,7 @@ func MigrateMySQLDatabase(t *testing.T, dbURL string) {
 // SetupMySQL sets up a new temporary MySQL database for testing.
 // It requires the NCPS_TEST_ADMIN_MYSQL_URL environment variable to be set.
 // It returns a database connection and a cleanup function.
-func SetupMySQL(t *testing.T) (database.Querier, string, func()) {
+func SetupMySQL(t *testing.T) (*bun.DB, string, func()) {
 	t.Helper()
 
 	adminDbURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
@@ -70,7 +50,7 @@ func SetupMySQL(t *testing.T) (database.Querier, string, func()) {
 	dbName := "test-" + MustRandString(58)
 
 	// MySQL CREATE DATABASE
-	_, err = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("CREATE DATABASE `%s`", dbName))
+	_, err = adminDb.DB.ExecContext(context.Background(), fmt.Sprintf("CREATE DATABASE `%s`", dbName))
 	require.NoError(t, err, "failed to create database %s", dbName)
 
 	// Replace the database name in the URL
@@ -104,9 +84,9 @@ func SetupMySQL(t *testing.T) (database.Querier, string, func()) {
 	require.NoError(t, err)
 
 	cleanup := func() {
-		_ = db.DB().Close()
-		_, _ = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE `%s`", dbName))
-		_ = adminDb.DB().Close()
+		_ = db.DB.Close()
+		_, _ = adminDb.DB.ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE `%s`", dbName))
+		_ = adminDb.DB.Close()
 	}
 
 	return db, dbURL, cleanup

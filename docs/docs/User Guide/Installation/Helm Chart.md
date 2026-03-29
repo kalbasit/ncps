@@ -328,7 +328,7 @@ config:
 
 ## Database Migrations
 
-The chart supports automatic database migrations using dbmate:
+The chart supports automatic database migrations using bun migrate via the `ncps migrate` command:
 
 ### Init Container Mode (Default)
 

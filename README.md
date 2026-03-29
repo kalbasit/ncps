@@ -45,7 +45,7 @@ docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
 
 # Initialize database
 docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
-  /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite up
+  /bin/ncps migrate up --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
 
 # Start the server
 docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage ghcr.io/kalbasit/ncps \

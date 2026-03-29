@@ -331,7 +331,7 @@ ls -la /path/to/dataPath
 systemctl cat ncps | grep database
 
 # Manually run migration (if needed)
-sudo -u ncps dbmate --url="sqlite:/var/lib/ncps/db/db.sqlite" migrate up
+sudo -u ncps ncps migrate up --cache-database-url=sqlite:/var/lib/ncps/db/db.sqlite
 ```
 
 ### Port Already in Use

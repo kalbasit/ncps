@@ -3,6 +3,7 @@ package cache
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
@@ -45,13 +47,13 @@ var errTest = errors.New("test error")
 
 // cacheFactory is a function that returns a clean, ready-to-use Cache instance,
 // database, local store, directory path, and takes care of cleaning up once the test is done.
-type cacheFactory func(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func())
+type cacheFactory func(t *testing.T) (*Cache, *bun.DB, *local.Store, string, func(string) string, func())
 
 // insertPartialNarInfo inserts a minimal narinfo record with only the hash field set.
 // All other fields are NULL, simulating an unmigrated state.
 // This is a test helper for migration testing.
-func insertPartialNarInfo(ctx context.Context, db database.Querier, hash string) error {
-	_, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+func insertPartialNarInfo(ctx context.Context, db *bun.DB, hash string) error {
+	_, err := database.CreateNarInfo(ctx, db, database.CreateNarInfoParams{
 		Hash: hash,
 		// All other fields default to sql.NullString{Valid: false} / sql.NullInt64{Valid: false}
 	})
@@ -59,7 +61,7 @@ func insertPartialNarInfo(ctx context.Context, db database.Querier, hash string)
 	return err
 }
 
-func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func()) {
+func setupSQLiteFactory(t *testing.T) (*Cache, *bun.DB, *local.Store, string, func(string) string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -83,14 +85,14 @@ func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, s
 
 	cleanup := func() {
 		c.Close()
-		db.DB().Close()
+		db.DB.Close()
 		os.RemoveAll(dir)
 	}
 
 	return c, db, localStore, dir, func(s string) string { return s }, cleanup
 }
 
-func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func()) {
+func setupPostgresFactory(t *testing.T) (*Cache, *bun.DB, *local.Store, string, func(string) string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -135,7 +137,7 @@ func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store,
 	return c, db, localStore, dir, rebind, cleanup
 }
 
-func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, string, func(string) string, func()) {
+func setupMySQLFactory(t *testing.T) (*Cache, *bun.DB, *local.Store, string, func(string) string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "cache-path-")
@@ -457,7 +459,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 		// all narinfo records are in the database
 		for _, narEntry := range allEntries {
-			_, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+			_, err := database.GetNarInfoByHash(context.Background(), c.db, narEntry.NarInfoHash)
 			require.NoError(t, err)
 		}
 
@@ -465,7 +467,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		for _, narEntry := range allEntries {
 			// Get the stored narinfo to retrieve the actual URL (which may have been modified
 			// with zstd compression if the original had compression: none)
-			ni, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+			ni, err := database.GetNarInfoByHash(context.Background(), c.db, narEntry.NarInfoHash)
 			require.NoErrorf(t, err, "failed to get narinfo for idx, hash %s", narEntry.NarInfoHash)
 
 			// Parse the stored URL to get the actual NAR hash and compression
@@ -473,13 +475,8 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			require.NoErrorf(t, parseErr, "failed to parse nar url for hash %s: %s", narEntry.NarInfoHash, ni.URL.String)
 
 			// Look up nar_file using the actual compression from the stored URL
-			_, err = c.db.GetNarFileByHashAndCompressionAndQuery(
-				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        nu.Hash,
-					Compression: nu.Compression.String(),
-					Query:       "",
-				})
+			_, err = database.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(), c.db, nu.Hash, nu.Compression.String(), "")
 			require.NoErrorf(t, err, "failed to get nar file for hash %s", narEntry.NarInfoHash)
 		}
 
@@ -489,7 +486,7 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 		for _, narEntry := range allEntries {
 			var narFileSize uint64
 
-			err = c.db.DB().QueryRowContext(context.Background(),
+			err = c.db.DB.QueryRowContext(context.Background(),
 				rebind("SELECT file_size FROM nar_files WHERE hash = ?"), narEntry.NarHash).Scan(&narFileSize)
 			require.NoErrorf(t, err, "failed to query nar_files for hash %s", narEntry.NarHash)
 			assert.Positivef(t, narFileSize, "nar_files.file_size must be > 0 for LRU to work (hash %s)", narEntry.NarHash)
@@ -531,11 +528,11 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 
 		// all narinfo records except the last one are in the database
 		for _, narEntry := range entries {
-			_, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+			_, err := database.GetNarInfoByHash(context.Background(), c.db, narEntry.NarInfoHash)
 			require.NoError(t, err)
 		}
 
-		_, err = c.db.GetNarInfoByHash(context.Background(), lastEntry.NarInfoHash)
+		_, err = database.GetNarInfoByHash(context.Background(), c.db, lastEntry.NarInfoHash)
 		require.ErrorIs(t, err, database.ErrNotFound)
 
 		// all nar_file records except the last one are in the database
@@ -547,23 +544,13 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 				compression = c
 			}
 
-			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
-				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narEntry.NarHash,
-					Compression: compression.String(),
-					Query:       "",
-				})
+			_, err := database.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(), c.db, narEntry.NarHash, compression.String(), "")
 			require.NoError(t, err)
 		}
 
-		_, lastErr := c.db.GetNarFileByHashAndCompressionAndQuery(
-			context.Background(),
-			database.GetNarFileByHashAndCompressionAndQueryParams{
-				Hash:        lastEntry.NarHash,
-				Compression: lastCompression.String(),
-				Query:       "",
-			})
+		_, lastErr := database.GetNarFileByHashAndCompressionAndQuery(
+			context.Background(), c.db, lastEntry.NarHash, lastCompression.String(), "")
 		require.ErrorIs(t, lastErr, database.ErrNotFound)
 	}
 }
@@ -754,7 +741,7 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 		// all narinfo records are in the database
 		for _, narEntry := range allEntries {
-			_, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+			_, err := database.GetNarInfoByHash(context.Background(), c.db, narEntry.NarInfoHash)
 			require.NoError(t, err)
 		}
 
@@ -766,13 +753,8 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 				compression = c
 			}
 
-			_, err := c.db.GetNarFileByHashAndCompressionAndQuery(
-				context.Background(),
-				database.GetNarFileByHashAndCompressionAndQueryParams{
-					Hash:        narEntry.NarHash,
-					Compression: compression.String(),
-					Query:       "",
-				})
+			_, err := database.GetNarFileByHashAndCompressionAndQuery(
+				context.Background(), c.db, narEntry.NarHash, compression.String(), "")
 			require.NoError(t, err)
 		}
 
@@ -788,7 +770,7 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 
 		// all narinfo records except the last one are in the database
 		for _, narEntry := range entries {
-			_, err := c.db.GetNarInfoByHash(context.Background(), narEntry.NarInfoHash)
+			_, err := database.GetNarInfoByHash(context.Background(), c.db, narEntry.NarInfoHash)
 			require.NoError(t, err)
 		}
 
@@ -820,40 +802,49 @@ func testRunLRUWithSharedNar(factory cacheFactory) func(*testing.T) {
 		// ni4 (50 bytes) -> NarFile B
 		// ni1 (100 bytes) -> NarFile A
 		// ni2 (100 bytes) -> NarFile A
-		// Total unique size: 150 bytes.
+		// Total narSize: 250 bytes (narinfos.nar_size values)
 
 		// NarFile B (50 bytes), NarInfo 4 (oldest)
-		narFileB, err := c.db.CreateNarFile(ctx, database.CreateNarFileParams{
+		narFileB, err := database.CreateNarFile(ctx, c.db, database.CreateNarFileParams{
 			Hash:        "nar-file-b",
 			Compression: "xz",
 			FileSize:    50,
 		})
 		require.NoError(t, err)
-		ni4, err := c.db.CreateNarInfo(ctx, database.CreateNarInfoParams{Hash: "nar-info-4"})
+		ni4, err := database.CreateNarInfo(ctx, c.db, database.CreateNarInfoParams{
+			Hash:    "nar-info-4",
+			NarSize: sql.NullInt64{Int64: 50, Valid: true},
+		})
 		require.NoError(t, err)
-		require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		require.NoError(t, database.LinkNarInfoToNarFile(ctx, c.db, database.LinkNarInfoToNarFileParams{
 			NarInfoID: ni4.ID,
 			NarFileID: narFileB.ID,
 		}))
 
 		// NarFile A (100 bytes), NarInfo 1
-		narFileA, err := c.db.CreateNarFile(ctx, database.CreateNarFileParams{
+		narFileA, err := database.CreateNarFile(ctx, c.db, database.CreateNarFileParams{
 			Hash:        "nar-file-a",
 			Compression: "xz",
 			FileSize:    100,
 		})
 		require.NoError(t, err)
-		ni1, err := c.db.CreateNarInfo(ctx, database.CreateNarInfoParams{Hash: "nar-info-1"})
+		ni1, err := database.CreateNarInfo(ctx, c.db, database.CreateNarInfoParams{
+			Hash:    "nar-info-1",
+			NarSize: sql.NullInt64{Int64: 100, Valid: true},
+		})
 		require.NoError(t, err)
-		require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		require.NoError(t, database.LinkNarInfoToNarFile(ctx, c.db, database.LinkNarInfoToNarFileParams{
 			NarInfoID: ni1.ID,
 			NarFileID: narFileA.ID,
 		}))
 
 		// NarFile A (100 bytes), NarInfo 2
-		ni2, err := c.db.CreateNarInfo(ctx, database.CreateNarInfoParams{Hash: "nar-info-2"})
+		ni2, err := database.CreateNarInfo(ctx, c.db, database.CreateNarInfoParams{
+			Hash:    "nar-info-2",
+			NarSize: sql.NullInt64{Int64: 100, Valid: true},
+		})
 		require.NoError(t, err)
-		require.NoError(t, c.db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		require.NoError(t, database.LinkNarInfoToNarFile(ctx, c.db, database.LinkNarInfoToNarFileParams{
 			NarInfoID: ni2.ID,
 			NarFileID: narFileA.ID,
 		}))
@@ -861,45 +852,38 @@ func testRunLRUWithSharedNar(factory cacheFactory) func(*testing.T) {
 		// Set deterministic timestamps to avoid time.Sleep and flaky tests.
 		// We set ni4 (oldest), then ni1, then ni2 (newest).
 		baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-		_, err = c.db.DB().ExecContext(ctx,
+		_, err = c.db.DB.ExecContext(ctx,
 			rebind("UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?"), baseTime.Add(-3*time.Hour), "nar-info-4")
 		require.NoError(t, err)
-		_, err = c.db.DB().ExecContext(ctx,
+		_, err = c.db.DB.ExecContext(ctx,
 			rebind("UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?"), baseTime.Add(-2*time.Hour), "nar-info-1")
 		require.NoError(t, err)
-		_, err = c.db.DB().ExecContext(ctx,
+		_, err = c.db.DB.ExecContext(ctx,
 			rebind("UPDATE narinfos SET last_accessed_at = ? WHERE hash = ?"), baseTime.Add(-1*time.Hour), "nar-info-2")
 		require.NoError(t, err)
 
-		// Set MaxSize to 0 to trigger eviction of all reclaimable records.
-		// If the query double-counts, it selects ni such that sum <= 0.
-		// With double-counting, sums are: ni4: 50, ni1: 150, ni2: 250.
-		// without double-counting, sums are: ni4: 50, ni1: 150, ni2: 150.
-		// We use maxSize = 0 to reclaim all 150 unique bytes.
+		// Set MaxSize to 0 to trigger eviction.
+		// narTotalSize = 250 (sum of narinfos.nar_size: 50+100+100)
+		// cleanupSize = 250 - 0 = 250
+		// With correct (non-double-counting) query, all entries have cumsum <= 250:
+		//   ni4: 50, ni1: 150, ni2: 150 (DISTINCT nar_file_ids: {B}=50, {B,A}=150, {B,A}=150)
+		// So all 3 narinfos should be selected for deletion.
 		c.SetMaxSize(0)
 
 		c.runLRU(ctx)()
 
 		// Verify that all narinfos were deleted.
-		_, err = c.db.GetNarInfoByHash(ctx, "nar-info-4")
+		_, err = database.GetNarInfoByHash(ctx, c.db, "nar-info-4")
 		require.ErrorIs(t, err, database.ErrNotFound, "ni4 should have been deleted")
-		_, err = c.db.GetNarInfoByHash(ctx, "nar-info-1")
+		_, err = database.GetNarInfoByHash(ctx, c.db, "nar-info-1")
 		require.ErrorIs(t, err, database.ErrNotFound, "ni1 should have been deleted")
-		_, err = c.db.GetNarInfoByHash(ctx, "nar-info-2")
+		_, err = database.GetNarInfoByHash(ctx, c.db, "nar-info-2")
 		require.ErrorIs(t, err, database.ErrNotFound, "ni2 should have been deleted")
 
 		// Verify that all nar files were deleted as they are now orphaned.
-		_, err = c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        "nar-file-a",
-			Compression: "xz",
-			Query:       "",
-		})
+		_, err = database.GetNarFileByHashAndCompressionAndQuery(ctx, c.db, "nar-file-a", "xz", "")
 		require.ErrorIs(t, err, database.ErrNotFound, "nar-file-a should have been deleted")
-		_, err = c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        "nar-file-b",
-			Compression: "xz",
-			Query:       "",
-		})
+		_, err = database.GetNarFileByHashAndCompressionAndQuery(ctx, c.db, "nar-file-b", "xz", "")
 		require.ErrorIs(t, err, database.ErrNotFound, "nar-file-b should have been deleted")
 	}
 }
@@ -921,7 +905,7 @@ func testStoreInDatabaseDuplicateDetection(factory cacheFactory) func(*testing.T
 		require.NoError(t, err, "first insert should succeed")
 
 		// Verify the record was created
-		_, err = c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
+		_, err = database.GetNarInfoByHash(newContext(), c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err, "record should exist in database")
 
 		// Second insert of the same narinfo should succeed (UPSERT)
@@ -929,7 +913,7 @@ func testStoreInDatabaseDuplicateDetection(factory cacheFactory) func(*testing.T
 		require.NoError(t, err, "duplicate insert should succeed with UPSERT")
 
 		// Verify the record persists and ID is consistent
-		ni2, err := c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
+		ni2, err := database.GetNarInfoByHash(newContext(), c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err, "record should exist in database")
 
 		require.NotEmpty(t, ni2.ID)
@@ -981,7 +965,7 @@ func testPutNarInfoConcurrentSameHash(factory cacheFactory) func(*testing.T) {
 		require.Equal(t, numGoroutines, successCount, "all PutNarInfo calls should succeed (PUT should be idempotent)")
 
 		// Verify the narinfo exists in database (narinfos are no longer stored in storage)
-		ni, err := c.db.GetNarInfoByHash(newContext(), testdata.Nar1.NarInfoHash)
+		ni, err := database.GetNarInfoByHash(newContext(), c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err, "narinfo should exist in database")
 		require.NotNil(t, ni)
 	}
@@ -1009,7 +993,7 @@ func testPutNarInfoWithSharedNar(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err, "first PutNarInfo should succeed")
 
 		// Verify first narinfo exists in database
-		narInfo1, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		narInfo1, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err, "first narinfo should exist in database")
 		require.NotNil(t, narInfo1)
 
@@ -1033,15 +1017,15 @@ Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE
 		require.NoError(t, err, "second PutNarInfo should succeed and reuse existing nar_file")
 
 		// Step 4: Verify both narinfos exist in database
-		narInfo2, err := c.db.GetNarInfoByHash(ctx, secondNarInfoHash)
+		narInfo2, err := database.GetNarInfoByHash(ctx, c.db, secondNarInfoHash)
 		require.NoError(t, err, "second narinfo should exist in database")
 		require.NotNil(t, narInfo2)
 
 		// Step 5: Verify both narinfos share the same nar_file
-		narFile1, err := c.db.GetNarFileByNarInfoID(ctx, narInfo1.ID)
+		narFile1, err := database.GetNarFileByNarInfoID(ctx, c.db, narInfo1.ID)
 		require.NoError(t, err, "should be able to get nar_file for first narinfo")
 
-		narFile2, err := c.db.GetNarFileByNarInfoID(ctx, narInfo2.ID)
+		narFile2, err := database.GetNarFileByNarInfoID(ctx, c.db, narInfo2.ID)
 		require.NoError(t, err, "should be able to get nar_file for second narinfo")
 
 		// Both should reference the same nar_file
@@ -1257,7 +1241,7 @@ func testMigrationDataIntegrity(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Verify it exists and has the correct URL
-		niOriginal, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		niOriginal, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 		require.True(t, niOriginal.URL.Valid)
 		require.Equal(t, "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz", niOriginal.URL.String)
@@ -1272,7 +1256,7 @@ func testMigrationDataIntegrity(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// 3. Verification: Verify the DB record is UNTOUCHED
-		niAfter, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		niAfter, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 		assert.Equal(t, niOriginal.Deriver.String, niAfter.Deriver.String, "Existing valid record should NOT be overwritten")
 		assert.NotEqual(t, modifiedNarInfo.Deriver, niAfter.Deriver.String, "Bad Deriver should not be present")
@@ -1293,7 +1277,7 @@ func testMigrationSuccess(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Verify it is indeed partial
-		niPartial, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		niPartial, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 		require.False(t, niPartial.URL.Valid, "URL should be NULL initially")
 
@@ -1305,7 +1289,7 @@ func testMigrationSuccess(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// 3. Verification: Verify the DB record IS updated
-		niAfter, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		niAfter, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 		require.True(t, niAfter.URL.Valid, "URL should be valid after migration")
 		assert.Equal(t, "nar/1lid9xrpirkzcpqsxfq02qwiq0yd70chfl860wzsqd1739ih0nri.nar.xz", niAfter.URL.String)
@@ -1334,7 +1318,7 @@ func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 
 		// 2. Action: concurrent writes to trigger potential race/locking issues
 		// We use a transaction to wrap multiple operations to ensure the "abort" behavior would be caught if present
-		err = c.withTransaction(ctx, "test_transaction_safety", func(qtx database.Querier) error {
+		err = c.withTransaction(ctx, "test_transaction_safety", func(qtx bun.Tx) error {
 			// Attempt to store the same record again within a transaction
 			// If the logic is "try insert, fail, delete, insert", the "fail" part aborts the transaction in Postgres
 
@@ -1347,7 +1331,7 @@ func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 
 			// In the *incorrect* impl, this returns an error, which aborts the tx.
 			// In the *correct* impl (UPSERT), this returns success (or 0 rows affected), guarding the tx.
-			_, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
+			_, err := database.CreateNarInfo(ctx, qtx, createNarInfoParams)
 
 			// With conditional upsert, if no update is performed, SQLite/Postgres might return ErrNoRows
 			// (if using RETURNING). This is NOT a transaction aborting error.
@@ -1357,7 +1341,7 @@ func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 
 			// If we are using Postgres, and CreateNarInfo failed (aborted tx), this next query would fail
 			// with "current transaction is aborted"
-			_, _ = qtx.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+			_, _ = database.GetNarInfoByHash(ctx, qtx, testdata.Nar1.NarInfoHash)
 
 			return nil
 		})
@@ -1391,14 +1375,14 @@ func testMigrationPartialRecordWithExistingReferences(factory cacheFactory) func
 		require.NoError(t, err)
 
 		// 3. Get the narinfo ID
-		niPartial, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		niPartial, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 		require.False(t, niPartial.URL.Valid, "URL should be NULL initially")
 
 		// 4. Add some references to the partial record (simulating a partial migration)
 		if len(narInfo.References) > 0 {
 			// Add only the first reference
-			err = c.db.AddNarInfoReference(ctx, database.AddNarInfoReferenceParams{
+			err = database.AddNarInfoReference(ctx, c.db, database.AddNarInfoReferenceParams{
 				NarInfoID: niPartial.ID,
 				Reference: narInfo.References[0],
 			})
@@ -1411,12 +1395,12 @@ func testMigrationPartialRecordWithExistingReferences(factory cacheFactory) func
 		require.NoError(t, err, "Migration should succeed even with existing references")
 
 		// 6. Verify the record is now complete
-		niAfter, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		niAfter, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 		require.True(t, niAfter.URL.Valid, "URL should be valid after migration")
 
 		// 7. Verify all references exist (no duplicates, no missing)
-		refs, err := c.db.GetNarInfoReferences(ctx, niAfter.ID)
+		refs, err := database.GetNarInfoReferences(ctx, c.db, niAfter.ID)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, narInfo.References, refs, "All references should be present exactly once")
 	}
@@ -1436,23 +1420,23 @@ func testDeleteNarInfoWithNullURL(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// 2. Add some references and signatures
-		niPartial, err := c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		niPartial, err := database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		err = c.db.AddNarInfoReference(ctx, database.AddNarInfoReferenceParams{
+		err = database.AddNarInfoReference(ctx, c.db, database.AddNarInfoReferenceParams{
 			NarInfoID: niPartial.ID,
 			Reference: "/nix/store/test-ref1",
 		})
 		require.NoError(t, err)
 
-		err = c.db.AddNarInfoSignature(ctx, database.AddNarInfoSignatureParams{
+		err = database.AddNarInfoSignature(ctx, c.db, database.AddNarInfoSignatureParams{
 			NarInfoID: niPartial.ID,
 			Signature: "test-signature:1234567890abcdef",
 		})
 		require.NoError(t, err)
 
 		// 3. Verify the record exists
-		_, err = c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		_, err = database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
 		// 4. Delete the narinfo
@@ -1460,17 +1444,17 @@ func testDeleteNarInfoWithNullURL(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err, "Should be able to delete narinfo with NULL URL")
 
 		// 5. Verify the record is gone from database
-		_, err = c.db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		_, err = database.GetNarInfoByHash(ctx, c.db, testdata.Nar1.NarInfoHash)
 		require.ErrorIs(t, err, database.ErrNotFound, "Record should be deleted from database")
 
 		// 6. Verify references are also gone (cascade delete)
-		refs, err := c.db.GetNarInfoReferences(ctx, niPartial.ID)
+		refs, err := database.GetNarInfoReferences(ctx, c.db, niPartial.ID)
 		if err == nil {
 			assert.Empty(t, refs, "References should be deleted via cascade")
 		}
 
 		// 7. Verify signatures are also gone (cascade delete)
-		sigs, err := c.db.GetNarInfoSignatures(ctx, niPartial.ID)
+		sigs, err := database.GetNarInfoSignatures(ctx, c.db, niPartial.ID)
 		if err == nil {
 			assert.Empty(t, sigs, "Signatures should be deleted via cascade")
 		}
@@ -1570,7 +1554,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 			validateResult: func(t *testing.T, c *Cache, ctx context.Context, hash string, expectedURL string) {
 				t.Helper()
 
-				ni, err := c.db.GetNarInfoByHash(ctx, hash)
+				ni, err := database.GetNarInfoByHash(ctx, c.db, hash)
 				require.NoError(t, err)
 				require.True(t, ni.URL.Valid, "URL should be valid after update")
 				assert.Equal(t, expectedURL, ni.URL.String, "URL should match the inserted value")
@@ -1597,7 +1581,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 			validateResult: func(t *testing.T, c *Cache, ctx context.Context, hash string, expectedURL string) {
 				t.Helper()
 
-				ni, err := c.db.GetNarInfoByHash(ctx, hash)
+				ni, err := database.GetNarInfoByHash(ctx, c.db, hash)
 				require.NoError(t, err)
 				require.True(t, ni.URL.Valid, "URL should still be valid")
 				assert.Equal(t, expectedURL, ni.URL.String, "URL should be unchanged")
@@ -1608,7 +1592,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 	}
 
 	// Helper function to run tests against a specific database backend
-	runTestsWithDB := func(t *testing.T, setupDB func(*testing.T) (database.Querier, func())) {
+	runTestsWithDB := func(t *testing.T, setupDB func(*testing.T) (*bun.DB, func())) {
 		t.Helper()
 
 		for _, tc := range testCases {
@@ -1666,7 +1650,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 	// Test with PostgreSQL (only if enabled via environment variable)
 	t.Run("PostgreSQL", func(t *testing.T) {
 		t.Parallel()
-		runTestsWithDB(t, func(t *testing.T) (database.Querier, func()) {
+		runTestsWithDB(t, func(t *testing.T) (*bun.DB, func()) {
 			db, _, cleanup := testhelper.SetupPostgres(t)
 
 			return db, cleanup
@@ -1676,7 +1660,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 	// Test with MySQL (only if enabled via environment variable)
 	t.Run("MySQL", func(t *testing.T) {
 		t.Parallel()
-		runTestsWithDB(t, func(t *testing.T) (database.Querier, func()) {
+		runTestsWithDB(t, func(t *testing.T) (*bun.DB, func()) {
 			db, _, cleanup := testhelper.SetupMySQL(t)
 
 			return db, cleanup
@@ -1717,11 +1701,9 @@ func testStoreNarFromTempFileHealsOrphanOnErrAlreadyExists(factory cacheFactory)
 		require.NoError(t, err, "writing NAR directly to narStore should succeed")
 
 		// 2. Verify no DB record exists yet (the crash scenario).
-		_, dbErr := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		_, dbErr := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, c.db, narURL.Hash, narURL.Compression.String(), narURL.Query.Encode(),
+		)
 		require.Error(t, dbErr, "no DB record should exist before the healing call")
 
 		// 3. Create a temp file with the same NAR content so storeNarFromTempFile can
@@ -1743,11 +1725,9 @@ func testStoreNarFromTempFileHealsOrphanOnErrAlreadyExists(factory cacheFactory)
 		require.NoError(t, err, "storeNarFromTempFile should succeed even when NAR already exists in storage")
 
 		// 5. Verify the DB record now exists.
-		nf, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		nf, err := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, c.db, narURL.Hash, narURL.Compression.String(), narURL.Query.Encode(),
+		)
 		require.NoError(t, err, "DB record must exist after storeNarFromTempFile healed the orphan")
 		assert.Equal(t, narURL.Hash, nf.Hash)
 	}
@@ -1782,11 +1762,9 @@ func testGetNarFromStoreHealsOrphanDBRecord(factory cacheFactory) func(*testing.
 		require.NoError(t, err, "writing NAR directly to narStore should succeed")
 
 		// 2. Verify no DB record exists yet.
-		_, dbErr := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		_, dbErr := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, c.db, narURL.Hash, narURL.Compression.String(), narURL.Query.Encode(),
+		)
 		require.Error(t, dbErr, "no DB record should exist before calling getNarFromStore")
 
 		// 3. Call getNarFromStore — this should read from narStore successfully and
@@ -1798,11 +1776,9 @@ func testGetNarFromStoreHealsOrphanDBRecord(factory cacheFactory) func(*testing.
 		reader.Close()
 
 		// 4. Verify the DB record was created (healing the orphan).
-		nf, err := c.db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-		})
+		nf, err := database.GetNarFileByHashAndCompressionAndQuery(
+			ctx, c.db, narURL.Hash, narURL.Compression.String(), narURL.Query.Encode(),
+		)
 		require.NoError(t, err, "DB record must exist after getNarFromStore healed the orphan")
 		assert.Equal(t, narURL.Hash, nf.Hash)
 	}
@@ -1971,13 +1947,11 @@ func TestStoreNarWithCDCCleanupOnFailure(t *testing.T) {
 	require.Error(t, err, "should fail on read error")
 
 	// Verify that the nar_file record has chunking_started_at set to NULL
-	nr, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	nr, err := database.GetNarFileByHashAndCompressionAndQuery(
+		ctx, db, nu.Hash, nu.Compression.String(), nu.Query.Encode(),
+	)
 	require.NoError(t, err)
-	assert.False(t, nr.ChunkingStartedAt.Valid, "chunking_started_at should be NULL after failure")
+	assert.True(t, nr.ChunkingStartedAt.IsZero(), "chunking_started_at should be NULL after failure")
 }
 
 // TestRunCDCLazyRecovery verifies that the CDC lazy recovery cron job
@@ -2022,7 +1996,7 @@ func TestRunCDCLazyRecovery(t *testing.T) {
 	// - Ensure chunking_started_at = NULL (no active chunking)
 	// - Update created_at to be old (older than the recovery interval)
 	oldCreatedAt := time.Now().Add(-10 * time.Minute)
-	_, err = db.DB().ExecContext(ctx,
+	_, err = db.DB.ExecContext(ctx,
 		rebind("UPDATE nar_files SET total_chunks = 0, created_at = ? WHERE hash = ?"),
 		oldCreatedAt,
 		entry.NarHash,
@@ -2030,14 +2004,12 @@ func TestRunCDCLazyRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the stuck file exists
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        entry.NarHash,
-		Compression: entry.NarCompression.String(),
-		Query:       "",
-	})
+	narFile, err := database.GetNarFileByHashAndCompressionAndQuery(
+		ctx, db, entry.NarHash, entry.NarCompression.String(), "",
+	)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), narFile.TotalChunks, "TotalChunks should be 0")
-	assert.False(t, narFile.ChunkingStartedAt.Valid, "ChunkingStartedAt should be NULL")
+	assert.True(t, narFile.ChunkingStartedAt.IsZero(), "ChunkingStartedAt should be NULL")
 
 	// Create a cron schedule for testing (every 5 minutes)
 	schedule, err := cron.ParseStandard("@every 5m")
@@ -2133,7 +2105,7 @@ func TestRunCDCLazyRecoveryWithFilesNewerThanCutoff(t *testing.T) {
 	// Create a NAR file that is too new to be considered "stuck"
 	// (created_at within the recovery interval)
 	recentHash := "testrecentnarhash123"
-	_, err = db.CreateNarFile(ctx, database.CreateNarFileParams{
+	_, err = database.CreateNarFile(ctx, db, database.CreateNarFileParams{
 		Hash:        recentHash,
 		Compression: "zstd",
 		Query:       "",
@@ -2143,11 +2115,7 @@ func TestRunCDCLazyRecoveryWithFilesNewerThanCutoff(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the file exists
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        recentHash,
-		Compression: "zstd",
-		Query:       "",
-	})
+	narFile, err := database.GetNarFileByHashAndCompressionAndQuery(ctx, db, recentHash, "zstd", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), narFile.TotalChunks, "TotalChunks should be 0")
 
@@ -2161,16 +2129,11 @@ func TestRunCDCLazyRecoveryWithFilesNewerThanCutoff(t *testing.T) {
 
 	// The file should NOT have chunking_started_at set because it's too new
 	// (within the 5 minute cutoff window)
-	params := database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        recentHash,
-		Compression: "zstd",
-		Query:       "",
-	}
-	narFileAfter, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, params)
+	narFileAfter, err := database.GetNarFileByHashAndCompressionAndQuery(ctx, db, recentHash, "zstd", "")
 	require.NoError(t, err)
 
 	// The recovery should NOT have triggered chunking for this file
 	// because it's newer than the cutoff time
-	assert.False(t, narFileAfter.ChunkingStartedAt.Valid,
+	assert.True(t, narFileAfter.ChunkingStartedAt.IsZero(),
 		"ChunkingStartedAt should NOT be set for files newer than cutoff")
 }

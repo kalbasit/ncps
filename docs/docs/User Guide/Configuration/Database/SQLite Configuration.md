@@ -43,7 +43,7 @@ The SQLite database is stored as a single file:
 
 ```
 # Run migrations to create tables
-dbmate --url=sqlite:/var/lib/ncps/db/db.sqlite migrate up
+ncps migrate up --cache-database-url=sqlite:/var/lib/ncps/db/db.sqlite
 ```
 
 ### Connection Pool Settings

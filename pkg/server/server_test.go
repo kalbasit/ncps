@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
@@ -43,7 +44,7 @@ const (
 
 func newTestCache(
 	ctx context.Context,
-	db database.Querier,
+	db *bun.DB,
 	//nolint:staticcheck // using deprecated ConfigStore interface for testing migration
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
@@ -180,7 +181,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := db.DB.QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -193,7 +194,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("narinfo does exist in the database", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := db.DB.QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -215,7 +216,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("narinfo is gone from the database", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := db.DB.QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -617,7 +618,7 @@ Deriver: test.drv
 				t.Run("narinfo does exist in the database", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := db.DB.QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -627,7 +628,7 @@ Deriver: test.drv
 				t.Run("it should be signed by our server", func(t *testing.T) {
 					var sigsStr []string
 
-					rows, err := db.DB().QueryContext(newContext(),
+					rows, err := db.DB.QueryContext(newContext(),
 						`SELECT signature FROM narinfo_signatures
 						 WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`,
 						testdata.Nar1.NarInfoHash)
@@ -816,7 +817,7 @@ func TestGetNarInfo_Head(t *testing.T) {
 	// Verify it's in the database
 	var count int
 
-	err = db.DB().
+	err = db.DB.
 		QueryRowContext(newContext(), "SELECT COUNT(*) FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).
 		Scan(&count)
 	require.NoError(t, err)

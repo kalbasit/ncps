@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bun"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
@@ -68,7 +69,7 @@ func (nr nopReporter) Shutdown(context.Context) error                  { return 
 func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
 
 type reporter struct {
-	db  database.Querier
+	db  *bun.DB
 	res *resource.Resource
 
 	logger log.Logger
@@ -83,7 +84,7 @@ type reporter struct {
 // It returns a shutdown function that should be called when the application exits.
 func New(
 	ctx context.Context,
-	db database.Querier,
+	db *bun.DB,
 	res *resource.Resource,
 	reportingSamples bool,
 ) (Reporter, error) {
@@ -263,7 +264,7 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 
 	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
 		// This uses the existing GetNarTotalSize query from your database package
-		size, err := r.db.GetNarTotalSize(ctx)
+		size, err := database.GetNarTotalSize(ctx, r.db)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().

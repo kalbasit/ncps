@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/testhelper"
@@ -21,7 +22,7 @@ func TestBackends(t *testing.T) {
 	}{
 		{
 			name: "SQLite",
-			setup: func(t *testing.T) database.Querier {
+			setup: func(t *testing.T) (*bun.DB, func()) {
 				t.Helper()
 
 				dir, err := os.MkdirTemp("", "database-path-")
@@ -33,38 +34,36 @@ func TestBackends(t *testing.T) {
 				db, err := database.Open("sqlite:"+dbFile, nil)
 				require.NoError(t, err)
 
-				t.Cleanup(func() {
-					db.DB().Close()
+				cleanup := func() {
+					db.DB.Close()
 					os.RemoveAll(dir)
-				})
+				}
 
-				return db
+				return db, cleanup
 			},
 		},
 
 		{
 			name:   "PostgreSQL",
 			envVar: "NCPS_TEST_ADMIN_POSTGRES_URL",
-			setup: func(t *testing.T) database.Querier {
+			setup: func(t *testing.T) (*bun.DB, func()) {
 				t.Helper()
 
 				db, _, cleanup := testhelper.SetupPostgres(t)
-				t.Cleanup(cleanup)
 
-				return db
+				return db, cleanup
 			},
 		},
 
 		{
 			name:   "MySQL",
 			envVar: "NCPS_TEST_ADMIN_MYSQL_URL",
-			setup: func(t *testing.T) database.Querier {
+			setup: func(t *testing.T) (*bun.DB, func()) {
 				t.Helper()
 
 				db, _, cleanup := testhelper.SetupMySQL(t)
-				t.Cleanup(cleanup)
 
-				return db
+				return db, cleanup
 			},
 		},
 	}

@@ -365,7 +365,7 @@ def run_db_migration(db_url):
         path = db_url.replace("sqlite:", "")
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    subprocess.run(["dbmate", "--no-dump-schema", "--url", db_url, "up"], check=True)
+    subprocess.run(["ncps", "migrate", "up", "--cache-database-url", db_url], check=True)
 
 
 def perform_clean():
@@ -377,21 +377,9 @@ def perform_clean():
         log(f"  Removing {ncps_var_dir}", YELLOW)
         shutil.rmtree(ncps_var_dir, ignore_errors=True)
 
-    # 2. Remove tables in Postgres/MySQL
-    for engine in ["postgres", "mysql"]:
-        url = DB_CONFIG[engine]
-        if shutil.which("dbmate"):
-            log(f"  Cleaning {engine} database...", YELLOW)
-            try:
-                subprocess.run(
-                    ["dbmate", "--url", url, "drop"],
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=5,
-                )
-            except subprocess.TimeoutExpired:
-                log(f"  Warning: {engine} cleanup timed out", RED)
+    # 2. Database cleanup is handled by bun migrate automatically
+    #    (bun migrate is idempotent - running migrate up on an existing
+    #     database just applies any pending migrations)
 
     # 3. Remove all s3 files
     if shutil.which("mc"):
@@ -578,7 +566,7 @@ def main():
     # Force absolute path for sqlite.
     if args.db == "sqlite":
         # Split 'sqlite:' from the path, resolve absolute path, and recombine
-        # This ensures dbmate and the Go app see the exact same file regardless of CWD changes
+        # This ensures ncps and the Go app see the exact same file regardless of CWD changes
         prefix, relative_path = db_url.split(":", 1)
         abs_path = os.path.abspath(relative_path)
         db_url = f"{prefix}:{abs_path}"

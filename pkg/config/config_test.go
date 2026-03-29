@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -15,15 +16,15 @@ import (
 )
 
 // databaseFactory is a function that returns a clean, ready-to-use database instance.
-type databaseFactory func(t *testing.T) (database.Querier, func())
+type databaseFactory func(t *testing.T) (*bun.DB, func())
 
-func setupSQLiteDatabase(t *testing.T) (database.Querier, func()) {
+func setupSQLiteDatabase(t *testing.T) (*bun.DB, func()) {
 	t.Helper()
 
 	return testhelper.SetupSQLite(t)
 }
 
-func setupPostgresDatabase(t *testing.T) (database.Querier, func()) {
+func setupPostgresDatabase(t *testing.T) (*bun.DB, func()) {
 	t.Helper()
 
 	db, _, cleanup := testhelper.SetupPostgres(t)
@@ -31,7 +32,7 @@ func setupPostgresDatabase(t *testing.T) (database.Querier, func()) {
 	return db, cleanup
 }
 
-func setupMySQLDatabase(t *testing.T) (database.Querier, func()) {
+func setupMySQLDatabase(t *testing.T) (*bun.DB, func()) {
 	t.Helper()
 
 	db, _, cleanup := testhelper.SetupMySQL(t)
@@ -97,10 +98,7 @@ func testGetClusterUUIDExisting(factory databaseFactory) func(*testing.T) {
 
 		const expectedUUID = "abc-123"
 
-		_, err := db.CreateConfig(context.Background(), database.CreateConfigParams{
-			Key:   config.KeyClusterUUID,
-			Value: expectedUUID,
-		})
+		_, err := database.CreateConfig(context.Background(), db, config.KeyClusterUUID, expectedUUID)
 		require.NoError(t, err)
 
 		actualUUID, err := c.GetClusterUUID(context.Background())
@@ -154,7 +152,7 @@ func testSetClusterUUIDNotExisting(factory databaseFactory) func(*testing.T) {
 		err := c.SetClusterUUID(context.Background(), "abc-123")
 		require.NoError(t, err)
 
-		conf, err := db.GetConfigByKey(context.Background(), config.KeyClusterUUID)
+		conf, err := database.GetConfigByKey(context.Background(), db, config.KeyClusterUUID)
 		require.NoError(t, err)
 
 		assert.Equal(t, config.KeyClusterUUID, conf.Key)
@@ -177,7 +175,7 @@ func testSetClusterUUIDExisting(factory databaseFactory) func(*testing.T) {
 		err = c.SetClusterUUID(context.Background(), "def-456")
 		require.NoError(t, err)
 
-		conf, err := db.GetConfigByKey(context.Background(), config.KeyClusterUUID)
+		conf, err := database.GetConfigByKey(context.Background(), db, config.KeyClusterUUID)
 		require.NoError(t, err)
 
 		assert.Equal(t, config.KeyClusterUUID, conf.Key)

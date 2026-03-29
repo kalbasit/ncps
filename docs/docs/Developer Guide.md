@@ -26,8 +26,7 @@ nix develop
 
 **Available tools in dev shell:**
 
-- go, golangci-lint, sqlc, sqlfluff
-- dbmate, delve, watchexec
+- go, golangci-lint, sqlfluff, delve, watchexec
 - Integration test helpers
 
 ## Development Workflow
@@ -77,18 +76,11 @@ go test -race ./...
 ### Database Migrations
 
 ```sh
-# Create new migration
-dbmate --migrations-dir db/migrations/sqlite new migration_name
+# Create new migration (use /migrate-new skill)
+ncps migrate new --engine sqlite --name migration_name
 
 # Run migrations
-dbmate migrate up
-```
-
-### SQL Code Generation
-
-```sh
-# After modifying db/query.sql
-sqlc generate
+ncps migrate up --cache-database-url=<database-url>
 ```
 
 ## Testing

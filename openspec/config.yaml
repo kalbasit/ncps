@@ -4,9 +4,9 @@ schema: spec-driven
 context: |
   Project: ncps (Nix Cache Proxy Service)
   Tech stack: Go, Nix flakes with direnv
-  Database: SQLite (default), PostgreSQL, MySQL/MariaDB via sqlc
+  Database: SQLite (default), PostgreSQL, MySQL/MariaDB via bun query builder
   Storage: Local filesystem, S3-compatible (MinIO)
-  Additional tools: golangci-lint, sqlc, sqlfluff, dbmate, testify
+  Additional tools: golangci-lint, sqlfluff, testify
 
   Domain: High-performance binary cache proxying for NixOS/Nix ecosystems. Handles NAR and .narinfo file fetching, caching, and serving.
   Architecture: Concurrent proxy design prioritizing memory efficiency and fast I/O for binary streams.
@@ -17,9 +17,8 @@ context: |
   - Parallel tests encouraged (paralleltest linter). All tests and subtests must call t.Parallel().
   - Race detector enabled for all tests.
   - Formatting: gofumpt, goimports, gci for Go. sqlfluff for SQL. `nix fmt` for all project files.
-  - Database migrations via dbmate wrapper (auto-detects engine from URL scheme).
+  - Database migrations via bun migrate (embedded in ncps binary).
   - All column names must be quoted in every SQL query and schema definition, without exception.
-  - sqlc generates three completely separate Querier interfaces (sqlitedb, postgresdb, mysqldb); never mix them.
   - CDC (content-defined chunking) may be enabled; NARs can be stored as whole files or as chunk sequences.
   - zstd readers/writers are pooled via sync.Pool to avoid GC pressure on high-throughput NAR streams.
 
@@ -27,7 +26,6 @@ context: |
   - test: Run tests with race detector
   - lint: Lint with golangci-lint (use --fix flag)
   - migrate-new, migrate-up, migrate-down: Database migration workflows
-  - generate-db-wrappers: Run sqlc generate after query changes
 
   Code Quality:
   - Use `golangci-lint run --fix` before manual fixes.

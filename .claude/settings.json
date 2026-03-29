@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dbmate:*)",
       "Bash(export NCPS_TEST_POSTGRES_URL=\"postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable\")",
       "Bash(export NCPS_TEST_S3_ACCESS_KEY_ID=\"test-access-key\")",
       "Bash(export NCPS_TEST_S3_BUCKET=\"test-bucket\")",
@@ -26,7 +25,6 @@
       "Bash(helm version:*)",
       "Bash(ls:*)",
       "Bash(nix build:*)",
-      "Bash(nix develop --command dbmate:*)",
       "Bash(nix develop --command go build:*)",
       "Bash(nix develop --command go doc:*)",
       "Bash(nix develop --command go generate:*)",
@@ -35,11 +33,9 @@
       "Bash(nix develop --command go run:*)",
       "Bash(nix develop --command go test:*)",
       "Bash(nix develop --command golangci-lint run:*)",
-      "Bash(nix develop --command sqlc generate:*)",
       "Bash(nix develop --command sqlfluff:*)",
       "Bash(nix flake check:*)",
       "Bash(nix fmt:*)",
-      "Bash(sqlc generate:*)",
       "Bash(sqlfluff:*)",
       "Bash(sqlite3 :memory::*)"
     ]

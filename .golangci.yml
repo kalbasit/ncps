@@ -15,8 +15,6 @@ formatters:
       custom-order: true
   exclusions:
     generated: lax
-    paths:
-      - nix/dbmate-wrapper/src/
 linters:
   enable:
     - err113
@@ -61,8 +59,6 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
-    paths:
-      - nix/dbmate-wrapper/src/
   settings:
     wsl_v5:
       allow-first-in-block: true

@@ -42,7 +42,7 @@ docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
 
 # Initialize the database
 docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
-  /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+  /bin/ncps migrate up --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
 ```
 
 **What this does:**
@@ -116,7 +116,7 @@ docker run --rm -v ncps-db:/db alpine mkdir -m 0700 -p /db
 
 # Initialize database
 docker run --rm -v ncps-db:/db ghcr.io/kalbasit/ncps \
-  /bin/dbmate --url=sqlite:/db/db.sqlite migrate up
+  /bin/ncps migrate up --cache-database-url=sqlite:/db/db.sqlite
 
 # Start server with S3 storage
 docker run -d \
@@ -273,7 +273,7 @@ docker port ncps
 
 ```sh
 docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
-  /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite migrate up
+  /bin/ncps migrate up --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
 ```
 
 ### Permission Errors

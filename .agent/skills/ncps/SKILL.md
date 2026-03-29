@@ -33,12 +33,11 @@ The project uses Nix to manage dependencies. Ensure you have Nix installed.
 
     This command starts a process manager (process-compose) that runs all necessary services in the foreground. Keep this running in a separate terminal.
 
-2. **Run DevShell Tools**: When using Claude Code, run any devShell tool (go, golangci-lint, sqlc, dbmate, sqlfluff) with `nix develop --command`:
+2. **Run DevShell Tools**: When using Claude Code, run any devShell tool (go, golangci-lint, sqlfluff) with `nix develop --command`:
 
     ```bash
     nix develop --command go test ./...
     nix develop --command golangci-lint run --fix
-    nix develop --command sqlc generate
     ```
 
     This works consistently in both the main working tree and in worktrees. For interactive use, you can also use `nix develop` or `direnv allow` if you have `direnv` installed.
@@ -84,7 +83,7 @@ The primary way to run `ncps` locally during development is via `dev-scripts/run
 ```
 
 > [!NOTE]
-> The script automatically handles database migrations using `dbmate` before starting the application.
+> The script automatically handles database migrations using `bun migrate` via `ncps migrate` before starting the application.
 
 ## Testing
 
@@ -110,7 +109,7 @@ To test Kubernetes deployments (requires a cluster):
 
 ## Database Management
 
-Migrations are managed via `dbmate`. See the `dbmate` skill for general usage, but note that `dev-scripts/run.py` handles applying migrations automatically for development.
+Migrations are managed via `bun migrate` using the `ncps migrate` command. See the `bun-migrate` skill for migration workflows. The `dev-scripts/run.py` script handles applying migrations automatically for development.
 
 To create a new migration for all supported engines, use the workflow:
 

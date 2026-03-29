@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS config;
+DROP TABLE IF EXISTS narinfo_nar_files;
+DROP TABLE IF EXISTS nar_files;
+DROP TABLE IF EXISTS narinfos;
