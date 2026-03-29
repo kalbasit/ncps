@@ -37,8 +37,6 @@
               ./post-check-redis.sh
               ./pre-check-redis.sh
 
-              ../../../db/migrations
-              ../../../db/schema
               ../../../go.mod
               ../../../go.sum
               ../../../main.go

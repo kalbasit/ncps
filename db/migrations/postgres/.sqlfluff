@@ -1,3 +1,0 @@
-[sqlfluff]
-# PostgreSQL dialect for PostgreSQL migrations
-dialect = postgres

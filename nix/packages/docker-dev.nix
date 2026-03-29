@@ -68,8 +68,6 @@
             "HOME=/home/ncps"
             "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             # Point ncps at the mounted repo's migration/schema dirs
-            "NCPS_DB_MIGRATIONS_DIR=/workdir/db/migrations"
-            "NCPS_DB_SCHEMA_DIR=/workdir/db/schema"
             # Integration test service endpoints — assumes `nix run .#deps` is running on the host.
             # host.docker.internal resolves to the Docker host from inside the container.
             "NCPS_TEST_S3_BUCKET=test-bucket"
