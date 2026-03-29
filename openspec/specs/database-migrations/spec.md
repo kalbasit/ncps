@@ -2,7 +2,7 @@
 
 ## Overview
 
-This spec defines the database migration system using `bun/migrate` with embedded SQL files, replacing the previous dbmate approach.
+This spec defines the database migration system using `bun/migrate` with embedded SQL files, replacing the previous migration approach.
 
 ---
 
@@ -14,9 +14,9 @@ All database migration SQL files SHALL be embedded in the ncps binary at build t
 - **WHEN** the ncps binary is built
 - **THEN** migration SQL files for all three engines (sqlite, postgres, mysql) are embedded and accessible without any external file system paths
 
-#### Scenario: No external dbmate binary needed
+#### Scenario: No external migration binary needed
 - **WHEN** a user runs `ncps migrate up` on a fresh system
-- **THEN** migrations apply successfully without requiring dbmate or any other external binary to be installed
+- **THEN** migrations apply successfully without requiring any external migration binary to be installed
 
 ---
 
@@ -73,7 +73,7 @@ ncps SHALL expose a `migrate` command with sub-commands to manage database schem
 - **THEN** `bun_migrations` is created and all migrations are applied and recorded
 
 #### Scenario: Existing dbmate-managed database
-- **WHEN** `ncps migrate up` is run against a database that already has a `schema_migrations` table from dbmate
+- **WHEN** `ncps migrate up` is run against a database that already has a `schema_migrations` table from a previous dbmate-managed deployment
 - **THEN** the compatibility migration recognises the existing applied migrations and does not re-apply them
 
 ---

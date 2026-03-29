@@ -2,7 +2,7 @@
 
 ## Overview
 
-This spec defines the database access layer using `github.com/uptrace/bun` as the sole database access mechanism, replacing the previous sqlc+dbmate approach.
+This spec defines the database access layer using `github.com/uptrace/bun` as the sole database access mechanism, replacing the previous sqlc approach.
 
 ---
 
