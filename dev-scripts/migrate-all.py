@@ -56,31 +56,20 @@ def check_command(cmd_list, name):
         return False
 
 
-def run_dbmate(url):
+def run_ncps_migrate(url):
     """
-    Runs dbmate drop, create, and up for the given URL.
+    Runs ncps migrate up for the given URL.
     Returns True on success.
     """
     try:
-        # 1. Drop existing database (ignore errors if it doesn't exist)
-        #    We suppress output to keep the console clean-ish, assuming
-        #    'dbmate drop' failing is often acceptable (e.g. first run).
         subprocess.run(
-            ["dbmate", "--url", url, "drop"],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            ["ncps", "migrate", "up", "--cache-database-url", url],
+            check=True,
         )
-
-        # 2. Create fresh database
-        subprocess.run(["dbmate", "--url", url, "create"], check=True)
-
-        # 3. Run migrations
-        subprocess.run(["dbmate", "--url", url, "up"], check=True)
         return True
 
     except subprocess.CalledProcessError as e:
-        log(f"Migration failed during step '{e.cmd}': {e}", RED)
+        log(f"Migration failed: {e}", RED)
         return False
 
 
@@ -99,7 +88,7 @@ def migrate_postgres():
     ]
 
     if check_command(cmd, "PostgreSQL"):
-        if run_dbmate(POSTGRES_URL):
+        if run_ncps_migrate(POSTGRES_URL):
             log("PostgreSQL migration complete.", GREEN)
             print()
             return True
@@ -129,7 +118,7 @@ def migrate_mysql():
     ]
 
     if check_command(cmd, "MySQL"):
-        if run_dbmate(MYSQL_URL):
+        if run_ncps_migrate(MYSQL_URL):
             log("MySQL migration complete.", GREEN)
             print()
             return True
@@ -147,7 +136,7 @@ def migrate_sqlite():
 
     if os.path.isdir(SQLITE_DIR):
         log("✓ SQLite directory ready", GREEN)
-        if run_dbmate(SQLITE_URL):
+        if run_ncps_migrate(SQLITE_URL):
             log("SQLite migration complete.", GREEN)
             print()
             return True

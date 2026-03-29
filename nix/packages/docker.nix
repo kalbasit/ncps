@@ -82,13 +82,6 @@
 
         config = {
           Cmd = [ "/bin/ncps" ];
-          Env = [
-            # NCPS_DB_MIGRATIONS_DIR tells ncps where to find migrations
-            "NCPS_DB_MIGRATIONS_DIR=/share/ncps/db/migrations"
-
-            # NCPS_DB_SCHEMA_DIR tells ncps where to find schema files
-            "NCPS_DB_SCHEMA_DIR=/share/ncps/db/schema"
-          ];
           ExposedPorts = {
             "8501/tcp" = { };
           };

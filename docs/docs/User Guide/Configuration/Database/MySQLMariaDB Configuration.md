@@ -87,7 +87,7 @@ ncps serve \
 
 ```
 # Run migrations
-dbmate --url="mysql://ncps:password@localhost:3306/ncps" migrate up
+ncps migrate up --cache-database-url="mysql://ncps:password@localhost:3306/ncps"
 ```
 
 ### Backup and Restore

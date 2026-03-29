@@ -129,7 +129,6 @@ golangci-lint run path/to/file.go
 nix fmt
 
 # Format SQL specifically
-sqlfluff format db/query.*.sql
 sqlfluff format db/migrations/
 ```
 
@@ -137,7 +136,6 @@ sqlfluff format db/migrations/
 
 ```sh
 # Lint SQL files
-sqlfluff lint db/query.*.sql
 sqlfluff lint db/migrations/
 ```
 

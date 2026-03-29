@@ -140,14 +140,6 @@
         shellHook = ''
           ${config.pre-commit.installationScript}
 
-          # Set NCPS_DB_MIGRATIONS_DIR to the repo root's db/migrations
-          # This avoids requiring the ncps package to be built for dev shell
-          export NCPS_DB_MIGRATIONS_DIR="$(git rev-parse --show-toplevel)/db/migrations"
-
-          # Set NCPS_DB_SCHEMA_DIR to the repo root's db/schema
-          # This avoids requiring the ncps package to be built for dev shell
-          export NCPS_DB_SCHEMA_DIR="$(git rev-parse --show-toplevel)/db/schema"
-
           # Set the environment variables to help users login to MySQL and PostgreSQL
           export NCPS_DEV_POSTGRES_URL="postgresql://dev-user:dev-password@127.0.0.1:5432/dev-db?sslmode=disable"
           export NCPS_DEV_MYSQL_URL="mysql://dev-user:dev-password@127.0.0.1:3306/dev-db"

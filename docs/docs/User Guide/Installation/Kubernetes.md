@@ -92,10 +92,10 @@ spec:
         - name: migrate-database
           image: ghcr.io/kalbasit/ncps:latest
           command:
-            - /bin/dbmate
-            - --url=sqlite:/storage/var/ncps/db/db.sqlite
+            - /bin/ncps
             - migrate
             - up
+            - --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
           volumeMounts:
             - name: ncps-persistent-storage
               mountPath: /storage
@@ -296,12 +296,9 @@ spec:
         - name: migrate-database
           image: ghcr.io/kalbasit/ncps:latest
           command:
-            - /bin/dbmate
+            - /bin/ncps
             - migrate
             - up
-          env:
-            - name: DBMATE_MIGRATIONS_DIR
-              value: /share/ncps/db/migrations/postgres
           envFrom:
             - configMapRef:
                 name: ncps-config

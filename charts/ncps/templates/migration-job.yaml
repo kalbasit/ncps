@@ -85,11 +85,28 @@ spec:
           image: {{ include "ncps.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
-            - /bin/dbmate
+            - /bin/ncps
           args:
+            - migrate
             - up
+            - --cache-database-url
+            - "$(CACHE_DATABASE_URL)"
           env:
-            {{- include "ncps.migrationDatabaseURLEnv" . | nindent 12 }}
+            - name: CACHE_DATABASE_URL
+{{- if eq .Values.config.database.type "sqlite" }}
+              value: {{ include "ncps.databaseURL" . | quote }}
+{{- else }}
+              valueFrom:
+                secretKeyRef:
+                  {{- $dbType := .Values.config.database.type -}}
+                  {{- $dbConfig := index .Values.config.database $dbType -}}
+                  {{- if $dbConfig.existingSecret }}
+                  name: {{ $dbConfig.existingSecret }}
+                  {{- else }}
+                  name: {{ include "ncps.fullname" . }}
+                  {{- end }}
+                  key: database-url
+{{- end }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
           volumeMounts:

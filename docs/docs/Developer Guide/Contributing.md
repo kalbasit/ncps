@@ -32,8 +32,6 @@ The project uses **Nix flakes** with **direnv** for reproducible development env
 
    - Go
    - golangci-lint
-   - sqlc
-   - dbmate
    - delve (debugger)
    - watchexec
    - sqlfluff
@@ -52,8 +50,6 @@ Once in the development shell, you have access to:
 | --- | --- |
 | `go` | Go compiler and toolchain |
 | `golangci-lint` | Code linting with 30+ linters |
-| `sqlc` | Type-safe SQL code generation |
-| `dbmate` | Database migration tool |
 | `delve` | Go debugger |
 | `watchexec` | File watcher for hot-reloading |
 | `sqlfluff` | SQL linting and formatting |
@@ -140,41 +136,29 @@ The documentation for this project is managed using Trilium. Follow these steps 
 
 **Creating a new migration:**
 
-```
-dbmate --migrations-dir db/migrations/sqlite new migration_name
-dbmate --migrations-dir db/migrations/postgres new migration_name
-dbmate --migrations-dir db/migrations/mysql new migration_name
-```
-
-The `dbmate` command is a wrapper that automatically:
-
-- Detects database type from the URL scheme
-- Selects the appropriate migrations directory (`db/migrations/sqlite/`, `db/migrations/postgres/`, or `db/migrations/mysql/`)
-- Creates timestamped migration files
+Use the `/migrate-new` skill to create new migration files for all database engines. The skill will create timestamped migration files in `db/migrations/<engine>/`.
 
 **Applying migrations:**
 
-```
-dbmate --url "sqlite:path/to/db.sqlite" up
-dbmate --url "postgresql://..." up
-dbmate --url "mysql://..." up
-```
+```bash
+# Apply all pending migrations
+ncps migrate up --cache-database-url=<database-url>
 
-**Note:** The wrapper uses the `NCPS_DB_MIGRATIONS_DIR` and the `NCPS_DB_SCHEMA_DIR` environment variables (automatically set in the dev shell) to locate migrations and schema.
-
-### Generating SQL Code
-
-After modifying SQL queries or migrations:
-
-```
-sqlc generate
+# Apply migrations up to a specific version
+ncps migrate up-to <version> --cache-database-url=<database-url>
 ```
 
-This generates type-safe Go code from:
+**Rolling back migrations:**
 
-- `db/query.sqlite.sql` → `pkg/database/sqlitedb/`
-- `db/query.postgres.sql` → `pkg/database/postgresdb/`
-- `db/query.mysql.sql` → `pkg/database/mysqldb/`
+```bash
+# Roll back the last migration
+ncps migrate down --cache-database-url=<database-url>
+
+# Roll back to a specific version
+ncps migrate down-to <version> --cache-database-url=<database-url>
+```
+
+**Note:** bun migrate automatically wraps each migration in a transaction. Do NOT add manual BEGIN/COMMIT blocks to migration files.
 
 ## Code Quality Standards
 
@@ -233,8 +217,6 @@ sqlfluff lint db/migrations/mysql/*.sql
 # Format SQL files
 sqlfluff format db/migrations/sqlite/*.sql
 ```
-
-**Note:** sqlc query files (`db/query.*.sql`) are excluded from sqlfluff as they use sqlc-specific syntax.
 
 ## Testing
 
@@ -570,28 +552,26 @@ ncps/
 │   │   ├── local/              # Local filesystem storage
 │   │   └── s3/                 # S3-compatible storage
 │   ├── database/               # Database abstraction
-│   │   ├── sqlitedb/           # SQLite implementation
-│   │   ├── postgresdb/         # PostgreSQL implementation
-│   │   └── mysqldb/            # MySQL/MariaDB implementation
+│   │   ├── migrations/         # Database migrations (bun migrate)
+│   │   ├── sqlite/             # SQLite implementation
+│   │   ├── postgres/           # PostgreSQL implementation
+│   │   └── mysql/              # MySQL/MariaDB implementation
 │   ├── lock/                   # Lock abstraction
 │   │   ├── local/              # Local locks (single-instance)
 │   │   └── redis/              # Redis distributed locks (HA)
 │   ├── server/                 # HTTP server (Chi router)
 │   └── nar/                    # NAR format handling
 ├── db/
-│   ├── migrations/             # Database migrations
-│   │   ├── sqlite/             # SQLite migrations
-│   │   ├── postgres/           # PostgreSQL migrations
-│   │   └── mysql/              # MySQL migrations
-│   ├── query.sqlite.sql        # SQLite queries (sqlc)
-│   ├── query.postgres.sql      # PostgreSQL queries (sqlc)
-│   └── query.mysql.sql         # MySQL queries (sqlc)
+│   ├── schema/                 # Auto-generated schema files
+│   └── migrations/             # Database migrations
+│       ├── sqlite/             # SQLite migrations
+│       ├── postgres/           # PostgreSQL migrations
+│       └── mysql/              # MySQL migrations
 ├── nix/                        # Nix configuration
 │   ├── packages/               # Package definitions
 │   ├── devshells/              # Development shells
 │   ├── formatter/              # Formatter configuration
-│   ├── process-compose/        # Development services
-│   └── dbmate-wrapper/         # Database migration wrapper
+│   └── process-compose/        # Development services
 └── dev-scripts/                # Development helper scripts
     └── run.sh                  # Development server script
 ```
@@ -615,72 +595,51 @@ Both local (sync.Mutex) and Redis (Redlock) backends implement these interfaces.
 
 **Database:**
 
-- Supports SQLite, PostgreSQL, and MySQL via sqlc
+- Supports SQLite, PostgreSQL, and MySQL via bun
 - Database selection via URL scheme in `--cache-database-url`
-- Type-safe queries generated from `db/query.*.sql` files
+- Type-safe queries using bun query builder
 
 ## Common Development Tasks
 
 ### Adding a New Database Migration
 
-```
-# Create migration for all databases
-dbmate --migrations-dir db/migrations/sqlite new add_new_feature
-dbmate --migrations-dir db/migrations/postgres new add_new_feature
-dbmate --migrations-dir db/migrations/mysql new add_new_feature
+Use the `/migrate-new` skill to create new migration files:
 
-# Edit the migration files in:
-# - db/migrations/sqlite/TIMESTAMP_add_new_feature.sql
-# - db/migrations/postgres/TIMESTAMP_add_new_feature.sql
-# - db/migrations/mysql/TIMESTAMP_add_new_feature.sql
-
-# IMPORTANT: Do NOT wrap migrations in BEGIN/COMMIT blocks
-# dbmate automatically wraps each migration in a transaction
-# Adding manual transactions will cause "cannot start a transaction within a transaction" errors
-#
-# Example migration:
-# -- migrate:up
-# CREATE TABLE example (...);
-# CREATE INDEX idx_example ON example (column);
-#
-# -- migrate:down
-# DROP INDEX idx_example;
-# DROP TABLE example;
-
-# Test the migration
-dbmate --url "sqlite:./test.db" up
-dbmate --url "postgresql://..." up
-dbmate --url "mysql://..." up
+```bash
+ncps migrate new --engine sqlite --name add_new_feature
+ncps migrate new --engine postgres --name add_new_feature
+ncps migrate new --engine mysql --name add_new_feature
 ```
 
-### Adding New SQL Queries
+Edit the migration files in:
 
-Edit the appropriate query file:
+- `db/migrations/sqlite/TIMESTAMP_add_new_feature.up.sql`
+- `db/migrations/postgres/TIMESTAMP_add_new_feature.up.sql`
+- `db/migrations/mysql/TIMESTAMP_add_new_feature.up.sql`
 
-- db/query.sqlite.sql (SQLite-specific queries)
-- db/query.postgres.sql (PostgreSQL-specific queries)
-- db/query.mysql.sql (MySQL-specific queries)
+**IMPORTANT:** Do NOT wrap migrations in BEGIN/COMMIT blocks. bun migrate automatically wraps each migration in a transaction. Adding manual transactions will cause "cannot start a transaction within a transaction" errors.
 
-### Generating SQL Code
+**Example migration (up):**
 
-After modifying SQL queries or migrations:
-
-```
-sqlc generate
-go generate ./pkg/database
+```sql
+CREATE TABLE IF NOT EXISTS example (...);
+CREATE INDEX IF NOT EXISTS idx_example ON example (column);
 ```
 
-This generates type-safe Go code from:
+**Example migration (down):**
 
-- `db/query.sqlite.sql` → `pkg/database/sqlitedb/`
-- `db/query.postgres.sql` → `pkg/database/postgresdb/`
-- `db/query.mysql.sql` → `pkg/database/mysqldb/`
+```sql
+DROP INDEX IF EXISTS idx_example;
+DROP TABLE IF EXISTS example;
+```
 
-And automatically updates:
+**Test the migration:**
 
-- `pkg/database/querier.go` (Common interface)
-- `pkg/database/models.go` (Common models)
-- `pkg/database/wrapper_*.go` (Engine adaptors)
+```bash
+ncps migrate up --cache-database-url=sqlite:./test.db
+ncps migrate up --cache-database-url=postgresql://...
+ncps migrate up --cache-database-url=mysql://...
+```
 
 ### Adding a New Storage Backend
 

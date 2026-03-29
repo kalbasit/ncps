@@ -16,7 +16,7 @@ ncps migrate new --engine mysql --name "your_migration_name_here"
 
 1. Edit the newly created `.up.sql` and `.down.sql` files in `db/migrations/<engine>/`.
 
-1. Follow the **bun-migrate skill** (`.agent/skills/dbmate/SKILL.md`) for rules on writing migrations (transaction handling, idempotent SQL, etc.).
+1. Follow the **bun-migrate skill** (`.agent/skills/bun-migrate/SKILL.md`) for rules on writing migrations (transaction handling, idempotent SQL, etc.).
 
 ## Migration File Naming
 

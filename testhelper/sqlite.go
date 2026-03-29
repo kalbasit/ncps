@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
@@ -25,31 +24,12 @@ func CreateMigrateDatabase(t testing.TB, dbFile string) {
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(dbFile), 0o700))
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-
-	dbMigrationsDir := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"migrations",
-		"sqlite",
-	)
-
-	dbSchema := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"schema",
-		"sqlite.sql",
-	)
-
 	//nolint:gosec
 	cmd := exec.CommandContext(context.Background(),
-		"dbmate",
-		"--no-dump-schema",
-		"--url=sqlite:"+dbFile,
-		"--migrations-dir="+dbMigrationsDir,
-		"--schema-file="+dbSchema,
+		"ncps",
+		"migrate",
 		"up",
+		"--cache-database-url=sqlite:"+dbFile,
 	)
 
 	output, err := cmd.CombinedOutput()

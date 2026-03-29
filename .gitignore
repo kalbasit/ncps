@@ -28,7 +28,7 @@
 go.work
 go.work.sum
 
-# env file used by dbmate
+# Environment file
 .env
 
 # Go and Nix-related build result

@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,36 +14,17 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 )
 
-// MigratePostgresDatabase will migrate the PostgreSQL database using dbmate.
+// MigratePostgresDatabase will migrate the PostgreSQL database using bun migrate via ncps.
 // The database URL should be in the format: postgresql://user:password@host:port/database
 func MigratePostgresDatabase(t *testing.T, dbURL string) {
 	t.Helper()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-
-	dbMigrationsDir := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"migrations",
-		"postgres",
-	)
-
-	dbSchema := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"schema",
-		"postgres.sql",
-	)
-
 	//nolint:gosec
 	cmd := exec.CommandContext(context.Background(),
-		"dbmate",
-		"--no-dump-schema",
-		"--url="+dbURL,
-		"--migrations-dir="+dbMigrationsDir,
-		"--schema-file="+dbSchema,
+		"ncps",
+		"migrate",
 		"up",
+		"--cache-database-url="+dbURL,
 	)
 
 	output, err := cmd.CombinedOutput()
