@@ -1,25 +1,36 @@
--- This migration provides compatibility between dbmate and bun/migrate.
--- For existing dbmate databases, it copies migration records from schema_migrations
--- to bun_migrations so already-applied migrations are not re-run.
--- For new databases, this migration creates the schema_migrations table if needed
--- and does nothing else.
---
--- This migration is idempotent and safe to run multiple times.
--- NOTE: The bun_migrations table is created automatically by bun/migrate.
+-- Migration: Copy dbmate schema_migrations to bun_migrations if table exists with records
+-- For new databases (no schema_migrations): bun_migrations auto-created by bun, nothing to do
+-- For existing dbmate databases: migrate records and drop schema_migrations
+-- This migration is idempotent and safe to run multiple times
 
--- Create schema_migrations table if it doesn't exist (for new databases).
--- Dbmate creates this with columns: version (PK), migrated_at
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version varchar(128) primary key,
-    migrated_at timestamp null
-);
+DROP PROCEDURE IF EXISTS migrate_dbmate;
 
--- Copy any existing migration records from dbmate's schema_migrations table
--- to bun_migrations. Use INSERT IGNORE to skip if already exists.
+DELIMITER //
 
-INSERT IGNORE INTO bun_migrations (name, migrated_at)
-SELECT
-    schema_migrations.version,
-    COALESCE(schema_migrations.migrated_at, CURRENT_TIMESTAMP)
-FROM schema_migrations
-WHERE schema_migrations.version IS NOT NULL;
+CREATE PROCEDURE migrate_dbmate()
+BEGIN
+    DECLARE table_exists INT DEFAULT 0;
+
+    -- Check if schema_migrations table exists
+    SELECT COUNT(*) INTO table_exists
+    FROM information_schema.tables
+    WHERE table_schema = DATABASE()
+    AND table_name = 'schema_migrations';
+
+    IF table_exists > 0 THEN
+        -- Table exists - migrate any records to bun_migrations
+        INSERT IGNORE INTO bun_migrations (name, migrated_at)
+        SELECT version, COALESCE(migrated_at, CURRENT_TIMESTAMP)
+        FROM schema_migrations
+        WHERE version IS NOT NULL;
+
+        -- Drop schema_migrations after migration (no longer needed; bun/migrate uses bun_migrations)
+        DROP TABLE IF EXISTS schema_migrations;
+    END IF;
+    -- If table doesn't exist (new database): nothing to do, bun_migrations auto-created by bun
+END//
+
+DELIMITER ;
+
+CALL migrate_dbmate();
+DROP PROCEDURE IF EXISTS migrate_dbmate;
