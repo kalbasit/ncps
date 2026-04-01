@@ -5,7 +5,7 @@ go 1.25.7
 tool github.com/kalbasit/sqlc-multi-db
 
 require (
-	github.com/XSAM/otelsql v0.41.0
+	github.com/XSAM/otelsql v0.42.0
 	github.com/andybalholm/brotli v1.2.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-redsync/redsync/v4 v4.16.0
