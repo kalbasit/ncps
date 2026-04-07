@@ -15,7 +15,7 @@ require (
 	github.com/kalbasit/fastcdc v0.0.0-20260329002940-ca5998c9b479
 	github.com/klauspost/compress v1.18.5
 	github.com/lib/pq v1.12.3
-	github.com/mattn/go-sqlite3 v1.14.40
+	github.com/mattn/go-sqlite3 v1.14.41
 	github.com/minio/minio-go/v7 v7.0.100
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
 	github.com/pierrec/lz4/v4 v4.1.26
