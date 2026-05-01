@@ -13,7 +13,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/kalbasit/fastcdc v0.0.0-20260426003518-b13ed8f4f563
-	github.com/klauspost/compress v1.18.5
+	github.com/klauspost/compress v1.18.6
 	github.com/lib/pq v1.12.3
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/minio/minio-go/v7 v7.1.0
