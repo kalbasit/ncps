@@ -9,7 +9,7 @@ require (
 	github.com/andybalholm/brotli v1.2.1
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-redsync/redsync/v4 v4.16.0
-	github.com/go-sql-driver/mysql v1.9.3
+	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/kalbasit/fastcdc v0.0.0-20260426003518-b13ed8f4f563
