@@ -60,7 +60,7 @@ cache:
 
 ### Lazy Chunking
 
-When lazy chunking is enabled (default), NAR files are stored in their original compressed format first, then chunked in the background. This improves Time To First Byte (TTFB) by avoiding synchronous chunking during download.
+When lazy chunking is enabled (opt-in, disabled by default), NAR files are stored in their original compressed format first, then chunked in the background. This improves Time To First Byte (TTFB) by avoiding synchronous chunking during download.
 
 **Behavior:**
 
