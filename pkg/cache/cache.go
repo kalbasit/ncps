@@ -2533,6 +2533,7 @@ func (c *Cache) pullNarIntoStore(
 				zerolog.Ctx(ctx).
 					Error().
 					Err(cdcErr).
+					Str("nar_url", narURLForCDC.String()).
 					Msg("CDC chunking failed in background after pullNarIntoStore")
 				ds.setError(cdcErr)
 
@@ -2629,6 +2630,7 @@ func (c *Cache) pullNarIntoStore(
 				zerolog.Ctx(ctx).
 					Error().
 					Err(cdcErr).
+					Str("nar_url", narURL.String()).
 					Msg("CDC chunking failed in background after pullNarIntoStore (simple path)")
 				ds.setError(cdcErr)
 
