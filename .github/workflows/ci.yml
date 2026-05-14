@@ -123,7 +123,7 @@ jobs:
           nix develop --command bash -c trilium-build-docs
       - name: Deploy docs
         id: deploy-docs-pages
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CF_NCPS_DEV_EDIT_WORKERS_TOKEN }}
           accountId: ${{ secrets.CF_NCPS_DEV_ACCOUNT_ID }}
