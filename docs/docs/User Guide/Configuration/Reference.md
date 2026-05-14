@@ -171,7 +171,7 @@ Content-Defined Chunking (CDC) enables deduplication of NAR files by splitting t
 | `--cache-cdc-min` | Minimum chunk size in bytes | `CACHE_CDC_MIN` | 16384 |
 | `--cache-cdc-avg` | Average chunk size in bytes | `CACHE_CDC_AVG` | 65536 |
 | `--cache-cdc-max` | Maximum chunk size in bytes | `CACHE_CDC_MAX` | 262144 |
-| `--cache-cdc-lazy-chunking-enabled` | Enable lazy chunking (store NAR first, chunk in background) | `CACHE_CDC_LAZY_CHUNKING_ENABLED` | `true` |
+| `--cache-cdc-lazy-chunking-enabled` | Enable lazy chunking (store NAR first, chunk in background) | `CACHE_CDC_LAZY_CHUNKING_ENABLED` | `false` |
 | `--cache-cdc-background-workers` | Number of background workers for lazy chunking | `CACHE_CDC_BACKGROUND_WORKERS` | number of CPUs |
 | `--cache-cdc-delete-delay` | Delay before deleting compressed NAR files after chunking | `CACHE_CDC_DELETE_DELAY` | `24h` |
 | `--cache-cdc-lazy-recovery-schedule` | Cron schedule for recovering stuck NARs in lazy chunking mode | `CACHE_CDC_LAZY_RECOVERY_SCHEDULE` | `@every 5m` |
