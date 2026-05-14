@@ -471,9 +471,9 @@ config:
     avg: 65536
     max: 262144
 
-    # Lazy chunking: store compressed NAR first, chunk in background (default: true)
+    # Lazy chunking: store compressed NAR first, chunk in background (default: false)
     # This improves TTFB by avoiding synchronous chunking during download
-    lazyChunkingEnabled: true
+    lazyChunkingEnabled: false
 
     # Number of background workers for lazy chunking (default: number of CPUs)
     backgroundWorkers: 4

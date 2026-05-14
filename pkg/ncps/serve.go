@@ -196,9 +196,9 @@ func serveCommand(
 			},
 			&cli.BoolFlag{
 				Name:    "cache-cdc-lazy-chunking-enabled",
-				Usage:   "Enable lazy chunking: store compressed NAR first, chunk in background (default: true)",
+				Usage:   "Enable lazy chunking: store compressed NAR first, chunk in background (default: false)",
 				Sources: flagSources("cache.cdc.lazy-chunking-enabled", "CACHE_CDC_LAZY_CHUNKING_ENABLED"),
-				Value:   true,
+				Value:   false,
 			},
 			&cli.IntFlag{
 				Name:    "cache-cdc-background-workers",
