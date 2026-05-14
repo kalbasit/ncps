@@ -612,12 +612,13 @@ func setupFsckCDCNarFile(
 	})
 	require.NoError(t, err)
 
-	// Create nar_file in DB.
+	// Create nar_file in DB. FileSize is set to ni.NarSize so that the correctly-chunked
+	// nar_file is NOT flagged by GetCDCNarFilesWithSizeMismatch (file_size == nar_size).
 	narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
 		Hash:        narHash,
 		Compression: narCompression.String(),
 		Query:       "",
-		FileSize:    uint64(len(narInfoText)),
+		FileSize:    ni.NarSize,
 		TotalChunks: int64(numChunks),
 	})
 	require.NoError(t, err)
@@ -673,6 +674,9 @@ func testFsckCDCSuite(setup fsckSetupFn) func(*testing.T) {
 		t.Run("RepairOrphanedChunkInStorage", testFsckCDCRepairOrphanedChunkInStorage(setup))
 		t.Run("ChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig",
 			testFsckCDCChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig(setup))
+		t.Run("SizeMismatchDetected", testFsckCDCSizeMismatchDetected(setup))
+		t.Run("SizeMismatchRepair", testFsckCDCSizeMismatchRepair(setup))
+		t.Run("CorrectSizeNotFlagged", testFsckCDCCorrectSizeNotFlagged(setup))
 	}
 }
 
@@ -854,17 +858,18 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 		require.NoError(t, err)
 		require.Len(t, nar1Chunks, 2)
 
+		ni2 := parseFsckNarInfoText(t, testdata.Nar2.NarInfoText)
+
 		// Create Nar2 sharing one chunk with Nar1.
+		// FileSize must equal ni2.NarSize (uncompressed) so Nar2 is not flagged as size-mismatched.
 		nar2File, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
 			Hash:        testdata.Nar2.NarHash,
 			Compression: testdata.Nar2.NarCompression.String(),
 			Query:       "",
-			FileSize:    uint64(len(testdata.Nar2.NarText)),
+			FileSize:    ni2.NarSize,
 			TotalChunks: 1,
 		})
 		require.NoError(t, err)
-
-		ni2 := parseFsckNarInfoText(t, testdata.Nar2.NarInfoText)
 		narInfo2, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
 			Hash:        testdata.Nar2.NarInfoHash,
 			StorePath:   sql.NullString{String: ni2.StorePath, Valid: ni2.StorePath != ""},
@@ -1033,5 +1038,134 @@ func testFsckCDCChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig(setup fsckSet
 		}
 
 		require.NoError(t, app.Run(ctx, args))
+	}
+}
+
+// testFsckCDCSizeMismatchDetected verifies that a CDC nar_file with file_size smaller than
+// the linked narinfo's nar_size is reported as a "CDC NARs w/ size mismatch" issue.
+func testFsckCDCSizeMismatchDetected(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// Create a correctly-chunked nar_file then set file_size to a truncated value.
+		narFile := setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		const truncatedSize = 490516
+		require.NoError(t, db.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+			ID:       narFile.ID,
+			FileSize: truncatedSize,
+		}))
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		args := []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--dry-run",
+		}
+
+		err = app.Run(ctx, args)
+		assert.ErrorIs(t, err, ncps.ErrFsckIssuesFound)
+	}
+}
+
+// testFsckCDCSizeMismatchRepair verifies that --repair deletes a size-mismatched CDC
+// nar_file and its orphaned narinfo, leaving a clean state on the next fsck run.
+func testFsckCDCSizeMismatchRepair(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		narFile := setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		const truncatedSize = 490516
+		require.NoError(t, db.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+			ID:       narFile.ID,
+			FileSize: truncatedSize,
+		}))
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Repair run — should delete the mismatched nar_file.
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--repair",
+		}))
+
+		// Verify nar_file is gone.
+		_, dbErr := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+			Hash:        testdata.Nar1.NarHash,
+			Compression: testdata.Nar1.NarCompression.String(),
+			Query:       "",
+		})
+		assert.True(t, database.IsNotFoundError(dbErr), "nar_file should be deleted after repair")
+
+		// Second fsck run must report 0 issues.
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}))
+	}
+}
+
+// testFsckCDCCorrectSizeNotFlagged verifies that a CDC nar_file with file_size exactly
+// equal to the linked narinfo's nar_size is NOT reported as a size mismatch.
+func testFsckCDCCorrectSizeNotFlagged(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// setupFsckCDCNarFile sets file_size == ni.NarSize — a correctly-chunked row.
+		setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// No issues expected — correctly-chunked rows must not be flagged.
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}))
 	}
 }

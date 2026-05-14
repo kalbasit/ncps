@@ -2174,3 +2174,69 @@ func TestRunCDCLazyRecoveryWithFilesNewerThanCutoff(t *testing.T) {
 	assert.False(t, narFileAfter.ChunkingStartedAt.Valid,
 		"ChunkingStartedAt should NOT be set for files newer than cutoff")
 }
+
+// TestStoreNarWithCDC_TruncatedStream is a regression test for the silent cache
+// poisoning bug: when the upstream stream ends prematurely, the CDC chunker sees a
+// clean EOF and would previously commit the truncated result as "complete". After the
+// fix, storeNarWithCDCFromReader must return an error and leave total_chunks = 0.
+func TestStoreNarWithCDC_TruncatedStream(t *testing.T) {
+	t.Parallel()
+
+	backends := []struct {
+		name    string
+		envVar  string
+		factory cacheFactory
+	}{
+		{name: "SQLite", factory: setupSQLiteFactory},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", factory: setupPostgresFactory},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", factory: setupMySQLFactory},
+	}
+
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			ctx := context.Background()
+
+			c, db, _, dir, _, cleanup := b.factory(t)
+			t.Cleanup(cleanup)
+
+			chunkStoreDir := filepath.Join(dir, "chunks-store")
+			cs, err := chunk.NewLocalStore(chunkStoreDir)
+			require.NoError(t, err)
+
+			c.SetChunkStore(cs)
+			require.NoError(t, c.SetCDCConfiguration(true, 1024, 4096, 8192))
+
+			// Declare fileSize much larger than what the reader actually provides.
+			const declaredNarSize uint64 = 100_000
+
+			const actualBytes = 100
+
+			const truncatedHash = "truncatedtest0000000000000000000000000000000000000000"
+
+			narURL := nar.URL{Hash: truncatedHash, Compression: nar.CompressionTypeNone}
+
+			// LimitReader returns io.EOF after actualBytes — simulates truncated upstream stream.
+			limitedR := io.LimitReader(strings.NewReader(strings.Repeat("x", actualBytes*2)), actualBytes)
+
+			err = c.storeNarWithCDCFromReader(ctx, limitedR, declaredNarSize, &narURL, nil)
+			require.Error(t, err, "truncated stream must return an error")
+			require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+			assert.Contains(t, err.Error(), "truncated")
+
+			// The nar_file row must NOT be marked complete.
+			nf, dbErr := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        narURL.Hash,
+				Compression: nar.CompressionTypeNone.String(),
+				Query:       "",
+			})
+			require.NoError(t, dbErr)
+			assert.Equal(t, int64(0), nf.TotalChunks, "truncated stream must leave total_chunks = 0")
+		})
+	}
+}
