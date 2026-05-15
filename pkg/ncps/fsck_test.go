@@ -677,6 +677,8 @@ func testFsckCDCSuite(setup fsckSetupFn) func(*testing.T) {
 		t.Run("SizeMismatchDetected", testFsckCDCSizeMismatchDetected(setup))
 		t.Run("SizeMismatchRepair", testFsckCDCSizeMismatchRepair(setup))
 		t.Run("CorrectSizeNotFlagged", testFsckCDCCorrectSizeNotFlagged(setup))
+		t.Run("SizeMismatchRespectsVerifiedSince", testFsckCDCSizeMismatchRespectsVerifiedSince(setup))
+		t.Run("SizeMismatchDoesNotUpdateVerifiedAt", testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt(setup))
 	}
 }
 
@@ -1167,5 +1169,94 @@ func testFsckCDCCorrectSizeNotFlagged(setup fsckSetupFn) func(*testing.T) {
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
 		}))
+	}
+}
+
+// testFsckCDCSizeMismatchRespectsVerifiedSince verifies that the size-mismatch check
+// follows the same verified_at skip semantics as the other nar_file checks.
+func testFsckCDCSizeMismatchRespectsVerifiedSince(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		narFile := setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		const truncatedSize = 490516
+		require.NoError(t, db.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+			ID:       narFile.ID,
+			FileSize: truncatedSize,
+		}))
+		require.NoError(t, db.UpdateNarFileVerifiedAt(ctx, narFile.ID))
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verified-since=1h",
+		}))
+	}
+}
+
+// testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt verifies that a dry-run fsck does
+// not mark a size-mismatched CDC nar_file as verified while reporting the issue.
+func testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		narFile := setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		const truncatedSize = 490516
+		require.NoError(t, db.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
+			ID:       narFile.ID,
+			FileSize: truncatedSize,
+		}))
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		runErr := app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--dry-run",
+		})
+		require.ErrorIs(t, runErr, ncps.ErrFsckIssuesFound)
+
+		narFileAfter, dbErr := db.GetNarFileByHashAndCompressionAndQuery(
+			ctx,
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        testdata.Nar1.NarHash,
+				Compression: testdata.Nar1.NarCompression.String(),
+				Query:       "",
+			},
+		)
+		require.NoError(t, dbErr)
+		assert.False(t, narFileAfter.VerifiedAt.Valid, "size-mismatched nar_file must not be marked verified")
 	}
 }

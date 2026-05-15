@@ -613,6 +613,18 @@ func collectFsckSuspects(
 	results.orphanedChunksInDB = orphanedChunks
 	logger.Info().Int("count", len(orphanedChunks)).Msg("phase 1e: orphaned chunks in DB found")
 
+	eligibleChunkedNarFiles := make(map[int64]database.GetAllNarFilesRow)
+
+	for _, nf := range allNarFiles {
+		if nf.TotalChunks <= 0 {
+			continue
+		}
+
+		if shouldCheckNar(nf, verifiedSince) {
+			eligibleChunkedNarFiles[nf.ID] = nf
+		}
+	}
+
 	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
 	logger.Info().Msg("phase 1f: checking NAR files with chunk issues")
 
@@ -634,8 +646,38 @@ func collectFsckSuspects(
 		return nil, fmt.Errorf("GetCDCNarFilesWithSizeMismatch: %w", err)
 	}
 
-	results.narFilesWithSizeMismatch = narFilesWithSizeMismatch
-	logger.Info().Int("count", len(narFilesWithSizeMismatch)).Msg("phase 1g: CDC NAR files with size mismatch found")
+	chunkIssuesByID := make(map[int64]struct{}, len(narFilesWithChunkIssues))
+	for _, nf := range narFilesWithChunkIssues {
+		chunkIssuesByID[nf.ID] = struct{}{}
+	}
+
+	sizeMismatchByID := make(map[int64]struct{}, len(narFilesWithSizeMismatch))
+	for _, nf := range narFilesWithSizeMismatch {
+		if _, ok := eligibleChunkedNarFiles[nf.ID]; !ok {
+			continue
+		}
+
+		results.narFilesWithSizeMismatch = append(results.narFilesWithSizeMismatch, nf)
+		sizeMismatchByID[nf.ID] = struct{}{}
+	}
+
+	for id := range eligibleChunkedNarFiles {
+		if _, hasChunkIssues := chunkIssuesByID[id]; hasChunkIssues {
+			continue
+		}
+
+		if _, hasSizeMismatch := sizeMismatchByID[id]; hasSizeMismatch {
+			continue
+		}
+
+		if err := db.UpdateNarFileVerifiedAt(ctx, id); err != nil {
+			logger.Warn().Err(err).Int64("nar_file_id", id).Msg("failed to update verified_at")
+		}
+	}
+
+	logger.Info().
+		Int("count", len(results.narFilesWithSizeMismatch)).
+		Msg("phase 1g: CDC NAR files with size mismatch found")
 
 	// h. Orphaned chunk files in storage
 	logger.Info().Msg("phase 1h: checking orphaned chunk files in storage")
@@ -1428,11 +1470,6 @@ func collectNarFilesWithChunkIssues(
 
 		if isBroken {
 			broken = append(broken, narFile)
-		} else {
-			// Verified, update verified_at
-			if err := db.UpdateNarFileVerifiedAt(ctx, nf.ID); err != nil {
-				zerolog.Ctx(ctx).Warn().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to update verified_at")
-			}
 		}
 	}
 
