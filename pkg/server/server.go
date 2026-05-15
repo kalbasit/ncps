@@ -161,9 +161,9 @@ func (s *Server) skipTelemetryForInfraRoutes(next http.Handler) http.Handler {
 
 		// Apply all telemetry middleware for other routes
 		telemetryChain := otelchi.Middleware(s.cache.GetHostname(), otelchi.WithChiRoutes(s.router))(
-			otelchimetric.NewRequestDurationMillis(baseCfg)(
-				otelchimetric.NewRequestInFlight(baseCfg)(
-					otelchimetric.NewResponseSizeBytes(baseCfg)(
+			otelchimetric.NewServerRequestDuration(baseCfg)(
+				otelchimetric.NewServerActiveRequests(baseCfg)(
+					otelchimetric.NewServerResponseBodySize(baseCfg)(
 						requestLogger(next),
 					),
 				),
