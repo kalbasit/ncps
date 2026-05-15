@@ -612,6 +612,61 @@ func (q *Queries) GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesRow, erro
 	return items, nil
 }
 
+const getCDCNarFilesWithSizeMismatch = `-- name: GetCDCNarFilesWithSizeMismatch :many
+SELECT DISTINCT nf.id, nf.hash, nf.compression, nf.file_size, nf."query", nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at, nf.verified_at
+FROM nar_files nf
+INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
+INNER JOIN narinfos ni ON ni.id = nnf.narinfo_id
+WHERE nf.total_chunks > 0
+    AND ni.nar_size IS NOT NULL
+    AND nf.file_size != CAST(ni.nar_size AS INTEGER)
+`
+
+// Find CDC nar_files (total_chunks > 0) whose stored file_size differs from the
+// linked narinfo's declared nar_size. These represent truncated CDC artifacts.
+//
+//	SELECT DISTINCT nf.id, nf.hash, nf.compression, nf.file_size, nf."query", nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at, nf.verified_at
+//	FROM nar_files nf
+//	INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
+//	INNER JOIN narinfos ni ON ni.id = nnf.narinfo_id
+//	WHERE nf.total_chunks > 0
+//	    AND ni.nar_size IS NOT NULL
+//	    AND nf.file_size != CAST(ni.nar_size AS INTEGER)
+func (q *Queries) GetCDCNarFilesWithSizeMismatch(ctx context.Context) ([]NarFile, error) {
+	rows, err := q.db.QueryContext(ctx, getCDCNarFilesWithSizeMismatch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NarFile
+	for rows.Next() {
+		var i NarFile
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hash,
+			&i.Compression,
+			&i.FileSize,
+			&i.Query,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastAccessedAt,
+			&i.TotalChunks,
+			&i.ChunkingStartedAt,
+			&i.VerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getChunkByHash = `-- name: GetChunkByHash :one
 SELECT id, hash, size, compressed_size, created_at, updated_at
 FROM chunks

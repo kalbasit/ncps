@@ -52,6 +52,9 @@ type fsckResults struct {
 	// narFilesWithChunkIssues: CDC nar_files with missing or incomplete chunks.
 	narFilesWithChunkIssues []database.NarFile
 
+	// narFilesWithSizeMismatch: CDC nar_files (total_chunks > 0) where file_size != narinfos.nar_size.
+	narFilesWithSizeMismatch []database.NarFile
+
 	// orphanedChunksInStorage: chunk files in storage with no DB record.
 	orphanedChunksInStorage []string
 }
@@ -63,6 +66,7 @@ func (r *fsckResults) totalIssues() int {
 		len(r.orphanedNarFilesInStorage) +
 		len(r.orphanedChunksInDB) +
 		len(r.narFilesWithChunkIssues) +
+		len(r.narFilesWithSizeMismatch) +
 		len(r.orphanedChunksInStorage)
 }
 
@@ -609,6 +613,18 @@ func collectFsckSuspects(
 	results.orphanedChunksInDB = orphanedChunks
 	logger.Info().Int("count", len(orphanedChunks)).Msg("phase 1e: orphaned chunks in DB found")
 
+	eligibleChunkedNarFiles := make(map[int64]database.GetAllNarFilesRow)
+
+	for _, nf := range allNarFiles {
+		if nf.TotalChunks <= 0 {
+			continue
+		}
+
+		if shouldCheckNar(nf, verifiedSince) {
+			eligibleChunkedNarFiles[nf.ID] = nf
+		}
+	}
+
 	// f. NAR files with chunk issues (count mismatch or chunks missing from storage)
 	logger.Info().Msg("phase 1f: checking NAR files with chunk issues")
 
@@ -622,11 +638,52 @@ func collectFsckSuspects(
 	results.narFilesWithChunkIssues = narFilesWithChunkIssues
 	logger.Info().Int("count", len(narFilesWithChunkIssues)).Msg("phase 1f: NAR files with chunk issues found")
 
-	// g. Orphaned chunk files in storage
-	logger.Info().Msg("phase 1g: checking orphaned chunk files in storage")
+	// g. CDC NAR files with size mismatch (total_chunks > 0 but file_size != narinfos.nar_size)
+	logger.Info().Msg("phase 1g: checking CDC NAR files with size mismatch")
+
+	narFilesWithSizeMismatch, err := db.GetCDCNarFilesWithSizeMismatch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("GetCDCNarFilesWithSizeMismatch: %w", err)
+	}
+
+	chunkIssuesByID := make(map[int64]struct{}, len(narFilesWithChunkIssues))
+	for _, nf := range narFilesWithChunkIssues {
+		chunkIssuesByID[nf.ID] = struct{}{}
+	}
+
+	sizeMismatchByID := make(map[int64]struct{}, len(narFilesWithSizeMismatch))
+	for _, nf := range narFilesWithSizeMismatch {
+		if _, ok := eligibleChunkedNarFiles[nf.ID]; !ok {
+			continue
+		}
+
+		results.narFilesWithSizeMismatch = append(results.narFilesWithSizeMismatch, nf)
+		sizeMismatchByID[nf.ID] = struct{}{}
+	}
+
+	for id := range eligibleChunkedNarFiles {
+		if _, hasChunkIssues := chunkIssuesByID[id]; hasChunkIssues {
+			continue
+		}
+
+		if _, hasSizeMismatch := sizeMismatchByID[id]; hasSizeMismatch {
+			continue
+		}
+
+		if err := db.UpdateNarFileVerifiedAt(ctx, id); err != nil {
+			logger.Warn().Err(err).Int64("nar_file_id", id).Msg("failed to update verified_at")
+		}
+	}
+
+	logger.Info().
+		Int("count", len(results.narFilesWithSizeMismatch)).
+		Msg("phase 1g: CDC NAR files with size mismatch found")
+
+	// h. Orphaned chunk files in storage
+	logger.Info().Msg("phase 1h: checking orphaned chunk files in storage")
 
 	// The total number of chunks in storage is not known beforehand, so we cannot
-	// accurately report a percentage for phase 1g. We'll rely on the checked count.
+	// accurately report a percentage for phase 1h. We'll rely on the checked count.
 
 	orphaned, err := collectOrphanedChunksInStorage(ctx, db, chunkStore, &checked)
 	if err != nil {
@@ -634,7 +691,7 @@ func collectFsckSuspects(
 	}
 
 	results.orphanedChunksInStorage = orphaned
-	logger.Info().Int("count", len(orphaned)).Msg("phase 1g: orphaned chunk files found")
+	logger.Info().Int("count", len(orphaned)).Msg("phase 1h: orphaned chunk files found")
 
 	return results, nil
 }
@@ -786,6 +843,28 @@ func reVerifyFsckSuspects(
 		}
 	}
 
+	// Re-verify: CDC NAR files with size mismatch
+	if chunkStore != nil {
+		recheckMismatch, err := db.GetCDCNarFilesWithSizeMismatch(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("re-verify GetCDCNarFilesWithSizeMismatch: %w", err)
+		}
+
+		recheckMismatchMap := make(map[int64]struct{}, len(recheckMismatch))
+		for _, nf := range recheckMismatch {
+			recheckMismatchMap[nf.ID] = struct{}{}
+		}
+
+		for _, nf := range suspects.narFilesWithSizeMismatch {
+			if _, ok := recheckMismatchMap[nf.ID]; ok {
+				results.narFilesWithSizeMismatch = append(results.narFilesWithSizeMismatch, nf)
+			}
+
+			checked.Add(1)
+			remaining.Add(-1)
+		}
+	}
+
 	// Re-verify: orphaned chunk files in storage
 	for _, hash := range suspects.orphanedChunksInStorage {
 		_, err := db.GetChunkByHash(ctx, hash)
@@ -830,6 +909,7 @@ func printFsckSummary(r *fsckResults) {
 		dataRows = append(dataRows,
 			fsckRow{"Orphaned chunks (DB only):", len(r.orphanedChunksInDB)},
 			fsckRow{"NAR files w/ chunk issues:", len(r.narFilesWithChunkIssues)},
+			fsckRow{"CDC NARs w/ size mismatch:", len(r.narFilesWithSizeMismatch)},
 			fsckRow{"Orphaned chunk files:", len(r.orphanedChunksInStorage)},
 		)
 	}
@@ -896,6 +976,7 @@ func printFsckSummary(r *fsckResults) {
 		fmt.Println(sep)
 		row("Orphaned chunks (DB only):", len(r.orphanedChunksInDB))
 		row("NAR files w/ chunk issues:", len(r.narFilesWithChunkIssues))
+		row("CDC NARs w/ size mismatch:", len(r.narFilesWithSizeMismatch))
 		row("Orphaned chunk files:", len(r.orphanedChunksInStorage))
 	}
 
@@ -1101,6 +1182,13 @@ func repairFsckIssues(
 		}
 	}
 
+	// f2. Delete CDC nar_files with size mismatch (truncated artifacts).
+	if chunkStore != nil {
+		if err := repairSizeMismatchCDCNarFiles(ctx, db, chunkStore, results.narFilesWithSizeMismatch, logger); err != nil {
+			return err
+		}
+	}
+
 	// g. Delete orphaned chunk files from storage
 	if chunkStore != nil {
 		for _, hash := range results.orphanedChunksInStorage {
@@ -1209,6 +1297,106 @@ func repairBrokenCDCNarFiles(
 	return nil
 }
 
+// repairSizeMismatchCDCNarFiles deletes CDC nar_files whose file_size does not match the
+// linked narinfo's nar_size (truncated artifacts). Re-verification is done via a fresh
+// GetCDCNarFilesWithSizeMismatch query rather than isNarFileChunkBroken, because
+// size-mismatched rows may otherwise pass the chunk-count check.
+func repairSizeMismatchCDCNarFiles(
+	ctx context.Context,
+	db database.Querier,
+	cs chunk.Store,
+	narFilesWithSizeMismatch []database.NarFile,
+	logger *zerolog.Logger,
+) error {
+	if len(narFilesWithSizeMismatch) == 0 {
+		return nil
+	}
+
+	// Snapshot pre-existing narinfo orphans so we only sweep newly orphaned ones below.
+	preExistingOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("repair size-mismatch pre-check GetNarInfosWithoutNarFiles: %w", err)
+	}
+
+	preExistingOrphanIDs := make(map[int64]struct{}, len(preExistingOrphans))
+	for _, ni := range preExistingOrphans {
+		preExistingOrphanIDs[ni.ID] = struct{}{}
+	}
+
+	// Re-verify: re-run the mismatch query and build a set for O(1) lookup.
+	recheckMismatch, err := db.GetCDCNarFilesWithSizeMismatch(ctx)
+	if err != nil {
+		return fmt.Errorf("repair size-mismatch re-verify GetCDCNarFilesWithSizeMismatch: %w", err)
+	}
+
+	recheckSet := make(map[int64]struct{}, len(recheckMismatch))
+	for _, nf := range recheckMismatch {
+		recheckSet[nf.ID] = struct{}{}
+	}
+
+	for _, nf := range narFilesWithSizeMismatch {
+		if _, stillMismatched := recheckSet[nf.ID]; !stillMismatched {
+			continue
+		}
+
+		if _, err := db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
+			Hash:        nf.Hash,
+			Compression: nf.Compression,
+			Query:       nf.Query,
+		}); err != nil {
+			logger.Error().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to delete size-mismatched CDC nar_file")
+		} else {
+			logger.Info().Int64("nar_file_id", nf.ID).Str("hash", nf.Hash).Msg("deleted size-mismatched CDC nar_file")
+		}
+	}
+
+	// Delete narinfos orphaned by the deletions above.
+	newOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("repair size-mismatch post-check GetNarInfosWithoutNarFiles: %w", err)
+	}
+
+	for _, ni := range newOrphans {
+		if _, alreadyOrphaned := preExistingOrphanIDs[ni.ID]; alreadyOrphaned {
+			continue
+		}
+
+		if _, delErr := db.DeleteNarInfoByID(ctx, ni.ID); delErr != nil {
+			logger.Error().Err(delErr).Int64("narinfo_id", ni.ID).
+				Msg("failed to delete narinfo orphaned by size-mismatched CDC nar_file")
+		} else {
+			logger.Info().Int64("narinfo_id", ni.ID).Str("hash", ni.Hash).
+				Msg("deleted narinfo orphaned by size-mismatched CDC nar_file")
+		}
+	}
+
+	// Clean up newly-orphaned chunks after nar_file deletions.
+	orphanedChunks, err := db.GetOrphanedChunks(ctx)
+	if err != nil {
+		return fmt.Errorf("repair size-mismatch GetOrphanedChunks: %w", err)
+	}
+
+	for _, c := range orphanedChunks {
+		if err := cs.DeleteChunk(ctx, c.Hash); err != nil {
+			logger.Error().Err(err).Str("hash", c.Hash).
+				Msg("failed to delete orphaned chunk from storage after size-mismatch repair")
+		} else {
+			logger.Info().Str("hash", c.Hash).
+				Msg("deleted orphaned chunk from storage after size-mismatch repair")
+		}
+
+		if err := db.DeleteChunkByID(ctx, c.ID); err != nil {
+			logger.Error().Err(err).Int64("chunk_id", c.ID).
+				Msg("failed to delete orphaned chunk DB record after size-mismatch repair")
+		} else {
+			logger.Info().Int64("chunk_id", c.ID).Str("hash", c.Hash).
+				Msg("deleted orphaned chunk DB record after size-mismatch repair")
+		}
+	}
+
+	return nil
+}
+
 // isNarFileChunkBroken returns true if the nar_file's chunks are incomplete or missing from storage.
 func isNarFileChunkBroken(ctx context.Context, db database.Querier, cs chunk.Store, nf database.NarFile) (bool, error) {
 	chunks, err := db.GetChunksByNarFileID(ctx, nf.ID)
@@ -1282,11 +1470,6 @@ func collectNarFilesWithChunkIssues(
 
 		if isBroken {
 			broken = append(broken, narFile)
-		} else {
-			// Verified, update verified_at
-			if err := db.UpdateNarFileVerifiedAt(ctx, nf.ID); err != nil {
-				zerolog.Ctx(ctx).Warn().Err(err).Int64("nar_file_id", nf.ID).Msg("failed to update verified_at")
-			}
 		}
 	}
 

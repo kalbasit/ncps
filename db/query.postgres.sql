@@ -271,6 +271,17 @@ FROM nar_files nf
 LEFT JOIN narinfo_nar_files ninf ON nf.id = ninf.nar_file_id
 WHERE ninf.narinfo_id IS NULL;
 
+-- name: GetCDCNarFilesWithSizeMismatch :many
+-- Find CDC nar_files (total_chunks > 0) whose stored file_size differs from the
+-- linked narinfo's declared nar_size. These represent truncated CDC artifacts.
+SELECT DISTINCT nf.id, nf.hash, nf.compression, nf.file_size, nf.query, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at, nf.verified_at
+FROM nar_files nf
+INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
+INNER JOIN narinfos ni ON ni.id = nnf.narinfo_id
+WHERE nf.total_chunks > 0
+    AND ni.nar_size IS NOT NULL
+    AND nf.file_size != CAST(ni.nar_size AS BIGINT);
+
 -- name: GetUnmigratedNarInfoHashes :many
 -- Get all narinfo hashes that have no URL (unmigrated).
 SELECT hash

@@ -1790,15 +1790,10 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	}
 	defer f.Close()
 
-	fi, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("error stating temp file: %w", err)
-	}
-
-	//nolint:gosec // G115: File size from Stat is non-negative
-	fileSize := uint64(fi.Size())
-
-	return c.storeNarWithCDCFromReader(ctx, f, fileSize, narURL, onNarFileReady)
+	// Pass fileSize=0: the compressed file size on disk does not equal the uncompressed
+	// NarSize, so we skip the size validation (which requires the narinfo's NarSize).
+	// The NarSize is only known at download time (pullNarIntoStore), not here.
+	return c.storeNarWithCDCFromReader(ctx, f, 0, narURL, onNarFileReady)
 }
 
 // maybeDecompressReader wraps r in a decompression reader if compression is not none.
@@ -1976,6 +1971,23 @@ func (c *Cache) storeNarWithCDCFromReader(
 				}
 
 				chunkCount += int64(len(batch))
+
+				// Validate that the total bytes consumed by the chunker match the
+				// narinfo's declared NarSize. A clean io.EOF from a decompressor
+				// can mask an upstream truncation (e.g. HTTP/2 GOAWAY), so we
+				// enforce the invariant here before committing the result.
+				if fileSize > 0 && uint64(totalSize) != fileSize { //nolint:gosec // G115: totalSize is non-negative
+					zerolog.Ctx(ctx).Error().
+						Str("nar_url", narURL.String()).
+						Uint64("expected_bytes", fileSize).
+						Int64("actual_bytes", totalSize).
+						Msg("storeNarWithCDCFromReader: CDC chunking truncated, aborting commit")
+
+					return fmt.Errorf(
+						"CDC chunking truncated: expected %d uncompressed bytes, got %d: %w",
+						fileSize, totalSize, io.ErrUnexpectedEOF,
+					)
+				}
 
 				// All chunks processed - mark as complete and update file_size
 				// to the actual uncompressed size (may differ from original compressed file size).
@@ -2521,6 +2533,7 @@ func (c *Cache) pullNarIntoStore(
 				zerolog.Ctx(ctx).
 					Error().
 					Err(cdcErr).
+					Str("nar_url", narURLForCDC.String()).
 					Msg("CDC chunking failed in background after pullNarIntoStore")
 				ds.setError(cdcErr)
 
@@ -2617,6 +2630,7 @@ func (c *Cache) pullNarIntoStore(
 				zerolog.Ctx(ctx).
 					Error().
 					Err(cdcErr).
+					Str("nar_url", narURL.String()).
 					Msg("CDC chunking failed in background after pullNarIntoStore (simple path)")
 				ds.setError(cdcErr)
 

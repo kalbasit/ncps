@@ -151,6 +151,17 @@ type Querier interface {
 	//  SELECT id, hash, compression, `query`, file_size, total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at, verified_at
 	//  FROM nar_files
 	GetAllNarFiles(ctx context.Context) ([]GetAllNarFilesRow, error)
+	// Find CDC nar_files (total_chunks > 0) whose stored file_size differs from the
+	// linked narinfo's declared nar_size. These represent truncated CDC artifacts.
+	//
+	//  SELECT DISTINCT nf.id, nf.hash, nf.compression, nf.file_size, nf.`query`, nf.created_at, nf.updated_at, nf.last_accessed_at, nf.total_chunks, nf.chunking_started_at, nf.verified_at
+	//  FROM nar_files nf
+	//  INNER JOIN narinfo_nar_files nnf ON nf.id = nnf.nar_file_id
+	//  INNER JOIN narinfos ni ON ni.id = nnf.narinfo_id
+	//  WHERE nf.total_chunks > 0
+	//      AND ni.nar_size IS NOT NULL
+	//      AND nf.file_size != CAST(ni.nar_size AS UNSIGNED)
+	GetCDCNarFilesWithSizeMismatch(ctx context.Context) ([]GetCDCNarFilesWithSizeMismatchRow, error)
 	//GetChunkByHash
 	//
 	//  SELECT id, hash, size, compressed_size, created_at, updated_at
