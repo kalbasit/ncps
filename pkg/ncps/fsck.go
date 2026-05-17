@@ -1738,7 +1738,8 @@ func isNarFileContentCorrupt(
 			return false, fmt.Errorf("GetChunk(%s): %w", c.Hash, err)
 		}
 
-		data, readErr := io.ReadAll(r)
+		h := blake3.New()
+		_, readErr := io.Copy(h, r)
 		closeErr := r.Close()
 
 		if readErr != nil {
@@ -1749,8 +1750,7 @@ func isNarFileContentCorrupt(
 			return false, fmt.Errorf("closing chunk %s: %w", c.Hash, closeErr)
 		}
 
-		sum := blake3.Sum256(data)
-		if hex.EncodeToString(sum[:]) != c.Hash {
+		if hex.EncodeToString(h.Sum(nil)) != c.Hash {
 			return true, nil
 		}
 	}
