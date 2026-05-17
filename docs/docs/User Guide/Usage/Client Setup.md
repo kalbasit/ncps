@@ -194,7 +194,7 @@ Configuring `trusted-users` makes sense if:
 
 ### Better Alternatives
 
-For most multi-user environments, it is safer to configure ncps globally in your system configuration (as shown in the [NixOS Configuration](#nixos-configuration) or [Non-NixOS Configuration](#non-nixos-configuration) sections above).
+For most multi-user environments, it is safer to configure ncps globally in your system configuration (as shown in the NixOS Configuration or Non-NixOS Configuration sections above).
 
 By adding `substituters` and `trusted-public-keys` to the global configuration:
 
