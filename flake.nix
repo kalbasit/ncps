@@ -24,7 +24,8 @@
 
     trilium = {
       inputs.nixpkgs.follows = "nixpkgs";
-      url = "github:TriliumNext/Trilium";
+      # TODO: Recent version broke, fix it upstream
+      url = "github:TriliumNext/Trilium/v0.103.0";
     };
   };
 
