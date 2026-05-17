@@ -2,18 +2,24 @@ package ncps
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/nix-community/go-nix/pkg/nixhash"
 	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v3"
+	"github.com/zeebo/blake3"
 	"golang.org/x/term"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
@@ -57,6 +63,17 @@ type fsckResults struct {
 
 	// orphanedChunksInStorage: chunk files in storage with no DB record.
 	orphanedChunksInStorage []string
+
+	// verifyContent indicates whether content-hash verification was requested.
+	verifyContent bool
+
+	// narFilesWithCorruptChunks: CDC nar_files where at least one chunk's decompressed
+	// content does not hash to its stored key (BLAKE3 hex).
+	narFilesWithCorruptChunks []database.NarFile
+
+	// narFilesWithHashMismatch: CDC nar_files whose assembled chunk stream does not
+	// match the narinfo NarHash (SHA-256 in nix-base32).
+	narFilesWithHashMismatch []database.NarFile
 }
 
 func (r *fsckResults) totalIssues() int {
@@ -67,7 +84,9 @@ func (r *fsckResults) totalIssues() int {
 		len(r.orphanedChunksInDB) +
 		len(r.narFilesWithChunkIssues) +
 		len(r.narFilesWithSizeMismatch) +
-		len(r.orphanedChunksInStorage)
+		len(r.orphanedChunksInStorage) +
+		len(r.narFilesWithCorruptChunks) +
+		len(r.narFilesWithHashMismatch)
 }
 
 // NarWalker is implemented by storage backends that support walking NAR files.
@@ -111,6 +130,11 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			&cli.DurationFlag{
 				Name:  "verified-since",
 				Usage: "Skip checking NARs that have been verified within this duration (e.g. 1h, 30m)",
+			},
+			&cli.BoolFlag{
+				Name: "verify-content",
+				Usage: "Read and hash each CDC chunk's decompressed content to detect corruption " +
+					"(expensive: reads all chunk bytes from storage; use --verified-since to limit scope)",
 			},
 
 			// Storage Flags
@@ -260,6 +284,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 
 			dryRun := cmd.Bool("dry-run")
 			repair := cmd.Bool("repair")
+			verifyContent := cmd.Bool("verify-content")
 
 			verifiedSince := cmd.Duration("verified-since")
 
@@ -365,7 +390,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			// 6. Phase 1: Collect suspects
 			logger.Info().Msg("phase 1: collecting suspects")
 
-			suspects, err := collectFsckSuspects(ctx, db, narStore, chunkStore, cdcMode, verifiedSince)
+			suspects, err := collectFsckSuspects(ctx, db, narStore, chunkStore, cdcMode, verifiedSince, verifyContent)
 			if err != nil {
 				return fmt.Errorf("error collecting suspects: %w", err)
 			}
@@ -436,9 +461,10 @@ func collectFsckSuspects(
 	chunkStore chunk.Store,
 	cdcMode bool,
 	verifiedSince time.Duration,
+	verifyContent bool,
 ) (*fsckResults, error) {
 	logger := zerolog.Ctx(ctx)
-	results := &fsckResults{cdcMode: cdcMode}
+	results := &fsckResults{cdcMode: cdcMode, verifyContent: verifyContent}
 
 	// Setup progress tracking
 	var checked, skipped, total, suspects atomic.Int64
@@ -679,7 +705,7 @@ func collectFsckSuspects(
 		Int("count", len(results.narFilesWithSizeMismatch)).
 		Msg("phase 1g: CDC NAR files with size mismatch found")
 
-	// h. Orphaned chunk files in storage
+	// h. Orphaned chunk files in storage (before content checks so we skip orphan hashes)
 	logger.Info().Msg("phase 1h: checking orphaned chunk files in storage")
 
 	// The total number of chunks in storage is not known beforehand, so we cannot
@@ -692,6 +718,49 @@ func collectFsckSuspects(
 
 	results.orphanedChunksInStorage = orphaned
 	logger.Info().Int("count", len(orphaned)).Msg("phase 1h: orphaned chunk files found")
+
+	if !verifyContent {
+		return results, nil
+	}
+
+	// Build a set of nar_file IDs that already have structural chunk issues so we
+	// don't double-count them in the content checks.
+	chunkIssueIDs := make(map[int64]struct{}, len(results.narFilesWithChunkIssues))
+	for _, nf := range results.narFilesWithChunkIssues {
+		chunkIssueIDs[nf.ID] = struct{}{}
+	}
+
+	// i. Chunk content hash verification.
+	logger.Info().Msg("phase 1i: verifying chunk content hashes")
+
+	corruptNarFiles, err := collectNarFilesWithCorruptChunks(
+		ctx, db, chunkStore, allNarFiles, chunkIssueIDs, verifiedSince,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("collectNarFilesWithCorruptChunks: %w", err)
+	}
+
+	results.narFilesWithCorruptChunks = corruptNarFiles
+	logger.Info().Int("count", len(corruptNarFiles)).Msg("phase 1i: NAR files with corrupt chunks found")
+
+	// Build set of corrupt IDs to skip in the NAR hash check.
+	corruptByID := make(map[int64]struct{}, len(corruptNarFiles))
+	for _, nf := range corruptNarFiles {
+		corruptByID[nf.ID] = struct{}{}
+	}
+
+	// j. End-to-end NAR hash verification.
+	logger.Info().Msg("phase 1j: verifying assembled NAR hashes")
+
+	hashMismatchNarFiles, err := collectNarFilesWithHashMismatch(
+		ctx, db, chunkStore, allNarFiles, chunkIssueIDs, corruptByID, verifiedSince,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("collectNarFilesWithHashMismatch: %w", err)
+	}
+
+	results.narFilesWithHashMismatch = hashMismatchNarFiles
+	logger.Info().Int("count", len(hashMismatchNarFiles)).Msg("phase 1j: NAR files with hash mismatch found")
 
 	return results, nil
 }
@@ -706,7 +775,7 @@ func reVerifyFsckSuspects(
 	suspects *fsckResults,
 ) (*fsckResults, error) {
 	logger := zerolog.Ctx(ctx)
-	results := &fsckResults{cdcMode: suspects.cdcMode}
+	results := &fsckResults{cdcMode: suspects.cdcMode, verifyContent: suspects.verifyContent}
 
 	// Setup progress tracking for phase 2
 	totalSuspects := suspects.totalIssues()
@@ -880,6 +949,40 @@ func reVerifyFsckSuspects(
 		remaining.Add(-1)
 	}
 
+	if !suspects.verifyContent || chunkStore == nil {
+		return results, nil
+	}
+
+	// Re-verify: NAR files with corrupt chunks (re-run content hash check per NAR).
+	for _, nf := range suspects.narFilesWithCorruptChunks {
+		broken, err := isNarFileContentCorrupt(ctx, db, chunkStore, nf)
+		if err != nil {
+			return nil, fmt.Errorf("re-verify narFilesWithCorruptChunks(%d): %w", nf.ID, err)
+		}
+
+		if broken {
+			results.narFilesWithCorruptChunks = append(results.narFilesWithCorruptChunks, nf)
+		}
+
+		checked.Add(1)
+		remaining.Add(-1)
+	}
+
+	// Re-verify: NAR files with hash mismatch.
+	for _, nf := range suspects.narFilesWithHashMismatch {
+		mismatch, err := isNarFileHashMismatched(ctx, db, chunkStore, nf)
+		if err != nil {
+			return nil, fmt.Errorf("re-verify narFilesWithHashMismatch(%d): %w", nf.ID, err)
+		}
+
+		if mismatch {
+			results.narFilesWithHashMismatch = append(results.narFilesWithHashMismatch, nf)
+		}
+
+		checked.Add(1)
+		remaining.Add(-1)
+	}
+
 	return results, nil
 }
 
@@ -912,6 +1015,13 @@ func printFsckSummary(r *fsckResults) {
 			fsckRow{"CDC NARs w/ size mismatch:", len(r.narFilesWithSizeMismatch)},
 			fsckRow{"Orphaned chunk files:", len(r.orphanedChunksInStorage)},
 		)
+
+		if r.verifyContent {
+			dataRows = append(dataRows,
+				fsckRow{"NAR files w/ corrupt chunks:", len(r.narFilesWithCorruptChunks)},
+				fsckRow{"NAR files w/ hash mismatch:", len(r.narFilesWithHashMismatch)},
+			)
+		}
 	}
 
 	total := r.totalIssues()
@@ -978,6 +1088,11 @@ func printFsckSummary(r *fsckResults) {
 		row("NAR files w/ chunk issues:", len(r.narFilesWithChunkIssues))
 		row("CDC NARs w/ size mismatch:", len(r.narFilesWithSizeMismatch))
 		row("Orphaned chunk files:", len(r.orphanedChunksInStorage))
+
+		if r.verifyContent {
+			row("NAR files w/ corrupt chunks:", len(r.narFilesWithCorruptChunks))
+			row("NAR files w/ hash mismatch:", len(r.narFilesWithHashMismatch))
+		}
 	}
 
 	fmt.Println(sep)
@@ -1189,6 +1304,30 @@ func repairFsckIssues(
 		}
 	}
 
+	// f3. Delete CDC nar_files with corrupt chunk content.
+	if chunkStore != nil && results.verifyContent {
+		verifyCorrupt := func(ctx context.Context, nf database.NarFile) (bool, error) {
+			return isNarFileContentCorrupt(ctx, db, chunkStore, nf)
+		}
+
+		if err := repairCDCNarFiles(
+			ctx, db, chunkStore, results.narFilesWithCorruptChunks, verifyCorrupt, logger,
+		); err != nil {
+			return err
+		}
+	}
+
+	// f4. Delete CDC nar_files with assembled NAR hash mismatch.
+	if chunkStore != nil && results.verifyContent {
+		verifyHash := func(ctx context.Context, nf database.NarFile) (bool, error) {
+			return isNarFileHashMismatched(ctx, db, chunkStore, nf)
+		}
+
+		if err := repairCDCNarFiles(ctx, db, chunkStore, results.narFilesWithHashMismatch, verifyHash, logger); err != nil {
+			return err
+		}
+	}
+
 	// g. Delete orphaned chunk files from storage
 	if chunkStore != nil {
 		for _, hash := range results.orphanedChunksInStorage {
@@ -1222,21 +1361,38 @@ func repairBrokenCDCNarFiles(
 	narFilesWithChunkIssues []database.NarFile,
 	logger *zerolog.Logger,
 ) error {
+	verifyFn := func(ctx context.Context, nf database.NarFile) (bool, error) {
+		return isNarFileChunkBroken(ctx, db, cs, nf)
+	}
+
+	return repairCDCNarFiles(ctx, db, cs, narFilesWithChunkIssues, verifyFn, logger)
+}
+
+// repairCDCNarFiles deletes CDC nar_files that are confirmed broken by reVerifyFn,
+// then cascades to clean up orphaned narinfos and chunks.
+func repairCDCNarFiles(
+	ctx context.Context,
+	db database.Querier,
+	cs chunk.Store,
+	narFiles []database.NarFile,
+	reVerifyFn func(ctx context.Context, nf database.NarFile) (bool, error),
+	logger *zerolog.Logger,
+) error {
 	// Snapshot pre-existing narinfo orphans so we only sweep newly orphaned ones below.
-	cdcPreExistingOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	preExistingOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
 	if err != nil {
 		return fmt.Errorf("repair CDC pre-check GetNarInfosWithoutNarFiles: %w", err)
 	}
 
-	cdcPreExistingOrphanIDs := make(map[int64]struct{}, len(cdcPreExistingOrphans))
-	for _, ni := range cdcPreExistingOrphans {
-		cdcPreExistingOrphanIDs[ni.ID] = struct{}{}
+	preExistingOrphanIDs := make(map[int64]struct{}, len(preExistingOrphans))
+	for _, ni := range preExistingOrphans {
+		preExistingOrphanIDs[ni.ID] = struct{}{}
 	}
 
-	for _, nf := range narFilesWithChunkIssues {
-		broken, err := isNarFileChunkBroken(ctx, db, cs, nf)
+	for _, nf := range narFiles {
+		broken, err := reVerifyFn(ctx, nf)
 		if err != nil {
-			return fmt.Errorf("repair re-verify narFilesWithChunkIssues(%d): %w", nf.ID, err)
+			return fmt.Errorf("repair re-verify nar_file(%d): %w", nf.ID, err)
 		}
 
 		if !broken {
@@ -1255,13 +1411,13 @@ func repairBrokenCDCNarFiles(
 	}
 
 	// Delete narinfos orphaned by the CDC nar_file deletions above.
-	cdcNewOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
+	newOrphans, err := db.GetNarInfosWithoutNarFiles(ctx)
 	if err != nil {
 		return fmt.Errorf("repair CDC post-check GetNarInfosWithoutNarFiles: %w", err)
 	}
 
-	for _, ni := range cdcNewOrphans {
-		if _, alreadyOrphaned := cdcPreExistingOrphanIDs[ni.ID]; alreadyOrphaned {
+	for _, ni := range newOrphans {
+		if _, alreadyOrphaned := preExistingOrphanIDs[ni.ID]; alreadyOrphaned {
 			continue
 		}
 
@@ -1508,6 +1664,210 @@ func collectOrphanedChunksInStorage(
 	}
 
 	return orphaned, nil
+}
+
+// collectNarFilesWithCorruptChunks returns CDC nar_files where at least one chunk's
+// decompressed content does not BLAKE3-hash to its stored key.
+// NAR files already in chunkIssueIDs (structurally broken) are skipped.
+func collectNarFilesWithCorruptChunks(
+	ctx context.Context,
+	db database.Querier,
+	cs chunk.Store,
+	allNarFiles []database.GetAllNarFilesRow,
+	chunkIssueIDs map[int64]struct{},
+	verifiedSince time.Duration,
+) ([]database.NarFile, error) {
+	if cs == nil {
+		return nil, nil
+	}
+
+	var corrupt []database.NarFile
+
+	for _, nf := range allNarFiles {
+		if nf.TotalChunks <= 0 {
+			continue
+		}
+
+		if _, hasIssue := chunkIssueIDs[nf.ID]; hasIssue {
+			continue
+		}
+
+		if !shouldCheckNar(nf, verifiedSince) {
+			continue
+		}
+
+		narFile := database.NarFile{
+			ID:                nf.ID,
+			Hash:              nf.Hash,
+			Compression:       nf.Compression,
+			Query:             nf.Query,
+			FileSize:          nf.FileSize,
+			TotalChunks:       nf.TotalChunks,
+			ChunkingStartedAt: nf.ChunkingStartedAt,
+			CreatedAt:         nf.CreatedAt,
+			UpdatedAt:         nf.UpdatedAt,
+			LastAccessedAt:    nf.LastAccessedAt,
+		}
+
+		isCorrupt, err := isNarFileContentCorrupt(ctx, db, cs, narFile)
+		if err != nil {
+			return nil, fmt.Errorf("isNarFileContentCorrupt(%d): %w", nf.ID, err)
+		}
+
+		if isCorrupt {
+			corrupt = append(corrupt, narFile)
+		}
+	}
+
+	return corrupt, nil
+}
+
+// isNarFileContentCorrupt returns true if any chunk's decompressed content does not
+// BLAKE3-hash to its stored key.
+func isNarFileContentCorrupt(
+	ctx context.Context, db database.Querier, cs chunk.Store, nf database.NarFile,
+) (bool, error) {
+	chunks, err := db.GetChunksByNarFileID(ctx, nf.ID)
+	if err != nil {
+		return false, fmt.Errorf("GetChunksByNarFileID(%d): %w", nf.ID, err)
+	}
+
+	for _, c := range chunks {
+		r, err := cs.GetChunk(ctx, c.Hash)
+		if err != nil {
+			return false, fmt.Errorf("GetChunk(%s): %w", c.Hash, err)
+		}
+
+		data, readErr := io.ReadAll(r)
+		closeErr := r.Close()
+
+		if readErr != nil {
+			return false, fmt.Errorf("reading chunk %s: %w", c.Hash, readErr)
+		}
+
+		if closeErr != nil {
+			return false, fmt.Errorf("closing chunk %s: %w", c.Hash, closeErr)
+		}
+
+		sum := blake3.Sum256(data)
+		if hex.EncodeToString(sum[:]) != c.Hash {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// collectNarFilesWithHashMismatch returns CDC nar_files whose assembled chunk stream does not
+// match the narinfo NarHash (SHA-256 in nix-base32). NAR files in chunkIssueIDs or corruptByID
+// are skipped.
+func collectNarFilesWithHashMismatch(
+	ctx context.Context,
+	db database.Querier,
+	cs chunk.Store,
+	allNarFiles []database.GetAllNarFilesRow,
+	chunkIssueIDs map[int64]struct{},
+	corruptByID map[int64]struct{},
+	verifiedSince time.Duration,
+) ([]database.NarFile, error) {
+	if cs == nil {
+		return nil, nil
+	}
+
+	var mismatched []database.NarFile
+
+	for _, nf := range allNarFiles {
+		if nf.TotalChunks <= 0 {
+			continue
+		}
+
+		if _, hasIssue := chunkIssueIDs[nf.ID]; hasIssue {
+			continue
+		}
+
+		if _, isCorrupt := corruptByID[nf.ID]; isCorrupt {
+			continue
+		}
+
+		if !shouldCheckNar(nf, verifiedSince) {
+			continue
+		}
+
+		narFile := database.NarFile{
+			ID:                nf.ID,
+			Hash:              nf.Hash,
+			Compression:       nf.Compression,
+			Query:             nf.Query,
+			FileSize:          nf.FileSize,
+			TotalChunks:       nf.TotalChunks,
+			ChunkingStartedAt: nf.ChunkingStartedAt,
+			CreatedAt:         nf.CreatedAt,
+			UpdatedAt:         nf.UpdatedAt,
+			LastAccessedAt:    nf.LastAccessedAt,
+		}
+
+		isMismatched, err := isNarFileHashMismatched(ctx, db, cs, narFile)
+		if err != nil {
+			return nil, fmt.Errorf("isNarFileHashMismatched(%d): %w", nf.ID, err)
+		}
+
+		if isMismatched {
+			mismatched = append(mismatched, narFile)
+		}
+	}
+
+	return mismatched, nil
+}
+
+// isNarFileHashMismatched returns true if the SHA-256 of all assembled chunk bytes
+// does not match the narinfo's NarHash.
+func isNarFileHashMismatched(
+	ctx context.Context, db database.Querier, cs chunk.Store, nf database.NarFile,
+) (bool, error) {
+	narHashRaw, err := db.GetNarInfoNarHashByNarFileID(ctx, nf.ID)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("GetNarInfoNarHashByNarFileID(%d): %w", nf.ID, err)
+	}
+
+	if !narHashRaw.Valid || narHashRaw.String == "" {
+		return false, nil
+	}
+
+	expectedHash, err := nixhash.ParseAny(narHashRaw.String, nil)
+	if err != nil {
+		return false, fmt.Errorf("parsing NarHash %q: %w", narHashRaw.String, err)
+	}
+
+	chunks, err := db.GetChunksByNarFileID(ctx, nf.ID)
+	if err != nil {
+		return false, fmt.Errorf("GetChunksByNarFileID(%d): %w", nf.ID, err)
+	}
+
+	h := sha256.New()
+
+	for _, c := range chunks {
+		r, err := cs.GetChunk(ctx, c.Hash)
+		if err != nil {
+			return false, fmt.Errorf("GetChunk(%s): %w", c.Hash, err)
+		}
+
+		_, copyErr := io.Copy(h, r)
+		closeErr := r.Close()
+
+		if copyErr != nil {
+			return false, fmt.Errorf("hashing chunk %s: %w", c.Hash, copyErr)
+		}
+
+		if closeErr != nil {
+			return false, fmt.Errorf("closing chunk %s: %w", c.Hash, closeErr)
+		}
+	}
+
+	return !bytes.Equal(h.Sum(nil), expectedHash.Digest()), nil
 }
 
 // narFileRowToURL converts nar_file fields into a nar.URL.

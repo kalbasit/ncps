@@ -56,6 +56,28 @@ tests:
           path: spec.jobTemplate.spec.template.spec.containers[0].args
           content: "24h"
 
+  - it: should add verify-content flag when enabled
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.verifyContent: true
+      config.hostname: test.example.com
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args
+          content: --verify-content
+
+  - it: should not add verify-content flag when disabled
+    template: fsck-cronjob.yaml
+    set:
+      fsck.enabled: true
+      fsck.verifyContent: false
+      config.hostname: test.example.com
+    asserts:
+      - notContains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args
+          content: --verify-content
+
   - it: should configure job settings
     template: fsck-cronjob.yaml
     set:

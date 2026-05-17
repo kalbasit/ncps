@@ -23,6 +23,15 @@ The `ncps fsck` command checks for consistency issues between the database and s
 | **Chunks missing from storage** | Chunk records in the database whose physical chunk file is absent |
 | **Orphaned chunk files** | Chunk files in storage that have no corresponding database record |
 
+### CDC Content Verification (opt-in, with `--verify-content`)
+
+These additional checks are only performed when `--verify-content` is passed. They read and decompress every chunk from storage, so they are significantly more expensive than the structural checks above.
+
+| Issue | Description |
+| --- | --- |
+| **NAR files w/ corrupt chunks** | A chunk's stored BLAKE3 hash does not match the hash of its decompressed content — indicates bit-rot or storage corruption |
+| **NAR files w/ hash mismatch** | The SHA-256 of all assembled chunk bytes does not match the `NarHash` in the narinfo — indicates the data was corrupted or assembled incorrectly |
+
 ## How fsck Works
 
 fsck runs in three phases:
@@ -115,6 +124,32 @@ ncps fsck \
 
 Allowed duration formats: `24h`, `168h`, etc.
 
+### Content Verification (CDC mode)
+
+> [!WARNING]
+> `--verify-content` reads and decompresses **every chunk byte** in storage. The I/O cost is proportional to the total uncompressed size of your CDC NAR cache. Use `--verified-since` to limit scope on large caches.
+
+Use `--verify-content` to detect chunk bit-rot and assembled NAR hash mismatches. This is most useful when you are seeing errors like `bad archive: input doesn't look like a Nix archive` during Nix builds, which can indicate that chunks stored in the cache are corrupt:
+
+```sh
+ncps fsck \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps" \
+  --verify-content \
+  --repair
+```
+
+For large caches, combine with `--verified-since` so only recently-unverified chunks are read:
+
+```sh
+ncps fsck \
+  --cache-database-url="sqlite:/var/lib/ncps/db.sqlite" \
+  --cache-storage-local="/var/lib/ncps" \
+  --verify-content \
+  --verified-since="24h" \
+  --repair
+```
+
 ### S3 Storage
 
 ```sh
@@ -144,6 +179,7 @@ ncps fsck \
 | `--repair` | Automatically fix all detected issues |
 | `--dry-run` | Show what would be fixed without making any changes |
 | `--verified-since` | Skip checking NARs verified within this duration (e.g., `24h`, `168h`) |
+| `--verify-content` | _(CDC only)_ Read and hash every chunk's decompressed bytes to detect corruption. Expensive — reads all chunk data from storage. Combine with `--verified-since` to limit scope. |
 
 ### Storage Flags
 
@@ -193,6 +229,8 @@ When `--repair` is used (or confirmed interactively), fsck deletes the following
 | [CDC] Orphaned chunks (DB only) | Delete the chunk DB record |
 | [CDC] Chunks missing from storage | Delete the chunk DB record |
 | [CDC] Orphaned chunk files | Delete the physical chunk file from storage |
+| [CDC] NAR files w/ corrupt chunks | Delete the `nar_file` DB record, its linked narinfo (if it becomes orphaned), and any orphaned chunks — same cascade as broken CDC NARs |
+| [CDC] NAR files w/ hash mismatch | Same cascade as corrupt chunks — the assembled NAR does not match the declared hash, so all data is considered untrustworthy |
 
 > **Note:** Repair does not recover missing data — it removes the inconsistent records. If you need to recover missing NAR files, restore from a backup before running repair.
 
@@ -262,6 +300,10 @@ fsck:
 
   # Skip checking NARs verified in the last 7 days
   verifiedSince: "168h"
+
+  # Read and hash every CDC chunk's decompressed content to detect corruption.
+  # WARNING: Reads all chunk bytes from storage. Combine with verifiedSince on large caches.
+  verifyContent: false
 
   # Optional: Resource limits for the CronJob
   resources:

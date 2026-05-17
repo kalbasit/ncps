@@ -1136,6 +1136,19 @@ func (w *postgresWrapper) GetNarInfoHashesByURL(ctx context.Context, url sql.Nul
 	return res, nil
 }
 
+func (w *postgresWrapper) GetNarInfoNarHashByNarFileID(ctx context.Context, narFileID int64) (sql.NullString, error) {
+	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
+
+	res, err := w.adapter.GetNarInfoNarHashByNarFileID(ctx, narFileID)
+	if err != nil {
+		return sql.NullString{}, err
+	}
+
+	// Return Primitive / *sql.DB / etc
+
+	return res, nil
+}
+
 func (w *postgresWrapper) GetNarInfoReferences(ctx context.Context, narinfoID int64) ([]string, error) {
 	/* --- Auto-Loop for Bulk Insert on Non-Postgres --- */
 
