@@ -448,6 +448,12 @@ fsck:
   schedule: "0 1 * * *"
   repair: true
   verifiedSince: "168h" # 7 days
+
+  # Enable chunk content verification (CDC only).
+  # Reads and decompresses every chunk byte — expensive on large caches.
+  # Pair with verifiedSince to limit the I/O to recently-unverified chunks.
+  verifyContent: false
+
   resources:
     limits:
       memory: 6Gi
@@ -457,6 +463,15 @@ fsck:
   job:
     concurrencyPolicy: Forbid
 ```
+
+| Value | Type | Default | Description |
+| --- | --- | --- | --- |
+| `fsck.enabled` | bool | `false` | Enable the periodic fsck CronJob |
+| `fsck.schedule` | string | `"0 1 * * *"` | Cron expression for the schedule |
+| `fsck.timezone` | string | `""` | Timezone for the cron schedule (e.g. `"UTC"`) |
+| `fsck.repair` | bool | `false` | Automatically repair detected issues |
+| `fsck.verifiedSince` | string | `""` | Skip NARs verified within this duration (e.g. `"24h"`) |
+| `fsck.verifyContent` | bool | `false` | _(CDC only)_ Read and hash every chunk's decompressed bytes. Expensive — combine with `verifiedSince` on large caches. |
 
 ## CDC Configuration (Experimental)
 

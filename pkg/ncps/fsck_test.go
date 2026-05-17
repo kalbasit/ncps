@@ -2,7 +2,10 @@ package ncps_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,11 +15,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zeebo/blake3"
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	chunkstore "github.com/kalbasit/ncps/pkg/storage/chunk"
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
+	nixbase32 "github.com/nix-community/go-nix/pkg/nixbase32"
 
 	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -679,6 +684,12 @@ func testFsckCDCSuite(setup fsckSetupFn) func(*testing.T) {
 		t.Run("CorrectSizeNotFlagged", testFsckCDCCorrectSizeNotFlagged(setup))
 		t.Run("SizeMismatchRespectsVerifiedSince", testFsckCDCSizeMismatchRespectsVerifiedSince(setup))
 		t.Run("SizeMismatchDoesNotUpdateVerifiedAt", testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt(setup))
+		t.Run("VerifyContentSkipsWhenFlagAbsent", testFsckCDCVerifyContentSkipsWhenFlagAbsent(setup))
+		t.Run("CorruptChunkDetected", testFsckCDCCorruptChunkDetected(setup))
+		t.Run("CleanChunksPassContentVerification", testFsckCDCCleanChunksPassContentVerification(setup))
+		t.Run("HashMismatchDetected", testFsckCDCHashMismatchDetected(setup))
+		t.Run("RepairCorruptChunk", testFsckCDCRepairCorruptChunk(setup))
+		t.Run("RepairHashMismatch", testFsckCDCRepairHashMismatch(setup))
 	}
 }
 
@@ -1211,6 +1222,109 @@ func testFsckCDCSizeMismatchRespectsVerifiedSince(setup fsckSetupFn) func(*testi
 	}
 }
 
+// setupFsckCDCNarFileWithRealHashes creates a CDC NAR file whose chunks are stored with
+// correct BLAKE3 hashes. The narinfo is populated with a NarHash that is the SHA-256 of
+// the concatenated chunk data. This helper is required for content-verification tests.
+//
+// chunkDataParts is the raw content for each chunk. The data is stored verbatim and the
+// BLAKE3 of each part is used as the chunk hash. The DB narinfo's NarHash field is set to
+// sha256:<nixbase32(sha256(all parts concatenated))> so that isNarFileHashMismatched
+// returns false for a correctly assembled archive.
+func setupFsckCDCNarFileWithRealHashes(
+	ctx context.Context,
+	t *testing.T,
+	db database.Querier,
+	cs chunkstore.Store,
+	narInfoHash string,
+	chunkDataParts [][]byte,
+) {
+	t.Helper()
+
+	// Compute per-chunk BLAKE3 hashes and combined SHA-256 for NarHash.
+	chunkHashes := make([]string, len(chunkDataParts))
+	combinedHash := sha256.New()
+
+	for i, data := range chunkDataParts {
+		sum := blake3.Sum256(data)
+		chunkHashes[i] = hex.EncodeToString(sum[:])
+
+		combinedHash.Write(data)
+	}
+
+	narHashBytes := combinedHash.Sum(nil)
+	narHashStr := "sha256:" + nixbase32.EncodeToString(narHashBytes)
+
+	// Compute total size.
+	var totalSize int64
+	for _, d := range chunkDataParts {
+		totalSize += int64(len(d))
+	}
+
+	// Build a minimal narinfo text. References must have a non-empty value or be omitted —
+	// the narinfo parser rejects "References:" with no trailing space+value.
+	narInfoText := fmt.Sprintf(
+		"StorePath: /nix/store/%s-content-verify-test\nURL: nar/%s.nar\nCompression: none\n"+
+			"FileHash: %s\nFileSize: %d\nNarHash: %s\nNarSize: %d\nReferences: %s-content-verify-test\n",
+		narInfoHash, narInfoHash, narHashStr, totalSize, narHashStr, totalSize, narInfoHash,
+	)
+
+	ni := parseFsckNarInfoText(t, narInfoText)
+
+	narInfo, err := db.CreateNarInfo(ctx, database.CreateNarInfoParams{
+		Hash:        narInfoHash,
+		StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
+		URL:         sql.NullString{String: ni.URL, Valid: ni.URL != ""},
+		Compression: sql.NullString{String: ni.Compression, Valid: ni.Compression != ""},
+		NarHash:     sql.NullString{String: ni.NarHash.String(), Valid: ni.NarHash != nil},
+		NarSize:     sql.NullInt64{Int64: int64(ni.NarSize), Valid: true}, //nolint:gosec
+		FileHash:    sql.NullString{String: ni.FileHash.String(), Valid: ni.FileHash != nil},
+		FileSize:    sql.NullInt64{Int64: int64(ni.FileSize), Valid: true}, //nolint:gosec
+		Deriver:     sql.NullString{String: ni.Deriver, Valid: ni.Deriver != ""},
+		System:      sql.NullString{String: ni.System, Valid: ni.System != ""},
+		Ca:          sql.NullString{String: ni.CA, Valid: ni.CA != ""},
+	})
+	require.NoError(t, err)
+
+	narHash := narInfoHash // reuse narInfoHash as nar_file hash for simplicity
+	narFile, err := db.CreateNarFile(ctx, database.CreateNarFileParams{
+		Hash:        narHash,
+		Compression: "none",
+		Query:       "",
+		FileSize:    uint64(totalSize), //nolint:gosec
+		TotalChunks: int64(len(chunkDataParts)),
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, db.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
+		NarInfoID: narInfo.ID,
+		NarFileID: narFile.ID,
+	}))
+
+	chunkIDs := make([]int64, len(chunkDataParts))
+	chunkIndexes := make([]int64, len(chunkDataParts))
+
+	for i, data := range chunkDataParts {
+		_, _, err := cs.PutChunk(ctx, chunkHashes[i], data)
+		require.NoError(t, err)
+
+		chunk, err := db.CreateChunk(ctx, database.CreateChunkParams{
+			Hash:           chunkHashes[i],
+			Size:           uint32(len(data)),     //nolint:gosec
+			CompressedSize: uint32(len(data) / 2), //nolint:gosec
+		})
+		require.NoError(t, err)
+
+		chunkIDs[i] = chunk.ID
+		chunkIndexes[i] = int64(i)
+	}
+
+	require.NoError(t, db.LinkNarFileToChunks(ctx, database.LinkNarFileToChunksParams{
+		NarFileID:  narFile.ID,
+		ChunkID:    chunkIDs,
+		ChunkIndex: chunkIndexes,
+	}))
+}
+
 // testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt verifies that a dry-run fsck does
 // not mark a size-mismatched CDC nar_file as verified while reporting the issue.
 func testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt(setup fsckSetupFn) func(*testing.T) {
@@ -1258,5 +1372,299 @@ func testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt(setup fsckSetupFn) func(*tes
 		)
 		require.NoError(t, dbErr)
 		assert.False(t, narFileAfter.VerifiedAt.Valid, "size-mismatched nar_file must not be marked verified")
+	}
+}
+
+// testFsckCDCVerifyContentSkipsWhenFlagAbsent verifies that chunks with wrong BLAKE3 hashes
+// are NOT detected without --verify-content.
+func testFsckCDCVerifyContentSkipsWhenFlagAbsent(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// Create a CDC NAR with fake (non-BLAKE3) chunk hashes — content is corrupt
+		// but structural checks (count + existence) pass.
+		setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Without --verify-content, corrupt chunk content is not detected.
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+		}))
+	}
+}
+
+// testFsckCDCCorruptChunkDetected verifies that a chunk stored under the wrong BLAKE3 hash is
+// detected when --verify-content is set.
+func testFsckCDCCorruptChunkDetected(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// setupFsckCDCNarFile stores chunks under hashes that do NOT reflect their actual
+		// BLAKE3 content — this simulates bit-rot / corruption.
+		setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		err = app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verify-content",
+			"--dry-run",
+		})
+		assert.ErrorIs(t, err, ncps.ErrFsckIssuesFound)
+	}
+}
+
+// testFsckCDCCleanChunksPassContentVerification verifies that chunks stored with correct BLAKE3
+// hashes and a matching NarHash produce 0 issues with --verify-content.
+func testFsckCDCCleanChunksPassContentVerification(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// Create two chunks whose BLAKE3 hashes are correct and whose combined SHA-256
+		// matches the NarHash stored in the narinfo.
+		chunkData := [][]byte{
+			[]byte("chunk-zero-data-for-content-verify-test"),
+			[]byte("chunk-one-data-for-content-verify-test"),
+		}
+
+		setupFsckCDCNarFileWithRealHashes(ctx, t, db, cs, testdata.Nar1.NarInfoHash, chunkData)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verify-content",
+		}))
+	}
+}
+
+// testFsckCDCHashMismatchDetected verifies that a NAR file whose chunks have correct BLAKE3
+// hashes but whose assembled SHA-256 does not match the narinfo NarHash is detected.
+func testFsckCDCHashMismatchDetected(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// Build chunks with correct BLAKE3 hashes so the corrupt-chunk check passes.
+		chunkData := [][]byte{
+			[]byte("chunk-zero-for-hash-mismatch-test"),
+			[]byte("chunk-one-for-hash-mismatch-test"),
+		}
+
+		setupFsckCDCNarFileWithRealHashes(ctx, t, db, cs, testdata.Nar1.NarInfoHash, chunkData)
+
+		// Corrupt the narinfo's NarHash in the DB so the assembled SHA-256 no longer matches.
+		narInfoHash := testdata.Nar1.NarInfoHash
+		ni, dbErr := db.GetNarInfoByHash(ctx, narInfoHash)
+		require.NoError(t, dbErr)
+
+		_, updateErr := db.UpdateNarInfo(ctx, database.UpdateNarInfoParams{
+			Hash:        narInfoHash,
+			StorePath:   ni.StorePath,
+			URL:         ni.URL,
+			Compression: ni.Compression,
+			FileHash:    ni.FileHash,
+			FileSize:    ni.FileSize,
+			// Set a deliberately wrong NarHash so the assembled SHA-256 can never match.
+			NarHash: sql.NullString{String: "sha256:0000000000000000000000000000000000000000000000000000", Valid: true},
+			NarSize: ni.NarSize,
+			Deriver: ni.Deriver,
+			System:  ni.System,
+			Ca:      ni.Ca,
+		})
+		require.NoError(t, updateErr)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		err = app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verify-content",
+			"--dry-run",
+		})
+		assert.ErrorIs(t, err, ncps.ErrFsckIssuesFound)
+	}
+}
+
+// testFsckCDCRepairCorruptChunk verifies that repair deletes a CDC nar_file with corrupt chunks,
+// its linked narinfo, and the orphaned chunks from DB and storage.
+func testFsckCDCRepairCorruptChunk(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		// Chunks stored with fake BLAKE3 hashes (corrupt content).
+		setupFsckCDCNarFile(ctx, t, db, cs,
+			testdata.Nar1.NarInfoHash, testdata.Nar1.NarInfoText,
+			testdata.Nar1.NarHash, testdata.Nar1.NarCompression, 2)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Run with --repair.
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verify-content",
+			"--repair",
+		}))
+
+		// Second run should be clean.
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verify-content",
+		}))
+
+		// The nar_file must be gone from DB.
+		_, dbErr := db.GetNarFileByHashAndCompressionAndQuery(
+			ctx,
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        testdata.Nar1.NarHash,
+				Compression: testdata.Nar1.NarCompression.String(),
+				Query:       "",
+			},
+		)
+		assert.ErrorIs(t, dbErr, database.ErrNotFound)
+	}
+}
+
+// testFsckCDCRepairHashMismatch verifies that repair deletes a CDC nar_file whose assembled
+// SHA-256 does not match the narinfo NarHash.
+func testFsckCDCRepairHashMismatch(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		db, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		configureFsckCDCInDatabase(ctx, t, db)
+
+		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
+		require.NoError(t, err)
+
+		chunkData := [][]byte{
+			[]byte("chunk-zero-for-repair-hash-mismatch-test"),
+			[]byte("chunk-one-for-repair-hash-mismatch-test"),
+		}
+
+		setupFsckCDCNarFileWithRealHashes(ctx, t, db, cs, testdata.Nar1.NarInfoHash, chunkData)
+
+		// Corrupt the stored NarHash to force a mismatch.
+		ni, dbErr := db.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+		require.NoError(t, dbErr)
+
+		_, updateErr := db.UpdateNarInfo(ctx, database.UpdateNarInfoParams{
+			Hash:        testdata.Nar1.NarInfoHash,
+			StorePath:   ni.StorePath,
+			URL:         ni.URL,
+			Compression: ni.Compression,
+			FileHash:    ni.FileHash,
+			FileSize:    ni.FileSize,
+			NarHash:     sql.NullString{String: "sha256:0000000000000000000000000000000000000000000000000000", Valid: true},
+			NarSize:     ni.NarSize,
+			Deriver:     ni.Deriver,
+			System:      ni.System,
+			Ca:          ni.Ca,
+		})
+		require.NoError(t, updateErr)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verify-content",
+			"--repair",
+		}))
+
+		// Second run clean.
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--verify-content",
+		}))
+
+		// The nar_file must be gone.
+		_, dbErr = db.GetNarFileByHashAndCompressionAndQuery(
+			ctx,
+			database.GetNarFileByHashAndCompressionAndQueryParams{
+				Hash:        testdata.Nar1.NarInfoHash,
+				Compression: "none",
+				Query:       "",
+			},
+		)
+		assert.ErrorIs(t, dbErr, database.ErrNotFound)
 	}
 }

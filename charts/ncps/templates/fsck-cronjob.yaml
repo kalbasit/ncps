@@ -94,6 +94,9 @@ spec:
                 - --verified-since
                 - {{ .Values.fsck.verifiedSince | quote }}
                 {{- end }}
+                {{- if .Values.fsck.verifyContent }}
+                - --verify-content
+                {{- end }}
               env:
                 {{- include "ncps.cacheDatabaseURLEnv" . | nindent 16 }}
                 {{- if and (eq .Values.config.storage.type "s3") (or .Values.config.storage.s3.existingSecret (and .Values.config.storage.s3.accessKeyId .Values.config.storage.s3.secretAccessKey)) }}

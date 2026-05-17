@@ -268,6 +268,14 @@ WHERE nf.total_chunks > 0
     AND ni.nar_size IS NOT NULL
     AND nf.file_size != CAST(ni.nar_size AS INTEGER);
 
+-- name: GetNarInfoNarHashByNarFileID :one
+-- Get the narinfo nar_hash for a given nar_file ID. Used for end-to-end NAR integrity verification.
+SELECT ni.nar_hash
+FROM narinfos ni
+INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+WHERE nnf.nar_file_id = ?
+LIMIT 1;
+
 -- name: GetUnmigratedNarInfoHashes :many
 -- Get all narinfo hashes that have no URL (unmigrated).
 SELECT hash

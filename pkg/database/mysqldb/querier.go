@@ -283,6 +283,14 @@ type Querier interface {
 	//  FROM narinfos
 	//  WHERE url = ?
 	GetNarInfoHashesByURL(ctx context.Context, url sql.NullString) ([]string, error)
+	// Get the narinfo nar_hash for a given nar_file ID. Used for end-to-end NAR integrity verification.
+	//
+	//  SELECT ni.nar_hash
+	//  FROM narinfos ni
+	//  INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+	//  WHERE nnf.nar_file_id = ?
+	//  LIMIT 1
+	GetNarInfoNarHashByNarFileID(ctx context.Context, narFileID int64) (sql.NullString, error)
 	//GetNarInfoReferences
 	//
 	//  SELECT reference

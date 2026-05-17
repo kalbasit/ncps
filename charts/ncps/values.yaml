@@ -581,6 +581,11 @@ fsck:
   # Default is empty (verified-since will not be passed)
   verifiedSince: ""
 
+  # Read and hash every CDC chunk's decompressed content to detect corruption.
+  # WARNING: This is expensive — it reads all chunk bytes from storage and decompresses them.
+  # Combine with verifiedSince to limit the scope on large caches (e.g. verifiedSince: "24h").
+  verifyContent: false
+
   # Resources for fsck container/job
   resources: {}
     # limits:

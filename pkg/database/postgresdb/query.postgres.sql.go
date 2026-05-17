@@ -1287,6 +1287,28 @@ func (q *Queries) GetNarInfoHashesByURL(ctx context.Context, url sql.NullString)
 	return items, nil
 }
 
+const getNarInfoNarHashByNarFileID = `-- name: GetNarInfoNarHashByNarFileID :one
+SELECT ni.nar_hash
+FROM narinfos ni
+INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+WHERE nnf.nar_file_id = $1
+LIMIT 1
+`
+
+// Get the narinfo nar_hash for a given nar_file ID. Used for end-to-end NAR integrity verification.
+//
+//	SELECT ni.nar_hash
+//	FROM narinfos ni
+//	INNER JOIN narinfo_nar_files nnf ON ni.id = nnf.narinfo_id
+//	WHERE nnf.nar_file_id = $1
+//	LIMIT 1
+func (q *Queries) GetNarInfoNarHashByNarFileID(ctx context.Context, narFileID int64) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getNarInfoNarHashByNarFileID, narFileID)
+	var nar_hash sql.NullString
+	err := row.Scan(&nar_hash)
+	return nar_hash, err
+}
+
 const getNarInfoReferences = `-- name: GetNarInfoReferences :many
 SELECT reference
 FROM narinfo_references
