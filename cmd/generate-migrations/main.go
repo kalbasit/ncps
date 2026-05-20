@@ -43,6 +43,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql/schema"
 
+	atlasmigrate "ariga.io/atlas/sql/migrate"
 	entsql "entgo.io/ent/dialect/sql"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
@@ -70,6 +71,8 @@ func main() {
 			"dev PostgreSQL URL (default: $NCPS_GEN_POSTGRES_URL or localhost test-db)")
 		mysqlURL = flag.String("mysql-url", "",
 			"dev MySQL URL (default: $NCPS_GEN_MYSQL_URL or localhost test-db)")
+		skip = flag.String("skip", "",
+			"comma-separated dialects to skip: sqlite,postgres,mysql (escape hatch for hand-written migrations)")
 	)
 
 	flag.Parse()
@@ -87,15 +90,36 @@ func main() {
 	stamp := time.Now().UTC().Format("20060102150405")
 	fname := fmt.Sprintf("%s_%s.sql", stamp, *name)
 
+	skipSet := parseSkip(*skip)
+
 	for _, d := range []dialectSpec{
 		{name: "sqlite", goDialect: dialect.SQLite, driver: "sqlite3", openDSN: "file::memory:?_fk=1&cache=shared"},
 		{name: "postgres", goDialect: dialect.Postgres, driver: "pgx", openDSN: pgURL},
 		{name: "mysql", goDialect: dialect.MySQL, driver: "mysql", openDSN: myURL},
 	} {
+		if _, ok := skipSet[d.name]; ok {
+			log.Printf("generate-migrations: skipping %s (per --skip)", d.name)
+
+			continue
+		}
+
 		if err := runDialect(ctx, *root, d, fname, *name, *sqlOnly); err != nil {
 			log.Fatalf("generate-migrations: %s: %v", d.name, err)
 		}
 	}
+}
+
+func parseSkip(s string) map[string]struct{} {
+	out := map[string]struct{}{}
+
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out[part] = struct{}{}
+		}
+	}
+
+	return out
 }
 
 type dialectSpec struct {
@@ -137,6 +161,14 @@ func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName 
 	gdir, err := sqltool.NewGooseDir(dir)
 	if err != nil {
 		return fmt.Errorf("NewGooseDir(%s): %w", dir, err)
+	}
+
+	// Ensure atlas.sum exists and is current before Atlas validates the
+	// directory during replay. This bootstraps the integrity file on the
+	// first run after a migration tree is hand-edited (notably the §7
+	// translation) and refreshes it on every subsequent generation.
+	if err := ensureAtlasSum(gdir); err != nil {
+		return fmt.Errorf("ensureAtlasSum: %w", err)
 	}
 
 	drv := entsql.OpenDB(d.goDialect, db)
@@ -246,6 +278,20 @@ func validateName(name string) error {
 	}
 
 	return nil
+}
+
+// ensureAtlasSum computes and writes atlas.sum for the given directory.
+// Atlas refuses to read directories whose atlas.sum is missing or stale;
+// this helper makes bootstrapping zero-cost for the developer (the §7
+// hand-translated directory has no atlas.sum until the first generation
+// run; subsequent runs keep atlas.sum in sync with any new files).
+func ensureAtlasSum(gdir *sqltool.GooseDir) error {
+	sum, err := gdir.Checksum()
+	if err != nil {
+		return fmt.Errorf("checksum: %w", err)
+	}
+
+	return atlasmigrate.WriteSumFile(gdir, sum)
 }
 
 func pickURL(flagVal, envKey, fallback string) string {
