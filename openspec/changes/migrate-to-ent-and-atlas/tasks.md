@@ -22,17 +22,18 @@
 
 ## 4. Ent schemas (one file per entity)
 
-- [ ] 4.1 Create `internal/entmixin/` with a `Timestamps` mixin contributing `created_at` and `updated_at` fields
-- [ ] 4.2 Author `ent/schema/config.go` matching the existing `config` table exactly (column types, nullability, defaults, UNIQUE index on `key`)
-- [ ] 4.3 Author `ent/schema/narinfo.go` matching `narinfos` (including the denormalised columns, UNIQUE on `hash`, index on `last_accessed_at`, and the table-level CHECK on `file_size`/`nar_size`)
-- [ ] 4.4 Author `ent/schema/narinfo_reference.go` matching `narinfo_references` (composite PK, FK to `narinfos` with `ON DELETE CASCADE`, index on `reference`)
-- [ ] 4.5 Author `ent/schema/narinfo_signature.go` matching `narinfo_signatures`
-- [ ] 4.6 Author `ent/schema/nar_file.go` matching `nar_files` (CDC state columns, UNIQUE on `(hash, compression, query)`, type override for `file_size → uint64`)
-- [ ] 4.7 Author `ent/schema/narinfo_nar_file.go` matching `narinfo_nar_files` (M:N join with both FK cascades and both lookup indexes)
-- [ ] 4.8 Author `ent/schema/chunk.go` matching `chunks` (UNIQUE on `hash`, table-level CHECKs for `size >= 0` and `compressed_size >= 0`, type overrides `size → uint32`, `compressed_size → uint32`)
-- [ ] 4.9 Author `ent/schema/nar_file_chunk.go` matching `nar_file_chunks` (composite PK, both FK cascades, index on `chunk_id`)
-- [ ] 4.10 Run `go generate ./ent/...` and commit the resulting `ent/` tree
-- [ ] 4.11 Run the schema-parity tests from §3 against a database created by applying Ent's `Schema.Create` and confirm zero divergence (temporary verification — `Schema.Create` is not the final apply path)
+- [x] 4.1 Create `internal/entmixin/` with a `Timestamps` mixin contributing `created_at` and `updated_at` fields
+- [x] 4.2 Author `ent/schema/config.go` matching the existing `config` table exactly (column types, nullability, defaults, UNIQUE index on `key`) — Go type renamed to `ConfigEntry` because `Config` collides with Ent's predeclared identifier; on-disk table pinned to "config" via `entsql.Annotation{Table: ...}`
+- [x] 4.3 Author `ent/schema/narinfo.go` matching `narinfos` (including the denormalised columns, UNIQUE on `hash`, index on `last_accessed_at`, and the table-level CHECK on `file_size`/`nar_size`)
+- [x] 4.4 Author `ent/schema/narinfo_reference.go` matching `narinfo_references` (surrogate `id` PK + composite UNIQUE index on `(narinfo_id, reference)` per design D10b, FK to `narinfos` with `ON DELETE CASCADE`, index on `reference`)
+- [x] 4.5 Author `ent/schema/narinfo_signature.go` matching `narinfo_signatures`
+- [x] 4.6 Author `ent/schema/nar_file.go` matching `nar_files` (CDC state columns, UNIQUE on `(hash, compression, query)`, `file_size` as `field.Uint64`)
+- [x] 4.7 Author `ent/schema/narinfo_nar_file.go` matching `narinfo_nar_files` (surrogate `id` PK + composite UNIQUE index on `(narinfo_id, nar_file_id)` per design D10b, both FK cascades and both lookup indexes)
+- [x] 4.8 Author `ent/schema/chunk.go` matching `chunks` (UNIQUE on `hash`, table-level CHECKs for `size >= 0` and `compressed_size >= 0`, `size`/`compressed_size` as `field.Uint32`)
+- [x] 4.9 Author `ent/schema/nar_file_chunk.go` matching `nar_file_chunks` (surrogate `id` PK + composite UNIQUE index on `(nar_file_id, chunk_index)` per design D10b, both FK cascades, index on `chunk_id`)
+- [x] 4.9b Author `ent/schema/pinned_closure.go` matching `pinned_closures` (UNIQUE on `hash`) — also extends the §3 schema-parity tests to cover this table
+- [x] 4.10 Run `go generate ./ent/...` and commit the resulting `ent/` tree
+- [x] 4.11 Run the schema-parity tests from §3 against a database created by applying Ent's `Schema.Create` and confirm zero divergence (temporary verification — `Schema.Create` is not the final apply path)
 
 ## 5. `cmd/ent-lint` (TDD: fixtures first)
 

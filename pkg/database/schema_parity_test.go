@@ -180,6 +180,17 @@ func runSchemaParity(t *testing.T, q database.Querier, d database.Type) {
 		require.Error(t, err)
 	})
 
+	t.Run("UNIQUE pinned_closures.hash rejects duplicate", func(t *testing.T) {
+		t.Parallel()
+
+		h := testhelper.MustRandString(32)
+		require.NoError(t, execf(ctx, sqlDB, d,
+			`INSERT INTO pinned_closures ("hash") VALUES (?)`, h))
+		err := execf(ctx, sqlDB, d,
+			`INSERT INTO pinned_closures ("hash") VALUES (?)`, h)
+		require.Error(t, err)
+	})
+
 	t.Run("UNIQUE config.key rejects duplicate", func(t *testing.T) {
 		t.Parallel()
 
@@ -284,6 +295,7 @@ var expectedTables = []string{
 	"narinfo_nar_files",
 	"chunks",
 	"nar_file_chunks",
+	"pinned_closures",
 }
 
 type tableColumns struct {
@@ -310,6 +322,7 @@ var expectedColumns = []tableColumns{
 	{table: "narinfo_nar_files", columns: []string{"narinfo_id", "nar_file_id"}},
 	{table: "chunks", columns: []string{"id", "hash", "size", "compressed_size", "created_at", "updated_at"}},
 	{table: "nar_file_chunks", columns: []string{"nar_file_id", "chunk_id", "chunk_index"}},
+	{table: "pinned_closures", columns: []string{"id", "hash", "created_at", "updated_at"}},
 }
 
 // ---------- dialect-aware helpers ----------

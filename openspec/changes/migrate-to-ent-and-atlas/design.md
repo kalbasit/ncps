@@ -216,6 +216,31 @@ Wired into `nix flake check` as a new `ent-lint-check` and into the `task ent:ch
 
 **Why**: Goose technically supports down migrations, but most production-relevant schema changes (`DROP COLUMN`, `DROP NOT NULL`, `DROP INDEX`) are not safely reversible against live data. Down migrations encourage a false sense of safety. The expand-contract recipe is the operator-correct alternative.
 
+### D10b: Weak entities get a surrogate `id` PK
+
+ncps's dbmate-era schema uses composite primary keys on four weak/join
+tables — `narinfo_references (narinfo_id, reference)`,
+`narinfo_signatures (narinfo_id, signature)`,
+`nar_file_chunks (nar_file_id, chunk_index)`, and
+`narinfo_nar_files (narinfo_id, nar_file_id)`.
+
+Ent's codegen does not robustly support PK-less / composite-PK entities:
+the `field.ID(col1, col2)` annotation works for the SQL generator but
+the `model` template fails at runtime (`nil pointer evaluating
+interface {}.id`) because much of Ent's generated mutation/query code
+assumes a single `id`.
+
+**Decision**: each weak entity gets a surrogate `id INTEGER PRIMARY KEY
+AUTOINCREMENT` column, and the original composite uniqueness is enforced
+via a `UNIQUE INDEX` declared in the Ent schema's `Indexes()`. Behaviour
+parity (uniqueness, FK cascade, query patterns) is preserved; the only
+change is an additive `id` column on each weak entity.
+
+This trade-off is enforced by the §3 schema-parity tests (which assert
+the *presence* of expected columns, not absence of extras) and by
+TestEntSchemaParity (§4), which verifies Ent's `Schema.Create` produces
+a database that passes the same parity assertions as the dbmate-era one.
+
 ### D11: `pkg/database/` surface
 
 - `database.Open(url, *PoolConfig)` returns `*database.Client` (an Ent client + driver metadata) instead of `Querier`.
