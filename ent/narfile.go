@@ -32,11 +32,11 @@ type NarFile struct {
 	// TotalChunks holds the value of the "total_chunks" field.
 	TotalChunks int64 `json:"total_chunks,omitempty"`
 	// ChunkingStartedAt holds the value of the "chunking_started_at" field.
-	ChunkingStartedAt sql.NullTime `json:"chunking_started_at,omitempty"`
+	ChunkingStartedAt *time.Time `json:"chunking_started_at,omitempty"`
 	// VerifiedAt holds the value of the "verified_at" field.
 	VerifiedAt *time.Time `json:"verified_at,omitempty"`
 	// LastAccessedAt holds the value of the "last_accessed_at" field.
-	LastAccessedAt time.Time `json:"last_accessed_at,omitempty"`
+	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the NarFileQuery when eager-loading is set.
 	Edges        NarFileEdges `json:"edges"`
@@ -151,7 +151,8 @@ func (_m *NarFile) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field chunking_started_at", values[i])
 			} else if value.Valid {
-				_m.ChunkingStartedAt = *value
+				_m.ChunkingStartedAt = new(time.Time)
+				*_m.ChunkingStartedAt = value.Time
 			}
 		case narfile.FieldVerifiedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -164,7 +165,8 @@ func (_m *NarFile) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field last_accessed_at", values[i])
 			} else if value.Valid {
-				_m.LastAccessedAt = value.Time
+				_m.LastAccessedAt = new(time.Time)
+				*_m.LastAccessedAt = value.Time
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -235,16 +237,20 @@ func (_m *NarFile) String() string {
 	builder.WriteString("total_chunks=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TotalChunks))
 	builder.WriteString(", ")
-	builder.WriteString("chunking_started_at=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ChunkingStartedAt))
+	if v := _m.ChunkingStartedAt; v != nil {
+		builder.WriteString("chunking_started_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	if v := _m.VerifiedAt; v != nil {
 		builder.WriteString("verified_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("last_accessed_at=")
-	builder.WriteString(_m.LastAccessedAt.Format(time.ANSIC))
+	if v := _m.LastAccessedAt; v != nil {
+		builder.WriteString("last_accessed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

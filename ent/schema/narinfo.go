@@ -61,6 +61,7 @@ func (NarInfo) Fields() []ent.Field {
 		field.String("ca").Optional().Nillable(),
 		field.Time("last_accessed_at").
 			Optional().
+			Nillable().
 			Default(time.Now),
 	}
 }

@@ -135,13 +135,13 @@ func (_u *NarFileUpdate) AddTotalChunks(v int64) *NarFileUpdate {
 }
 
 // SetChunkingStartedAt sets the "chunking_started_at" field.
-func (_u *NarFileUpdate) SetChunkingStartedAt(v sql.NullTime) *NarFileUpdate {
+func (_u *NarFileUpdate) SetChunkingStartedAt(v time.Time) *NarFileUpdate {
 	_u.mutation.SetChunkingStartedAt(v)
 	return _u
 }
 
 // SetNillableChunkingStartedAt sets the "chunking_started_at" field if the given value is not nil.
-func (_u *NarFileUpdate) SetNillableChunkingStartedAt(v *sql.NullTime) *NarFileUpdate {
+func (_u *NarFileUpdate) SetNillableChunkingStartedAt(v *time.Time) *NarFileUpdate {
 	if v != nil {
 		_u.SetChunkingStartedAt(*v)
 	}
@@ -580,13 +580,13 @@ func (_u *NarFileUpdateOne) AddTotalChunks(v int64) *NarFileUpdateOne {
 }
 
 // SetChunkingStartedAt sets the "chunking_started_at" field.
-func (_u *NarFileUpdateOne) SetChunkingStartedAt(v sql.NullTime) *NarFileUpdateOne {
+func (_u *NarFileUpdateOne) SetChunkingStartedAt(v time.Time) *NarFileUpdateOne {
 	_u.mutation.SetChunkingStartedAt(v)
 	return _u
 }
 
 // SetNillableChunkingStartedAt sets the "chunking_started_at" field if the given value is not nil.
-func (_u *NarFileUpdateOne) SetNillableChunkingStartedAt(v *sql.NullTime) *NarFileUpdateOne {
+func (_u *NarFileUpdateOne) SetNillableChunkingStartedAt(v *time.Time) *NarFileUpdateOne {
 	if v != nil {
 		_u.SetChunkingStartedAt(*v)
 	}

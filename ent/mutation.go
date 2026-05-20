@@ -1294,7 +1294,7 @@ type NarFileMutation struct {
 	query                     *string
 	total_chunks              *int64
 	addtotal_chunks           *int64
-	chunking_started_at       *sql.NullTime
+	chunking_started_at       *time.Time
 	verified_at               *time.Time
 	last_accessed_at          *time.Time
 	clearedFields             map[string]struct{}
@@ -1713,12 +1713,12 @@ func (m *NarFileMutation) ResetTotalChunks() {
 }
 
 // SetChunkingStartedAt sets the "chunking_started_at" field.
-func (m *NarFileMutation) SetChunkingStartedAt(st sql.NullTime) {
-	m.chunking_started_at = &st
+func (m *NarFileMutation) SetChunkingStartedAt(t time.Time) {
+	m.chunking_started_at = &t
 }
 
 // ChunkingStartedAt returns the value of the "chunking_started_at" field in the mutation.
-func (m *NarFileMutation) ChunkingStartedAt() (r sql.NullTime, exists bool) {
+func (m *NarFileMutation) ChunkingStartedAt() (r time.Time, exists bool) {
 	v := m.chunking_started_at
 	if v == nil {
 		return
@@ -1729,7 +1729,7 @@ func (m *NarFileMutation) ChunkingStartedAt() (r sql.NullTime, exists bool) {
 // OldChunkingStartedAt returns the old "chunking_started_at" field's value of the NarFile entity.
 // If the NarFile object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *NarFileMutation) OldChunkingStartedAt(ctx context.Context) (v sql.NullTime, err error) {
+func (m *NarFileMutation) OldChunkingStartedAt(ctx context.Context) (v *time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldChunkingStartedAt is only allowed on UpdateOne operations")
 	}
@@ -1827,7 +1827,7 @@ func (m *NarFileMutation) LastAccessedAt() (r time.Time, exists bool) {
 // OldLastAccessedAt returns the old "last_accessed_at" field's value of the NarFile entity.
 // If the NarFile object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *NarFileMutation) OldLastAccessedAt(ctx context.Context) (v time.Time, err error) {
+func (m *NarFileMutation) OldLastAccessedAt(ctx context.Context) (v *time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldLastAccessedAt is only allowed on UpdateOne operations")
 	}
@@ -2148,7 +2148,7 @@ func (m *NarFileMutation) SetField(name string, value ent.Value) error {
 		m.SetTotalChunks(v)
 		return nil
 	case narfile.FieldChunkingStartedAt:
-		v, ok := value.(sql.NullTime)
+		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -3790,7 +3790,7 @@ func (m *NarInfoMutation) LastAccessedAt() (r time.Time, exists bool) {
 // OldLastAccessedAt returns the old "last_accessed_at" field's value of the NarInfo entity.
 // If the NarInfo object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *NarInfoMutation) OldLastAccessedAt(ctx context.Context) (v time.Time, err error) {
+func (m *NarInfoMutation) OldLastAccessedAt(ctx context.Context) (v *time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldLastAccessedAt is only allowed on UpdateOne operations")
 	}
