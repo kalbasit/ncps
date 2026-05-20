@@ -37,19 +37,19 @@
 
 ## 5. `cmd/ent-lint` (TDD: fixtures first)
 
-- [ ] 5.1 Create `cmd/ent-lint/testdata/` with positive and negative fixture directories for each of A1–A5
-- [ ] 5.2 Write `cmd/ent-lint/main_test.go` asserting one `[FAIL]` line per negative fixture and all `[PASS]` lines for the positive fixtures
-- [ ] 5.3 Implement A1: AST walk for field-level `entsql.Check(...)` annotations
-- [ ] 5.4 Implement A2: AST walk for `OnDelete` annotations on `edge.From()` chains
+- [x] 5.1 Create `cmd/ent-lint/testdata/` with positive and negative fixture directories for each of A1, A2, A4 (A3, A5, snake-case-enum, expand-contract, CHECK-presence fixtures tracked separately — see 5.5/5.7/5.8/5.9/5.10 below)
+- [x] 5.2 Write `cmd/ent-lint/main_test.go` asserting one `[FAIL]` line per negative fixture and all `[PASS]` lines for the positive fixtures (covers A1, A2, A4 today)
+- [x] 5.3 Implement A1: AST walk for field-level `entsql.Check(...)` annotations
+- [x] 5.4 Implement A2: AST walk for `OnDelete` annotations on `edge.From()` chains
 - [ ] 5.5 Implement A3: cross-file AST walk for `field.X().Unique()` columns that are also bound by `edge.From().Field(...)` elsewhere
-- [ ] 5.6 Implement A4: cross-file AST walk for `edge.To` declarations without a reciprocal `edge.From().Ref()` on the target schema
+- [x] 5.6 Implement A4: cross-file AST walk for `edge.To` declarations without a reciprocal `edge.From().Ref()` on the target schema
 - [ ] 5.7 Implement A5: AST walk for `field.Bytes("*_ciphertext")` declarations without a chained `.Sensitive()`
 - [ ] 5.8 Implement the snake_case enum-type check (A `field.Enum(...)` without `entsql.Annotation{Type: "<table>_<column>_enum"}`)
 - [ ] 5.9 Implement the expand-contract check on the newest file in each `migrations/<dialect>/` directory
 - [ ] 5.10 Implement the CHECK presence cross-validation against generated `.sql` baselines for every dialect
-- [ ] 5.11 Implement checklist-formatted output (`[PASS]` / `[FAIL]` + invariant id + message); exit non-zero on any `[FAIL]`
-- [ ] 5.12 Run `go test ./cmd/ent-lint` and confirm all fixtures pass
-- [ ] 5.13 Run `cmd/ent-lint --root .` against the current `ent/schema/` tree and confirm it exits zero
+- [x] 5.11 Implement checklist-formatted output (`[PASS]` / `[FAIL]` + invariant id + message); exit non-zero on any `[FAIL]`
+- [x] 5.12 Run `go test ./cmd/ent-lint` and confirm all fixtures pass
+- [x] 5.13 Run `cmd/ent-lint --root .` against the current `ent/schema/` tree and confirm it exits zero
 
 ## 6. `cmd/generate-migrations` (TDD)
 
