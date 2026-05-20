@@ -104,7 +104,7 @@ The bridge SHALL include, at minimum:
 
 ### Requirement: Fresh installs skip the dbmate-era history via `Schema.Create`
 
-The system SHALL detect an empty database at `migrate up` and SHALL produce the Ent-expected schema by invoking Ent's runtime `entSchema.NewMigrate(drv).Create(ctx, migrate.Tables...)` — not by replaying the translated dbmate-era migrations. After `Schema.Create` succeeds, the system SHALL seed `schema_migrations` with every version stamp present in the embedded `migrations/<dialect>/` directory, each row recorded as `is_applied=true` and `tstamp=NOW()`.
+The system SHALL detect an empty database at `migrate up` and SHALL produce the Ent-expected schema by invoking Ent's runtime `entSchema.NewMigrate(drv).Create(ctx, migrate.Tables...)` — not by replaying the translated dbmate-era migrations. After `Schema.Create` succeeds, the system SHALL seed `schema_migrations` with every version stamp present in the embedded `migrations/<dialect>/` directory, each row recorded as `is_applied=true` and `tstamp` set to the current time (the dialect-appropriate function, or a Go-side `time.Now()` value).
 
 #### Scenario: Empty database first-boot
 
