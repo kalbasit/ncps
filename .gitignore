@@ -33,6 +33,8 @@ go.work.sum
 
 # Go and Nix-related build result
 /ncps
+/ent-lint
+/generate-migrations
 /result*
 /.direnv
 
