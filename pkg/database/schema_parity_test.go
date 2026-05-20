@@ -59,7 +59,7 @@ func TestSchemaParity(t *testing.T) {
 			envVar: "NCPS_TEST_ADMIN_POSTGRES_URL",
 			setup: func(t *testing.T) (database.Querier, func()) {
 				t.Helper()
-				db, _, cleanup := testhelper.SetupPostgres(t)
+				db, _, _, cleanup := testhelper.SetupPostgres(t)
 
 				return db, cleanup
 			},
@@ -70,7 +70,7 @@ func TestSchemaParity(t *testing.T) {
 			envVar: "NCPS_TEST_ADMIN_MYSQL_URL",
 			setup: func(t *testing.T) (database.Querier, func()) {
 				t.Helper()
-				db, _, cleanup := testhelper.SetupMySQL(t)
+				db, _, _, cleanup := testhelper.SetupMySQL(t)
 
 				return db, cleanup
 			},

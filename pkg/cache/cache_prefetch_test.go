@@ -58,7 +58,7 @@ func BenchmarkStreamCompleteChunks_WithPrefetch(b *testing.B) {
 	// We'll skip the full setup and just test the core functionality
 	// For now, use the test factory with a wrapper
 	t := &testing.T{}
-	c, _, _, cacheDir, _, cleanup := setupSQLiteFactory(t)
+	c, _, _, _, cacheDir, _, cleanup := setupSQLiteFactory(t)
 	b.Cleanup(cleanup)
 
 	// Initialize chunk store with simulated latency
@@ -110,7 +110,7 @@ func TestPrefetchPipelineOrdering(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, _, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store
@@ -154,7 +154,7 @@ func TestPrefetchErrorPropagation(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store
@@ -211,7 +211,7 @@ func TestPrefetchContextCancellation(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, _, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store with latency to make cancellation timing easier
@@ -297,7 +297,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store with latency
@@ -405,7 +405,7 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store with latency
@@ -491,7 +491,7 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store

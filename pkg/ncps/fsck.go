@@ -289,7 +289,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			verifiedSince := cmd.Duration("verified-since")
 
 			// 1. Setup Database
-			db, err := createDatabaseQuerier(cmd)
+			db, _, err := createDatabaseQuerier(cmd)
 			if err != nil {
 				logger.Error().Err(err).Msg("error creating database querier")
 

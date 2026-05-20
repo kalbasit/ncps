@@ -362,6 +362,11 @@ type Cache struct {
 	healthChecker *healthcheck.HealthChecker
 	maxSize       uint64
 	db            database.Querier
+	// dbClient is the Ent-backed replacement for db. Introduced in
+	// §11.1 of migrate-to-ent-and-atlas; coexists with db while
+	// §11.2-§11.7 convert call sites one feature group at a time.
+	// §11.8 removes the db field once nothing references Querier.
+	dbClient *database.Client
 
 	// tempDir is used to store nar files temporarily.
 	tempDir string
@@ -550,10 +555,16 @@ func IsUploadOnly(ctx context.Context) bool {
 }
 
 // New returns a new Cache.
+//
+// The dbClient parameter is the Ent-backed replacement for db.
+// Introduced in §11.1 of the migrate-to-ent-and-atlas openspec
+// change; it coexists with the Querier-typed db while §11.2-§11.7
+// migrate individual call sites. §11.8 removes the db parameter.
 func New(
 	ctx context.Context,
 	hostName string,
 	db database.Querier,
+	dbClient *database.Client,
 	//nolint:staticcheck // deprecated: migration support
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
@@ -567,6 +578,7 @@ func New(
 ) (*Cache, error) {
 	c := &Cache{
 		db:                   db,
+		dbClient:             dbClient,
 		config:               config.New(db, cacheLocker),
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,

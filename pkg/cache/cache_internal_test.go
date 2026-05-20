@@ -70,6 +70,8 @@ func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, s
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -77,7 +79,7 @@ func setupSQLiteFactory(t *testing.T) (*Cache, database.Querier, *local.Store, s
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+	c, err := New(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
@@ -96,7 +98,7 @@ func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store,
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, _, dbCleanup := testhelper.SetupPostgres(t)
+	db, dbClient, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -104,7 +106,7 @@ func setupPostgresFactory(t *testing.T) (*Cache, database.Querier, *local.Store,
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+	c, err := New(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
@@ -141,7 +143,7 @@ func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, st
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, _, dbCleanup := testhelper.SetupMySQL(t)
+	db, dbClient, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -149,7 +151,7 @@ func setupMySQLFactory(t *testing.T) (*Cache, database.Querier, *local.Store, st
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := New(newContext(), cacheName, db, localStore, localStore, localStore, "",
+	c, err := New(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
@@ -1608,7 +1610,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 	}
 
 	// Helper function to run tests against a specific database backend
-	runTestsWithDB := func(t *testing.T, setupDB func(*testing.T) (database.Querier, func())) {
+	runTestsWithDB := func(t *testing.T, setupDB func(*testing.T) (database.Querier, *database.Client, func())) {
 		t.Helper()
 
 		for _, tc := range testCases {
@@ -1618,7 +1620,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 				ctx := newContext()
 
 				// Setup database
-				db, dbCleanup := setupDB(t)
+				db, dbClient, dbCleanup := setupDB(t)
 				t.Cleanup(dbCleanup)
 
 				// Setup storage
@@ -1634,7 +1636,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 				downloadLocker := locklocal.NewLocker()
 				cacheLocker := locklocal.NewRWLocker()
 
-				c, err := New(ctx, cacheName, db, localStore, localStore, localStore, "",
+				c, err := New(ctx, cacheName, db, dbClient, localStore, localStore, localStore, "",
 					downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 				require.NoError(t, err)
 
@@ -1666,20 +1668,20 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 	// Test with PostgreSQL (only if enabled via environment variable)
 	t.Run("PostgreSQL", func(t *testing.T) {
 		t.Parallel()
-		runTestsWithDB(t, func(t *testing.T) (database.Querier, func()) {
-			db, _, cleanup := testhelper.SetupPostgres(t)
+		runTestsWithDB(t, func(t *testing.T) (database.Querier, *database.Client, func()) {
+			db, dbClient, _, cleanup := testhelper.SetupPostgres(t)
 
-			return db, cleanup
+			return db, dbClient, cleanup
 		})
 	})
 
 	// Test with MySQL (only if enabled via environment variable)
 	t.Run("MySQL", func(t *testing.T) {
 		t.Parallel()
-		runTestsWithDB(t, func(t *testing.T) (database.Querier, func()) {
-			db, _, cleanup := testhelper.SetupMySQL(t)
+		runTestsWithDB(t, func(t *testing.T) (database.Querier, *database.Client, func()) {
+			db, dbClient, _, cleanup := testhelper.SetupMySQL(t)
 
-			return db, cleanup
+			return db, dbClient, cleanup
 		})
 	})
 }

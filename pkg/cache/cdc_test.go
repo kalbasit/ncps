@@ -178,7 +178,7 @@ func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -221,7 +221,7 @@ func testCDCDeduplication(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -257,7 +257,7 @@ func testCDCMixedMode(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, _, _, dir, _, cleanup := factory(t)
+		c, _, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -308,7 +308,7 @@ func testCDCGetNarInfo(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -368,7 +368,7 @@ func testCDCClientDisconnectNoGoroutineLeak(factory cacheFactory) func(*testing.
 
 		ctx := context.Background()
 
-		c, _, _, dir, _, cleanup := factory(t)
+		c, _, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -443,7 +443,7 @@ func testCDCDecompressZstdBeforeChunking(factory cacheFactory) func(*testing.T) 
 
 		ctx := context.Background()
 
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -515,7 +515,7 @@ func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -582,7 +582,7 @@ func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Set up CDC
@@ -658,7 +658,7 @@ func testCDCMigrateNarToChunksUpdatesNarInfo(factory cacheFactory) func(*testing
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// 1. Store a NAR as whole file (CDC disabled) with xz compression
@@ -734,7 +734,7 @@ func testCDCMigrateNarToChunksLinksNarInfoNarFiles(factory cacheFactory) func(*t
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// 1. Store a NAR as a whole file (CDC disabled) with xz compression
@@ -807,7 +807,7 @@ func testCDCPutNarInfoNormalizesCompression(factory cacheFactory) func(*testing.
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Enable CDC
@@ -885,7 +885,7 @@ func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T)
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Set up CDC
@@ -950,7 +950,7 @@ func testCDCPutNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T) 
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Enable CDC
@@ -1008,7 +1008,7 @@ func testCDCPutNarInfoNoContextCanceled(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
-		c, _, _, dir, _, cleanup := factory(t)
+		c, _, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Enable CDC
@@ -1073,7 +1073,7 @@ func testCDCPutNarDoesNotOverwriteFileSizeOnceChunked(factory cacheFactory) func
 
 		ctx := context.Background()
 
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Initialize chunk store
@@ -1172,7 +1172,7 @@ func testCDCMigrateNarToChunksCompressionNormalizationIsAtomic(factory cacheFact
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// 1. Store a NAR as a whole file with xz compression (CDC disabled).
@@ -1261,7 +1261,7 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// 1. Store a NAR as a whole file (CDC disabled) with xz compression.
@@ -1379,7 +1379,7 @@ func testCDCMigrateNarToChunksDeletesOriginalFile(factory cacheFactory) func(*te
 
 		ctx := context.Background()
 
-		c, _, _, dir, _, cleanup := factory(t)
+		c, _, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// 1. Store a NAR as a whole file (CDC disabled) with xz compression.
@@ -1441,7 +1441,7 @@ func testCDCMigrateNarToChunksHealsStaleNarInfoURLOnSecondCall(factory cacheFact
 
 		ctx := context.Background()
 
-		c, db, localStore, dir, rebind, cleanup := factory(t)
+		c, db, _, localStore, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		entry := testdata.Nar1
@@ -1540,7 +1540,7 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// 1. Store a NAR as a whole file (CDC disabled) with xz compression.
@@ -1654,7 +1654,7 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, _, _, dir, _, cleanup := factory(t)
+		c, _, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Set up CDC with small chunk sizes for fast chunking.
@@ -1758,7 +1758,7 @@ func testCDCDisabledWithChunkedNARsInDB(factory cacheFactory) func(*testing.T) {
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, db, _, dir, _, cleanup := factory(t)
+		c, db, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Step 1: Enable CDC and store a NAR as chunks.
@@ -1815,7 +1815,7 @@ func testCDCGetNarTransparentZstd(factory cacheFactory) func(*testing.T) {
 
 		ctx := context.Background()
 
-		c, _, _, dir, _, cleanup := factory(t)
+		c, _, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		chunkStoreDir := filepath.Join(dir, "chunks-store")
@@ -1897,7 +1897,7 @@ func testCDCLazyChunkingPreservesOldNarFile(factory cacheFactory) func(*testing.
 
 		ctx := context.Background()
 
-		c, db, _, dir, rebind, cleanup := factory(t)
+		c, db, _, _, dir, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		entry := testdata.Nar1
