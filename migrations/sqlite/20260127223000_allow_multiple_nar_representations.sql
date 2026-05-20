@@ -1,4 +1,10 @@
 -- +goose Up
+-- +goose NO TRANSACTION
+-- Required so the `PRAGMA foreign_keys = OFF` statements below take
+-- effect — goose wraps migrations in a transaction by default, and
+-- SQLite ignores `PRAGMA foreign_keys` inside a transaction, which
+-- would cause the DROP TABLE/RENAME swap to fail against any data
+-- already in narinfo_nar_files.
 
 -- Step 1: Create new nar_files table with the composite unique constraint
 CREATE TABLE nar_files_new (

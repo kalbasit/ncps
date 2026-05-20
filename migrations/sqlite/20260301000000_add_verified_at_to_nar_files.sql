@@ -2,39 +2,9 @@
 ALTER TABLE nar_files ADD COLUMN verified_at TIMESTAMP;
 
 -- +goose Down
-CREATE TABLE nar_files_new (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hash TEXT NOT NULL,
-    compression TEXT NOT NULL DEFAULT '',
-    file_size INTEGER NOT NULL,
-    "query" TEXT NOT NULL DEFAULT '',
-    total_chunks BIGINT NOT NULL DEFAULT 0,
-    chunking_started_at TIMESTAMP NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP,
-    last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (hash, compression, "query")
-);
-
-INSERT INTO nar_files_new (
-    id, hash, compression, file_size, "query", total_chunks, chunking_started_at, created_at, updated_at, last_accessed_at
-)
-SELECT
-    id,
-    hash,
-    compression,
-    file_size,
-    "query",
-    total_chunks,
-    chunking_started_at,
-    created_at,
-    updated_at,
-    last_accessed_at
-FROM nar_files;
-
-PRAGMA foreign_keys = OFF;
-DROP TABLE nar_files;
-ALTER TABLE nar_files_new RENAME TO nar_files;
-PRAGMA foreign_keys = ON;
-
-CREATE INDEX idx_nar_files_last_accessed_at ON nar_files (last_accessed_at);
+-- Use ALTER TABLE DROP COLUMN (supported in sqlite >= 3.35.0, which the
+-- project's mattn/go-sqlite3 v1.14.x bundles) instead of the fragile
+-- table-swap pattern. The previous swap-based form had to manually
+-- enumerate every column on nar_files and would have silently dropped
+-- any column added by a later migration that wasn't yet known here.
+ALTER TABLE nar_files DROP COLUMN verified_at;
