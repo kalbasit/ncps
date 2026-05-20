@@ -226,13 +226,18 @@ func resetDevDB(ctx context.Context, db *sql.DB, d dialectSpec) error {
 		return nil
 	}
 
-	tables := []string{
-		"nar_file_chunks", "nar_files", "narinfo_nar_files",
-		"narinfo_references", "narinfo_signatures", "narinfos",
-		"chunks", "config", "pinned_closures", "schema_migrations",
+	// Source of truth for ncps tables: migrate.Tables (the Ent
+	// codegen output). Add schema_migrations explicitly since Ent
+	// doesn't manage the migration-tracking table.
+	tables := make([]string, 0, len(migrate.Tables)+1)
+	for _, t := range migrate.Tables {
+		tables = append(tables, t.Name)
 	}
 
-	if d.name == "mysql" {
+	tables = append(tables, "schema_migrations")
+
+	switch d.name {
+	case "mysql":
 		if _, err := db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=0"); err != nil {
 			return fmt.Errorf("disable fk checks: %w", err)
 		}
@@ -248,15 +253,21 @@ func resetDevDB(ctx context.Context, db *sql.DB, d dialectSpec) error {
 		}
 
 		return nil
-	}
-	// Postgres: cascade-drop so FKs go with the tables.
-	for _, t := range tables {
-		if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS "`+t+`" CASCADE`); err != nil {
-			return fmt.Errorf("drop %s: %w", t, err)
-		}
-	}
 
-	return nil
+	case "postgres":
+		// Cascade-drop so FKs go with the tables.
+		for _, t := range tables {
+			if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS "`+t+`" CASCADE`); err != nil {
+				return fmt.Errorf("drop %s: %w", t, err)
+			}
+		}
+
+		return nil
+
+	default:
+		//nolint:err113 // diagnostic
+		return fmt.Errorf("resetDevDB: unsupported dialect %q", d.name)
+	}
 }
 
 // validateName rejects empty and well-known placeholder names. The lint
