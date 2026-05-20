@@ -173,7 +173,7 @@ func adoptPostgresSteps(ctx context.Context, tx *sql.Tx) error {
 			id serial NOT NULL,
 			version_id bigint NOT NULL,
 			is_applied boolean NOT NULL,
-			tstamp timestamp NULL DEFAULT now(),
+			tstamp timestamp NOT NULL DEFAULT now(),
 			PRIMARY KEY(id)
 		)`,
 		`INSERT INTO schema_migrations (version_id, is_applied, tstamp)

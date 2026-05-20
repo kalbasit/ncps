@@ -56,7 +56,7 @@ Schemas live as Go structs under `ent/schema/*.go`. Fields, indexes, edges, mixi
 
 **Why over dbmate**: dbmate is an external binary requiring the wrapper in `nix/dbmate-wrapper/`; Goose is an in-process library. We also need programmatic access to the tracking table state for the dbmate-adoption hook (D7).
 
-**Tracking table name**: `ncps_schema_versions` (single fixed name across engines, set via `goose.WithTableName`). Avoids colliding with dbmate's `schema_migrations`.
+**Tracking table name**: `schema_migrations` (single fixed name across engines, set via `goose.WithTableName`). Preserves the dbmate-era name for operator continuity — see D6 for the adoption mechanism that converts the dbmate-shape table to goose's canonical column layout in place.
 
 ### D4: Migration directory layout — no shard subdirectory
 
@@ -189,7 +189,7 @@ State detection: `column_exists("schema_migrations", "is_applied")`.
     id          <serial-pk>,           -- INTEGER PRIMARY KEY AUTOINCREMENT (sqlite) / SERIAL PRIMARY KEY (postgres)
     version_id  BIGINT  NOT NULL,
     is_applied  BOOLEAN NOT NULL,
-    tstamp      TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+    tstamp      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
   INSERT INTO schema_migrations (version_id, is_applied, tstamp)
     SELECT CAST(version AS BIGINT), TRUE, CURRENT_TIMESTAMP
@@ -221,7 +221,7 @@ Action per state:
 - **S2**: hand off to goose.
 - **S3**: full sequence:
   1. `ALTER TABLE schema_migrations RENAME TO schema_migrations_dbmate_backup`
-  2. `CREATE TABLE schema_migrations (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, version_id BIGINT NOT NULL, is_applied TINYINT(1) NOT NULL, tstamp TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP)`
+  2. `CREATE TABLE schema_migrations (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, version_id BIGINT NOT NULL, is_applied TINYINT(1) NOT NULL, tstamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`
   3. `INSERT INTO schema_migrations (version_id, is_applied, tstamp) SELECT CAST(version AS UNSIGNED), TRUE, CURRENT_TIMESTAMP FROM schema_migrations_dbmate_backup`
   4. Verify row-count parity (Go-side `SELECT COUNT(*)` against both tables).
   5. `DROP TABLE schema_migrations_dbmate_backup`
