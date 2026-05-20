@@ -1,9 +1,9 @@
 ## 1. MySQL spike (decision gate)
 
-- [ ] 1.1 Add a throwaway branch with a single `ent/schema/spike.go` declaring one toy entity with fields, an index, an edge, and a CHECK annotation
-- [ ] 1.2 Write a one-shot Go program that calls `entgo.io/ent/dialect/sql/schema.NewMigrate` with `dialect.MySQL`, `sqltool.GooseFormatter`, and `sqltool.NewGooseDir` against an empty MariaDB 11 dev DB; capture the generated `.sql` file
-- [ ] 1.3 Apply the generated file with `goose.NewProvider(goose.DialectMySQL, db, dir, WithTableName("schema_migrations")).Up(ctx)` and confirm the table is created exactly as Ent's `migrate.Tables` expects
-- [ ] 1.4 Decision gate: if the pipeline works end-to-end, document the result in `design.md` and delete the spike branch; if it fails, write a ~50-LOC custom Goose formatter for MySQL and validate the same flow before proceeding
+- [x] 1.1 Add a throwaway branch with a single `ent/schema/spike.go` declaring one toy entity with fields, an index, an edge, and a CHECK annotation
+- [x] 1.2 Write a one-shot Go program that calls `entgo.io/ent/dialect/sql/schema.NewMigrate` with `dialect.MySQL`, `sqltool.GooseFormatter`, and `sqltool.NewGooseDir` against an empty MariaDB 11 dev DB; capture the generated `.sql` file
+- [x] 1.3 Apply the generated file with `goose.NewProvider(goose.DialectMySQL, db, dir, WithTableName("schema_migrations")).Up(ctx)` and confirm the table is created exactly as Ent's `migrate.Tables` expects
+- [x] 1.4 Decision gate: if the pipeline works end-to-end, document the result in `design.md` and delete the spike branch; if it fails, write a ~50-LOC custom Goose formatter for MySQL and validate the same flow before proceeding
 
 ## 2. Foundation setup
 
