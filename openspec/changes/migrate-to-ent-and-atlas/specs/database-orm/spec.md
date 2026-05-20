@@ -71,6 +71,21 @@ The system SHALL provide an Ent mixin (e.g. `entmixin.Timestamps`) that contribu
 - **THEN** the schema's `Mixin()` method SHALL return `[]ent.Mixin{entmixin.Timestamps{}}`
 - **AND** the schema SHALL NOT re-declare `created_at` or `updated_at` fields directly
 
+### Requirement: `Schema.Create` is the canonical fresh-install schema source
+
+The system SHALL use Ent's runtime `entSchema.NewMigrate(drv).Create(ctx, migrate.Tables...)` as the schema-creation path for fresh installs (databases that have no application tables and no `schema_migrations` row). This produces the *current* end-state schema in one operation, rather than replaying historical migration files. The schema produced by `Schema.Create` MUST match the schema produced by applying every `.sql` file under `migrations/<dialect>/` in timestamp order; this equivalence is gated by the §8 schema-equivalence golden test.
+
+#### Scenario: Empty DB fresh install
+
+- **WHEN** `ncps migrate up` is invoked against an empty database
+- **THEN** the system SHALL call `entSchema.NewMigrate(drv).Create(ctx, migrate.Tables...)` to produce the entire Ent-expected schema
+- **AND** the system SHALL NOT execute any file under `migrations/<dialect>/` against that database
+
+#### Scenario: Schema.Create == applied migrations
+
+- **WHEN** the §8 golden test compares (a) a fresh database after Schema.Create against (b) a fresh database after `goose.Up` applies every `migrations/<dialect>/*.sql` in timestamp order
+- **THEN** the two schemas SHALL be byte-equivalent (modulo column ordering) for every dialect
+
 ### Requirement: Hand-written engine-specific Querier code is removed
 
 The system SHALL NOT contain the legacy `pkg/database/{sqlitedb,postgresdb,mysqldb}/` packages, the `pkg/database/generated_*.go` files, or the hand-written `pkg/database/Querier` interface after this change is applied. The Ent client is the sole database surface for callers in `pkg/cache/`, `pkg/ncps/`, `pkg/server/`, and `cmd/`.
