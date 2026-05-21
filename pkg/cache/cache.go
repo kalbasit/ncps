@@ -2304,16 +2304,33 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 	// see the committed deletion. Ent equivalent of the legacy LEFT
 	// JOIN nar_file_chunks WHERE chunk_id IS NULL: chunks that have no
 	// NarFileLinks edge.
-	orphanedChunks, err := c.dbClient.Ent().Chunk.Query().
-		Where(
-			entchunk.IDIn(ids...),
-			entchunk.Not(entchunk.HasNarFileLinks()),
-		).
-		All(ctx)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
+	//
+	// IDIn is batched (cdcCleanupHashBatchSize) to stay below driver
+	// parameter limits: a very large NAR file split into small CDC
+	// chunks can produce many thousands of partial-chunk IDs after a
+	// stale-lock cleanup, which would otherwise exceed SQLite's ≤ 999
+	// placeholder ceiling on older builds.
+	var orphanedChunks []*ent.Chunk
 
-		return
+	for start := 0; start < len(ids); start += cdcCleanupHashBatchSize {
+		end := start + cdcCleanupHashBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+
+		batch, err := c.dbClient.Ent().Chunk.Query().
+			Where(
+				entchunk.IDIn(ids[start:end]...),
+				entchunk.Not(entchunk.HasNarFileLinks()),
+			).
+			All(ctx)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
+
+			return
+		}
+
+		orphanedChunks = append(orphanedChunks, batch...)
 	}
 
 	for _, oc := range orphanedChunks {
