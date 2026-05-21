@@ -1,0 +1,26 @@
+name: Merge Stack — Start
+on:
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: merge-stack-start-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  start:
+    # Only act on human-applied `merge-stack` labels on non-fork PRs.
+    # The sender check prevents this from re-firing recursively when
+    # the action labels the next PR down the chain itself.
+    if: >-
+      github.event.label.name == 'merge-stack' && github.event.sender.type == 'User' && github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: kalbasit/stackmerge-action/start@main
+        with:
+          token: ${{ secrets.GHA_PAT_TOKEN }}

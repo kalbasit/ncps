@@ -1,0 +1,23 @@
+name: Merge Stack — Continue
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: merge-stack-continue-${{ github.repository }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  continue:
+    if: >-
+      github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'merge-stack') && github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: kalbasit/stackmerge-action/continue@main
+        with:
+          token: ${{ secrets.GHA_PAT_TOKEN }}
