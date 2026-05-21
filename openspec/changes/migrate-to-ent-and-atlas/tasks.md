@@ -117,19 +117,19 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 - [x] 11.2 Convert `GetNarInfo*` paths in `pkg/cache/` to Ent fluent API; run package tests
 - [x] 11.3 Convert `PutNarInfo*` paths; run package tests
 - [x] 11.4 Convert `GetNarFile*` / `PutNarFile*` paths (including CDC chunk insertion); run package tests
-- [ ] 11.5 Convert chunk and orphan-cleanup queries; run package tests
-- [ ] 11.6 Convert `pkg/ncps/` paths (migration tooling, fsck, closure pinning); run package tests
-- [ ] 11.7 Convert `pkg/server/` paths; run package tests
-- [ ] 11.8 Convert `cmd/` paths; run integration tests
-- [ ] 11.9 Run `go test -race ./...` against all three engines and confirm parity with the pre-change baseline
+- [x] 11.5 Convert chunk and orphan-cleanup queries; run package tests
+- [x] 11.6 Convert `pkg/ncps/` paths (migration tooling, fsck, closure pinning); run package tests
+- [x] 11.7 Convert `pkg/server/` paths; run package tests
+- [x] 11.8 Convert `cmd/` paths; run integration tests
+- [x] 11.9 Run `go test -race ./...` against all three engines and confirm parity with the pre-change baseline
 
 ## 12. Cleanup
 
 - [ ] 12.1 Delete `db/query.sqlite.sql`, `db/query.postgres.sql`, `db/query.mysql.sql`
 - [ ] 12.2 Delete `db/schema/sqlite.sql`, `db/schema/postgres.sql`, `db/schema/mysql.sql`
 - [ ] 12.3 Delete `db/migrations/sqlite/`, `db/migrations/postgres/`, `db/migrations/mysql/` (after confirming the translated files are committed under `migrations/<dialect>/`)
-- [ ] 12.4 Delete `pkg/database/sqlitedb/`, `pkg/database/postgresdb/`, `pkg/database/mysqldb/`
-- [ ] 12.5 Delete `pkg/database/generated_models.go`, `pkg/database/generated_errors.go`, `pkg/database/generated_querier.go`, `pkg/database/generated_wrapper_{sqlite,postgres,mysql}.go`
+- [x] 12.4 Delete `pkg/database/sqlitedb/`, `pkg/database/postgresdb/`, `pkg/database/mysqldb/`
+- [x] 12.5 Delete `pkg/database/generated_models.go`, `pkg/database/generated_errors.go`, `pkg/database/generated_querier.go`, `pkg/database/generated_wrapper_{sqlite,postgres,mysql}.go`
 - [ ] 12.6 Delete `nix/dbmate-wrapper/` and remove `dbmate-wrapper` from any Nix package or dev-shell reference
 - [ ] 12.7 Remove `dbmate` from the dev shell and Docker images
 - [ ] 12.8 Remove `github.com/kalbasit/sqlc-multi-db` from the `tool ()` directive and from `go.mod`'s indirect requires (run `go mod tidy`)
