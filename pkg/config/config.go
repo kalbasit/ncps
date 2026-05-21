@@ -9,6 +9,9 @@ import (
 
 	"github.com/rs/zerolog"
 
+	entconfigentry "github.com/kalbasit/ncps/ent/configentry"
+
+	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/lock"
 )
@@ -55,14 +58,14 @@ var (
 // Config provides access to the persistent configuration stored in the database.
 // It uses an RWLocker to ensure thread-safe access to configuration keys.
 type Config struct {
-	db       database.Querier
+	dbClient *database.Client
 	rwLocker lock.RWLocker
 }
 
 // New returns a new Config instance.
-func New(db database.Querier, rwLocker lock.RWLocker) *Config {
+func New(dbClient *database.Client, rwLocker lock.RWLocker) *Config {
 	return &Config{
-		db:       db,
+		dbClient: dbClient,
 		rwLocker: rwLocker,
 	}
 }
@@ -149,9 +152,11 @@ func (c *Config) getConfig(ctx context.Context, key string) (string, error) {
 		}
 	}()
 
-	cu, err := c.db.GetConfigByKey(ctx, key)
+	cu, err := c.dbClient.Ent().ConfigEntry.Query().
+		Where(entconfigentry.KeyEQ(key)).
+		Only(ctx)
 	if err != nil {
-		if database.IsNotFoundError(err) {
+		if ent.IsNotFound(err) {
 			return "", fmt.Errorf("%w: %s", ErrConfigNotFound, key)
 		}
 
@@ -183,10 +188,18 @@ func (c *Config) setConfig(ctx context.Context, key, value string) error {
 		}
 	}()
 
-	return c.db.SetConfig(ctx, database.SetConfigParams{
-		Key:   key,
-		Value: value,
-	})
+	// UPSERT on (key) — matches the legacy SetConfig
+	// `INSERT … ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value,
+	// updated_at = CURRENT_TIMESTAMP`.
+	return c.dbClient.Ent().ConfigEntry.Create().
+		SetKey(key).
+		SetValue(value).
+		OnConflictColumns(entconfigentry.FieldKey).
+		Update(func(u *ent.ConfigEntryUpsert) {
+			u.SetValue(value)
+			u.SetUpdatedAt(time.Now())
+		}).
+		Exec(ctx)
 }
 
 // ValidateOrStoreCDCConfig validates CDC configuration against stored values or stores them if not yet configured.

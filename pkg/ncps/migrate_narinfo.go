@@ -217,7 +217,7 @@ requests. Without Redis, the command uses in-memory locking (no coordination wit
 			}
 
 			// 3. Setup OTel
-			extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+			extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, dbClient, rwLocker)
 			if err != nil {
 				logger.
 					Error().

@@ -22,10 +22,13 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-// narToChunksMigrationFactory is a function that returns a clean, ready-to-use database,
-// local store, directory path, and database URL string for CLI commands,
-// and takes care of cleaning up once the test is done.
-type narToChunksMigrationFactory func(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func())
+// narToChunksMigrationFactory is a function that returns a clean, ready-to-use database
+// (legacy Querier + §11-introduced Ent-backed *database.Client), local store, directory
+// path, and database URL string for CLI commands, and takes care of cleaning up once the
+// test is done.
+type narToChunksMigrationFactory func(t *testing.T) (
+	database.Querier, *database.Client, *storagelocal.Store, string, string, func(),
+)
 
 // TestMigrateNarToChunksBackends runs all NAR-to-chunks migration tests against all supported database backends.
 func TestMigrateNarToChunksBackends(t *testing.T) {
@@ -67,13 +70,13 @@ func TestMigrateNarToChunksBackends(t *testing.T) {
 
 // configureCDCInDatabase sets up CDC configuration in the database for testing.
 // This must be called before running migrate-nar-to-chunks command.
-func configureCDCInDatabase(ctx context.Context, t *testing.T, db database.Querier) {
+func configureCDCInDatabase(ctx context.Context, t *testing.T, dbClient *database.Client) {
 	t.Helper()
 
 	// Create a local RW locker for config access
 	rwLocker := locklocal.NewRWLocker()
 
-	cfg := config.New(db, rwLocker)
+	cfg := config.New(dbClient, rwLocker)
 
 	require.NoError(t, cfg.SetCDCEnabled(ctx, "true"), "failed to set CDC enabled")
 	require.NoError(t, cfg.SetCDCMin(ctx, "16384"), "failed to set CDC min")
@@ -98,9 +101,9 @@ func testMigrateNarToChunksSuccess(factory narToChunksMigrationFactory) func(*te
 
 		// Setup
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
-		db, _, dir, dbURL, cleanup := factory(t)
+		db, dbClient, _, dir, dbURL, cleanup := factory(t)
 		t.Cleanup(cleanup)
-		configureCDCInDatabase(ctx, t, db)
+		configureCDCInDatabase(ctx, t, dbClient)
 
 		// Pre-populate storage with NarInfo and NAR
 		narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
@@ -158,9 +161,9 @@ func testMigrateNarToChunksUnmigratedNarInfoFailure(factory narToChunksMigration
 
 		// Setup
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
-		db, _, dir, dbURL, cleanup := factory(t)
+		_, dbClient, _, dir, dbURL, cleanup := factory(t)
 		t.Cleanup(cleanup)
-		configureCDCInDatabase(ctx, t, db)
+		configureCDCInDatabase(ctx, t, dbClient)
 
 		// Pre-populate storage with NarInfo (NOT migrated to DB)
 		narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
@@ -190,9 +193,9 @@ func testMigrateNarToChunksDryRun(factory narToChunksMigrationFactory) func(*tes
 
 		// Setup
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
-		db, _, dir, dbURL, cleanup := factory(t)
+		db, dbClient, _, dir, dbURL, cleanup := factory(t)
 		t.Cleanup(cleanup)
-		configureCDCInDatabase(ctx, t, db)
+		configureCDCInDatabase(ctx, t, dbClient)
 
 		// Pre-populate storage with NarInfo and NAR
 		narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
@@ -249,9 +252,9 @@ func testMigrateNarToChunksIdempotency(factory narToChunksMigrationFactory) func
 
 		// Setup
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
-		db, _, dir, dbURL, cleanup := factory(t)
+		db, dbClient, _, dir, dbURL, cleanup := factory(t)
 		t.Cleanup(cleanup)
-		configureCDCInDatabase(ctx, t, db)
+		configureCDCInDatabase(ctx, t, dbClient)
 
 		// Pre-populate storage with NarInfo and NAR
 		narInfoPath := filepath.Join(dir, "store", "narinfo", testdata.Nar1.NarInfoPath)
@@ -318,9 +321,9 @@ func testMigrateNarToChunksDeduplication(factory narToChunksMigrationFactory) fu
 
 		// Setup
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
-		db, _, dir, dbURL, cleanup := factory(t)
+		db, dbClient, _, dir, dbURL, cleanup := factory(t)
 		t.Cleanup(cleanup)
-		configureCDCInDatabase(ctx, t, db)
+		configureCDCInDatabase(ctx, t, dbClient)
 
 		// Create two narinfos pointing to the same NAR URL
 		narInfo1Text := testdata.Nar1.NarInfoText
@@ -411,9 +414,9 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 
 		// Setup
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
-		db, _, dir, dbURL, cleanup := factory(t)
+		db, dbClient, _, dir, dbURL, cleanup := factory(t)
 		t.Cleanup(cleanup)
-		configureCDCInDatabase(ctx, t, db)
+		configureCDCInDatabase(ctx, t, dbClient)
 
 		// Pre-populate storage with multiple NARs
 		entries := []testdata.Entry{testdata.Nar1, testdata.Nar2, testdata.Nar3}
@@ -469,7 +472,9 @@ func testMigrateNarToChunksMultipleNARs(factory narToChunksMigrationFactory) fun
 	}
 }
 
-func setupNarToChunksMigrationSQLite(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func()) {
+func setupNarToChunksMigrationSQLite(t *testing.T) (
+	database.Querier, *database.Client, *storagelocal.Store, string, string, func(),
+) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -478,6 +483,9 @@ func setupNarToChunksMigrationSQLite(t *testing.T) (database.Querier, *storagelo
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
 	require.NoError(t, err)
 
 	store, err := storagelocal.New(ctx, dir)
@@ -489,16 +497,18 @@ func setupNarToChunksMigrationSQLite(t *testing.T) (database.Querier, *storagelo
 		db.DB().Close()
 	}
 
-	return db, store, dir, dbURL, cleanup
+	return db, dbClient, store, dir, dbURL, cleanup
 }
 
-func setupNarToChunksMigrationPostgres(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func()) {
+func setupNarToChunksMigrationPostgres(t *testing.T) (
+	database.Querier, *database.Client, *storagelocal.Store, string, string, func(),
+) {
 	t.Helper()
 
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbURL, dbCleanup := testhelper.SetupPostgres(t)
+	db, dbClient, dbURL, dbCleanup := testhelper.SetupPostgres(t)
 
 	store, err := storagelocal.New(ctx, dir)
 	require.NoError(t, err)
@@ -507,16 +517,18 @@ func setupNarToChunksMigrationPostgres(t *testing.T) (database.Querier, *storage
 		dbCleanup()
 	}
 
-	return db, store, dir, dbURL, cleanup
+	return db, dbClient, store, dir, dbURL, cleanup
 }
 
-func setupNarToChunksMigrationMySQL(t *testing.T) (database.Querier, *storagelocal.Store, string, string, func()) {
+func setupNarToChunksMigrationMySQL(t *testing.T) (
+	database.Querier, *database.Client, *storagelocal.Store, string, string, func(),
+) {
 	t.Helper()
 
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbURL, dbCleanup := testhelper.SetupMySQL(t)
+	db, dbClient, dbURL, dbCleanup := testhelper.SetupMySQL(t)
 
 	store, err := storagelocal.New(ctx, dir)
 	require.NoError(t, err)
@@ -525,5 +537,5 @@ func setupNarToChunksMigrationMySQL(t *testing.T) (database.Querier, *storageloc
 		dbCleanup()
 	}
 
-	return db, store, dir, dbURL, cleanup
+	return db, dbClient, store, dir, dbURL, cleanup
 }

@@ -31,8 +31,8 @@ import (
 	"github.com/kalbasit/ncps/testhelper"
 )
 
-// fsckSetupFn returns (db, localStore, storageDir, dbURL, cleanup).
-type fsckSetupFn func(t *testing.T) (database.Querier, *localstorage.Store, string, string, func())
+// fsckSetupFn returns (db, dbClient, localStore, storageDir, dbURL, cleanup).
+type fsckSetupFn func(t *testing.T) (database.Querier, *database.Client, *localstorage.Store, string, string, func())
 
 func TestFsckBackends(t *testing.T) {
 	t.Parallel()
@@ -93,7 +93,7 @@ func testFsckClean(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, store, dir, dbURL, cleanup := setup(t)
+		db, _, store, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Seed a fully consistent narinfo+narfile in DB and storage.
@@ -123,7 +123,7 @@ func testFsckNarInfosWithoutNarFiles(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, _, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Insert a narinfo in DB with a URL but with no linked nar_file.
@@ -168,7 +168,7 @@ func testFsckOrphanedNarFilesInDB(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, _, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Create a nar_file in DB with no linked narinfo.
@@ -212,7 +212,7 @@ func testFsckNarFileMissingInStorage(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, store, dir, dbURL, cleanup := setup(t)
+		db, _, store, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Write narinfo+nar to storage and fully migrate to DB.
@@ -249,7 +249,7 @@ func testFsckNarFileMissingCascadeRepair(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, store, dir, dbURL, cleanup := setup(t)
+		db, _, store, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Seed a fully consistent narinfo+narfile in DB and storage.
@@ -294,7 +294,7 @@ func testFsckOrphanedNarInStorage(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		_, _, dir, dbURL, cleanup := setup(t)
+		_, _, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Write a NAR file to storage without any DB record.
@@ -324,7 +324,7 @@ func testFsckRepair(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, store, dir, dbURL, cleanup := setup(t)
+		db, _, store, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Seed a consistent entry.
@@ -368,7 +368,7 @@ func testFsckDryRun(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, store, dir, dbURL, cleanup := setup(t)
+		db, _, store, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Seed a consistent entry.
@@ -409,7 +409,7 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, store, dir, dbURL, cleanup := setup(t)
+		db, _, store, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Seed a fully consistent narinfo+narfile in DB and storage.
@@ -487,7 +487,7 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 }
 
 // setupFsckSQLite creates a SQLite-backed test environment.
-func setupFsckSQLite(t *testing.T) (database.Querier, *localstorage.Store, string, string, func()) {
+func setupFsckSQLite(t *testing.T) (database.Querier, *database.Client, *localstorage.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -498,6 +498,9 @@ func setupFsckSQLite(t *testing.T) (database.Querier, *localstorage.Store, strin
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
+
 	store, err := localstorage.New(ctx, dir)
 	require.NoError(t, err)
 
@@ -505,37 +508,37 @@ func setupFsckSQLite(t *testing.T) (database.Querier, *localstorage.Store, strin
 		db.DB().Close()
 	}
 
-	return db, store, dir, "sqlite:" + dbFile, cleanup
+	return db, dbClient, store, dir, "sqlite:" + dbFile, cleanup
 }
 
 // setupFsckPostgres creates a PostgreSQL-backed test environment.
-func setupFsckPostgres(t *testing.T) (database.Querier, *localstorage.Store, string, string, func()) {
+func setupFsckPostgres(t *testing.T) (database.Querier, *database.Client, *localstorage.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbURL, dbCleanup := testhelper.SetupPostgres(t)
+	db, dbClient, dbURL, dbCleanup := testhelper.SetupPostgres(t)
 
 	store, err := localstorage.New(ctx, dir)
 	require.NoError(t, err)
 
-	return db, store, dir, dbURL, dbCleanup
+	return db, dbClient, store, dir, dbURL, dbCleanup
 }
 
 // setupFsckMySQL creates a MySQL-backed test environment.
-func setupFsckMySQL(t *testing.T) (database.Querier, *localstorage.Store, string, string, func()) {
+func setupFsckMySQL(t *testing.T) (database.Querier, *database.Client, *localstorage.Store, string, string, func()) {
 	t.Helper()
 
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbURL, dbCleanup := testhelper.SetupMySQL(t)
+	db, dbClient, dbURL, dbCleanup := testhelper.SetupMySQL(t)
 
 	store, err := localstorage.New(ctx, dir)
 	require.NoError(t, err)
 
-	return db, store, dir, dbURL, dbCleanup
+	return db, dbClient, store, dir, dbURL, dbCleanup
 }
 
 // writeFsckNar1ToStorage writes Nar1's narinfo and NAR file to the storage directory.
@@ -572,11 +575,11 @@ func parseFsckNarInfoText(t *testing.T, text string) *narinfopkg.NarInfo {
 }
 
 // configureFsckCDCInDatabase sets up CDC configuration in the database for fsck tests.
-func configureFsckCDCInDatabase(ctx context.Context, t *testing.T, db database.Querier) {
+func configureFsckCDCInDatabase(ctx context.Context, t *testing.T, dbClient *database.Client) {
 	t.Helper()
 
 	rwLocker := locklocal.NewRWLocker()
-	cfg := config.New(db, rwLocker)
+	cfg := config.New(dbClient, rwLocker)
 
 	require.NoError(t, cfg.SetCDCEnabled(ctx, "true"), "failed to set CDC enabled")
 	require.NoError(t, cfg.SetCDCMin(ctx, "16384"), "failed to set CDC min")
@@ -700,10 +703,10 @@ func testFsckCDCClean(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -732,10 +735,10 @@ func testFsckCDCNarFileChunkCountMismatch(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -774,10 +777,10 @@ func testFsckCDCChunkMissingFromStorage(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -816,10 +819,10 @@ func testFsckCDCOrphanedChunkInStorage(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		_, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -853,10 +856,10 @@ func testFsckCDCRepairIncompleteNar(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -973,10 +976,10 @@ func testFsckCDCRepairOrphanedChunkInStorage(setup fsckSetupFn) func(*testing.T)
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		_, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1024,7 +1027,7 @@ func testFsckCDCChunkedNarFilesNotFlaggedAsMissingWithoutCDCConfig(setup fsckSet
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, _, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
 		// Intentionally do NOT call configureFsckCDCInDatabase — simulates a DB where the
@@ -1062,10 +1065,10 @@ func testFsckCDCSizeMismatchDetected(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1104,10 +1107,10 @@ func testFsckCDCSizeMismatchRepair(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1158,10 +1161,10 @@ func testFsckCDCCorrectSizeNotFlagged(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1191,10 +1194,10 @@ func testFsckCDCSizeMismatchRespectsVerifiedSince(setup fsckSetupFn) func(*testi
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1333,10 +1336,10 @@ func testFsckCDCSizeMismatchDoesNotUpdateVerifiedAt(setup fsckSetupFn) func(*tes
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1383,10 +1386,10 @@ func testFsckCDCVerifyContentSkipsWhenFlagAbsent(setup fsckSetupFn) func(*testin
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1417,10 +1420,10 @@ func testFsckCDCCorruptChunkDetected(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1453,10 +1456,10 @@ func testFsckCDCCleanChunksPassContentVerification(setup fsckSetupFn) func(*test
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1490,10 +1493,10 @@ func testFsckCDCHashMismatchDetected(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1549,10 +1552,10 @@ func testFsckCDCRepairCorruptChunk(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)
@@ -1603,10 +1606,10 @@ func testFsckCDCRepairHashMismatch(setup fsckSetupFn) func(*testing.T) {
 
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
-		db, _, dir, dbURL, cleanup := setup(t)
+		db, dbClient, _, dir, dbURL, cleanup := setup(t)
 		t.Cleanup(cleanup)
 
-		configureFsckCDCInDatabase(ctx, t, db)
+		configureFsckCDCInDatabase(ctx, t, dbClient)
 
 		cs, err := chunkstore.NewLocalStore(filepath.Join(dir, "store"))
 		require.NoError(t, err)

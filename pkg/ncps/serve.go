@@ -519,7 +519,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
-		extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+		extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, dbClient, rwLocker)
 		if err != nil {
 			logger.
 				Error().
@@ -1069,7 +1069,7 @@ func createCache(
 
 	c.SetCacheSignNarinfo(cmd.Bool("cache-sign-narinfo"))
 
-	cfg := config.New(db, rwLocker)
+	cfg := config.New(dbClient, rwLocker)
 
 	// Configure CDC
 	cdcEnabled := cmd.Bool("cache-cdc-enabled")
@@ -1297,7 +1297,7 @@ func loadCDCConfigFromDB(
 func detectExtraResourceAttrs(
 	ctx context.Context,
 	cmd *cli.Command,
-	db database.Querier,
+	dbClient *database.Client,
 	rwLocker lock.RWLocker,
 ) ([]attribute.KeyValue, error) {
 	var attrs []attribute.KeyValue
@@ -1319,7 +1319,7 @@ func detectExtraResourceAttrs(
 	attrs = append(attrs, attribute.String("ncps.lock_type", backend))
 
 	// 3. Set the cluster UUID
-	clusterUUID, err := getOrSetClusterUUID(ctx, db, rwLocker)
+	clusterUUID, err := getOrSetClusterUUID(ctx, dbClient, rwLocker)
 	if err != nil {
 		return nil, err
 	}
@@ -1348,8 +1348,8 @@ func detectExtraResourceAttrs(
 	return attrs, nil
 }
 
-func getOrSetClusterUUID(ctx context.Context, db database.Querier, rwLocker lock.RWLocker) (string, error) {
-	c := config.New(db, rwLocker)
+func getOrSetClusterUUID(ctx context.Context, dbClient *database.Client, rwLocker lock.RWLocker) (string, error) {
+	c := config.New(dbClient, rwLocker)
 
 	cu, err := c.GetClusterUUID(ctx)
 	if err != nil {

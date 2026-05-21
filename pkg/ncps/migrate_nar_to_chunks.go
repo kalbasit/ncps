@@ -216,7 +216,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				return fmt.Errorf("error creating lockers: %w", err)
 			}
 
-			cfg := config.New(db, rwLocker)
+			cfg := config.New(dbClient, rwLocker)
 
 			cdcEnabledStr, err := cfg.GetCDCEnabled(ctx)
 			if err != nil {
@@ -237,7 +237,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			}
 
 			// 3. Setup OTel
-			extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+			extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, dbClient, rwLocker)
 			if err != nil {
 				return fmt.Errorf("error detecting extra resource attributes: %w", err)
 			}
