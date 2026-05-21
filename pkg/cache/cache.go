@@ -2291,16 +2291,24 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 	// GetOrphanedChunks is on Ent (§11.5), the chunk PK type is
 	// plain int on both sides — no conversion needed.
 	staleByID := make(map[int]string, len(staleLockChunks))
+
+	ids := make([]int, 0, len(staleLockChunks))
 	for _, ch := range staleLockChunks {
 		staleByID[ch.ID] = ch.Hash
+		ids = append(ids, ch.ID)
 	}
 
-	// Find all currently orphaned chunks (no nar_file_chunks references).
-	// Run this outside the previous transaction so we see the committed deletion.
-	// Ent equivalent of the legacy LEFT JOIN nar_file_chunks WHERE chunk_id IS NULL:
-	// chunks that have no NarFileLinks edge.
+	// Restrict the orphan-check query to the candidate IDs we already
+	// know about, so we don't pull (and filter in memory) every orphan
+	// in the database. Run this outside the previous transaction so we
+	// see the committed deletion. Ent equivalent of the legacy LEFT
+	// JOIN nar_file_chunks WHERE chunk_id IS NULL: chunks that have no
+	// NarFileLinks edge.
 	orphanedChunks, err := c.dbClient.Ent().Chunk.Query().
-		Where(entchunk.Not(entchunk.HasNarFileLinks())).
+		Where(
+			entchunk.IDIn(ids...),
+			entchunk.Not(entchunk.HasNarFileLinks()),
+		).
 		All(ctx)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
@@ -2309,10 +2317,7 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 	}
 
 	for _, oc := range orphanedChunks {
-		hash, ok := staleByID[oc.ID]
-		if !ok {
-			continue // Not one of our stale lock chunks.
-		}
+		hash := staleByID[oc.ID]
 
 		chunkLog := log.With().Str("chunk_hash", hash).Int("chunk_id", oc.ID).Logger()
 		chunkLog.Debug().Msg("immediately cleaning up chunk from stale CDC lock")
