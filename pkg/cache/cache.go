@@ -5428,9 +5428,17 @@ func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn fun
 		delay = initialDelay
 	)
 
+	zerolog.Ctx(ctx).Debug().
+		Str("operation", operation).
+		Msg("withEntTransaction: starting transaction")
+
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		err = c.dbClient.WithTransaction(ctx, operation, fn)
 		if err == nil {
+			zerolog.Ctx(ctx).Debug().
+				Str("operation", operation).
+				Msg("withEntTransaction: transaction committed successfully")
+
 			return nil
 		}
 
@@ -5451,10 +5459,16 @@ func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn fun
 			Dur("delay", delay).
 			Msg("database deadlock/busy, retrying transaction")
 
+		// time.NewTimer + Stop instead of time.After to avoid leaking
+		// the underlying timer (and its goroutine on pre-1.23 runtimes)
+		// for the full delay duration when ctx is cancelled mid-wait.
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
+
 			return ctx.Err()
-		case <-time.After(delay):
+		case <-timer.C:
 			delay *= 2
 		}
 	}
