@@ -379,11 +379,12 @@ type Cache struct {
 	secretKey     signature.SecretKey
 	healthChecker *healthcheck.HealthChecker
 	maxSize       uint64
-	db            database.Querier
-	// dbClient is the Ent-backed replacement for db. Introduced in
-	// §11.1 of migrate-to-ent-and-atlas; coexists with db while
-	// §11.2-§11.7 convert call sites one feature group at a time.
-	// §11.8 removes the db field once nothing references Querier.
+	// db is the legacy sqlc-style Querier; the production code path no
+	// longer uses it (everything reads/writes via dbClient + Ent), but
+	// the field is retained for test fixtures that still construct rows
+	// through the Querier API. §12 of migrate-to-ent-and-atlas deletes
+	// it alongside the sqlc dependency.
+	db       database.Querier
 	dbClient *database.Client
 
 	// tempDir is used to store nar files temporarily.
@@ -573,11 +574,6 @@ func IsUploadOnly(ctx context.Context) bool {
 }
 
 // New returns a new Cache.
-//
-// The dbClient parameter is the Ent-backed replacement for db.
-// Introduced in §11.1 of the migrate-to-ent-and-atlas openspec
-// change; it coexists with the Querier-typed db while §11.2-§11.7
-// migrate individual call sites. §11.8 removes the db parameter.
 func New(
 	ctx context.Context,
 	hostName string,
@@ -4798,7 +4794,7 @@ func (c *Cache) MigrateNarInfoToDatabase(
 		narInfoStore = c.narInfoStore
 	}
 
-	return MigrateNarInfo(ctx, c.downloadLocker, c.db, c.dbClient, narInfoStore, hash, ni)
+	return MigrateNarInfo(ctx, c.downloadLocker, c.dbClient, narInfoStore, hash, ni)
 }
 
 // MigrateNarInfo migrates a single narinfo from storage to the database.
@@ -4821,7 +4817,6 @@ func (c *Cache) MigrateNarInfoToDatabase(
 func MigrateNarInfo(
 	ctx context.Context,
 	locker lock.Locker,
-	db database.Querier,
 	dbClient *database.Client,
 	narInfoStore storage.NarInfoStore,
 	hash string,
@@ -4851,8 +4846,10 @@ func MigrateNarInfo(
 
 	// Double check if already migrated after acquiring the lock.
 	// This prevents multiple sequential migrations for the same narinfo.
-	nir, err := db.GetNarInfoByHash(ctx, hash)
-	if err == nil && nir.URL.Valid {
+	nir, err := dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.HashEQ(hash)).
+		Only(ctx)
+	if err == nil && nir.URL != nil && *nir.URL != "" {
 		zerolog.Ctx(ctx).Debug().
 			Str("narinfo_hash", hash).
 			Msg("migration completed by another instance while waiting for lock")
@@ -5398,64 +5395,9 @@ func (c *Cache) coordinateDownload(
 	return ds
 }
 
-// withTransaction executes fn within a database transaction.
-// It automatically handles transaction lifecycle: BeginTx, Rollback (on error or panic), and Commit.
-func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
-	const (
-		maxAttempts  = 5
-		initialDelay = 50 * time.Millisecond
-	)
-
-	var (
-		err   error
-		delay = initialDelay
-	)
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		err = c.executeTransaction(ctx, operation, fn)
-		if err == nil {
-			return nil
-		}
-
-		// Only retry on deadlock/busy errors
-		if !database.IsDeadlockError(err) {
-			return err
-		}
-
-		if attempt == maxAttempts {
-			break
-		}
-
-		zerolog.Ctx(ctx).
-			Warn().
-			Err(err).
-			Str("operation", operation).
-			Int("attempt", attempt).
-			Dur("delay", delay).
-			Msg("database deadlock/busy, retrying transaction")
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			delay *= 2
-		}
-	}
-
-	return fmt.Errorf("transaction for %s failed after %d attempts: %w", operation, maxAttempts, err)
-}
-
-// withEntTransaction is the Ent-backed counterpart to withTransaction.
-// It wraps c.dbClient.WithTransaction with the same deadlock-retry
-// policy. Once §11.2-§11.5 finish converting every call site away
-// from the qtx-style Querier closures, withTransaction (and the
-// underlying executeTransaction) can be deleted.
-//
-// the first batch of conversions in §11.2 still uses the legacy
-// helper because the closures cascade through sqlc row-shape
-// consumers. Will become live as those callers convert.
-//
-
+// withEntTransaction wraps c.dbClient.WithTransaction with the same
+// deadlock/duplicate-key retry policy the package-level
+// withEntTransactionRetry provides.
 func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn func(tx *ent.Tx) error) error {
 	return withEntTransactionRetry(ctx, c.dbClient, operation, fn)
 }
@@ -5532,58 +5474,6 @@ func withEntTransactionRetry(
 	}
 
 	return fmt.Errorf("transaction for %s failed after %d attempts: %w", operation, maxAttempts, err)
-}
-
-func (c *Cache) executeTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
-	zerolog.Ctx(ctx).Debug().
-		Str("operation", operation).
-		Msg("executeTransaction: starting transaction")
-
-	tx, err := c.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("operation", operation).
-			Msg("executeTransaction: failed to begin transaction")
-
-		return fmt.Errorf("error beginning a transaction for %s: %w", operation, err)
-	}
-
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(err).
-					Str("operation", operation).
-					Msg("executeTransaction: error rolling back the transaction")
-			}
-		}
-	}()
-
-	if err := fn(c.db.WithTx(tx)); err != nil {
-		zerolog.Ctx(ctx).Debug().
-			Err(err).
-			Str("operation", operation).
-			Msg("executeTransaction: transaction function returned error (will rollback)")
-
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("operation", operation).
-			Msg("executeTransaction: failed to commit transaction")
-
-		return fmt.Errorf("error committing the transaction for %s: %w", operation, err)
-	}
-
-	zerolog.Ctx(ctx).Debug().
-		Str("operation", operation).
-		Msg("executeTransaction: transaction committed successfully")
-
-	return nil
 }
 
 // withReadLock executes fn while holding a read lock with the specified key.
