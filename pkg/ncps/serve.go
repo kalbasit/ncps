@@ -617,7 +617,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 
 			analyticsReporter, err = analytics.New(
 				ctx,
-				db,
+				dbClient,
 				analyticsResource,
 				cmd.Bool("analytics-reporting-samples"),
 			)
