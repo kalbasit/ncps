@@ -29,6 +29,8 @@ import (
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	entnarinfonarfile "github.com/kalbasit/ncps/ent/narinfonarfile"
+	entnarinforeference "github.com/kalbasit/ncps/ent/narinforeference"
+	entnarinfosignature "github.com/kalbasit/ncps/ent/narinfosignature"
 
 	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/analytics"
@@ -4134,74 +4136,18 @@ func (c *Cache) storeInDatabase(
 		Info().
 		Msg("storing narinfo and nar_file record in the database")
 
-	return c.withTransaction(ctx, "storeInDatabase", func(qtx database.Querier) error {
-		createNarInfoParams := database.CreateNarInfoParams{
-			Hash:        hash,
-			StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
-			URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
-			Compression: sql.NullString{String: narInfo.Compression, Valid: narInfo.Compression != ""},
-			FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: narInfo.FileSize != 0}, //nolint:gosec
-			NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true},                   //nolint:gosec
-			Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
-			System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
-			Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
-		}
-
-		if narInfo.FileHash != nil {
-			createNarInfoParams.FileHash = sql.NullString{String: narInfo.FileHash.String(), Valid: true}
-		}
-
-		if narInfo.NarHash != nil {
-			createNarInfoParams.NarHash = sql.NullString{String: narInfo.NarHash.String(), Valid: true}
-		}
-
-		nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
+	return c.withEntTransaction(ctx, "storeInDatabase", func(tx *ent.Tx) error {
+		nir, err := upsertNarInfoFromParsed(ctx, tx, hash, narInfo)
 		if err != nil {
-			// Database-specific UPSERT behavior:
-			//
-			// PostgreSQL/SQLite: Use "ON CONFLICT ... DO UPDATE ... WHERE url IS NULL"
-			//   - If hash exists with NULL URL → updates and returns the row
-			//   - If hash exists with valid URL → condition fails, returns database.ErrNotFound
-			//   - If hash doesn't exist → inserts and returns the row
-			//
-			// MySQL: Use "ON DUPLICATE KEY UPDATE ... IF(url IS NULL, VALUES(...), ...)"
-			//   - Always executes UPDATE clause (even if condition is false)
-			//   - Returns via LastInsertId() mechanism in wrapper
-			//   - Never hits this database.ErrNotFound path
-			//
-			// In both cases, if a record exists with valid URL, we fetch it instead.
-			if database.IsNotFoundError(err) {
-				nir, err = qtx.GetNarInfoByHash(ctx, hash)
-				if err != nil {
-					return fmt.Errorf("upsert returned no rows (record exists with valid URL), failed to fetch: %w", err)
-				}
-			} else {
-				return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
-			}
+			return err
 		}
 
-		if len(narInfo.References) > 0 {
-			if err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
-				NarInfoID: nir.ID,
-				Reference: narInfo.References,
-			}); err != nil {
-				return fmt.Errorf("error inserting narinfo reference: %w", err)
-			}
+		if err := addNarInfoReferences(ctx, tx, nir.ID, narInfo.References); err != nil {
+			return err
 		}
 
-		// Signatures
-		sigStrings := make([]string, len(narInfo.Signatures))
-		for i, sig := range narInfo.Signatures {
-			sigStrings[i] = sig.String()
-		}
-
-		if len(sigStrings) > 0 {
-			if err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
-				NarInfoID: nir.ID,
-				Signature: sigStrings,
-			}); err != nil {
-				return fmt.Errorf("error inserting narinfo signature: %w", err)
-			}
+		if err := addNarInfoSignatures(ctx, tx, nir.ID, narInfo.Signatures); err != nil {
+			return err
 		}
 
 		narURL, err := nar.ParseURL(narInfo.URL)
@@ -4216,23 +4162,273 @@ func (c *Cache) storeInDatabase(
 			return fmt.Errorf("error normalizing the nar URL: %w", err)
 		}
 
-		// Check if nar_file already exists (multiple narinfos can share the same nar_file)
-
-		narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narFileSize(narInfo))
+		narFileID, err := createOrUpdateNarFileEnt(ctx, tx, normalizedNarURL, narFileSize(narInfo))
 		if err != nil {
 			return err
 		}
 
-		// Link narinfo to nar_file
-		if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
-			NarInfoID: nir.ID,
-			NarFileID: narFileID,
-		}); err != nil {
+		// Link narinfo to nar_file. Ignore() compiles to ON CONFLICT
+		// DO UPDATE SET column = column (a no-op update) which is the
+		// effective equivalent of the legacy ON CONFLICT DO NOTHING but
+		// always returns a row so RETURNING-style scans succeed on
+		// Postgres. Postgres needs the conflict resolved at the SQL
+		// layer or the surrounding transaction enters an aborted state.
+		if err := tx.NarInfoNarFile.Create().
+			SetNarinfoID(nir.ID).
+			SetNarFileID(narFileID).
+			OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+			Ignore().
+			Exec(ctx); err != nil {
 			return fmt.Errorf("error linking narinfo to nar_file: %w", err)
 		}
 
 		return nil
 	})
+}
+
+// upsertNarInfoFromParsed mirrors the legacy CreateNarInfo's UPSERT
+// semantics ("INSERT … ON CONFLICT (hash) DO UPDATE … WHERE url IS NULL"):
+//
+//   - hash absent  → insert a fresh narinfo with the supplied fields
+//   - hash present with NULL/empty URL → update the stub with the supplied fields
+//   - hash present with a non-empty URL → keep the existing row untouched
+//
+// Atomicity is provided by the surrounding *ent.Tx; the cache-level
+// PutNarInfo write lock prevents concurrent same-hash writers from
+// racing this read-then-write pattern.
+func upsertNarInfoFromParsed(
+	ctx context.Context,
+	tx *ent.Tx,
+	hash string,
+	narInfo *narinfo.NarInfo,
+) (*ent.NarInfo, error) {
+	existing, err := tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+
+	switch {
+	case ent.IsNotFound(err):
+		// Insert new
+		nb := tx.NarInfo.Create().SetHash(hash)
+		applyNarInfoCreate(nb, narInfo)
+
+		nir, err := nb.Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error inserting the narinfo record for hash %q: %w", hash, err)
+		}
+
+		return nir, nil
+	case err != nil:
+		return nil, fmt.Errorf("error fetching the narinfo record for hash %q: %w", hash, err)
+	case existing.URL == nil || *existing.URL == "":
+		// Update stub
+		ub := tx.NarInfo.UpdateOneID(existing.ID)
+		applyNarInfoUpdate(ub, narInfo)
+
+		nir, err := ub.Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error updating the stub narinfo record for hash %q: %w", hash, err)
+		}
+
+		return nir, nil
+	default:
+		// Existing with non-empty URL → keep as-is
+		return existing, nil
+	}
+}
+
+// applyNarInfoCreate copies the nullable fields of a parsed narinfo
+// onto an Ent create builder. Empty/zero values are dropped (the
+// corresponding columns stay NULL) to match the legacy
+// sql.NullString{Valid: v != ""} behaviour of CreateNarInfo.
+func applyNarInfoCreate(nb *ent.NarInfoCreate, narInfo *narinfo.NarInfo) {
+	if narInfo.StorePath != "" {
+		nb.SetStorePath(narInfo.StorePath)
+	}
+
+	if narInfo.URL != "" {
+		nb.SetURL(narInfo.URL)
+	}
+
+	if narInfo.Compression != "" {
+		nb.SetCompression(narInfo.Compression)
+	}
+
+	if narInfo.FileHash != nil {
+		nb.SetFileHash(narInfo.FileHash.String())
+	}
+	// nar_size is intentionally always set (Valid: true in legacy)
+	//nolint:gosec // G115: NarSize/FileSize are non-negative by spec
+	nb.SetNarSize(int64(narInfo.NarSize))
+
+	if narInfo.FileSize != 0 {
+		//nolint:gosec // G115: FileSize is non-negative by spec
+		nb.SetFileSize(int64(narInfo.FileSize))
+	}
+
+	if narInfo.NarHash != nil {
+		nb.SetNarHash(narInfo.NarHash.String())
+	}
+
+	if narInfo.Deriver != "" {
+		nb.SetDeriver(narInfo.Deriver)
+	}
+
+	if narInfo.System != "" {
+		nb.SetSystem(narInfo.System)
+	}
+
+	if narInfo.CA != "" {
+		nb.SetCa(narInfo.CA)
+	}
+}
+
+// applyNarInfoUpdate is the counterpart to applyNarInfoCreate for the
+// stub-update path: clears columns whose source value is empty, sets
+// the rest. Mirrors the legacy `WHERE url IS NULL` branch's behaviour.
+func applyNarInfoUpdate(ub *ent.NarInfoUpdateOne, narInfo *narinfo.NarInfo) {
+	if narInfo.StorePath != "" {
+		ub.SetStorePath(narInfo.StorePath)
+	} else {
+		ub.ClearStorePath()
+	}
+
+	if narInfo.URL != "" {
+		ub.SetURL(narInfo.URL)
+	} else {
+		ub.ClearURL()
+	}
+
+	if narInfo.Compression != "" {
+		ub.SetCompression(narInfo.Compression)
+	} else {
+		ub.ClearCompression()
+	}
+
+	if narInfo.FileHash != nil {
+		ub.SetFileHash(narInfo.FileHash.String())
+	} else {
+		ub.ClearFileHash()
+	}
+
+	//nolint:gosec // G115: NarSize is non-negative by spec
+	ub.SetNarSize(int64(narInfo.NarSize))
+
+	if narInfo.FileSize != 0 {
+		//nolint:gosec // G115: FileSize is non-negative by spec
+		ub.SetFileSize(int64(narInfo.FileSize))
+	} else {
+		ub.ClearFileSize()
+	}
+
+	if narInfo.NarHash != nil {
+		ub.SetNarHash(narInfo.NarHash.String())
+	} else {
+		ub.ClearNarHash()
+	}
+
+	if narInfo.Deriver != "" {
+		ub.SetDeriver(narInfo.Deriver)
+	} else {
+		ub.ClearDeriver()
+	}
+
+	if narInfo.System != "" {
+		ub.SetSystem(narInfo.System)
+	} else {
+		ub.ClearSystem()
+	}
+
+	if narInfo.CA != "" {
+		ub.SetCa(narInfo.CA)
+	} else {
+		ub.ClearCa()
+	}
+}
+
+// addNarInfoReferences bulk-inserts narinfo_references rows.
+// Conflicts on (narinfo_id, reference) become no-ops at the SQL
+// level (Ent's OnConflict + DoNothing), matching the legacy
+// AddNarInfoReferences's `ON CONFLICT (narinfo_id, reference) DO
+// NOTHING`. DB-level dedup is required on Postgres because a Go-level
+// "ignore duplicate key error" leaves the transaction in an aborted
+// state.
+func addNarInfoReferences(ctx context.Context, tx *ent.Tx, narinfoID int, refs []string) error {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	bulk := make([]*ent.NarInfoReferenceCreate, len(refs))
+	for i, ref := range refs {
+		bulk[i] = tx.NarInfoReference.Create().SetNarinfoID(narinfoID).SetReference(ref)
+	}
+
+	if err := tx.NarInfoReference.CreateBulk(bulk...).
+		OnConflictColumns(entnarinforeference.FieldNarinfoID, entnarinforeference.FieldReference).
+		Ignore().
+		Exec(ctx); err != nil {
+		return fmt.Errorf("error inserting narinfo reference: %w", err)
+	}
+
+	return nil
+}
+
+// addNarInfoSignatures is the signature counterpart of addNarInfoReferences.
+func addNarInfoSignatures(
+	ctx context.Context,
+	tx *ent.Tx,
+	narinfoID int,
+	signatures []signature.Signature,
+) error {
+	if len(signatures) == 0 {
+		return nil
+	}
+
+	bulk := make([]*ent.NarInfoSignatureCreate, len(signatures))
+	for i, sig := range signatures {
+		bulk[i] = tx.NarInfoSignature.Create().SetNarinfoID(narinfoID).SetSignature(sig.String())
+	}
+
+	if err := tx.NarInfoSignature.CreateBulk(bulk...).
+		OnConflictColumns(entnarinfosignature.FieldNarinfoID, entnarinfosignature.FieldSignature).
+		Ignore().
+		Exec(ctx); err != nil {
+		return fmt.Errorf("error inserting narinfo signature: %w", err)
+	}
+
+	return nil
+}
+
+// createOrUpdateNarFileEnt is the Ent-backed counterpart to
+// createOrUpdateNarFile: idempotently inserts a nar_files row for
+// (hash, compression, query). If the row already exists, the
+// last_accessed_at column is bumped to now via OnConflict.Update.
+// Returns the int id (Ent's PK type for strong entities); callers
+// that still need int64 should cast at the boundary. The §11.4 CDC
+// conversions will phase out the int64 callers.
+func createOrUpdateNarFileEnt(
+	ctx context.Context,
+	tx *ent.Tx,
+	narURL nar.URL,
+	fileSize uint64,
+) (int, error) {
+	id, err := tx.NarFile.Create().
+		SetHash(narURL.Hash).
+		SetCompression(narURL.Compression.String()).
+		SetQuery(narURL.Query.Encode()).
+		SetFileSize(fileSize).
+		OnConflictColumns(
+			entnarfile.FieldHash,
+			entnarfile.FieldCompression,
+			entnarfile.FieldQuery,
+		).
+		Update(func(u *ent.NarFileUpsert) {
+			u.SetLastAccessedAt(time.Now())
+		}).
+		ID(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("error upserting nar_file record: %w", err)
+	}
+
+	return id, nil
 }
 
 func (c *Cache) fixNarInfoFileSize(
