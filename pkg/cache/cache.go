@@ -33,6 +33,7 @@ import (
 	entnarinfonarfile "github.com/kalbasit/ncps/ent/narinfonarfile"
 	entnarinforeference "github.com/kalbasit/ncps/ent/narinforeference"
 	entnarinfosignature "github.com/kalbasit/ncps/ent/narinfosignature"
+	entpinnedclosure "github.com/kalbasit/ncps/ent/pinnedclosure"
 
 	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/analytics"
@@ -2297,17 +2298,21 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 		Int("stale_chunk_count", len(staleLockChunks)).
 		Logger()
 
-	// Build a map from chunk ID → hash for O(1) lookup. The Ent
-	// chunk PK is int; we key the map on int64 because the legacy
-	// GetOrphanedChunks (still on Querier until §11.5) returns int64.
-	staleByID := make(map[int64]string, len(staleLockChunks))
+	// Build a map from chunk ID → hash for O(1) lookup. Now that
+	// GetOrphanedChunks is on Ent (§11.5), the chunk PK type is
+	// plain int on both sides — no conversion needed.
+	staleByID := make(map[int]string, len(staleLockChunks))
 	for _, ch := range staleLockChunks {
-		staleByID[int64(ch.ID)] = ch.Hash
+		staleByID[ch.ID] = ch.Hash
 	}
 
 	// Find all currently orphaned chunks (no nar_file_chunks references).
 	// Run this outside the previous transaction so we see the committed deletion.
-	orphanedChunks, err := c.db.GetOrphanedChunks(ctx)
+	// Ent equivalent of the legacy LEFT JOIN nar_file_chunks WHERE chunk_id IS NULL:
+	// chunks that have no NarFileLinks edge.
+	orphanedChunks, err := c.dbClient.Ent().Chunk.Query().
+		Where(entchunk.Not(entchunk.HasNarFileLinks())).
+		All(ctx)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
 
@@ -2320,11 +2325,13 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 			continue // Not one of our stale lock chunks.
 		}
 
-		chunkLog := log.With().Str("chunk_hash", hash).Int64("chunk_id", oc.ID).Logger()
+		chunkLog := log.With().Str("chunk_hash", hash).Int("chunk_id", oc.ID).Logger()
 		chunkLog.Debug().Msg("immediately cleaning up chunk from stale CDC lock")
 
 		// Delete the DB record first; if this fails, leave the physical file for GC.
-		if err := c.db.DeleteChunkByID(ctx, oc.ID); err != nil {
+		if _, err := c.dbClient.Ent().Chunk.Delete().
+			Where(entchunk.IDEQ(oc.ID)).
+			Exec(ctx); err != nil {
 			chunkLog.Warn().Err(err).Msg("failed to delete orphaned chunk record during stale lock cleanup")
 
 			continue
@@ -7134,16 +7141,14 @@ func (c *Cache) migrateNarToChunksCleanup(ctx context.Context, originalNarURL na
 	originalURL := originalNarURL.String()
 	newURL := newNarURL.String()
 
-	if _, err := c.db.UpdateNarInfoCompressionFileSizeHashAndURL(
-		ctx,
-		database.UpdateNarInfoCompressionFileSizeHashAndURLParams{
-			Compression: sql.NullString{String: nar.CompressionTypeNone.String(), Valid: true},
-			NewUrl:      sql.NullString{String: newURL, Valid: true},
-			OldUrl:      sql.NullString{String: originalURL, Valid: true},
-			FileSize:    sql.NullInt64{Valid: false},
-			FileHash:    sql.NullString{Valid: false},
-		},
-	); err != nil {
+	if _, err := c.dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.URL(originalURL)).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetURL(newURL).
+		ClearFileSize().
+		ClearFileHash().
+		SetUpdatedAt(time.Now()).
+		Save(ctx); err != nil {
 		zerolog.Ctx(ctx).Warn().
 			Err(err).
 			Str("old_url", originalURL).
@@ -7284,14 +7289,14 @@ func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 		return fmt.Errorf("failed to verify narinfo existence: %w", err)
 	}
 
-	// Try to create the pinned closure (idempotent - ignore duplicate key errors)
-	_, err := c.db.CreatePinnedClosure(ctx, hash)
-	if err != nil {
-		// Check if it's a duplicate key error (already pinned)
-		if database.IsDuplicateKeyError(err) {
-			return nil
-		}
-
+	// Try to create the pinned closure. Idempotent at the SQL layer
+	// via OnConflictColumns(hash).Ignore() — matches the legacy
+	// `INSERT … ON CONFLICT(hash) DO NOTHING`.
+	if err := c.dbClient.Ent().PinnedClosure.Create().
+		SetHash(hash).
+		OnConflictColumns(entpinnedclosure.FieldHash).
+		Ignore().
+		Exec(ctx); err != nil {
 		return fmt.Errorf("failed to pin closure: %w", err)
 	}
 
@@ -7300,8 +7305,9 @@ func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 
 // UnpinClosure unpins a closure by its narinfo hash.
 func (c *Cache) UnpinClosure(ctx context.Context, hash string) error {
-	_, err := c.db.DeletePinnedClosure(ctx, hash)
-	if err != nil {
+	if _, err := c.dbClient.Ent().PinnedClosure.Delete().
+		Where(entpinnedclosure.HashEQ(hash)).
+		Exec(ctx); err != nil {
 		return fmt.Errorf("failed to unpin closure: %w", err)
 	}
 
@@ -7309,8 +7315,8 @@ func (c *Cache) UnpinClosure(ctx context.Context, hash string) error {
 }
 
 // ListPinnedClosures returns all pinned closures.
-func (c *Cache) ListPinnedClosures(ctx context.Context) ([]database.PinnedClosure, error) {
-	closures, err := c.db.ListPinnedClosures(ctx)
+func (c *Cache) ListPinnedClosures(ctx context.Context) ([]*ent.PinnedClosure, error) {
+	closures, err := c.dbClient.Ent().PinnedClosure.Query().All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pinned closures: %w", err)
 	}
@@ -7320,16 +7326,14 @@ func (c *Cache) ListPinnedClosures(ctx context.Context) ([]database.PinnedClosur
 
 // IsNarInfoPinned checks if a narinfo hash is pinned.
 func (c *Cache) IsNarInfoPinned(ctx context.Context, hash string) (bool, error) {
-	_, err := c.db.GetPinnedClosure(ctx, hash)
-	if err == nil {
-		return true, nil
+	exists, err := c.dbClient.Ent().PinnedClosure.Query().
+		Where(entpinnedclosure.HashEQ(hash)).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if narinfo is pinned: %w", err)
 	}
 
-	if errors.Is(err, database.ErrNotFound) {
-		return false, nil
-	}
-
-	return false, fmt.Errorf("failed to check if narinfo is pinned: %w", err)
+	return exists, nil
 }
 
 // narInfoHashLength is the length of a Nix base32 hash (52 characters).
@@ -7343,7 +7347,7 @@ func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}
 	// with deep or wide closure graphs.
 
 	// Get all pinned closure roots
-	pinnedClosures, err := c.db.ListPinnedClosures(ctx)
+	pinnedClosures, err := c.dbClient.Ent().PinnedClosure.Query().All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pinned closures: %w", err)
 	}
