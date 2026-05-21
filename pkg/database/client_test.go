@@ -1,7 +1,6 @@
 package database_test
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -239,7 +238,7 @@ func freshSchemaSQLite(t *testing.T) (*sql.DB, func()) {
 		t.Fatalf("NewMigrate: %v", err)
 	}
 
-	if createErr := m.Create(context.Background(), entmigrate.Tables...); createErr != nil {
+	if createErr := m.Create(t.Context(), entmigrate.Tables...); createErr != nil {
 		database.SchemaCreateMu.Unlock()
 
 		t.Fatalf("Schema.Create: %v", createErr)
