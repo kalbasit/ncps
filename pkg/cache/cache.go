@@ -64,6 +64,14 @@ const (
 	// which is critical for databases like MySQL under parallel test load.
 	progressivePollBatchSize = 256
 
+	// cdcCleanupHashBatchSize bounds the size of `WHERE hash IN (…)`
+	// batches issued by the CDC delayed-cleanup job. Stays well under
+	// driver parameter limits (Postgres ≤ 65535, modern SQLite ≤
+	// 32766, older SQLite ≤ 999) while staying well above typical
+	// chunked-NAR-hash counts so the job remains a single query for
+	// almost every install.
+	cdcCleanupHashBatchSize = 500
+
 	// Migration operation constants for metrics.
 	migrationOperationMigrate = "migrate"
 	migrationOperationDelete  = "delete"
@@ -704,12 +712,14 @@ func (c *Cache) GetCDCDeleteDelay() time.Duration {
 
 func (c *Cache) setupMetricCallbacks() error {
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		// Observe total size: SUM(file_size) over nar_files, with
-		// COALESCE-to-zero semantics (empty table returns 0, not NULL).
+		// Observe total size: SUM(file_size) over nar_files. SQL SUM on
+		// an empty set returns NULL, which won't scan into a plain
+		// int64 — use sql.NullInt64 and treat NULL as zero. The column
+		// alias matches the field name Ent emits via ent.Sum.
 		var totalSize int64
 
 		var totals []struct {
-			Sum int64 `sql:"sum"`
+			Sum sql.NullInt64 `sql:"sum"`
 		}
 
 		if err := c.dbClient.Ent().NarFile.Query().
@@ -720,8 +730,8 @@ func (c *Cache) setupMetricCallbacks() error {
 				Err(err).
 				Msg("failed to get total nar size for metrics")
 		} else {
-			if len(totals) > 0 {
-				totalSize = totals[0].Sum
+			if len(totals) > 0 && totals[0].Sum.Valid {
+				totalSize = totals[0].Sum.Int64
 			}
 
 			o.ObserveInt64(totalSizeMetric, totalSize)
@@ -6081,12 +6091,17 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 			// (compression='none', total_chunks>0) representation, then
 			// find the old compressed (total_chunks=0, compression!='none')
 			// records for those hashes whose created_at predates cutoff.
-			ent := c.dbClient.Ent()
+			//
+			// HashIn is batched (cdcCleanupHashBatchSize) to stay below
+			// driver parameter limits (Postgres ≤ 65535, SQLite ≤ 32766
+			// on recent builds, ≤ 999 on older). 500 is well below all
+			// limits, well above typical chunked-NAR-hash counts.
+			entClient := c.dbClient.Ent()
 
 			var chunkedHashRows []struct {
 				Hash string `sql:"hash"`
 			}
-			if err := ent.NarFile.Query().
+			if err := entClient.NarFile.Query().
 				Where(
 					entnarfile.CompressionEQ("none"),
 					entnarfile.TotalChunksGT(0),
@@ -6109,18 +6124,29 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 				chunkedHashes[i] = r.Hash
 			}
 
-			oldFiles, err := ent.NarFile.Query().
-				Where(
-					entnarfile.TotalChunksEQ(0),
-					entnarfile.CompressionNEQ("none"),
-					entnarfile.CreatedAtLT(cutoffTime),
-					entnarfile.HashIn(chunkedHashes...),
-				).
-				All(ctx)
-			if err != nil {
-				log.Error().Err(err).Msg("error getting old compressed NAR files for cleanup")
+			var oldFiles []*ent.NarFile
 
-				return err
+			for start := 0; start < len(chunkedHashes); start += cdcCleanupHashBatchSize {
+				end := start + cdcCleanupHashBatchSize
+				if end > len(chunkedHashes) {
+					end = len(chunkedHashes)
+				}
+
+				batch, err := entClient.NarFile.Query().
+					Where(
+						entnarfile.TotalChunksEQ(0),
+						entnarfile.CompressionNEQ("none"),
+						entnarfile.CreatedAtLT(cutoffTime),
+						entnarfile.HashIn(chunkedHashes[start:end]...),
+					).
+					All(ctx)
+				if err != nil {
+					log.Error().Err(err).Msg("error getting old compressed NAR files for cleanup")
+
+					return err
+				}
+
+				oldFiles = append(oldFiles, batch...)
 			}
 
 			if len(oldFiles) == 0 {
@@ -6139,7 +6165,7 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 				}
 
 				// Delete from database first. If this fails, we'll retry on the next run.
-				if _, err := ent.NarFile.Delete().
+				if _, err := entClient.NarFile.Delete().
 					Where(entnarfile.IDEQ(oldFile.ID)).
 					Exec(ctx); err != nil {
 					log.Error().Err(err).
