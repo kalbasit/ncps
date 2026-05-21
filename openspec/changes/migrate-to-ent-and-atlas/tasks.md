@@ -83,7 +83,7 @@ Per design D6 (Option E), the §7 translated migrations do **not** by themselves
 - [x] 8.4 `atlas.sum` per dialect generated automatically by `cmd/generate-migrations` thanks to the `ensureAtlasSum` helper added in this commit (extends §6's generator).
 - [x] 8.5 `migrations/equivalence_test.go::TestSchemaEquivalence` added: per dialect, opens a fresh empty database, replays every `migrations/<dialect>/*.sql` via Atlas's `schema.ModeReplay` with the `GooseFormatter`, then calls `NamedDiff` against `migrate.Tables` into a temp directory. Asserts no new `.sql` file appears (zero diff). All three dialects pass.
 - [ ] 8.6 `TestSchemaCreateMatchesAppliedMigrations` (Option E's fresh-install ↔ applied-migrations equivalence) is deferred to §9 where the fresh-install path (`Schema.Create` + version seeding) is implemented — testing that path requires the path to exist.
-- [ ] 8.7 Wire §8 tests into `nix flake check` — deferred to §13 (CI integration) when all checks are wired together.
+- [x] 8.7 Wire §8 tests into `nix flake check` — implemented in §13.4 via the `schema-equivalence-check` derivation.
 
 ## 9. `ncps migrate up` command + adoption (Option E)
 
@@ -140,9 +140,9 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 - [x] 13.1 Add an `ent-codegen-drift-check` derivation in `nix/checks/` that runs `go generate ./ent/...` then `git diff --exit-code ./ent/`
 - [x] 13.2 Add an `ent-lint-check` derivation that runs `cmd/ent-lint --root .` and asserts zero `[FAIL]` lines
 - [x] 13.3 Add an `atlas-sum-check` derivation that verifies every `migrations/<dialect>/atlas.sum` matches the directory contents
-- [ ] 13.4 Add a `schema-equivalence-check` derivation that runs the §8 golden test for all three engines (uses process-compose deps)
-- [ ] 13.5 Verify `nix flake check` passes end-to-end with all four new derivations contributing
-- [ ] 13.6 Confirm the existing `.github/workflows/ci.yml` still passes (no edits expected — the new checks plug into `nix flake check`)
+- [x] 13.4 Add a `schema-equivalence-check` derivation that runs the §8 golden test for all three engines (uses process-compose deps)
+- [x] 13.5 Verify `nix flake check` passes end-to-end with all four new derivations contributing
+- [x] 13.6 Confirm the existing `.github/workflows/ci.yml` still passes (no edits expected — the new checks plug into `nix flake check`)
 
 ## 14. Docs and skills
 
