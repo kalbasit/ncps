@@ -152,8 +152,8 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 - [x] 14.4 Rewrite `.agent/skills/migrate-down/SKILL.md` to point at the expand-contract policy instead of describing a down command
 - [x] 14.5 Delete `.agent/skills/sqlc/` and `.agent/skills/generate-db-wrappers/` (also removed `.agent/skills/dbmate/`)
 - [x] 14.6 Add a `.agent/skills/ent-schema/SKILL.md` documenting the five codegen invariants and the snake_case enum-type convention
-- [ ] 14.7 Update the project `README.md` to mention Ent + Atlas + Goose under "Architecture" / "Development"
-- [ ] 14.8 Add a `CHANGELOG.md` entry calling out the upgrade procedure for operators with existing dbmate-managed deployments (backup advised; first `migrate up` performs the one-shot adoption)
+- [x] 14.7 Update the project `README.md` to mention Ent + Atlas + Goose under "Architecture" / "Development"
+- [x] 14.8 Add a `CHANGELOG.md` entry calling out the upgrade procedure for operators with existing dbmate-managed deployments (backup advised; first `migrate up` performs the one-shot adoption)
 - [ ] 14.9 Run `nix fmt` and `golangci-lint run --fix` over the entire tree as a final pass
 
 ## 15. Standardize the `data-model` openspec spec

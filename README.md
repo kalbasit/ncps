@@ -43,9 +43,9 @@ docker volume create ncps-storage
 docker run --rm -v ncps-storage:/storage alpine /bin/sh -c \
   "mkdir -m 0755 -p /storage/var && mkdir -m 0700 -p /storage/var/ncps && mkdir -m 0700 -p /storage/var/ncps/db"
 
-# Initialize database
+# Initialize database (ncps embeds the migrations and applies them via goose)
 docker run --rm -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
-  /bin/dbmate --url=sqlite:/storage/var/ncps/db/db.sqlite up
+  /bin/ncps migrate up --cache-database-url=sqlite:/storage/var/ncps/db/db.sqlite
 
 # Start the server
 docker run -d --name ncps -p 8501:8501 -v ncps-storage:/storage ghcr.io/kalbasit/ncps \
@@ -86,6 +86,18 @@ Your cache will be available at `http://localhost:8501`. See the [Quick Start Gu
 - **High Availability**: Multiple instances with S3 storage, PostgreSQL/MySQL, and Redis for zero-downtime operation. **Note: Must enable CDC.**
 
 See the [Deployment Guide](https://docs.ncps.dev/user-guide/deployment.html) for detailed setup instructions.
+
+## Architecture
+
+ncps is written in Go. The notable internal dependencies:
+
+- **[Ent](https://entgo.io/)** — type-safe ORM. Schemas under `ent/schema/` are the only source of truth for the database DDL; the generated Ent client lives under `ent/` (committed; produced by `go generate ./ent/...`).
+- **[Atlas](https://atlasgo.io/)** — schema-diff engine, used as a Go library (no `atlas` CLI binary). `cmd/generate-migrations` diffs the Ent schemas against the on-disk migration history and emits one Goose-formatted `.sql` per dialect under `migrations/<dialect>/`, sealed by per-dialect `atlas.sum` integrity files.
+- **[Goose](https://github.com/pressly/goose)** — runtime migration runner. `ncps migrate up` embeds the per-dialect migrations and applies pending ones. Migrations are forward-only; column changes follow an expand-contract policy.
+- **[Chi](https://go-chi.io/)** — HTTP router for the cache server.
+- **Go-based storage backends** — local filesystem and S3 (MinIO-compatible).
+
+See [Architecture](https://docs.ncps.dev/developer-guide/architecture.html) for the full design and [Development](https://docs.ncps.dev/developer-guide.html) for the contributor workflow.
 
 ## Support the Project
 
