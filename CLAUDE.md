@@ -10,7 +10,7 @@ ncps (Nix Cache Proxy Server) is a Go application that acts as a local binary ca
 
 ### Prerequisites
 
-Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, golangci-lint, sqlc, sqlfluff, dbmate, delve, watchexec.
+Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev shell: go, go-task, golangci-lint, sqlfluff, delve, watchexec.
 
 ### Common Commands
 
@@ -36,27 +36,33 @@ golangci-lint run --fix  # Automatically fix fixable linter issues
 # Format code
 nix fmt                  # Format all project files (Go, Nix, SQL, etc.)
 
-# Lint SQL files
-sqlfluff lint db/query.*.sql              # Lint all SQL query files
-sqlfluff lint db/migrations/              # Lint all migration files
+# Regenerate Ent client (after editing ent/schema/*.go)
+go generate ./ent/...                      # Or: task ent:generate
 
-# Format SQL files
-sqlfluff format db/query.*.sql            # Format all SQL query files
-sqlfluff format db/migrations/            # Format all migration files
+# Lint Ent schemas + generated baseline migrations for codegen invariants
+go run ./cmd/ent-lint --root .             # Or: task ent:lint
 
-# Generate SQL code and Database Wrappers (after modifying db/query.sql or migrations)
-sqlc generate
-go generate ./pkg/database
+# Verify Ent code is up to date AND lints cleanly
+task ent:check
 
-# Create new database migrations (creates timestamped migration files)
-dbmate --migrations-dir db/migrations/sqlite new migration_name
-dbmate --migrations-dir db/migrations/postgres new migration_name
-dbmate --migrations-dir db/migrations/mysql new migration_name
+# Generate per-dialect Atlas migrations (one .sql per dialect, shared timestamp)
+go run ./cmd/generate-migrations --name=descriptive_snake_case
+# Or: task migrations:gen NAME=descriptive_snake_case
 
-# Run database migrations manually
-dbmate --url "sqlite:/path/to/your/db.sqlite" --migrations-dir db/migrations/sqlite up
-dbmate --url "postgresql://user:pass@localhost:5432/ncps" --migrations-dir db/migrations/postgres up
-dbmate --url "mysql://user:pass@localhost:3306/ncps" --migrations-dir db/migrations/mysql up
+# Generate empty Goose stubs (for backfills + the four-step NOT NULL recipe)
+go run ./cmd/generate-migrations --sql-only --name=descriptive_snake_case
+# Or: task migrations:sql NAME=descriptive_snake_case
+
+# Apply migrations (embedded; runs goose against the right dialect)
+ncps migrate up --cache-database-url=sqlite:/path/to/db.sqlite
+ncps migrate up --cache-database-url=postgresql://user:pass@host/db
+ncps migrate up --cache-database-url=mysql://user:pass@host/db
+
+# Preview pending migrations without touching the database
+ncps migrate up --dry-run --cache-database-url=sqlite:/path/to/db.sqlite
+
+# Verify the atlas.sum integrity files are current
+go run ./cmd/atlas-sum-check --root .
 
 # Build
 go build .
@@ -65,10 +71,10 @@ go build .
 nix build
 
 # Database Migrations
-# Use the /migrate-new, /migrate-up, or /migrate-down skills for database changes.
-# /migrate-new - Creates new migration files for all engines.
-# /migrate-up - Applies all migrations and updates schema files from a clean state.
-# /migrate-down - Rolls back the last migration.
+# Use the /migrate-new and /migrate-up skills for database changes.
+# /migrate-new - Edits an Ent schema + generates per-dialect Atlas migrations.
+# /migrate-up  - Applies migrations via `ncps migrate up` (with --dry-run preview).
+# /migrate-down - Documents the expand-contract policy (migrations are forward-only).
 ```
 
 ## Development Workflow
@@ -160,8 +166,10 @@ The service configurations match the test environment variables to ensure consis
 The project uses "Skills" to provide detailed instructions and best practices for specific tools or domains. These are located in `.agent/skills/<skill-name>/SKILL.md`.
 
 - **graphite**: Instructions for using Graphite (`gt`) for branch management and restacking.
-- **dbmate**: Detailed rules and best practices for writing and applying database migrations.
-- **sqlc**: Workflow for modifying database queries, generating code, and updating wrappers.
+- **ent-schema**: Rules for editing `ent/schema/*.go` — the five codegen invariants enforced by `cmd/ent-lint` and the snake_case enum-type convention.
+- **migrate-new**: Workflow for editing an Ent schema and generating per-dialect Atlas migrations.
+- **migrate-up**: Workflow for applying migrations via `ncps migrate up`.
+- **migrate-down**: Documents the expand-contract policy — migrations are forward-only; column changes follow the four-step recipe.
 
 When working with these tools, you SHOULD read the corresponding `SKILL.md` to ensure compliance with project-specific rules.
 
@@ -632,23 +640,23 @@ go test -race -run "TestGetNarInfo.*Concurrent" ./pkg/cache -v
 ### Package Structure
 
 - `cmd/` - CLI commands (serve, global flags, OpenTelemetry bootstrap)
+- `cmd/ent-lint/` - AST-based linter that enforces the Ent codegen invariants
+- `cmd/generate-migrations/` - Atlas-driven per-dialect migration generator
+- `cmd/atlas-sum-check/` - CI helper that verifies every `atlas.sum` is current
 - `pkg/cache/` - Core caching logic and upstream cache fetching
 - `pkg/storage/` - Storage abstraction layer with implementations:
   - `storage/local/` - Local filesystem storage
   - `storage/s3/` - S3-compatible storage (e.g., Garage, AWS S3, Ceph)
 - `pkg/server/` - HTTP server using Chi router
-- `pkg/database/` - Database abstraction layer supporting multiple engines (sqlc-generated code)
-  - `database/sqlitedb/` - SQLite-specific implementation
-  - `database/postgresdb/` - PostgreSQL-specific implementation
-  - `database/mysqldb/` - MySQL/MariaDB-specific implementation
+- `pkg/database/` - Thin facade over the generated Ent client (`*database.Client` wraps `*ent.Client` + driver metadata)
+  - `pkg/database/migrate/` - State detection + adoption + apply path for `ncps migrate up`
 - `pkg/nar/` - NAR (Nix ARchive) format handling
-- `db/migrations/` - Database migration files
-  - `migrations/sqlite/` - SQLite migration files
-  - `migrations/postgres/` - PostgreSQL migration files
-  - `migrations/mysql/` - MySQL/MariaDB migration files
-- `db/query.sqlite.sql` - SQLite queries for sqlc code generation
-- `db/query.postgres.sql` - PostgreSQL queries for sqlc code generation
-- `db/query.mysql.sql` - MySQL/MariaDB queries for sqlc code generation
+- `ent/schema/` - Hand-authored Ent schemas (the only DDL source of truth)
+- `ent/` - Generated Ent client (committed; produced by `go generate ./ent/...`)
+- `migrations/` - Goose-formatted Atlas migrations + integrity sums (embedded into the binary)
+  - `migrations/sqlite/` - SQLite migration files + `atlas.sum`
+  - `migrations/postgres/` - PostgreSQL migration files + `atlas.sum`
+  - `migrations/mysql/` - MySQL/MariaDB migration files + `atlas.sum`
 
 ### Key Interfaces (pkg/storage/store.go)
 
@@ -662,7 +670,10 @@ Both local and S3 backends implement these interfaces.
 
 ### Database
 
-Supports multiple database engines via sqlc for type-safe SQL:
+Supports multiple database engines via [Ent](https://entgo.io/) as the
+type-safe ORM, [Atlas](https://atlasgo.io/) as the migration-diff engine
+(used as a Go library, never the `atlas` CLI), and
+[Goose](https://github.com/pressly/goose) as the runtime migration runner.
 
 - **SQLite** (default): Embedded database, no external dependencies
 - **PostgreSQL**: Scalable relational database for production deployments
@@ -671,59 +682,74 @@ Supports multiple database engines via sqlc for type-safe SQL:
 Database selection is done via URL scheme in the `--cache-database-url` flag:
 
 - SQLite: `sqlite:/path/to/db.sqlite`
-
 - PostgreSQL: `postgresql://user:password@host:port/database`
-
 - MySQL/MariaDB: `mysql://user:password@host:port/database`
 
-Schema in `db/schema.sql`, engine-specific queries in `db/query.sqlite.sql`, `db/query.postgres.sql`, and `db/query.mysql.sql`. Run `sqlc generate` after modifying queries.
-
-- This keeps the wrapper simple and doesn't require rebuilding ncps to update it
+Schemas live in `ent/schema/*.go` (one file per entity). Run
+`go generate ./ent/...` (or `task ent:generate`) to regenerate the Ent
+client under `ent/`. The generated tree is committed and verified in CI
+by the `ent-codegen-drift-check` derivation.
 
 **Creating Database Migrations:**
 
-For ANY database changes, you MUST use one of the migration workflows:
+For ANY database changes, follow this workflow:
 
-- **/migrate-new**: To create new timestamped migration files for all engines.
-- **/migrate-up**: To apply migrations and update schema files properly using `./dev-scripts/migrate-all.py`.
-- **/migrate-down**: To roll back migrations.
+1. Edit `ent/schema/<entity>.go` (field, edge, index, or annotation change).
+1. Regenerate the Ent client: `go generate ./ent/...`.
+1. Emit per-dialect Atlas migrations under `migrations/<dialect>/`:
+   `go run ./cmd/generate-migrations --name=<descriptive_snake_case>`
+1. Review the generated SQL. Each dialect file is a single timestamp-prefixed
+   `.sql` with `+goose Up` / `+goose Down` markers. SQLite files that need
+   `PRAGMA foreign_keys = OFF` must also carry `-- +goose NO TRANSACTION`.
+1. Apply the migrations:
+   `ncps migrate up --cache-database-url=<url>` (use `--dry-run` to preview).
 
-**Implementation details:**
+Use the **/migrate-new** skill for the schema-edit + generate flow,
+**/migrate-up** for applying, and **/migrate-down** for the expand-contract
+recipe (migrations are forward-only; there is no `migrate down` command).
 
-The `dbmate` command in the development environment and Docker images is actually a wrapper (separate `dbmate-wrapper` binary in `nix/dbmate-wrapper/`). The wrapper automatically detects the migrations directory based on the database URL scheme:
+**Expand-contract policy (never alter columns in place):**
 
-- `sqlite:` → uses `db/migrations/sqlite`
-- `postgresql:` or `postgres:` → uses `db/migrations/postgres`
-- `mysql:` → uses `db/migrations/mysql`
+Column changes that aren't purely additive — type changes, NOT NULL
+additions, renames — must be split across multiple deploys so old and new
+binaries can coexist against the same schema:
 
-This means you **don't need to specify `--migrations-dir` manually** - the wrapper handles it automatically!
+1. **Add** the new column (nullable) in migration N.
+1. **Backfill** the new column in migration N+1 (SQL-only stub).
+1. **Switch reads** to the new column in the application; deploy.
+1. **Drop** the old column in migration N+2.
 
-If you need to override the auto-detection, you can still provide `--migrations-dir` explicitly.
+**Four-step NOT NULL recipe** (the specific case of adding a NOT NULL
+constraint to an existing nullable column):
 
-**Implementation details:**
+1. Migration A: ADD COLUMN nullable, default-able.
+1. Migration B (sql-only stub): BACKFILL existing rows.
+1. Migration C: ADD CONSTRAINT NOT NULL (or ALTER COLUMN ... SET NOT NULL).
+1. Deploy each step independently; never combine in a single migration.
 
-The wrapper is a standalone Go program in `nix/dbmate-wrapper/` that:
+**Ent codegen invariants** (enforced by `cmd/ent-lint`):
 
-- Parses the `--url` flag to determine the database type (sqlite, postgres, mysql)
-- Uses the `NCPS_DB_MIGRATIONS_DIR` environment variable to locate the base migrations directory
-  - In Docker: set to `/share/ncps/db/migrations` (static path in container)
-  - In dev shell: set dynamically via `shellHook` to `$(git rev-parse --show-toplevel)/db/migrations` (repo root)
-  - This ensures migration changes are immediately visible without rebuilding
-- Automatically sets the `DBMATE_MIGRATIONS_DIR` environment variable to the appropriate database-specific path:
-  - Example: `${NCPS_DB_MIGRATIONS_DIR}/sqlite` or `${NCPS_DB_MIGRATIONS_DIR}/postgres`
-- Uses the `NCPS_DB_SCHEMA_DIR` environment variable to locate the base schema directory
-  - In Docker: set to `/share/ncps/db/schema` (static path in container)
-  - In dev shell: set dynamically via `shellHook` to `$(git rev-parse --show-toplevel)/db/schema` (repo root)
-  - This ensures migration changes are immediately visible without rebuilding
-- Automatically sets the `DBMATE_SCHEMA_FILE` environment variable to the appropriate database-specific path:
-  - Example: `${NCPS_DB_SCHEMA_DIR}/sqlite.sql` or `${NCPS_DB_SCHEMA_DIR}/postgres.sql`
-- Calls the real `dbmate` binary (consistently renamed to `dbmate.real` in both dev and Docker)
-- Respects user overrides:
-  - if `DBMATE_MIGRATIONS_DIR` is already set or `--migrations-dir` is provided, the wrapper passes through without modification
-  - if `DBMATE_SCHEMA_FILE` is already set or `--schema-file` is provided, the wrapper passes through without modification
-- This keeps the wrapper simple and doesn't require rebuilding ncps to update it
+- **A1** — Field-level `entsql.Check(...)` annotations are silently
+  dropped by Ent. CHECKs MUST live on table-level `Annotations()`.
+- **A2** — Ent uses snake_case enum-type names. Every `field.Enum(...)`
+  needs a matching `entsql.Annotation{Type: "<table>_<column>_enum"}`.
+- **A3** — UNIQUE columns also bound by `edge.From().Field()` must carry
+  duplicate index annotations so Ent doesn't fabricate phantom indexes.
+- **A4** — Every `edge.To(name, T.Type)` needs a reciprocal
+  `edge.From(...,T.Type).Ref(name)` on the target schema (otherwise Ent
+  fabricates a phantom FK column on the target).
+- **A5** — Every `field.Bytes("*_ciphertext")` field MUST chain
+  `.Sensitive()` so the ciphertext never appears in error messages, logs,
+  or generated `String()` methods.
 
-**IMPORTANT:** Never manually create migration files by copying existing ones, as this will result in incorrect timestamps. Always use `dbmate new` to ensure proper chronological ordering.
+See `cmd/ent-lint/main.go` for the live AST enforcement of A1, A2, and
+A4; A3 and A5 are tracked in the ent-schema-lint spec and currently
+enforced by code review.
+
+**IMPORTANT:** Never hand-edit a committed migration file. The
+`atlas.sum` integrity file under each `migrations/<dialect>/` seals the
+directory contents; any change must be produced by re-running
+`cmd/generate-migrations`, which regenerates `atlas.sum` automatically.
 
 ## Code Quality
 
