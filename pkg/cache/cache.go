@@ -26,7 +26,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	entchunk "github.com/kalbasit/ncps/ent/chunk"
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
+	entnarfilechunk "github.com/kalbasit/ncps/ent/narfilechunk"
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	entnarinfonarfile "github.com/kalbasit/ncps/ent/narinfonarfile"
 	entnarinforeference "github.com/kalbasit/ncps/ent/narinforeference"
@@ -1444,15 +1446,30 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 		Int64("written", written).
 		Msg("ensureNarFileRecord: starting transaction")
 
-	return c.withTransaction(ctx, txName, func(qtx database.Querier) error {
-		nf, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-			//nolint:gosec // G115: conversion is safe because size is non-negative
-			FileSize:    uint64(written),
-			TotalChunks: 0, // initially 0, background job will chunk if needed
-		})
+	//nolint:gosec // G115: conversion is safe because size is non-negative
+	fileSize := uint64(written)
+
+	return c.withEntTransaction(ctx, txName, func(tx *ent.Tx) error {
+		// Insert; on (hash, compression, query) conflict, overwrite
+		// the file_size (and touch updated_at) to match the legacy
+		// CreateNarFile+UpdateNarFileFileSize sequence. TotalChunks
+		// stays at its existing value on conflict — only set to 0 on
+		// fresh insert (the Create's default).
+		id, err := tx.NarFile.Create().
+			SetHash(narURL.Hash).
+			SetCompression(narURL.Compression.String()).
+			SetQuery(narURL.Query.Encode()).
+			SetFileSize(fileSize).
+			OnConflictColumns(
+				entnarfile.FieldHash,
+				entnarfile.FieldCompression,
+				entnarfile.FieldQuery,
+			).
+			Update(func(u *ent.NarFileUpsert) {
+				u.SetFileSize(fileSize)
+				u.SetUpdatedAt(time.Now())
+			}).
+			ID(ctx)
 		if err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
@@ -1464,20 +1481,10 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 		}
 
 		zerolog.Ctx(ctx).Debug().
-			Int64("nar_file_id", nf.ID).
+			Int("nar_file_id", id).
 			Str("hash", narURL.Hash).
 			Str("compression", narURL.Compression.String()).
 			Msg("ensureNarFileRecord: CreateNarFile succeeded")
-
-		// If the record existed but had a different size, update it to reflect the truth.
-		//nolint:gosec // G115: conversion is safe because size is non-negative
-		if nf.FileSize != uint64(written) {
-			return qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
-				ID: nf.ID,
-				//nolint:gosec // G115: conversion is safe because size is non-negative
-				FileSize: uint64(written),
-			})
-		}
 
 		return nil
 	})
@@ -2030,13 +2037,17 @@ func (c *Cache) storeNarWithCDCFromReader(
 
 				// All chunks processed - mark as complete and update file_size
 				// to the actual uncompressed size (may differ from original compressed file size).
-				err := c.withTransaction(ctx, "storeNarWithCDC.MarkComplete", func(qtx database.Querier) error {
-					return qtx.UpdateNarFileTotalChunks(ctx, database.UpdateNarFileTotalChunksParams{
-						ID:          narFileID,
-						TotalChunks: chunkCount,
+				err := c.withEntTransaction(ctx, "storeNarWithCDC.MarkComplete", func(tx *ent.Tx) error {
+					//nolint:gosec // G115: nar_file IDs are non-negative
+					_, err := tx.NarFile.UpdateOneID(int(narFileID)).
+						SetTotalChunks(chunkCount).
 						//nolint:gosec // G115: totalSize is non-negative
-						FileSize: uint64(totalSize),
-					})
+						SetFileSize(uint64(totalSize)).
+						SetUpdatedAt(time.Now()).
+						ClearChunkingStartedAt().
+						Save(ctx)
+
+					return err
 				})
 				if err != nil {
 					return fmt.Errorf("error marking chunking complete: %w", err)
@@ -2061,16 +2072,18 @@ func (c *Cache) storeNarWithCDCFromReader(
 						Query:       narURL.Query,
 					}
 
-					if err := c.withTransaction(ctx, "storeNarWithCDC.RelinkAndCleanup", func(qtx database.Querier) error {
-						if _, err := qtx.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
-							Hash:        narURL.Hash,
-							Compression: originalCompression.String(),
-							Query:       narURL.Query.Encode(),
-						}); err != nil {
+					if err := c.withEntTransaction(ctx, "storeNarWithCDC.RelinkAndCleanup", func(tx *ent.Tx) error {
+						if _, err := tx.NarFile.Delete().
+							Where(
+								entnarfile.HashEQ(narURL.Hash),
+								entnarfile.CompressionEQ(originalCompression.String()),
+								entnarfile.QueryEQ(narURL.Query.Encode()),
+							).
+							Exec(ctx); err != nil {
 							return fmt.Errorf("failed to delete old nar_file record: %w", err)
 						}
 
-						return c.relinkNarInfosToNarFileWithQuerier(ctx, qtx, oldNarURL, narFileID)
+						return c.relinkNarInfosToNarFileWithEntTx(ctx, tx, oldNarURL, narFileID)
 					}); err != nil {
 						zerolog.Ctx(ctx).Warn().
 							Err(err).
@@ -2137,21 +2150,32 @@ func (c *Cache) findOrCreateNarFileForCDC(
 	ctx context.Context,
 	narURL *nar.URL,
 	fileSize uint64,
-) (narFileID int64, staleLockChunks []database.Chunk, err error) {
+) (narFileID int64, staleLockChunks []*ent.Chunk, err error) {
 	zerolog.Ctx(ctx).Debug().
 		Str("hash", narURL.Hash).
 		Str("compression", narURL.Compression.String()).
 		Uint64("file_size", fileSize).
 		Msg("findOrCreateNarFileForCDC: starting transaction")
 
-	err = c.withTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(qtx database.Querier) error {
-		nr, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-			Hash:        narURL.Hash,
-			Compression: narURL.Compression.String(),
-			Query:       narURL.Query.Encode(),
-			FileSize:    fileSize,
-			TotalChunks: 0, // Mark as "in progress"
-		})
+	err = c.withEntTransaction(ctx, "storeNarWithCDC.CreateNarFile", func(tx *ent.Tx) error {
+		// UPSERT on (hash, compression, query). Ent's OnConflict
+		// returns the row id, but not the existing-row fields we need
+		// for the state machine below — do a follow-up Get to retrieve
+		// the current TotalChunks / ChunkingStartedAt / FileSize.
+		nrID, err := tx.NarFile.Create().
+			SetHash(narURL.Hash).
+			SetCompression(narURL.Compression.String()).
+			SetQuery(narURL.Query.Encode()).
+			SetFileSize(fileSize).
+			OnConflictColumns(
+				entnarfile.FieldHash,
+				entnarfile.FieldCompression,
+				entnarfile.FieldQuery,
+			).
+			Update(func(u *ent.NarFileUpsert) {
+				u.SetUpdatedAt(time.Now())
+			}).
+			ID(ctx)
 		if err != nil {
 			zerolog.Ctx(ctx).Error().
 				Err(err).
@@ -2162,8 +2186,13 @@ func (c *Cache) findOrCreateNarFileForCDC(
 			return err
 		}
 
+		nr, err := tx.NarFile.Get(ctx, nrID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch upserted nar_file %d: %w", nrID, err)
+		}
+
 		zerolog.Ctx(ctx).Debug().
-			Int64("nar_file_id", nr.ID).
+			Int("nar_file_id", nr.ID).
 			Str("hash", narURL.Hash).
 			Str("compression", narURL.Compression.String()).
 			Msg("findOrCreateNarFileForCDC: CreateNarFile succeeded")
@@ -2172,15 +2201,15 @@ func (c *Cache) findOrCreateNarFileForCDC(
 		// However, in CDC mode, once chunked, FileSize holds the uncompressed size.
 		// We should only update it if it's not yet fully chunked.
 		if nr.FileSize != fileSize && nr.TotalChunks == 0 {
-			if err := qtx.UpdateNarFileFileSize(ctx, database.UpdateNarFileFileSizeParams{
-				ID:       nr.ID,
-				FileSize: fileSize,
-			}); err != nil {
+			if _, err := tx.NarFile.UpdateOneID(nr.ID).
+				SetFileSize(fileSize).
+				SetUpdatedAt(time.Now()).
+				Save(ctx); err != nil {
 				return err
 			}
 		}
 
-		narFileID = nr.ID
+		narFileID = int64(nr.ID)
 
 		// Determine whether chunking has already been completed or is in progress.
 		//
@@ -2193,8 +2222,8 @@ func (c *Cache) findOrCreateNarFileForCDC(
 			return storage.ErrAlreadyExists
 		}
 
-		if nr.ChunkingStartedAt.Valid {
-			age := time.Since(nr.ChunkingStartedAt.Time)
+		if nr.ChunkingStartedAt != nil {
+			age := time.Since(*nr.ChunkingStartedAt)
 			if age < cdcChunkingLockTTL {
 				// Another in-progress attempt is still within the TTL — skip.
 				return storage.ErrAlreadyExists
@@ -2203,7 +2232,9 @@ func (c *Cache) findOrCreateNarFileForCDC(
 			// Lock is stale: a previous attempt was interrupted mid-chunking.
 			// Collect the partial chunk records so we can clean them up after the
 			// transaction commits (chunk files live outside the DB transaction).
-			partialChunks, err := qtx.GetChunksByNarFileID(ctx, narFileID)
+			partialChunks, err := tx.Chunk.Query().
+				Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
+				All(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get chunks for stale nar_file %d: %w", narFileID, err)
 			}
@@ -2216,13 +2247,19 @@ func (c *Cache) findOrCreateNarFileForCDC(
 				Int("stale_chunk_count", len(staleLockChunks)).
 				Msg("stale CDC chunking lock detected; cleaning up partial chunks and restarting")
 
-			if err := qtx.DeleteNarFileChunksByNarFileID(ctx, narFileID); err != nil {
+			if _, err := tx.NarFileChunk.Delete().
+				Where(entnarfilechunk.NarFileID(nr.ID)).
+				Exec(ctx); err != nil {
 				return fmt.Errorf("failed to delete partial chunks for nar_file %d: %w", narFileID, err)
 			}
 		}
 
 		// Mark this nar_file as having chunking in progress.
-		if err := qtx.SetNarFileChunkingStarted(ctx, narFileID); err != nil {
+		now := time.Now()
+		if _, err := tx.NarFile.UpdateOneID(nr.ID).
+			SetChunkingStartedAt(now).
+			SetUpdatedAt(now).
+			Save(ctx); err != nil {
 			return fmt.Errorf("failed to set chunking_started_at for nar_file %d: %w", narFileID, err)
 		}
 
@@ -2241,7 +2278,7 @@ func (c *Cache) findOrCreateNarFileForCDC(
 //
 // A chunk is only deleted if it is truly orphaned (no remaining nar_file_chunks references),
 // to avoid accidentally removing chunks that are shared with other completed NAR files.
-func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, staleLockChunks []database.Chunk) {
+func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, staleLockChunks []*ent.Chunk) {
 	if len(staleLockChunks) == 0 {
 		return
 	}
@@ -2250,10 +2287,12 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 		Int("stale_chunk_count", len(staleLockChunks)).
 		Logger()
 
-	// Build a map from chunk ID → hash for O(1) lookup.
+	// Build a map from chunk ID → hash for O(1) lookup. The Ent
+	// chunk PK is int; we key the map on int64 because the legacy
+	// GetOrphanedChunks (still on Querier until §11.5) returns int64.
 	staleByID := make(map[int64]string, len(staleLockChunks))
 	for _, ch := range staleLockChunks {
-		staleByID[ch.ID] = ch.Hash
+		staleByID[int64(ch.ID)] = ch.Hash
 	}
 
 	// Find all currently orphaned chunks (no nar_file_chunks references).
@@ -2288,23 +2327,45 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 	}
 }
 
-// relinkNarInfosToNarFileWithQuerier links all narinfos pointing to narURL to narFileID
-// in a single bulk INSERT ... SELECT. Called after CDC migration to repair
-// narinfo_nar_files entries that were CASCADE-deleted when the old nar_file
-// record was removed. It accepts any database.Querier (including a transaction
-// querier) so the bulk re-link can be executed within the same transaction as
-// the preceding DeleteNarFileByHash call.
-func (c *Cache) relinkNarInfosToNarFileWithQuerier(
+// relinkNarInfosToNarFileWithEntTx is the Ent counterpart to the legacy
+// LinkNarInfosByURLToNarFile bulk INSERT ... SELECT. Called after CDC
+// migration to repair narinfo_nar_files entries that were
+// CASCADE-deleted when the old nar_file record was removed.
+//
+// Ent's edge model doesn't express INSERT ... SELECT directly so we
+// do it in two steps inside the caller's transaction:
+//  1. Query all narinfo IDs whose URL matches the old narURL.
+//  2. CreateBulk narinfo_nar_files rows for each, with
+//     OnConflictColumns(...).Ignore() reproducing the legacy
+//     ON CONFLICT (narinfo_id, nar_file_id) DO NOTHING semantics.
+func (c *Cache) relinkNarInfosToNarFileWithEntTx(
 	ctx context.Context,
-	q database.Querier,
+	tx *ent.Tx,
 	narURL nar.URL,
 	narFileID int64,
 ) error {
-	if err := q.LinkNarInfosByURLToNarFile(ctx, database.LinkNarInfosByURLToNarFileParams{
-		NarFileID: narFileID,
-		URL:       sql.NullString{String: narURL.String(), Valid: true},
-	}); err != nil {
-		return fmt.Errorf("failed to link narinfos by URL %q to nar_file %d: %w", narURL.String(), narFileID, err)
+	narInfoIDs, err := tx.NarInfo.Query().
+		Where(entnarinfo.URL(narURL.String())).
+		IDs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch narinfos by URL %q: %w", narURL.String(), err)
+	}
+
+	if len(narInfoIDs) == 0 {
+		return nil
+	}
+
+	bulk := make([]*ent.NarInfoNarFileCreate, len(narInfoIDs))
+	for i, niID := range narInfoIDs {
+		bulk[i] = tx.NarInfoNarFile.Create().SetNarinfoID(niID).SetNarFileID(int(narFileID))
+	}
+
+	if err := tx.NarInfoNarFile.CreateBulk(bulk...).
+		OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+		Ignore().
+		Exec(ctx); err != nil {
+		return fmt.Errorf("failed to link narinfos by URL %q to nar_file %d: %w",
+			narURL.String(), narFileID, err)
 	}
 
 	return nil
@@ -2315,32 +2376,45 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 		return nil
 	}
 
-	return c.withTransaction(ctx, "recordChunkBatch", func(qtx database.Querier) error {
-		chunkIDs := make([]int64, len(batch))
-		chunkIndices := make([]int64, len(batch))
+	return c.withEntTransaction(ctx, "recordChunkBatch", func(tx *ent.Tx) error {
+		chunkIDs := make([]int, len(batch))
 
 		for i, chunkMetadata := range batch {
-			// Create or increment ref count.
-			ch, err := qtx.CreateChunk(ctx, database.CreateChunkParams{
-				Hash:           chunkMetadata.Hash,
-				Size:           chunkMetadata.Size,
-				CompressedSize: chunkMetadata.CompressedSize,
-			})
+			// Create-or-touch chunk: ON CONFLICT(hash) DO UPDATE SET
+			// updated_at = CURRENT_TIMESTAMP. Ent's UpsertOne.Update
+			// expresses the touch; .ID(ctx) returns the existing
+			// (or newly-inserted) chunk row's PK regardless of which
+			// branch fired.
+			id, err := tx.Chunk.Create().
+				SetHash(chunkMetadata.Hash).
+				SetSize(chunkMetadata.Size).
+				SetCompressedSize(chunkMetadata.CompressedSize).
+				OnConflictColumns(entchunk.FieldHash).
+				Update(func(u *ent.ChunkUpsert) {
+					u.SetUpdatedAt(time.Now())
+				}).
+				ID(ctx)
 			if err != nil {
 				return fmt.Errorf("error creating chunk record: %w", err)
 			}
 
-			chunkIDs[i] = ch.ID
-			chunkIndices[i] = startIndex + int64(i)
+			chunkIDs[i] = id
 		}
 
-		// Link to NAR file in bulk
-		err := qtx.LinkNarFileToChunks(ctx, database.LinkNarFileToChunksParams{
-			NarFileID:  narFileID,
-			ChunkID:    chunkIDs,
-			ChunkIndex: chunkIndices,
-		})
-		if err != nil {
+		// Link to NAR file in bulk; ON CONFLICT (nar_file_id,
+		// chunk_index) DO NOTHING per the legacy LinkNarFileToChunks.
+		bulk := make([]*ent.NarFileChunkCreate, len(batch))
+		for i, id := range chunkIDs {
+			bulk[i] = tx.NarFileChunk.Create().
+				SetNarFileID(int(narFileID)).
+				SetChunkID(id).
+				SetChunkIndex(int(startIndex) + i)
+		}
+
+		if err := tx.NarFileChunk.CreateBulk(bulk...).
+			OnConflictColumns(entnarfilechunk.FieldNarFileID, entnarfilechunk.FieldChunkIndex).
+			Ignore().
+			Exec(ctx); err != nil {
 			return fmt.Errorf("error linking chunks in bulk: %w", err)
 		}
 
