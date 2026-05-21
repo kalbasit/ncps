@@ -13,11 +13,13 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
+	entnarfile "github.com/kalbasit/ncps/ent/narfile"
+	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
+	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/config"
-	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/otel"
 	"github.com/kalbasit/ncps/pkg/storage"
@@ -287,9 +289,11 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			var unmigratedHashesCount int32
 
 			err = narInfoStore.WalkNarInfos(ctx, func(hash string) error {
-				ni, err := db.GetNarInfoByHash(ctx, hash)
+				ni, err := dbClient.Ent().NarInfo.Query().
+					Where(entnarinfo.HashEQ(hash)).
+					Only(ctx)
 				if err != nil {
-					if database.IsNotFoundError(err) {
+					if ent.IsNotFound(err) {
 						atomic.AddInt32(&unmigratedHashesCount, 1)
 
 						return nil
@@ -298,7 +302,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 					return fmt.Errorf("failed to fetch narinfo from database: %w", err)
 				}
 
-				if !ni.URL.Valid {
+				if ni.URL == nil {
 					atomic.AddInt32(&unmigratedHashesCount, 1)
 				}
 
@@ -317,10 +321,14 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 
 			startTime := time.Now()
 
-			totalToChunk, err := db.GetNarFilesToChunkCount(ctx)
+			totalToChunkInt, err := dbClient.Ent().NarFile.Query().
+				Where(entnarfile.TotalChunksEQ(0)).
+				Count(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch total count of NAR files to chunk: %w", err)
 			}
+
+			totalToChunk := int64(totalToChunkInt)
 
 			var (
 				totalProcessed int32
@@ -375,7 +383,17 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				}
 			}()
 
-			narFiles, err := db.GetNarFilesToChunk(ctx)
+			narFiles, err := dbClient.Ent().NarFile.Query().
+				Where(entnarfile.TotalChunksEQ(0)).
+				Order(ent.Asc(entnarfile.FieldID)).
+				Select(
+					entnarfile.FieldID,
+					entnarfile.FieldHash,
+					entnarfile.FieldCompression,
+					entnarfile.FieldQuery,
+					entnarfile.FieldFileSize,
+				).
+				All(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch candidate NAR files from database: %w", err)
 			}
