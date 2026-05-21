@@ -4607,11 +4607,14 @@ func (c *Cache) fixNarInfoFileSize(
 		Int64("correct_size", correctSize).
 		Msg("updating narinfo file size in the database")
 
-	return c.withTransaction(ctx, "fixNarInfoFileSize", func(qtx database.Querier) error {
-		return qtx.UpdateNarInfoFileSize(ctx, database.UpdateNarInfoFileSizeParams{
-			Hash:     hash,
-			FileSize: sql.NullInt64{Int64: correctSize, Valid: true},
-		})
+	return c.withEntTransaction(ctx, "fixNarInfoFileSize", func(tx *ent.Tx) error {
+		_, err := tx.NarInfo.Update().
+			Where(entnarinfo.HashEQ(hash)).
+			SetFileSize(correctSize).
+			SetUpdatedAt(time.Now()).
+			Save(ctx)
+
+		return err
 	})
 }
 
@@ -5670,12 +5673,22 @@ func (c *Cache) withTryLock(ctx context.Context, operation string, lockKey strin
 
 // calculateCleanupSize validates the total NAR size and calculates how much needs to be cleaned up.
 // Returns 0 if no cleanup is needed.
-func (c *Cache) calculateCleanupSize(ctx context.Context, qtx database.Querier, log zerolog.Logger) (uint64, error) {
-	narTotalSize, err := qtx.GetNarTotalSize(ctx)
-	if err != nil {
+func (c *Cache) calculateCleanupSize(ctx context.Context, tx *ent.Tx, log zerolog.Logger) (uint64, error) {
+	var sums []struct {
+		Sum sql.NullInt64 `sql:"sum"`
+	}
+
+	if err := tx.NarFile.Query().
+		Aggregate(ent.Sum(entnarfile.FieldFileSize)).
+		Scan(ctx, &sums); err != nil {
 		log.Error().Err(err).Msg("error fetching the total nar size")
 
 		return 0, err
+	}
+
+	var narTotalSize int64
+	if len(sums) > 0 && sums[0].Sum.Valid {
+		narTotalSize = sums[0].Sum.Int64
 	}
 
 	if narTotalSize == 0 {
@@ -5706,77 +5719,92 @@ func (c *Cache) calculateCleanupSize(ctx context.Context, qtx database.Querier, 
 // and then cleans up any NarFiles that became orphaned as a result.
 func (c *Cache) deleteLRURecordsFromDB(
 	ctx context.Context,
-	qtx database.Querier,
+	tx *ent.Tx,
 	log zerolog.Logger,
 	cleanupSize uint64,
 	pinnedHashes map[string]struct{},
 ) ([]string, []nar.URL, []string, error) {
 	// 1. METADATA PHASE
-	// Find the NarInfos that constitute the oldest `cleanupSize` worth of data.
-	// We may need to fetch more than cleanupSize to skip pinned closures.
-	// Use a loop to fetch more candidates until we meet the target or exhaust the table.
-	const maxFetchSize = 10000 // Cap fetch size to prevent excessive memory usage
+	// Find the NarInfos that constitute the oldest `cleanupSize` worth of
+	// data. We fetch in LRU order (last_accessed_at ASC, id ASC) with the
+	// linked nar_file eager-loaded, then take the longest PREFIX whose
+	// cumulative file_size stays within ~2× cleanupSize bytes. The 2×
+	// overshoot mirrors the legacy GetLeastUsedNarInfos correlated-subquery
+	// filter: it provides slack for skipping pinned narinfos without
+	// pulling the whole table. The actual deletion loop then walks this
+	// prefix and stops as soon as it has freed cleanupSize bytes (or runs
+	// out of candidates) — never over-evicting beyond the budget.
+	const maxFetchRows = 10000 // hard cap so we never load the whole table
 
-	var fetchSize uint64
+	candidates, err := tx.NarInfo.Query().
+		Order(
+			ent.Asc(entnarinfo.FieldLastAccessedAt),
+			ent.Asc(entnarinfo.FieldID),
+		).
+		WithNarInfoNarFiles(func(q *ent.NarInfoNarFileQuery) {
+			q.WithNarFile()
+		}).
+		Limit(maxFetchRows).
+		All(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("error getting least used narinfos")
 
-	if cleanupSize > 0 {
-		fetchSize = cleanupSize * 2
-		// Check for overflow
-		if fetchSize < cleanupSize {
-			fetchSize = maxFetchSize
-		}
-	} else {
-		fetchSize = 100 // minimum fetch for "delete all" case
+		return nil, nil, nil, err
 	}
 
-	if fetchSize > maxFetchSize {
-		fetchSize = maxFetchSize
+	if len(candidates) == 0 {
+		log.Warn().Msg("cleanup required but no reclaimable narinfos found")
+
+		return nil, nil, nil, nil
 	}
 
-	fetchIncrement := fetchSize // double fetch size each iteration
-
-	var (
-		narInfosToDelete []database.NarInfo
-		err              error
-	)
-
-	for {
-		narInfosToDelete, err = qtx.GetLeastUsedNarInfos(ctx, fetchSize)
-		if err != nil {
-			log.Error().Err(err).Msg("error getting least used narinfos")
-
-			return nil, nil, nil, err
-		}
-
-		if len(narInfosToDelete) == 0 {
-			log.Warn().Msg("cleanup required but no reclaimable narinfos found")
-
-			return nil, nil, nil, nil
-		}
-
-		// Check if we have enough eligible candidates (excluding pinned)
-		eligibleCount := 0
-
-		for _, info := range narInfosToDelete {
-			if _, isPinned := pinnedHashes[info.Hash]; !isPinned {
-				eligibleCount++
+	// Apply the legacy cumulative-byte filter: keep the LRU prefix whose
+	// cumulative file_size is <= max(2*cleanupSize, smallest-single-row).
+	// For cleanupSize == 0 ("delete all") keep every candidate.
+	narInfoFileSize := func(info *ent.NarInfo) uint64 {
+		for _, link := range info.Edges.NarInfoNarFiles {
+			if link.Edges.NarFile != nil {
+				return link.Edges.NarFile.FileSize
 			}
 		}
 
-		// If we have enough eligible candidates, proceed
-		// If cleanupSize is 0 (meaning "delete all"), continue until we've fetched all narinfos
-		if eligibleCount > 0 && (cleanupSize > 0 || len(narInfosToDelete) == 0) {
-			break
+		return 0
+	}
+
+	narInfosToDelete := candidates
+
+	if cleanupSize > 0 {
+		// Compute byteBudget = 2*cleanupSize, saturating on overflow.
+		byteBudget := cleanupSize * 2
+		if byteBudget < cleanupSize {
+			byteBudget = math.MaxUint64
 		}
 
-		// Not enough eligible candidates, fetch more
-		log.Debug().
-			Int("fetched", len(narInfosToDelete)).
-			Int("eligible", eligibleCount).
-			Msg("no eligible narinfos in batch, fetching more")
+		var cumulative uint64
 
-		fetchSize += fetchIncrement
-		fetchIncrement *= 2 // geometric growth to avoid too many iterations
+		narInfosToDelete = narInfosToDelete[:0]
+
+		for _, info := range candidates {
+			next := cumulative + narInfoFileSize(info)
+			// Always include the first narinfo so we make progress even
+			// when its single file_size already exceeds the budget. This
+			// matches the legacy SQL, which returns rows whose cumulative
+			// (including themselves) is <= budget — the first row's
+			// "cumulative" is its own file_size.
+			if next > byteBudget && len(narInfosToDelete) > 0 {
+				break
+			}
+
+			cumulative = next
+
+			narInfosToDelete = append(narInfosToDelete, info)
+		}
+	}
+
+	if len(narInfosToDelete) == 0 {
+		log.Warn().Msg("cleanup required but no reclaimable narinfos found")
+
+		return nil, nil, nil, nil
 	}
 
 	log.Info().Int("count", len(narInfosToDelete)).Msg("found narinfos to expire")
@@ -5797,26 +5825,12 @@ func (c *Cache) deleteLRURecordsFromDB(
 			continue
 		}
 
-		// Get the file size for this narinfo to track cleanup size
-		// TODO: This is an N+1 query pattern. Consider optimizing by fetching all
-		// nar_files in a batch query or modifying GetLeastUsedNarInfos to include file_size.
-		narFile, err := qtx.GetNarFileByNarInfoID(ctx, info.ID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			log.Error().Err(err).Str("hash", info.Hash).Msg("error getting narfile size")
-
-			continue
-		}
-
-		fileSize := uint64(0)
-		if err == nil {
-			fileSize = narFile.FileSize
-		}
+		fileSize := narInfoFileSize(info)
 
 		narInfoHashesToRemove = append(narInfoHashesToRemove, info.Hash)
 		totalSize += fileSize
 
-		// We delete by ID since we have the full object from the previous query
-		if _, err := qtx.DeleteNarInfoByID(ctx, info.ID); err != nil {
+		if err := tx.NarInfo.DeleteOneID(info.ID).Exec(ctx); err != nil {
 			log.Error().
 				Err(err).
 				Str("hash", info.Hash).
@@ -5856,7 +5870,9 @@ func (c *Cache) deleteLRURecordsFromDB(
 	// 2. STORAGE PHASE
 	// Now that metadata is gone, some files might have zero references.
 	// We find those truly orphaned files.
-	orphanedNarFiles, err := qtx.GetOrphanedNarFiles(ctx)
+	orphanedNarFiles, err := tx.NarFile.Query().
+		Where(entnarfile.Not(entnarfile.HasNarInfoNarFiles())).
+		All(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("error identifying orphaned nar files")
 
@@ -5877,7 +5893,9 @@ func (c *Cache) deleteLRURecordsFromDB(
 		}
 
 		// Batch delete all orphaned nar files in one query
-		if _, err := qtx.DeleteOrphanedNarFiles(ctx); err != nil {
+		if _, err := tx.NarFile.Delete().
+			Where(entnarfile.Not(entnarfile.HasNarInfoNarFiles())).
+			Exec(ctx); err != nil {
 			log.Error().
 				Err(err).
 				Msg("error deleting orphaned nar file records")
@@ -5894,7 +5912,9 @@ func (c *Cache) deleteLRURecordsFromDB(
 		return narInfoHashesToRemove, narURLsToRemove, nil, nil
 	}
 
-	orphanedChunks, err := qtx.GetOrphanedChunks(ctx)
+	orphanedChunks, err := tx.Chunk.Query().
+		Where(entchunk.Not(entchunk.HasNarFileLinks())).
+		All(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("error identifying orphaned chunks")
 
@@ -5915,7 +5935,9 @@ func (c *Cache) deleteLRURecordsFromDB(
 	}
 
 	// Batch delete all orphaned chunks in one query
-	if _, err := qtx.DeleteOrphanedChunks(ctx); err != nil {
+	if _, err := tx.Chunk.Delete().
+		Where(entchunk.Not(entchunk.HasNarFileLinks())).
+		Exec(ctx); err != nil {
 		log.Error().
 			Err(err).
 			Msg("error deleting orphaned chunk records")
@@ -6026,37 +6048,37 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 				return err
 			}
 
-			tx, err := c.db.DB().BeginTx(ctx, nil)
-			if err != nil {
-				log.Error().Err(err).Msg("error beginning a transaction")
-
-				return err
-			}
-
-			defer func() {
-				if err := tx.Rollback(); err != nil {
-					if !errors.Is(err, sql.ErrTxDone) {
-						log.Error().Err(err).Msg("error rolling back the transaction")
-					}
-				}
-			}()
-
-			qtx := c.db.WithTx(tx)
-
-			cleanupSize, err := c.calculateCleanupSize(ctx, qtx, log)
-			if err != nil || cleanupSize == 0 {
-				return err
-			}
-
-			narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove, err := c.deleteLRURecordsFromDB(
-				ctx,
-				qtx,
-				log,
-				cleanupSize,
-				pinnedHashes,
+			var (
+				narInfoHashesToRemove []string
+				narURLsToRemove       []nar.URL
+				chunkHashesToRemove   []string
+				cleanupSize           uint64
 			)
-			if err != nil || (len(narInfoHashesToRemove) == 0 && len(chunkHashesToRemove) == 0) {
+
+			err = c.withEntTransaction(ctx, "runLRU", func(tx *ent.Tx) error {
+				var txErr error
+
+				cleanupSize, txErr = c.calculateCleanupSize(ctx, tx, log)
+				if txErr != nil || cleanupSize == 0 {
+					return txErr
+				}
+
+				narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove, txErr = c.deleteLRURecordsFromDB(
+					ctx,
+					tx,
+					log,
+					cleanupSize,
+					pinnedHashes,
+				)
+
+				return txErr
+			})
+			if err != nil {
 				return err
+			}
+
+			if len(narInfoHashesToRemove) == 0 && len(chunkHashesToRemove) == 0 {
+				return nil
 			}
 
 			// Track eviction counts
@@ -6067,13 +6089,6 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			// Track bytes freed (approximate as cleanupSize)
 			//nolint:gosec // G115: Cleanup size is bounded by cache max size, unlikely to exceed int64 max
 			lruBytesFreedTotal.Add(ctx, int64(cleanupSize))
-
-			// Commit the database transaction before deleting from stores
-			if err := tx.Commit(); err != nil {
-				log.Error().Err(err).Msg("error committing the transaction")
-
-				return err
-			}
 
 			// Remove all the files from the store as fast as possible
 			c.parallelDeleteFromStores(ctx, log, narInfoHashesToRemove, narURLsToRemove, chunkHashesToRemove)
