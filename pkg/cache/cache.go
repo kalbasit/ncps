@@ -379,12 +379,7 @@ type Cache struct {
 	secretKey     signature.SecretKey
 	healthChecker *healthcheck.HealthChecker
 	maxSize       uint64
-	// db is the legacy sqlc-style Querier; the production code path no
-	// longer uses it (everything reads/writes via dbClient + Ent), but
-	// the field is retained for test fixtures that still construct rows
-	// through the Querier API. §12 of migrate-to-ent-and-atlas deletes
-	// it alongside the sqlc dependency.
-	db       database.Querier
+
 	dbClient *database.Client
 
 	// tempDir is used to store nar files temporarily.
@@ -577,7 +572,6 @@ func IsUploadOnly(ctx context.Context) bool {
 func New(
 	ctx context.Context,
 	hostName string,
-	db database.Querier,
 	dbClient *database.Client,
 	//nolint:staticcheck // deprecated: migration support
 	configStore storage.ConfigStore,
@@ -591,7 +585,6 @@ func New(
 	cacheLockTTL time.Duration,
 ) (*Cache, error) {
 	c := &Cache{
-		db:                   db,
 		dbClient:             dbClient,
 		config:               config.New(dbClient, cacheLocker),
 		configStore:          configStore,

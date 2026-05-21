@@ -43,7 +43,6 @@ const (
 
 func newTestCache(
 	ctx context.Context,
-	db database.Querier,
 	dbClient *database.Client,
 	//nolint:staticcheck // using deprecated ConfigStore interface for testing migration
 	configStore storage.ConfigStore,
@@ -53,7 +52,7 @@ func newTestCache(
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	return cache.New(ctx, cacheName, db, dbClient, configStore, narInfoStore, narStore, "",
+	return cache.New(ctx, cacheName, dbClient, configStore, narInfoStore, narStore, "",
 		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Second, 30*time.Minute)
 }
 
@@ -76,15 +75,13 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -125,15 +122,13 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -185,7 +180,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := dbClient.DB().QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -198,7 +193,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("narinfo does exist in the database", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := dbClient.DB().QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -220,7 +215,7 @@ func TestServeHTTP(t *testing.T) {
 				t.Run("narinfo is gone from the database", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := dbClient.DB().QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -283,15 +278,13 @@ func TestServeHTTP(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -360,13 +353,10 @@ Deriver: test.drv
 				// Create a cache using the test store
 				testDBFile := filepath.Join(testDir, "db.sqlite")
 				testhelper.CreateMigrateDatabase(t, testDBFile)
-				testDB, err := database.Open("sqlite:"+testDBFile, nil)
+				testDBClient, err := database.Open("sqlite:"+testDBFile, nil)
 				require.NoError(t, err)
 
-				testDBClient, err := database.NewClient(testDB.DB(), database.TypeSQLite)
-				require.NoError(t, err)
-
-				testCache, err := newTestCache(newContext(), testDB, testDBClient, testLocalStore, testLocalStore, testLocalStore)
+				testCache, err := newTestCache(newContext(), testDBClient, testLocalStore, testLocalStore, testLocalStore)
 				require.NoError(t, err)
 
 				// Create a server using the test cache
@@ -537,15 +527,13 @@ Deriver: test.drv
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -629,7 +617,7 @@ Deriver: test.drv
 				t.Run("narinfo does exist in the database", func(t *testing.T) {
 					var count int
 
-					err := db.DB().QueryRowContext(newContext(),
+					err := dbClient.DB().QueryRowContext(newContext(),
 						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
 						testdata.Nar1.NarInfoHash).Scan(&count)
 					require.NoError(t, err)
@@ -639,7 +627,7 @@ Deriver: test.drv
 				t.Run("it should be signed by our server", func(t *testing.T) {
 					var sigsStr []string
 
-					rows, err := db.DB().QueryContext(newContext(),
+					rows, err := dbClient.DB().QueryContext(newContext(),
 						`SELECT signature FROM narinfo_signatures
 						 WHERE narinfo_id = (SELECT id FROM narinfos WHERE hash = ?)`,
 						testdata.Nar1.NarInfoHash)
@@ -734,15 +722,13 @@ func TestGetNar_HeadOptimization(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -794,15 +780,13 @@ func TestGetNarInfo_Head(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -832,7 +816,7 @@ func TestGetNarInfo_Head(t *testing.T) {
 	// Verify it's in the database
 	var count int
 
-	err = db.DB().
+	err = dbClient.DB().
 		QueryRowContext(newContext(), "SELECT COUNT(*) FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).
 		Scan(&count)
 	require.NoError(t, err)
@@ -860,15 +844,13 @@ func TestGetNar_HeadFallback(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -924,15 +906,13 @@ func TestGetNar_ZstdCompression(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -999,15 +979,13 @@ func TestGetNar_NoZstdCompression(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -1071,15 +1049,13 @@ func TestGetNar_ZstdCompression_Head(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -1166,15 +1142,13 @@ func TestGetNar_HeaderSettingSequence(t *testing.T) {
 
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	s := server.New(c)
@@ -1220,15 +1194,13 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	s := server.New(c)
@@ -1365,15 +1337,13 @@ func TestGetNar_Base16Hash(t *testing.T) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -1440,15 +1410,13 @@ func TestGetNar_NixServeUpstream(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1681,15 +1649,13 @@ func TestGetNar_NixServeUpstream_PrefixedNarURL(t *testing.T) {
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1780,15 +1746,13 @@ func setupUploadRouteTest(t *testing.T) (*httptest.Server, string, string, strin
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1998,15 +1962,13 @@ func TestPinClosure(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)
@@ -2055,15 +2017,13 @@ func TestPinClosure(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)
@@ -2111,15 +2071,13 @@ func TestPinClosure(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)
@@ -2167,15 +2125,13 @@ func TestPinClosure(t *testing.T) {
 		dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 		testhelper.CreateMigrateDatabase(t, dbFile)
 
-		db, err := database.Open("sqlite:"+dbFile, nil)
-		require.NoError(t, err)
-		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		dbClient, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)

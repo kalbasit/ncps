@@ -49,16 +49,13 @@ func TestSecurity(t *testing.T) {
 
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
-	db, err := database.Open("sqlite:"+dbFile, nil)
-	require.NoError(t, err)
-
-	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	ls, err := local.New(context.Background(), dir)
 	require.NoError(t, err)
 
-	c, err := cache.New(context.Background(), "localhost", db, dbClient, ls, ls, ls, "",
+	c, err := cache.New(context.Background(), "localhost", dbClient, ls, ls, ls, "",
 		locklocal.NewLocker(), locklocal.NewRWLocker(), time.Minute, 30*time.Second, time.Minute)
 	require.NoError(t, err)
 

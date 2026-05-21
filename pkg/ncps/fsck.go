@@ -295,14 +295,12 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			verifiedSince := cmd.Duration("verified-since")
 
 			// 1. Setup Database
-			db, dbClient, err := createDatabaseQuerier(cmd)
+			dbClient, err := createDatabaseClient(cmd)
 			if err != nil {
-				logger.Error().Err(err).Msg("error creating database querier")
+				logger.Error().Err(err).Msg("error creating database client")
 
 				return err
 			}
-			// db is still threaded through CLI plumbing; queries are issued via dbClient.
-			_ = db
 
 			// 2. Setup Lockers
 			locker, rwLocker, err := getLockers(ctx, cmd)

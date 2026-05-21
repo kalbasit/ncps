@@ -206,9 +206,9 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			dryRun := cmd.Bool("dry-run")
 
 			// 1. Setup Database
-			db, dbClient, err := createDatabaseQuerier(cmd)
+			dbClient, err := createDatabaseClient(cmd)
 			if err != nil {
-				return fmt.Errorf("error creating database querier: %w", err)
+				return fmt.Errorf("error creating database client: %w", err)
 			}
 
 			// 2a. Load CDC configuration from database (must happen after DB creation)
@@ -270,7 +270,7 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 			// 4. Setup Cache (needed for migration logic)
 			// We recreate the cache to reuse its MigrateNarToChunks logic
 			// Note: createCache will load CDC values from the database since we don't have CDC flags
-			c, err := createCache(ctx, cmd, db, dbClient, locker, rwLocker, nil)
+			c, err := createCache(ctx, cmd, dbClient, locker, rwLocker, nil)
 			if err != nil {
 				return fmt.Errorf("error creating cache: %w", err)
 			}

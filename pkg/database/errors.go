@@ -83,11 +83,29 @@ func IsDuplicateKeyError(err error) bool {
 }
 
 // IsNotFoundError checks if the error indicates a row was not found.
+// Accepts both the package-level ErrNotFound sentinel and Ent's
+// *NotFoundError wrapper.
 func IsNotFoundError(err error) bool {
-	return errors.Is(err, ErrNotFound)
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
+
+	// ent.IsNotFound matches Ent's *NotFoundError type. We avoid the
+	// direct import dependency by checking the error message structure
+	// via the well-known Ent sentinel below.
+	return isEntNotFound(err)
 }
 
 var (
+	// ErrNotFound is the package-level "not found" sentinel returned
+	// by helpers in this package and matched (via errors.Is) by tests
+	// that previously expected the sqlc-generated equivalent.
+	ErrNotFound = errors.New("not found")
+
 	// ErrUnsupportedDriver is returned when the database driver is not recognized.
 	ErrUnsupportedDriver = errors.New("unsupported database driver")
 

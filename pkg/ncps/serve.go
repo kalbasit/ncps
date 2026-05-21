@@ -499,12 +499,12 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return maxprocs.AutoMaxProcs(ctx, 30*time.Second, logger)
 		})
 
-		db, dbClient, err := createDatabaseQuerier(cmd)
+		dbClient, err := createDatabaseClient(cmd)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
-				Msg("error creating database querier")
+				Msg("error creating database client")
 
 			return err
 		}
@@ -646,7 +646,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := createCache(ctx, cmd, db, dbClient, locker, rwLocker, ucs)
+		cache, err := createCache(ctx, cmd, dbClient, locker, rwLocker, ucs)
 		if err != nil {
 			return err
 		}
@@ -969,7 +969,7 @@ func createS3Storage(
 	return s3Store, s3Store, s3Store, nil
 }
 
-func createDatabaseQuerier(cmd *cli.Command) (database.Querier, *database.Client, error) {
+func createDatabaseClient(cmd *cli.Command) (*database.Client, error) {
 	dbURL := cmd.String("cache-database-url")
 
 	// Build pool configuration from flags
@@ -985,26 +985,13 @@ func createDatabaseQuerier(cmd *cli.Command) (database.Querier, *database.Client
 		}
 	}
 
-	db, err := database.Open(dbURL, poolCfg)
+	dbClient, err := database.Open(dbURL, poolCfg)
 	if err != nil {
 		// Avoid embedding dbURL — it may contain user:password credentials.
-		return nil, nil, fmt.Errorf("error opening the database: %w", err)
+		return nil, fmt.Errorf("error opening the database: %w", err)
 	}
 
-	// §11.1: construct the Ent-backed Client alongside the legacy
-	// Querier. Both share the same *sql.DB, so we own a single
-	// connection pool; the Client wraps it via entsql.OpenDB.
-	dbType, err := database.DetectFromDatabaseURL(dbURL)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error detecting database type: %w", err)
-	}
-
-	dbClient, err := database.NewClient(db.DB(), dbType)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error constructing database client: %w", err)
-	}
-
-	return db, dbClient, nil
+	return dbClient, nil
 }
 
 func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.Locker) (chunk.Store, error) {
@@ -1028,7 +1015,6 @@ func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.L
 func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
-	db database.Querier,
 	dbClient *database.Client,
 	locker lock.Locker,
 	rwLocker lock.RWLocker,
@@ -1047,7 +1033,6 @@ func createCache(
 	c, err := cache.New(
 		ctx,
 		hostName,
-		db,
 		dbClient,
 		configStore,
 		narInfoStore,
