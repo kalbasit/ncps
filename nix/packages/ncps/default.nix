@@ -16,7 +16,7 @@
             in
             if tag != "" then tag else rev;
 
-          vendorHash = "sha256-N7tHfkKMhAnMfk899FdfM8F8TdMV/KlJoqWWlk9Tx7U=";
+          vendorHash = "sha256-msHGDKU1HutZ6ovp2/1nKYDcgfRrJ8Vi6XJHt62wQAU=";
         in
         pkgs.buildGoModule {
           inherit version vendorHash;
@@ -38,8 +38,6 @@
               ./pre-check-redis.sh
 
               ../../../cmd
-              ../../../db/migrations
-              ../../../db/schema
               ../../../ent
               ../../../go.mod
               ../../../go.sum
@@ -74,7 +72,6 @@
 
             pkgs.awscli2 # used by init-garage smoke test (put/get/presign)
             pkgs.curl # used for HTTP health checks and anonymous-access check
-            pkgs.dbmate # used for testing
             pkgs.garage # S3-compatible storage for integration tests
             pkgs.jq # used for testing by init-garage
             pkgs.mariadb # MySQL/MariaDB for integration tests
