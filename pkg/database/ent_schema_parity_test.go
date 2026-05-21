@@ -47,6 +47,10 @@ func TestEntSchemaParity(t *testing.T) {
 	// Apply the schema via Ent's runtime migrator. This is a temporary
 	// fast-path; the production apply uses goose against translated
 	// migration files (see §7/§9).
+	//
+	// Ent's Schema.Create mutates the package-level migrate.Tables slice;
+	// the SchemaCreateMu serialises that mutation against any other test
+	// that also calls Schema.Create in parallel.
 	drv := entsql.OpenDB(dialect.SQLite, sqlDB)
 	m, err := schema.NewMigrate(drv)
 	require.NoError(t, err)
