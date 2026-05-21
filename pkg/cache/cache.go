@@ -2365,17 +2365,36 @@ func (c *Cache) relinkNarInfosToNarFileWithEntTx(
 		return nil
 	}
 
-	bulk := make([]*ent.NarInfoNarFileCreate, len(narInfoIDs))
-	for i, niID := range narInfoIDs {
-		bulk[i] = tx.NarInfoNarFile.Create().SetNarinfoID(niID).SetNarFileID(int(narFileID))
-	}
+	// Chunk the CreateBulk to stay below driver placeholder limits.
+	// Each row sends 2 parameters (narinfo_id, nar_file_id); 500 rows
+	// per batch = 1000 placeholders, well under Postgres 65535,
+	// modern SQLite 32766, and older SQLite 999. Closures with
+	// thousands of narinfos sharing a NAR URL (large multi-output
+	// derivations, deep dependency trees) are uncommon but real, and
+	// without chunking the bulk insert would silently fail on
+	// older sqlite.
+	const relinkBatchSize = 500
 
-	if err := tx.NarInfoNarFile.CreateBulk(bulk...).
-		OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
-		Ignore().
-		Exec(ctx); err != nil {
-		return fmt.Errorf("failed to link narinfos by URL %q to nar_file %d: %w",
-			narURL.String(), narFileID, err)
+	for start := 0; start < len(narInfoIDs); start += relinkBatchSize {
+		end := start + relinkBatchSize
+		if end > len(narInfoIDs) {
+			end = len(narInfoIDs)
+		}
+
+		batch := narInfoIDs[start:end]
+		bulk := make([]*ent.NarInfoNarFileCreate, len(batch))
+
+		for i, niID := range batch {
+			bulk[i] = tx.NarInfoNarFile.Create().SetNarinfoID(niID).SetNarFileID(int(narFileID))
+		}
+
+		if err := tx.NarInfoNarFile.CreateBulk(bulk...).
+			OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+			Ignore().
+			Exec(ctx); err != nil {
+			return fmt.Errorf("failed to link narinfos batch by URL %q to nar_file %d: %w",
+				narURL.String(), narFileID, err)
+		}
 	}
 
 	return nil
