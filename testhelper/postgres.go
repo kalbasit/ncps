@@ -3,54 +3,39 @@ package testhelper
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/migrations"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/database/migrate"
 )
 
-// MigratePostgresDatabase will migrate the PostgreSQL database using dbmate.
+// MigratePostgresDatabase runs the same migrate.Up flow `ncps migrate
+// up` uses in production: empty DB → ent.Schema.Create → final
+// schema including the §10b surrogate-id columns on weak entities.
+// Replaces the legacy dbmate invocation.
 // The database URL should be in the format: postgresql://user:password@host:port/database
 func MigratePostgresDatabase(t *testing.T, dbURL string) {
 	t.Helper()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
+	db, err := database.Open(dbURL, nil)
+	require.NoError(t, err)
 
-	dbMigrationsDir := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"migrations",
-		"postgres",
-	)
+	defer db.DB().Close()
 
-	dbSchema := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"schema",
-		"postgres.sql",
-	)
+	sub, err := fs.Sub(migrations.FS, "postgres")
+	require.NoError(t, err)
 
-	//nolint:gosec
-	cmd := exec.CommandContext(context.Background(),
-		"dbmate",
-		"--no-dump-schema",
-		"--url="+dbURL,
-		"--migrations-dir="+dbMigrationsDir,
-		"--schema-file="+dbSchema,
-		"up",
-	)
-
-	output, err := cmd.CombinedOutput()
-	require.NoErrorf(t, err, "Running %q has failed. Output:\n%s", cmd.String(), string(output))
-
-	t.Logf("%s: %s", cmd.String(), output)
+	require.NoError(t, migrate.Up(context.Background(), migrate.Options{
+		DB:           db.DB(),
+		Dialect:      database.TypePostgreSQL,
+		MigrationsFS: sub,
+	}))
 }
 
 // SetupPostgres sets up a new temporary PostgreSQL database for testing.

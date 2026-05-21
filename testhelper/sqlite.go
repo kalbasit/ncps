@@ -4,68 +4,52 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kalbasit/ncps/migrations"
 	"github.com/kalbasit/ncps/pkg/database"
+	"github.com/kalbasit/ncps/pkg/database/migrate"
 	"github.com/kalbasit/ncps/pkg/nar"
 )
 
-// CreateMigrateDatabase will create all necessary directories, and will create
-// the sqlite3 database (if necessary) and migrate it.
+// CreateMigrateDatabase creates the parent directory tree and a fresh
+// SQLite database, then runs the same migrate.Up flow `ncps migrate up`
+// uses in production. Empty DB → ent.Schema.Create → final schema
+// including the §10b surrogate-id columns on weak entities. Tests can
+// now perform Ent edge traversals (WithReferences/WithSignatures/
+// WithNarInfoNarFiles) that the legacy dbmate-only schema didn't
+// support.
 func CreateMigrateDatabase(t testing.TB, dbFile string) {
 	t.Helper()
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(dbFile), 0o700))
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-
-	dbMigrationsDir := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"migrations",
-		"sqlite",
-	)
-
-	dbSchema := filepath.Join(
-		filepath.Dir(filepath.Dir(thisFile)),
-		"db",
-		"schema",
-		"sqlite.sql",
-	)
-
-	//nolint:gosec
-	cmd := exec.CommandContext(context.Background(),
-		"dbmate",
-		"--no-dump-schema",
-		"--url=sqlite:"+dbFile,
-		"--migrations-dir="+dbMigrationsDir,
-		"--schema-file="+dbSchema,
-		"up",
-	)
-
-	output, err := cmd.CombinedOutput()
-	require.NoErrorf(t, err, "Running %q has failed", cmd.String())
-
-	t.Logf("%s: %s", cmd.String(), output)
-
-	// IMPORTANT: Checkpoint the WAL to ensure all changes are written to the main database file.
-	// While not strictly necessary for correctness (SQLite handles this automatically), it ensures
-	// that all migration changes are immediately visible to new connections without relying on
-	// WAL file reads. This can prevent subtle issues in test environments with rapid database
-	// create/destroy cycles. See: https://www.sqlite.org/wal.html#checkpointing
-	db, err := sql.Open("sqlite3", dbFile)
+	db, err := sql.Open("sqlite3",
+		"file:"+dbFile+"?_fk=1&_journal_mode=WAL&_busy_timeout=10000")
 	require.NoError(t, err)
 
 	defer db.Close()
 
+	sub, err := fs.Sub(migrations.FS, "sqlite")
+	require.NoError(t, err)
+
+	require.NoError(t, migrate.Up(context.Background(), migrate.Options{
+		DB:           db,
+		Dialect:      database.TypeSQLite,
+		MigrationsFS: sub,
+	}))
+
+	// Checkpoint the WAL so on-disk file content is visible to other
+	// connections immediately. Not strictly required for correctness
+	// — SQLite handles WAL transparently — but prevents subtle
+	// rapid-create/destroy timing issues in tests. See
+	// https://www.sqlite.org/wal.html#checkpointing
 	_, err = db.ExecContext(context.Background(), "PRAGMA wal_checkpoint(TRUNCATE)")
 	require.NoError(t, err)
 }
