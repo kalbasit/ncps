@@ -12,7 +12,7 @@ ALTER TABLE "pinned_closures" ALTER COLUMN "hash" TYPE character varying;
 -- create index "pinnedclosure_hash" to table: "pinned_closures"
 CREATE UNIQUE INDEX "pinnedclosure_hash" ON "pinned_closures" ("hash");
 -- modify "nar_files" table
-ALTER TABLE "nar_files" DROP CONSTRAINT "nar_files_file_size_check", ALTER COLUMN "hash" TYPE character varying, ALTER COLUMN "compression" TYPE character varying, ALTER COLUMN "query" TYPE character varying, ALTER COLUMN "last_accessed_at" DROP DEFAULT;
+ALTER TABLE "nar_files" DROP CONSTRAINT "nar_files_file_size_check", ALTER COLUMN "hash" TYPE character varying, ALTER COLUMN "compression" TYPE character varying, ALTER COLUMN "query" TYPE character varying;
 -- create index "narfile_hash_compression_query" to table: "nar_files"
 CREATE UNIQUE INDEX "narfile_hash_compression_query" ON "nar_files" ("hash", "compression", "query");
 -- create index "narfile_last_accessed_at" to table: "nar_files"
@@ -24,7 +24,7 @@ CREATE INDEX "narfilechunk_chunk_id" ON "nar_file_chunks" ("chunk_id");
 -- create index "narfilechunk_nar_file_id_chunk_index" to table: "nar_file_chunks"
 CREATE UNIQUE INDEX "narfilechunk_nar_file_id_chunk_index" ON "nar_file_chunks" ("nar_file_id", "chunk_index");
 -- modify "narinfos" table
-ALTER TABLE "narinfos" ALTER COLUMN "hash" TYPE character varying, ALTER COLUMN "last_accessed_at" DROP DEFAULT, ALTER COLUMN "store_path" TYPE character varying, ALTER COLUMN "url" TYPE character varying, ALTER COLUMN "compression" TYPE character varying, ALTER COLUMN "file_hash" TYPE character varying, ALTER COLUMN "nar_hash" TYPE character varying, ALTER COLUMN "deriver" TYPE character varying, ALTER COLUMN "system" TYPE character varying, ALTER COLUMN "ca" TYPE character varying;
+ALTER TABLE "narinfos" ALTER COLUMN "hash" TYPE character varying, ALTER COLUMN "store_path" TYPE character varying, ALTER COLUMN "url" TYPE character varying, ALTER COLUMN "compression" TYPE character varying, ALTER COLUMN "file_hash" TYPE character varying, ALTER COLUMN "nar_hash" TYPE character varying, ALTER COLUMN "deriver" TYPE character varying, ALTER COLUMN "system" TYPE character varying, ALTER COLUMN "ca" TYPE character varying;
 -- create index "narinfo_hash" to table: "narinfos"
 CREATE UNIQUE INDEX "narinfo_hash" ON "narinfos" ("hash");
 -- create index "narinfo_last_accessed_at" to table: "narinfos"
@@ -76,7 +76,7 @@ DROP INDEX "narinfo_last_accessed_at";
 -- reverse: create index "narinfo_hash" to table: "narinfos"
 DROP INDEX "narinfo_hash";
 -- reverse: modify "narinfos" table
-ALTER TABLE "narinfos" ALTER COLUMN "ca" TYPE text, ALTER COLUMN "system" TYPE text, ALTER COLUMN "deriver" TYPE text, ALTER COLUMN "nar_hash" TYPE text, ALTER COLUMN "file_hash" TYPE text, ALTER COLUMN "compression" TYPE text, ALTER COLUMN "url" TYPE text, ALTER COLUMN "store_path" TYPE text, ALTER COLUMN "last_accessed_at" SET DEFAULT CURRENT_TIMESTAMP, ALTER COLUMN "hash" TYPE text;
+ALTER TABLE "narinfos" ALTER COLUMN "ca" TYPE text, ALTER COLUMN "system" TYPE text, ALTER COLUMN "deriver" TYPE text, ALTER COLUMN "nar_hash" TYPE text, ALTER COLUMN "file_hash" TYPE text, ALTER COLUMN "compression" TYPE text, ALTER COLUMN "url" TYPE text, ALTER COLUMN "store_path" TYPE text, ALTER COLUMN "hash" TYPE text;
 -- reverse: create index "narfilechunk_nar_file_id_chunk_index" to table: "nar_file_chunks"
 DROP INDEX "narfilechunk_nar_file_id_chunk_index";
 -- reverse: create index "narfilechunk_chunk_id" to table: "nar_file_chunks"
@@ -88,7 +88,7 @@ DROP INDEX "narfile_last_accessed_at";
 -- reverse: create index "narfile_hash_compression_query" to table: "nar_files"
 DROP INDEX "narfile_hash_compression_query";
 -- reverse: modify "nar_files" table
-ALTER TABLE "nar_files" ALTER COLUMN "last_accessed_at" SET DEFAULT CURRENT_TIMESTAMP, ALTER COLUMN "query" TYPE text, ALTER COLUMN "compression" TYPE text, ALTER COLUMN "hash" TYPE text, ADD CONSTRAINT "nar_files_file_size_check" CHECK (file_size >= 0);
+ALTER TABLE "nar_files" ALTER COLUMN "query" TYPE text, ALTER COLUMN "compression" TYPE text, ALTER COLUMN "hash" TYPE text, ADD CONSTRAINT "nar_files_file_size_check" CHECK (file_size >= 0);
 -- reverse: create index "pinnedclosure_hash" to table: "pinned_closures"
 DROP INDEX "pinnedclosure_hash";
 -- reverse: modify "pinned_closures" table
