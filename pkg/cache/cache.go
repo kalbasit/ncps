@@ -4847,12 +4847,24 @@ func MigrateNarInfo(
 	nir, err := dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HashEQ(hash)).
 		Only(ctx)
-	if err == nil && nir.URL != nil && *nir.URL != "" {
-		zerolog.Ctx(ctx).Debug().
-			Str("narinfo_hash", hash).
-			Msg("migration completed by another instance while waiting for lock")
 
-		return nil
+	switch {
+	case err == nil:
+		if nir.URL != nil && *nir.URL != "" {
+			zerolog.Ctx(ctx).Debug().
+				Str("narinfo_hash", hash).
+				Msg("migration completed by another instance while waiting for lock")
+
+			return nil
+		}
+	case ent.IsNotFound(err):
+		// Expected: narinfo not yet in DB; fall through to migrate.
+	default:
+		// Unexpected DB error — log but still attempt migration; if the
+		// DB is genuinely broken the upsert below will surface the error.
+		zerolog.Ctx(ctx).Warn().Err(err).
+			Str("narinfo_hash", hash).
+			Msg("double-check NarInfo lookup failed; proceeding with migration")
 	}
 
 	log := zerolog.Ctx(ctx).With().Str("narinfo_hash", hash).Logger()
