@@ -733,8 +733,9 @@ constraint to an existing nullable column):
 
 - **A1** — Field-level `entsql.Check(...)` annotations are silently
   dropped by Ent. CHECKs MUST live on table-level `Annotations()`.
-- **A2** — Ent uses snake_case enum-type names. Every `field.Enum(...)`
-  needs a matching `entsql.Annotation{Type: "<table>_<column>_enum"}`.
+- **A2** — `entsql.OnDelete(...)` annotations on `edge.From(...)` are
+  silently ignored by Ent. CASCADE/RESTRICT/SET NULL MUST live on the
+  owning `edge.To(...)` side.
 - **A3** — UNIQUE columns also bound by `edge.From().Field()` must carry
   duplicate index annotations so Ent doesn't fabricate phantom indexes.
 - **A4** — Every `edge.To(name, T.Type)` needs a reciprocal
@@ -743,10 +744,14 @@ constraint to an existing nullable column):
 - **A5** — Every `field.Bytes("*_ciphertext")` field MUST chain
   `.Sensitive()` so the ciphertext never appears in error messages, logs,
   or generated `String()` methods.
+- **Snake_case enum-type naming** (convention; not yet linted). Every
+  `field.Enum(...)` needs a matching
+  `entsql.Annotation{Type: "<table>_<column>_enum"}` so the generated
+  DDL emits a stable, predictable type name across dialects.
 
 See `cmd/ent-lint/main.go` for the live AST enforcement of A1, A2, and
-A4; A3 and A5 are tracked in the ent-schema-lint spec and currently
-enforced by code review.
+A4; A3, A5, and the snake_case enum-type convention are tracked in the
+ent-schema-lint spec and currently enforced by code review.
 
 **IMPORTANT:** Never hand-edit a committed migration file. The
 `atlas.sum` integrity file under each `migrations/<dialect>/` seals the

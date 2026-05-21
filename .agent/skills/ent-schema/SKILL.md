@@ -32,16 +32,30 @@ func (Chunk) Annotations() []schema.Annotation {
 }
 ```
 
-### A2 — snake_case enum-type naming
+### A2 — `entsql.OnDelete(...)` lives on `edge.To`, never on `edge.From`
 
-Ent uses snake_case enum-type names by convention. Every `field.Enum(...)`
-needs a matching `entsql.Annotation{Type: "<table>_<column>_enum"}` so
-the generated DDL emits a stable, predictable type name across dialects.
+Ent silently ignores `entsql.OnDelete(...)` annotations attached to
+`edge.From(...)` declarations. CASCADE / RESTRICT / SET NULL semantics
+MUST be declared on the owning `edge.To(...)` side, otherwise the
+generated DDL falls back to the default ON DELETE rule and the intended
+behaviour disappears without warning.
 
 ```go
-field.Enum("compression").
-    Values("none", "xz", "zstd").
-    Annotations(entsql.Annotation{Type: "nar_files_compression_enum"})
+// Correct — OnDelete on edge.To (the FK owner).
+func (Parent) Edges() []ent.Edge {
+    return []ent.Edge{
+        edge.To("children", Child.Type).
+            Annotations(entsql.Annotation{OnDelete: entsql.Cascade}),
+    }
+}
+
+// Wrong — OnDelete on edge.From is silently dropped.
+func (Child) Edges() []ent.Edge {
+    return []ent.Edge{
+        edge.From("parent", Parent.Type).Ref("children").Unique().
+            Annotations(entsql.Annotation{OnDelete: entsql.Cascade}),
+    }
+}
 ```
 
 ### A3 — UNIQUE + edge.From().Field() pairing
@@ -81,6 +95,20 @@ func (Child) Edges() []ent.Edge {
 Every `field.Bytes("*_ciphertext")` field MUST chain `.Sensitive()` so
 the ciphertext never leaks into error messages, log lines, or the
 generated `String()` methods.
+
+### Snake_case enum-type naming (convention; not yet linted)
+
+Ent uses snake_case enum-type names by convention. Every `field.Enum(...)`
+needs a matching `entsql.Annotation{Type: "<table>_<column>_enum"}` so
+the generated DDL emits a stable, predictable type name across dialects.
+This is enforced by code review until ncps's schema tree gains its first
+`field.Enum(...)` declaration and the check is wired into `cmd/ent-lint`.
+
+```go
+field.Enum("compression").
+    Values("none", "xz", "zstd").
+    Annotations(entsql.Annotation{Type: "nar_files_compression_enum"})
+```
 
 ```go
 field.Bytes("password_ciphertext").Sensitive()
