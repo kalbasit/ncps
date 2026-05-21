@@ -265,13 +265,13 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 	}
 
 	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		var sums []struct {
-			Sum sql.NullInt64 `sql:"sum"`
-		}
-
+		// Scan positionally into a single sql.NullInt64 so we don't depend
+		// on Ent aliasing the SUM(...) column to "sum"; this also handles
+		// the NULL result from SUM on an empty table.
+		var sum sql.NullInt64
 		if err := r.dbClient.Ent().NarFile.Query().
 			Aggregate(ent.Sum(entnarfile.FieldFileSize)).
-			Scan(ctx, &sums); err != nil {
+			Scan(ctx, &sum); err != nil {
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
@@ -283,8 +283,8 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 		}
 
 		var size int64
-		if len(sums) > 0 && sums[0].Sum.Valid {
-			size = sums[0].Sum.Int64
+		if sum.Valid {
+			size = sum.Int64
 		}
 
 		o.ObserveInt64(totalSizeGauge, size)
