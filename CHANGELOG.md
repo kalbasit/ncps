@@ -11,9 +11,11 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Database tooling migrated from sqlc + dbmate to Ent + Atlas + Goose.**
   Schemas are now authored under `ent/schema/*.go`, migrations are
   generated from Atlas diffs (used as a Go library) via
-  `go run ./cmd/generate-migrations --name=<descriptive_snake_case>`,
-  and applied at runtime by `ncps migrate up`. The runtime applier is
-  `goose.NewProvider` against the embedded `migrations/<dialect>/` FS.
+  `task migrations:gen NAME=<descriptive_snake_case>` (which regenerates
+  the Ent client via its dependency on `ent:generate`, then calls
+  `go run ./cmd/generate-migrations --name=...`), and applied at runtime
+  by `ncps migrate up`. The runtime applier is `goose.NewProvider`
+  against the embedded `migrations/<dialect>/` FS.
 
   See `CLAUDE.md` for the full developer workflow and the
   expand-contract policy + four-step NOT NULL recipe.
@@ -39,7 +41,7 @@ adoption:
 1. If the shape is the legacy dbmate one, it converts the tracking
    table to the goose shape:
    - On SQLite and PostgreSQL — inside a single transaction
-     (`BEGIN; CREATE TEMP …; DROP TABLE schema_migrations; CREATE TABLE schema_migrations (goose shape); INSERT sentinel + preserved versions; verify row-count parity; COMMIT;`).
+     (`BEGIN; CREATE TEMP …; DROP TABLE schema_migrations; CREATE TABLE schema_migrations (goose shape); INSERT sentinel + preserved versions; verify row-count consistency (including the sentinel row); COMMIT;`).
    - On MySQL — via a RENAME → CREATE → sentinel → copy → verify →
      DROP backup-table dance that is safe to interrupt and resume.
 1. All previously applied dbmate versions are recorded as
