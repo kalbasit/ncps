@@ -794,15 +794,9 @@ func queryCDCNarFilesWithSizeMismatch(
 		return nil, fmt.Errorf("query CDC nar_files: %w", err)
 	}
 
-	seen := make(map[int]struct{}, len(rows))
-
 	var mismatched []*ent.NarFile
 
 	for _, nf := range rows {
-		if _, ok := seen[nf.ID]; ok {
-			continue
-		}
-
 		for _, link := range nf.Edges.NarInfoNarFiles {
 			ni := link.Edges.Narinfo
 			if ni == nil || ni.NarSize == nil {
@@ -814,7 +808,6 @@ func queryCDCNarFilesWithSizeMismatch(
 			//nolint:gosec // G115: NAR sizes are well below math.MaxInt64.
 			if int64(nf.FileSize) != *ni.NarSize {
 				mismatched = append(mismatched, nf)
-				seen[nf.ID] = struct{}{}
 
 				break
 			}
