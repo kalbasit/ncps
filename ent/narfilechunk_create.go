@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/kalbasit/ncps/ent/chunk"
@@ -19,6 +20,7 @@ type NarFileChunkCreate struct {
 	config
 	mutation *NarFileChunkMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetNarFileID sets the "nar_file_id" field.
@@ -124,6 +126,7 @@ func (_c *NarFileChunkCreate) createSpec() (*NarFileChunk, *sqlgraph.CreateSpec)
 		_node = &NarFileChunk{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(narfilechunk.Table, sqlgraph.NewFieldSpec(narfilechunk.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if value, ok := _c.mutation.ChunkIndex(); ok {
 		_spec.SetField(narfilechunk.FieldChunkIndex, field.TypeInt, value)
 		_node.ChunkIndex = value
@@ -165,11 +168,225 @@ func (_c *NarFileChunkCreate) createSpec() (*NarFileChunk, *sqlgraph.CreateSpec)
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.NarFileChunk.Create().
+//		SetNarFileID(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.NarFileChunkUpsert) {
+//			SetNarFileID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *NarFileChunkCreate) OnConflict(opts ...sql.ConflictOption) *NarFileChunkUpsertOne {
+	_c.conflict = opts
+	return &NarFileChunkUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.NarFileChunk.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *NarFileChunkCreate) OnConflictColumns(columns ...string) *NarFileChunkUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &NarFileChunkUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// NarFileChunkUpsertOne is the builder for "upsert"-ing
+	//  one NarFileChunk node.
+	NarFileChunkUpsertOne struct {
+		create *NarFileChunkCreate
+	}
+
+	// NarFileChunkUpsert is the "OnConflict" setter.
+	NarFileChunkUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetNarFileID sets the "nar_file_id" field.
+func (u *NarFileChunkUpsert) SetNarFileID(v int) *NarFileChunkUpsert {
+	u.Set(narfilechunk.FieldNarFileID, v)
+	return u
+}
+
+// UpdateNarFileID sets the "nar_file_id" field to the value that was provided on create.
+func (u *NarFileChunkUpsert) UpdateNarFileID() *NarFileChunkUpsert {
+	u.SetExcluded(narfilechunk.FieldNarFileID)
+	return u
+}
+
+// SetChunkID sets the "chunk_id" field.
+func (u *NarFileChunkUpsert) SetChunkID(v int) *NarFileChunkUpsert {
+	u.Set(narfilechunk.FieldChunkID, v)
+	return u
+}
+
+// UpdateChunkID sets the "chunk_id" field to the value that was provided on create.
+func (u *NarFileChunkUpsert) UpdateChunkID() *NarFileChunkUpsert {
+	u.SetExcluded(narfilechunk.FieldChunkID)
+	return u
+}
+
+// SetChunkIndex sets the "chunk_index" field.
+func (u *NarFileChunkUpsert) SetChunkIndex(v int) *NarFileChunkUpsert {
+	u.Set(narfilechunk.FieldChunkIndex, v)
+	return u
+}
+
+// UpdateChunkIndex sets the "chunk_index" field to the value that was provided on create.
+func (u *NarFileChunkUpsert) UpdateChunkIndex() *NarFileChunkUpsert {
+	u.SetExcluded(narfilechunk.FieldChunkIndex)
+	return u
+}
+
+// AddChunkIndex adds v to the "chunk_index" field.
+func (u *NarFileChunkUpsert) AddChunkIndex(v int) *NarFileChunkUpsert {
+	u.Add(narfilechunk.FieldChunkIndex, v)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// Using this option is equivalent to using:
+//
+//	client.NarFileChunk.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *NarFileChunkUpsertOne) UpdateNewValues() *NarFileChunkUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.NarFileChunk.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *NarFileChunkUpsertOne) Ignore() *NarFileChunkUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *NarFileChunkUpsertOne) DoNothing() *NarFileChunkUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the NarFileChunkCreate.OnConflict
+// documentation for more info.
+func (u *NarFileChunkUpsertOne) Update(set func(*NarFileChunkUpsert)) *NarFileChunkUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&NarFileChunkUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetNarFileID sets the "nar_file_id" field.
+func (u *NarFileChunkUpsertOne) SetNarFileID(v int) *NarFileChunkUpsertOne {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.SetNarFileID(v)
+	})
+}
+
+// UpdateNarFileID sets the "nar_file_id" field to the value that was provided on create.
+func (u *NarFileChunkUpsertOne) UpdateNarFileID() *NarFileChunkUpsertOne {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.UpdateNarFileID()
+	})
+}
+
+// SetChunkID sets the "chunk_id" field.
+func (u *NarFileChunkUpsertOne) SetChunkID(v int) *NarFileChunkUpsertOne {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.SetChunkID(v)
+	})
+}
+
+// UpdateChunkID sets the "chunk_id" field to the value that was provided on create.
+func (u *NarFileChunkUpsertOne) UpdateChunkID() *NarFileChunkUpsertOne {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.UpdateChunkID()
+	})
+}
+
+// SetChunkIndex sets the "chunk_index" field.
+func (u *NarFileChunkUpsertOne) SetChunkIndex(v int) *NarFileChunkUpsertOne {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.SetChunkIndex(v)
+	})
+}
+
+// AddChunkIndex adds v to the "chunk_index" field.
+func (u *NarFileChunkUpsertOne) AddChunkIndex(v int) *NarFileChunkUpsertOne {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.AddChunkIndex(v)
+	})
+}
+
+// UpdateChunkIndex sets the "chunk_index" field to the value that was provided on create.
+func (u *NarFileChunkUpsertOne) UpdateChunkIndex() *NarFileChunkUpsertOne {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.UpdateChunkIndex()
+	})
+}
+
+// Exec executes the query.
+func (u *NarFileChunkUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for NarFileChunkCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *NarFileChunkUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *NarFileChunkUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *NarFileChunkUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // NarFileChunkCreateBulk is the builder for creating many NarFileChunk entities in bulk.
 type NarFileChunkCreateBulk struct {
 	config
 	err      error
 	builders []*NarFileChunkCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the NarFileChunk entities in the database.
@@ -198,6 +415,7 @@ func (_c *NarFileChunkCreateBulk) Save(ctx context.Context) ([]*NarFileChunk, er
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -248,6 +466,159 @@ func (_c *NarFileChunkCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *NarFileChunkCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.NarFileChunk.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.NarFileChunkUpsert) {
+//			SetNarFileID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *NarFileChunkCreateBulk) OnConflict(opts ...sql.ConflictOption) *NarFileChunkUpsertBulk {
+	_c.conflict = opts
+	return &NarFileChunkUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.NarFileChunk.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *NarFileChunkCreateBulk) OnConflictColumns(columns ...string) *NarFileChunkUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &NarFileChunkUpsertBulk{
+		create: _c,
+	}
+}
+
+// NarFileChunkUpsertBulk is the builder for "upsert"-ing
+// a bulk of NarFileChunk nodes.
+type NarFileChunkUpsertBulk struct {
+	create *NarFileChunkCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.NarFileChunk.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *NarFileChunkUpsertBulk) UpdateNewValues() *NarFileChunkUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.NarFileChunk.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *NarFileChunkUpsertBulk) Ignore() *NarFileChunkUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *NarFileChunkUpsertBulk) DoNothing() *NarFileChunkUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the NarFileChunkCreateBulk.OnConflict
+// documentation for more info.
+func (u *NarFileChunkUpsertBulk) Update(set func(*NarFileChunkUpsert)) *NarFileChunkUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&NarFileChunkUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetNarFileID sets the "nar_file_id" field.
+func (u *NarFileChunkUpsertBulk) SetNarFileID(v int) *NarFileChunkUpsertBulk {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.SetNarFileID(v)
+	})
+}
+
+// UpdateNarFileID sets the "nar_file_id" field to the value that was provided on create.
+func (u *NarFileChunkUpsertBulk) UpdateNarFileID() *NarFileChunkUpsertBulk {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.UpdateNarFileID()
+	})
+}
+
+// SetChunkID sets the "chunk_id" field.
+func (u *NarFileChunkUpsertBulk) SetChunkID(v int) *NarFileChunkUpsertBulk {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.SetChunkID(v)
+	})
+}
+
+// UpdateChunkID sets the "chunk_id" field to the value that was provided on create.
+func (u *NarFileChunkUpsertBulk) UpdateChunkID() *NarFileChunkUpsertBulk {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.UpdateChunkID()
+	})
+}
+
+// SetChunkIndex sets the "chunk_index" field.
+func (u *NarFileChunkUpsertBulk) SetChunkIndex(v int) *NarFileChunkUpsertBulk {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.SetChunkIndex(v)
+	})
+}
+
+// AddChunkIndex adds v to the "chunk_index" field.
+func (u *NarFileChunkUpsertBulk) AddChunkIndex(v int) *NarFileChunkUpsertBulk {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.AddChunkIndex(v)
+	})
+}
+
+// UpdateChunkIndex sets the "chunk_index" field to the value that was provided on create.
+func (u *NarFileChunkUpsertBulk) UpdateChunkIndex() *NarFileChunkUpsertBulk {
+	return u.Update(func(s *NarFileChunkUpsert) {
+		s.UpdateChunkIndex()
+	})
+}
+
+// Exec executes the query.
+func (u *NarFileChunkUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the NarFileChunkCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for NarFileChunkCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *NarFileChunkUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
