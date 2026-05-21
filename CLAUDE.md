@@ -55,8 +55,8 @@ go run ./cmd/generate-migrations --sql-only --name=descriptive_snake_case
 
 # Apply migrations (embedded; runs goose against the right dialect)
 ncps migrate up --cache-database-url=sqlite:/path/to/db.sqlite
-ncps migrate up --cache-database-url=postgresql://user:pass@host/db
-ncps migrate up --cache-database-url=mysql://user:pass@host/db
+ncps migrate up --cache-database-url=postgresql://user:password@host:port/database
+ncps migrate up --cache-database-url=mysql://user:password@host:port/database
 
 # Preview pending migrations without touching the database
 ncps migrate up --dry-run --cache-database-url=sqlite:/path/to/db.sqlite
@@ -706,7 +706,9 @@ For ANY database changes, follow this workflow:
 
 Use the **/migrate-new** skill for the schema-edit + generate flow,
 **/migrate-up** for applying, and **/migrate-down** for the expand-contract
-recipe (migrations are forward-only; there is no `migrate down` command).
+recipe (migrations are forward-only; the `migrate down` command is
+implemented but unsupported — it returns an error pointing at the
+expand-contract policy).
 
 **Expand-contract policy (never alter columns in place):**
 
