@@ -4904,7 +4904,7 @@ func storeNarInfoInDatabase(
 	hash string,
 	narInfo *narinfo.NarInfo,
 ) error {
-	return dbClient.WithTransaction(ctx, "storeNarInfoInDatabase", func(tx *ent.Tx) error {
+	return withEntTransactionRetry(ctx, dbClient, "storeNarInfoInDatabase", func(tx *ent.Tx) error {
 		nir, err := upsertNarInfoFromParsed(ctx, tx, hash, narInfo)
 		if err != nil {
 			return err
@@ -5418,6 +5418,20 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 //
 
 func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn func(tx *ent.Tx) error) error {
+	return withEntTransactionRetry(ctx, c.dbClient, operation, fn)
+}
+
+// withEntTransactionRetry wraps dbClient.WithTransaction with the
+// same deadlock-retry policy the legacy *Cache.executeTransaction
+// helper provided. Package-level so it can be reused by callers that
+// don't hold a *Cache (storeNarInfoInDatabase running under
+// MigrateNarInfo / the CLI migrate-narinfo path).
+func withEntTransactionRetry(
+	ctx context.Context,
+	dbClient *database.Client,
+	operation string,
+	fn func(tx *ent.Tx) error,
+) error {
 	const (
 		maxAttempts  = 5
 		initialDelay = 50 * time.Millisecond
@@ -5433,7 +5447,7 @@ func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn fun
 		Msg("withEntTransaction: starting transaction")
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		err = c.dbClient.WithTransaction(ctx, operation, fn)
+		err = dbClient.WithTransaction(ctx, operation, fn)
 		if err == nil {
 			zerolog.Ctx(ctx).Debug().
 				Str("operation", operation).
