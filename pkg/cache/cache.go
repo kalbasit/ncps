@@ -26,6 +26,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	entnarfile "github.com/kalbasit/ncps/ent/narfile"
+	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
+	entnarinfonarfile "github.com/kalbasit/ncps/ent/narinfonarfile"
+
+	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/analytics"
 	"github.com/kalbasit/ncps/pkg/cache/healthcheck"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
@@ -708,14 +713,14 @@ func (c *Cache) setupMetricCallbacks() error {
 		}
 
 		// Observe narinfo count
-		narInfoCount, err := c.db.GetNarInfoCount(ctx)
+		narInfoCount, err := c.dbClient.Ent().NarInfo.Query().Count(ctx)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Warn().
 				Err(err).
 				Msg("failed to get narinfo count for metrics")
 		} else {
-			o.ObserveInt64(narInfoCountMetric, narInfoCount)
+			o.ObserveInt64(narInfoCountMetric, int64(narInfoCount))
 		}
 
 		// Observe nar file count
@@ -1339,27 +1344,31 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 // This is used to recover the original upstream URL (with prefix) when fetching from
 // nix-serve style upstreams that use prefixed URLs (e.g., narinfohash-narhash).
 func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.URL) nar.URL {
-	urlStr, err := c.db.GetNarInfoURLByNarFileHash(ctx, database.GetNarInfoURLByNarFileHashParams{
-		Hash:        normalizedNarURL.Hash,
-		Compression: normalizedNarURL.Compression.String(),
-		Query:       normalizedNarURL.Query.Encode(),
-	})
+	ni, err := c.dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.HasNarInfoNarFilesWith(
+			entnarinfonarfile.HasNarFileWith(
+				entnarfile.HashEQ(normalizedNarURL.Hash),
+				entnarfile.CompressionEQ(normalizedNarURL.Compression.String()),
+				entnarfile.QueryEQ(normalizedNarURL.Query.Encode()),
+			),
+		)).
+		First(ctx)
 	if err != nil {
 		// Not found is an expected case. We should log any other database errors.
-		if !database.IsNotFoundError(err) && !errors.Is(err, sql.ErrNoRows) {
+		if !ent.IsNotFound(err) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup original nar URL")
 		}
 
 		return normalizedNarURL
 	}
 
-	if urlStr.Valid && urlStr.String != "" {
-		originalURL, parseErr := nar.ParseURL(urlStr.String)
+	if ni.URL != nil && *ni.URL != "" {
+		originalURL, parseErr := nar.ParseURL(*ni.URL)
 		if parseErr == nil {
 			return originalURL
 		}
 		// Log if we have a URL in the DB but can't parse it.
-		zerolog.Ctx(ctx).Warn().Err(parseErr).Str("url", urlStr.String).Msg("Failed to parse original nar URL from DB")
+		zerolog.Ctx(ctx).Warn().Err(parseErr).Str("url", *ni.URL).Msg("Failed to parse original nar URL from DB")
 	}
 
 	// If parsing fails or URL is invalid/empty, return the normalized URL unchanged
@@ -1375,20 +1384,22 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 		return nil, nil
 	}
 
-	narInfoHash, err := c.db.GetNarInfoHashByNarURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
+	ni, err := c.dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.URL(narURL.String())).
+		First(ctx)
 	if err != nil {
-		if !database.IsNotFoundError(err) && !errors.Is(err, sql.ErrNoRows) {
+		if !ent.IsNotFound(err) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup narinfo hash by nar URL")
 		}
 
 		return nil, nil
 	}
 
-	if narInfoHash == "" {
+	if ni.Hash == "" {
 		return nil, nil
 	}
 
-	_, upstreamNarInfo, err := c.getNarInfoFromUpstream(ctx, narInfoHash)
+	_, upstreamNarInfo, err := c.getNarInfoFromUpstream(ctx, ni.Hash)
 	if err != nil || upstreamNarInfo == nil {
 		return nil, nil
 	}
@@ -4375,15 +4386,17 @@ func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string
 // and fixes their file size if needed.
 func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) error {
 	// The NarInfo URL usually matches the NAR URL.
-	hashes, err := c.db.GetNarInfoHashesByURL(ctx, sql.NullString{String: narURL.String(), Valid: true})
+	nis, err := c.dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.URL(narURL.String())).
+		All(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get narinfo hashes by url: %w", err)
 	}
 
 	var errs []error
 
-	for _, hash := range hashes {
-		if err := c.CheckAndFixNarInfo(ctx, hash); err != nil {
+	for _, ni := range nis {
+		if err := c.CheckAndFixNarInfo(ctx, ni.Hash); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -4734,8 +4747,8 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 	// Check if narinfo exists in storage or database
 	inStorage := c.narInfoStore.HasNarInfo(ctx, hash)
 
-	_, err := c.db.GetNarInfoByHash(ctx, hash)
-	if err != nil && !database.IsNotFoundError(err) {
+	_, err := c.dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(hash)).First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
 		return fmt.Errorf("error checking for narinfo in database: %w", err)
 	}
 
@@ -6791,8 +6804,10 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 	// Verify the narinfo exists before pinning, as per the spec.
 	// Return 404 if the narinfo doesn't exist in the database.
-	if _, err := c.db.GetNarInfoByHash(ctx, hash); err != nil {
-		if errors.Is(err, database.ErrNotFound) {
+	if _, err := c.dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.HashEQ(hash)).
+		First(ctx); err != nil {
+		if ent.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
 
