@@ -11,8 +11,9 @@
 //
 //	atlas-sum-check --root .
 //
-// The binary exits non-zero on the first mismatch and prints a diagnostic
-// pointing at the offending directory.
+// The binary checks every dialect and exits non-zero at the end if any
+// dialect's directory mismatched, printing a diagnostic for each
+// offending directory.
 package main
 
 import (
