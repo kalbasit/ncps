@@ -702,16 +702,27 @@ func (c *Cache) GetCDCDeleteDelay() time.Duration {
 
 func (c *Cache) setupMetricCallbacks() error {
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		// Observe total size
-		size, err := c.db.GetNarTotalSize(ctx)
-		if err != nil {
-			// Log error but don't fail the scrape entirely
+		// Observe total size: SUM(file_size) over nar_files, with
+		// COALESCE-to-zero semantics (empty table returns 0, not NULL).
+		var totalSize int64
+
+		var totals []struct {
+			Sum int64 `sql:"sum"`
+		}
+
+		if err := c.dbClient.Ent().NarFile.Query().
+			Aggregate(ent.Sum(entnarfile.FieldFileSize)).
+			Scan(ctx, &totals); err != nil {
 			zerolog.Ctx(ctx).
 				Warn().
 				Err(err).
 				Msg("failed to get total nar size for metrics")
 		} else {
-			o.ObserveInt64(totalSizeMetric, size)
+			if len(totals) > 0 {
+				totalSize = totals[0].Sum
+			}
+
+			o.ObserveInt64(totalSizeMetric, totalSize)
 		}
 
 		// Observe narinfo count
@@ -726,14 +737,14 @@ func (c *Cache) setupMetricCallbacks() error {
 		}
 
 		// Observe nar file count
-		narFileCount, err := c.db.GetNarFileCount(ctx)
+		narFileCount, err := c.dbClient.Ent().NarFile.Query().Count(ctx)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Warn().
 				Err(err).
 				Msg("failed to get nar file count for metrics")
 		} else {
-			o.ObserveInt64(narFileCountMetric, narFileCount)
+			o.ObserveInt64(narFileCountMetric, int64(narFileCount))
 		}
 
 		// Observe cache max size (static value)
@@ -741,8 +752,8 @@ func (c *Cache) setupMetricCallbacks() error {
 		o.ObserveInt64(cacheMaxSizeBytes, int64(c.maxSize))
 
 		// Observe cache utilization ratio
-		if c.maxSize > 0 && size > 0 {
-			utilizationRatio := float64(size) / float64(c.maxSize)
+		if c.maxSize > 0 && totalSize > 0 {
+			utilizationRatio := float64(totalSize) / float64(c.maxSize)
 			o.ObserveFloat64(cacheUtilizationRatio, utilizationRatio)
 		} else {
 			o.ObserveFloat64(cacheUtilizationRatio, 0.0)
@@ -1918,7 +1929,10 @@ func (c *Cache) storeNarWithCDCFromReader(
 
 	defer func() {
 		if !success {
-			if err := c.db.ClearNarFileChunkingStarted(context.WithoutCancel(ctx), narFileID); err != nil {
+			if _, err := c.dbClient.Ent().NarFile.UpdateOneID(int(narFileID)).
+				ClearChunkingStartedAt().
+				SetUpdatedAt(time.Now()).
+				Save(context.WithoutCancel(ctx)); err != nil {
 				zerolog.Ctx(context.WithoutCancel(ctx)).
 					Warn().
 					Err(err).
@@ -2979,11 +2993,13 @@ func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
 		return storage.ErrNotFound
 	}
 
-	if _, err := c.db.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
-		Hash:        narURL.Hash,
-		Compression: narURL.Compression.String(),
-		Query:       narURL.Query.Encode(),
-	}); err != nil {
+	if _, err := c.dbClient.Ent().NarFile.Delete().
+		Where(
+			entnarfile.HashEQ(narURL.Hash),
+			entnarfile.CompressionEQ(narURL.Compression.String()),
+			entnarfile.QueryEQ(narURL.Query.Encode()),
+		).
+		Exec(ctx); err != nil {
 		return fmt.Errorf("error deleting narinfo from the database: %w", err)
 	}
 
@@ -5929,7 +5945,47 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 			// Get old compressed NAR files that are ready for deletion
 			cutoffTime := time.Now().Add(-c.GetCDCDeleteDelay())
 
-			oldFiles, err := c.db.GetOldCompressedNarFiles(ctx, cutoffTime)
+			// Two-step Ent equivalent of the legacy self-join: first
+			// gather the hashes that already have a chunked
+			// (compression='none', total_chunks>0) representation, then
+			// find the old compressed (total_chunks=0, compression!='none')
+			// records for those hashes whose created_at predates cutoff.
+			ent := c.dbClient.Ent()
+
+			var chunkedHashRows []struct {
+				Hash string `sql:"hash"`
+			}
+			if err := ent.NarFile.Query().
+				Where(
+					entnarfile.CompressionEQ("none"),
+					entnarfile.TotalChunksGT(0),
+				).
+				Select(entnarfile.FieldHash).
+				Scan(ctx, &chunkedHashRows); err != nil {
+				log.Error().Err(err).Msg("error fetching chunked NAR hashes for cleanup")
+
+				return err
+			}
+
+			if len(chunkedHashRows) == 0 {
+				log.Debug().Msg("no chunked NAR hashes found; nothing to clean")
+
+				return nil
+			}
+
+			chunkedHashes := make([]string, len(chunkedHashRows))
+			for i, r := range chunkedHashRows {
+				chunkedHashes[i] = r.Hash
+			}
+
+			oldFiles, err := ent.NarFile.Query().
+				Where(
+					entnarfile.TotalChunksEQ(0),
+					entnarfile.CompressionNEQ("none"),
+					entnarfile.CreatedAtLT(cutoffTime),
+					entnarfile.HashIn(chunkedHashes...),
+				).
+				All(ctx)
 			if err != nil {
 				log.Error().Err(err).Msg("error getting old compressed NAR files for cleanup")
 
@@ -5952,9 +6008,11 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 				}
 
 				// Delete from database first. If this fails, we'll retry on the next run.
-				if _, err := c.db.DeleteNarFileByID(ctx, oldFile.ID); err != nil {
+				if _, err := ent.NarFile.Delete().
+					Where(entnarfile.IDEQ(oldFile.ID)).
+					Exec(ctx); err != nil {
 					log.Error().Err(err).
-						Int64("id", oldFile.ID).
+						Int("id", oldFile.ID).
 						Msg("failed to delete old compressed NAR file record from database")
 
 					continue
@@ -6024,11 +6082,15 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 				batchSize = math.MaxInt32
 			}
 
-			//nolint:gosec // G115: batchSize is bounded by math.MaxInt32 above
-			stuckFiles, err := c.db.GetStuckNarFiles(ctx, database.GetStuckNarFilesParams{
-				CutoffTime: cutoffTime,
-				BatchSize:  int32(batchSize),
-			})
+			stuckFiles, err := c.dbClient.Ent().NarFile.Query().
+				Where(
+					entnarfile.TotalChunksEQ(0),
+					entnarfile.ChunkingStartedAtIsNil(),
+					entnarfile.CreatedAtLT(cutoffTime),
+				).
+				Order(ent.Asc(entnarfile.FieldID)).
+				Limit(batchSize).
+				All(ctx)
 			if err != nil {
 				log.Error().Err(err).Msg("error getting stuck NAR files for recovery")
 
@@ -6595,7 +6657,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 			// No chunks at current index yet — the CDC goroutine hasn't written them.
 			// Check whether chunking is complete or still in progress before waiting.
 			if totalChunks == 0 {
-				nr, queryErr := c.db.GetNarFileByID(ctx, narFileID)
+				nr, queryErr := c.dbClient.Ent().NarFile.Get(ctx, int(narFileID))
 				if queryErr != nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", queryErr)}
 
@@ -6605,7 +6667,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				totalChunks = nr.TotalChunks
 
 				// If total_chunks is still 0 but chunking_started_at is NULL, chunking was aborted.
-				if totalChunks == 0 && !nr.ChunkingStartedAt.Valid {
+				if totalChunks == 0 && nr.ChunkingStartedAt == nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
 
 					return
@@ -6678,7 +6740,8 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 				// Re-check NarFile record for abort or completion since the last
 				// empty batch; the CDC goroutine may have updated these fields.
-				nr2, narFileErr := c.db.GetNarFileByID(ctx, narFileID)
+
+				nr2, narFileErr := c.dbClient.Ent().NarFile.Get(ctx, int(narFileID))
 				if narFileErr != nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying nar file: %w", narFileErr)}
 
@@ -6695,7 +6758,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					break // More chunks now recorded; loop to batch-query them.
 				}
 
-				if !nr2.ChunkingStartedAt.Valid {
+				if nr2.ChunkingStartedAt == nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
 
 					return
