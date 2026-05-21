@@ -3851,10 +3851,10 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 		narURL *nar.URL
 	)
 
-	err := c.withTransaction(ctx, "getNarInfoFromDatabase", func(qtx database.Querier) error {
+	err := c.withEntTransaction(ctx, "getNarInfoFromDatabase", func(tx *ent.Tx) error {
 		var populateErr error
 
-		ni, narURL, populateErr = c.populateNarInfoFromDatabase(ctx, qtx, hash, true)
+		ni, narURL, populateErr = c.populateNarInfoFromDatabase(ctx, tx, hash, true)
 
 		return populateErr
 	})
@@ -3921,60 +3921,59 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 
 func (c *Cache) populateNarInfoFromDatabase(
 	ctx context.Context,
-	qtx database.Querier,
+	tx *ent.Tx,
 	hash string,
 	touch bool,
 ) (*narinfo.NarInfo, *nar.URL, error) {
-	nir, err := qtx.GetNarInfoByHash(ctx, hash)
+	nir, err := tx.NarInfo.Query().
+		Where(entnarinfo.HashEQ(hash)).
+		WithReferences().
+		WithSignatures().
+		Only(ctx)
 	if err != nil {
-		if database.IsNotFoundError(err) {
+		if ent.IsNotFound(err) {
 			return nil, nil, storage.ErrNotFound
 		}
 
 		return nil, nil, fmt.Errorf("error fetching the narinfo record from database: %w", err)
 	}
 
-	// If URL is not valid, it means this record hasn't been migrated yet
-	// (it might have been created by an older version of ncps as a placeholder).
-	if !nir.URL.Valid {
+	// If URL is nil/empty, the record hasn't been migrated yet (an
+	// older ncps version may have created it as a placeholder).
+	if nir.URL == nil || *nir.URL == "" {
 		return nil, nil, storage.ErrNotFound
 	}
 
 	ni := &narinfo.NarInfo{
-		StorePath:   nir.StorePath.String,
-		URL:         nir.URL.String,
-		Compression: nir.Compression.String,
-		FileSize:    uint64(nir.FileSize.Int64), //nolint:gosec
-		NarSize:     uint64(nir.NarSize.Int64),  //nolint:gosec
-		Deriver:     nir.Deriver.String,
-		System:      nir.System.String,
-		CA:          nir.Ca.String,
+		StorePath:   derefStringPtr(nir.StorePath),
+		URL:         *nir.URL,
+		Compression: derefStringPtr(nir.Compression),
+		//nolint:gosec // G115: file_size is non-negative by narinfos_file_size_nonneg CHECK
+		FileSize: uint64(derefInt64Ptr(nir.FileSize)),
+		//nolint:gosec // G115: nar_size is non-negative by narinfos_nar_size_nonneg CHECK
+		NarSize: uint64(derefInt64Ptr(nir.NarSize)),
+		Deriver: derefStringPtr(nir.Deriver),
+		System:  derefStringPtr(nir.System),
+		CA:      derefStringPtr(nir.Ca),
 	}
 
-	if ni.FileHash, err = parseValidHash(nir.FileHash, "file_hash"); err != nil {
+	if ni.FileHash, err = parseValidHashPtr(nir.FileHash, "file_hash"); err != nil {
 		return nil, nil, err
 	}
 
-	if ni.NarHash, err = parseValidHash(nir.NarHash, "nar_hash"); err != nil {
+	if ni.NarHash, err = parseValidHashPtr(nir.NarHash, "nar_hash"); err != nil {
 		return nil, nil, err
 	}
 
-	// Fetch references
-	ni.References, err = qtx.GetNarInfoReferences(ctx, nir.ID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error fetching narinfo references: %w", err)
+	// References and signatures came back via the eager-load.
+	for _, ref := range nir.Edges.References {
+		ni.References = append(ni.References, ref.Reference)
 	}
 
-	// Fetch signatures
-	sigs, err := qtx.GetNarInfoSignatures(ctx, nir.ID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error fetching narinfo signatures: %w", err)
-	}
-
-	for _, sigStr := range sigs {
-		sig, err := signature.ParseSignature(sigStr)
+	for _, s := range nir.Edges.Signatures {
+		sig, err := signature.ParseSignature(s.Signature)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error parsing signature %q: %w", sigStr, err)
+			return nil, nil, fmt.Errorf("error parsing signature %q: %w", s.Signature, err)
 		}
 
 		ni.Signatures = append(ni.Signatures, sig)
@@ -3986,10 +3985,13 @@ func (c *Cache) populateNarInfoFromDatabase(
 		return nil, nil, fmt.Errorf("error parsing nar URL %q: %w", ni.URL, err)
 	}
 
-	// Touch the record if needed
+	// Touch the record if needed.
 	if touch {
-		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
+		if nir.LastAccessedAt == nil || time.Since(*nir.LastAccessedAt) > c.recordAgeIgnoreTouch {
+			if _, err := tx.NarInfo.Update().
+				Where(entnarinfo.HashEQ(hash)).
+				SetLastAccessedAt(time.Now()).
+				Save(ctx); err != nil {
 				return nil, nil, fmt.Errorf("error touching the narinfo record: %w", err)
 			}
 		}
@@ -5185,7 +5187,7 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 // helper because the closures cascade through sqlc row-shape
 // consumers. Will become live as those callers convert.
 //
-//nolint:unused // exposed for the in-progress §11 caller migration;
+
 func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn func(tx *ent.Tx) error) error {
 	const (
 		maxAttempts  = 5
@@ -6134,18 +6136,42 @@ func (c *Cache) processHealthChanges(ctx context.Context, healthChangeCh <-chan 
 	}
 }
 
-func parseValidHash(hash sql.NullString, fieldName string) (*nixhash.HashWithEncoding, error) {
-	if !hash.Valid {
+// parseValidHashPtr parses an Ent-shape nullable hash field.
+// Nullable string fields come back as *string from Ent; nil or
+// empty string means "no hash".
+func parseValidHashPtr(hash *string, fieldName string) (*nixhash.HashWithEncoding, error) {
+	if hash == nil || *hash == "" {
 		//nolint:nilnil
 		return nil, nil
 	}
 
-	h, err := nixhash.ParseAny(hash.String, nil)
+	h, err := nixhash.ParseAny(*hash, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing %s: %w", fieldName, err)
 	}
 
 	return h, nil
+}
+
+// derefStringPtr returns "" if p is nil, *p otherwise. Ent's
+// nullable string fields come back as *string while the legacy
+// narinfo struct uses plain strings; this bridges the two.
+func derefStringPtr(p *string) string {
+	if p == nil {
+		return ""
+	}
+
+	return *p
+}
+
+// derefInt64Ptr returns 0 if p is nil, *p otherwise. Mirrors
+// derefStringPtr for int64-valued nullable Ent fields.
+func derefInt64Ptr(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+
+	return *p
 }
 
 // HasNarInChunks returns true if the NAR is already in chunks and chunking is complete.
