@@ -139,7 +139,7 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 
 - [x] 13.1 Add an `ent-codegen-drift-check` derivation in `nix/checks/` that runs `go generate ./ent/...` then `git diff --exit-code ./ent/`
 - [x] 13.2 Add an `ent-lint-check` derivation that runs `cmd/ent-lint --root .` and asserts zero `[FAIL]` lines
-- [ ] 13.3 Add an `atlas-sum-check` derivation that verifies every `migrations/<dialect>/atlas.sum` matches the directory contents
+- [x] 13.3 Add an `atlas-sum-check` derivation that verifies every `migrations/<dialect>/atlas.sum` matches the directory contents
 - [ ] 13.4 Add a `schema-equivalence-check` derivation that runs the §8 golden test for all three engines (uses process-compose deps)
 - [ ] 13.5 Verify `nix flake check` passes end-to-end with all four new derivations contributing
 - [ ] 13.6 Confirm the existing `.github/workflows/ci.yml` still passes (no edits expected — the new checks plug into `nix flake check`)

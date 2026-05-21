@@ -77,6 +77,27 @@
             doCheck = false;
           });
 
+          # atlas-sum-check verifies that the atlas.sum file in each
+          # migrations/<dialect>/ directory matches the directory's
+          # recomputed checksum. Drift indicates a hand-edit of a tracked
+          # migration without regenerating atlas.sum, which would break
+          # Atlas's replay validator.
+          atlas-sum-check = config.packages.ncps.overrideAttrs (_oa: {
+            name = "atlas-sum-check";
+            src = ../../.;
+            outputs = [ "out" ];
+            buildPhase = ''
+              HOME=$TMPDIR
+
+              go build -o ./atlas-sum-check ./cmd/atlas-sum-check
+              ./atlas-sum-check --root .
+            '';
+            installPhase = ''
+              touch $out
+            '';
+            doCheck = false;
+          });
+
           # ent-lint-check runs cmd/ent-lint against the Ent schema tree and
           # fails if any [FAIL] line appears in the output.
           ent-lint-check = config.packages.ncps.overrideAttrs (_oa: {
