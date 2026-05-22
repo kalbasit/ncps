@@ -16,9 +16,9 @@
 
 ## 3. Schema-parity test baseline (TDD)
 
-- [ ] 3.1 Write `pkg/database/contract_test.go` additions that assert exact column lists, nullability, indexes, FKs, and CHECK presence for `config`, `narinfos`, `narinfo_references`, `narinfo_signatures`, `nar_files`, `narinfo_nar_files`, `chunks`, `nar_file_chunks`
-- [ ] 3.2 Confirm the new tests pass against the current dbmate-applied schema for SQLite, PostgreSQL, and MySQL (via process-compose deps)
-- [ ] 3.3 Commit these tests separately — they form the regression bar that every subsequent step must preserve
+- [x] 3.1 Write `pkg/database/contract_test.go` additions that assert exact column lists, nullability, indexes, FKs, and CHECK presence for `config`, `narinfos`, `narinfo_references`, `narinfo_signatures`, `nar_files`, `narinfo_nar_files`, `chunks`, `nar_file_chunks`
+- [x] 3.2 Confirm the new tests pass against the current dbmate-applied schema for SQLite, PostgreSQL, and MySQL (via process-compose deps)
+- [x] 3.3 Commit these tests separately — they form the regression bar that every subsequent step must preserve
 
 ## 4. Ent schemas (one file per entity)
 
