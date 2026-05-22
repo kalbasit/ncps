@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"strconv"
 	"strings"
-	"sync"
 
 	"entgo.io/ent/dialect"
 	"github.com/pressly/goose/v3/database"
@@ -18,15 +17,10 @@ import (
 	ncpsdb "github.com/kalbasit/ncps/pkg/database"
 )
 
-// entCreateMu serialises Ent's Schema.Create across goroutines. Ent's
-// migrate.Tables is a package-level slice that Atlas's setupTables
-// mutates during Create, so concurrent fresh-install paths race. In
-// production only one ncps process calls migrate.Up at startup, but
-// the test suite runs many parallel scenarios — this mutex keeps the
-// tests honest without distorting production behaviour.
-//
-//nolint:gochecknoglobals // package-level synchronisation primitive
-var entCreateMu sync.Mutex
+// The Schema.Create serialisation mutex lives in pkg/database
+// (ncpsdb.SchemaCreateMu) so every caller in the process — this
+// package, pkg/database's own tests, and testhelper's
+// CreateMigrateDatabase — shares one source of truth.
 
 // freshInstall produces the entire Ent-expected schema on an empty
 // database via Ent's runtime `Schema.Create`, then seeds the goose
@@ -57,7 +51,7 @@ func freshInstall(
 	// 1. Ent's Schema.Create produces the application tables in one shot.
 	//    Serialise across goroutines — Ent mutates the package-level
 	//    migrate.Tables slice during Create, so concurrent callers race.
-	entCreateMu.Lock()
+	ncpsdb.SchemaCreateMu.Lock()
 
 	drv := entsql.OpenDB(entDialect, db)
 
@@ -65,14 +59,14 @@ func freshInstall(
 		entschema.WithDialect(entDialect),
 	)
 	if err != nil {
-		entCreateMu.Unlock()
+		ncpsdb.SchemaCreateMu.Unlock()
 
 		return fmt.Errorf("NewMigrate: %w", err)
 	}
 
 	createErr := m.Create(ctx, entmigrate.Tables...)
 
-	entCreateMu.Unlock()
+	ncpsdb.SchemaCreateMu.Unlock()
 
 	if createErr != nil {
 		return fmt.Errorf("Schema.Create: %w", createErr)

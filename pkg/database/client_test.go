@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"entgo.io/ent/dialect"
@@ -25,14 +24,6 @@ import (
 // errCallerSentinel is a static error returned by test callbacks to
 // verify rollback semantics.
 var errCallerSentinel = errors.New("caller error")
-
-// entCreateMu serialises Ent's Schema.Create across goroutines inside
-// this test binary (Ent mutates the package-level migrate.Tables slice
-// during Create — concurrent callers race). Mirrors the same guard in
-// pkg/database/migrate/fresh.go.
-//
-//nolint:gochecknoglobals // process-wide concurrency guard.
-var entCreateMu sync.Mutex
 
 func TestNewClient_NilDB(t *testing.T) {
 	t.Parallel()
@@ -237,24 +228,24 @@ func freshSchemaSQLite(t *testing.T) (*sql.DB, func()) {
 	sdb, err := sql.Open("sqlite3", "file:"+dbFile+"?_fk=1&_journal_mode=WAL&_busy_timeout=10000")
 	require.NoError(t, err)
 
-	entCreateMu.Lock()
+	database.SchemaCreateMu.Lock()
 
 	drv := entsql.OpenDB(dialect.SQLite, sdb)
 
 	m, err := entschema.NewMigrate(drv, entschema.WithDialect(dialect.SQLite))
 	if err != nil {
-		entCreateMu.Unlock()
+		database.SchemaCreateMu.Unlock()
 
 		t.Fatalf("NewMigrate: %v", err)
 	}
 
 	if createErr := m.Create(context.Background(), entmigrate.Tables...); createErr != nil {
-		entCreateMu.Unlock()
+		database.SchemaCreateMu.Unlock()
 
 		t.Fatalf("Schema.Create: %v", createErr)
 	}
 
-	entCreateMu.Unlock()
+	database.SchemaCreateMu.Unlock()
 
 	return sdb, func() { _ = sdb.Close() }
 }

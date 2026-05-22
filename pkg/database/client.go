@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 
 	"entgo.io/ent/dialect"
 
@@ -12,6 +13,16 @@ import (
 
 	"github.com/kalbasit/ncps/ent"
 )
+
+// SchemaCreateMu serialises Ent's Schema.Create across the process.
+// Ent mutates the package-level `migrate.Tables` slice during
+// Schema.Create; without a global lock, concurrent goroutines race on
+// that slice. Every code path that calls Schema.Create (fresh-install
+// in pkg/database/migrate, schema-bootstrap helpers in tests) must
+// acquire this mutex.
+//
+//nolint:gochecknoglobals // process-wide concurrency guard.
+var SchemaCreateMu sync.Mutex
 
 // ErrUnknownDialect is returned when a database.Type cannot be mapped to
 // an ent dialect string. Mirrors the sentinel in pkg/database/migrate.
