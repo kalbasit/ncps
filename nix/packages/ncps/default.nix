@@ -16,7 +16,7 @@
             in
             if tag != "" then tag else rev;
 
-          vendorHash = "sha256-esLcV66Zl997aYod7nnw0Gm2MNGJIf8q7lr3PF+ntkE=";
+          vendorHash = "sha256-i+5aLkQuY7xTlKeoXYNzU8tTPSd/qIX2V2lCToJC4YM=";
         in
         pkgs.buildGoModule {
           inherit version vendorHash;
@@ -44,6 +44,7 @@
               ../../../go.sum
               ../../../internal
               ../../../main.go
+              ../../../migrations
               ../../../nix/process-compose/init-minio.sh
               ../../../nix/process-compose/init-mysql.sh
               ../../../nix/process-compose/init-postgres.sh
