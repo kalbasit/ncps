@@ -94,7 +94,6 @@ func ByChunkField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newChunkStep(), sql.OrderByField(field, opts...))
 	}
 }
-
 func newNarFileStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -102,7 +101,6 @@ func newNarFileStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.M2O, true, NarFileTable, NarFileColumn),
 	)
 }
-
 func newChunkStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),

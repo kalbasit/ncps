@@ -181,7 +181,6 @@ func ByChunkLinks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newChunkLinksStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
-
 func newNarInfoNarFilesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -189,7 +188,6 @@ func newNarInfoNarFilesStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, NarInfoNarFilesTable, NarInfoNarFilesColumn),
 	)
 }
-
 func newChunkLinksStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),

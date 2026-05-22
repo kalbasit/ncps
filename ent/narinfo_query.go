@@ -521,7 +521,6 @@ func (_q *NarInfoQuery) loadReferences(ctx context.Context, query *NarInfoRefere
 	}
 	return nil
 }
-
 func (_q *NarInfoQuery) loadSignatures(ctx context.Context, query *NarInfoSignatureQuery, nodes []*NarInfo, init func(*NarInfo), assign func(*NarInfo, *NarInfoSignature)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int]*NarInfo)
@@ -552,7 +551,6 @@ func (_q *NarInfoQuery) loadSignatures(ctx context.Context, query *NarInfoSignat
 	}
 	return nil
 }
-
 func (_q *NarInfoQuery) loadNarInfoNarFiles(ctx context.Context, query *NarInfoNarFileQuery, nodes []*NarInfo, init func(*NarInfo), assign func(*NarInfo, *NarInfoNarFile)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int]*NarInfo)

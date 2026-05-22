@@ -473,7 +473,6 @@ func (_q *NarInfoNarFileQuery) loadNarinfo(ctx context.Context, query *NarInfoQu
 	}
 	return nil
 }
-
 func (_q *NarInfoNarFileQuery) loadNarFile(ctx context.Context, query *NarFileQuery, nodes []*NarInfoNarFile, init func(*NarInfoNarFile), assign func(*NarInfoNarFile, *NarFile)) error {
 	ids := make([]int, 0, len(nodes))
 	nodeids := make(map[int][]*NarInfoNarFile)

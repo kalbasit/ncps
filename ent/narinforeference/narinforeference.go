@@ -46,8 +46,10 @@ func ValidColumn(column string) bool {
 	return false
 }
 
-// ReferenceValidator is a validator for the "reference" field. It is called by the builders before save.
-var ReferenceValidator func(string) error
+var (
+	// ReferenceValidator is a validator for the "reference" field. It is called by the builders before save.
+	ReferenceValidator func(string) error
+)
 
 // OrderOption defines the ordering options for the NarInfoReference queries.
 type OrderOption func(*sql.Selector)
@@ -73,7 +75,6 @@ func ByNarinfoField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newNarinfoStep(), sql.OrderByField(field, opts...))
 	}
 }
-
 func newNarinfoStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
