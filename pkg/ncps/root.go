@@ -221,6 +221,7 @@ func New() (*cli.Command, error) {
 		},
 		Commands: []*cli.Command{
 			serveCommand(userDirs, flagSources, registerShutdown),
+			migrateCommand(flagSources),
 			migrateNarInfoCommand(flagSources, registerShutdown),
 			migrateNarToChunksCommand(flagSources, registerShutdown),
 			fsckCommand(flagSources, registerShutdown),
