@@ -4073,17 +4073,21 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
-	err := c.withTransaction(ctx, "purgeNarInfo", func(qtx database.Querier) error {
-		if _, err := qtx.DeleteNarInfoByHash(ctx, hash); err != nil {
+	err := c.withEntTransaction(ctx, "purgeNarInfo", func(tx *ent.Tx) error {
+		if _, err := tx.NarInfo.Delete().
+			Where(entnarinfo.HashEQ(hash)).
+			Exec(ctx); err != nil {
 			return fmt.Errorf("error deleting the narinfo record: %w", err)
 		}
 
 		if narURL.Hash != "" {
-			if _, err := qtx.DeleteNarFileByHash(ctx, database.DeleteNarFileByHashParams{
-				Hash:        narURL.Hash,
-				Compression: narURL.Compression.String(),
-				Query:       narURL.Query.Encode(),
-			}); err != nil {
+			if _, err := tx.NarFile.Delete().
+				Where(
+					entnarfile.HashEQ(narURL.Hash),
+					entnarfile.CompressionEQ(narURL.Compression.String()),
+					entnarfile.QueryEQ(narURL.Query.Encode()),
+				).
+				Exec(ctx); err != nil {
 				return fmt.Errorf("error deleting the nar record: %w", err)
 			}
 		}
@@ -4775,7 +4779,9 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 
 	// Delete from database (includes cascading deletes for references, signatures, and links)
 	if inDatabase {
-		if _, err := c.db.DeleteNarInfoByHash(ctx, hash); err != nil {
+		if _, err := c.dbClient.Ent().NarInfo.Delete().
+			Where(entnarinfo.HashEQ(hash)).
+			Exec(ctx); err != nil {
 			return fmt.Errorf("error deleting narinfo from the database: %w", err)
 		}
 
