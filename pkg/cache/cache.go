@@ -4626,46 +4626,6 @@ func narFileSize(ni *narinfo.NarInfo) uint64 {
 	return ni.NarSize
 }
 
-func createOrUpdateNarFile(
-	ctx context.Context,
-	qtx database.Querier,
-	narURL nar.URL,
-	fileSize uint64,
-) (int64, error) {
-	zerolog.Ctx(ctx).Debug().
-		Str("hash", narURL.Hash).
-		Str("compression", narURL.Compression.String()).
-		Uint64("file_size", fileSize).
-		Msg("createOrUpdateNarFile: creating nar_file record")
-
-	// Create (or update existing) nar_file record.
-	// The query uses ON CONFLICT DO UPDATE (or ON DUPLICATE KEY UPDATE), so duplicates are handled
-	// by updating the timestamp and returning the record.
-	newNarFile, err := qtx.CreateNarFile(ctx, database.CreateNarFileParams{
-		Hash:        narURL.Hash,
-		Compression: narURL.Compression.String(),
-		Query:       narURL.Query.Encode(),
-		FileSize:    fileSize,
-	})
-	if err != nil {
-		zerolog.Ctx(ctx).Error().
-			Err(err).
-			Str("hash", narURL.Hash).
-			Str("compression", narURL.Compression.String()).
-			Msg("createOrUpdateNarFile: CreateNarFile failed")
-
-		return 0, fmt.Errorf("error creating or updating nar_file record in the database: %w", err)
-	}
-
-	zerolog.Ctx(ctx).Debug().
-		Int64("nar_file_id", newNarFile.ID).
-		Str("hash", narURL.Hash).
-		Str("compression", narURL.Compression.String()).
-		Msg("createOrUpdateNarFile: CreateNarFile succeeded")
-
-	return newNarFile.ID, nil
-}
-
 // MigrateNarInfoToDatabase migrates a single narinfo from storage to the database.
 // It uses distributed locking to coordinate with other instances (if Redis is configured).
 // This is a convenience wrapper around MigrateNarInfo for use within the Cache.
@@ -4680,7 +4640,7 @@ func (c *Cache) MigrateNarInfoToDatabase(
 		narInfoStore = c.narInfoStore
 	}
 
-	return MigrateNarInfo(ctx, c.downloadLocker, c.db, narInfoStore, hash, ni)
+	return MigrateNarInfo(ctx, c.downloadLocker, c.db, c.dbClient, narInfoStore, hash, ni)
 }
 
 // MigrateNarInfo migrates a single narinfo from storage to the database.
@@ -4690,7 +4650,10 @@ func (c *Cache) MigrateNarInfoToDatabase(
 // Parameters:
 //   - ctx: Context for the operation
 //   - locker: Distributed locker for coordination (can be in-memory for single-instance)
-//   - db: Database querier for storing the narinfo
+//   - db: Database querier (legacy; kept for the pre-lock double-check
+//     until §11 fully retires the Querier surface)
+//   - dbClient: Ent-backed client used by storeNarInfoInDatabase for
+//     the actual UPSERT pipeline
 //   - narInfoStore: Optional storage backend to delete from after migration (nil to skip deletion)
 //   - hash: The narinfo hash to migrate
 //   - ni: The parsed narinfo to migrate
@@ -4701,6 +4664,7 @@ func MigrateNarInfo(
 	ctx context.Context,
 	locker lock.Locker,
 	db database.Querier,
+	dbClient *database.Client,
 	narInfoStore storage.NarInfoStore,
 	hash string,
 	ni *narinfo.NarInfo,
@@ -4750,7 +4714,7 @@ func MigrateNarInfo(
 	}
 
 	// Store narinfo in database using the UPSERT logic from storeInDatabase
-	err = storeNarInfoInDatabase(ctx, db, hash, ni)
+	err = storeNarInfoInDatabase(ctx, dbClient, hash, ni)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to migrate narinfo to database")
 
@@ -4810,121 +4774,57 @@ func MigrateNarInfo(
 	return nil
 }
 
-// storeNarInfoInDatabase is extracted from Cache.storeInDatabase for use by migration.
-// It contains the core UPSERT logic without Cache dependencies.
-func storeNarInfoInDatabase(ctx context.Context, db database.Querier, hash string, narInfo *narinfo.NarInfo) error {
-	tx, err := db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("error beginning transaction: %w", err)
-	}
-
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			if !errors.Is(err, sql.ErrTxDone) {
-				zerolog.Ctx(ctx).Error().Err(err).Msg("error rolling back transaction")
-			}
+// storeNarInfoInDatabase is the Cache-free counterpart to
+// Cache.storeInDatabase. Used by MigrateNarInfo (which has no *Cache
+// reference). Shares the same Ent helpers — upsertNarInfoFromParsed,
+// addNarInfoReferences, addNarInfoSignatures, createOrUpdateNarFileEnt
+// — defined alongside Cache.storeInDatabase.
+func storeNarInfoInDatabase(
+	ctx context.Context,
+	dbClient *database.Client,
+	hash string,
+	narInfo *narinfo.NarInfo,
+) error {
+	return dbClient.WithTransaction(ctx, "storeNarInfoInDatabase", func(tx *ent.Tx) error {
+		nir, err := upsertNarInfoFromParsed(ctx, tx, hash, narInfo)
+		if err != nil {
+			return err
 		}
-	}()
 
-	qtx := db.WithTx(tx)
-
-	createNarInfoParams := database.CreateNarInfoParams{
-		Hash:        hash,
-		StorePath:   sql.NullString{String: narInfo.StorePath, Valid: narInfo.StorePath != ""},
-		URL:         sql.NullString{String: narInfo.URL, Valid: narInfo.URL != ""},
-		Compression: sql.NullString{String: narInfo.Compression, Valid: narInfo.Compression != ""},
-		FileSize:    sql.NullInt64{Int64: int64(narInfo.FileSize), Valid: true}, //nolint:gosec
-		NarSize:     sql.NullInt64{Int64: int64(narInfo.NarSize), Valid: true},  //nolint:gosec
-		Deriver:     sql.NullString{String: narInfo.Deriver, Valid: narInfo.Deriver != ""},
-		System:      sql.NullString{String: narInfo.System, Valid: narInfo.System != ""},
-		Ca:          sql.NullString{String: narInfo.CA, Valid: narInfo.CA != ""},
-	}
-
-	if narInfo.FileHash != nil {
-		createNarInfoParams.FileHash = sql.NullString{String: narInfo.FileHash.String(), Valid: true}
-	}
-
-	if narInfo.NarHash != nil {
-		createNarInfoParams.NarHash = sql.NullString{String: narInfo.NarHash.String(), Valid: true}
-	}
-
-	nir, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
-	if err != nil {
-		// Handle UPSERT behavior (see Cache.storeInDatabase for full comments)
-		if database.IsNotFoundError(err) {
-			nir, err = qtx.GetNarInfoByHash(ctx, hash)
-			if err != nil {
-				return fmt.Errorf("upsert returned no rows (record exists with valid URL), failed to fetch: %w", err)
-			}
-		} else {
-			return fmt.Errorf("error inserting the narinfo record for hash %q in the database: %w", hash, err)
+		if err := addNarInfoReferences(ctx, tx, nir.ID, narInfo.References); err != nil {
+			return err
 		}
-	}
 
-	if len(narInfo.References) > 0 {
-		if err := qtx.AddNarInfoReferences(ctx, database.AddNarInfoReferencesParams{
-			NarInfoID: nir.ID,
-			Reference: narInfo.References,
-		}); err != nil {
-			// Duplicate key errors are expected with UPSERT
-			if !database.IsDuplicateKeyError(err) {
-				return fmt.Errorf("error inserting narinfo reference: %w", err)
-			}
+		if err := addNarInfoSignatures(ctx, tx, nir.ID, narInfo.Signatures); err != nil {
+			return err
 		}
-	}
 
-	// Signatures
-	sigStrings := make([]string, len(narInfo.Signatures))
-	for i, sig := range narInfo.Signatures {
-		sigStrings[i] = sig.String()
-	}
-
-	if len(sigStrings) > 0 {
-		if err := qtx.AddNarInfoSignatures(ctx, database.AddNarInfoSignaturesParams{
-			NarInfoID: nir.ID,
-			Signature: sigStrings,
-		}); err != nil {
-			// Duplicate key errors are expected with UPSERT
-			if !database.IsDuplicateKeyError(err) {
-				return fmt.Errorf("error inserting narinfo signature: %w", err)
-			}
+		narURL, err := nar.ParseURL(narInfo.URL)
+		if err != nil {
+			return fmt.Errorf("error parsing the nar URL: %w", err)
 		}
-	}
 
-	narURL, err := nar.ParseURL(narInfo.URL)
-	if err != nil {
-		return fmt.Errorf("error parsing the nar URL: %w", err)
-	}
+		normalizedNarURL, err := narURL.Normalize()
+		if err != nil {
+			return fmt.Errorf("error normalizing the nar URL: %w", err)
+		}
 
-	// Normalize the NAR URL to remove any narinfo hash prefix.
-	// This ensures nar_files.hash matches what's actually stored in the storage layer.
-	normalizedNarURL, err := narURL.Normalize()
-	if err != nil {
-		return fmt.Errorf("error normalizing the nar URL: %w", err)
-	}
+		narFileID, err := createOrUpdateNarFileEnt(ctx, tx, normalizedNarURL, narFileSize(narInfo))
+		if err != nil {
+			return err
+		}
 
-	// Create or get nar_file record
-	narFileID, err := createOrUpdateNarFile(ctx, qtx, normalizedNarURL, narFileSize(narInfo))
-	if err != nil {
-		return err
-	}
-
-	// Link narinfo to nar_file
-	if err := qtx.LinkNarInfoToNarFile(ctx, database.LinkNarInfoToNarFileParams{
-		NarInfoID: nir.ID,
-		NarFileID: narFileID,
-	}); err != nil {
-		// Duplicate key errors are expected with UPSERT
-		if !database.IsDuplicateKeyError(err) {
+		if err := tx.NarInfoNarFile.Create().
+			SetNarinfoID(nir.ID).
+			SetNarFileID(narFileID).
+			OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+			Ignore().
+			Exec(ctx); err != nil {
 			return fmt.Errorf("error linking narinfo to nar_file: %w", err)
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing transaction: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func (c *Cache) backgroundMigrateNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) {

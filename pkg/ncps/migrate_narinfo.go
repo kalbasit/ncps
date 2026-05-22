@@ -201,7 +201,7 @@ requests. Without Redis, the command uses in-memory locking (no coordination wit
 			dryRun := cmd.Bool("dry-run")
 
 			// 1. Setup Database
-			db, _, err := createDatabaseQuerier(cmd)
+			db, dbClient, err := createDatabaseQuerier(cmd)
 			if err != nil {
 				logger.Error().Err(err).Msg("error creating database querier")
 
@@ -374,7 +374,7 @@ requests. Without Redis, the command uses in-memory locking (no coordination wit
 
 					// Use the shared migration function from pkg/cache
 					// Pass narInfoStore to enable deletion after migration
-					if err := cache.MigrateNarInfo(ctxWithLog, locker, db, narInfoStore, hash, ni); err != nil {
+					if err := cache.MigrateNarInfo(ctxWithLog, locker, db, dbClient, narInfoStore, hash, ni); err != nil {
 						log.Error().Err(err).Msg("failed to migrate narinfo")
 						atomic.AddInt32(&totalFailed, 1)
 						RecordMigrationObject(ctxWithLog, MigrationTypeNarInfoToDB, MigrationOperationMigrate, MigrationResultFailure)

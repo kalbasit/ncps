@@ -24,6 +24,7 @@ import (
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
+	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -2021,7 +2022,10 @@ func testBackgroundMigrateNarInfoThunderingHerd(_ cacheFactory) func(*testing.T)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o700))
 		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
 
-		// Create a spy that captures calls to GetNarInfoByHash
+		// Create a spy that captures Querier-level GetNarInfoByHash
+		// calls (legacy observation hook). NarInfo create calls now
+		// flow through dbClient/Ent; we instrument them via an
+		// Ent NarInfo create hook below.
 		spy := &migrationSpy{
 			Querier:               db,
 			getNarInfoByHashCalls: new(int),
@@ -2031,6 +2035,23 @@ func testBackgroundMigrateNarInfoThunderingHerd(_ cacheFactory) func(*testing.T)
 
 		// Increase MaxOpenConns to avoid deadlocks during concurrent transactions in the test
 		db.DB().SetMaxOpenConns(10)
+
+		// Ent hook: count NarInfo create mutations. With §11.3's
+		// MigrateNarInfo conversion the create flows through dbClient
+		// rather than the Querier-shaped spy, so this is the only
+		// reliable observation point. Atomic since concurrent
+		// GetNarInfo goroutines may hit it simultaneously.
+		dbClient.Ent().NarInfo.Use(func(next ent.Mutator) ent.Mutator {
+			return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+				if m.Op() == ent.OpCreate {
+					spy.mu.Lock()
+					*spy.createNarInfoCalls++
+					spy.mu.Unlock()
+				}
+
+				return next.Mutate(ctx, m)
+			})
+		})
 
 		c, err := newTestCache(newContext(), "test.example.com", spy, dbClient, localStore, localStore, localStore, "")
 		require.NoError(t, err)
