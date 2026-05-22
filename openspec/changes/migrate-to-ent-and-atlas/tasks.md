@@ -7,12 +7,12 @@
 
 ## 2. Foundation setup
 
-- [ ] 2.1 Add `entgo.io/ent`, `ariga.io/atlas`, `github.com/pressly/goose/v3` as direct requires in `go.mod`
-- [ ] 2.2 Pin `entgo.io/ent/cmd/ent` in the `tool ()` directive in `go.mod`
-- [ ] 2.3 Add `go-task` to the Nix dev shell in `flake.nix` and confirm `task --version` resolves inside `nix develop`
-- [ ] 2.4 Create `Taskfile.dist.yml` at the repo root with `ent:generate`, `ent:lint`, `ent:check`, `migrations:gen`, and `migrations:sql` tasks per the design's D8
-- [ ] 2.5 Run `task --list` and verify the five expected tasks are discoverable
-- [ ] 2.6 Add `entgo.io/ent` go-generate marker file at `ent/generate.go` containing `//go:generate go tool ent generate ./schema`
+- [x] 2.1 Add `entgo.io/ent`, `ariga.io/atlas`, `github.com/pressly/goose/v3` as direct requires in `go.mod`
+- [x] 2.2 Pin `entgo.io/ent/cmd/ent` in the `tool ()` directive in `go.mod`
+- [x] 2.3 Add `go-task` to the Nix dev shell in `flake.nix` and confirm `task --version` resolves inside `nix develop`
+- [x] 2.4 Create `Taskfile.dist.yml` at the repo root with `ent:generate`, `ent:lint`, `ent:check`, `migrations:gen`, and `migrations:sql` tasks per the design's D8
+- [x] 2.5 Run `task --list` and verify the five expected tasks are discoverable
+- [x] 2.6 Add `entgo.io/ent` go-generate marker file at `ent/generate.go` containing `//go:generate go tool ent generate ./schema`
 
 ## 3. Schema-parity test baseline (TDD)
 

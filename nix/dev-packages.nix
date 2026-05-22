@@ -4,6 +4,7 @@
 # Usage: import ./dev-packages.nix pkgs
 pkgs: with pkgs; [
   go
+  go-task
   golangci-lint
   sqlc
   sqlfluff

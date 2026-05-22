@@ -1,0 +1,53 @@
+# Taskfile.dist.yml — developer workflow tasks for ncps.
+#
+# Override locally by creating Taskfile.yml (gitignored) that "includes" this
+# file or redefines individual tasks.
+#
+# Run `task --list` to see all available tasks.
+version: "3"
+tasks:
+  ent:generate:
+    desc: Regenerate the Ent client from ent/schema/*.go
+    method: checksum
+    sources:
+      - "ent/schema/*.go"
+      - "ent/generate.go"
+    generates:
+      - "ent/**/*.go"
+    cmds:
+      - go generate ./ent/...
+  ent:lint:
+    desc: Lint Ent schema source and generated baseline migrations for codegen invariants
+    cmds:
+      - go run ./cmd/ent-lint --root .
+  ent:check:
+    desc: Verify Ent code is up to date and lints cleanly
+    deps:
+      - ent:generate
+    cmds:
+      - git diff --exit-code ./ent/
+      - task: ent:lint
+  migrations:gen:
+    desc: |
+      Generate new schema-driven migrations for all dialects.
+      Usage: task migrations:gen NAME=add_fields
+    vars:
+      NAME: "{{.NAME}}"
+    preconditions:
+      - sh: '[ -n "{{.NAME}}" ]'
+        msg: "NAME is required. Usage: task migrations:gen NAME=descriptive_name"
+    deps:
+      - ent:generate
+    cmds:
+      - go run ./cmd/generate-migrations --name {{.NAME}}
+  migrations:sql:
+    desc: |
+      Create empty SQL-only migration stubs for all dialects.
+      Usage: task migrations:sql NAME=backfill_foo
+    vars:
+      NAME: "{{.NAME}}"
+    preconditions:
+      - sh: '[ -n "{{.NAME}}" ]'
+        msg: "NAME is required. Usage: task migrations:sql NAME=descriptive_name"
+    cmds:
+      - go run ./cmd/generate-migrations --sql-only --name {{.NAME}}
