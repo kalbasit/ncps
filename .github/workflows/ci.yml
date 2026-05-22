@@ -27,7 +27,7 @@ jobs:
       cachix_cache: ncps
       oci: true
       primary_package: ncps
-      images: kalbasit/ncps
+      dockerhub_image: kalbasit/ncps
       dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
       languages: |
         {"go":{"packages":["ncps"]}}
