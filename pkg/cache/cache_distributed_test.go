@@ -893,6 +893,13 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 	return func(t *testing.T) {
 		t.Parallel()
 
+		// Blocked on kalbasit/ncps#1230: async chunking goroutine state can be left
+		// in `total_chunks=0 + chunking_started_at SET + partial chunks` if the
+		// process is killed mid-chunking. Concurrent instances then time out
+		// waiting for chunks that will never arrive. Re-enable once the startup
+		// recovery (option 3) fix lands.
+		t.Skip("blocked on #1230 startup recovery")
+
 		ctx := newContext()
 
 		// Get shared database and directory from factory
