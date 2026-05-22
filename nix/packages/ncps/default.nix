@@ -16,7 +16,7 @@
             in
             if tag != "" then tag else rev;
 
-          vendorHash = "sha256-msHGDKU1HutZ6ovp2/1nKYDcgfRrJ8Vi6XJHt62wQAU=";
+          vendorHash = "sha256-xfNIzw+wXW7iR71ZGJddBd5oQKsOcMGmCkdIJsN0vB0=";
         in
         pkgs.buildGoModule {
           inherit version vendorHash;
@@ -112,9 +112,6 @@
           '';
 
           postInstall = ''
-            mkdir -p $out/share/ncps
-            cp -r db $out/share/ncps/db
-
             # ncps makes use of xz for decompression as it's 3-5x faster than
             # using the native Go implementation of xz. By wrapping ncps, and
             # setting the XZ_BINARY_PATH environment variable, we ensure that
