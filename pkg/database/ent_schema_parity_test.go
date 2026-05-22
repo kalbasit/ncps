@@ -50,7 +50,14 @@ func TestEntSchemaParity(t *testing.T) {
 	drv := entsql.OpenDB(dialect.SQLite, sqlDB)
 	m, err := schema.NewMigrate(drv)
 	require.NoError(t, err)
-	require.NoError(t, m.Create(context.Background(), migrate.Tables...))
+
+	database.SchemaCreateMu.Lock()
+
+	createErr := m.Create(context.Background(), migrate.Tables...)
+
+	database.SchemaCreateMu.Unlock()
+
+	require.NoError(t, createErr)
 
 	// Wrap the freshly-built database in a Querier for the parity helpers.
 	q, err := database.Open("sqlite:"+dbFile, nil)
