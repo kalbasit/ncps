@@ -107,9 +107,9 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 
 ## 10. `pkg/database/` rewrite
 
-- [ ] 10.1 Replace `database.Querier` return type with `*database.Client` (wraps `*ent.Client` + driver metadata) in `database.Open(url, poolCfg)`
-- [ ] 10.2 Implement `(*database.Client).WithTransaction(ctx, name, fn func(*ent.Tx) error) error` preserving the OTel span/error wrapping the legacy helper provided
-- [ ] 10.3 Keep `database.DetectFromDatabaseURL` and `database.PoolConfig` as-is; verify their tests still pass
+- [x] 10.1 Replace `database.Querier` return type with `*database.Client` (wraps `*ent.Client` + driver metadata) in `database.Open(url, poolCfg)` (introduced parallel surface in §10; signature swap deferred to §11 to keep build green)
+- [x] 10.2 Implement `(*database.Client).WithTransaction(ctx, name, fn func(*ent.Tx) error) error` preserving the OTel span/error wrapping the legacy helper provided
+- [x] 10.3 Keep `database.DetectFromDatabaseURL` and `database.PoolConfig` as-is; verify their tests still pass
 
 ## 11. Caller migration
 
