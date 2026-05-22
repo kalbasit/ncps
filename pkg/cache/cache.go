@@ -5175,6 +5175,62 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 	return fmt.Errorf("transaction for %s failed after %d attempts: %w", operation, maxAttempts, err)
 }
 
+// withEntTransaction is the Ent-backed counterpart to withTransaction.
+// It wraps c.dbClient.WithTransaction with the same deadlock-retry
+// policy. Once §11.2-§11.5 finish converting every call site away
+// from the qtx-style Querier closures, withTransaction (and the
+// underlying executeTransaction) can be deleted.
+//
+// the first batch of conversions in §11.2 still uses the legacy
+// helper because the closures cascade through sqlc row-shape
+// consumers. Will become live as those callers convert.
+//
+//nolint:unused // exposed for the in-progress §11 caller migration;
+func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn func(tx *ent.Tx) error) error {
+	const (
+		maxAttempts  = 5
+		initialDelay = 50 * time.Millisecond
+	)
+
+	var (
+		err   error
+		delay = initialDelay
+	)
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err = c.dbClient.WithTransaction(ctx, operation, fn)
+		if err == nil {
+			return nil
+		}
+
+		// Only retry on deadlock/busy errors
+		if !database.IsDeadlockError(err) {
+			return err
+		}
+
+		if attempt == maxAttempts {
+			break
+		}
+
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(err).
+			Str("operation", operation).
+			Int("attempt", attempt).
+			Dur("delay", delay).
+			Msg("database deadlock/busy, retrying transaction")
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			delay *= 2
+		}
+	}
+
+	return fmt.Errorf("transaction for %s failed after %d attempts: %w", operation, maxAttempts, err)
+}
+
 func (c *Cache) executeTransaction(ctx context.Context, operation string, fn func(qtx database.Querier) error) error {
 	zerolog.Ctx(ctx).Debug().
 		Str("operation", operation).
