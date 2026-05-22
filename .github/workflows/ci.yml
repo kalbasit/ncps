@@ -22,7 +22,7 @@ permissions:
   packages: write
 jobs:
   shared:
-    uses: kalbasit/gh-actions/.github/workflows/ci.yml@main
+    uses: kalbasit/gh-actions/.github/workflows/ci.yml@feat-add-reusable-ci-workflows
     with:
       cachix_cache: ncps
       oci: true
