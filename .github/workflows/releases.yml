@@ -8,12 +8,14 @@ on:
       - "v*.*.*"
 jobs:
   build:
-    uses: ./.github/workflows/build.yml
+    uses: kalbasit/gh-actions/.github/workflows/build.yml@feat-add-reusable-ci-workflows
     with:
-      systems: "['x86_64-linux', 'aarch64-linux']"
+      systems: '["x86_64-linux", "aarch64-linux"]'
       images: kalbasit/ncps
+      cachix_cache: ncps
+      primary_package: ncps
       dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
-      push_images: true
+      push_oci: true
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
