@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/kalbasit/ncps/ent/configentry"
@@ -18,6 +19,7 @@ type ConfigEntryCreate struct {
 	config
 	mutation *ConfigEntryMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetCreatedAt sets the "created_at" field.
@@ -148,6 +150,7 @@ func (_c *ConfigEntryCreate) createSpec() (*ConfigEntry, *sqlgraph.CreateSpec) {
 		_node = &ConfigEntry{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(configentry.Table, sqlgraph.NewFieldSpec(configentry.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(configentry.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
@@ -167,11 +170,230 @@ func (_c *ConfigEntryCreate) createSpec() (*ConfigEntry, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.ConfigEntry.Create().
+//		SetCreatedAt(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.ConfigEntryUpsert) {
+//			SetCreatedAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *ConfigEntryCreate) OnConflict(opts ...sql.ConflictOption) *ConfigEntryUpsertOne {
+	_c.conflict = opts
+	return &ConfigEntryUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.ConfigEntry.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *ConfigEntryCreate) OnConflictColumns(columns ...string) *ConfigEntryUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &ConfigEntryUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// ConfigEntryUpsertOne is the builder for "upsert"-ing
+	//  one ConfigEntry node.
+	ConfigEntryUpsertOne struct {
+		create *ConfigEntryCreate
+	}
+
+	// ConfigEntryUpsert is the "OnConflict" setter.
+	ConfigEntryUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *ConfigEntryUpsert) SetUpdatedAt(v time.Time) *ConfigEntryUpsert {
+	u.Set(configentry.FieldUpdatedAt, v)
+	return u
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *ConfigEntryUpsert) UpdateUpdatedAt() *ConfigEntryUpsert {
+	u.SetExcluded(configentry.FieldUpdatedAt)
+	return u
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *ConfigEntryUpsert) ClearUpdatedAt() *ConfigEntryUpsert {
+	u.SetNull(configentry.FieldUpdatedAt)
+	return u
+}
+
+// SetKey sets the "key" field.
+func (u *ConfigEntryUpsert) SetKey(v string) *ConfigEntryUpsert {
+	u.Set(configentry.FieldKey, v)
+	return u
+}
+
+// UpdateKey sets the "key" field to the value that was provided on create.
+func (u *ConfigEntryUpsert) UpdateKey() *ConfigEntryUpsert {
+	u.SetExcluded(configentry.FieldKey)
+	return u
+}
+
+// SetValue sets the "value" field.
+func (u *ConfigEntryUpsert) SetValue(v string) *ConfigEntryUpsert {
+	u.Set(configentry.FieldValue, v)
+	return u
+}
+
+// UpdateValue sets the "value" field to the value that was provided on create.
+func (u *ConfigEntryUpsert) UpdateValue() *ConfigEntryUpsert {
+	u.SetExcluded(configentry.FieldValue)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// Using this option is equivalent to using:
+//
+//	client.ConfigEntry.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *ConfigEntryUpsertOne) UpdateNewValues() *ConfigEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.CreatedAt(); exists {
+			s.SetIgnore(configentry.FieldCreatedAt)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.ConfigEntry.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *ConfigEntryUpsertOne) Ignore() *ConfigEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *ConfigEntryUpsertOne) DoNothing() *ConfigEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the ConfigEntryCreate.OnConflict
+// documentation for more info.
+func (u *ConfigEntryUpsertOne) Update(set func(*ConfigEntryUpsert)) *ConfigEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&ConfigEntryUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *ConfigEntryUpsertOne) SetUpdatedAt(v time.Time) *ConfigEntryUpsertOne {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *ConfigEntryUpsertOne) UpdateUpdatedAt() *ConfigEntryUpsertOne {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *ConfigEntryUpsertOne) ClearUpdatedAt() *ConfigEntryUpsertOne {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.ClearUpdatedAt()
+	})
+}
+
+// SetKey sets the "key" field.
+func (u *ConfigEntryUpsertOne) SetKey(v string) *ConfigEntryUpsertOne {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.SetKey(v)
+	})
+}
+
+// UpdateKey sets the "key" field to the value that was provided on create.
+func (u *ConfigEntryUpsertOne) UpdateKey() *ConfigEntryUpsertOne {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.UpdateKey()
+	})
+}
+
+// SetValue sets the "value" field.
+func (u *ConfigEntryUpsertOne) SetValue(v string) *ConfigEntryUpsertOne {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.SetValue(v)
+	})
+}
+
+// UpdateValue sets the "value" field to the value that was provided on create.
+func (u *ConfigEntryUpsertOne) UpdateValue() *ConfigEntryUpsertOne {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.UpdateValue()
+	})
+}
+
+// Exec executes the query.
+func (u *ConfigEntryUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for ConfigEntryCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *ConfigEntryUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *ConfigEntryUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *ConfigEntryUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // ConfigEntryCreateBulk is the builder for creating many ConfigEntry entities in bulk.
 type ConfigEntryCreateBulk struct {
 	config
 	err      error
 	builders []*ConfigEntryCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the ConfigEntry entities in the database.
@@ -201,6 +423,7 @@ func (_c *ConfigEntryCreateBulk) Save(ctx context.Context) ([]*ConfigEntry, erro
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -251,6 +474,166 @@ func (_c *ConfigEntryCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *ConfigEntryCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.ConfigEntry.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.ConfigEntryUpsert) {
+//			SetCreatedAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *ConfigEntryCreateBulk) OnConflict(opts ...sql.ConflictOption) *ConfigEntryUpsertBulk {
+	_c.conflict = opts
+	return &ConfigEntryUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.ConfigEntry.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *ConfigEntryCreateBulk) OnConflictColumns(columns ...string) *ConfigEntryUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &ConfigEntryUpsertBulk{
+		create: _c,
+	}
+}
+
+// ConfigEntryUpsertBulk is the builder for "upsert"-ing
+// a bulk of ConfigEntry nodes.
+type ConfigEntryUpsertBulk struct {
+	create *ConfigEntryCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.ConfigEntry.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *ConfigEntryUpsertBulk) UpdateNewValues() *ConfigEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.CreatedAt(); exists {
+				s.SetIgnore(configentry.FieldCreatedAt)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.ConfigEntry.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *ConfigEntryUpsertBulk) Ignore() *ConfigEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *ConfigEntryUpsertBulk) DoNothing() *ConfigEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the ConfigEntryCreateBulk.OnConflict
+// documentation for more info.
+func (u *ConfigEntryUpsertBulk) Update(set func(*ConfigEntryUpsert)) *ConfigEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&ConfigEntryUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *ConfigEntryUpsertBulk) SetUpdatedAt(v time.Time) *ConfigEntryUpsertBulk {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *ConfigEntryUpsertBulk) UpdateUpdatedAt() *ConfigEntryUpsertBulk {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *ConfigEntryUpsertBulk) ClearUpdatedAt() *ConfigEntryUpsertBulk {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.ClearUpdatedAt()
+	})
+}
+
+// SetKey sets the "key" field.
+func (u *ConfigEntryUpsertBulk) SetKey(v string) *ConfigEntryUpsertBulk {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.SetKey(v)
+	})
+}
+
+// UpdateKey sets the "key" field to the value that was provided on create.
+func (u *ConfigEntryUpsertBulk) UpdateKey() *ConfigEntryUpsertBulk {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.UpdateKey()
+	})
+}
+
+// SetValue sets the "value" field.
+func (u *ConfigEntryUpsertBulk) SetValue(v string) *ConfigEntryUpsertBulk {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.SetValue(v)
+	})
+}
+
+// UpdateValue sets the "value" field to the value that was provided on create.
+func (u *ConfigEntryUpsertBulk) UpdateValue() *ConfigEntryUpsertBulk {
+	return u.Update(func(s *ConfigEntryUpsert) {
+		s.UpdateValue()
+	})
+}
+
+// Exec executes the query.
+func (u *ConfigEntryUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the ConfigEntryCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for ConfigEntryCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *ConfigEntryUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

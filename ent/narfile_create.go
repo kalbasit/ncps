@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/kalbasit/ncps/ent/narfile"
@@ -20,6 +21,7 @@ type NarFileCreate struct {
 	config
 	mutation *NarFileMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetCreatedAt sets the "created_at" field.
@@ -284,6 +286,7 @@ func (_c *NarFileCreate) createSpec() (*NarFile, *sqlgraph.CreateSpec) {
 		_node = &NarFile{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(narfile.Table, sqlgraph.NewFieldSpec(narfile.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(narfile.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
@@ -359,11 +362,451 @@ func (_c *NarFileCreate) createSpec() (*NarFile, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.NarFile.Create().
+//		SetCreatedAt(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.NarFileUpsert) {
+//			SetCreatedAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *NarFileCreate) OnConflict(opts ...sql.ConflictOption) *NarFileUpsertOne {
+	_c.conflict = opts
+	return &NarFileUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.NarFile.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *NarFileCreate) OnConflictColumns(columns ...string) *NarFileUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &NarFileUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// NarFileUpsertOne is the builder for "upsert"-ing
+	//  one NarFile node.
+	NarFileUpsertOne struct {
+		create *NarFileCreate
+	}
+
+	// NarFileUpsert is the "OnConflict" setter.
+	NarFileUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *NarFileUpsert) SetUpdatedAt(v time.Time) *NarFileUpsert {
+	u.Set(narfile.FieldUpdatedAt, v)
+	return u
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateUpdatedAt() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldUpdatedAt)
+	return u
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *NarFileUpsert) ClearUpdatedAt() *NarFileUpsert {
+	u.SetNull(narfile.FieldUpdatedAt)
+	return u
+}
+
+// SetHash sets the "hash" field.
+func (u *NarFileUpsert) SetHash(v string) *NarFileUpsert {
+	u.Set(narfile.FieldHash, v)
+	return u
+}
+
+// UpdateHash sets the "hash" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateHash() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldHash)
+	return u
+}
+
+// SetCompression sets the "compression" field.
+func (u *NarFileUpsert) SetCompression(v string) *NarFileUpsert {
+	u.Set(narfile.FieldCompression, v)
+	return u
+}
+
+// UpdateCompression sets the "compression" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateCompression() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldCompression)
+	return u
+}
+
+// SetFileSize sets the "file_size" field.
+func (u *NarFileUpsert) SetFileSize(v uint64) *NarFileUpsert {
+	u.Set(narfile.FieldFileSize, v)
+	return u
+}
+
+// UpdateFileSize sets the "file_size" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateFileSize() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldFileSize)
+	return u
+}
+
+// AddFileSize adds v to the "file_size" field.
+func (u *NarFileUpsert) AddFileSize(v uint64) *NarFileUpsert {
+	u.Add(narfile.FieldFileSize, v)
+	return u
+}
+
+// SetQuery sets the "query" field.
+func (u *NarFileUpsert) SetQuery(v string) *NarFileUpsert {
+	u.Set(narfile.FieldQuery, v)
+	return u
+}
+
+// UpdateQuery sets the "query" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateQuery() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldQuery)
+	return u
+}
+
+// SetTotalChunks sets the "total_chunks" field.
+func (u *NarFileUpsert) SetTotalChunks(v int64) *NarFileUpsert {
+	u.Set(narfile.FieldTotalChunks, v)
+	return u
+}
+
+// UpdateTotalChunks sets the "total_chunks" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateTotalChunks() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldTotalChunks)
+	return u
+}
+
+// AddTotalChunks adds v to the "total_chunks" field.
+func (u *NarFileUpsert) AddTotalChunks(v int64) *NarFileUpsert {
+	u.Add(narfile.FieldTotalChunks, v)
+	return u
+}
+
+// SetChunkingStartedAt sets the "chunking_started_at" field.
+func (u *NarFileUpsert) SetChunkingStartedAt(v time.Time) *NarFileUpsert {
+	u.Set(narfile.FieldChunkingStartedAt, v)
+	return u
+}
+
+// UpdateChunkingStartedAt sets the "chunking_started_at" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateChunkingStartedAt() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldChunkingStartedAt)
+	return u
+}
+
+// ClearChunkingStartedAt clears the value of the "chunking_started_at" field.
+func (u *NarFileUpsert) ClearChunkingStartedAt() *NarFileUpsert {
+	u.SetNull(narfile.FieldChunkingStartedAt)
+	return u
+}
+
+// SetVerifiedAt sets the "verified_at" field.
+func (u *NarFileUpsert) SetVerifiedAt(v time.Time) *NarFileUpsert {
+	u.Set(narfile.FieldVerifiedAt, v)
+	return u
+}
+
+// UpdateVerifiedAt sets the "verified_at" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateVerifiedAt() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldVerifiedAt)
+	return u
+}
+
+// ClearVerifiedAt clears the value of the "verified_at" field.
+func (u *NarFileUpsert) ClearVerifiedAt() *NarFileUpsert {
+	u.SetNull(narfile.FieldVerifiedAt)
+	return u
+}
+
+// SetLastAccessedAt sets the "last_accessed_at" field.
+func (u *NarFileUpsert) SetLastAccessedAt(v time.Time) *NarFileUpsert {
+	u.Set(narfile.FieldLastAccessedAt, v)
+	return u
+}
+
+// UpdateLastAccessedAt sets the "last_accessed_at" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateLastAccessedAt() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldLastAccessedAt)
+	return u
+}
+
+// ClearLastAccessedAt clears the value of the "last_accessed_at" field.
+func (u *NarFileUpsert) ClearLastAccessedAt() *NarFileUpsert {
+	u.SetNull(narfile.FieldLastAccessedAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// Using this option is equivalent to using:
+//
+//	client.NarFile.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *NarFileUpsertOne) UpdateNewValues() *NarFileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.CreatedAt(); exists {
+			s.SetIgnore(narfile.FieldCreatedAt)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.NarFile.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *NarFileUpsertOne) Ignore() *NarFileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *NarFileUpsertOne) DoNothing() *NarFileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the NarFileCreate.OnConflict
+// documentation for more info.
+func (u *NarFileUpsertOne) Update(set func(*NarFileUpsert)) *NarFileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&NarFileUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *NarFileUpsertOne) SetUpdatedAt(v time.Time) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateUpdatedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *NarFileUpsertOne) ClearUpdatedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearUpdatedAt()
+	})
+}
+
+// SetHash sets the "hash" field.
+func (u *NarFileUpsertOne) SetHash(v string) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetHash(v)
+	})
+}
+
+// UpdateHash sets the "hash" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateHash() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateHash()
+	})
+}
+
+// SetCompression sets the "compression" field.
+func (u *NarFileUpsertOne) SetCompression(v string) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetCompression(v)
+	})
+}
+
+// UpdateCompression sets the "compression" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateCompression() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateCompression()
+	})
+}
+
+// SetFileSize sets the "file_size" field.
+func (u *NarFileUpsertOne) SetFileSize(v uint64) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetFileSize(v)
+	})
+}
+
+// AddFileSize adds v to the "file_size" field.
+func (u *NarFileUpsertOne) AddFileSize(v uint64) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.AddFileSize(v)
+	})
+}
+
+// UpdateFileSize sets the "file_size" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateFileSize() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateFileSize()
+	})
+}
+
+// SetQuery sets the "query" field.
+func (u *NarFileUpsertOne) SetQuery(v string) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetQuery(v)
+	})
+}
+
+// UpdateQuery sets the "query" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateQuery() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateQuery()
+	})
+}
+
+// SetTotalChunks sets the "total_chunks" field.
+func (u *NarFileUpsertOne) SetTotalChunks(v int64) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetTotalChunks(v)
+	})
+}
+
+// AddTotalChunks adds v to the "total_chunks" field.
+func (u *NarFileUpsertOne) AddTotalChunks(v int64) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.AddTotalChunks(v)
+	})
+}
+
+// UpdateTotalChunks sets the "total_chunks" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateTotalChunks() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateTotalChunks()
+	})
+}
+
+// SetChunkingStartedAt sets the "chunking_started_at" field.
+func (u *NarFileUpsertOne) SetChunkingStartedAt(v time.Time) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetChunkingStartedAt(v)
+	})
+}
+
+// UpdateChunkingStartedAt sets the "chunking_started_at" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateChunkingStartedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateChunkingStartedAt()
+	})
+}
+
+// ClearChunkingStartedAt clears the value of the "chunking_started_at" field.
+func (u *NarFileUpsertOne) ClearChunkingStartedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearChunkingStartedAt()
+	})
+}
+
+// SetVerifiedAt sets the "verified_at" field.
+func (u *NarFileUpsertOne) SetVerifiedAt(v time.Time) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetVerifiedAt(v)
+	})
+}
+
+// UpdateVerifiedAt sets the "verified_at" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateVerifiedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateVerifiedAt()
+	})
+}
+
+// ClearVerifiedAt clears the value of the "verified_at" field.
+func (u *NarFileUpsertOne) ClearVerifiedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearVerifiedAt()
+	})
+}
+
+// SetLastAccessedAt sets the "last_accessed_at" field.
+func (u *NarFileUpsertOne) SetLastAccessedAt(v time.Time) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetLastAccessedAt(v)
+	})
+}
+
+// UpdateLastAccessedAt sets the "last_accessed_at" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateLastAccessedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateLastAccessedAt()
+	})
+}
+
+// ClearLastAccessedAt clears the value of the "last_accessed_at" field.
+func (u *NarFileUpsertOne) ClearLastAccessedAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearLastAccessedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *NarFileUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for NarFileCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *NarFileUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *NarFileUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *NarFileUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // NarFileCreateBulk is the builder for creating many NarFile entities in bulk.
 type NarFileCreateBulk struct {
 	config
 	err      error
 	builders []*NarFileCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the NarFile entities in the database.
@@ -393,6 +836,7 @@ func (_c *NarFileCreateBulk) Save(ctx context.Context) ([]*NarFile, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -443,6 +887,285 @@ func (_c *NarFileCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *NarFileCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.NarFile.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.NarFileUpsert) {
+//			SetCreatedAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *NarFileCreateBulk) OnConflict(opts ...sql.ConflictOption) *NarFileUpsertBulk {
+	_c.conflict = opts
+	return &NarFileUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.NarFile.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *NarFileCreateBulk) OnConflictColumns(columns ...string) *NarFileUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &NarFileUpsertBulk{
+		create: _c,
+	}
+}
+
+// NarFileUpsertBulk is the builder for "upsert"-ing
+// a bulk of NarFile nodes.
+type NarFileUpsertBulk struct {
+	create *NarFileCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.NarFile.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *NarFileUpsertBulk) UpdateNewValues() *NarFileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.CreatedAt(); exists {
+				s.SetIgnore(narfile.FieldCreatedAt)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.NarFile.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *NarFileUpsertBulk) Ignore() *NarFileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *NarFileUpsertBulk) DoNothing() *NarFileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the NarFileCreateBulk.OnConflict
+// documentation for more info.
+func (u *NarFileUpsertBulk) Update(set func(*NarFileUpsert)) *NarFileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&NarFileUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *NarFileUpsertBulk) SetUpdatedAt(v time.Time) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateUpdatedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *NarFileUpsertBulk) ClearUpdatedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearUpdatedAt()
+	})
+}
+
+// SetHash sets the "hash" field.
+func (u *NarFileUpsertBulk) SetHash(v string) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetHash(v)
+	})
+}
+
+// UpdateHash sets the "hash" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateHash() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateHash()
+	})
+}
+
+// SetCompression sets the "compression" field.
+func (u *NarFileUpsertBulk) SetCompression(v string) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetCompression(v)
+	})
+}
+
+// UpdateCompression sets the "compression" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateCompression() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateCompression()
+	})
+}
+
+// SetFileSize sets the "file_size" field.
+func (u *NarFileUpsertBulk) SetFileSize(v uint64) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetFileSize(v)
+	})
+}
+
+// AddFileSize adds v to the "file_size" field.
+func (u *NarFileUpsertBulk) AddFileSize(v uint64) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.AddFileSize(v)
+	})
+}
+
+// UpdateFileSize sets the "file_size" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateFileSize() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateFileSize()
+	})
+}
+
+// SetQuery sets the "query" field.
+func (u *NarFileUpsertBulk) SetQuery(v string) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetQuery(v)
+	})
+}
+
+// UpdateQuery sets the "query" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateQuery() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateQuery()
+	})
+}
+
+// SetTotalChunks sets the "total_chunks" field.
+func (u *NarFileUpsertBulk) SetTotalChunks(v int64) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetTotalChunks(v)
+	})
+}
+
+// AddTotalChunks adds v to the "total_chunks" field.
+func (u *NarFileUpsertBulk) AddTotalChunks(v int64) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.AddTotalChunks(v)
+	})
+}
+
+// UpdateTotalChunks sets the "total_chunks" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateTotalChunks() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateTotalChunks()
+	})
+}
+
+// SetChunkingStartedAt sets the "chunking_started_at" field.
+func (u *NarFileUpsertBulk) SetChunkingStartedAt(v time.Time) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetChunkingStartedAt(v)
+	})
+}
+
+// UpdateChunkingStartedAt sets the "chunking_started_at" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateChunkingStartedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateChunkingStartedAt()
+	})
+}
+
+// ClearChunkingStartedAt clears the value of the "chunking_started_at" field.
+func (u *NarFileUpsertBulk) ClearChunkingStartedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearChunkingStartedAt()
+	})
+}
+
+// SetVerifiedAt sets the "verified_at" field.
+func (u *NarFileUpsertBulk) SetVerifiedAt(v time.Time) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetVerifiedAt(v)
+	})
+}
+
+// UpdateVerifiedAt sets the "verified_at" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateVerifiedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateVerifiedAt()
+	})
+}
+
+// ClearVerifiedAt clears the value of the "verified_at" field.
+func (u *NarFileUpsertBulk) ClearVerifiedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearVerifiedAt()
+	})
+}
+
+// SetLastAccessedAt sets the "last_accessed_at" field.
+func (u *NarFileUpsertBulk) SetLastAccessedAt(v time.Time) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetLastAccessedAt(v)
+	})
+}
+
+// UpdateLastAccessedAt sets the "last_accessed_at" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateLastAccessedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateLastAccessedAt()
+	})
+}
+
+// ClearLastAccessedAt clears the value of the "last_accessed_at" field.
+func (u *NarFileUpsertBulk) ClearLastAccessedAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearLastAccessedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *NarFileUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the NarFileCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for NarFileCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *NarFileUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
