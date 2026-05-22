@@ -168,15 +168,21 @@ Action per state:
 
 **Why not require a manual operator migration**: ncps is self-hosted; there is no script-delivery mechanism. The adoption must be automatic and idempotent.
 
-### D7: MySQL/MariaDB validation
+### D7: MySQL/MariaDB validation — VALIDATED
 
-The reference repo handles only sqlite + postgres. ncps must validate three points before relying on the pipeline for MySQL:
+The reference repo handles only sqlite + postgres. ncps must validate three points before relying on the pipeline for MySQL. The spike (Tasks §1) confirmed all three against MariaDB 11.4.8:
 
-1. `entsql.Open("mysql", url)` and `dialect.MySQL` produce correct DDL for the existing schema (Ent's documented behaviour, but unproven in this combination locally).
-2. `ariga.io/atlas/sql/sqltool.GooseFormatter` emits MySQL-syntactic DDL (Atlas docs claim yes; verify by inspecting a generated baseline).
-3. `goose.DialectMySQL` correctly applies the generated baseline against MariaDB 11 (the version `process-compose-flake` ships).
+1. **`entsql.Open("mysql", dsn)` with `dialect.MySQL` produces correct DDL.** Ent's MySQL dialect emits `bigint`, `varchar(N)`, backtick-quoted identifiers, `CHARSET utf8mb4 COLLATE utf8mb4_bin` clauses, and `AUTO_INCREMENT` PKs — matching MariaDB expectations exactly.
+2. **`ariga.io/atlas/sql/sqltool.GooseFormatter` emits MySQL-syntactic DDL.** The spike's generated baseline file (under `schema.ModeReplay`) produced valid MySQL `CREATE TABLE` statements with `-- +goose Up` / `-- +goose Down` markers and reverse-order `DROP TABLE` for downgrade.
+3. **`goose.NewProvider(goose.DialectMySQL, db, fs, WithTableName("schema_migrations")).Up(ctx)` applies the baseline.** Goose created its tracking row, applied the DDL, and reported the migration with sub-millisecond apply time.
 
-If any fails, fall back is: use Ent's MySQL dialect for codegen + DDL diff, but write a small custom Goose formatter (≈50 LOC) that emits MySQL-quoted identifiers. Decision deferred until the spike in Tasks §1.
+Post-apply verification queries against `information_schema` confirmed every schema feature survived:
+
+- `CHECK_CONSTRAINTS` contains the named constraint declared via `entsql.Annotation{Checks: ...}`.
+- `REFERENTIAL_CONSTRAINTS` shows `DELETE_RULE = 'CASCADE'` on the foreign key declared via `edge.To(...).Annotations(entsql.OnDelete(entsql.Cascade))`.
+- `STATISTICS` shows `NON_UNIQUE = 0` on the `name` column index declared via `index.Fields("name").Unique()`.
+
+**Decision**: proceed with the pipeline as planned. No custom Goose formatter is required. The `cmd/spike-mysql/` exploration code and the two `ent/schema/spike_*.go` schemas were deleted after the validation.
 
 ### D8: `cmd/generate-migrations` shape
 
