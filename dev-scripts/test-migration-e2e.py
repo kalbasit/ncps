@@ -202,12 +202,26 @@ def start_ncps(scenario, log_path):
     if scenario["cdc"]:
         args.append("--enable-cdc")
     log(f"start_ncps: {' '.join(args)}", G)
+    # When the worktree is detached at main's commit, run.py calls
+    # `dbmate up` with no --migrations-dir. main's db/migrations/
+    # contains only per-dialect sub-dirs; the historical
+    # dbmate-wrapper (deleted in 80c4a15) used to inject the right
+    # one. Without it, bare dbmate fails with `no migration files
+    # found`. Setting DBMATE_MIGRATIONS_DIR here points dbmate at
+    # the dialect-specific sub-dir. The variable is silently ignored
+    # on the migration-branch side (where run.py uses `ncps migrate
+    # up` instead), so this is safe to set unconditionally.
+    env = os.environ.copy()
+    env["DBMATE_MIGRATIONS_DIR"] = os.path.join(
+        REPO_ROOT, "db", "migrations", scenario["db"]
+    )
     f = open(log_path, "w")
     p = subprocess.Popen(
         args,
         cwd=REPO_ROOT,
         stdout=f,
         stderr=subprocess.STDOUT,
+        env=env,
         preexec_fn=os.setsid,
     )
     return p, f
