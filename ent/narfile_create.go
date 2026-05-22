@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/kalbasit/ncps/ent/narfile"
@@ -106,13 +105,13 @@ func (_c *NarFileCreate) SetNillableTotalChunks(v *int64) *NarFileCreate {
 }
 
 // SetChunkingStartedAt sets the "chunking_started_at" field.
-func (_c *NarFileCreate) SetChunkingStartedAt(v sql.NullTime) *NarFileCreate {
+func (_c *NarFileCreate) SetChunkingStartedAt(v time.Time) *NarFileCreate {
 	_c.mutation.SetChunkingStartedAt(v)
 	return _c
 }
 
 // SetNillableChunkingStartedAt sets the "chunking_started_at" field if the given value is not nil.
-func (_c *NarFileCreate) SetNillableChunkingStartedAt(v *sql.NullTime) *NarFileCreate {
+func (_c *NarFileCreate) SetNillableChunkingStartedAt(v *time.Time) *NarFileCreate {
 	if v != nil {
 		_c.SetChunkingStartedAt(*v)
 	}
@@ -315,7 +314,7 @@ func (_c *NarFileCreate) createSpec() (*NarFile, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := _c.mutation.ChunkingStartedAt(); ok {
 		_spec.SetField(narfile.FieldChunkingStartedAt, field.TypeTime, value)
-		_node.ChunkingStartedAt = value
+		_node.ChunkingStartedAt = &value
 	}
 	if value, ok := _c.mutation.VerifiedAt(); ok {
 		_spec.SetField(narfile.FieldVerifiedAt, field.TypeTime, value)
@@ -323,7 +322,7 @@ func (_c *NarFileCreate) createSpec() (*NarFile, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := _c.mutation.LastAccessedAt(); ok {
 		_spec.SetField(narfile.FieldLastAccessedAt, field.TypeTime, value)
-		_node.LastAccessedAt = value
+		_node.LastAccessedAt = &value
 	}
 	if nodes := _c.mutation.NarInfoNarFilesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

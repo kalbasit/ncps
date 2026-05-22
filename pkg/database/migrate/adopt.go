@@ -70,37 +70,30 @@ func adoptTransactional(ctx context.Context, db *sql.DB, d database.Type) error 
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
-
-	rollback := func() { _ = tx.Rollback() }
+	// Deferred rollback is a no-op if Commit succeeds. Idiomatic + robust
+	// against future early-return paths.
+	defer func() { _ = tx.Rollback() }()
 
 	// 1. Capture pre-count via a SELECT inside the transaction.
 	var preCount int
 
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM schema_migrations`).Scan(&preCount); err != nil {
-		rollback()
-
 		return fmt.Errorf("count dbmate rows: %w", err)
 	}
 	// 2. + 3. + 4. as a sequence of statements specific to each dialect.
 	switch d {
 	case database.TypeSQLite:
 		if err := adoptSQLiteSteps(ctx, tx); err != nil {
-			rollback()
-
 			return err
 		}
 	case database.TypePostgreSQL:
 		if err := adoptPostgresSteps(ctx, tx); err != nil {
-			rollback()
-
 			return err
 		}
 	case database.TypeMySQL, database.TypeUnknown:
 		fallthrough
 	default:
-		rollback()
-
 		return fmt.Errorf("adoptTransactional: %w %v", ErrUnknownDialect, d)
 	}
 	// 5. Verify row-count parity.
@@ -108,16 +101,12 @@ func adoptTransactional(ctx context.Context, db *sql.DB, d database.Type) error 
 
 	if err := tx.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM schema_migrations`).Scan(&postCount); err != nil {
-		rollback()
-
 		return fmt.Errorf("count adopted rows: %w", err)
 	}
 
 	// postCount = preCount + 1 because adoption inserts the goose
 	// sentinel (version_id=0) alongside the preserved dbmate versions.
 	if postCount != preCount+1 {
-		rollback()
-
 		//nolint:err113 // diagnostic; not meant for programmatic inspection
 		return fmt.Errorf("migrate: adopt row-count mismatch: dbmate had %d, adopted %d (expected %d incl. sentinel)",
 			preCount, postCount, preCount+1)
@@ -173,7 +162,7 @@ func adoptPostgresSteps(ctx context.Context, tx *sql.Tx) error {
 			id serial NOT NULL,
 			version_id bigint NOT NULL,
 			is_applied boolean NOT NULL,
-			tstamp timestamp NULL DEFAULT now(),
+			tstamp timestamp NOT NULL DEFAULT now(),
 			PRIMARY KEY(id)
 		)`,
 		`INSERT INTO schema_migrations (version_id, is_applied, tstamp)

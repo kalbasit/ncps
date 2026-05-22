@@ -91,7 +91,7 @@ func TotalChunks(v int64) predicate.NarFile {
 }
 
 // ChunkingStartedAt applies equality check predicate on the "chunking_started_at" field. It's identical to ChunkingStartedAtEQ.
-func ChunkingStartedAt(v sql.NullTime) predicate.NarFile {
+func ChunkingStartedAt(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldEQ(FieldChunkingStartedAt, v))
 }
 
@@ -471,42 +471,42 @@ func TotalChunksLTE(v int64) predicate.NarFile {
 }
 
 // ChunkingStartedAtEQ applies the EQ predicate on the "chunking_started_at" field.
-func ChunkingStartedAtEQ(v sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtEQ(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldEQ(FieldChunkingStartedAt, v))
 }
 
 // ChunkingStartedAtNEQ applies the NEQ predicate on the "chunking_started_at" field.
-func ChunkingStartedAtNEQ(v sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtNEQ(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldNEQ(FieldChunkingStartedAt, v))
 }
 
 // ChunkingStartedAtIn applies the In predicate on the "chunking_started_at" field.
-func ChunkingStartedAtIn(vs ...sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtIn(vs ...time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldIn(FieldChunkingStartedAt, vs...))
 }
 
 // ChunkingStartedAtNotIn applies the NotIn predicate on the "chunking_started_at" field.
-func ChunkingStartedAtNotIn(vs ...sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtNotIn(vs ...time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldNotIn(FieldChunkingStartedAt, vs...))
 }
 
 // ChunkingStartedAtGT applies the GT predicate on the "chunking_started_at" field.
-func ChunkingStartedAtGT(v sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtGT(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldGT(FieldChunkingStartedAt, v))
 }
 
 // ChunkingStartedAtGTE applies the GTE predicate on the "chunking_started_at" field.
-func ChunkingStartedAtGTE(v sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtGTE(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldGTE(FieldChunkingStartedAt, v))
 }
 
 // ChunkingStartedAtLT applies the LT predicate on the "chunking_started_at" field.
-func ChunkingStartedAtLT(v sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtLT(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldLT(FieldChunkingStartedAt, v))
 }
 
 // ChunkingStartedAtLTE applies the LTE predicate on the "chunking_started_at" field.
-func ChunkingStartedAtLTE(v sql.NullTime) predicate.NarFile {
+func ChunkingStartedAtLTE(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldLTE(FieldChunkingStartedAt, v))
 }
 

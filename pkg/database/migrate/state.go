@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 
+	entmigrate "github.com/kalbasit/ncps/ent/migrate"
+
 	"github.com/kalbasit/ncps/pkg/database"
 )
 
@@ -317,10 +319,18 @@ func anyAppTableExists(ctx context.Context, db *sql.DB, d database.Type) (bool, 
 // declares. Kept in sync via the §3 schema-parity tests and §8
 // schema-equivalence test.
 //
-//nolint:gochecknoglobals // immutable canonical set
-var appTables = []string{
-	"narinfos", "nar_files", "chunks",
-	"narinfo_references", "narinfo_signatures",
-	"narinfo_nar_files", "nar_file_chunks",
-	"config", "pinned_closures",
+// appTables is the canonical set of ncps tables Ent declares in
+// migrate.Tables. Derived dynamically at init() so adding a new entity
+// to ent/schema/ automatically updates the corrupt-state probe — no
+// hand-maintenance of a parallel list.
+//
+//nolint:gochecknoglobals // immutable; populated at init from entmigrate.Tables
+var appTables []string
+
+//nolint:gochecknoinits // populates appTables from the generated Ent migrate.Tables
+func init() {
+	appTables = make([]string, 0, len(entmigrate.Tables))
+	for _, t := range entmigrate.Tables {
+		appTables = append(appTables, t.Name)
+	}
 }

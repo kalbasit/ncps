@@ -454,7 +454,11 @@ func mustListTables(ctx context.Context, t *testing.T, db *sql.DB, d database.Ty
 	for rows.Next() {
 		var name string
 		require.NoError(t, rows.Scan(&name))
-		out = append(out, name)
+		// Normalize to lowercase: some MySQL configurations return
+		// table names in their stored case which may differ from the
+		// expectedTables list. Consistent with how column names are
+		// normalized in mustListColumns.
+		out = append(out, strings.ToLower(name))
 	}
 
 	require.NoError(t, rows.Err())
@@ -508,7 +512,9 @@ func mustListColumns(ctx context.Context, t *testing.T, db *sql.DB, d database.T
 			)
 
 			require.NoError(t, rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk))
-			out = append(out, name)
+			// Lowercase for consistency with the Postgres/MySQL paths
+			// below and with the expectedColumns list.
+			out = append(out, strings.ToLower(name))
 		case database.TypeMySQL, database.TypePostgreSQL, database.TypeUnknown:
 			fallthrough
 		default:

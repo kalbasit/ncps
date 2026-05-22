@@ -203,6 +203,12 @@ func checkA1(schemas []schemaFile) []result {
 	for _, sf := range schemas {
 		methods := methodsByName(sf, "Fields")
 		for _, m := range methods {
+			// Skip top-level helper functions named Fields — only
+			// method receivers can be Ent schema methods.
+			if receiverTypeName(m) == "" {
+				continue
+			}
+
 			violations := findFieldEntsqlCheck(sf, m)
 			if len(violations) == 0 {
 				out = append(out, result{
@@ -288,6 +294,11 @@ func checkA2(schemas []schemaFile) []result {
 	for _, sf := range schemas {
 		methods := methodsByName(sf, "Edges")
 		for _, m := range methods {
+			// Skip top-level helper functions named Edges.
+			if receiverTypeName(m) == "" {
+				continue
+			}
+
 			violations := findEdgeFromOnDelete(sf, m)
 			if len(violations) == 0 {
 				out = append(out, result{
@@ -416,6 +427,11 @@ func checkA4(schemas []schemaFile) []result {
 	for _, sf := range schemas {
 		for _, m := range methodsByName(sf, "Edges") {
 			schemaName := receiverTypeName(m)
+			// Skip top-level helper functions named Edges (no receiver).
+			if schemaName == "" {
+				continue
+			}
+
 			ast.Inspect(m, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -429,10 +445,19 @@ func checkA4(schemas []schemaFile) []result {
 				// edge.To(...)
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == edgePkg {
 					if sel.Sel.Name == "To" && len(call.Args) >= 2 {
+						target := typeRefName(call.Args[1])
+						// Skip edges whose target isn't a simple T.Type
+						// expression — they don't match Ent's edge surface
+						// and would produce confusing failure messages
+						// (empty target name).
+						if target == "" {
+							return true
+						}
+
 						tos = append(tos, edgeTo{
 							source:   schemaName,
 							edgeName: stringLitValue(call.Args[0]),
-							target:   typeRefName(call.Args[1]),
+							target:   target,
 							line:     sf.fset.Position(call.Pos()).Line,
 							path:     sf.path,
 						})

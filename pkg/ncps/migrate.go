@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 
@@ -78,7 +79,12 @@ func migrateUpCommand(flagSources flagSourcesFn) *cli.Command {
 					return fmt.Errorf("migrate up --dry-run: %w", err)
 				}
 
-				printPlan(ctx, plan)
+				w := cmd.Writer
+				if w == nil {
+					w = os.Stdout
+				}
+
+				printPlan(w, plan)
 
 				return nil
 			}
@@ -150,14 +156,17 @@ func dialectSubdir(d database.Type) string {
 	}
 }
 
-func printPlan(_ context.Context, plan migrate.Plan) {
-	fmt.Fprintf(os.Stdout, "migrate up --dry-run\n")
-	fmt.Fprintf(os.Stdout, "  state           : %s\n", plan.State)
-	fmt.Fprintf(os.Stdout, "  adoption action : %s\n", plan.AdoptionAction)
-	fmt.Fprintf(os.Stdout, "  applied versions: %d\n", plan.AppliedCount)
-	fmt.Fprintf(os.Stdout, "  pending versions: %d\n", len(plan.PendingVersions))
+// printPlan writes the migrate.Plan to w. Accepting io.Writer (rather
+// than hardcoding os.Stdout) makes the helper testable and lets the
+// cli.Command's configured Writer flow through.
+func printPlan(w io.Writer, plan migrate.Plan) {
+	fmt.Fprintf(w, "migrate up --dry-run\n")
+	fmt.Fprintf(w, "  state           : %s\n", plan.State)
+	fmt.Fprintf(w, "  adoption action : %s\n", plan.AdoptionAction)
+	fmt.Fprintf(w, "  applied versions: %d\n", plan.AppliedCount)
+	fmt.Fprintf(w, "  pending versions: %d\n", len(plan.PendingVersions))
 
 	for _, v := range plan.PendingVersions {
-		fmt.Fprintf(os.Stdout, "    - %d\n", v)
+		fmt.Fprintf(w, "    - %d\n", v)
 	}
 }

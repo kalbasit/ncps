@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"database/sql"
 	"time"
 
 	"entgo.io/ent"
@@ -50,12 +49,13 @@ func (NarFile) Fields() []ent.Field {
 			Default(0),
 		field.Time("chunking_started_at").
 			Optional().
-			GoType(sql.NullTime{}),
+			Nillable(),
 		field.Time("verified_at").
 			Optional().
 			Nillable(),
 		field.Time("last_accessed_at").
 			Optional().
+			Nillable().
 			Default(time.Now),
 	}
 }

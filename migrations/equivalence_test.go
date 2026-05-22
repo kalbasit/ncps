@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"ariga.io/atlas/sql/sqltool"
 	"entgo.io/ent/dialect"
@@ -18,12 +19,12 @@ import (
 
 	atlasmigrate "ariga.io/atlas/sql/migrate"
 	entsql "entgo.io/ent/dialect/sql"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"github.com/kalbasit/ncps/ent/migrate"
 	"github.com/kalbasit/ncps/migrations"
 	"github.com/kalbasit/ncps/testhelper"
 
-	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -200,30 +201,44 @@ func openFreshMySQL(t *testing.T) (*sql.DB, func()) {
 
 // mysqlURLToDSN converts a URL-style mysql DSN
 // ("mysql://user:pass@host:port/db?params") to go-sql-driver's native
-// DSN form ("user:pass@tcp(host:port)/db?params"). If newDBName is
-// non-empty, it replaces the path component (used for ephemeral DBs).
+// DSN form. Uses mysqldriver.NewConfig to build the DSN robustly —
+// passwords containing `:` or `@` would break naive concatenation. If
+// newDBName is non-empty, it replaces the path component (used for
+// ephemeral DBs).
 func mysqlURLToDSN(rawURL, newDBName string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
 
-	user := u.User.Username()
-	pass, _ := u.User.Password()
+	cfg := mysqldriver.NewConfig()
+	cfg.User = u.User.Username()
+	cfg.Passwd, _ = u.User.Password()
+	cfg.Net = "tcp"
+	cfg.Addr = u.Host
 
-	dbName := newDBName
-	if dbName == "" {
-		dbName = strings.TrimPrefix(u.Path, "/")
+	cfg.DBName = newDBName
+	if cfg.DBName == "" {
+		cfg.DBName = strings.TrimPrefix(u.Path, "/")
 	}
 
-	dsn := user + ":" + pass + "@tcp(" + u.Host + ")/" + dbName
-	if u.RawQuery != "" {
-		dsn += "?" + u.RawQuery
-	} else {
-		dsn += "?parseTime=true&loc=UTC"
+	cfg.Params = map[string]string{}
+
+	for k, v := range u.Query() {
+		if len(v) > 0 {
+			cfg.Params[k] = v[0]
+		}
 	}
 
-	return dsn, nil
+	if _, ok := cfg.Params["parseTime"]; !ok {
+		cfg.ParseTime = true
+	}
+
+	if _, ok := cfg.Params["loc"]; !ok {
+		cfg.Loc = time.UTC
+	}
+
+	return cfg.FormatDSN(), nil
 }
 
 func copyMigrations(t *testing.T, dialect string) string {
@@ -248,7 +263,15 @@ func copyMigrations(t *testing.T, dialect string) string {
 		}
 		defer in.Close()
 
-		out, err := os.Create(filepath.Join(dst, p))
+		// Ensure the parent directory exists before creating the file.
+		// Today migrations/<dialect>/ is flat, but a future refactor
+		// could nest files; MkdirAll keeps this helper robust.
+		outPath := filepath.Join(dst, p)
+		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+			return err
+		}
+
+		out, err := os.Create(outPath)
 		if err != nil {
 			return err
 		}

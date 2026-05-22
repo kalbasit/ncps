@@ -394,7 +394,7 @@ func (_c *NarInfoCreate) createSpec() (*NarInfo, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := _c.mutation.LastAccessedAt(); ok {
 		_spec.SetField(narinfo.FieldLastAccessedAt, field.TypeTime, value)
-		_node.LastAccessedAt = value
+		_node.LastAccessedAt = &value
 	}
 	if nodes := _c.mutation.ReferencesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

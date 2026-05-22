@@ -44,7 +44,7 @@ type NarInfo struct {
 	// Ca holds the value of the "ca" field.
 	Ca *string `json:"ca,omitempty"`
 	// LastAccessedAt holds the value of the "last_accessed_at" field.
-	LastAccessedAt time.Time `json:"last_accessed_at,omitempty"`
+	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the NarInfoQuery when eager-loading is set.
 	Edges        NarInfoEdges `json:"edges"`
@@ -216,7 +216,8 @@ func (_m *NarInfo) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field last_accessed_at", values[i])
 			} else if value.Valid {
-				_m.LastAccessedAt = value.Time
+				_m.LastAccessedAt = new(time.Time)
+				*_m.LastAccessedAt = value.Time
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -330,8 +331,10 @@ func (_m *NarInfo) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
-	builder.WriteString("last_accessed_at=")
-	builder.WriteString(_m.LastAccessedAt.Format(time.ANSIC))
+	if v := _m.LastAccessedAt; v != nil {
+		builder.WriteString("last_accessed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

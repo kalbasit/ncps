@@ -15,12 +15,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+
 	"github.com/kalbasit/ncps/migrations"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/database/migrate"
 	"github.com/kalbasit/ncps/testhelper"
 
-	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -378,28 +379,47 @@ func openMySQLTest(t *testing.T) (*sql.DB, func()) {
 	return db, cleanup
 }
 
+// mysqlURLToDSN converts a URL-style mysql DSN to go-sql-driver's
+// native DSN form via mysqldriver.NewConfig so passwords containing
+// `:` or `@` don't break naive concatenation.
 func mysqlURLToDSN(rawURL, newDBName string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
 
-	user := u.User.Username()
-	pass, _ := u.User.Password()
+	cfg := mysqldriver.NewConfig()
+	cfg.User = u.User.Username()
+	cfg.Passwd, _ = u.User.Password()
+	cfg.Net = "tcp"
+	cfg.Addr = u.Host
 
-	dbName := newDBName
-	if dbName == "" {
-		dbName = strings.TrimPrefix(u.Path, "/")
+	cfg.DBName = newDBName
+	if cfg.DBName == "" {
+		cfg.DBName = strings.TrimPrefix(u.Path, "/")
 	}
 
-	dsn := user + ":" + pass + "@tcp(" + u.Host + ")/" + dbName
-	if u.RawQuery != "" {
-		dsn += "?" + u.RawQuery
-	} else {
-		dsn += "?parseTime=true&loc=UTC&multiStatements=true"
+	cfg.Params = map[string]string{}
+
+	for k, v := range u.Query() {
+		if len(v) > 0 {
+			cfg.Params[k] = v[0]
+		}
 	}
 
-	return dsn, nil
+	if _, ok := cfg.Params["parseTime"]; !ok {
+		cfg.ParseTime = true
+	}
+
+	if _, ok := cfg.Params["loc"]; !ok {
+		cfg.Loc = time.UTC
+	}
+
+	if _, ok := cfg.Params["multiStatements"]; !ok {
+		cfg.MultiStatements = true
+	}
+
+	return cfg.FormatDSN(), nil
 }
 
 // ---------- migration helpers ----------

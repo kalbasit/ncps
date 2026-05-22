@@ -1,4 +1,10 @@
 -- +goose Up
+-- +goose NO TRANSACTION
+-- Required so the `PRAGMA foreign_keys = off` below takes effect —
+-- SQLite ignores the PRAGMA inside a transaction, which would cause
+-- the subsequent DROP TABLE / RENAME swaps to fail against any data
+-- already referencing the rewritten tables.
+
 -- disable the enforcement of foreign-keys constraints
 PRAGMA foreign_keys = OFF;
 -- create "new_narinfos" table
