@@ -11,6 +11,14 @@
         buildInputs =
           (import ../dev-packages.nix pkgs)
           ++ [
+            # dbmate is kept available for local dev only (used by
+            # dev-scripts/run.py's perform_clean() to drop dev
+            # databases between scenarios). NOT included in
+            # dev-packages.nix because that set is shared with the
+            # docker-dev image, and dbmate is no longer part of the
+            # runtime — `ncps migrate up` is the supported path.
+            pkgs.dbmate
+
             # python environment for dev-scripts.
             (pkgs.python3.withPackages (
               ps: with ps; [
