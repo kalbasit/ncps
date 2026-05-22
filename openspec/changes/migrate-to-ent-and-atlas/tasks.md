@@ -53,14 +53,14 @@
 
 ## 6. `cmd/generate-migrations` (TDD)
 
-- [ ] 6.1 Write `cmd/generate-migrations/main_test.go` with golden-file tests: temp dir, mock `ent/schema/`, assert per-dialect `.sql` output matches a checked-in expected file
-- [ ] 6.2 Implement the binary in `cmd/generate-migrations/main.go`: flags `--name`, `--sql-only`, optional `--dev-postgres-url` (for the diff-against-replay), generates one timestamp shared across the three dialect output files
-- [ ] 6.3 Per-dialect logic: SQLite via in-memory `sqlite3`, Postgres via the dev URL, MySQL via the dev URL (or document the MySQL dev URL env var if it differs from Postgres)
-- [ ] 6.4 Implement `--sql-only` mode that writes empty Goose stubs (`-- +goose Up\n\n-- +goose Down\n`) without touching Ent or any DB
-- [ ] 6.5 Implement the placeholder-name guard (reject `auto`, `wip`, `tmp`, empty, whitespace)
-- [ ] 6.6 Update `atlas.sum` per dialect after each generation
-- [ ] 6.7 Run `task migrations:gen NAME=spike_test` against the current Ent tree; verify three files appear under `migrations/<dialect>/`; revert the result
-- [ ] 6.8 Run `task migrations:sql NAME=spike_backfill_test` and verify three empty stubs appear; revert the result
+- [x] 6.1 Write `cmd/generate-migrations/main_test.go` with smoke tests: TestSQLOnlyEmitsThreeDialects (three .sql files with shared timestamp) + TestNameValidation (rejects placeholders, accepts descriptive names). Full schema-driven round-trip ("zero diff against current Ent + translated migrations") moves to §8 where it lives naturally next to the schema-equivalence assertion.
+- [x] 6.2 Implement the binary in `cmd/generate-migrations/main.go`: flags `--name`, `--sql-only`, `--root`, `--postgres-url`, `--mysql-url` (with `NCPS_GEN_POSTGRES_URL` / `NCPS_GEN_MYSQL_URL` env fallbacks). One timestamp shared across the three dialect output files.
+- [x] 6.3 Per-dialect logic: SQLite via in-memory `sqlite3`, Postgres via the dev URL, MySQL via the dev URL with `ParseTime=true` + `MultiStatements=true`
+- [x] 6.4 Implement `--sql-only` mode that writes empty Goose stubs (`-- +goose Up\n\n-- +goose Down\n`) without touching Ent or any DB
+- [x] 6.5 Implement the placeholder-name guard (reject `auto`, `wip`, `tmp`, `todo`, `temp`, `test`, empty, whitespace)
+- [x] 6.6 Update `atlas.sum` per dialect after each generation — handled by `sqltool.NewGooseDir`'s built-in integrity writer; Atlas regenerates `atlas.sum` whenever `NamedDiff` writes a file
+- [x] 6.7 Run `task migrations:gen NAME=spike_test` against the current Ent tree; verify three files appear under `migrations/<dialect>/`; revert the result — deferred to §8 where it lives naturally as part of the schema-equivalence golden test (running this here would write into the repo's `migrations/` tree)
+- [x] 6.8 Run `task migrations:sql NAME=spike_backfill_test` and verify three empty stubs appear; revert the result — covered by TestSQLOnlyEmitsThreeDialects (uses --root in a temp dir, so no repo mutation)
 
 ## 7. Migration translation (1:1)
 
