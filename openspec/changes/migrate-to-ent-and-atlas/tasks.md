@@ -64,12 +64,12 @@
 
 ## 7. Migration translation (1:1)
 
-- [ ] 7.1 For each existing `db/migrations/sqlite/*.sql`, copy to `migrations/sqlite/` preserving the timestamp and rewrite `-- migrate:up` → `-- +goose Up`, `-- migrate:down` → `-- +goose Down`
-- [ ] 7.2 Repeat for `db/migrations/postgres/*.sql` → `migrations/postgres/`
-- [ ] 7.3 Repeat for `db/migrations/mysql/*.sql` → `migrations/mysql/`
-- [ ] 7.4 Generate `atlas.sum` for each dialect directory via the Atlas library call (run `cmd/generate-migrations --recompute-sums` or equivalent)
-- [ ] 7.5 Author `migrations/migrations.go` with `//go:embed sqlite/* postgres/* mysql/*` exposing a single `MigrationsFS embed.FS` var
-- [ ] 7.6 Verify `MigrationsFS` enumerates the expected file count per dialect (8 postgres, 8 mysql, 14 sqlite)
+- [x] 7.1 For each existing `db/migrations/sqlite/*.sql`, copy to `migrations/sqlite/` preserving the timestamp and rewrite `-- migrate:up` → `-- +goose Up`, `-- migrate:down` → `-- +goose Down`
+- [x] 7.2 Repeat for `db/migrations/postgres/*.sql` → `migrations/postgres/`
+- [x] 7.3 Repeat for `db/migrations/mysql/*.sql` → `migrations/mysql/`
+- [ ] 7.4 Generate `atlas.sum` for each dialect directory via the Atlas library call (run `cmd/generate-migrations --recompute-sums` or equivalent) — deferred to §6 (cmd/generate-migrations writes atlas.sum as part of its first invocation)
+- [x] 7.5 Author `migrations/migrations.go` with `//go:embed sqlite/* postgres/* mysql/*` exposing a single `MigrationsFS embed.FS` var (named `FS` here for ergonomics — `migrations.FS` reads better than `migrations.MigrationsFS`)
+- [x] 7.6 Verify `MigrationsFS` enumerates the expected file count per dialect (8 postgres, 8 mysql, 14 sqlite). Adds `TestEmbedFS` and `TestGooseApplySQLite` smoke tests; full multi-engine schema-equivalence is §8.
 
 ## 8. Schema-equivalence golden test
 

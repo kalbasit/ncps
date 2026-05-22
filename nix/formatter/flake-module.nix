@@ -35,6 +35,12 @@
         "ent/pinnedclosure/**/*.go"
         "ent/predicate/**/*.go"
         "ent/runtime/**/*.go"
+        # Goose-translated migration files: sqlfluff cannot parse the
+        # `-- +goose Up/Down` directives or the dialect-specific syntax
+        # (MySQL backticks, SQLite PRAGMA, etc.). Their integrity is
+        # protected by atlas.sum under each migrations/<dialect>/, so
+        # external formatting would invalidate the checksum anyway.
+        "migrations/**/*.sql"
         "openspec/**/*.md"
         "renovate.json"
       ];
