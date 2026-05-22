@@ -348,16 +348,11 @@ def _snapshot_sqlite(path):
     )
     tables = [r[0] for r in cur.fetchall()]
     for t in tables:
-        try:
-            cur.execute(f"SELECT COUNT(*) FROM `{t}`")
-            snap["tables"][t] = cur.fetchone()[0]
-        except sqlite3.Error:
-            pass
-    try:
+        cur.execute(f"SELECT COUNT(*) FROM `{t}`")
+        snap["tables"][t] = cur.fetchone()[0]
+    if "narinfos" in tables:
         cur.execute("SELECT hash FROM narinfos ORDER BY hash")
         snap["narinfo_hashes"] = [r[0] for r in cur.fetchall()]
-    except sqlite3.Error:
-        pass
     conn.close()
     return snap
 
@@ -365,10 +360,7 @@ def _snapshot_sqlite(path):
 def _snapshot_pg(url):
     import psycopg2
     snap = {"tables": {}, "narinfo_hashes": []}
-    try:
-        conn = psycopg2.connect(url)
-    except psycopg2.Error:
-        return snap
+    conn = psycopg2.connect(url)
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -377,16 +369,11 @@ def _snapshot_pg(url):
             )
             tables = [r[0] for r in cur.fetchall()]
             for t in tables:
-                try:
-                    cur.execute(f'SELECT COUNT(*) FROM "{t}"')
-                    snap["tables"][t] = cur.fetchone()[0]
-                except psycopg2.Error:
-                    conn.rollback()
-            try:
+                cur.execute(f'SELECT COUNT(*) FROM "{t}"')
+                snap["tables"][t] = cur.fetchone()[0]
+            if "narinfos" in tables:
                 cur.execute("SELECT hash FROM narinfos ORDER BY hash")
                 snap["narinfo_hashes"] = [r[0] for r in cur.fetchall()]
-            except psycopg2.Error:
-                conn.rollback()
     finally:
         conn.close()
     return snap
@@ -396,31 +383,23 @@ def _snapshot_mysql(url):
     import pymysql
     parsed = urlparse(url)
     snap = {"tables": {}, "narinfo_hashes": []}
-    try:
-        conn = pymysql.connect(
-            host=parsed.hostname,
-            port=parsed.port or 3306,
-            user=parsed.username,
-            password=parsed.password or "",
-            database=parsed.path.lstrip("/"),
-        )
-    except pymysql.MySQLError:
-        return snap
+    conn = pymysql.connect(
+        host=parsed.hostname,
+        port=parsed.port or 3306,
+        user=parsed.username,
+        password=parsed.password or "",
+        database=parsed.path.lstrip("/"),
+    )
     try:
         with conn.cursor() as cur:
             cur.execute("SHOW TABLES")
             tables = sorted(r[0] for r in cur.fetchall())
             for t in tables:
-                try:
-                    cur.execute(f"SELECT COUNT(*) FROM `{t}`")
-                    snap["tables"][t] = cur.fetchone()[0]
-                except pymysql.MySQLError:
-                    pass
-            try:
+                cur.execute(f"SELECT COUNT(*) FROM `{t}`")
+                snap["tables"][t] = cur.fetchone()[0]
+            if "narinfos" in tables:
                 cur.execute("SELECT hash FROM narinfos ORDER BY hash")
                 snap["narinfo_hashes"] = [r[0] for r in cur.fetchall()]
-            except pymysql.MySQLError:
-                pass
     finally:
         conn.close()
     return snap
