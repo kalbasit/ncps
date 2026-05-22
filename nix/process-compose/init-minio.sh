@@ -5,7 +5,19 @@ set -euo pipefail
 # ---------------------------------------------------
 # SETUP: Local admin alias for the connection
 # ---------------------------------------------------
-mc alias set local "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+# `mc alias set` validates credentials against MinIO's admin API, which can
+# briefly return "Server not initialized yet" right after the health endpoint
+# starts responding. Retry to absorb that gap.
+for i in {1..15}; do
+  if mc alias set local "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; then
+    break
+  fi
+  if [ "$i" -eq 15 ]; then
+    echo "❌ mc alias set failed after 15 attempts" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 # ---------------------------------------------------
 # SETUP: Create the test bucket and the access key

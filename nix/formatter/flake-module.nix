@@ -13,6 +13,28 @@
         ".env"
         ".envrc"
         "LICENSE"
+        # Ent generated code: produced by `go generate ./ent/...`; never
+        # hand-edited and never re-formatted — the Ent generator emits its
+        # own canonical layout, and any external formatting causes a diff
+        # loop against the codegen drift check (see
+        # nix/checks/flake-module.nix → ent-codegen-drift-check). The
+        # schemas under ent/schema/ remain formattable (they are inputs to
+        # the generator); only the generated tree is excluded.
+        "ent/*.go"
+        "ent/chunk/**/*.go"
+        "ent/configentry/**/*.go"
+        "ent/enttest/**/*.go"
+        "ent/hook/**/*.go"
+        "ent/migrate/**/*.go"
+        "ent/narfile/**/*.go"
+        "ent/narfilechunk/**/*.go"
+        "ent/narinfo/**/*.go"
+        "ent/narinfonarfile/**/*.go"
+        "ent/narinforeference/**/*.go"
+        "ent/narinfosignature/**/*.go"
+        "ent/pinnedclosure/**/*.go"
+        "ent/predicate/**/*.go"
+        "ent/runtime/**/*.go"
         "openspec/**/*.md"
         "renovate.json"
       ];
