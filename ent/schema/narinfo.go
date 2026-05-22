@@ -62,7 +62,10 @@ func (NarInfo) Fields() []ent.Field {
 		field.Time("last_accessed_at").
 			Optional().
 			Nillable().
-			Default(time.Now),
+			Default(time.Now).
+			Annotations(entsql.Annotation{
+				DefaultExpr: "CURRENT_TIMESTAMP",
+			}),
 	}
 }
 

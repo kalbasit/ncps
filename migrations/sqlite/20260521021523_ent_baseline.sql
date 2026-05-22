@@ -1,14 +1,8 @@
 -- +goose Up
--- +goose NO TRANSACTION
--- Required so the `PRAGMA foreign_keys = off` below takes effect —
--- SQLite ignores the PRAGMA inside a transaction, which would cause
--- the subsequent DROP TABLE / RENAME swaps to fail against any data
--- already referencing the rewritten tables.
-
 -- disable the enforcement of foreign-keys constraints
 PRAGMA foreign_keys = OFF;
 -- create "new_narinfos" table
-CREATE TABLE `new_narinfos` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `created_at` datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), `updated_at` datetime NULL, `hash` text NOT NULL, `store_path` text NULL, `url` text NULL, `compression` text NULL, `file_hash` text NULL, `file_size` integer NULL, `nar_hash` text NULL, `nar_size` integer NULL, `deriver` text NULL, `system` text NULL, `ca` text NULL, `last_accessed_at` datetime NULL, CONSTRAINT `narinfos_file_size_nonneg` CHECK (file_size >= 0), CONSTRAINT `narinfos_nar_size_nonneg` CHECK (nar_size >= 0));
+CREATE TABLE `new_narinfos` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `created_at` datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), `updated_at` datetime NULL, `hash` text NOT NULL, `store_path` text NULL, `url` text NULL, `compression` text NULL, `file_hash` text NULL, `file_size` integer NULL, `nar_hash` text NULL, `nar_size` integer NULL, `deriver` text NULL, `system` text NULL, `ca` text NULL, `last_accessed_at` datetime NULL DEFAULT (CURRENT_TIMESTAMP), CONSTRAINT `narinfos_file_size_nonneg` CHECK (file_size >= 0), CONSTRAINT `narinfos_nar_size_nonneg` CHECK (nar_size >= 0));
 -- copy rows from old table "narinfos" to new temporary table "new_narinfos"
 INSERT INTO `new_narinfos` (`id`, `created_at`, `updated_at`, `hash`, `store_path`, `url`, `compression`, `file_hash`, `file_size`, `nar_hash`, `nar_size`, `deriver`, `system`, `ca`, `last_accessed_at`) SELECT
     `id`,
@@ -99,7 +93,7 @@ CREATE UNIQUE INDEX `narinfosignature_narinfo_id_signature` ON `narinfo_signatur
 -- create index "narinfosignature_signature" to table: "narinfo_signatures"
 CREATE INDEX `narinfosignature_signature` ON `narinfo_signatures` (`signature`);
 -- create "new_nar_files" table
-CREATE TABLE `new_nar_files` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `created_at` datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), `updated_at` datetime NULL, `hash` text NOT NULL, `compression` text NOT NULL DEFAULT (''), `file_size` integer NOT NULL, `query` text NOT NULL DEFAULT (''), `total_chunks` integer NOT NULL DEFAULT (0), `chunking_started_at` datetime NULL, `verified_at` datetime NULL, `last_accessed_at` datetime NULL);
+CREATE TABLE `new_nar_files` (`id` integer NOT NULL PRIMARY KEY AUTOINCREMENT, `created_at` datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), `updated_at` datetime NULL, `hash` text NOT NULL, `compression` text NOT NULL DEFAULT (''), `file_size` integer NOT NULL, `query` text NOT NULL DEFAULT (''), `total_chunks` integer NOT NULL DEFAULT (0), `chunking_started_at` datetime NULL, `verified_at` datetime NULL, `last_accessed_at` datetime NULL DEFAULT (CURRENT_TIMESTAMP));
 -- copy rows from old table "nar_files" to new temporary table "new_nar_files"
 INSERT INTO `new_nar_files` (`id`, `created_at`, `updated_at`, `hash`, `compression`, `file_size`, `query`, `total_chunks`, `chunking_started_at`, `verified_at`, `last_accessed_at`) SELECT
     `id`,

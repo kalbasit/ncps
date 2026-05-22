@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	atlasmigrate "ariga.io/atlas/sql/migrate"
+	atlasschema "ariga.io/atlas/sql/schema"
 	entsql "entgo.io/ent/dialect/sql"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
@@ -55,11 +56,23 @@ func TestSchemaEquivalence(t *testing.T) {
 		goDialect   string
 		envVar      string
 		openFreshDB func(t *testing.T) (db *sql.DB, cleanup func())
+		diffHooks   []schema.DiffHook
 	}{
 		{
 			dialect:     "sqlite",
 			goDialect:   dialect.SQLite,
 			openFreshDB: openFreshSQLite,
+			// SQLite-only: Ent's atDefault wraps an Expr default in
+			// outer parens ("CURRENT_TIMESTAMP" -> "(CURRENT_TIMESTAMP)"),
+			// but SQLite's introspector returns the raw stored form
+			// without parens. Atlas's SQLite defaultChanged compares
+			// the two strings directly (no MayWrap normalization), so
+			// every column with a DefaultExpr produces a phantom
+			// ModifyTable diff on this dialect. PG and MySQL aren't
+			// affected (their introspectors preserve the form Atlas
+			// emits). Normalize the desired-side defaults here so the
+			// schema-equivalence assertion sees apples-to-apples values.
+			diffHooks: []schema.DiffHook{stripParenWrappedExprDefaults},
 		},
 		{
 			dialect:     "postgres",
@@ -96,12 +109,18 @@ func TestSchemaEquivalence(t *testing.T) {
 			before := mustListSQLFiles(t, tmpDir)
 
 			drv := entsql.OpenDB(tc.goDialect, db)
-			m, err := schema.NewMigrate(drv,
+
+			opts := []schema.MigrateOption{
 				schema.WithDir(gdir),
 				schema.WithMigrationMode(schema.ModeReplay),
 				schema.WithDialect(tc.goDialect),
 				schema.WithFormatter(sqltool.GooseFormatter),
-			)
+			}
+			if len(tc.diffHooks) > 0 {
+				opts = append(opts, schema.WithDiffHook(tc.diffHooks...))
+			}
+
+			m, err := schema.NewMigrate(drv, opts...)
 			require.NoError(t, err)
 			require.NoError(t, m.NamedDiff(t.Context(), "equivalence_check", migrate.Tables...))
 
@@ -318,4 +337,34 @@ func setDiff(after, before []string) []string {
 	}
 
 	return out
+}
+
+// stripParenWrappedExprDefaults is a SQLite-only DiffHook that strips a
+// single layer of outer parentheses from RawExpr column defaults on the
+// desired side of the diff. Ents schema/atlas.go atDefault always wraps
+// an entsql.Annotation{DefaultExpr: ...} value in parens before handing
+// it to Atlas (e.g. "CURRENT_TIMESTAMP" -> "(CURRENT_TIMESTAMP)"). SQLites
+// schema introspector returns the unwrapped form. Atlas's SQLite
+// defaultChanged compares the two RawExpr strings byte-for-byte without
+// the MayWrap normalization it uses elsewhere, so every DefaultExpr
+// column trips a phantom diff. Postgres/MySQL preserve the wrapped form
+// during introspection and do not need this hook.
+func stripParenWrappedExprDefaults(next schema.Differ) schema.Differ {
+	return schema.DiffFunc(func(current, desired *atlasschema.Schema) ([]atlasschema.Change, error) {
+		for _, tbl := range desired.Tables {
+			for _, col := range tbl.Columns {
+				re, ok := col.Default.(*atlasschema.RawExpr)
+				if !ok || re == nil {
+					continue
+				}
+
+				x := re.X
+				if len(x) >= 2 && x[0] == '(' && x[len(x)-1] == ')' {
+					re.X = x[1 : len(x)-1]
+				}
+			}
+		}
+
+		return next.Diff(current, desired)
+	})
 }
