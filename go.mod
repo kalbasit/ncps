@@ -11,7 +11,6 @@ require (
 	entgo.io/ent v0.14.6
 	github.com/XSAM/otelsql v0.42.0
 	github.com/andybalholm/brotli v1.2.1
-	github.com/docker/docker v28.5.2+incompatible
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-redsync/redsync/v4 v4.16.0
 	github.com/go-sql-driver/mysql v1.10.0
@@ -134,6 +133,5 @@ require (
 	google.golang.org/grpc v1.81.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gotest.tools/v3 v3.5.2 // indirect
 	mvdan.cc/gofumpt v0.9.2 // indirect
 )
