@@ -1,0 +1,138 @@
+suite: test migration container invokes ncps migrate up
+templates:
+  - migration-job.yaml
+  - deployment.yaml
+  - statefulset.yaml
+  - configmap.yaml
+  - secret.yaml
+  - secret-signing-key.yaml
+tests:
+  # ---- migration-job ----
+  - it: migration-job command is /bin/ncps
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value:
+            - /bin/ncps
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - migrate
+            - up
+
+  - it: migration-job env uses CACHE_DATABASE_URL not DATABASE_URL (sqlite)
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_DATABASE_URL
+            value: "sqlite:/storage/db/ncps.db"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL
+
+  - it: migration-job env uses CACHE_DATABASE_URL with secretKeyRef (postgres)
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: postgresql
+      config.database.postgresql.host: pg
+      config.database.postgresql.password: pw
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CACHE_DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-ncps
+                key: database-url
+
+  # ---- deployment initContainer ----
+  - it: deployment migration initContainer invokes ncps migrate up
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: initContainer
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[?(@.name=="migration")].command
+          value:
+            - /bin/ncps
+      - equal:
+          path: spec.template.spec.initContainers[?(@.name=="migration")].args
+          value:
+            - migrate
+            - up
+
+  - it: deployment migration initContainer env uses CACHE_DATABASE_URL (sqlite)
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      migration.enabled: true
+      migration.mode: initContainer
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="migration")].env
+          content:
+            name: CACHE_DATABASE_URL
+            value: "sqlite:/storage/db/ncps.db"
+      - notContains:
+          path: spec.template.spec.initContainers[?(@.name=="migration")].env
+          content:
+            name: DATABASE_URL
+
+  # ---- statefulset initContainer ----
+  - it: statefulset migration initContainer invokes ncps migrate up
+    template: statefulset.yaml
+    set:
+      mode: statefulset
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: b
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: k
+      config.storage.s3.secretAccessKey: s
+      migration.enabled: true
+      migration.mode: initContainer
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[?(@.name=="migration")].command
+          value:
+            - /bin/ncps
+      - equal:
+          path: spec.template.spec.initContainers[?(@.name=="migration")].args
+          value:
+            - migrate
+            - up

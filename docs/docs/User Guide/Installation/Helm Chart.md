@@ -328,7 +328,7 @@ config:
 
 ## Database Migrations
 
-The chart supports automatic database migrations using dbmate:
+The chart supports automatic database migrations by invoking `ncps migrate up` inside the runtime container image:
 
 ### Init Container Mode (Default)
 

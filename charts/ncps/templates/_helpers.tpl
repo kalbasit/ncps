@@ -132,10 +132,12 @@ Returns the CACHE_DATABASE_URL env var config - either from value or secretKeyRe
 
 {{/*
 Database URL environment variable for migration
-Returns the DATABASE_URL env var config - either from value or secretKeyRef
+Returns the CACHE_DATABASE_URL env var config - either from value or secretKeyRef.
+The env-var name matches the source declared on the `--cache-database-url`
+flag in pkg/ncps/migrate.go so that `ncps migrate up` picks it up directly.
 */}}
 {{- define "ncps.migrationDatabaseURLEnv" -}}
-- name: DATABASE_URL
+- name: CACHE_DATABASE_URL
 {{- if eq .Values.config.database.type "sqlite" }}
   value: {{ include "ncps.databaseURL" . | quote }}
 {{- else }}
