@@ -46,10 +46,8 @@ func ValidColumn(column string) bool {
 	return false
 }
 
-var (
-	// SignatureValidator is a validator for the "signature" field. It is called by the builders before save.
-	SignatureValidator func(string) error
-)
+// SignatureValidator is a validator for the "signature" field. It is called by the builders before save.
+var SignatureValidator func(string) error
 
 // OrderOption defines the ordering options for the NarInfoSignature queries.
 type OrderOption func(*sql.Selector)
@@ -75,6 +73,7 @@ func ByNarinfoField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newNarinfoStep(), sql.OrderByField(field, opts...))
 	}
 }
+
 func newNarinfoStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),

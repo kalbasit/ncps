@@ -86,6 +86,7 @@ func ByNarFileField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newNarFileStep(), sql.OrderByField(field, opts...))
 	}
 }
+
 func newNarinfoStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -93,6 +94,7 @@ func newNarinfoStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.M2O, true, NarinfoTable, NarinfoColumn),
 	)
 }
+
 func newNarFileStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),

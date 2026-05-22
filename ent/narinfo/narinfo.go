@@ -230,6 +230,7 @@ func ByNarInfoNarFiles(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newNarInfoNarFilesStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
 func newReferencesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -237,6 +238,7 @@ func newReferencesStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, ReferencesTable, ReferencesColumn),
 	)
 }
+
 func newSignaturesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -244,6 +246,7 @@ func newSignaturesStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, SignaturesTable, SignaturesColumn),
 	)
 }
+
 func newNarInfoNarFilesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),

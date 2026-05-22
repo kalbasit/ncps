@@ -477,6 +477,7 @@ func (_q *NarFileQuery) loadNarInfoNarFiles(ctx context.Context, query *NarInfoN
 	}
 	return nil
 }
+
 func (_q *NarFileQuery) loadChunkLinks(ctx context.Context, query *NarFileChunkQuery, nodes []*NarFile, init func(*NarFile), assign func(*NarFile, *NarFileChunk)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int]*NarFile)

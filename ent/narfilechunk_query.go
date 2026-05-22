@@ -473,6 +473,7 @@ func (_q *NarFileChunkQuery) loadNarFile(ctx context.Context, query *NarFileQuer
 	}
 	return nil
 }
+
 func (_q *NarFileChunkQuery) loadChunk(ctx context.Context, query *ChunkQuery, nodes []*NarFileChunk, init func(*NarFileChunk), assign func(*NarFileChunk, *Chunk)) error {
 	ids := make([]int, 0, len(nodes))
 	nodeids := make(map[int][]*NarFileChunk)

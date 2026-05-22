@@ -112,6 +112,7 @@ func ByNarFileLinks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newNarFileLinksStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
 func newNarFileLinksStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
