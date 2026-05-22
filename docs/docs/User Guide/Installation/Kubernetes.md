@@ -301,13 +301,7 @@ spec:
           args:
             - migrate
             - up
-          envFrom:
-            - configMapRef:
-                name: ncps-config
-          # `ncps migrate up` reads the database URL from the
-          # CACHE_DATABASE_URL env var (or the --cache-database-url
-          # flag). The migrations themselves are embedded into the
-          # ncps binary, so no DBMATE_MIGRATIONS_DIR is needed.
+            - --cache-database-url=postgresql://ncps:PASSWORD@postgres:5432/ncps?sslmode=require
           volumeMounts:
             - name: config
               mountPath: /config.yaml
