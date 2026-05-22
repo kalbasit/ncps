@@ -359,12 +359,33 @@ def check_dependencies(args):
 
 def run_db_migration(db_url):
     log(f"Migrating database: {db_url}", YELLOW)
-    # Ensure directory exists for sqlite
+    # Ensure directory exists for sqlite.
+    # For postgres/mysql, ensure the database itself exists — `dbmate
+    # up` used to do this implicitly, but `ncps migrate up` connects
+    # to an existing database and won't create it. We use `dbmate
+    # create` (idempotent-ish: errors if it already exists, which we
+    # ignore) to keep the behavior compatible.
     if db_url.startswith("sqlite:"):
         path = db_url.replace("sqlite:", "")
         os.makedirs(os.path.dirname(path), exist_ok=True)
+    else:
+        subprocess.run(
+            ["dbmate", "--url", db_url, "create"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
-    subprocess.run(["dbmate", "--no-dump-schema", "--url", db_url, "up"], check=True)
+    # Use the embedded goose runner via `ncps migrate up`. This is the
+    # only supported path on this branch (the migrations live in
+    # migrations/<dialect>/, not the dbmate-default db/migrations/),
+    # and it exercises the real dbmate→goose adoption logic if the
+    # target database was initialized by an older ncps version.
+    subprocess.run(
+        ["go", "run", ".", "migrate", "up", f"--cache-database-url={db_url}"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
 
 
 def perform_clean():
