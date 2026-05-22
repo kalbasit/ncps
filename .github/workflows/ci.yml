@@ -3,7 +3,7 @@ name: CI
 # sibling jobs (database codegen, docs deploy) that don't generalize across
 # the other consumers.
 #
-# Pinned to the feat branch until v0.1.0 is tagged — bump to @v0.1.0 once ready.
+# Pinned to @main while iterating; will repin to @v0.1.0 once tagged.
 on:
   pull_request:
     branches:
@@ -22,7 +22,7 @@ permissions:
   packages: write
 jobs:
   shared:
-    uses: kalbasit/gh-actions/.github/workflows/ci.yml@feat-add-reusable-ci-workflows
+    uses: kalbasit/gh-actions/.github/workflows/ci.yml@main
     with:
       cachix_cache: ncps
       oci: true
