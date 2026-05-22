@@ -3696,10 +3696,10 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return nil, errNarInfoPurged
 	}
 
-	err = c.withTransaction(ctx, "getNarInfoFromStore", func(qtx database.Querier) error {
-		nir, err := qtx.GetNarInfoByHash(ctx, hash)
+	err = c.withEntTransaction(ctx, "getNarInfoFromStore", func(tx *ent.Tx) error {
+		nir, err := tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
 		if err != nil {
-			if database.IsNotFoundError(err) {
+			if ent.IsNotFound(err) {
 				c.backgroundMigrateNarInfo(ctx, hash, ni)
 
 				return nil
@@ -3709,7 +3709,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		}
 
 		// Migrate narinfos from storage to the database.
-		if !nir.URL.Valid {
+		if nir.URL == nil || *nir.URL == "" {
 			c.backgroundMigrateNarInfo(ctx, hash, ni)
 		}
 
@@ -3717,8 +3717,11 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 			c.BackgroundMigrateNarToChunks(ctx, narURL)
 		}
 
-		if lat, err := nir.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNarInfo(ctx, hash); err != nil {
+		if nir.LastAccessedAt == nil || time.Since(*nir.LastAccessedAt) > c.recordAgeIgnoreTouch {
+			if _, err := tx.NarInfo.Update().
+				Where(entnarinfo.HashEQ(hash)).
+				SetLastAccessedAt(time.Now()).
+				Save(ctx); err != nil {
 				return fmt.Errorf("error touching the narinfo record: %w", err)
 			}
 		}
@@ -4282,21 +4285,21 @@ func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL) (int64, error)
 func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	// First check if we have the NarInfo in DB using direct DB access
 	// to avoid higher-level cache logic (like purging or storage checks)
-	niRow, err := c.db.GetNarInfoByHash(ctx, hash)
+	niRow, err := c.dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if ent.IsNotFound(err) {
 			return nil
 		}
 
 		return fmt.Errorf("failed to get narinfo from db: %w", err)
 	}
 
-	if !niRow.URL.Valid {
+	if niRow.URL == nil || *niRow.URL == "" {
 		// No URL means not migrated or partial, can't check
 		return nil
 	}
 
-	nu, err := nar.ParseURL(niRow.URL.String)
+	nu, err := nar.ParseURL(*niRow.URL)
 	if err != nil {
 		return fmt.Errorf("failed to parse nar url from narinfo: %w", err)
 	}
@@ -4333,10 +4336,11 @@ func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 		return nil
 	}
 
-	if size != niRow.FileSize.Int64 {
+	currentFileSize := derefInt64Ptr(niRow.FileSize)
+	if size != currentFileSize {
 		zerolog.Ctx(ctx).
 			Info().
-			Int64("current_size", niRow.FileSize.Int64).
+			Int64("current_size", currentFileSize).
 			Int64("actual_size", size).
 			Msg("mismatch detected, fixing narinfo file size")
 
@@ -4346,36 +4350,40 @@ func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	return nil
 }
 
-func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string, niRow database.NarInfo) error {
-	// For compression=none, FileSize must be 0. If it's not, fix it.
-	if niRow.FileSize.Valid && niRow.FileSize.Int64 != 0 {
+func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string, niRow *ent.NarInfo) error {
+	// For compression=none, FileSize must be 0/NULL. If it's not, fix it.
+	if niRow.FileSize != nil && *niRow.FileSize != 0 {
 		zerolog.Ctx(ctx).
 			Info().
-			Int64("current_size", niRow.FileSize.Int64).
+			Int64("current_size", *niRow.FileSize).
 			Msg("mismatch detected for compression=none, fixing narinfo file size to NULL")
 
-		if err := c.withTransaction(ctx, "fixNarInfoFileSizeToNull", func(qtx database.Querier) error {
-			return qtx.UpdateNarInfoFileSize(ctx, database.UpdateNarInfoFileSizeParams{
-				Hash:     hash,
-				FileSize: sql.NullInt64{Int64: 0, Valid: false},
-			})
+		if err := c.withEntTransaction(ctx, "fixNarInfoFileSizeToNull", func(tx *ent.Tx) error {
+			_, err := tx.NarInfo.Update().
+				Where(entnarinfo.HashEQ(hash)).
+				ClearFileSize().
+				Save(ctx)
+
+			return err
 		}); err != nil {
 			return fmt.Errorf("failed to fix narinfo file size to NULL: %w", err)
 		}
 	}
 
 	// For compression=none, FileHash must be NULL. If it's not, fix it.
-	if niRow.FileHash.Valid || niRow.FileHash.String != "" {
+	if niRow.FileHash != nil && *niRow.FileHash != "" {
 		zerolog.Ctx(ctx).
 			Info().
-			Str("current_file_hash", niRow.FileHash.String).
+			Str("current_file_hash", *niRow.FileHash).
 			Msg("mismatch detected for compression=none, fixing narinfo file hash to NULL")
 
-		if err := c.withTransaction(ctx, "fixNarInfoFileHashToNull", func(qtx database.Querier) error {
-			return qtx.UpdateNarInfoFileHash(ctx, database.UpdateNarInfoFileHashParams{
-				Hash:     hash,
-				FileHash: sql.NullString{String: "", Valid: false},
-			})
+		if err := c.withEntTransaction(ctx, "fixNarInfoFileHashToNull", func(tx *ent.Tx) error {
+			_, err := tx.NarInfo.Update().
+				Where(entnarinfo.HashEQ(hash)).
+				ClearFileHash().
+				Save(ctx)
+
+			return err
 		}); err != nil {
 			return fmt.Errorf("failed to fix narinfo file hash to NULL: %w", err)
 		}
@@ -6990,23 +6998,21 @@ func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}
 			currentHash := queue[0]
 			queue = queue[1:]
 
-			// Get the narinfo by hash
-			ni, err := c.db.GetNarInfoByHash(ctx, currentHash)
+			// Get the narinfo + its references in one round-trip
+			ni, err := c.dbClient.Ent().NarInfo.Query().
+				Where(entnarinfo.HashEQ(currentHash)).
+				WithReferences().
+				Only(ctx)
 			if err != nil {
-				if database.IsNotFoundError(err) {
+				if ent.IsNotFound(err) {
 					continue // Narinfo not in database, skip
 				}
 
 				return nil, fmt.Errorf("failed to get narinfo %s: %w", currentHash, err)
 			}
 
-			// Get references for this narinfo
-			refs, err := c.db.GetNarInfoReferences(ctx, ni.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get references for narinfo %s: %w", currentHash, err)
-			}
-
-			for _, ref := range refs {
+			for _, refEdge := range ni.Edges.References {
+				ref := refEdge.Reference
 				// Extract hash from reference (format: <hash>-<name>-<version>)
 				// Hash is the first 52 characters
 				if len(ref) < narInfoHashLength {
