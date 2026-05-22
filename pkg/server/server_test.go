@@ -44,6 +44,7 @@ const (
 func newTestCache(
 	ctx context.Context,
 	db database.Querier,
+	dbClient *database.Client,
 	//nolint:staticcheck // using deprecated ConfigStore interface for testing migration
 	configStore storage.ConfigStore,
 	narInfoStore storage.NarInfoStore,
@@ -52,7 +53,7 @@ func newTestCache(
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	return cache.New(ctx, cacheName, db, configStore, narInfoStore, narStore, "",
+	return cache.New(ctx, cacheName, db, dbClient, configStore, narInfoStore, narStore, "",
 		downloadLocker, cacheLocker, 5*time.Minute, 30*time.Second, 30*time.Minute)
 }
 
@@ -77,11 +78,13 @@ func TestServeHTTP(t *testing.T) {
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -124,11 +127,13 @@ func TestServeHTTP(t *testing.T) {
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -280,11 +285,13 @@ func TestServeHTTP(t *testing.T) {
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -356,7 +363,10 @@ Deriver: test.drv
 				testDB, err := database.Open("sqlite:"+testDBFile, nil)
 				require.NoError(t, err)
 
-				testCache, err := newTestCache(newContext(), testDB, testLocalStore, testLocalStore, testLocalStore)
+				testDBClient, err := database.NewClient(testDB.DB(), database.TypeSQLite)
+				require.NoError(t, err)
+
+				testCache, err := newTestCache(newContext(), testDB, testDBClient, testLocalStore, testLocalStore, testLocalStore)
 				require.NoError(t, err)
 
 				// Create a server using the test cache
@@ -529,11 +539,13 @@ Deriver: test.drv
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		c.AddUpstreamCaches(newContext(), uc)
@@ -724,11 +736,13 @@ func TestGetNar_HeadOptimization(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -782,11 +796,13 @@ func TestGetNarInfo_Head(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -846,11 +862,13 @@ func TestGetNar_HeadFallback(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -908,11 +926,13 @@ func TestGetNar_ZstdCompression(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -981,11 +1001,13 @@ func TestGetNar_NoZstdCompression(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -1051,11 +1073,13 @@ func TestGetNar_ZstdCompression_Head(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -1144,11 +1168,13 @@ func TestGetNar_HeaderSettingSequence(t *testing.T) {
 	testhelper.CreateMigrateDatabase(t, dbFile)
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	s := server.New(c)
@@ -1196,11 +1222,13 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	s := server.New(c)
@@ -1339,11 +1367,13 @@ func TestGetNar_Base16Hash(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	// create the server
@@ -1412,11 +1442,13 @@ func TestGetNar_NixServeUpstream(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1651,11 +1683,13 @@ func TestGetNar_NixServeUpstream_PrefixedNarURL(t *testing.T) {
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1748,11 +1782,13 @@ func setupUploadRouteTest(t *testing.T) (*httptest.Server, string, string, strin
 
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
 
-	c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+	c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 	require.NoError(t, err)
 
 	c.AddUpstreamCaches(newContext(), uc)
@@ -1964,11 +2000,13 @@ func TestPinClosure(t *testing.T) {
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)
@@ -2019,11 +2057,13 @@ func TestPinClosure(t *testing.T) {
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)
@@ -2073,11 +2113,13 @@ func TestPinClosure(t *testing.T) {
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)
@@ -2127,11 +2169,13 @@ func TestPinClosure(t *testing.T) {
 
 		db, err := database.Open("sqlite:"+dbFile, nil)
 		require.NoError(t, err)
+		dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+		require.NoError(t, err)
 
 		localStore, err := local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		c, err := newTestCache(newContext(), db, localStore, localStore, localStore)
+		c, err := newTestCache(newContext(), db, dbClient, localStore, localStore, localStore)
 		require.NoError(t, err)
 
 		s := server.New(c)

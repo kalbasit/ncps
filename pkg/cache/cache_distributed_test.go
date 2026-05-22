@@ -46,11 +46,15 @@ func skipIfRedisNotAvailable(t *testing.T) {
 }
 
 // distributedDBFactory creates a shared database for distributed testing.
+//
+// §11.1: factories now also yield a *database.Client so call sites can
+// pass it into cache.New. The Querier+Client pair share the same
+// *sql.DB, so cleanup still owns a single connection pool to close.
 // Unlike other factories, this returns a SHARED database that multiple cache instances will use.
-type distributedDBFactory func(t *testing.T) (database.Querier, string, func())
+type distributedDBFactory func(t *testing.T) (database.Querier, *database.Client, string, func())
 
 // setupDistributedSQLite creates a shared SQLite database for distributed testing.
-func setupDistributedSQLite(t *testing.T) (database.Querier, string, func()) {
+func setupDistributedSQLite(t *testing.T) (database.Querier, *database.Client, string, func()) {
 	t.Helper()
 
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
@@ -62,46 +66,49 @@ func setupDistributedSQLite(t *testing.T) (database.Querier, string, func()) {
 	db, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
+	dbClient, err := database.NewClient(db.DB(), database.TypeSQLite)
+	require.NoError(t, err)
+
 	cleanup := func() {
 		db.DB().Close()
 		os.RemoveAll(sharedDir)
 	}
 
-	return db, sharedDir, cleanup
+	return db, dbClient, sharedDir, cleanup
 }
 
 // setupDistributedPostgres creates a shared PostgreSQL database for distributed testing.
-func setupDistributedPostgres(t *testing.T) (database.Querier, string, func()) {
+func setupDistributedPostgres(t *testing.T) (database.Querier, *database.Client, string, func()) {
 	t.Helper()
 
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
 
-	db, _, dbCleanup := testhelper.SetupPostgres(t)
+	db, dbClient, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	cleanup := func() {
 		dbCleanup()
 		os.RemoveAll(sharedDir)
 	}
 
-	return db, sharedDir, cleanup
+	return db, dbClient, sharedDir, cleanup
 }
 
 // setupDistributedMySQL creates a shared MySQL database for distributed testing.
-func setupDistributedMySQL(t *testing.T) (database.Querier, string, func()) {
+func setupDistributedMySQL(t *testing.T) (database.Querier, *database.Client, string, func()) {
 	t.Helper()
 
 	sharedDir, err := os.MkdirTemp("", "cache-distributed-")
 	require.NoError(t, err)
 
-	db, _, dbCleanup := testhelper.SetupMySQL(t)
+	db, dbClient, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	cleanup := func() {
 		dbCleanup()
 		os.RemoveAll(sharedDir)
 	}
 
-	return db, sharedDir, cleanup
+	return db, dbClient, sharedDir, cleanup
 }
 
 // TestDistributedBackends runs the distributed test suite across multiple database backends.
@@ -163,7 +170,7 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 		ctx := newContext()
 
 		// Get shared database and directory from factory
-		db, sharedDir, cleanup := factory(t)
+		db, dbClient, sharedDir, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Start test server
@@ -232,6 +239,7 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 				ctx,
 				cacheName,
 				db,
+				dbClient,
 				sharedStore,
 				sharedStore,
 				sharedStore,
@@ -315,7 +323,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 		ctx := newContext()
 
 		// Get shared database and directory from factory
-		db, sharedDir, cleanup := factory(t)
+		db, dbClient, sharedDir, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Start test server
@@ -342,6 +350,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 			ctx,
 			cacheName,
 			db,
+			dbClient,
 			sharedStore,
 			sharedStore,
 			sharedStore,
@@ -384,6 +393,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 				ctx,
 				cacheName,
 				db,
+				dbClient,
 				sharedStore,
 				sharedStore,
 				sharedStore,
@@ -510,7 +520,7 @@ func testPutNarInfoConcurrentSharedNar(factory distributedDBFactory) func(*testi
 				ctx := newContext()
 
 				// Get shared database and directory from factory
-				db, sharedDir, cleanup := factory(t)
+				db, dbClient, sharedDir, cleanup := factory(t)
 				defer cleanup()
 
 				// Redis setup
@@ -541,6 +551,7 @@ func testPutNarInfoConcurrentSharedNar(factory distributedDBFactory) func(*testi
 					ctx,
 					cacheName,
 					db,
+					dbClient,
 					sharedStore,
 					sharedStore,
 					sharedStore,
@@ -654,7 +665,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 	ctx := newContext()
 
 	// Get shared database and directory from factory
-	db, sharedDir, cleanup := factory(t)
+	db, dbClient, sharedDir, cleanup := factory(t)
 	t.Cleanup(cleanup)
 
 	// Generate a large NAR (2MB) - enough for chunking but fast for tests
@@ -751,6 +762,7 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 			ctx,
 			fmt.Sprintf("cache-instance-%d", i),
 			db,
+			dbClient,
 			sharedStore,
 			sharedStore,
 			sharedStore,
@@ -903,7 +915,7 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 		ctx := newContext()
 
 		// Get shared database and directory from factory
-		db, sharedDir, cleanup := factory(t)
+		db, dbClient, sharedDir, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Generate a large NAR (12MB) to ensure CDC chunking takes time
@@ -998,6 +1010,7 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 				ctx,
 				cacheName,
 				db,
+				dbClient,
 				sharedStore,
 				sharedStore,
 				sharedStore,

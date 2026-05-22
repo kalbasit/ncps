@@ -201,7 +201,7 @@ requests. Without Redis, the command uses in-memory locking (no coordination wit
 			dryRun := cmd.Bool("dry-run")
 
 			// 1. Setup Database
-			db, err := createDatabaseQuerier(cmd)
+			db, _, err := createDatabaseQuerier(cmd)
 			if err != nil {
 				logger.Error().Err(err).Msg("error creating database querier")
 

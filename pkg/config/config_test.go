@@ -20,13 +20,15 @@ type databaseFactory func(t *testing.T) (database.Querier, func())
 func setupSQLiteDatabase(t *testing.T) (database.Querier, func()) {
 	t.Helper()
 
-	return testhelper.SetupSQLite(t)
+	db, _, cleanup := testhelper.SetupSQLite(t)
+
+	return db, cleanup
 }
 
 func setupPostgresDatabase(t *testing.T) (database.Querier, func()) {
 	t.Helper()
 
-	db, _, cleanup := testhelper.SetupPostgres(t)
+	db, _, _, cleanup := testhelper.SetupPostgres(t)
 
 	return db, cleanup
 }
@@ -34,7 +36,7 @@ func setupPostgresDatabase(t *testing.T) (database.Querier, func()) {
 func setupMySQLDatabase(t *testing.T) (database.Querier, func()) {
 	t.Helper()
 
-	db, _, cleanup := testhelper.SetupMySQL(t)
+	db, _, _, cleanup := testhelper.SetupMySQL(t)
 
 	return db, cleanup
 }

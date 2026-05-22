@@ -498,7 +498,7 @@ func setupNarToChunksMigrationPostgres(t *testing.T) (database.Querier, *storage
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, dbURL, dbCleanup := testhelper.SetupPostgres(t)
+	db, _, dbURL, dbCleanup := testhelper.SetupPostgres(t)
 
 	store, err := storagelocal.New(ctx, dir)
 	require.NoError(t, err)
@@ -516,7 +516,7 @@ func setupNarToChunksMigrationMySQL(t *testing.T) (database.Querier, *storageloc
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, dbURL, dbCleanup := testhelper.SetupMySQL(t)
+	db, _, dbURL, dbCleanup := testhelper.SetupMySQL(t)
 
 	store, err := storagelocal.New(ctx, dir)
 	require.NoError(t, err)

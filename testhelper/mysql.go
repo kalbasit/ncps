@@ -55,8 +55,10 @@ func MigrateMySQLDatabase(t *testing.T, dbURL string) {
 
 // SetupMySQL sets up a new temporary MySQL database for testing.
 // It requires the NCPS_TEST_ADMIN_MYSQL_URL environment variable to be set.
-// It returns a database connection and a cleanup function.
-func SetupMySQL(t *testing.T) (database.Querier, string, func()) {
+// It returns the legacy Querier (still in use during §11.2-§11.7),
+// the §11-introduced Ent-backed *database.Client, the database URL,
+// and a cleanup function.
+func SetupMySQL(t *testing.T) (database.Querier, *database.Client, string, func()) {
 	t.Helper()
 
 	adminDbURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
@@ -103,11 +105,14 @@ func SetupMySQL(t *testing.T) (database.Querier, string, func()) {
 	db, err := database.Open(dbURL, nil)
 	require.NoError(t, err)
 
+	dbClient, err := database.NewClient(db.DB(), database.TypeMySQL)
+	require.NoError(t, err)
+
 	cleanup := func() {
 		_ = db.DB().Close()
 		_, _ = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE `%s`", dbName))
 		_ = adminDb.DB().Close()
 	}
 
-	return db, dbURL, cleanup
+	return db, dbClient, dbURL, cleanup
 }

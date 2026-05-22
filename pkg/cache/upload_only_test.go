@@ -30,10 +30,10 @@ func TestGetNar_UploadOnly(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
 	t.Cleanup(ts.Close)
 
-	db, localStore, _, _, cleanup := setupTestComponents(t)
+	db, dbClient, localStore, _, _, cleanup := setupTestComponents(t)
 	t.Cleanup(cleanup)
 
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -93,10 +93,10 @@ func TestGetNarInfo_UploadOnly(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
 	t.Cleanup(ts.Close)
 
-	db, localStore, _, _, cleanup := setupTestComponents(t)
+	db, dbClient, localStore, _, _, cleanup := setupTestComponents(t)
 	t.Cleanup(cleanup)
 
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -141,10 +141,10 @@ func TestPutNarInfo_DoesNotTriggerNARStreaming(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 
-	db, localStore, _, _, cleanup := setupTestComponents(t)
+	db, dbClient, localStore, _, _, cleanup := setupTestComponents(t)
 	t.Cleanup(cleanup)
 
-	c, err := newTestCache(newContext(), cacheName, db, localStore, localStore, localStore, "")
+	c, err := newTestCache(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "")
 	require.NoError(t, err)
 
 	// Step 1: Store the NAR locally so checkAndFixNarInfo finds it in the store.

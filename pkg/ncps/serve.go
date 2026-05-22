@@ -499,7 +499,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return maxprocs.AutoMaxProcs(ctx, 30*time.Second, logger)
 		})
 
-		db, err := createDatabaseQuerier(cmd)
+		db, dbClient, err := createDatabaseQuerier(cmd)
 		if err != nil {
 			zerolog.Ctx(ctx).
 				Error().
@@ -646,7 +646,7 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return fmt.Errorf("error computing the upstream caches: %w", err)
 		}
 
-		cache, err := createCache(ctx, cmd, db, locker, rwLocker, ucs)
+		cache, err := createCache(ctx, cmd, db, dbClient, locker, rwLocker, ucs)
 		if err != nil {
 			return err
 		}
@@ -969,7 +969,7 @@ func createS3Storage(
 	return s3Store, s3Store, s3Store, nil
 }
 
-func createDatabaseQuerier(cmd *cli.Command) (database.Querier, error) {
+func createDatabaseQuerier(cmd *cli.Command) (database.Querier, *database.Client, error) {
 	dbURL := cmd.String("cache-database-url")
 
 	// Build pool configuration from flags
@@ -987,10 +987,23 @@ func createDatabaseQuerier(cmd *cli.Command) (database.Querier, error) {
 
 	db, err := database.Open(dbURL, poolCfg)
 	if err != nil {
-		return nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
+		return nil, nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
 	}
 
-	return db, nil
+	// §11.1: construct the Ent-backed Client alongside the legacy
+	// Querier. Both share the same *sql.DB, so we own a single
+	// connection pool; the Client wraps it via entsql.OpenDB.
+	dbType, err := database.DetectFromDatabaseURL(dbURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error detecting database type for %q: %w", dbURL, err)
+	}
+
+	dbClient, err := database.NewClient(db.DB(), dbType)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error constructing database client for %q: %w", dbURL, err)
+	}
+
+	return db, dbClient, nil
 }
 
 func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.Locker) (chunk.Store, error) {
@@ -1015,6 +1028,7 @@ func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
 	db database.Querier,
+	dbClient *database.Client,
 	locker lock.Locker,
 	rwLocker lock.RWLocker,
 	ucs []*upstream.Cache,
@@ -1033,6 +1047,7 @@ func createCache(
 		ctx,
 		hostName,
 		db,
+		dbClient,
 		configStore,
 		narInfoStore,
 		narStore,

@@ -515,7 +515,7 @@ func setupFsckPostgres(t *testing.T) (database.Querier, *localstorage.Store, str
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, dbURL, dbCleanup := testhelper.SetupPostgres(t)
+	db, _, dbURL, dbCleanup := testhelper.SetupPostgres(t)
 
 	store, err := localstorage.New(ctx, dir)
 	require.NoError(t, err)
@@ -530,7 +530,7 @@ func setupFsckMySQL(t *testing.T) (database.Querier, *localstorage.Store, string
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, dbURL, dbCleanup := testhelper.SetupMySQL(t)
+	db, _, dbURL, dbCleanup := testhelper.SetupMySQL(t)
 
 	store, err := localstorage.New(ctx, dir)
 	require.NoError(t, err)
