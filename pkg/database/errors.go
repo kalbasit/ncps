@@ -94,9 +94,9 @@ func IsNotFoundError(err error) bool {
 		return true
 	}
 
-	// ent.IsNotFound matches Ent's *NotFoundError type. We avoid the
-	// direct import dependency by checking the error message structure
-	// via the well-known Ent sentinel below.
+	// ent.IsNotFound matches Ent's *NotFoundError type. We delegate to
+	// isEntNotFound (defined in ent_errors.go) so the ent import stays
+	// isolated to a single file.
 	return isEntNotFound(err)
 }
 

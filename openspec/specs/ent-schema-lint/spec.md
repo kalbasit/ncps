@@ -55,5 +55,5 @@ The system SHALL emit one line per check with a leading `[PASS]` or `[FAIL]` tok
 #### Scenario: Output shape
 
 - **WHEN** `cmd/ent-lint --root .` is invoked
-- **THEN** stdout SHALL contain lines like `[PASS] A1 ent/schema/narinfo.go: no field-level entsql.Check` and (on failure) `[FAIL] A4 ent/schema/narinfo.go: edge.To("references") has no reciprocal edge.From().Ref()`
+- **THEN** stdout SHALL contain lines like `[PASS] A1 ent/schema/narinfo.go: no field-level entsql.Check` and (on failure) `[FAIL] A4 ent/schema/narinfo.go:<line> edge.To("references", Target.Type) has no reciprocal edge.From(NarInfo.Type).Ref("references") on Target — Ent will fabricate a phantom FK column`
 - **AND** the exit code SHALL be non-zero if and only if at least one `[FAIL]` line is emitted

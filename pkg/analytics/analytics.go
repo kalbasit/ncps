@@ -265,10 +265,16 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 	}
 
 	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		// Ent's Select.Scan calls sql.ScanSlice, which requires a slice
+		// destination AND uses tag-based field matching for struct
+		// elements. The sql:"sum" tag matches the normalized column
+		// name Ent emits from ent.Sum(...) — scanStruct splits the
+		// column at "(" and lowercases the leading token, so
+		// "SUM(file_size)" → "sum". sql.NullInt64 then captures the
+		// SUM NULL for an empty table without panicking.
 		var sums []struct {
 			Sum sql.NullInt64 `sql:"sum"`
 		}
-
 		if err := r.dbClient.Ent().NarFile.Query().
 			Aggregate(ent.Sum(entnarfile.FieldFileSize)).
 			Scan(ctx, &sums); err != nil {

@@ -108,13 +108,13 @@ The bridge SHALL include, at minimum:
 
 ### Requirement: Fresh installs skip the dbmate-era history via `Schema.Create`
 
-The system SHALL detect an empty database at `migrate up` and SHALL produce the Ent-expected schema by invoking Ent's runtime `entSchema.NewMigrate(drv).Create(ctx, migrate.Tables...)` — not by replaying the translated dbmate-era migrations. After `Schema.Create` succeeds, the system SHALL seed `schema_migrations` with every version stamp present in the embedded `migrations/<dialect>/` directory, each row recorded as `is_applied=true` and `tstamp` set to the current time (the dialect-appropriate function, or a Go-side `time.Now()` value).
+The system SHALL detect an empty database at `migrate up` and SHALL produce the Ent-expected schema by invoking Ent's runtime `entSchema.NewMigrate(drv).Create(ctx, migrate.Tables...)` — not by replaying the translated dbmate-era migrations. After `Schema.Create` succeeds, the system SHALL seed `schema_migrations` with every version stamp present in the embedded `migrations/<dialect>/` directory, each row recorded as `is_applied=true`. The `tstamp` column is populated by the database's default timestamp function (Goose's `InsertRequest` exposes only `Version`, so the Go side does not pass a `time.Now()` value).
 
 #### Scenario: Empty database first-boot
 
 - **WHEN** `migrate up` runs against an empty database (no `schema_migrations`, no application tables)
 - **THEN** the system SHALL call `Schema.Create` to produce the entire Ent-expected schema in one operation
-- **AND** the system SHALL enumerate every `.sql` file under `migrations/<dialect>/` from `migrations.FS`, parse its timestamp prefix, and insert one row per version into `schema_migrations` with `is_applied=true` and `tstamp` set to the current time
+- **AND** the system SHALL enumerate every `.sql` file under `migrations/<dialect>/` from `migrations.FS`, parse its timestamp prefix, and insert one row per version into `schema_migrations` with `is_applied=true` (the `tstamp` column is populated by the database's default timestamp function)
 - **AND** the subsequent Goose invocation SHALL report zero pending migrations
 
 #### Scenario: Fresh install at v1.1 (after a new incremental migration has been added)
@@ -181,7 +181,7 @@ The system SHALL produce migrations that are safe to apply while the immediately
 #### Scenario: Forbidden DDL in the newest migration
 
 - **WHEN** the newest file in any `migrations/<dialect>/` directory contains a forbidden DDL statement
-- **THEN** `cmd/ent-lint` SHALL fail with a non-zero exit and a checklist-formatted message naming the file and the forbidden statement
+- **THEN** the change SHALL be rejected in code review against the expand-contract policy documented in `CLAUDE.md`, until a future change wires this check into `cmd/ent-lint` to fail with a non-zero exit and a checklist-formatted message naming the file and the forbidden statement
 
 #### Scenario: Promoting a column to NOT NULL safely
 

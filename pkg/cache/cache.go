@@ -2291,28 +2291,50 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 	// GetOrphanedChunks is on Ent (§11.5), the chunk PK type is
 	// plain int on both sides — no conversion needed.
 	staleByID := make(map[int]string, len(staleLockChunks))
+
+	ids := make([]int, 0, len(staleLockChunks))
 	for _, ch := range staleLockChunks {
 		staleByID[ch.ID] = ch.Hash
+		ids = append(ids, ch.ID)
 	}
 
-	// Find all currently orphaned chunks (no nar_file_chunks references).
-	// Run this outside the previous transaction so we see the committed deletion.
-	// Ent equivalent of the legacy LEFT JOIN nar_file_chunks WHERE chunk_id IS NULL:
-	// chunks that have no NarFileLinks edge.
-	orphanedChunks, err := c.dbClient.Ent().Chunk.Query().
-		Where(entchunk.Not(entchunk.HasNarFileLinks())).
-		All(ctx)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
+	// Restrict the orphan-check query to the candidate IDs we already
+	// know about, so we don't pull (and filter in memory) every orphan
+	// in the database. Run this outside the previous transaction so we
+	// see the committed deletion. Ent equivalent of the legacy LEFT
+	// JOIN nar_file_chunks WHERE chunk_id IS NULL: chunks that have no
+	// NarFileLinks edge.
+	//
+	// IDIn is batched (cdcCleanupHashBatchSize) to stay below driver
+	// parameter limits: a very large NAR file split into small CDC
+	// chunks can produce many thousands of partial-chunk IDs after a
+	// stale-lock cleanup, which would otherwise exceed SQLite's ≤ 999
+	// placeholder ceiling on older builds.
+	var orphanedChunks []*ent.Chunk
 
-		return
+	for start := 0; start < len(ids); start += cdcCleanupHashBatchSize {
+		end := start + cdcCleanupHashBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+
+		batch, err := c.dbClient.Ent().Chunk.Query().
+			Where(
+				entchunk.IDIn(ids[start:end]...),
+				entchunk.Not(entchunk.HasNarFileLinks()),
+			).
+			All(ctx)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get orphaned chunks during stale lock cleanup; will rely on GC")
+
+			return
+		}
+
+		orphanedChunks = append(orphanedChunks, batch...)
 	}
 
 	for _, oc := range orphanedChunks {
-		hash, ok := staleByID[oc.ID]
-		if !ok {
-			continue // Not one of our stale lock chunks.
-		}
+		hash := staleByID[oc.ID]
 
 		chunkLog := log.With().Str("chunk_hash", hash).Int("chunk_id", oc.ID).Logger()
 		chunkLog.Debug().Msg("immediately cleaning up chunk from stale CDC lock")
@@ -4842,12 +4864,24 @@ func MigrateNarInfo(
 	nir, err := dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HashEQ(hash)).
 		Only(ctx)
-	if err == nil && nir.URL != nil && *nir.URL != "" {
-		zerolog.Ctx(ctx).Debug().
-			Str("narinfo_hash", hash).
-			Msg("migration completed by another instance while waiting for lock")
 
-		return nil
+	switch {
+	case err == nil:
+		if nir.URL != nil && *nir.URL != "" {
+			zerolog.Ctx(ctx).Debug().
+				Str("narinfo_hash", hash).
+				Msg("migration completed by another instance while waiting for lock")
+
+			return nil
+		}
+	case ent.IsNotFound(err):
+		// Expected: narinfo not yet in DB; fall through to migrate.
+	default:
+		// Unexpected DB error — log but still attempt migration; if the
+		// DB is genuinely broken the upsert below will surface the error.
+		zerolog.Ctx(ctx).Warn().Err(err).
+			Str("narinfo_hash", hash).
+			Msg("double-check NarInfo lookup failed; proceeding with migration")
 	}
 
 	log := zerolog.Ctx(ctx).With().Str("narinfo_hash", hash).Logger()

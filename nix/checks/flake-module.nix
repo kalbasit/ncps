@@ -142,13 +142,13 @@
             preCheck = ''
               # Set up cleanup trap to ensure background processes are killed even if tests fail.
               cleanup() {
-                source $src/nix/packages/ncps/post-check-mysql.sh
-                source $src/nix/packages/ncps/post-check-postgres.sh
+                source "$src/nix/packages/ncps/post-check-mysql.sh"
+                source "$src/nix/packages/ncps/post-check-postgres.sh"
               }
               trap cleanup EXIT
 
-              source $src/nix/packages/ncps/pre-check-mysql.sh
-              source $src/nix/packages/ncps/pre-check-postgres.sh
+              source "$src/nix/packages/ncps/pre-check-mysql.sh"
+              source "$src/nix/packages/ncps/pre-check-postgres.sh"
             '';
             checkPhase = ''
               runHook preCheck

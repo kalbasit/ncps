@@ -19,8 +19,11 @@
         # loop against the codegen drift check (see
         # nix/checks/flake-module.nix → ent-codegen-drift-check). The
         # schemas under ent/schema/ remain formattable (they are inputs to
-        # the generator); only the generated tree is excluded.
+        # the generator); only the generated tree is excluded. The
+        # hand-written ent/generate.go (which carries the //go:generate
+        # directive) is explicitly re-included so it stays formattable.
         "ent/*.go"
+        "!ent/generate.go"
         "ent/chunk/**/*.go"
         "ent/configentry/**/*.go"
         "ent/enttest/**/*.go"
