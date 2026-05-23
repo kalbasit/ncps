@@ -1047,7 +1047,7 @@ func TestNar_ErrorPaths(t *testing.T) {
 	})
 }
 
-// Integration tests - require running MinIO instance
+// Integration tests - require a running S3-compatible server (Garage)
 
 //nolint:paralleltest
 func TestGetSecretKey_Integration(t *testing.T) {

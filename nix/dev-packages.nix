@@ -10,9 +10,9 @@ pkgs: with pkgs; [
   watchexec
   xz
   delve
+  awscli2
+  garage
   mariadb
-  minio
-  minio-client
   postgresql
   redis
   skopeo

@@ -6,7 +6,7 @@ A Nix-native tool for comprehensive Kubernetes integration testing of the NCPS H
 
 This tool provides a unified CLI (`k8s-tests`) for:
 
-- **Cluster Management**: Create/destroy Kind clusters with all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
+- **Cluster Management**: Create/destroy Kind clusters with all dependencies (Garage, PostgreSQL, MariaDB, Redis)
 - **Test Generation**: Generate Helm values files from declarative Nix configuration
 - **Deployment Testing**: Install, test, and cleanup test deployments
 - **Complete Workflows**: Run end-to-end integration tests with a single command

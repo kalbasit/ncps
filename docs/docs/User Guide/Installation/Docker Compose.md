@@ -128,36 +128,42 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # MinIO (S3-compatible storage)
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  # Garage (S3-compatible storage)
+  garage:
+    image: dxflrs/garage:v1.0.1
+    entrypoint: ["/garage"]
+    command: ["server"]
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      GARAGE_CONFIG_FILE: /etc/garage.toml
     volumes:
-      - minio-data:/data
+      - garage-data:/var/lib/garage
+      - ./garage.toml:/etc/garage.toml:ro
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "3900:3900"   # S3 API
+      - "3903:3903"   # admin API
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3903/health"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
-  # Create MinIO bucket
-  createbuckets:
-    image: minio/mc:latest
+  # Bootstrap Garage: assign layout, create bucket and access key.
+  # Provide ./garage.toml alongside this file (see Garage docs for a template).
+  garage-bootstrap:
+    image: dxflrs/garage:v1.0.1
     depends_on:
-      minio:
+      garage:
         condition: service_healthy
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb myminio/ncps-cache --ignore-existing;
-      exit 0;
+      garage -c /etc/garage.toml layout assign -z dc1 -c 1G $$(garage -c /etc/garage.toml node id -q | cut -d@ -f1) || true;
+      garage -c /etc/garage.toml layout apply --version 1 || true;
+      garage -c /etc/garage.toml bucket create ncps-cache || true;
+      garage -c /etc/garage.toml key import --yes your-access-key your-secret-key || true;
+      garage -c /etc/garage.toml bucket allow --read --write --owner ncps-cache --key your-access-key;
       "
     restart: "no"
 
@@ -179,16 +185,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      createbuckets:
+      garage-bootstrap:
         condition: service_completed_successfully
     ports:
       - "8501:8501"
     environment:
       CACHE_HOSTNAME: cache.example.com
       CACHE_STORAGE_S3_BUCKET: ncps-cache
-      CACHE_STORAGE_S3_ENDPOINT: http://minio:9000
-      CACHE_STORAGE_S3_ACCESS_KEY_ID: minioadmin
-      CACHE_STORAGE_S3_SECRET_ACCESS_KEY: minioadmin
+      CACHE_STORAGE_S3_ENDPOINT: http://garage:3900
+      CACHE_STORAGE_S3_ACCESS_KEY_ID: your-access-key
+      CACHE_STORAGE_S3_SECRET_ACCESS_KEY: your-secret-key
       CACHE_STORAGE_S3_USE_SSL: "false"
       CACHE_DATABASE_URL: postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable
       CACHE_REDIS_ADDRS: redis:6379
@@ -205,16 +211,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      createbuckets:
+      garage-bootstrap:
         condition: service_completed_successfully
     ports:
       - "8502:8501"
     environment:
       CACHE_HOSTNAME: cache.example.com
       CACHE_STORAGE_S3_BUCKET: ncps-cache
-      CACHE_STORAGE_S3_ENDPOINT: http://minio:9000
-      CACHE_STORAGE_S3_ACCESS_KEY_ID: minioadmin
-      CACHE_STORAGE_S3_SECRET_ACCESS_KEY: minioadmin
+      CACHE_STORAGE_S3_ENDPOINT: http://garage:3900
+      CACHE_STORAGE_S3_ACCESS_KEY_ID: your-access-key
+      CACHE_STORAGE_S3_SECRET_ACCESS_KEY: your-secret-key
       CACHE_STORAGE_S3_USE_SSL: "false"
       CACHE_DATABASE_URL: postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable
       CACHE_REDIS_ADDRS: redis:6379
@@ -225,21 +231,21 @@ services:
 
 volumes:
   postgres-data:
-  minio-data:
+  garage-data:
 ```
 
 **This setup includes:**
 
 - PostgreSQL for shared database
 - Redis for distributed locking
-- MinIO for S3-compatible storage
+- Garage for S3-compatible storage
 - Two ncps instances for high availability
 
 **Access points:**
 
 - ncps instance 1: [http://localhost:8501](http://localhost:8501)
 - ncps instance 2: [http://localhost:8502](http://localhost:8502)
-- MinIO console: [http://localhost:9001](http://localhost:9001)
+- Garage admin API: [http://localhost:3903](http://localhost:3903)
 
 ## Using Configuration File
 

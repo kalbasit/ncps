@@ -25,7 +25,7 @@ This skill documents the standard workflows for developing, building, running, a
 
 The project uses Nix to manage dependencies. Ensure you have Nix installed.
 
-1. **Start Services**: Before running the application or tests that require backing services (Postgres, MySQL, Redis, MinIO), start them using:
+1. **Start Services**: Before running the application or tests that require backing services (Postgres, MySQL, Redis, Garage), start them using:
 
     ```bash
     nix run .#deps

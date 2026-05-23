@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """verify-data.py — Verify NCPS data integrity by cross-checking the database
-against actual stored files (local filesystem or S3/MinIO).
+against actual stored files (local filesystem or S3/Garage).
 
 Reads configuration from var/ncps/state.json written by run.py, so no flags
 are needed for connection settings or CDC mode.

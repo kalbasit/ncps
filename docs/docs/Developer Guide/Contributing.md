@@ -37,7 +37,7 @@ The project uses **Nix flakes** with **direnv** for reproducible development env
    - delve (debugger)
    - watchexec
    - sqlfluff
-   - MinIO (for S3 testing)
+   - Garage (for S3 testing)
    - PostgreSQL (for database testing)
    - MySQL/MariaDB (for database testing)
    - Redis (for distributed locking testing)
@@ -57,7 +57,7 @@ Once in the development shell, you have access to:
 | `delve` | Go debugger |
 | `watchexec` | File watcher for hot-reloading |
 | `sqlfluff` | SQL linting and formatting |
-| `minio` | S3-compatible object storage |
+| `garage` | S3-compatible object storage |
 | `postgresql` | PostgreSQL database server |
 | `mariadb` | MySQL/MariaDB database server |
 | `redis` | Redis server for distributed locks |
@@ -72,9 +72,9 @@ nix run .#deps
 
 This starts:
 
-- **MinIO** - S3-compatible storage server (port 9000, console on 9001)
+- **Garage** - S3-compatible object store (S3 API on port 9000, admin on 3903)
   - Test bucket: `test-bucket`
-  - Credentials: `test-access-key` / `test-secret-key`
+  - Credentials: `GK1234567890abcdef12345678` / `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
   - Self-validation ensures proper setup
 - **PostgreSQL** - Database server (port 5432)
   - Test database: `test-db`
@@ -100,7 +100,7 @@ The development server supports hot-reloading and multiple storage backends:
 # or explicitly
 ./dev-scripts/run.sh local
 
-# Using S3/MinIO storage (requires dependencies to be running)
+# Using S3/Garage storage (requires dependencies to be running)
 # In a separate terminal:
 nix run .#deps
 
@@ -272,7 +272,7 @@ The development shell provides commands to easily enable/disable integration tes
 
 | Command | Description |
 | --- | --- |
-| `eval "$(enable-s3-tests)"` | Enable S3/MinIO integration tests |
+| `eval "$(enable-s3-tests)"` | Enable S3/Garage integration tests |
 | `eval "$(enable-postgres-tests)"` | Enable PostgreSQL integration tests |
 | `eval "$(enable-redis-tests)"` | Enable Redis integration tests |
 | `eval "$(enable-mysql-tests)"` | Enable MySQL integration tests |
@@ -310,8 +310,8 @@ The helper commands output shell export statements that you evaluate in your cur
   - `NCPS_TEST_S3_BUCKET=test-bucket`
   - `NCPS_TEST_S3_ENDPOINT=http://127.0.0.1:9000`
   - `NCPS_TEST_S3_REGION=us-east-1`
-  - `NCPS_TEST_S3_ACCESS_KEY_ID=test-access-key`
-  - `NCPS_TEST_S3_SECRET_ACCESS_KEY=test-secret-key`
+  - `NCPS_TEST_S3_ACCESS_KEY_ID=GK1234567890abcdef12345678`
+  - `NCPS_TEST_S3_SECRET_ACCESS_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
 - `**enable-postgres-tests**` exports:
   - `NCPS_TEST_POSTGRES_URL=postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable`
 - `**enable-mysql-tests**` exports:
@@ -341,7 +341,7 @@ nix build
 
 The Nix build automatically:
 
-1. Starts MinIO, PostgreSQL, MariaDB, and Redis in `preCheck` phase
+1. Starts Garage, PostgreSQL, MariaDB, and Redis in `preCheck` phase
 1. Creates test databases and buckets
 1. Exports test environment variables
 1. Runs all tests (including integration tests)
@@ -349,7 +349,7 @@ The Nix build automatically:
 
 ### Helm Chart Testing
 
-The project includes comprehensive Helm chart testing using a local Kind cluster with MinIO, PostgreSQL, MariaDB, and Redis. A unified CLI tool (`k8s-tests`) manages the complete testing workflow.
+The project includes comprehensive Helm chart testing using a local Kind cluster with Garage, PostgreSQL, MariaDB, and Redis. A unified CLI tool (`k8s-tests`) manages the complete testing workflow.
 
 **Prerequisites:**
 
@@ -377,7 +377,7 @@ This command:
 **Individual Steps:**
 
 ```sh
-# 1. Create Kind cluster with all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
+# 1. Create Kind cluster with all dependencies (Garage, PostgreSQL, MariaDB, Redis)
 k8s-tests cluster create
 
 # 2. Build Docker image, push to local registry, and generate test values

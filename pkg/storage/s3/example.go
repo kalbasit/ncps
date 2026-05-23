@@ -58,25 +58,28 @@ func Example() {
 	fmt.Printf("Retrieved secret key: %s\n", retrievedKey.String())
 }
 
-// ExampleMinIO demonstrates how to use the S3 storage with MinIO.
-func ExampleMinIO() {
+// ExampleGarage demonstrates how to use the S3 storage with a self-hosted
+// S3-compatible server such as Garage. Configuration is identical for other
+// S3-compatible servers (Ceph, SeaweedFS, etc.) — just adjust the endpoint
+// and credentials.
+func ExampleGarage() {
 	ctx := context.Background()
 
-	// Create MinIO configuration
+	// Create configuration for a self-hosted S3-compatible endpoint.
 	cfg := s3.Config{
 		Bucket:          "my-nix-cache",
-		Endpoint:        "http://localhost:9000", // Must include scheme
-		AccessKeyID:     "minioadmin",
-		SecretAccessKey: "minioadmin",
-		ForcePathStyle:  true, // MinIO requires path-style addressing
+		Endpoint:        "http://localhost:3900", // Must include scheme
+		AccessKeyID:     "your-access-key",
+		SecretAccessKey: "your-secret-key",
+		ForcePathStyle:  true, // Most self-hosted S3 servers require path-style addressing
 	}
 
 	// Create S3 store
 	store, err := New(ctx, cfg)
 	if err != nil {
-		log.Fatalf("Failed to create MinIO store: %v", err)
+		log.Fatalf("Failed to create S3 store: %v", err)
 	}
 
 	// Use the store as before
-	fmt.Printf("MinIO store created successfully: %v\n", store)
+	fmt.Printf("S3 store created successfully: %v\n", store)
 }

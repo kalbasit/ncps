@@ -51,7 +51,7 @@ Running multiple ncps instances provides:
 1. **Distributed locking backend**
    - **Redis server** (version 5.0+)
 1. **S3-compatible storage** (shared across all instances)
-   - AWS S3, MinIO, DigitalOcean Spaces, etc.
+   - AWS S3, Garage, DigitalOcean Spaces, etc.
 1. **PostgreSQL or MySQL database** (shared across all instances)
    - PostgreSQL 12+ or MySQL 8.0+
    - **SQLite is NOT supported for HA**
@@ -72,7 +72,7 @@ Running multiple ncps instances provides:
 
 ## Quick Start
 
-### Option 1: Docker Compose with MinIO
+### Option 1: Docker Compose with Garage
 
 See [Docker Compose HA example](../Installation/Docker%20Compose.md).
 
@@ -96,7 +96,7 @@ replicaCount: 3
       bucket: ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      forcePathStyle: false  # Set to true for MinIO
+      forcePathStyle: false  # Set to true for Garage and other self-hosted S3 servers
 
   database:
     url: postgresql://ncps:password@postgres:5432/ncps
@@ -147,20 +147,27 @@ aws s3api put-bucket-versioning \
   --versioning-configuration Status=Enabled
 ```
 
-**MinIO:**
+**Garage:**
 
 ```
-# Start MinIO
+# Start Garage (requires a garage.toml in the current directory; see Garage docs).
 docker run -d \
-  --name minio \
-  -p 9000:9000 \
-  -p 9001:9001 \
-  -v minio-data:/data \
-  minio/minio server /data --console-address ":9001"
+  --name garage \
+  -p 3900:3900 \
+  -p 3903:3903 \
+  -v garage-data:/var/lib/garage \
+  -v "$PWD/garage.toml:/etc/garage.toml:ro" \
+  -e GARAGE_CONFIG_FILE=/etc/garage.toml \
+  dxflrs/garage:v1.0.1 server
 
-# Create bucket
-mc alias set myminio http://localhost:9000 minioadmin minioadmin
-mc mb myminio/ncps-cache
+# Bootstrap layout, bucket, and access key (one-time).
+docker exec garage sh -c '
+  garage -c /etc/garage.toml layout assign -z dc1 -c 1G $(garage -c /etc/garage.toml node id -q | cut -d@ -f1)
+  garage -c /etc/garage.toml layout apply --version 1
+  garage -c /etc/garage.toml bucket create ncps-cache
+  garage -c /etc/garage.toml key import --yes your-access-key your-secret-key
+  garage -c /etc/garage.toml bucket allow --read --write --owner ncps-cache --key your-access-key
+'
 ```
 
 ### Step 3: Set Up Database
@@ -202,7 +209,7 @@ cache:
       region: us-east-1
       access-key-id: ${S3_ACCESS_KEY}
       secret-access-key: ${S3_SECRET_KEY}
-      force-path-style: false  # Set to true for MinIO
+      force-path-style: false  # Set to true for Garage and other self-hosted S3 servers
 
   database-url: postgresql://ncps:password@postgres:5432/ncps?sslmode=require
 

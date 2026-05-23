@@ -78,7 +78,7 @@ func New(ctx context.Context, cfg s3.Config) (*Store, error) {
 		bucketLookup = minio.BucketLookupPath
 	}
 
-	// Create MinIO client
+	// Create S3 client
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:        credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		Secure:       useSSL,
@@ -87,7 +87,7 @@ func New(ctx context.Context, cfg s3.Config) (*Store, error) {
 		Transport:    cfg.Transport,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error creating MinIO client: %w", err)
+		return nil, fmt.Errorf("error creating S3 client: %w", err)
 	}
 
 	// Test bucket access
@@ -517,7 +517,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader, size
 	var written int64
 
 	if size > 0 {
-		// Known size - use regular PutObject, MinIO will stream without buffering
+		// Known size - use regular PutObject; the S3 client will stream without buffering
 		result, e := s.client.PutObject(
 			ctx,
 			s.bucket,
@@ -547,7 +547,7 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader, size
 
 // putObjectStream uploads an object of unknown size using a streaming multipart upload.
 // This avoids the memory spike that occurs when PutObject is called with an unknown size (size=-1)
-// without a PartSize, which causes MinIO to buffer the entire stream.
+// without a PartSize, which causes the S3 client to buffer the entire stream.
 // By setting PartSize, we force a streaming multipart upload.
 func (s *Store) putObjectStream(
 	ctx context.Context,
@@ -557,7 +557,7 @@ func (s *Store) putObjectStream(
 ) (int64, error) {
 	// Use PutObject with a part size to trigger a streaming multipart upload.
 	// When the object size is unknown (size=-1), providing a PartSize prevents
-	// the minio-go client from buffering the entire stream into memory.
+	// the underlying S3 client from buffering the entire stream into memory.
 	options := minio.PutObjectOptions{
 		ContentType: contentType,
 		PartSize:    5 * 1024 * 1024, // 5MB part size
@@ -659,7 +659,7 @@ func (s *Store) HasNarinfoDir(ctx context.Context) (bool, error) {
 	}
 
 	// It's good practice to create a cancellable context when reading from
-	// MinIO channels to prevent goroutine leaks if you exit early.
+	// S3 client channels to prevent goroutine leaks if you exit early.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

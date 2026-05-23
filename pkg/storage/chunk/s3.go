@@ -74,7 +74,7 @@ func NewS3Store(ctx context.Context, cfg s3.Config, locker lock.Locker) (Store, 
 		BucketLookup: bucketLookup,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error creating MinIO client: %w", err)
+		return nil, fmt.Errorf("error creating S3 client: %w", err)
 	}
 
 	// Verify bucket exists

@@ -37,7 +37,7 @@ type Config struct {
 	// SecretAccessKey is the secret key for authentication
 	SecretAccessKey string
 	// ForcePathStyle forces path-style addressing (bucket.s3.com/key vs s3.com/bucket/key)
-	// Set to true for MinIO and other S3-compatible services
+	// Set to true for self-hosted S3-compatible servers (Garage, Ceph, etc.)
 	// Set to false for AWS S3 (default)
 	ForcePathStyle bool
 	// Prefix is an optional path prefix for all keys stored in the bucket
@@ -78,7 +78,7 @@ func ValidateConfig(cfg Config) error {
 }
 
 // GetEndpointWithoutScheme returns the endpoint without the scheme prefix.
-// This is useful since MinIO SDK expects endpoint without scheme.
+// This is useful since the underlying S3 SDK expects endpoint without scheme.
 func GetEndpointWithoutScheme(endpoint string) string {
 	// This function assumes a valid URL with a scheme, as validated by ValidateConfig.
 	// We can ignore the error from url.Parse.

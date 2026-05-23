@@ -2,14 +2,14 @@
 
 ## S3 Storage Implementation
 
-This package provides an S3-compatible storage backend for ncps (Nix Cache Proxy Server). It implements the same interface as the local storage but uses S3 or S3-compatible services like MinIO for backend storage.
+This package provides an S3-compatible storage backend for ncps (Nix Cache Proxy Server). It implements the same interface as the local storage but uses S3 or S3-compatible servers like Garage for backend storage.
 
 ## Features
 
-- **S3 Compatibility**: Works with AWS S3 and any S3-compatible service (MinIO, Ceph, etc.)
+- **S3 Compatibility**: Works with AWS S3 and any S3-compatible server (Garage, Ceph, etc.)
 - **Drop-in Replacement**: Implements the same interface as local storage
 - **Configurable**: Supports custom endpoints, regions, and authentication
-- **MinIO Optimized**: Built using the MinIO Go SDK for optimal compatibility
+- **Standard S3 Client**: Built using the generic `minio-go` S3 v4 client library
 - **Telemetry**: Includes OpenTelemetry tracing for monitoring
 
 ## Configuration
@@ -19,23 +19,23 @@ The S3 storage is configured using the `Config` struct:
 ```go
 type Config struct {
     Bucket          string // S3 bucket name (required)
-    Region          string // AWS region (optional, can be empty for MinIO)
+    Region          string // AWS region (optional for self-hosted S3 servers)
     Endpoint        string // S3 endpoint URL with scheme (required)
     AccessKeyID     string // Access key for authentication (required)
     SecretAccessKey string // Secret key for authentication (required)
-    ForcePathStyle  bool   // Force path-style addressing (required for MinIO, optional for AWS S3)
+    ForcePathStyle  bool   // Force path-style addressing (required for Garage and other self-hosted S3 servers, optional for AWS S3)
 }
 ```
 
 ### Important Notes
 
 - **Endpoint Format**: The endpoint **must** include the URL scheme (e.g., `"http://localhost:9000"` or `"https://s3.us-west-2.amazonaws.com"`). The scheme determines whether SSL/TLS is used.
-- **Region**: Optional for MinIO, but typically required for AWS S3.
-- **ForcePathStyle**: Set to `true` for MinIO and other S3-compatible services that require path-style addressing. Set to `false` for AWS S3 (which uses virtual-hosted-style by default).
+- **Region**: Optional for self-hosted S3 servers like Garage, but typically required for AWS S3.
+- **ForcePathStyle**: Set to `true` for Garage and other self-hosted S3-compatible servers that require path-style addressing. Set to `false` for AWS S3 (which uses virtual-hosted-style by default).
 
 ## Usage
 
-### MinIO Usage (Local Development)
+### Garage Usage (Local Development)
 
 ```go
 import (
@@ -45,13 +45,13 @@ import (
 
 ctx := context.Background()
 
-// Create MinIO configuration
+// Create configuration for a self-hosted S3-compatible endpoint
 cfg := s3.Config{
     Bucket:          "my-nix-cache",
     Endpoint:        "http://localhost:9000", // Must include scheme
-    AccessKeyID:     "minioadmin",
-    SecretAccessKey: "minioadmin",
-    ForcePathStyle:  true,                    // MinIO requires path-style addressing
+    AccessKeyID:     "your-access-key",
+    SecretAccessKey: "your-secret-key",
+    ForcePathStyle:  true,                    // Garage and most self-hosted S3 servers require path-style addressing
 }
 
 // Create S3 store
@@ -120,7 +120,7 @@ All operations include OpenTelemetry tracing with relevant attributes:
 
 ### Streaming Uploads
 
-The implementation uses MinIO's streaming upload capability for NAR files (size=-1), allowing efficient uploads of large files without buffering the entire content in memory.
+The implementation uses the S3 client's streaming upload capability for NAR files (size=-1), allowing efficient uploads of large files without buffering the entire content in memory.
 
 ## Testing
 
@@ -132,7 +132,7 @@ go test ./pkg/storage/s3/...
 
 ## Dependencies
 
-- `github.com/minio/minio-go/v7` - MinIO Go SDK for S3 operations
+- `github.com/minio/minio-go/v7` - generic S3 v4 client library used for S3 operations
 - `github.com/nix-community/go-nix` - Nix-specific types and utilities
 - `go.opentelemetry.io/otel` - OpenTelemetry for tracing
 
@@ -140,7 +140,7 @@ go test ./pkg/storage/s3/...
 
 To migrate from local storage to S3 storage:
 
-1. Create an S3 bucket or MinIO instance
+1. Create an S3 bucket or self-hosted S3-compatible instance (e.g., Garage)
 1. Configure the S3 storage with appropriate credentials
 1. Replace the local storage initialization with S3 storage
 1. The rest of your application code remains unchanged

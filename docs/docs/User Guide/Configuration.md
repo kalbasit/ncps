@@ -145,7 +145,7 @@ cache:
       region: us-east-1
       access-key-id: ${S3_ACCESS_KEY}
       secret-access-key: ${S3_SECRET_KEY}
-      force-path-style: false  # Set to true for MinIO
+      force-path-style: false  # Set to true for Garage and other self-hosted S3 servers
   database-url: postgresql://ncps:password@postgres:5432/ncps?sslmode=require
   max-size: 200G
   upstream:
@@ -167,7 +167,7 @@ cache:
       bucket: ncps-cache
       endpoint: https://s3.amazonaws.com
       region: us-east-1
-      force-path-style: false  # Set to true for MinIO
+      force-path-style: false  # Set to true for Garage and other self-hosted S3 servers
   database-url: postgresql://ncps:password@postgres:5432/ncps?sslmode=require
   redis:
     addrs:

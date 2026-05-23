@@ -64,7 +64,7 @@ type NarStore interface {
 
 **Implementation:**
 
-- Uses MinIO Go SDK
+- Uses the `minio-go` S3 client SDK (a generic S3 v4 client library)
 - Supports all S3-compatible services
 - Concurrent-safe
 

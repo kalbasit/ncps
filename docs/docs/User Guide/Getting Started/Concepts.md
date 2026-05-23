@@ -108,7 +108,7 @@ Stores metadata about cached packages:
 Stores actual package files:
 
 - **Local Filesystem**: Traditional file storage, simple setup, single-instance
-- **S3-Compatible**: AWS S3, MinIO, etc., required for HA, scalable
+- **S3-Compatible**: AWS S3, Garage, etc., required for HA, scalable
 
 ### Key Concepts
 
