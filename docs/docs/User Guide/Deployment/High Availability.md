@@ -149,7 +149,7 @@ aws s3api put-bucket-versioning \
 
 **Garage:**
 
-```
+```bash
 # Start Garage (requires a garage.toml in the current directory; see Garage docs).
 docker run -d \
   --name garage \
