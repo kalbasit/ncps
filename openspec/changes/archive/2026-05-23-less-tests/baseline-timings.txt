@@ -1,0 +1,89 @@
+================================================================================
+PER-PACKAGE WALL TIME (ranked, descending)
+================================================================================
+ elapsed (s)   tests   pass   fail   skip  package
+--------------------------------------------------------------------------------
+      16.541     226    208      0     19  github.com/kalbasit/ncps/pkg/cache
+      13.576     135    135      0      0  github.com/kalbasit/ncps/pkg/cache/upstream
+      12.230      84     58      0     26  github.com/kalbasit/ncps/pkg/storage/s3
+       7.830      15      2      0     13  github.com/kalbasit/ncps/pkg/lock/redis
+       5.124      12     12      0      0  github.com/kalbasit/ncps/cmd/generate-migrations
+       3.831      87     85      0      2  github.com/kalbasit/ncps/pkg/server
+       3.712      63     57      0      6  github.com/kalbasit/ncps/pkg/ncps
+       1.868       5      5      0      0  github.com/kalbasit/ncps/pkg/chunker
+       1.573      55     55      0      0  github.com/kalbasit/ncps/pkg/storage/local
+       1.542       4      2      0      2  github.com/kalbasit/ncps/pkg/cache/healthcheck
+       1.211       9      7      0      2  github.com/kalbasit/ncps/migrations
+       1.209       8      8      0      0  github.com/kalbasit/ncps/cmd/ent-lint
+       1.150      14     14      0      0  github.com/kalbasit/ncps/pkg/lock/local
+       1.123      10      7      0      3  github.com/kalbasit/ncps/pkg/database/migrate
+       1.105      27     21      0      6  github.com/kalbasit/ncps/pkg/config
+       1.091       8      8      0      0  github.com/kalbasit/ncps/pkg/lock
+       1.082      37     37      0      0  github.com/kalbasit/ncps/pkg/database
+       1.077      17     11      0      6  github.com/kalbasit/ncps/pkg/storage/chunk
+       1.068     145    145      0      0  github.com/kalbasit/ncps/pkg/nar
+       1.053      19     19      0      0  github.com/kalbasit/ncps/pkg/zstd
+       1.023       3      3      0      0  github.com/kalbasit/ncps/pkg/otel
+       1.021      24     24      0      0  github.com/kalbasit/ncps/testhelper
+       1.020       9      9      0      0  github.com/kalbasit/ncps/pkg/xz
+       1.016      31     31      0      0  github.com/kalbasit/ncps/pkg/helper
+       1.014      12     12      0      0  github.com/kalbasit/ncps/pkg/circuitbreaker
+       1.011      24     24      0      0  github.com/kalbasit/ncps/pkg/narinfo
+       1.011      11     11      0      0  github.com/kalbasit/ncps/pkg/otelzerolog
+       1.011      16     16      0      0  github.com/kalbasit/ncps/pkg/s3
+       1.010      14     14      0      0  github.com/kalbasit/ncps/pkg/nixcacheinfo
+--------------------------------------------------------------------------------
+      88.133  TOTAL (sum of per-package elapsed)
+
+================================================================================
+SLOW TESTS (elapsed > 0.500s, parent + subtests)
+================================================================================
+ elapsed (s)  package / test
+--------------------------------------------------------------------------------
+      12.000  github.com/kalbasit/ncps/pkg/cache/upstream  TestNewWithOptions/custom_dialer_timeout_is_respected_-_slow_connection_succeeds_with_longer_timeout
+      10.500  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/DeadlockContextCancellationDuringDownload
+       7.000  github.com/kalbasit/ncps/pkg/cache/upstream  TestNewWithOptions/custom_response_header_timeout_is_respected_-_slow_server_succeeds_with_longer_timeout
+       6.800  github.com/kalbasit/ncps/pkg/lock/redis  TestNewLocker_ReturnType
+       5.390  github.com/kalbasit/ncps/pkg/storage/s3  TestSecretKey_ErrorPaths/PutSecretKey_StatObject_error
+       5.340  github.com/kalbasit/ncps/pkg/storage/s3  TestNar_ErrorPaths/DeleteNar_StatObject_returns_error
+       5.310  github.com/kalbasit/ncps/pkg/storage/s3  TestWalkNarInfos_ErrorPaths/ListObjects_returns_error
+       5.230  github.com/kalbasit/ncps/pkg/storage/s3  TestSecretKey_ErrorPaths/DeleteSecretKey_StatObject_error
+       5.150  github.com/kalbasit/ncps/pkg/storage/s3  TestPutNar_ErrorPaths/PutNar_StatObject_error
+       5.010  github.com/kalbasit/ncps/pkg/cache/upstream  TestGetNarInfo/timeout_if_server_takes_more_than_3_seconds_before_first_byte
+       5.010  github.com/kalbasit/ncps/pkg/cache/upstream  TestGetNar/timeout_if_server_takes_more_than_3_seconds_before_first_byte
+       5.000  github.com/kalbasit/ncps/pkg/cache/upstream  TestHasNarInfo/timeout_if_server_takes_more_than_3_seconds_before_first_byte
+       5.000  github.com/kalbasit/ncps/pkg/cache/upstream  TestHasNar/timeout_if_server_takes_more_than_3_seconds_before_first_byte
+       4.460  github.com/kalbasit/ncps/pkg/storage/s3  TestDeleteNarInfo_ErrorPaths/DeleteNarInfo_StatObject_error
+       4.430  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01
+       4.160  github.com/kalbasit/ncps/pkg/storage/s3  TestSecretKey_ErrorPaths/PutSecretKey_PutObject_error
+       4.110  github.com/kalbasit/ncps/pkg/storage/s3  TestDeleteNarInfo_ErrorPaths/DeleteNarInfo_RemoveObject_error
+       4.090  github.com/kalbasit/ncps/cmd/generate-migrations  TestNameValidation
+       4.080  github.com/kalbasit/ncps/cmd/generate-migrations  TestSQLOnlyEmitsThreeDialects
+       4.040  github.com/kalbasit/ncps/pkg/storage/s3  TestNar_ErrorPaths/DeleteNar_returns_error
+       3.760  github.com/kalbasit/ncps/pkg/storage/s3  TestSecretKey_ErrorPaths/GetSecretKey_Stat_error
+       3.670  github.com/kalbasit/ncps/pkg/storage/s3  TestSecretKey_ErrorPaths/DeleteSecretKey_RemoveObject_error
+       3.660  github.com/kalbasit/ncps/pkg/storage/s3  TestSecretKey_ErrorPaths/GetSecretKey_Read_error
+       3.250  github.com/kalbasit/ncps/pkg/storage/s3  TestPutNar_ErrorPaths/PutNar_PutObject_error
+       3.240  github.com/kalbasit/ncps/pkg/storage/s3  TestHasNarinfoDir_ErrorPaths/ListObjects_returns_error
+       2.990  github.com/kalbasit/ncps/pkg/storage/s3  TestHasNar_ErrorPaths/HasNar_StatObject_error
+       2.600  github.com/kalbasit/ncps/pkg/storage/s3  TestNar_ErrorPaths/GetNar_returns_error
+       2.250  github.com/kalbasit/ncps/pkg/cache  TestCDCBackends/SQLite/first_pull_completes_before_CDC_chunking_finishes
+       2.090  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNarInfo
+       2.040  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNarInfo/narinfo_exists_upstream
+       2.040  github.com/kalbasit/ncps/pkg/ncps  TestFsckBackends/SQLite/VerifiedSince
+       2.020  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNar
+       2.020  github.com/kalbasit/ncps/pkg/server  TestSecurity
+       2.010  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNar/nar_exists_upstream
+       1.800  github.com/kalbasit/ncps/pkg/storage/s3  TestNarInfo_ErrorPaths/PutNarInfo_returns_error
+       1.720  github.com/kalbasit/ncps/pkg/cache  TestIssue990_BackgroundJobContextCancellation
+       1.150  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite/RunLRU
+       1.130  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite/RunLRUCleanupInconsistentNarInfoState
+       1.060  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite/ConcurrentDecompression
+       1.050  github.com/kalbasit/ncps/pkg/cache  TestGetNarInfoDistributedCoordination
+       1.000  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNarInfo/narinfo_exists_upstream/pulling_it_another_time_within_recordAgeIgnoreTouch_should_not_update_last_accessed_at
+       1.000  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNarInfo/narinfo_exists_upstream/pulling_it_another_time_should_update_last_accessed_at_only_for_narinfo
+       1.000  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNar/nar_exists_upstream/pulling_it_another_time_within_recordAgeIgnoreTouch_should_not_update_last_accessed_at
+       1.000  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01/GetNar/nar_exists_upstream/pulling_it_another_time_should_update_last_accessed_at
+       0.950  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarInfoBackends/SQLite/LargeNarInfo
+       0.860  github.com/kalbasit/ncps/pkg/chunker  TestCDCChunker_Chunk_ErrorRace
+       0.640  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite
