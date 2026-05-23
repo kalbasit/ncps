@@ -15,7 +15,7 @@ The project SHALL provide a reproducible workflow that ranks Go test execution t
 - **WHEN** a developer has integration env vars enabled (`eval "$(enable-integration-tests)"`) and runs the profiling workflow
 - **THEN** the workflow produces a ranked list of packages by total wall time
 - **AND** produces a ranked list of individual tests (parent and subtests) with `Elapsed > 500ms`
-- **AND** writes the ranking to a deterministic output file under `dev-scripts/` or `openspec/changes/<change>/`
+- **AND** when run locally, writes the ranking to a deterministic output file under `dev-scripts/` or `openspec/changes/<change>/`
 
 #### Scenario: Profiling without integration env vars
 
