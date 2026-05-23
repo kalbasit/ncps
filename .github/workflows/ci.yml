@@ -22,7 +22,7 @@ permissions:
   packages: write
 jobs:
   shared:
-    uses: kalbasit/gh-actions/.github/workflows/ci.yml@main
+    uses: kalbasit/gh-actions/.github/workflows/ci.yml@feat-generate-configurable-targets
     with:
       cachix_cache: ncps
       oci: true
@@ -30,7 +30,10 @@ jobs:
       dockerhub_image: kalbasit/ncps
       dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
       languages: |
-        {"go":{"packages":["ncps"]}}
+        {"go":{"targets":[
+          {"attr":"ncps",                                        "file":"nix/packages/ncps/default.nix"},
+          {"attr":"checks.x86_64-linux.ent-codegen-drift-check", "file":"nix/checks/flake-module.nix"}
+        ]}}
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       gha_pat_token: ${{ secrets.GHA_PAT_TOKEN }}
@@ -45,7 +48,6 @@ jobs:
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
       ent: ${{ steps.filter.outputs.ent }}
-      go_deps: ${{ steps.filter.outputs.go_deps }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v4
@@ -55,14 +57,13 @@ jobs:
             ent:
               - "ent/schema/**"
               - "ent/generate.go"
-            go_deps:
-              - "go.mod"
-              - "go.sum"
             docs:
               - "docs/**"
   generate-database:
     needs: filter
-    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && (needs.filter.outputs.ent == 'true' || needs.filter.outputs.go_deps == 'true')
+    # Vendor-hash regeneration moved to gh-actions/generate.yml via the shared
+    # workflow's `languages.go.targets`. This job now only handles Ent codegen.
+    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.ent == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -75,84 +76,11 @@ jobs:
         with:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Update vendor hash for ncps
-        if: needs.filter.outputs.go_deps == 'true'
-        run: |
-          go mod tidy
-
-          set +e
-          nix build --print-build-logs .#ncps.goModules 2> /tmp/log
-          ret=$?
-          set -e
-
-          if [[ "$ret" -eq 0 ]]; then
-            set +e
-            nix build --print-build-logs .#ncps.goModules --rebuild 2> /tmp/log
-            ret=$?
-            set -e
-          fi
-
-          if [[ "$ret" -eq 0 ]]; then
-            echo "::notice::Hash is up to date"
-            exit 0
-          fi
-
-          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
-          echo "hash=$hash"
-
-          if [[ -z "$hash" ]]; then
-            cat /tmp/log
-            echo "::error::hash is empty"
-            exit 1
-          fi
-
-          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps/default.nix
-
-          git diff
-      - name: Update vendor hash for ent-codegen-drift-check
-        if: needs.filter.outputs.go_deps == 'true'
-        run: |
-          set +e
-          nix build --print-build-logs .#checks.x86_64-linux.ent-codegen-drift-check.goModules 2> /tmp/log
-          ret=$?
-          set -e
-
-          if [[ "$ret" -eq 0 ]]; then
-            set +e
-            nix build --print-build-logs .#checks.x86_64-linux.ent-codegen-drift-check.goModules --rebuild 2> /tmp/log
-            ret=$?
-            set -e
-          fi
-
-          if [[ "$ret" -eq 0 ]]; then
-            echo "::notice::Hash is up to date"
-            exit 0
-          fi
-
-          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
-          echo "hash=$hash"
-
-          if [[ -z "$hash" ]]; then
-            cat /tmp/log
-            echo "::error::hash is empty"
-            exit 1
-          fi
-
-          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/checks/flake-module.nix
-
-          git diff
-      - uses: stefanzweifel/git-auto-commit-action@v7
-        if: needs.filter.outputs.go_deps == 'true'
-        with:
-          commit_message: "Auto Update Vendor Hash for ncps"
       - name: Regenerate Ent code
-        if: needs.filter.outputs.ent == 'true'
         run: nix develop --command go generate ./ent/...
       - name: Format Code
-        if: needs.filter.outputs.ent == 'true'
         run: nix fmt
       - uses: stefanzweifel/git-auto-commit-action@v7
-        if: needs.filter.outputs.ent == 'true'
         with:
           commit_message: "Auto Regenerate Ent Code"
   deploy-docs-pages:

@@ -8,7 +8,7 @@ on:
       - "v*.*.*"
 jobs:
   build:
-    uses: kalbasit/gh-actions/.github/workflows/build.yml@main
+    uses: kalbasit/gh-actions/.github/workflows/build.yml@feat-generate-configurable-targets
     with:
       systems: '["x86_64-linux", "aarch64-linux"]'
       cachix_cache: ncps
