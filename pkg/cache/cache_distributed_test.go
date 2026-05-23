@@ -471,7 +471,9 @@ func testDistributedLockFailover(_ distributedDBFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		testKey := "test-failover-key"
-		shortTTL := 2 * time.Second
+		// Short TTL keeps the "wait for expiry" step under a second; previously this was
+		// 2s + 2s safety = 4s of pure waiting per test, ×3 backends.
+		shortTTL := 500 * time.Millisecond
 
 		// Locker 1 acquires the lock
 		err = locker1.Lock(ctx, testKey, shortTTL)
@@ -481,16 +483,16 @@ func testDistributedLockFailover(_ distributedDBFactory) func(*testing.T) {
 		locker2, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
 		require.NoError(t, err)
 
-		// Locker 2 should initially fail to acquire (lock held by locker1)
-		ctx2, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		// Locker 2 should initially fail to acquire (lock held by locker1).
+		// Bounded by 200ms — well under shortTTL so it must still be held.
+		ctx2, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
 
 		err = locker2.Lock(ctx2, testKey, shortTTL)
 		require.Error(t, err, "locker2 should fail to acquire lock held by locker1")
 
-		// Simulate locker1 failure (don't unlock, let it expire)
-		// Wait for TTL to expire
-		time.Sleep(shortTTL + 2*time.Second)
+		// Simulate locker1 failure (don't unlock, let it expire). Wait TTL + safety.
+		time.Sleep(shortTTL + 300*time.Millisecond)
 
 		// Now locker2 should be able to acquire the lock
 		err = locker2.Lock(ctx, testKey, shortTTL)
@@ -661,8 +663,10 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 	dbClient, sharedDir, cleanup := factory(t)
 	t.Cleanup(cleanup)
 
-	// Generate a large NAR (2MB) - enough for chunking but fast for tests
-	const largeNARSize = 2 * 1024 * 1024
+	// Generate a NAR large enough to exercise chunking but small enough that the
+	// concurrent-download lock dance isn't dominated by raw transfer time. 256KiB is
+	// well above the default CDC min/avg/max and is the actual quantity under test.
+	const largeNARSize = 256 * 1024
 
 	narData := make([]byte, largeNARSize)
 	_, err := rand.Read(narData)
@@ -687,9 +691,10 @@ func testLargeNARConcurrentDownloadScenario(t *testing.T, factory distributedDBF
 
 	handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == narPath && r.Method == http.MethodGet {
-			// Add artificial delay to simulate slow download (like real large NARs)
-			// This ensures concurrent requests arrive while download is in progress
-			time.Sleep(2 * time.Second)
+			// Artificial delay so the other cache instances (spawned in the goroutine
+			// loop below) arrive while the first download is in flight. 300ms is
+			// well above goroutine scheduling latency without dominating wall time.
+			time.Sleep(300 * time.Millisecond)
 		}
 
 		return false // Let default handler process request

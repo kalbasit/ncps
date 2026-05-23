@@ -180,12 +180,14 @@ func TestLocker_LockExpiry(t *testing.T) {
 
 	key := getUniqueKey(t, "expiry")
 
-	// Acquire lock with short TTL
-	err = locker1.Lock(ctx, key, 1*time.Second)
+	// Acquire lock with short TTL. 200ms keeps the "wait for expiry" step well under
+	// a second; Redis lock-release semantics are millisecond-granular on a quiet
+	// machine and 400ms is comfortable safety margin.
+	err = locker1.Lock(ctx, key, 200*time.Millisecond)
 	require.NoError(t, err)
 
 	// Wait for lock to expire
-	time.Sleep(2 * time.Second)
+	time.Sleep(400 * time.Millisecond)
 
 	// Second locker should be able to acquire (lock expired)
 	err = locker2.Lock(ctx, key, 5*time.Second)
@@ -271,14 +273,17 @@ func TestLocker_DegradedModeDisabled(t *testing.T) {
 	t.Parallel()
 	skipIfRedisNotAvailable(t)
 
-	ctx := context.Background()
-
-	// Configure with invalid Redis address
+	// Configure with invalid Redis address.
 	cfg := redis.Config{
 		Addrs:     []string{"localhost:9999"}, // Invalid port
 		KeyPrefix: "test:ncps:lock:",
 	}
 	retryCfg := getTestRetryConfig()
+
+	// Bound the context so we don't pay the go-redis default DialTimeout (5s) for
+	// each ping attempt; 500ms is well above "connection refused" latency.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
 
 	// With degraded mode disabled, should fail to create locker
 	_, err := redis.NewLocker(ctx, cfg, retryCfg, false)
