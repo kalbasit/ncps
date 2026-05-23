@@ -36,9 +36,8 @@ const (
 )
 
 var (
-	errConnectionFailed    = errors.New("connection failed")
-	errTestingBucketAccess = errors.New("error testing bucket access")
-	errCallbackFailed      = errors.New("callback error")
+	errConnectionFailed = errors.New("connection failed")
+	errCallbackFailed   = errors.New("callback error")
 
 	//nolint:gochecknoglobals
 	s3ListObjectsResponse = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1801,10 +1800,12 @@ func TestNew_BucketAccessError(t *testing.T) {
 
 	cfg := getTestConfig(t)
 
-	// Use mock transport to trigger error
-	expectedErr := errTestingBucketAccess
+	// Return a non-retryable 403 instead of a RoundTripper error so the minio SDK
+	// gives up immediately (would otherwise retry with exponential backoff for ~5s).
+	// The production wrapper at s3.go:95 wraps any non-nil error as
+	// "error testing bucket access", so the assertion still holds.
 	cfg.Transport = roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
-		return nil, expectedErr
+		return s3ErrorResponse("error testing bucket access")
 	})
 
 	_, err := storage_s3.New(newContext(), *cfg)
