@@ -170,7 +170,7 @@ For high-availability mode, you need:
 1. **Distributed Lock Backend** (one of the following):
    - **Redis** (version 5.0 or later)
 1. **Shared Storage** (S3-compatible)
-   - AWS S3, MinIO, DigitalOcean Spaces, etc.
+   - AWS S3, Garage, DigitalOcean Spaces, etc.
    - All instances must access the same bucket
 1. **Shared Database** (PostgreSQL or MySQL)
    - PostgreSQL 12+ or MySQL 8.0+ recommended

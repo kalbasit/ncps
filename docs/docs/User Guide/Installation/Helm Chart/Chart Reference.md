@@ -169,7 +169,7 @@ Configuration for the temporary directory used for downloads and transient opera
 | `config.storage.s3.bucket` | S3 bucket name | `""` |
 | `config.storage.s3.endpoint` | S3 endpoint with scheme (https:// or http://) | `""` |
 | `config.storage.s3.region` | S3 region | `us-east-1` |
-| `config.storage.s3.forcePathStyle` | Force path-style addressing (required for MinIO) | `false` |
+| `config.storage.s3.forcePathStyle` | Force path-style addressing (required for Garage and other self-hosted S3 servers) | `false` |
 | `config.storage.s3.accessKeyId` | S3 access key ID | `""` |
 | `config.storage.s3.secretAccessKey` | S3 secret access key | `""` |
 | `config.storage.s3.existingSecret` | Existing secret with S3 credentials | `""` |

@@ -147,7 +147,7 @@ func serveCommand(
 			},
 			&cli.StringFlag{
 				Name:    "cache-storage-s3-endpoint",
-				Usage:   "S3-compatible endpoint URL with scheme (e.g., https://s3.amazonaws.com or http://minio.example.com:9000)",
+				Usage:   "S3-compatible endpoint URL with scheme (e.g., https://s3.amazonaws.com or http://garage:3900)",
 				Sources: flagSources("cache.storage.s3.endpoint", "CACHE_STORAGE_S3_ENDPOINT"),
 			},
 			&cli.StringFlag{
@@ -167,7 +167,7 @@ func serveCommand(
 			},
 			&cli.BoolFlag{
 				Name:    "cache-storage-s3-force-path-style",
-				Usage:   "Force path-style S3 addressing (bucket/key vs key.bucket) - required for MinIO, optional for AWS S3",
+				Usage:   "Force path-style S3 addressing (required for self-hosted S3 servers like Garage; optional for AWS S3)",
 				Sources: flagSources("cache.storage.s3.force-path-style", "CACHE_STORAGE_S3_FORCE_PATH_STYLE"),
 			},
 			// CDC Flags

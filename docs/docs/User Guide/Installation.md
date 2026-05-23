@@ -125,7 +125,7 @@ After installing ncps with any method:
 
 - Required for HA deployments
 - Scalable and redundant
-- Works with AWS S3, MinIO, and others
+- Works with AWS S3, Garage, and others
 
 **Cons:**
 

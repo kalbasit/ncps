@@ -48,7 +48,7 @@ nix run .#deps  # In separate terminal
 
 ### Development Dependencies
 
-Start MinIO, PostgreSQL, MySQL, Redis for testing:
+Start Garage, PostgreSQL, MySQL, Redis for testing:
 
 ```sh
 nix run .#deps
@@ -56,7 +56,7 @@ nix run .#deps
 
 This starts:
 
-- **MinIO** (port 9000) - S3-compatible storage
+- **Garage** (S3 API on port 9000, admin API on 3903) - S3-compatible storage. Garage's upstream default S3 port is 3900; the dev setup binds 9000 to preserve the existing test-contract endpoint inherited from MinIO.
 - **PostgreSQL** (port 5432) - Database
 - **MySQL/MariaDB** (port 3306) - Database
 - **Redis** (port 6379) - Distributed locks

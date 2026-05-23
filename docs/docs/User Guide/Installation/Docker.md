@@ -137,10 +137,10 @@ docker run -d \
   --cache-upstream-public-key=cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 ```
 
-**For MinIO:**
+**For Garage / self-hosted S3:**
 
 ```sh
---cache-storage-s3-endpoint=http://minio.example.com:9000 \
+--cache-storage-s3-endpoint=http://garage.example.com:3900 \
 --cache-storage-s3-use-ssl=false \
 ```
 

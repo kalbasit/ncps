@@ -1083,7 +1083,7 @@ class NCPSTester:
             # Parse endpoint to extract service name and port
             endpoint = s3_config["endpoint"]
             use_ssl = endpoint.startswith("https://")
-            # Extract host:port from URL (e.g., "http://minio.minio.svc.cluster.local:9000" -> "minio.minio.svc.cluster.local:9000")
+            # Extract host:port from URL (e.g., "http://garage.garage.svc.cluster.local:3900" -> "garage.garage.svc.cluster.local:3900")
             endpoint_without_scheme = endpoint.split("://", 1)[-1]
             host_port = endpoint_without_scheme.split("/", 1)[0]  # Remove any path
 
@@ -1093,11 +1093,11 @@ class NCPSTester:
                 port = "443" if use_ssl else "80"
                 host = host_port
 
-            # Extract service name from FQDN (e.g., "minio.minio.svc.cluster.local" -> "minio")
+            # Extract service name from FQDN (e.g., "garage.garage.svc.cluster.local" -> "garage")
             service_name = host.split(".")[0]
-            namespace = host.split(".")[1] if "." in host else "minio"
+            namespace = host.split(".")[1] if "." in host else "garage"
 
-            # Port-forward to MinIO service
+            # Port-forward to the in-cluster S3 service
             port_forward = subprocess.Popen(
                 [
                     "kubectl",
@@ -1114,7 +1114,7 @@ class NCPSTester:
             # Wait for port-forward to be ready
             time.sleep(3)
 
-            # Connect to MinIO via localhost
+            # Connect to the in-cluster S3 service via the localhost port-forward
             s3_client = boto3.client(
                 "s3",
                 endpoint_url=f"http://localhost:{local_port}",

@@ -233,13 +233,13 @@ config:
     s3:
       # S3 bucket name
       bucket: ""
-      # S3 endpoint with scheme (e.g., https://s3.amazonaws.com or http://minio:9000)
+      # S3 endpoint with scheme (e.g., https://s3.amazonaws.com or http://garage:3900)
       # The scheme (https:// or http://) determines SSL usage
       endpoint: ""
       # S3 region
       region: "us-east-1"
       # Force path-style S3 addressing (bucket/key vs key.bucket)
-      # Required for MinIO, optional for AWS S3
+      # Required for Garage and other self-hosted S3 servers, optional for AWS S3
       forcePathStyle: false
       # S3 credentials (provided via secret)
       accessKeyId: ""

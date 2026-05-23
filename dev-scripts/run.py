@@ -20,8 +20,8 @@ S3_CONFIG = {
     "bucket": "test-bucket",
     "endpoint": "http://127.0.0.1:9000",
     "region": "us-east-1",
-    "access_key": "test-access-key",
-    "secret_key": "test-secret-key",
+    "access_key": "GK1234567890abcdef12345678",
+    "secret_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 }
 
 # Database URLs matching bash scripts
@@ -323,19 +323,18 @@ def check_dependencies(args):
 
     # Check Storage/Locker
     if args.storage == "s3" or (args.replicas > 1):
-        # MinIO check
-        # Note: We could parse S3_CONFIG['endpoint'] here if we wanted to be strictly dynamic,
-        # but the health path (/minio/health/live) is specific to MinIO anyway.
+        # Garage health check via its admin API. The admin port is fixed at 3903
+        # by nix/process-compose/flake-module.nix (garageEnvironment).
         if (
             subprocess.call(
-                ["curl", "-s", f"{S3_CONFIG['endpoint']}/minio/health/live"],
+                ["curl", "-sf", "http://127.0.0.1:3903/health"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
             != 0
         ):
             log(
-                "❌ MinIO is not running (Required for S3 or HA). Run 'nix run .#deps'",
+                "❌ Garage is not running (Required for S3 or HA). Run 'nix run .#deps'",
                 RED,
             )
             deps_ok = False

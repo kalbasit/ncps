@@ -6,13 +6,13 @@ import (
 	"github.com/kalbasit/ncps/pkg/lock"
 )
 
-// GetClient returns the internal MinIO client.
+// GetClient returns the internal S3 client.
 // This is only for testing purposes.
 func (s *s3Store) GetClient() *minio.Client {
 	return s.client
 }
 
-// SetClient sets the internal MinIO client.
+// SetClient sets the internal S3 client.
 // This is only for testing purposes.
 func (s *s3Store) SetClient(client *minio.Client) {
 	s.client = client

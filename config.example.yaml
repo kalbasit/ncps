@@ -95,11 +95,11 @@ cache:
     # Use this OR S3 storage (cache.storage.s3.bucket) - not both
     local: "/var/lib/ncps"
     # S3 Storage configuration (alternative to cache.storage.local)
-    # Use this for storing cache data in S3-compatible storage (AWS S3, MinIO, etc.)
+    # Use this for storing cache data in S3-compatible storage (AWS S3, Garage, etc.)
     # s3:
     #   # S3 bucket name (use this OR cache.storage.local - not both)
     #   bucket: "ncps-cache"
-    #   # S3-compatible endpoint URL with scheme (e.g., https://s3.amazonaws.com or http://minio.example.com:9000)
+    #   # S3-compatible endpoint URL with scheme (e.g., https://s3.amazonaws.com or http://garage.example.com:3900)
     #   endpoint: "https://s3.amazonaws.com"
     #   # AWS region (optional)
     #   region: "us-east-1"
@@ -107,8 +107,8 @@ cache:
     #   access-key-id: "your-access-key"
     #   # S3 secret access key
     #   secret-access-key: "your-secret-key"
-    #   # Force path-style S3 addressing (required for MinIO, optional for AWS S3)
-    #   # Set to true for MinIO and other S3-compatible services
+    #   # Force path-style S3 addressing (required for Garage and other self-hosted S3 servers, optional for AWS S3)
+    #   # Set to true for Garage and other self-hosted S3-compatible servers
     #   # Set to false for AWS S3 (default)
     #   force-path-style: false
   # The path to the temporary directory that is used by the cache to download NAR files

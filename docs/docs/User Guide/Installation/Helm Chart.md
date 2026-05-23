@@ -391,7 +391,7 @@ config:
       secretAccessKey: YOUR_SECRET_KEY
 ```
 
-### MinIO
+### Garage (or other in-cluster self-hosted S3)
 
 ```yaml
 config:
@@ -399,11 +399,11 @@ config:
     type: s3
     s3:
       bucket: ncps
-      endpoint: http://minio.minio.svc.cluster.local:9000
+      endpoint: http://garage.garage.svc.cluster.local:3900
       region: us-east-1
-      forcePathStyle: true  # Required for MinIO
-      accessKeyId: minioadmin
-      secretAccessKey: minioadmin
+      forcePathStyle: true  # Required for Garage and most self-hosted S3 servers
+      accessKeyId: your-access-key
+      secretAccessKey: your-secret-key
 ```
 
 ## Redis Configuration (High Availability)
@@ -780,7 +780,7 @@ kubectl -n ncps logs job/ncps-migration
 **S3 connection errors:**
 
 - Verify S3 credentials and endpoint
-- For MinIO, ensure `config.storage.s3.forcePathStyle: true` is set
+- For Garage and other self-hosted S3 servers, ensure `config.storage.s3.forcePathStyle: true` is set
 - Check endpoint includes proper scheme (http:// or https://)
 
 ## Complete Values Reference

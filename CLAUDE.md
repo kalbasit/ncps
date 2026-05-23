@@ -18,10 +18,10 @@ Uses Nix flakes with direnv (`.envrc` with `use_flake`). Tools available in dev 
 # Run development server (hot-reload with watchexec)
 ./dev-scripts/run.sh              # Uses local filesystem storage (default)
 ./dev-scripts/run.sh local        # Explicitly use local storage
-./dev-scripts/run.sh s3           # Use S3/MinIO storage (requires deps to be running)
+./dev-scripts/run.sh s3           # Use S3/Garage storage (requires deps to be running)
 
-# Start development dependencies (MinIO for S3 testing, PostgreSQL for database testing)
-nix run .#deps                    # Starts MinIO and PostgreSQL with self-validation
+# Start development dependencies (Garage for S3 testing, PostgreSQL for database testing)
+nix run .#deps                    # Starts Garage and PostgreSQL with self-validation
 
 # Run tests with race detector
 go test -race ./...
@@ -84,11 +84,11 @@ The development server (`./dev-scripts/run.sh`) supports two storage backends:
 - Ideal for quick testing and development
 - Storage is ephemeral (cleaned up on script exit)
 
-**S3 Storage (MinIO):**
+**S3 Storage (Garage):**
 
-- Requires running MinIO via `nix run .#deps`
+- Requires running Garage via `nix run .#deps`
 - Tests S3-compatible storage implementation
-- Uses MinIO server on `127.0.0.1:9000`
+- Uses Garage server on `127.0.0.1:9000`
 - Pre-configured with test credentials and bucket
 - Includes self-validation to ensure proper setup
 
@@ -98,16 +98,17 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
 
 **`nix run .#deps`** - Starts development services:
 
-**MinIO (S3-compatible storage):**
+**Garage (S3-compatible storage):**
 
 - Ephemeral storage in temporary directory
-- MinIO server on port 9000, console on port 9001
+- Garage S3 API on port 9000 (no separate web console — use `garage` CLI instead)
+- Garage admin API on port 3903 (health checks, metrics)
 - Pre-configured test bucket (`test-bucket`)
-- Test credentials: `test-access-key` / `test-secret-key`
-- Self-validation checks:
-  - Access key authentication
-  - Public access blocking (security verification)
-  - Signed URL generation and access
+- Test credentials: `GK1234567890abcdef12345678` / `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
+- Self-validation checks (via `awscli2`):
+  - Signed put/get round-trip
+  - Public access blocking (anonymous GET is rejected)
+  - Presigned URL generation and access
 
 **PostgreSQL (database):**
 
@@ -144,8 +145,8 @@ The project uses [process-compose-flake](https://github.com/Platonic-Systems/pro
 
 Configuration in `nix/process-compose/flake-module.nix` defines:
 
-- `minio-server` process - MinIO server with health checks
-- `create-buckets` process - Bucket creation and validation
+- `garage-server` process - Garage server with health checks
+- `garage-init` process - Layout assignment, bucket + key creation, smoke test
 - `postgres-server` process - PostgreSQL server with health checks
 - `init-database` process - PostgreSQL database and user creation with validation
 - `mariadb-server` process - MariaDB server with health checks
@@ -539,7 +540,7 @@ If migration issues occur:
 **Worker Count Guidelines:**
 
 - Local filesystem storage: 10-30 workers
-- S3/MinIO storage: 20-50 workers (network-bound)
+- S3/Garage storage: 20-50 workers (network-bound)
 - PostgreSQL database: Scale with connection pool
 - SQLite database: Use lower count (5-10) due to write serialization
 
@@ -634,7 +635,7 @@ go test -race -run "TestGetNarInfo.*Concurrent" ./pkg/cache -v
 - `pkg/cache/` - Core caching logic and upstream cache fetching
 - `pkg/storage/` - Storage abstraction layer with implementations:
   - `storage/local/` - Local filesystem storage
-  - `storage/s3/` - S3-compatible storage (including MinIO)
+  - `storage/s3/` - S3-compatible storage (e.g., Garage, AWS S3, Ceph)
 - `pkg/server/` - HTTP server using Chi router
 - `pkg/database/` - Database abstraction layer supporting multiple engines (sqlc-generated code)
   - `database/sqlitedb/` - SQLite-specific implementation
@@ -769,7 +770,7 @@ eval "$(enable-integration-tests)"
 go test -race ./...
 
 # Or enable specific integration tests only:
-eval "$(enable-s3-tests)"          # Enable S3/MinIO tests only
+eval "$(enable-s3-tests)"          # Enable S3/Garage tests only
 eval "$(enable-postgres-tests)"    # Enable PostgreSQL tests only
 eval "$(enable-mysql-tests)"       # Enable MySQL tests only
 eval "$(enable-redis-tests)"       # Enable Redis tests only
@@ -791,7 +792,7 @@ These commands output export statements that you evaluate in your current shell 
 
 **For Nix builds and CI:**
 
-All integration test dependencies (MinIO, PostgreSQL, MariaDB, Redis) are automatically started during the test phase when building with Nix:
+All integration test dependencies (Garage, PostgreSQL, MariaDB, Redis) are automatically started during the test phase when building with Nix:
 
 ```bash
 # Runs all checks including all integration tests
@@ -803,7 +804,7 @@ nix build
 
 The Nix build (`nix/packages/ncps/default.nix`) automatically:
 
-1. Starts MinIO, PostgreSQL, MariaDB, and Redis servers in the `preCheck` phase
+1. Starts Garage, PostgreSQL, MariaDB, and Redis servers in the `preCheck` phase
 1. Creates test databases, buckets, and credentials
 1. Exports all integration test environment variables
 1. Runs all tests (including all integration tests)
@@ -814,7 +815,7 @@ This setup ensures:
 - All integration tests run in CI/CD (GitHub Actions workflows)
 - `nix flake check` includes comprehensive testing across all backends
 - All three database implementations (SQLite, PostgreSQL, MySQL) are tested
-- S3 storage backend is tested against MinIO
+- S3 storage backend is tested against Garage
 - Redis distributed locks are tested for high-availability deployments
 - Runtime usage (`nix run github:kalbasit/ncps`) is unaffected
 - Docker builds (`.#docker`) are unaffected

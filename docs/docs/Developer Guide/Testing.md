@@ -39,7 +39,7 @@ eval "$(disable-integration-tests)"
 
 **Available helpers:**
 
-- `enable-s3-tests` - S3/MinIO tests
+- `enable-s3-tests` - S3/Garage tests
 - `enable-postgres-tests` - PostgreSQL tests
 - `enable-mysql-tests` - MySQL tests
 - `enable-redis-tests` - Redis lock tests
@@ -56,7 +56,7 @@ nix flake check
 
 This automatically:
 
-1. Starts all dependencies (MinIO, PostgreSQL, MariaDB, Redis)
+1. Starts all dependencies (Garage, PostgreSQL, MariaDB, Redis)
 1. Runs all tests including integration tests
 1. Stops all services
 

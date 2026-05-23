@@ -143,7 +143,6 @@ nodes:
 
         # Helm repos
         repos = {
-            "minio": "https://charts.min.io/",
             "cnpg": "https://cloudnative-pg.io/charts/",
             "mariadb-operator": "https://mariadb-operator.github.io/mariadb-operator/",
             "ot-helm": "https://ot-container-kit.github.io/helm-charts/",
@@ -152,64 +151,192 @@ nodes:
             self.run_cmd(["helm", "repo", "add", name, url, "--force-update"])
         self.run_cmd(["helm", "repo", "update"])
 
-        # MinIO
-        self.log("   - Installing MinIO...")
-        self.run_cmd(
-            [
-                "helm",
-                "upgrade",
-                "--install",
-                "minio",
-                "minio/minio",
-                "--namespace",
-                "minio",
-                "--create-namespace",
-                "--set",
-                "resources.requests.memory=256Mi",
-                "--set",
-                "mode=standalone",
-                "--set",
-                "rootUser=admin",
-                "--set",
-                "rootPassword=password123",
-                "--set",
-                "persistence.enabled=true",
-                "--set",
-                "persistence.size=5Gi",
-                "--wait",
-            ]
-        )
+        # Garage (S3-compatible storage). Deployed via raw manifests — Garage has
+        # no first-party Helm chart and the test setup only needs a single node.
+        self.log("   - Installing Garage...")
+        garage_manifest = """
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: garage
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+  namespace: garage
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    db_engine = "sqlite"
+    replication_factor = 1
+    rpc_bind_addr = "[::]:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+    rpc_secret = "0000000000000000000000000000000000000000000000000000000000000000"
 
-        # Configure MinIO
-        self.log("   ⚙️  Configuring MinIO (bucket and access keys)...")
-        mc_cmd = """
-            set -e
-            echo '--> Waiting for MinIO service...'
-            until mc alias set internal http://minio.minio.svc.cluster.local:9000 admin password123; do
-                echo '    MinIO not ready yet, retrying in 2s...'
-                sleep 2
-            done
-            mc mb internal/ncps-bucket || true
-            mc admin user svcacct add --access-key 'ncps-access-key' --secret-key 'ncps-secret-key' internal admin || true
-        """
+    [s3_api]
+    s3_region = "us-east-1"
+    api_bind_addr = "[::]:3900"
+    root_domain = ".s3.local"
+
+    [s3_web]
+    bind_addr = "[::]:3902"
+    root_domain = ".web.local"
+    index = "index.html"
+
+    [admin]
+    api_bind_addr = "[::]:3903"
+    admin_token = "ncps-k8s-admin-token"
+    metrics_token = "ncps-k8s-admin-token"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: garage
+  namespace: garage
+spec:
+  serviceName: garage
+  replicas: 1
+  selector:
+    matchLabels:
+      app: garage
+  template:
+    metadata:
+      labels:
+        app: garage
+    spec:
+      containers:
+        - name: garage
+          image: dxflrs/garage:v1.0.1
+          command: ["/garage"]
+          args: ["server"]
+          env:
+            - name: GARAGE_CONFIG_FILE
+              value: /etc/garage.toml
+          ports:
+            - containerPort: 3900
+              name: s3-api
+            - containerPort: 3901
+              name: rpc
+            - containerPort: 3902
+              name: s3-web
+            - containerPort: 3903
+              name: admin
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3903
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/garage.toml
+              subPath: garage.toml
+            - name: data
+              mountPath: /var/lib/garage
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 50m
+      volumes:
+        - name: config
+          configMap:
+            name: garage-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  namespace: garage
+spec:
+  selector:
+    app: garage
+  ports:
+    - name: s3-api
+      port: 3900
+      targetPort: 3900
+    - name: rpc
+      port: 3901
+      targetPort: 3901
+    - name: s3-web
+      port: 3902
+      targetPort: 3902
+    - name: admin
+      port: 3903
+      targetPort: 3903
+"""
+        self.run_cmd(["kubectl", "apply", "-f", "-"], input=garage_manifest)
+        # `kubectl rollout status` waits for the controller to create the pod
+        # *and* for it to become ready. `kubectl wait` would race the controller
+        # and exit with "no matching resources found" before the pod is scheduled.
         self.run_cmd(
             [
                 "kubectl",
-                "run",
-                "minio-configurator",
+                "rollout",
+                "status",
                 "--namespace",
-                "minio",
-                "--image=minio/mc",
-                "--restart=Never",
-                "--rm",
-                "-i",
-                "--command",
-                "--",
-                "/bin/sh",
-                "-c",
-                mc_cmd,
+                "garage",
+                "statefulset/garage",
+                "--timeout=180s",
             ]
         )
+
+        # Configure Garage (layout, bucket, access key).
+        # The dxflrs/garage image is distroless (no /bin/sh, no awk), so we
+        # orchestrate each step here and exec the `/garage` binary directly.
+        self.log("   ⚙️  Configuring Garage (layout, bucket, access key)...")
+
+        def garage_exec(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+            return self.run_cmd(
+                [
+                    "kubectl",
+                    "exec",
+                    "--namespace",
+                    "garage",
+                    "garage-0",
+                    "--",
+                    "/garage",
+                    *args,
+                ],
+                check=check,
+                capture_output=True,
+            )
+
+        # 1. Look up the node id and assign a single-node layout if not already done.
+        node_id_out = garage_exec("node", "id", "-q").stdout.strip()
+        # Format: "<node_id>@<ip>:<port>"; take just the node_id.
+        node_id = node_id_out.split("@", 1)[0]
+
+        layout_show = garage_exec("layout", "show", check=False).stdout
+        if node_id not in layout_show:
+            garage_exec("layout", "assign", "-z", "dc1", "-c", "1G", node_id)
+            # First apply on a fresh cluster is version 1; otherwise increment.
+            # Parse "Current cluster layout version: N" from `layout show` output.
+            layout_show2 = garage_exec("layout", "show").stdout
+            version = 1
+            for line in layout_show2.splitlines():
+                if "Current cluster layout version:" in line:
+                    version = int(line.rsplit(":", 1)[1].strip()) + 1
+                    break
+            garage_exec("layout", "apply", "--version", str(version))
+
+        # 2. Create the bucket (idempotent).
+        if garage_exec("bucket", "info", "ncps-bucket", check=False).returncode != 0:
+            garage_exec("bucket", "create", "ncps-bucket")
+
+        # 3. Import the access key (idempotent).
+        if garage_exec("key", "info", "GK1234567890abcdef12345678", check=False).returncode != 0:
+            garage_exec("key", "import", "--yes", "GK1234567890abcdef12345678", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+
+        # 4. Grant read+write on the bucket.
+        garage_exec(
+            "bucket", "allow", "--read", "--write", "--owner",
+            "ncps-bucket", "--key", "GK1234567890abcdef12345678",
+        )
+        self.log("   ✅ Garage configured.")
 
         # Registry
         self.log("   - Installing Container Registry...")
@@ -675,10 +802,10 @@ spec:
     def get_cluster_creds(self) -> Dict[str, Any]:
         creds = {
             "s3": {
-                "endpoint": "http://minio.minio.svc.cluster.local:9000",
+                "endpoint": "http://garage.garage.svc.cluster.local:3900",
                 "bucket": "ncps-bucket",
-                "access_key": "ncps-access-key",
-                "secret_key": "ncps-secret-key",
+                "access_key": "GK1234567890abcdef12345678",
+                "secret_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             },
             "postgresql": {
                 "host": "pg17-ncps-rw.data.svc.cluster.local",
@@ -771,7 +898,7 @@ spec:
         self.log(f"Context: kind-{CLUSTER_NAME}")
         self.log("\n--- 📦 Container Registry ---")
         self.log("  Location: 127.0.0.1:30000")
-        self.log("\n--- 🪣 S3 (MinIO) ---")
+        self.log("\n--- 🪣 S3 (Garage) ---")
         for k, v in creds["s3"].items():
             self.log(f"  {k.capitalize()}: {v}")
         self.log("\n--- 🐘 PostgreSQL 17 ---")

@@ -17,7 +17,7 @@ ncps acts as a local binary cache for Nix, fetching store paths from upstream ca
 ## Key Features
 
 - **Multi-upstream cache** with automatic failover
-- **Flexible storage**: local filesystem or S3-compatible (AWS S3, MinIO, etc.)
+- **Flexible storage**: local filesystem or S3-compatible (AWS S3, Garage, etc.)
 - **Database support**: SQLite, PostgreSQL, or MySQL/MariaDB
 - **High availability** with Redis distributed locking for zero-downtime deployments
 - **Smart caching**: LRU management with configurable size limits

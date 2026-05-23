@@ -107,7 +107,7 @@ Start
 
 - 2+ servers (3+ recommended for better availability)
 - Redis server (single instance or cluster)
-- S3-compatible storage (AWS S3, MinIO, etc.)
+- S3-compatible storage (AWS S3, Garage, etc.)
 - PostgreSQL or MySQL database
 - Load balancer (nginx, HAProxy, cloud LB)
 

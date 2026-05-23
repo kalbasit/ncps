@@ -25,8 +25,8 @@
 
           src = lib.fileset.toSource {
             fileset = lib.fileset.unions [
-              ./post-check-minio.sh
-              ./pre-check-minio.sh
+              ./post-check-garage.sh
+              ./pre-check-garage.sh
 
               ./post-check-mysql.sh
               ./pre-check-mysql.sh
@@ -45,11 +45,11 @@
               ../../../internal
               ../../../main.go
               ../../../migrations
-              ../../../nix/process-compose/init-minio.sh
+              ../../../nix/process-compose/init-garage.sh
               ../../../nix/process-compose/init-mysql.sh
               ../../../nix/process-compose/init-postgres.sh
               ../../../nix/process-compose/postgres-dblink-create-drop-functions.sql
-              ../../../nix/process-compose/start-minio.sh
+              ../../../nix/process-compose/start-garage.sh
               ../../../nix/process-compose/start-mysql.sh
               ../../../nix/process-compose/start-postgres.sh
               ../../../nix/process-compose/start-redis.sh
@@ -71,12 +71,12 @@
           nativeBuildInputs = [
             pkgs.makeBinaryWrapper # used for wrapping the binary so it can always find the xz binary
 
-            pkgs.curl # used for checking MinIO health check
+            pkgs.awscli2 # used by init-garage smoke test (put/get/presign)
+            pkgs.curl # used for HTTP health checks and anonymous-access check
             pkgs.dbmate # used for testing
-            pkgs.jq # used for testing by the init-minio
+            pkgs.garage # S3-compatible storage for integration tests
+            pkgs.jq # used for testing by init-garage
             pkgs.mariadb # MySQL/MariaDB for integration tests
-            pkgs.minio # S3-compatible storage for integration tests
-            pkgs.minio-client # mc CLI for MinIO setup
             pkgs.postgresql # PostgreSQL for integration tests
             pkgs.python3 # used for generating the ports
             pkgs.redis # Redis for distributed locking integration tests
@@ -91,14 +91,14 @@
           preCheck = ''
             # Set up cleanup trap to ensure background processes are killed even if tests fail
             cleanup() {
-              source $src/nix/packages/ncps/post-check-minio.sh
+              source $src/nix/packages/ncps/post-check-garage.sh
               source $src/nix/packages/ncps/post-check-mysql.sh
               source $src/nix/packages/ncps/post-check-postgres.sh
               source $src/nix/packages/ncps/post-check-redis.sh
             }
             trap cleanup EXIT
 
-            source $src/nix/packages/ncps/pre-check-minio.sh
+            source $src/nix/packages/ncps/pre-check-garage.sh
             source $src/nix/packages/ncps/pre-check-mysql.sh
             source $src/nix/packages/ncps/pre-check-postgres.sh
             source $src/nix/packages/ncps/pre-check-redis.sh

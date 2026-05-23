@@ -24,17 +24,25 @@
         MYSQL_MIGRATION_PASSWORD = "migration-password";
       };
 
-      minioEnvironment = {
-        MINIO_CONSOLE = "http://127.0.0.1:9001";
-        MINIO_CONSOLE_PORT = "9001";
-        MINIO_ENDPOINT = "http://127.0.0.1:9000";
-        MINIO_PORT = "9000";
-        MINIO_REGION = "us-east-1";
-        MINIO_ROOT_PASSWORD = "password";
-        MINIO_ROOT_USER = "admin";
-        MINIO_TEST_S3_ACCESS_KEY_ID = "test-access-key";
-        MINIO_TEST_S3_BUCKET = "test-bucket";
-        MINIO_TEST_S3_SECRET_ACCESS_KEY = "test-secret-key";
+      garageEnvironment = {
+        # Backend-neutral env vars consumed by Go tests (see testhelper/s3.go)
+        # and the dev shell `enable-s3-tests` helper.
+        NCPS_TEST_S3_ENDPOINT = "http://127.0.0.1:9000";
+        NCPS_TEST_S3_PORT = "9000";
+        NCPS_TEST_S3_REGION = "us-east-1";
+        NCPS_TEST_S3_ACCESS_KEY_ID = "GK1234567890abcdef12345678";
+        NCPS_TEST_S3_BUCKET = "test-bucket";
+        NCPS_TEST_S3_SECRET_ACCESS_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        # Garage-internal settings. Storage paths (GARAGE_DATA_DIR / META_DIR /
+        # CONFIG_FILE) are derived per-UID inside start-garage.sh and
+        # init-garage.sh to avoid collisions between users sharing a host.
+        GARAGE_RPC_PORT = "3901";
+        GARAGE_ADMIN_PORT = "3903";
+        # Fixed dev secrets — Garage requires these but they're not exposed to tests.
+        # 64-char hex RPC secret and an arbitrary admin token.
+        GARAGE_RPC_SECRET = "0000000000000000000000000000000000000000000000000000000000000000";
+        GARAGE_ADMIN_TOKEN = "ncps-dev-admin-token";
       };
 
       postgresEnvironment = {
@@ -66,55 +74,68 @@
       process-compose.deps = {
         settings = {
           processes = {
-            minio-server = {
+            garage-server = {
               command =
                 let
-                  startMinio = pkgs.writeShellApplication {
-                    name = "start-minio";
-                    runtimeInputs = [ pkgs.minio ];
-                    text = builtins.readFile ./start-minio.sh;
+                  startGarage = pkgs.writeShellApplication {
+                    name = "start-garage";
+                    runtimeInputs = [ pkgs.garage ];
+                    text = builtins.readFile ./start-garage.sh;
                   };
                 in
-                "${startMinio}/bin/start-minio";
-              environment = minioEnvironment;
+                ''
+                  # Ensure the data + metadata dirs exist before garage starts.
+                  mkdir -p "$GARAGE_DATA_DIR" "$GARAGE_META_DIR"
+                  exec ${startGarage}/bin/start-garage
+                '';
+              environment = garageEnvironment;
               readiness_probe = {
+                # Garage exposes its health probe via the admin API.
                 http_get = {
                   host = "127.0.0.1";
-                  port = 9000;
-                  path = "/minio/health/live";
+                  port = 3903;
+                  path = "/health";
                 };
                 initial_delay_seconds = 2;
                 period_seconds = 5;
               };
             };
-            minio-init = {
+            garage-init = {
               command =
                 let
-                  initMinio = pkgs.writeShellApplication {
-                    name = "init-minio";
+                  initGarage = pkgs.writeShellApplication {
+                    name = "init-garage";
                     runtimeInputs = [
-                      pkgs.minio-client
+                      pkgs.garage
+                      pkgs.awscli2
                       pkgs.curl
                       pkgs.jq
+                      pkgs.gawk
                     ];
-                    text = builtins.readFile ./init-minio.sh;
+                    text = builtins.readFile ./init-garage.sh;
                   };
                 in
                 ''
-                  # Remove stale marker file from previous runs
-                  rm -f /tmp/ncps-minio-ready
+                  # Per-UID ready marker (avoids collisions when multiple users
+                  # run process-compose on the same host).
+                  READY_MARKER="''${TMPDIR:-/tmp}/ncps-garage-$(id -u).ready"
 
-                  ${initMinio}/bin/init-minio
+                  # Remove stale marker file from previous runs, and clean up on
+                  # shutdown so a stale marker doesn't survive into the next run.
+                  rm -f "$READY_MARKER"
+                  trap 'rm -f "$READY_MARKER"' EXIT INT TERM
+
+                  ${initGarage}/bin/init-garage
 
                   # Create ready marker file for process-compose health check
-                  touch /tmp/ncps-minio-ready
+                  touch "$READY_MARKER"
 
                   sleep infinity
                 '';
-              environment = minioEnvironment;
-              depends_on.minio-server.condition = "process_healthy";
+              environment = garageEnvironment;
+              depends_on.garage-server.condition = "process_healthy";
               readiness_probe = {
-                exec.command = "test -f /tmp/ncps-minio-ready";
+                exec.command = ''test -f "''${TMPDIR:-/tmp}/ncps-garage-$(id -u).ready"'';
                 initial_delay_seconds = 3;
                 period_seconds = 1;
               };

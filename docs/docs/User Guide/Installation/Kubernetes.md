@@ -255,7 +255,7 @@ data:
           bucket: ncps-cache
           endpoint: https://s3.amazonaws.com  # Scheme (https://) is required
           region: us-east-1
-          force-path-style: false  # Set to true for MinIO
+          force-path-style: false  # Set to true for Garage and other self-hosted S3 servers
       database-url: postgresql://ncps:PASSWORD@postgres:5432/ncps?sslmode=require
       upstream:
         urls:

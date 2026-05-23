@@ -9,7 +9,7 @@ Configure ncps storage backends: local filesystem or S3-compatible storage.
 ncps supports two storage backends for storing NAR files and other cache data:
 
 - **Local Filesystem**: Traditional file-based storage
-- **S3-Compatible**: AWS S3, MinIO, and other S3-compatible services
+- **S3-Compatible**: AWS S3, Garage, and other S3-compatible services
 
 **Note:** You must choose exactly ONE storage backend. You cannot use both simultaneously.
 

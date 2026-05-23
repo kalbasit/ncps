@@ -45,13 +45,13 @@
                 exit 0
               fi
 
-              echo "✅ S3 tests enabled, don't forget to run 'nix run .#deps' to start MinIO." >&2
+              echo "✅ S3 tests enabled, don't forget to run 'nix run .#deps' to start Garage." >&2
               cat <<'EOF'
                 export NCPS_TEST_S3_BUCKET="test-bucket"
                 export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
                 export NCPS_TEST_S3_REGION="us-east-1"
-                export NCPS_TEST_S3_ACCESS_KEY_ID="test-access-key"
-                export NCPS_TEST_S3_SECRET_ACCESS_KEY="test-secret-key"
+                export NCPS_TEST_S3_ACCESS_KEY_ID="GK1234567890abcdef12345678"
+                export NCPS_TEST_S3_SECRET_ACCESS_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
               EOF
             '')
             (pkgs.writeShellScriptBin "enable-postgres-tests" ''
@@ -169,7 +169,7 @@
 
           echo ""
           echo "🧪 Integration test helpers available:"
-          echo "  eval \"\$(enable-s3-tests)\"           - Enable S3/MinIO tests"
+          echo "  eval \"\$(enable-s3-tests)\"           - Enable S3/Garage tests"
           echo "  eval \"\$(enable-postgres-tests)\"     - Enable PostgreSQL tests"
           echo "  eval \"\$(enable-mysql-tests)\"        - Enable MySQL tests"
           echo "  eval \"\$(enable-redis-tests)\"        - Enable Redis tests"
