@@ -1,7 +1,9 @@
 name: CI
-permissions:
-  contents: read
-  packages: write
+# Thin caller of kalbasit/gh-actions' reusable CI workflow plus ncps-specific
+# sibling jobs (database codegen, docs deploy) that don't generalize across
+# the other consumers.
+#
+# Pinned to @main while iterating; will repin to @v0.1.0 once tagged.
 on:
   pull_request:
     branches:
@@ -9,19 +11,43 @@ on:
       - "release-*"
   push:
     branches:
-      - "main"
+      - main
       - "release-*"
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
+permissions:
+  contents: read
+  packages: write
 jobs:
+  shared:
+    uses: kalbasit/gh-actions/.github/workflows/ci.yml@main
+    with:
+      cachix_cache: ncps
+      oci: true
+      primary_package: ncps
+      dockerhub_image: kalbasit/ncps
+      dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
+      languages: |
+        {"go":{"targets":[
+          {"attr":"ncps",                                        "file":"nix/packages/ncps/default.nix"},
+          {"attr":"checks.x86_64-linux.ent-codegen-drift-check", "file":"nix/checks/flake-module.nix"}
+        ]}}
+    secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      gha_pat_token: ${{ secrets.GHA_PAT_TOKEN }}
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}
+      dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+  # ---- ncps-specific sibling jobs --------------------------------------------------
+  # These stay here because they don't generalize across the other consumers.
+  # They run their own paths-filter because the reusable workflow doesn't (currently)
+  # expose its filter outputs back to the caller.
   filter:
     runs-on: ubuntu-24.04
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
       ent: ${{ steps.filter.outputs.ent }}
-      go_deps: ${{ steps.filter.outputs.go_deps }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v4
@@ -31,14 +57,13 @@ jobs:
             ent:
               - "ent/schema/**"
               - "ent/generate.go"
-            go_deps:
-              - "go.mod"
-              - "go.sum"
             docs:
               - "docs/**"
-  generate:
+  generate-database:
     needs: filter
-    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && (needs.filter.outputs.ent == 'true' || needs.filter.outputs.go_deps == 'true')
+    # Vendor-hash regeneration moved to gh-actions/generate.yml via the shared
+    # workflow's `languages.go.targets`. This job now only handles Ent codegen.
+    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.ent == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -51,84 +76,11 @@ jobs:
         with:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Update vendor hash for ncps
-        if: needs.filter.outputs.go_deps == 'true'
-        run: |
-          go mod tidy
-
-          set +e
-          nix build --print-build-logs .#ncps.goModules 2> /tmp/log
-          ret=$?
-          set -e
-
-          if [[ "$ret" -eq 0 ]]; then
-            set +e
-            nix build --print-build-logs .#ncps.goModules --rebuild 2> /tmp/log
-            ret=$?
-            set -e
-          fi
-
-          if [[ "$ret" -eq 0 ]]; then
-            echo "::notice::Hash is up to date"
-            exit 0
-          fi
-
-          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
-          echo "hash=$hash"
-
-          if [[ -z "$hash" ]]; then
-            cat /tmp/log
-            echo "::error::hash is empty"
-            exit 1
-          fi
-
-          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps/default.nix
-
-          git diff
-      - name: Update vendor hash for ent-codegen-drift-check
-        if: needs.filter.outputs.go_deps == 'true'
-        run: |
-          set +e
-          nix build --print-build-logs .#checks.x86_64-linux.ent-codegen-drift-check.goModules 2> /tmp/log
-          ret=$?
-          set -e
-
-          if [[ "$ret" -eq 0 ]]; then
-            set +e
-            nix build --print-build-logs .#checks.x86_64-linux.ent-codegen-drift-check.goModules --rebuild 2> /tmp/log
-            ret=$?
-            set -e
-          fi
-
-          if [[ "$ret" -eq 0 ]]; then
-            echo "::notice::Hash is up to date"
-            exit 0
-          fi
-
-          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
-          echo "hash=$hash"
-
-          if [[ -z "$hash" ]]; then
-            cat /tmp/log
-            echo "::error::hash is empty"
-            exit 1
-          fi
-
-          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/checks/flake-module.nix
-
-          git diff
-      - uses: stefanzweifel/git-auto-commit-action@v7
-        if: needs.filter.outputs.go_deps == 'true'
-        with:
-          commit_message: "Auto Update Vendor Hash for ncps"
       - name: Regenerate Ent code
-        if: needs.filter.outputs.ent == 'true'
         run: nix develop --command go generate ./ent/...
       - name: Format Code
-        if: needs.filter.outputs.ent == 'true'
         run: nix fmt
       - uses: stefanzweifel/git-auto-commit-action@v7
-        if: needs.filter.outputs.ent == 'true'
         with:
           commit_message: "Auto Regenerate Ent Code"
   deploy-docs-pages:
@@ -146,8 +98,7 @@ jobs:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Build docs
-        run: |
-          nix develop --command bash -c trilium-build-docs
+        run: nix develop --command bash -c trilium-build-docs
       - name: Deploy docs
         id: deploy-docs-pages
         uses: cloudflare/wrangler-action@v4
@@ -166,46 +117,44 @@ jobs:
               repo: context.repo.repo,
               body: `Pages deployed to ${{ steps.deploy-docs-pages.outputs.deployment-url }}`
             })
-  build:
-    uses: ./.github/workflows/build.yml
-    with:
-      systems: "['x86_64-linux', 'aarch64-linux']"
-      images: kalbasit/ncps
-      dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
-      push_images: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false) }}
-    secrets:
-      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      codecov_token: ${{ secrets.CODECOV_TOKEN }}
-      dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+  # ---- Final gate over the reusable workflow + sibling jobs ------------------------
   ci:
     runs-on: ubuntu-24.04
-    # Run even if dependencies are skipped or fail, so we can check their status
     if: always()
     needs:
+      - shared
       - filter
-      - build
+      - generate-database
       - deploy-docs-pages
-      - generate
     steps:
       - name: Check Workflow Status
+        env:
+          SHARED_RESULT: ${{ needs.shared.result }}
+          FILTER_RESULT: ${{ needs.filter.result }}
+          GENERATE_DATABASE_RESULT: ${{ needs.generate-database.result }}
+          DEPLOY_DOCS_PAGES_RESULT: ${{ needs.deploy-docs-pages.result }}
         run: |
           #!/usr/bin/env bash
           set -euo pipefail
 
-          # Get the full JSON result of all dependencies
-          results='${{ toJSON(needs) }}'
+          declare -A results=(
+            ["shared"]="$SHARED_RESULT"
+            ["filter"]="$FILTER_RESULT"
+            ["generate-database"]="$GENERATE_DATABASE_RESULT"
+            ["deploy-docs-pages"]="$DEPLOY_DOCS_PAGES_RESULT"
+          )
 
-          # Check if any job resulted in "failure"
-          if echo "$results" | grep -q '"result": "failure"'; then
-            echo "::error::One or more dependent jobs failed."
+          failed=0
+          for job in "${!results[@]}"; do
+            result="${results[$job]}"
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "::error::Job '$job' ended with result: $result"
+              failed=1
+            fi
+          done
+
+          if [[ "$failed" -ne 0 ]]; then
             exit 1
           fi
 
-          # Check if any job resulted in "cancelled"
-          if echo "$results" | grep -q '"result": "cancelled"'; then
-            echo "::error::One or more dependent jobs were cancelled."
-            exit 1
-          fi
-
-          # If we get here, jobs were either "success" or "skipped" (which is valid)
-          echo "All jobs passed or were validly skipped."
+          echo "All jobs passed"
