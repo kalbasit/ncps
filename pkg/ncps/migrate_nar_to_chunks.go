@@ -211,6 +211,8 @@ Once a NAR is successfully migrated to chunks and verified, it is deleted from t
 				return fmt.Errorf("error creating database client: %w", err)
 			}
 
+			registerShutdown("database client", func(_ context.Context) error { return dbClient.Close() })
+
 			// 2a. Load CDC configuration from database (must happen after DB creation)
 			// CDC is required for migrate-nar-to-chunks command
 			locker, rwLocker, err := getLockers(ctx, cmd)
