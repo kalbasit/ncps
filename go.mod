@@ -8,7 +8,7 @@ tool (
 )
 
 require (
-	ariga.io/atlas v0.38.0
+	ariga.io/atlas v1.2.0
 	entgo.io/ent v0.14.6
 	github.com/XSAM/otelsql v0.42.0
 	github.com/andybalholm/brotli v1.2.1
