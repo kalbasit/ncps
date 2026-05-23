@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
+	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/kalbasit/ncps/pkg/cache"
@@ -268,12 +269,18 @@ requests. Without Redis, the command uses in-memory locking (no coordination wit
 
 			startTime := time.Now()
 
-			unmigratedHashes, err := db.GetUnmigratedNarInfoHashes(ctx)
+			unmigratedHashes, err := dbClient.Ent().NarInfo.Query().
+				Where(entnarinfo.URLIsNil()).
+				Select(entnarinfo.FieldHash).
+				Strings(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch unmigrated hashes from database: %w", err)
 			}
 
-			migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
+			migratedHashes, err := dbClient.Ent().NarInfo.Query().
+				Where(entnarinfo.URLNotNil()).
+				Select(entnarinfo.FieldHash).
+				Strings(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch migrated hashes from database: %w", err)
 			}
