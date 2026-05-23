@@ -1034,13 +1034,13 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		c.upstreamJobsMu.Unlock()
 
 		if !hasNar && !hasNarInStore && c.isCDCEnabled() && !hasActiveLocalJob {
-			nr, nrErr := c.getNarFileFromDB(ctx, c.db, narURL)
-			if nrErr == nil && nr.ChunkingStartedAt.Valid {
+			nr, nrErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
+			if nrErr == nil && nr.ChunkingStartedAt != nil {
 				// Chunking is actively in progress; use progressive streaming if not stale.
-				if time.Since(nr.ChunkingStartedAt.Time) < cdcChunkingLockTTL {
+				if time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL {
 					hasNar = true
 				}
-			} else if nrErr != nil && !database.IsNotFoundError(nrErr) {
+			} else if nrErr != nil && !ent.IsNotFound(nrErr) {
 				return fmt.Errorf("failed to check nar file record for progressive streaming: %w", nrErr)
 			}
 		}
@@ -1336,9 +1336,9 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 	)
 	defer span.End()
 
-	nr, err := c.getNarFileFromDB(ctx, c.db, nu)
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, nu)
 	if err != nil {
-		if !database.IsNotFoundError(err) {
+		if !ent.IsNotFound(err) {
 			zerolog.Ctx(ctx).Error().Err(err).Msg("error querying nar file size from database")
 		}
 
@@ -2830,7 +2830,7 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	serveFromChunks := !hasInStore
 	if hasInStore && c.isCDCEnabled() {
 		// Check if the nar is chunked by looking at the nar_file record
-		nr, nrErr := c.getNarFileFromDB(ctx, c.db, *narURL)
+		nr, nrErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, *narURL)
 		if nrErr == nil && nr.TotalChunks > 0 {
 			// Nar is chunked, serve from chunks for better performance
 			serveFromChunks = true
@@ -2944,10 +2944,10 @@ func (c *Cache) getNarFromStore(
 
 	var needsDBRecord bool
 
-	err = c.withTransaction(ctx, "getNarFromStore", func(qtx database.Querier) error {
-		nr, err := c.getNarFileFromDB(ctx, qtx, *narURL)
+	err = c.withEntTransaction(ctx, "getNarFromStore", func(tx *ent.Tx) error {
+		nr, err := c.getNarFileFromDB(ctx, tx.NarFile, *narURL)
 		if err != nil {
-			if database.IsNotFoundError(err) {
+			if ent.IsNotFound(err) {
 				// NAR is in storage but has no DB record — this is an orphan left by a
 				// crash between narStore.PutNar and ensureNarFileRecord. Schedule healing.
 				needsDBRecord = true
@@ -2963,12 +2963,16 @@ func (c *Cache) getNarFromStore(
 		// return none so the caller knows they're receiving uncompressed bytes.
 		narURL.Compression = nar.CompressionType(nr.Compression)
 
-		if lat, err := nr.LastAccessedAt.Value(); err == nil && time.Since(lat.(time.Time)) > c.recordAgeIgnoreTouch {
-			if _, err := qtx.TouchNarFile(ctx, database.TouchNarFileParams{
-				Hash:        narURL.Hash,
-				Compression: narURL.Compression.String(),
-				Query:       narURL.Query.Encode(),
-			}); err != nil {
+		if nr.LastAccessedAt == nil || time.Since(*nr.LastAccessedAt) > c.recordAgeIgnoreTouch {
+			if _, err := tx.NarFile.Update().
+				Where(
+					entnarfile.HashEQ(narURL.Hash),
+					entnarfile.CompressionEQ(narURL.Compression.String()),
+					entnarfile.QueryEQ(narURL.Query.Encode()),
+				).
+				SetLastAccessedAt(time.Now()).
+				SetUpdatedAt(time.Now()).
+				Save(ctx); err != nil {
 				return fmt.Errorf("error touching the nar record: %w", err)
 			}
 		}
@@ -3620,7 +3624,7 @@ func (c *Cache) prePullNar(
 			// before NAR chunking starts) as "has asset", which would cause streamProgressiveChunks
 			// to wait 30s for chunks that never arrive, resulting in truncated NAR responses.
 			if c.isCDCEnabled() {
-				nr, err := c.getNarFileFromDB(ctx, c.db, *narURL)
+				nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, *narURL)
 				if err != nil {
 					return false
 				}
@@ -3629,8 +3633,8 @@ func (c *Cache) prePullNar(
 					return true
 				}
 
-				if nr.ChunkingStartedAt.Valid {
-					return time.Since(nr.ChunkingStartedAt.Time) < cdcChunkingLockTTL
+				if nr.ChunkingStartedAt != nil {
+					return time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL
 				}
 
 				return false
@@ -3644,34 +3648,45 @@ func (c *Cache) prePullNar(
 	)
 }
 
-// getNarFileFromDB looks up a nar_file record by URL using the given querier.
-// It tries the most likely compression first based on whether CDC is enabled:
+// getNarFileFromDB looks up a nar_file record by URL using the given
+// Ent client. Accepts *ent.NarFileClient, which is the type both
+// `c.dbClient.Ent().NarFile` and `tx.NarFile` resolve to — so the same
+// helper handles non-tx and in-tx call sites. Tries the most likely
+// compression first based on whether CDC is enabled:
 //   - CDC enabled:  try "none" first (all CDC files use none), fall back to original
 //   - CDC disabled: try original compression first, fall back to "none"
-func (c *Cache) getNarFileFromDB(ctx context.Context, q database.Querier, narURL nar.URL) (database.NarFile, error) {
+func (c *Cache) getNarFileFromDB(
+	ctx context.Context,
+	nfc *ent.NarFileClient,
+	narURL nar.URL,
+) (*ent.NarFile, error) {
 	first, second := narURL.Compression, nar.CompressionTypeNone
 	if c.isCDCEnabled() {
 		first, second = nar.CompressionTypeNone, narURL.Compression
 	}
 
-	nr, err := q.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        narURL.Hash,
-		Compression: first.String(),
-		Query:       narURL.Query.Encode(),
-	})
+	nr, err := nfc.Query().
+		Where(
+			entnarfile.HashEQ(narURL.Hash),
+			entnarfile.CompressionEQ(first.String()),
+			entnarfile.QueryEQ(narURL.Query.Encode()),
+		).
+		Only(ctx)
 	if err == nil {
 		return nr, nil
 	}
 
-	if database.IsNotFoundError(err) && first != second {
-		return q.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-			Hash:        narURL.Hash,
-			Compression: second.String(),
-			Query:       narURL.Query.Encode(),
-		})
+	if ent.IsNotFound(err) && first != second {
+		return nfc.Query().
+			Where(
+				entnarfile.HashEQ(narURL.Hash),
+				entnarfile.CompressionEQ(second.String()),
+				entnarfile.QueryEQ(narURL.Query.Encode()),
+			).
+			Only(ctx)
 	}
 
-	return database.NarFile{}, err
+	return nil, err
 }
 
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
@@ -4302,6 +4317,20 @@ func upsertNarInfoFromParsed(
 
 		nir, err := nb.Save(ctx)
 		if err != nil {
+			// A concurrent writer (e.g. a background migration racing with
+			// PutNarInfo) may have inserted the row between our query and
+			// our insert.  Treat that as success: re-fetch and return the
+			// winner's row so the caller can continue linking references /
+			// signatures / nar_files against the real record.
+			if ent.IsConstraintError(err) {
+				nir, err = tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("error re-fetching narinfo record after concurrent insert for hash %q: %w", hash, err)
+				}
+
+				return nir, nil
+			}
+
 			return nil, fmt.Errorf("error inserting the narinfo record for hash %q: %w", hash, err)
 		}
 
@@ -4557,9 +4586,9 @@ func (c *Cache) fixNarInfoFileSize(
 //
 // Returns -1 if the size cannot be determined (NAR not found or not yet available).
 func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL) (int64, error) {
-	narFileRow, err := c.getNarFileFromDB(ctx, c.db, nu)
+	narFileRow, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, nu)
 	if err != nil {
-		if database.IsNotFoundError(err) {
+		if ent.IsNotFound(err) {
 			return -1, nil
 		}
 
@@ -6426,9 +6455,9 @@ func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error
 		return false, nil
 	}
 
-	nr, err := c.getNarFileFromDB(ctx, c.db, narURL)
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
 	if err != nil {
-		if database.IsNotFoundError(err) {
+		if ent.IsNotFound(err) {
 			return false, nil
 		}
 
@@ -6442,9 +6471,9 @@ func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error
 // regardless of chunking completion status. This is used for coordination
 // to allow progressive streaming while chunking is in progress.
 func (c *Cache) HasNarFileRecord(ctx context.Context, narURL nar.URL) (bool, error) {
-	_, err := c.getNarFileFromDB(ctx, c.db, narURL)
+	_, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
 	if err != nil {
-		if database.IsNotFoundError(err) {
+		if ent.IsNotFound(err) {
 			return false, nil
 		}
 
@@ -6478,28 +6507,29 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		totalChunks int64
 	)
 
-	err := c.withTransaction(ctx, "getNarFromChunks.init", func(qtx database.Querier) error {
-		nr, err := c.getNarFileFromDB(ctx, qtx, *narURL)
+	err := c.withEntTransaction(ctx, "getNarFromChunks.init", func(tx *ent.Tx) error {
+		nr, err := c.getNarFileFromDB(ctx, tx.NarFile, *narURL)
 		if err != nil {
 			return err
 		}
 
-		narFileID = nr.ID
+		narFileID = int64(nr.ID)
 		//nolint:gosec // G115: File size is non-negative
 		totalSize = int64(nr.FileSize)
 		totalChunks = nr.TotalChunks
 
 		// Touch the NAR file
-		latValue, err := nr.LastAccessedAt.Value()
-		if err == nil {
-			if lat, ok := latValue.(time.Time); ok && time.Since(lat) > c.recordAgeIgnoreTouch {
-				if _, err := qtx.TouchNarFile(ctx, database.TouchNarFileParams{
-					Hash:        narURL.Hash,
-					Compression: narURL.Compression.String(),
-					Query:       narURL.Query.Encode(),
-				}); err != nil {
-					return fmt.Errorf("error touching the nar record: %w", err)
-				}
+		if nr.LastAccessedAt == nil || time.Since(*nr.LastAccessedAt) > c.recordAgeIgnoreTouch {
+			if _, err := tx.NarFile.Update().
+				Where(
+					entnarfile.HashEQ(narURL.Hash),
+					entnarfile.CompressionEQ(narURL.Compression.String()),
+					entnarfile.QueryEQ(narURL.Query.Encode()),
+				).
+				SetLastAccessedAt(time.Now()).
+				SetUpdatedAt(time.Now()).
+				Save(ctx); err != nil {
+				return fmt.Errorf("error touching the nar record: %w", err)
 			}
 		}
 

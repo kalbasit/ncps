@@ -1121,7 +1121,7 @@ func testGetNarFileSize(factory cacheFactory) func(*testing.T) {
 			nu := nar.URL{Hash: "doesnotexist", Compression: nar.CompressionTypeXz}
 			_, err := c.GetNarFileSize(context.Background(), nu)
 			require.Error(t, err)
-			assert.True(t, database.IsNotFoundError(err))
+			assert.True(t, ent.IsNotFound(err))
 		})
 
 		t.Run("nar file exists in database", func(t *testing.T) {
