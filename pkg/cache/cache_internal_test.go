@@ -464,9 +464,9 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			assert.True(t, found, nu.String()+" should exist in the store")
 		}
 
-		// Ensure time has advanced past timestamp precision for the last_accessed_at
-		// work. Every supported engine stores sub-second precision, so 100ms is plenty.
-		time.Sleep(100 * time.Millisecond)
+		// Ensure time has advanced past MySQL's second-level TIMESTAMP precision so
+		// the LRU sees different last_accessed_at values between phase 1 and phase 2.
+		time.Sleep(1100 * time.Millisecond)
 
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
@@ -761,9 +761,9 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 			assert.True(t, found, nu.String()+" should exist in the store")
 		}
 
-		// Ensure time has advanced past timestamp precision for the last_accessed_at
-		// work. Every supported engine stores sub-second precision, so 100ms is plenty.
-		time.Sleep(100 * time.Millisecond)
+		// Ensure time has advanced past MySQL's second-level TIMESTAMP precision so
+		// the LRU sees different last_accessed_at values between phase 1 and phase 2.
+		time.Sleep(1100 * time.Millisecond)
 
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
