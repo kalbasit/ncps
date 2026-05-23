@@ -114,7 +114,7 @@ ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
   --cache-storage-s3-endpoint=http://garage.example.com:3900 \
   --cache-storage-s3-access-key-id=your-access-key \
-  --cache-storage-s3-secret-access-key=your-access-key \
+  --cache-storage-s3-secret-access-key=your-secret-key \
   --cache-storage-s3-force-path-style=true
 ```
 
