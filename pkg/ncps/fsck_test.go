@@ -430,12 +430,9 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		verifiedAt1 := *nf.VerifiedAt
 
 		// 2. Run fsck with --verified-since 1h - should skip checking.
-		// Since we don't have a direct way to check 'skipped' count from the app return
-		// value, we verify that verified_at was NOT updated. The sleep just needs to put
-		// the prior verified_at outside the "1ms" window used in step 3 while staying
-		// well inside the "1h" window used here — 100ms is plenty for sub-second
-		// timestamp precision on every supported engine.
-		time.Sleep(100 * time.Millisecond)
+		// MySQL TIMESTAMP has second-level precision; sleep >1s so step 3's fsck
+		// lands in a different second than step 1's verifiedAt1.
+		time.Sleep(1100 * time.Millisecond)
 
 		args = []string{
 			"ncps", "fsck",
