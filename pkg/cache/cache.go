@@ -6580,16 +6580,26 @@ func (c *Cache) streamCompleteChunks(
 	totalChunks int64,
 	raw bool,
 ) error {
-	// Get all chunks at once
+	// Get all chunks at once, ordered by their position in the NAR.
+	// Query the junction entity directly (rather than chunk + edge
+	// HasNarFileLinks with edge-ordering, which Ent compiles to a
+	// Postgres-incompatible `ORDER BY <join_table>.chunk_index` after
+	// the implicit GROUP BY chunk.id). Eager-load Chunk on each link.
 	chunkHashes := make([]string, 0, totalChunks)
 
-	chunks, err := c.db.GetChunksByNarFileID(ctx, narFileID)
+	links, err := c.dbClient.Ent().NarFileChunk.Query().
+		Where(entnarfilechunk.NarFileID(int(narFileID))).
+		Order(entnarfilechunk.ByChunkIndex()).
+		WithChunk().
+		All(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting chunks: %w", err)
 	}
 
-	for _, ch := range chunks {
-		chunkHashes = append(chunkHashes, ch.Hash)
+	for _, link := range links {
+		if link.Edges.Chunk != nil {
+			chunkHashes = append(chunkHashes, link.Edges.Chunk.Hash)
+		}
 	}
 
 	if len(chunkHashes) != int(totalChunks) {
@@ -6711,20 +6721,35 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 			// Batch-query chunks from current index to avoid per-chunk poll overhead.
 			// When multiple chunks are already written by the CDC goroutine, this returns
 			// all of them at once, eliminating the 200ms wait between each chunk.
-			batch, err := c.db.GetChunksByNarFileIDFromIndex(ctx, database.GetChunksByNarFileIDFromIndexParams{
-				NarFileID:  narFileID,
-				ChunkIndex: chunkIndex,
-				Limit:      progressivePollBatchSize,
-			})
-			if err != nil && !database.IsNotFoundError(err) {
+			// Query the junction entity (with eager-loaded Chunk) so Postgres
+			// can use the column ORDER BY directly — chunk-side edge-ordering
+			// trips Postgres's GROUP BY rule, see getNarChunkedFromStore.
+			batch, err := c.dbClient.Ent().NarFileChunk.Query().
+				Where(
+
+					entnarfilechunk.NarFileID(int(narFileID)),
+
+					entnarfilechunk.ChunkIndexGTE(int(chunkIndex)),
+				).
+				Order(entnarfilechunk.ByChunkIndex()).
+				WithChunk().
+				Limit(progressivePollBatchSize).
+				All(ctx)
+			if err != nil && !ent.IsNotFound(err) {
 				chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunks from index %d: %w", chunkIndex, err)}
 
 				return
 			}
 
-			if len(batch) > 0 {
+			if len(batch) > 0 { //nolint:nestif // pipeline loop, pre-existing depth
 				// Feed all available chunks from the batch into the pipeline.
-				for _, ch := range batch {
+				for _, link := range batch {
+					if link.Edges.Chunk == nil {
+						continue
+					}
+
+					ch := link.Edges.Chunk
+
 					var (
 						rc       io.ReadCloser
 						fetchErr error
@@ -6796,21 +6821,34 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					return
 				}
 
-				// Re-check: try a batch query again after the sleep.
-				batch2, batchErr := c.db.GetChunksByNarFileIDFromIndex(ctx, database.GetChunksByNarFileIDFromIndexParams{
-					NarFileID:  narFileID,
-					ChunkIndex: chunkIndex,
-					Limit:      progressivePollBatchSize,
-				})
-				if batchErr != nil && !database.IsNotFoundError(batchErr) {
+				// Re-check: try a batch query again after the sleep. Same
+				// junction-side query as the initial poll to keep Postgres happy.
+				batch2, batchErr := c.dbClient.Ent().NarFileChunk.Query().
+					Where(
+
+						entnarfilechunk.NarFileID(int(narFileID)),
+
+						entnarfilechunk.ChunkIndexGTE(int(chunkIndex)),
+					).
+					Order(entnarfilechunk.ByChunkIndex()).
+					WithChunk().
+					Limit(progressivePollBatchSize).
+					All(ctx)
+				if batchErr != nil && !ent.IsNotFound(batchErr) {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunks from index %d: %w", chunkIndex, batchErr)}
 
 					return
 				}
 
-				if len(batch2) > 0 {
+				if len(batch2) > 0 { //nolint:nestif // pipeline loop, pre-existing depth
 					// Feed the newly-available chunks and break out of the wait loop.
-					for _, ch := range batch2 {
+					for _, link := range batch2 {
+						if link.Edges.Chunk == nil {
+							continue
+						}
+
+						ch := link.Edges.Chunk
+
 						var (
 							rc       io.ReadCloser
 							fetchErr error

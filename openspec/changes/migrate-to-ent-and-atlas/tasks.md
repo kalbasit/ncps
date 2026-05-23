@@ -116,7 +116,7 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 - [x] 11.1 Rewrite `pkg/cache/cache.go` storage of `database.Querier` to `*database.Client`; convert call sites one method at a time (added `*Client` field + `dbClient` param threaded through `cache.New`, testhelpers, and all call sites; call-site method conversions in §11.2-§11.8)
 - [x] 11.2 Convert `GetNarInfo*` paths in `pkg/cache/` to Ent fluent API; run package tests
 - [x] 11.3 Convert `PutNarInfo*` paths; run package tests
-- [ ] 11.4 Convert `GetNarFile*` / `PutNarFile*` paths (including CDC chunk insertion); run package tests
+- [x] 11.4 Convert `GetNarFile*` / `PutNarFile*` paths (including CDC chunk insertion); run package tests
 - [ ] 11.5 Convert chunk and orphan-cleanup queries; run package tests
 - [ ] 11.6 Convert `pkg/ncps/` paths (migration tooling, fsck, closure pinning); run package tests
 - [ ] 11.7 Convert `pkg/server/` paths; run package tests
