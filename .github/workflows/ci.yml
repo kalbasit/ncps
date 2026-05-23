@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
+      ent: ${{ steps.filter.outputs.ent }}
       go_deps: ${{ steps.filter.outputs.go_deps }}
     steps:
       - uses: actions/checkout@v6
@@ -27,6 +28,9 @@ jobs:
         id: filter
         with:
           filters: |
+            ent:
+              - "ent/schema/**"
+              - "ent/generate.go"
             go_deps:
               - "go.mod"
               - "go.sum"
@@ -34,7 +38,7 @@ jobs:
               - "docs/**"
   generate:
     needs: filter
-    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.go_deps == 'true'
+    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && (needs.filter.outputs.ent == 'true' || needs.filter.outputs.go_deps == 'true')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -117,6 +121,16 @@ jobs:
         if: needs.filter.outputs.go_deps == 'true'
         with:
           commit_message: "Auto Update Vendor Hash for ncps"
+      - name: Regenerate Ent code
+        if: needs.filter.outputs.ent == 'true'
+        run: nix develop --command go generate ./ent/...
+      - name: Format Code
+        if: needs.filter.outputs.ent == 'true'
+        run: nix fmt
+      - uses: stefanzweifel/git-auto-commit-action@v7
+        if: needs.filter.outputs.ent == 'true'
+        with:
+          commit_message: "Auto Regenerate Ent Code"
   deploy-docs-pages:
     permissions:
       contents: read

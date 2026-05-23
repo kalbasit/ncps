@@ -123,6 +123,49 @@
             doCheck = false;
           });
 
+          # schema-equivalence-check runs migrations/TestSchemaEquivalence
+          # for all three dialects (SQLite, Postgres, MySQL). For Postgres
+          # and MySQL the test needs live databases — process-compose-style
+          # ephemeral servers are spun up via the pre-check helpers that
+          # the main ncps derivation uses for its integration tests.
+          schema-equivalence-check = config.packages.ncps.overrideAttrs (_oa: {
+            name = "schema-equivalence-check";
+            src = ../../.;
+            outputs = [ "out" ];
+            # The parent ncps derivation builds the binary in buildPhase;
+            # for the schema-equivalence check we don't need the binary,
+            # only the test pass. Replace buildPhase with a no-op to keep
+            # this derivation cheap.
+            buildPhase = ''
+              :
+            '';
+            preCheck = ''
+              # Set up cleanup trap to ensure background processes are killed even if tests fail.
+              cleanup() {
+                source $src/nix/packages/ncps/post-check-mysql.sh
+                source $src/nix/packages/ncps/post-check-postgres.sh
+              }
+              trap cleanup EXIT
+
+              source $src/nix/packages/ncps/pre-check-mysql.sh
+              source $src/nix/packages/ncps/pre-check-postgres.sh
+            '';
+            checkPhase = ''
+              runHook preCheck
+
+              go test -race -count=1 -timeout 10m -run TestSchemaEquivalence ./migrations/...
+
+              runHook postCheck
+            '';
+            # No coverage file is produced here, so override the parent
+            # postCheck (which moves coverage.txt into the coverage output).
+            postCheck = "";
+            doCheck = true;
+            installPhase = ''
+              touch $out
+            '';
+          });
+
           helm-unittest-check = pkgs.stdenvNoCC.mkDerivation {
             name = "ncps-helm-unittest";
             src = ../../charts/ncps;
