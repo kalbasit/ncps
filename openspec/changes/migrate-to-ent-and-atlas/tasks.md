@@ -146,7 +146,7 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 
 ## 14. Docs and skills
 
-- [ ] 14.1 Update `CLAUDE.md`: replace the sqlc / dbmate sections with the Ent / Atlas / Goose workflow; document the expand-contract policy and four-step NOT NULL recipe
+- [x] 14.1 Update `CLAUDE.md`: replace the sqlc / dbmate sections with the Ent / Atlas / Goose workflow; document the expand-contract policy and four-step NOT NULL recipe
 - [ ] 14.2 Rewrite `.agent/skills/migrate-new/SKILL.md` to drive the `task migrations:gen NAME=…` and `task migrations:sql NAME=…` workflows
 - [ ] 14.3 Rewrite `.agent/skills/migrate-up/SKILL.md` to drive `ncps migrate up` (mentioning the `--dry-run` flag for upgrades)
 - [ ] 14.4 Rewrite `.agent/skills/migrate-down/SKILL.md` to point at the expand-contract policy instead of describing a down command
