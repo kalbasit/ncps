@@ -1,0 +1,52 @@
+================================================================================
+PER-PACKAGE WALL TIME (ranked, descending)
+================================================================================
+ elapsed (s)   tests   pass   fail   skip  package
+--------------------------------------------------------------------------------
+       3.121      12     12      0      0  github.com/kalbasit/ncps/cmd/generate-migrations
+       2.983     226    208      0     19  github.com/kalbasit/ncps/pkg/cache
+       2.303       5      5      0      0  github.com/kalbasit/ncps/pkg/chunker
+       2.273      87     85      0      2  github.com/kalbasit/ncps/pkg/server
+       2.168     135    135      0      0  github.com/kalbasit/ncps/pkg/cache/upstream
+       2.027      15      2      0     13  github.com/kalbasit/ncps/pkg/lock/redis
+       1.907      63     57      0      6  github.com/kalbasit/ncps/pkg/ncps
+       1.621       4      2      0      2  github.com/kalbasit/ncps/pkg/cache/healthcheck
+       1.538      55     55      0      0  github.com/kalbasit/ncps/pkg/storage/local
+       1.524      84     58      0     26  github.com/kalbasit/ncps/pkg/storage/s3
+       1.175       8      8      0      0  github.com/kalbasit/ncps/cmd/ent-lint
+       1.162       9      7      0      2  github.com/kalbasit/ncps/migrations
+       1.153      14     14      0      0  github.com/kalbasit/ncps/pkg/lock/local
+       1.102      10      7      0      3  github.com/kalbasit/ncps/pkg/database/migrate
+       1.094       8      8      0      0  github.com/kalbasit/ncps/pkg/lock
+       1.076      17     11      0      6  github.com/kalbasit/ncps/pkg/storage/chunk
+       1.063      19     19      0      0  github.com/kalbasit/ncps/pkg/zstd
+       1.060      27     21      0      6  github.com/kalbasit/ncps/pkg/config
+       1.055     145    145      0      0  github.com/kalbasit/ncps/pkg/nar
+       1.042      37     37      0      0  github.com/kalbasit/ncps/pkg/database
+       1.029       9      9      0      0  github.com/kalbasit/ncps/pkg/xz
+       1.022      24     24      0      0  github.com/kalbasit/ncps/testhelper
+       1.019       3      3      0      0  github.com/kalbasit/ncps/pkg/otel
+       1.014      14     14      0      0  github.com/kalbasit/ncps/pkg/nixcacheinfo
+       1.013      16     16      0      0  github.com/kalbasit/ncps/pkg/s3
+       1.012      12     12      0      0  github.com/kalbasit/ncps/pkg/circuitbreaker
+       1.012      31     31      0      0  github.com/kalbasit/ncps/pkg/helper
+       1.012      24     24      0      0  github.com/kalbasit/ncps/pkg/narinfo
+       1.010      11     11      0      0  github.com/kalbasit/ncps/pkg/otelzerolog
+--------------------------------------------------------------------------------
+      41.590  TOTAL (sum of per-package elapsed)
+
+================================================================================
+SLOW TESTS (elapsed > 0.500s, parent + subtests)
+================================================================================
+ elapsed (s)  package / test
+--------------------------------------------------------------------------------
+       2.090  github.com/kalbasit/ncps/cmd/generate-migrations  TestSQLOnlyEmitsThreeDialects
+       2.080  github.com/kalbasit/ncps/cmd/generate-migrations  TestNameValidation
+       1.290  github.com/kalbasit/ncps/pkg/chunker  TestCDCChunker_Chunk_ErrorRace
+       1.040  github.com/kalbasit/ncps/pkg/cache  TestGetNarInfoDistributedCoordination
+       1.000  github.com/kalbasit/ncps/pkg/lock/redis  TestNewLocker_ReturnType
+       0.830  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01
+       0.790  github.com/kalbasit/ncps/pkg/cache  TestCDCBackends/SQLite/first_pull_completes_before_CDC_chunking_finishes
+       0.690  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite
+       0.570  github.com/kalbasit/ncps/pkg/cache  TestIssue990_BackgroundJobContextCancellation
+       0.510  github.com/kalbasit/ncps/pkg/cache/upstream  TestHasNarInfo/response_header_timeout_treated_as_not-found_for_HEAD_requests

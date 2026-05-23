@@ -1,0 +1,97 @@
+================================================================================
+PER-PACKAGE WALL TIME (ranked, descending)
+================================================================================
+ elapsed (s)   tests   pass   fail   skip  package
+--------------------------------------------------------------------------------
+      11.892     597    574     11     13  github.com/kalbasit/ncps/pkg/cache
+       7.070      86     86      0      0  github.com/kalbasit/ncps/pkg/storage/s3
+       6.282     159    159      0      0  github.com/kalbasit/ncps/pkg/ncps
+       3.276      91     91      0      0  github.com/kalbasit/ncps/pkg/server
+       3.069      15     15      0      0  github.com/kalbasit/ncps/pkg/lock/redis
+       2.887      12     12      0      0  github.com/kalbasit/ncps/cmd/generate-migrations
+       2.653       5      5      0      0  github.com/kalbasit/ncps/pkg/chunker
+       2.093     135    135      0      0  github.com/kalbasit/ncps/pkg/cache/upstream
+       1.921      57     57      0      0  github.com/kalbasit/ncps/pkg/config
+       1.763      55     55      0      0  github.com/kalbasit/ncps/pkg/storage/local
+       1.701       4      4      0      0  github.com/kalbasit/ncps/pkg/cache/healthcheck
+       1.318       8      8      0      0  github.com/kalbasit/ncps/cmd/ent-lint
+       1.298      21     19      0      2  github.com/kalbasit/ncps/pkg/database/migrate
+       1.270       9      9      0      0  github.com/kalbasit/ncps/migrations
+       1.216      24     24      0      0  github.com/kalbasit/ncps/pkg/storage/chunk
+       1.128      14     14      0      0  github.com/kalbasit/ncps/pkg/lock/local
+       1.096       8      8      0      0  github.com/kalbasit/ncps/pkg/lock
+       1.091     145    145      0      0  github.com/kalbasit/ncps/pkg/nar
+       1.086      19     19      0      0  github.com/kalbasit/ncps/pkg/zstd
+       1.061      37     37      0      0  github.com/kalbasit/ncps/pkg/database
+       1.052       9      9      0      0  github.com/kalbasit/ncps/pkg/xz
+       1.029      24     24      0      0  github.com/kalbasit/ncps/pkg/narinfo
+       1.026       3      3      0      0  github.com/kalbasit/ncps/pkg/otel
+       1.024      24     24      0      0  github.com/kalbasit/ncps/testhelper
+       1.023      14     14      0      0  github.com/kalbasit/ncps/pkg/nixcacheinfo
+       1.021      12     12      0      0  github.com/kalbasit/ncps/pkg/circuitbreaker
+       1.018      11     11      0      0  github.com/kalbasit/ncps/pkg/otelzerolog
+       1.017      31     31      0      0  github.com/kalbasit/ncps/pkg/helper
+       1.016      16     16      0      0  github.com/kalbasit/ncps/pkg/s3
+--------------------------------------------------------------------------------
+      64.397  TOTAL (sum of per-package elapsed)
+
+================================================================================
+SLOW TESTS (elapsed > 0.500s, parent + subtests)
+================================================================================
+ elapsed (s)  package / test
+--------------------------------------------------------------------------------
+       9.920  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/PostgreSQL
+       9.760  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/MySQL
+       9.660  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite
+       6.220  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/PostgreSQL#01
+       5.990  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/MySQL#01
+       5.860  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/SQLite#01
+       5.430  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/PostgreSQL/LargeNARConcurrentDownload/CDC_Enabled
+       5.230  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/MySQL/LargeNARConcurrentDownload/CDC_Enabled
+       5.220  github.com/kalbasit/ncps/pkg/storage/s3  TestNew_BucketAccessError
+       4.810  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/PostgreSQL/PutNarInfoConcurrentSharedNar
+       4.790  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/SQLite/LargeNARConcurrentDownload/CDC_Enabled
+       4.510  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/SQLite/LockFailover
+       4.510  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/PostgreSQL/LockFailover
+       4.510  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/MySQL/LockFailover
+       2.930  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/PostgreSQL/LargeNARConcurrentDownload/CDC_Disabled
+       2.670  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/MySQL/PutNarInfoConcurrentSharedNar
+       2.670  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/SQLite/LargeNARConcurrentDownload/CDC_Disabled
+       2.520  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/MySQL/LargeNARConcurrentDownload/CDC_Disabled
+       2.010  github.com/kalbasit/ncps/pkg/lock/redis  TestLocker_LockExpiry
+       1.860  github.com/kalbasit/ncps/cmd/generate-migrations  TestSQLOnlyEmitsThreeDialects
+       1.860  github.com/kalbasit/ncps/pkg/lock/redis  TestLocker_RetryWithBackoff
+       1.850  github.com/kalbasit/ncps/cmd/generate-migrations  TestNameValidation
+       1.730  github.com/kalbasit/ncps/pkg/lock/redis  TestLocker_DegradedModeDisabled
+       1.720  github.com/kalbasit/ncps/pkg/lock/redis  TestLocker_DegradedMode
+       1.640  github.com/kalbasit/ncps/pkg/chunker  TestCDCChunker_Chunk_ErrorRace
+       1.440  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/SQLite/PutNarInfoConcurrentSharedNar
+       1.050  github.com/kalbasit/ncps/pkg/cache  TestGetNarInfoDistributedCoordination
+       1.000  github.com/kalbasit/ncps/pkg/lock/redis  TestNewLocker_ReturnType
+       0.870  github.com/kalbasit/ncps/pkg/cache  TestCDCBackends/PostgreSQL/first_pull_completes_before_CDC_chunking_finishes
+       0.820  github.com/kalbasit/ncps/pkg/cache  TestCDCBackends/SQLite/first_pull_completes_before_CDC_chunking_finishes
+       0.800  github.com/kalbasit/ncps/pkg/cache  TestCDCBackends/MySQL/first_pull_completes_before_CDC_chunking_finishes
+       0.760  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarToChunksBackends/MySQL/MultipleNARs
+       0.760  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarToChunksBackends/MySQL/Idempotency
+       0.660  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/MySQL/RunLRU
+       0.650  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/PostgreSQL#01/GetNarWithPlaceholderNarFileRecord
+       0.630  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/PostgreSQL/ConcurrentReads
+       0.620  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/MySQL#01/GetNarWithPlaceholderNarFileRecord
+       0.610  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarToChunksBackends/MySQL/DryRun
+       0.600  github.com/kalbasit/ncps/pkg/ncps  TestFsckBackends/PostgreSQL/CDC/CorruptChunkDetected
+       0.590  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarInfoBackends/PostgreSQL/DryRun
+       0.580  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/SQLite/ConcurrentReads
+       0.570  github.com/kalbasit/ncps/pkg/cache  TestIssue990_BackgroundJobContextCancellation
+       0.570  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/PostgreSQL#01/DeadlockContextCancellationDuringDownload
+       0.570  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarInfoBackends/PostgreSQL/AlreadyMigrated
+       0.570  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarInfoBackends/PostgreSQL/MultipleNarInfos
+       0.560  github.com/kalbasit/ncps/pkg/cache  TestDistributedBackends/MySQL/ConcurrentReads
+       0.560  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarInfoBackends/PostgreSQL/Idempotency
+       0.530  github.com/kalbasit/ncps/pkg/cache  TestCacheBackends/PostgreSQL#01/BackgroundMigrateNarToChunksAfterCancellation
+       0.520  github.com/kalbasit/ncps/pkg/lock/redis  TestRWLocker_WriterBlocksReaders
+       0.520  github.com/kalbasit/ncps/pkg/ncps  TestFsckBackends/MySQL/CDC/HashMismatchDetected
+       0.520  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarInfoBackends/MySQL/Success
+       0.520  github.com/kalbasit/ncps/pkg/ncps  TestFsckBackends/PostgreSQL/CDC/VerifyContentSkipsWhenFlagAbsent
+       0.510  github.com/kalbasit/ncps/pkg/cache/upstream  TestGetNarInfo/response_header_timeout_fires_when_server_stalls_before_first_byte
+       0.510  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarToChunksBackends/MySQL/Deduplication
+       0.510  github.com/kalbasit/ncps/pkg/ncps  TestMigrateNarToChunksBackends/MySQL/Success
