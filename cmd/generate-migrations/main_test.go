@@ -1,12 +1,27 @@
 package main_test
 
 import (
+	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+// sharedBinary is built once for the whole package via TestMain so each test
+// reuses the same executable. Building it per-test cost ~3-4s × N.
+//
+//nolint:gochecknoglobals // intentional package-level state for one-shot binary build
+var (
+	sharedBinary    string
+	errSharedBuild  error
+	sharedBuildOnce sync.Once
+	sharedBuildOut  string
+	sharedBinaryDir string
 )
 
 // TestSQLOnlyEmitsThreeDialects verifies the --sql-only path produces
@@ -78,14 +93,40 @@ func TestNameValidation(t *testing.T) {
 	}
 }
 
+// buildGenerateMigrations returns the path to a built copy of the binary, built once
+// per package run. Subsequent callers reuse the same executable.
 func buildGenerateMigrations(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	binary := filepath.Join(dir, "generate-migrations")
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", binary, ".")
-	cmd.Dir = "."
-	out, err := cmd.CombinedOutput()
-	require.NoErrorf(t, err, "go build ./cmd/generate-migrations failed:\n%s", string(out))
+	sharedBuildOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "generate-migrations-bin-*")
+		if err != nil {
+			errSharedBuild = err
 
-	return binary
+			return
+		}
+
+		sharedBinaryDir = dir
+		sharedBinary = filepath.Join(dir, "generate-migrations")
+		cmd := exec.CommandContext(context.Background(), "go", "build", "-o", sharedBinary, ".")
+		cmd.Dir = "."
+
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			errSharedBuild = err
+			sharedBuildOut = string(out)
+		}
+	})
+	require.NoErrorf(t, errSharedBuild, "go build ./cmd/generate-migrations failed:\n%s", sharedBuildOut)
+
+	return sharedBinary
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+
+	if sharedBinaryDir != "" {
+		_ = os.RemoveAll(sharedBinaryDir)
+	}
+
+	os.Exit(code)
 }

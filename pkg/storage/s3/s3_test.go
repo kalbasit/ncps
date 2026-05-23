@@ -37,10 +37,6 @@ const (
 
 var (
 	errConnectionFailed    = errors.New("connection failed")
-	errListObjectsFailed   = errors.New("list objects failed")
-	errPutFailed           = errors.New("put failed")
-	errGetFailed           = errors.New("get failed")
-	errDeleteFailed        = errors.New("delete failed")
 	errTestingBucketAccess = errors.New("error testing bucket access")
 	errCallbackFailed      = errors.New("callback error")
 
@@ -88,15 +84,16 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 	t.Run("GetSecretKey Read error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errGetFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
 				return s3OKResponse(s3LocationResponseString)
 			}
 
+			// HEAD succeeds so Stat() passes; GET (the body fetch) returns a non-retryable 403
+			// so io.ReadAll trips the "error reading secret key" wrap.
 			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "config/cache.key") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -113,7 +110,6 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 	t.Run("GetSecretKey Stat error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errGetFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -127,7 +123,7 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 
 			// HEAD request (Stat) fails
 			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -144,16 +140,16 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 	t.Run("PutSecretKey StatObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errConnectionFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
 				return s3OKResponse(s3LocationResponseString)
 			}
 
-			// StatObject (HEAD) fails with unexpected error
+			// StatObject (HEAD) returns a non-retryable 403 with a non-NoSuchKey code so the
+			// minio SDK gives up immediately and the wrapper's "not NoSuchKey" branch fires.
 			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -173,7 +169,6 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 	t.Run("PutSecretKey PutObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errPutFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -187,7 +182,7 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 
 			// PutObject fails
 			if req.Method == http.MethodPut && strings.Contains(req.URL.Path, "config/cache.key") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -207,7 +202,6 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 	t.Run("DeleteSecretKey StatObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errConnectionFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -216,7 +210,7 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 
 			// StatObject (HEAD) fails with unexpected error
 			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "config/cache.key") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -233,7 +227,6 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 	t.Run("DeleteSecretKey RemoveObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errDeleteFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -247,7 +240,7 @@ func TestSecretKey_ErrorPaths(t *testing.T) {
 
 			// RemoveObject fails
 			if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, "config/cache.key") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -344,6 +337,31 @@ func s3NotFoundResponse(code, message string) (*http.Response, error) {
 	}, nil
 }
 
+// s3ErrorResponse returns a fake S3 "AccessDenied" 403 with the given message.
+// Use this in transport mocks to simulate S3 errors WITHOUT triggering minio-go's
+// retry logic — the SDK retries on RoundTripper errors and 5xx, but not on 4xx
+// (except 408/429). The "AccessDenied" code is reliably non-NoSuchKey so wrappers
+// take their "unexpected error" branch; the message is surfaced verbatim into
+// err.Error(), which keeps existing literal-text assertions working.
+func s3ErrorResponse(message string) (*http.Response, error) {
+	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>AccessDenied</Code>
+  <Message>%s</Message>
+  <RequestId>4442587FB7D0A2F9</RequestId>
+  <HostId>nmIPG6bRoc0OcSR89Our983D5z77Fv9A=</HostId>
+</Error>`, message)
+
+	header := make(http.Header)
+	header.Set("Content-Type", "application/xml")
+
+	return &http.Response{
+		StatusCode: http.StatusForbidden,
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}, nil
+}
+
 func s3OKResponse(body string) (*http.Response, error) {
 	header := make(http.Header)
 	header.Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
@@ -416,7 +434,6 @@ func TestWalkNarInfos_ErrorPaths(t *testing.T) {
 	t.Run("ListObjects returns error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errListObjectsFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			// BucketExists check in New
@@ -424,9 +441,10 @@ func TestWalkNarInfos_ErrorPaths(t *testing.T) {
 				return s3OKResponse(s3LocationResponseString)
 			}
 
-			// Then it lists objects
+			// ListObjects request returns a non-retryable 403 with the sentinel message
+			// embedded in the body so the existing assertion still passes.
 			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "test-bucket") {
-				return nil, expectedErr
+				return s3ErrorResponse("list objects failed")
 			}
 
 			return s3OKResponse("")
@@ -573,7 +591,6 @@ func TestDeleteNarInfo_ErrorPaths(t *testing.T) {
 	t.Run("DeleteNarInfo StatObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errConnectionFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -582,7 +599,7 @@ func TestDeleteNarInfo_ErrorPaths(t *testing.T) {
 
 			// StatObject (HEAD) fails with unexpected error
 			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, ".narinfo") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -599,7 +616,6 @@ func TestDeleteNarInfo_ErrorPaths(t *testing.T) {
 	t.Run("DeleteNarInfo RemoveObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errDeleteFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -613,7 +629,7 @@ func TestDeleteNarInfo_ErrorPaths(t *testing.T) {
 
 			// RemoveObject fails
 			if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, ".narinfo") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -688,15 +704,15 @@ func TestNarInfo_ErrorPaths(t *testing.T) {
 	t.Run("PutNarInfo returns error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errPutFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
 				return s3OKResponse(s3LocationResponseString)
 			}
 
+			// PUT returns a non-retryable 403; sentinel text in Message keeps the assertion.
 			if req.Method == http.MethodPut && strings.Contains(req.URL.Path, ".narinfo") {
-				return nil, expectedErr
+				return s3ErrorResponse("put failed")
 			}
 
 			// StatObject (to check if it exists)
@@ -772,7 +788,6 @@ func TestHasNar_ErrorPaths(t *testing.T) {
 	t.Run("HasNar StatObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errConnectionFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -781,7 +796,7 @@ func TestHasNar_ErrorPaths(t *testing.T) {
 
 			// StatObject (HEAD) fails with unexpected error
 			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -830,7 +845,6 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 	t.Run("PutNar StatObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errConnectionFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -839,7 +853,7 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 
 			// StatObject (HEAD) fails with unexpected error
 			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -857,7 +871,6 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 	t.Run("PutNar PutObject error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errPutFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -871,7 +884,7 @@ func TestPutNar_ErrorPaths(t *testing.T) {
 
 			// PutObject fails
 			if req.Method == http.MethodPut && strings.Contains(req.URL.Path, "store/nar") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -921,19 +934,16 @@ func TestNar_ErrorPaths(t *testing.T) {
 	t.Run("GetNar returns error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errGetFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
 				return s3OKResponse(s3LocationResponseString)
 			}
 
-			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "store/nar") {
-				return nil, expectedErr
-			}
-
-			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
-				return nil, expectedErr
+			// GET/HEAD return non-retryable 403 with the sentinel text so the assertion holds.
+			if (req.Method == http.MethodGet || req.Method == http.MethodHead) &&
+				strings.Contains(req.URL.Path, "store/nar") {
+				return s3ErrorResponse("get failed")
 			}
 
 			return s3OKResponse("")
@@ -951,7 +961,6 @@ func TestNar_ErrorPaths(t *testing.T) {
 	t.Run("DeleteNar StatObject returns error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errConnectionFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
@@ -960,7 +969,7 @@ func TestNar_ErrorPaths(t *testing.T) {
 
 			// StatObject (HEAD) fails with unexpected error
 			if req.Method == http.MethodHead && strings.Contains(req.URL.Path, "store/nar") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")
@@ -978,15 +987,15 @@ func TestNar_ErrorPaths(t *testing.T) {
 	t.Run("DeleteNar returns error", func(t *testing.T) {
 		t.Parallel()
 
-		expectedErr := errDeleteFailed
 		cfgWithMock := cfg
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			if req.URL.Query().Has("location") && strings.Contains(req.URL.Path, "test-bucket") {
 				return s3OKResponse(s3LocationResponseString)
 			}
 
+			// DELETE returns non-retryable 403 with the sentinel text so the assertion holds.
 			if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, "store/nar") {
-				return nil, expectedErr
+				return s3ErrorResponse("delete failed")
 			}
 
 			// StatObject (to check if it exists)
@@ -1710,7 +1719,6 @@ func TestHasNarinfoDir_ErrorPaths(t *testing.T) {
 			SecretAccessKey: "minioadmin",
 		}
 
-		expectedErr := errListObjectsFailed
 		cfgWithMock := cfgBase
 		cfgWithMock.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			// BucketExists check in New
@@ -1720,7 +1728,7 @@ func TestHasNarinfoDir_ErrorPaths(t *testing.T) {
 
 			// ListObjects request fails
 			if req.Method == http.MethodGet && strings.Contains(req.URL.Path, "test-bucket") {
-				return nil, expectedErr
+				return s3ErrorResponse("access denied")
 			}
 
 			return s3OKResponse("")

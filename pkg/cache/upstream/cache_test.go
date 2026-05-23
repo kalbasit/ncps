@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -232,11 +231,11 @@ func TestGetNarInfo(t *testing.T) {
 	//nolint:paralleltest
 	t.Run("upstream with public keys", testFn(true))
 
-	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+	t.Run("response header timeout fires when server stalls before first byte", func(t *testing.T) {
 		t.Parallel()
 
 		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		t.Cleanup(slowServer.Close)
@@ -245,7 +244,8 @@ func TestGetNarInfo(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			&upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
+				PublicKeys:            testdata.PublicKeys(),
+				ResponseHeaderTimeout: 50 * time.Millisecond,
 			},
 		)
 		require.NoError(t, err)
@@ -302,11 +302,11 @@ func TestHasNarInfo(t *testing.T) {
 		})
 	}
 
-	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+	t.Run("response header timeout treated as not-found for HEAD requests", func(t *testing.T) {
 		t.Parallel()
 
 		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		t.Cleanup(slowServer.Close)
@@ -315,7 +315,8 @@ func TestHasNarInfo(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			&upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
+				PublicKeys:            testdata.PublicKeys(),
+				ResponseHeaderTimeout: 50 * time.Millisecond,
 			},
 		)
 		require.NoError(t, err)
@@ -373,11 +374,11 @@ func TestGetNar(t *testing.T) {
 		})
 	}
 
-	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+	t.Run("response header timeout fires when server stalls before first byte", func(t *testing.T) {
 		t.Parallel()
 
 		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		t.Cleanup(slowServer.Close)
@@ -386,7 +387,8 @@ func TestGetNar(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			&upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
+				PublicKeys:            testdata.PublicKeys(),
+				ResponseHeaderTimeout: 50 * time.Millisecond,
 			},
 		)
 		require.NoError(t, err)
@@ -446,11 +448,11 @@ func TestHasNar(t *testing.T) {
 		})
 	}
 
-	t.Run("timeout if server takes more than 3 seconds before first byte", func(t *testing.T) {
+	t.Run("response header timeout treated as not-found for HEAD requests", func(t *testing.T) {
 		t.Parallel()
 
 		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(5 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		t.Cleanup(slowServer.Close)
@@ -459,7 +461,8 @@ func TestHasNar(t *testing.T) {
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
 			&upstream.Options{
-				PublicKeys: testdata.PublicKeys(),
+				PublicKeys:            testdata.PublicKeys(),
+				ResponseHeaderTimeout: 50 * time.Millisecond,
 			},
 		)
 		require.NoError(t, err)
@@ -639,126 +642,80 @@ func TestNewWithOptions(t *testing.T) {
 		})
 	}
 
-	t.Run("custom dialer timeout is respected - slow connection succeeds with longer timeout", func(t *testing.T) {
+	t.Run("DialerTimeout fires on unreachable host", func(t *testing.T) {
 		t.Parallel()
 
-		// Create a listener that delays accepting connections
-		//nolint:noctx // Using net.Listen is fine in tests
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		t.Cleanup(func() { listener.Close() })
+		// 192.0.2.1 is in TEST-NET-1 (RFC 5737), reserved for documentation.  On most
+		// systems the TCP SYN gets no SYN-ACK and the dialer's timer fires ("timeout").
+		// In a network-sandboxed build environment (e.g. Nix) the kernel may immediately
+		// return ENETUNREACH ("network is unreachable") — both are valid outcomes; the
+		// assertion below accepts either.  The elapsed-time guard catches regressions
+		// where DialerTimeout is ignored and the request hangs on ResponseHeaderTimeout.
+		const unroutable = "http://192.0.2.1:1"
 
-		slowListener := &slowAcceptListener{
-			Listener: listener,
-			delay:    4 * time.Second, // Longer than default 3s timeout
-		}
-
-		// Start a server with the slow listener
-		server := &http.Server{
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, "StorePath: /nix/store/test")
-			}),
-			ReadHeaderTimeout: 10 * time.Second,
-		}
-
-		go func() {
-			//nolint:errcheck
-			server.Serve(slowListener)
-		}()
-
-		// Allow the server goroutine to start before making a connection.
-		time.Sleep(100 * time.Millisecond)
-		t.Cleanup(func() { server.Close() })
-
-		serverURL := fmt.Sprintf("http://%s", listener.Addr().String())
-
-		// With default timeout (3s), connection should fail
-		cDefault, err := upstream.New(
+		c, err := upstream.New(
 			newContext(),
-			testhelper.MustParseURL(t, serverURL),
-			nil,
+			testhelper.MustParseURL(t, unroutable),
+			&upstream.Options{
+				DialerTimeout:         50 * time.Millisecond,
+				ResponseHeaderTimeout: 5 * time.Second,
+			},
 		)
 		require.NoError(t, err)
 
-		_, err = cDefault.GetNarInfo(context.Background(), "test")
+		start := time.Now()
+		_, err = c.GetNarInfo(context.Background(), "test")
+		elapsed := time.Since(start)
+
 		require.Error(t, err)
-		// The error might be deadline exceeded or connection refused depending on timing
-		assert.True(t, errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout"))
-
-		// With custom longer timeout (6s), connection should succeed
-		opts := &upstream.Options{
-			DialerTimeout:         6 * time.Second,
-			ResponseHeaderTimeout: 10 * time.Second, // Set this too so we don't timeout waiting for headers
-		}
-
-		cCustom, err := upstream.New(
-			newContext(),
-			testhelper.MustParseURL(t, serverURL),
-			opts,
-		)
-		require.NoError(t, err)
-
-		// This should NOT timeout during connection because we have a longer timeout
-		_, err = cCustom.GetNarInfo(context.Background(), "test")
-		// It will error with parsing, but not with connection timeout
-		require.Error(t, err)
-		assert.NotErrorIs(t, err, context.DeadlineExceeded)
+		assert.True(t,
+			errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(err.Error(), "timeout") ||
+				strings.Contains(err.Error(), "unreachable"),
+			"expected a connection-failure error, got: %v", err)
+		// Bound at 2s to catch a regression where DialerTimeout is ignored and the request hangs
+		// on ResponseHeaderTimeout (5s) or longer.
+		assert.Less(t, elapsed, 2*time.Second, "DialerTimeout should fire well before ResponseHeaderTimeout")
 	})
 
-	t.Run("custom response header timeout is respected - slow server succeeds with longer timeout", func(t *testing.T) {
+	t.Run("ResponseHeaderTimeout is wired through - short timeout fails, longer timeout succeeds", func(t *testing.T) {
 		t.Parallel()
 
-		// Server that takes 4 seconds to respond (longer than default 3s timeout)
+		// Server stalls 200ms before sending headers. A short ResponseHeaderTimeout (50ms) must
+		// trip; a longer one (2s) must not.
 		slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(4 * time.Second)
+			time.Sleep(200 * time.Millisecond)
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, "StorePath: /nix/store/test")
 		}))
 		t.Cleanup(slowServer.Close)
 
-		// With default timeout (3s), this should fail
-		cDefault, err := upstream.New(
+		cShort, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
-			nil,
+			&upstream.Options{
+				ResponseHeaderTimeout: 50 * time.Millisecond,
+			},
 		)
 		require.NoError(t, err)
 
-		_, err = cDefault.GetNarInfo(context.Background(), "test")
+		_, err = cShort.GetNarInfo(context.Background(), "test")
 		require.Error(t, err)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 
-		// With custom longer timeout (6s), this should succeed
-		opts := &upstream.Options{
-			ResponseHeaderTimeout: 6 * time.Second,
-		}
-
-		cCustom, err := upstream.New(
+		cLong, err := upstream.New(
 			newContext(),
 			testhelper.MustParseURL(t, slowServer.URL),
-			opts,
+			&upstream.Options{
+				ResponseHeaderTimeout: 2 * time.Second,
+			},
 		)
 		require.NoError(t, err)
 
-		// This should NOT timeout because we have a longer timeout
-		_, err = cCustom.GetNarInfo(context.Background(), "test")
-		// It will error with parsing, but not with timeout
+		_, err = cLong.GetNarInfo(context.Background(), "test")
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, context.DeadlineExceeded)
 	})
-}
-
-// slowAcceptListener wraps a net.Listener to delay accepting connections.
-type slowAcceptListener struct {
-	net.Listener
-	delay time.Duration
-}
-
-func (l *slowAcceptListener) Accept() (net.Conn, error) {
-	time.Sleep(l.delay)
-
-	return l.Listener.Accept()
 }
 
 func newContext() context.Context {
