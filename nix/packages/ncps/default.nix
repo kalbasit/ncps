@@ -16,7 +16,7 @@
             in
             if tag != "" then tag else rev;
 
-          vendorHash = "sha256-N7tHfkKMhAnMfk899FdfM8F8TdMV/KlJoqWWlk9Tx7U=";
+          vendorHash = "sha256-Qvq3CAeSN0ytefM10bP3MfnQVtRzg3GTZygcnc+ClyY=";
         in
         pkgs.buildGoModule {
           inherit version vendorHash;
@@ -38,8 +38,6 @@
               ./pre-check-redis.sh
 
               ../../../cmd
-              ../../../db/migrations
-              ../../../db/schema
               ../../../ent
               ../../../go.mod
               ../../../go.sum
@@ -74,7 +72,6 @@
 
             pkgs.awscli2 # used by init-garage smoke test (put/get/presign)
             pkgs.curl # used for HTTP health checks and anonymous-access check
-            pkgs.dbmate # used for testing
             pkgs.garage # S3-compatible storage for integration tests
             pkgs.jq # used for testing by init-garage
             pkgs.mariadb # MySQL/MariaDB for integration tests
@@ -115,9 +112,6 @@
           '';
 
           postInstall = ''
-            mkdir -p $out/share/ncps
-            cp -r db $out/share/ncps/db
-
             # ncps makes use of xz for decompression as it's 3-5x faster than
             # using the native Go implementation of xz. By wrapping ncps, and
             # setting the XZ_BINARY_PATH environment variable, we ensure that

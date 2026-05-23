@@ -20,15 +20,7 @@
           entry = "${pkgs.chart-testing}/bin/ct lint --all --skip-helm-dependencies --validate-maintainers=false";
         };
         deadnix.enable = true;
-        golangci-lint = {
-          enable = true;
-
-          # XXX: Exclude sub-modules because it fails with this error message:
-          # ERRO [linters_context] typechecking error: main module (github.com/kalbasit/ncps) does not contain package github.com/kalbasit/ncps/nix/dbmate-wrapper/src
-          excludes = [
-            "nix/dbmate-wrapper/src"
-          ];
-        };
+        golangci-lint.enable = true;
         no-commit-to-branch.enable = true;
         no-commit-to-branch.settings.branch = [ "main" ];
         nixfmt-rfc-style.enable = true;
