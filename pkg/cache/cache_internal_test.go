@@ -464,8 +464,9 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			assert.True(t, found, nu.String()+" should exist in the store")
 		}
 
-		// ensure time has moved by one sec for the last_accessed_at work
-		time.Sleep(time.Second)
+		// Ensure time has advanced past timestamp precision for the last_accessed_at
+		// work. Every supported engine stores sub-second precision, so 100ms is plenty.
+		time.Sleep(100 * time.Millisecond)
 
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
@@ -760,8 +761,9 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 			assert.True(t, found, nu.String()+" should exist in the store")
 		}
 
-		// ensure time has moved by one sec for the last_accessed_at work
-		time.Sleep(time.Second)
+		// Ensure time has advanced past timestamp precision for the last_accessed_at
+		// work. Every supported engine stores sub-second precision, so 100ms is plenty.
+		time.Sleep(100 * time.Millisecond)
 
 		// pull the nars except for the last entry to get their last_accessed_at updated
 		sizePulled = 0
@@ -1860,8 +1862,10 @@ func testConcurrentDecompression(factory cacheFactory) func(*testing.T) {
 		err = c.SetCDCConfiguration(true, 4096, 16384, 32768)
 		require.NoError(t, err)
 
-		// Generate valid ZSTD compressed data for the test
-		narData := testhelper.MustRandString(1024 * 1024) // 1MiB
+		// Generate valid ZSTD compressed data for the test. 100KiB is enough to make
+		// concurrent decompression non-trivial without paying for 1MiB of randomness
+		// and zstd compression per run.
+		narData := testhelper.MustRandString(100 * 1024)
 		zstData := CompressZstd(t, narData)
 
 		// Use proper Nix hash generation helpers

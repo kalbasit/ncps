@@ -155,19 +155,24 @@ L:
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
 
+			// 100ms is generous margin for an in-process httptest.Server roundtrip
+			// (~1ms in practice) while keeping the 4 negative-confirmation subtests
+			// from dominating wall time.
+			const reachTimeout = 100 * time.Millisecond
+
 			if tt.shouldReachUpstream {
 				select {
 				case path := <-receivedPaths:
 					t.Logf("Upstream received expected path: %s", path)
 					// OK
-				case <-time.After(500 * time.Millisecond):
+				case <-time.After(reachTimeout):
 					t.Error("Request should have reached upstream but didn't")
 				}
 			} else {
 				select {
 				case path := <-receivedPaths:
 					t.Errorf("Request should NOT have reached upstream but reached it at path: %s", path)
-				case <-time.After(500 * time.Millisecond):
+				case <-time.After(reachTimeout):
 					// OK
 				}
 			}

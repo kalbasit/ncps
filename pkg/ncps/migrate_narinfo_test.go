@@ -868,10 +868,12 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
-		// Create a large narinfo with many references and signatures
-		const numReferences = 100
+		// Create a "large" narinfo — i.e., one with many more references and signatures
+		// than the typical narinfo (which has 2-5 refs and 1-3 sigs). 20 / 10 is plenty
+		// to exercise the bulk-insert path without paying for 150 INSERTs per run.
+		const numReferences = 20
 
-		const numSignatures = 50
+		const numSignatures = 10
 
 		hash := "0a90gw9sdyz3680wfncd5xf0qg6zh27w"
 		narHash := "024wilh5y46xqqjnwp159s13kgvsh8zfr6g6znb8ix2vlyf61rwp"
@@ -931,7 +933,10 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 
 		narPath := filepath.Join(dir, "store", "nar", nFP)
 		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
-		require.NoError(t, os.WriteFile(narPath, []byte(testhelper.MustRandString(999999)), 0o600))
+		// Migration walks narinfos and reads narinfo files; the NAR body itself is never
+		// opened, so a small placeholder is enough — no need to spend ~1MB of randomness
+		// per run.
+		require.NoError(t, os.WriteFile(narPath, []byte(testhelper.MustRandString(1024)), 0o600))
 
 		// Run migration
 		err = store.WalkNarInfos(ctx, func(h string) error {
@@ -975,12 +980,12 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, signatures, numSignatures, "Should have all signatures migrated")
 
-		// Verify a few specific references (spot check)
+		// Verify a few specific references (spot check first, middle, last).
 		assert.Contains(t, references, "ref0-abcdefgh1234567890abcdefgh1234567890")
-		assert.Contains(t, references, "ref50-abcdefgh1234567890abcdefgh1234567890")
-		assert.Contains(t, references, "ref99-abcdefgh1234567890abcdefgh1234567890")
+		assert.Contains(t, references, "ref10-abcdefgh1234567890abcdefgh1234567890")
+		assert.Contains(t, references, "ref19-abcdefgh1234567890abcdefgh1234567890")
 
-		// Verify a few specific signatures (spot check)
+		// Verify a few specific signatures (spot check first, middle, last).
 		assert.Contains(
 			t,
 			signatures,
@@ -989,12 +994,12 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		assert.Contains(
 			t,
 			signatures,
-			"cache.test.org-25:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==",
+			"cache.test.org-5:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==",
 		)
 		assert.Contains(
 			t,
 			signatures,
-			"cache.test.org-49:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==",
+			"cache.test.org-9:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==",
 		)
 
 		t.Logf("Successfully migrated large narinfo with %d references and %d signatures", numReferences, numSignatures)
