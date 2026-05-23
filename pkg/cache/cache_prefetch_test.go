@@ -15,7 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kalbasit/ncps/pkg/database"
+	entnarfile "github.com/kalbasit/ncps/ent/narfile"
+	entnarfilechunk "github.com/kalbasit/ncps/ent/narfilechunk"
+
+	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
 )
@@ -58,7 +61,7 @@ func BenchmarkStreamCompleteChunks_WithPrefetch(b *testing.B) {
 	// We'll skip the full setup and just test the core functionality
 	// For now, use the test factory with a wrapper
 	t := &testing.T{}
-	c, _, _, _, cacheDir, _, cleanup := setupSQLiteFactory(t)
+	c, _, _, cacheDir, _, cleanup := setupSQLiteFactory(t)
 	b.Cleanup(cleanup)
 
 	// Initialize chunk store with simulated latency
@@ -110,7 +113,7 @@ func TestPrefetchPipelineOrdering(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, _, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store
@@ -154,7 +157,7 @@ func TestPrefetchErrorPropagation(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store
@@ -174,14 +177,18 @@ func TestPrefetchErrorPropagation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the chunks and delete one from storage (but not from DB)
-	chunks, err := db.GetChunksByNarFileID(ctx, 1)
+	chunkLinks, err := dbClient.Ent().NarFileChunk.Query().
+		Where(entnarfilechunk.NarFileIDEQ(1)).
+		Order(ent.Asc(entnarfilechunk.FieldChunkIndex)).
+		WithChunk().
+		All(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, chunks)
+	require.NotEmpty(t, chunkLinks)
 
 	// Delete the second chunk from storage to simulate a missing chunk
-	if len(chunks) > 1 {
+	if len(chunkLinks) > 1 {
 		// Find the chunk file
-		chunkHash := chunks[1].Hash
+		chunkHash := chunkLinks[1].Edges.Chunk.Hash
 		chunkPath := filepath.Join(chunkStoreDir, chunkHash[:2], chunkHash)
 
 		// Only try to delete if it exists
@@ -211,7 +218,7 @@ func TestPrefetchContextCancellation(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, _, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store with latency to make cancellation timing easier
@@ -297,7 +304,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store with latency
@@ -324,15 +331,21 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the NAR file record
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	narFile, err := dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(nu.Hash),
+			entnarfile.CompressionEQ(nu.Compression.String()),
+			entnarfile.QueryEQ(nu.Query.Encode()),
+		).
+		Only(ctx)
 	require.NoError(t, err)
 
 	// Get all chunks
-	chunks, err := db.GetChunksByNarFileID(ctx, narFile.ID)
+	chunks, err := dbClient.Ent().NarFileChunk.Query().
+		Where(entnarfilechunk.NarFileIDEQ(narFile.ID)).
+		Order(ent.Asc(entnarfilechunk.FieldChunkIndex)).
+		WithChunk().
+		All(ctx)
 	require.NoError(t, err)
 	require.Greater(t, len(chunks), 2, "need at least 3 chunks for meaningful test")
 
@@ -343,7 +356,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	// Simulate incomplete chunking: set total_chunks to 0 and chunking_started_at to NOW.
 	// This forces progressive streaming mode. chunking_started_at must be non-NULL to
 	// distinguish an active in-progress chunking from a stale placeholder record.
-	_, err = db.DB().ExecContext(
+	_, err = dbClient.DB().ExecContext(
 		ctx,
 		"UPDATE nar_files SET total_chunks = 0, chunking_started_at = CURRENT_TIMESTAMP WHERE id = ?",
 		narFile.ID,
@@ -355,7 +368,7 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond) // Reduced delay to speed up test
 
-		_, _ = db.DB().ExecContext(
+		_, _ = dbClient.DB().ExecContext(
 			context.Background(),
 			"UPDATE nar_files SET total_chunks = ? WHERE id = ?",
 			totalChunks, narFile.ID,
@@ -405,7 +418,7 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store with latency
@@ -430,15 +443,17 @@ func TestProgressiveStreamingNoGoroutineLeak(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the NAR file record and simulate incomplete chunking
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	narFile, err := dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(nu.Hash),
+			entnarfile.CompressionEQ(nu.Compression.String()),
+			entnarfile.QueryEQ(nu.Query.Encode()),
+		).
+		Only(ctx)
 	require.NoError(t, err)
 
 	// Set total_chunks to 0 to force progressive streaming
-	_, err = db.DB().ExecContext(ctx, "UPDATE nar_files SET total_chunks = 0 WHERE id = ?", narFile.ID)
+	_, err = dbClient.DB().ExecContext(ctx, "UPDATE nar_files SET total_chunks = 0 WHERE id = ?", narFile.ID)
 	require.NoError(t, err)
 
 	// Count goroutines before
@@ -491,7 +506,7 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, db, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
 	t.Cleanup(cleanup)
 
 	// Initialize chunk store
@@ -512,15 +527,17 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get the NAR file record
-	narFile, err := db.GetNarFileByHashAndCompressionAndQuery(ctx, database.GetNarFileByHashAndCompressionAndQueryParams{
-		Hash:        nu.Hash,
-		Compression: nu.Compression.String(),
-		Query:       nu.Query.Encode(),
-	})
+	narFile, err := dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(nu.Hash),
+			entnarfile.CompressionEQ(nu.Compression.String()),
+			entnarfile.QueryEQ(nu.Query.Encode()),
+		).
+		Only(ctx)
 	require.NoError(t, err)
 
 	// Simulate incomplete chunking: set total_chunks to 0 and chunking_started_at to NOW.
-	_, err = db.DB().ExecContext(
+	_, err = dbClient.DB().ExecContext(
 		ctx,
 		"UPDATE nar_files SET total_chunks = 0, chunking_started_at = CURRENT_TIMESTAMP WHERE id = ?",
 		narFile.ID,
@@ -531,7 +548,7 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 
-		if _, err := db.DB().ExecContext(
+		if _, err := dbClient.DB().ExecContext(
 			context.Background(),
 			"UPDATE nar_files SET chunking_started_at = NULL WHERE id = ?",
 			narFile.ID,

@@ -1,4 +1,3 @@
-//go:generate go tool sqlc-multi-db --engine sqlite:sqlitedb --engine postgres:postgresdb --engine mysql:mysqldb postgresdb/querier.go
 package database
 
 import (
@@ -13,10 +12,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
-
-	"github.com/kalbasit/ncps/pkg/database/mysqldb"
-	"github.com/kalbasit/ncps/pkg/database/postgresdb"
-	"github.com/kalbasit/ncps/pkg/database/sqlitedb"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver
@@ -40,7 +35,7 @@ type PoolConfig struct {
 	MaxIdleConns int
 }
 
-// Open opens a database connection and returns a Querier implementation.
+// Open opens a database connection and returns an Ent-backed *Client.
 // The database type is determined from the URL scheme:
 //   - sqlite:// or sqlite3:// for SQLite
 //   - postgres:// or postgresql:// for PostgreSQL
@@ -48,7 +43,7 @@ type PoolConfig struct {
 //
 // The poolCfg parameter is optional. If nil, sensible defaults are used based on
 // the database type. SQLite uses MaxOpenConns=1, PostgreSQL and MySQL use higher values.
-func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
+func Open(dbURL string, poolCfg *PoolConfig) (*Client, error) {
 	dbType, err := DetectFromDatabaseURL(dbURL)
 	if err != nil {
 		return nil, err
@@ -66,7 +61,6 @@ func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
 	case TypeUnknown:
 		fallthrough
 	default:
-		// This should never happen due to detection above, but included for safety
 		return nil, ErrUnsupportedDriver
 	}
 
@@ -74,20 +68,7 @@ func Open(dbURL string, poolCfg *PoolConfig) (Querier, error) {
 		return nil, fmt.Errorf("error opening the database at %q: %w", dbURL, err)
 	}
 
-	// Return the appropriate wrapper based on the scheme
-	switch dbType {
-	case TypeMySQL:
-		return &mysqlWrapper{adapter: mysqldb.NewAdapter(sdb)}, nil
-	case TypePostgreSQL:
-		return &postgresWrapper{adapter: postgresdb.NewAdapter(sdb)}, nil
-	case TypeSQLite:
-		return &sqliteWrapper{adapter: sqlitedb.NewAdapter(sdb)}, nil
-	case TypeUnknown:
-		fallthrough
-	default:
-		// This should never happen due to detection above, but included for safety
-		return nil, ErrUnsupportedDriver
-	}
+	return NewClient(sdb, dbType)
 }
 
 // applyPoolSettings applies connection pool settings to the database connection.

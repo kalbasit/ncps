@@ -15,6 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
+	entnarinforeference "github.com/kalbasit/ncps/ent/narinforeference"
+	entnarinfosignature "github.com/kalbasit/ncps/ent/narinfosignature"
 	narinfopkg "github.com/nix-community/go-nix/pkg/narinfo"
 
 	"github.com/kalbasit/ncps/pkg/database"
@@ -29,7 +32,7 @@ import (
 // migrationFactory is a function that returns a clean, ready-to-use database,
 // local store, and directory path, and takes care of cleaning up once the test is done.
 // It also returns a rebind function to convert SQL queries from ? bindvars to the backend's format.
-type migrationFactory func(t *testing.T) (database.Querier, *local.Store, string, string, func(string) string, func())
+type migrationFactory func(t *testing.T) (*database.Client, *local.Store, string, string, func(string) string, func())
 
 // TestMigrateNarInfoBackends runs all migration tests against all supported database backends.
 func TestMigrateNarInfoBackends(t *testing.T) {
@@ -95,7 +98,7 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, _, dir, dbURL, rebind, cleanup := factory(t)
+		dbClient, _, dir, dbURL, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfos
@@ -110,7 +113,7 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		// Verify not in database
 		var count int
 
-		err := db.DB().QueryRowContext(
+		err := dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -123,7 +126,7 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		// Register in DB as unmigrated
 		ni, err := narinfopkg.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
-		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, db, testdata.Nar1.NarInfoHash, ni))
+		require.NoError(t, testhelper.RegisterNarInfoAsUnmigrated(ctx, dbClient, testdata.Nar1.NarInfoHash, ni))
 
 		// Use --concurrency=1 to avoid MySQL deadlocks when migrating multiple narinfos in parallel
 		args := []string{
@@ -135,7 +138,7 @@ func testMigrateNarInfoSuccess(factory migrationFactory) func(*testing.T) {
 		require.NoError(t, app.Run(ctx, args))
 
 		// Verify in database
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -153,7 +156,7 @@ func testMigrateNarInfoDryRun(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfos
@@ -184,7 +187,7 @@ func testMigrateNarInfoDryRun(factory migrationFactory) func(*testing.T) {
 		// Verify NOT in database
 		var count int
 
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -202,7 +205,7 @@ func testMigrateNarInfoIdempotency(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfos
@@ -223,7 +226,7 @@ func testMigrateNarInfoIdempotency(factory migrationFactory) func(*testing.T) {
 				return err
 			}
 
-			return testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni)
+			return testhelper.MigrateNarInfoToDatabase(ctx, dbClient, hash, ni)
 		})
 		require.NoError(t, err)
 
@@ -235,7 +238,7 @@ func testMigrateNarInfoIdempotency(factory migrationFactory) func(*testing.T) {
 			}
 
 			// This should handle duplicate key gracefully
-			err = testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni)
+			err = testhelper.MigrateNarInfoToDatabase(ctx, dbClient, hash, ni)
 
 			// Should either succeed or succeed if multiple concurrently handled the same hash
 			if err != nil && !database.IsDuplicateKeyError(err) {
@@ -249,7 +252,7 @@ func testMigrateNarInfoIdempotency(factory migrationFactory) func(*testing.T) {
 		// Verify still only one record in database
 		var count int
 
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -264,7 +267,7 @@ func testMigrateNarInfoMultipleNarInfos(factory migrationFactory) func(*testing.
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with multiple narinfos
@@ -293,7 +296,7 @@ func testMigrateNarInfoMultipleNarInfos(factory migrationFactory) func(*testing.
 				return err
 			}
 
-			return testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni)
+			return testhelper.MigrateNarInfoToDatabase(ctx, dbClient, hash, ni)
 		})
 		require.NoError(t, err)
 		assert.Equal(t, len(entries), totalProcessed)
@@ -301,7 +304,7 @@ func testMigrateNarInfoMultipleNarInfos(factory migrationFactory) func(*testing.
 		// Verify all in database
 		var count int
 
-		err = db.DB().QueryRowContext(ctx, rebind("SELECT COUNT(*) FROM narinfos")).Scan(&count)
+		err = dbClient.DB().QueryRowContext(ctx, rebind("SELECT COUNT(*) FROM narinfos")).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, len(entries), count)
 	}
@@ -314,7 +317,7 @@ func testMigrateNarInfoAlreadyMigrated(factory migrationFactory) func(*testing.T
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with narinfo
@@ -330,11 +333,14 @@ func testMigrateNarInfoAlreadyMigrated(factory migrationFactory) func(*testing.T
 		ni, err := store.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		err = testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni)
+		err = testhelper.MigrateNarInfoToDatabase(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
 		require.NoError(t, err)
 
 		// Fetch migrated hashes
-		migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
+		migratedHashes, err := dbClient.Ent().NarInfo.Query().
+			Where(entnarinfo.URLNotNil()).
+			Select(entnarinfo.FieldHash).
+			Strings(ctx)
 		require.NoError(t, err)
 
 		migratedHashesMap := make(map[string]struct{}, len(migratedHashes))
@@ -366,7 +372,7 @@ func testMigrateNarInfoAlreadyMigrated(factory migrationFactory) func(*testing.T
 		// Verify still in database
 		var count int
 
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -405,7 +411,7 @@ func testMigrateNarInfoWithReferencesAndSignatures(factory migrationFactory) fun
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Use Nar1 which has references and signatures
@@ -424,13 +430,13 @@ func testMigrateNarInfoWithReferencesAndSignatures(factory migrationFactory) fun
 		require.NotEmpty(t, ni.Signatures, "Test data should have signatures")
 
 		// Migrate
-		err = testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni)
+		err = testhelper.MigrateNarInfoToDatabase(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
 		require.NoError(t, err)
 
 		// Verify references in database
 		var refCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = dbClient.DB().QueryRowContext(ctx,
 			rebind(`SELECT COUNT(*) FROM narinfo_references nr
 		 JOIN narinfos n ON nr.narinfo_id = n.id
 		 WHERE n.hash = ?`),
@@ -441,7 +447,7 @@ func testMigrateNarInfoWithReferencesAndSignatures(factory migrationFactory) fun
 		// Verify signatures in database
 		var sigCount int
 
-		err = db.DB().QueryRowContext(ctx,
+		err = dbClient.DB().QueryRowContext(ctx,
 			rebind(`SELECT COUNT(*) FROM narinfo_signatures ns
 		 JOIN narinfos n ON ns.narinfo_id = n.id
 		 WHERE n.hash = ?`),
@@ -458,7 +464,7 @@ func testMigrateNarInfoDeleteAlreadyMigrated(factory migrationFactory) func(*tes
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage
@@ -474,14 +480,17 @@ func testMigrateNarInfoDeleteAlreadyMigrated(factory migrationFactory) func(*tes
 		ni, err := store.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		err = testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni)
+		err = testhelper.MigrateNarInfoToDatabase(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
 		require.NoError(t, err)
 
 		// Verify file exists before deletion
 		assert.FileExists(t, narInfoPath)
 
 		// Fetch migrated hashes
-		migratedHashes, err := db.GetMigratedNarInfoHashes(ctx)
+		migratedHashes, err := dbClient.Ent().NarInfo.Query().
+			Where(entnarinfo.URLNotNil()).
+			Select(entnarinfo.FieldHash).
+			Strings(ctx)
 		require.NoError(t, err)
 
 		migratedHashesMap := make(map[string]struct{}, len(migratedHashes))
@@ -508,7 +517,7 @@ func testMigrateNarInfoDeleteAlreadyMigrated(factory migrationFactory) func(*tes
 		// Verify still in database
 		var count int
 
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -523,11 +532,11 @@ func testMigrateNarInfoConcurrentMigration(factory migrationFactory) func(*testi
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Increase connection pool for concurrent operations
-		db.DB().SetMaxOpenConns(20)
+		dbClient.DB().SetMaxOpenConns(20)
 
 		// Pre-populate storage with multiple narinfos
 		entries := []testdata.Entry{testdata.Nar1, testdata.Nar2, testdata.Nar3, testdata.Nar4, testdata.Nar5}
@@ -559,7 +568,7 @@ func testMigrateNarInfoConcurrentMigration(factory migrationFactory) func(*testi
 				return nil //nolint:nilerr // Continue processing other narinfos
 			}
 
-			if err := testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni); err != nil {
+			if err := testhelper.MigrateNarInfoToDatabase(ctx, dbClient, hash, ni); err != nil {
 				if !database.IsDuplicateKeyError(err) {
 					t.Logf("Migration error for hash %s: %v", hash, err)
 					atomic.AddInt32(&errorsCount, 1)
@@ -575,7 +584,7 @@ func testMigrateNarInfoConcurrentMigration(factory migrationFactory) func(*testi
 		// Verify all in database
 		var count int
 
-		err = db.DB().QueryRowContext(ctx, rebind("SELECT COUNT(*) FROM narinfos")).Scan(&count)
+		err = dbClient.DB().QueryRowContext(ctx, rebind("SELECT COUNT(*) FROM narinfos")).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, len(entries), count)
 	}
@@ -588,7 +597,7 @@ func testMigrateNarInfoPartialData(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Use testdata.Nar1 but verify it has no Deriver, System, or CA fields
@@ -604,7 +613,7 @@ func testMigrateNarInfoPartialData(factory migrationFactory) func(*testing.T) {
 		ni, err := store.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		err = testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni)
+		err = testhelper.MigrateNarInfoToDatabase(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
 		require.NoError(t, err)
 
 		// Verify in database - all fields should be stored correctly
@@ -618,7 +627,7 @@ func testMigrateNarInfoPartialData(factory migrationFactory) func(*testing.T) {
 			dbCA        sql.NullString
 		)
 
-		err = db.DB().QueryRowContext(ctx,
+		err = dbClient.DB().QueryRowContext(ctx,
 			rebind("SELECT hash, store_path, url, deriver, system, ca FROM narinfos WHERE hash = ?"),
 			testdata.Nar1.NarInfoHash).Scan(&dbHash, &dbStorePath, &dbURLResult, &dbDeriver, &dbSystem, &dbCA)
 		require.NoError(t, err)
@@ -658,7 +667,7 @@ func testMigrateNarInfoTransactionRollback(factory migrationFactory) func(*testi
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage
@@ -673,26 +682,51 @@ func testMigrateNarInfoTransactionRollback(factory migrationFactory) func(*testi
 		ni, err := store.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		// Start a transaction and intentionally cause a failure
-		tx, err := db.DB().BeginTx(ctx, nil)
+		// Start a transaction and intentionally cause a failure.
+		// We use Ent's transaction API to mirror the production code path.
+		tx, err := dbClient.Ent().Tx(ctx)
 		require.NoError(t, err)
 
-		qtx := db.WithTx(tx)
-
 		// Create narinfo (should succeed)
-		nir, err := qtx.CreateNarInfo(ctx, database.CreateNarInfoParams{
-			Hash:        testdata.Nar1.NarInfoHash,
-			StorePath:   sql.NullString{String: ni.StorePath, Valid: ni.StorePath != ""},
-			URL:         sql.NullString{String: ni.URL, Valid: ni.URL != ""},
-			Compression: sql.NullString{String: ni.Compression, Valid: ni.Compression != ""},
-			FileHash:    sql.NullString{String: ni.FileHash.String(), Valid: ni.FileHash != nil},
-			FileSize:    sql.NullInt64{Int64: int64(ni.FileSize), Valid: true}, //nolint:gosec // Test code
-			NarHash:     sql.NullString{String: ni.NarHash.String(), Valid: ni.NarHash != nil},
-			NarSize:     sql.NullInt64{Int64: int64(ni.NarSize), Valid: true}, //nolint:gosec // Test code
-			Deriver:     sql.NullString{String: ni.Deriver, Valid: ni.Deriver != ""},
-			System:      sql.NullString{String: ni.System, Valid: ni.System != ""},
-			Ca:          sql.NullString{String: ni.CA, Valid: ni.CA != ""},
-		})
+		nb := tx.NarInfo.Create().SetHash(testdata.Nar1.NarInfoHash)
+
+		if ni.StorePath != "" {
+			nb = nb.SetStorePath(ni.StorePath)
+		}
+
+		if ni.URL != "" {
+			nb = nb.SetURL(ni.URL)
+		}
+
+		if ni.Compression != "" {
+			nb = nb.SetCompression(ni.Compression)
+		}
+
+		if ni.FileHash != nil {
+			nb = nb.SetFileHash(ni.FileHash.String())
+		}
+		//nolint:gosec // G115: FileSize/NarSize are non-negative by spec
+		nb = nb.SetFileSize(int64(ni.FileSize))
+
+		if ni.NarHash != nil {
+			nb = nb.SetNarHash(ni.NarHash.String())
+		}
+		//nolint:gosec // G115: NarSize is non-negative by spec
+		nb = nb.SetNarSize(int64(ni.NarSize))
+
+		if ni.Deriver != "" {
+			nb = nb.SetDeriver(ni.Deriver)
+		}
+
+		if ni.System != "" {
+			nb = nb.SetSystem(ni.System)
+		}
+
+		if ni.CA != "" {
+			nb = nb.SetCa(ni.CA)
+		}
+
+		nir, err := nb.Save(ctx)
 		require.NoError(t, err)
 		require.NotZero(t, nir.ID)
 
@@ -703,7 +737,7 @@ func testMigrateNarInfoTransactionRollback(factory migrationFactory) func(*testi
 		// Verify NOT in database (transaction was rolled back)
 		var count int
 
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -718,7 +752,7 @@ func testMigrateNarInfoMissingNarFile(factory migrationFactory) func(*testing.T)
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate ONLY narinfo (no nar file)
@@ -734,13 +768,13 @@ func testMigrateNarInfoMissingNarFile(factory migrationFactory) func(*testing.T)
 		ni, err := store.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		err = testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni)
+		err = testhelper.MigrateNarInfoToDatabase(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
 		require.NoError(t, err)
 
 		// Verify in database
 		var count int
 
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), testdata.Nar1.NarInfoHash,
 		).Scan(&count)
 		require.NoError(t, err)
@@ -755,7 +789,7 @@ func testMigrateNarInfoProgressTracking(factory migrationFactory) func(*testing.
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, _, cleanup := factory(t)
+		dbClient, store, dir, _, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Pre-populate storage with multiple narinfos
@@ -793,7 +827,7 @@ func testMigrateNarInfoProgressTracking(factory migrationFactory) func(*testing.
 				return nil //nolint:nilerr // Continue processing other narinfos
 			}
 
-			if err := testhelper.MigrateNarInfoToDatabase(ctx, db, hash, ni); err != nil {
+			if err := testhelper.MigrateNarInfoToDatabase(ctx, dbClient, hash, ni); err != nil {
 				atomic.AddInt32(&failed, 1)
 				t.Logf("Progress: %d/%d processed (failed: %s)", currentProcessed, len(entries), hash)
 
@@ -831,7 +865,7 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
 
 		// Setup
-		db, store, dir, _, rebind, cleanup := factory(t)
+		dbClient, store, dir, _, rebind, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Create a large narinfo with many references and signatures
@@ -906,30 +940,38 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 				return fmt.Errorf("failed to get narinfo: %w", err)
 			}
 
-			return testhelper.MigrateNarInfoToDatabase(ctx, db, h, ni)
+			return testhelper.MigrateNarInfoToDatabase(ctx, dbClient, h, ni)
 		})
 		require.NoError(t, err)
 
 		// Verify in database
 		var count int
 
-		err = db.DB().QueryRowContext(
+		err = dbClient.DB().QueryRowContext(
 			ctx, rebind("SELECT COUNT(*) FROM narinfos WHERE hash = ?"), hash,
 		).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count, "Should have exactly one narinfo record")
 
 		// Get narinfo ID
-		nir, err := db.GetNarInfoByHash(ctx, hash)
+		nir, err := dbClient.Ent().NarInfo.Query().
+			Where(entnarinfo.HashEQ(hash)).
+			Only(ctx)
 		require.NoError(t, err)
 
 		// Verify all references were migrated
-		references, err := db.GetNarInfoReferences(ctx, nir.ID)
+		references, err := dbClient.Ent().NarInfoReference.Query().
+			Where(entnarinforeference.NarinfoIDEQ(nir.ID)).
+			Select(entnarinforeference.FieldReference).
+			Strings(ctx)
 		require.NoError(t, err)
 		assert.Len(t, references, numReferences, "Should have all references migrated")
 
 		// Verify all signatures were migrated
-		signatures, err := db.GetNarInfoSignatures(ctx, nir.ID)
+		signatures, err := dbClient.Ent().NarInfoSignature.Query().
+			Where(entnarinfosignature.NarinfoIDEQ(nir.ID)).
+			Select(entnarinfosignature.FieldSignature).
+			Strings(ctx)
 		require.NoError(t, err)
 		assert.Len(t, signatures, numSignatures, "Should have all signatures migrated")
 
@@ -967,7 +1009,7 @@ func BenchmarkMigrateNarInfo(b *testing.B) {
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(b, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(b, err)
 
 	store, err := local.New(ctx, dir)
@@ -989,16 +1031,16 @@ func BenchmarkMigrateNarInfo(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Clean database between iterations
-		_, err := db.DB().ExecContext(ctx, "DELETE FROM narinfos")
+		_, err := dbClient.DB().ExecContext(ctx, "DELETE FROM narinfos")
 		require.NoError(b, err)
 
-		err = testhelper.MigrateNarInfoToDatabase(ctx, db, testdata.Nar1.NarInfoHash, ni)
+		err = testhelper.MigrateNarInfoToDatabase(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
 		require.NoError(b, err)
 	}
 }
 
 func setupNarInfoMigrationSQLite(t *testing.T) (
-	database.Querier,
+	*database.Client,
 	*local.Store,
 	string,
 	string,
@@ -1012,24 +1054,24 @@ func setupNarInfoMigrationSQLite(t *testing.T) (
 	dbFile := filepath.Join(dir, "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
 
-	db, err := database.Open("sqlite:"+dbFile, nil)
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
 
 	store, err := local.New(ctx, dir)
 	require.NoError(t, err)
 
 	cleanup := func() {
-		db.DB().Close()
+		dbClient.DB().Close()
 	}
 
 	dbURL := "sqlite:" + dbFile
 	rebind := func(query string) string { return query }
 
-	return db, store, dir, dbURL, rebind, cleanup
+	return dbClient, store, dir, dbURL, rebind, cleanup
 }
 
 func setupNarInfoMigrationPostgres(t *testing.T) (
-	database.Querier,
+	*database.Client,
 	*local.Store,
 	string,
 	string,
@@ -1041,7 +1083,7 @@ func setupNarInfoMigrationPostgres(t *testing.T) (
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbURL, dbCleanup := testhelper.SetupPostgres(t)
+	dbClient, dbURL, dbCleanup := testhelper.SetupPostgres(t)
 
 	store, err := local.New(ctx, dir)
 	require.NoError(t, err)
@@ -1070,11 +1112,11 @@ func setupNarInfoMigrationPostgres(t *testing.T) (
 		return builder.String()
 	}
 
-	return db, store, dir, dbURL, rebind, cleanup
+	return dbClient, store, dir, dbURL, rebind, cleanup
 }
 
 func setupNarInfoMigrationMySQL(t *testing.T) (
-	database.Querier,
+	*database.Client,
 	*local.Store,
 	string,
 	string,
@@ -1086,7 +1128,7 @@ func setupNarInfoMigrationMySQL(t *testing.T) (
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, _, dbURL, dbCleanup := testhelper.SetupMySQL(t)
+	dbClient, dbURL, dbCleanup := testhelper.SetupMySQL(t)
 
 	store, err := local.New(ctx, dir)
 	require.NoError(t, err)
@@ -1097,5 +1139,5 @@ func setupNarInfoMigrationMySQL(t *testing.T) (
 
 	rebind := func(query string) string { return query }
 
-	return db, store, dir, dbURL, rebind, cleanup
+	return dbClient, store, dir, dbURL, rebind, cleanup
 }

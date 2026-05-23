@@ -23,27 +23,26 @@ import (
 func MigrateMySQLDatabase(t *testing.T, dbURL string) {
 	t.Helper()
 
-	db, err := database.Open(dbURL, nil)
+	dbClient, err := database.Open(dbURL, nil)
 	require.NoError(t, err)
 
-	defer db.DB().Close()
+	defer dbClient.Close()
 
 	sub, err := fs.Sub(migrations.FS, "mysql")
 	require.NoError(t, err)
 
 	require.NoError(t, migrate.Up(context.Background(), migrate.Options{
-		DB:           db.DB(),
+		DB:           dbClient.DB(),
 		Dialect:      database.TypeMySQL,
 		MigrationsFS: sub,
 	}))
 }
 
 // SetupMySQL sets up a new temporary MySQL database for testing.
-// It requires the NCPS_TEST_ADMIN_MYSQL_URL environment variable to be set.
-// It returns the legacy Querier (still in use during §11.2-§11.7),
-// the §11-introduced Ent-backed *database.Client, the database URL,
+// It requires the NCPS_TEST_ADMIN_MYSQL_URL environment variable to
+// be set. Returns the Ent-backed *database.Client, the database URL,
 // and a cleanup function.
-func SetupMySQL(t *testing.T) (database.Querier, *database.Client, string, func()) {
+func SetupMySQL(t *testing.T) (*database.Client, string, func()) {
 	t.Helper()
 
 	adminDbURL := os.Getenv("NCPS_TEST_ADMIN_MYSQL_URL")
@@ -56,23 +55,17 @@ func SetupMySQL(t *testing.T) (database.Querier, *database.Client, string, func(
 
 	dbName := "test-" + MustRandString(58)
 
-	// MySQL CREATE DATABASE
 	_, err = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("CREATE DATABASE `%s`", dbName))
 	require.NoError(t, err, "failed to create database %s", dbName)
 
-	// Replace the database name in the URL
 	u, err := url.Parse(adminDbURL)
 	require.NoError(t, err)
 
 	u.Path = "/" + dbName
 	dbURL := u.String()
 
-	// Helper to recover from migration panic
 	var errMigration error
 
-	// We can't defer the check here easily because t.Fatalf stops the test.
-	// But MigrateMySQLDatabase might panic? The original code had a defer recover block.
-	// Let's keep it safe.
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -87,17 +80,14 @@ func SetupMySQL(t *testing.T) (database.Querier, *database.Client, string, func(
 		t.Fatalf("Failed to migrate MySQL database: %v", errMigration)
 	}
 
-	db, err := database.Open(dbURL, nil)
-	require.NoError(t, err)
-
-	dbClient, err := database.NewClient(db.DB(), database.TypeMySQL)
+	dbClient, err := database.Open(dbURL, nil)
 	require.NoError(t, err)
 
 	cleanup := func() {
-		_ = db.DB().Close()
+		_ = dbClient.Close()
 		_, _ = adminDb.DB().ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE `%s`", dbName))
-		_ = adminDb.DB().Close()
+		_ = adminDb.Close()
 	}
 
-	return db, dbClient, dbURL, cleanup
+	return dbClient, dbURL, cleanup
 }

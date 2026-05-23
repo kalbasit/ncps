@@ -35,7 +35,7 @@ func setupSQLiteServer(t *testing.T) (*Server, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbClient, dbCleanup := testhelper.SetupSQLite(t)
+	dbClient, dbCleanup := testhelper.SetupSQLite(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func setupSQLiteServer(t *testing.T) (*Server, func()) {
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := cache.New(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "",
+	c, err := cache.New(newContext(), cacheName, dbClient, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
@@ -64,7 +64,7 @@ func setupPostgresServer(t *testing.T) (*Server, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbClient, _, dbCleanup := testhelper.SetupPostgres(t)
+	dbClient, _, dbCleanup := testhelper.SetupPostgres(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func setupPostgresServer(t *testing.T) (*Server, func()) {
 	downloadLocker := locklocal.NewLocker()
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := cache.New(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "",
+	c, err := cache.New(newContext(), cacheName, dbClient, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
@@ -93,7 +93,7 @@ func setupMySQLServer(t *testing.T) (*Server, func()) {
 	dir, err := os.MkdirTemp("", "cache-path-")
 	require.NoError(t, err)
 
-	db, dbClient, _, dbCleanup := testhelper.SetupMySQL(t)
+	dbClient, _, dbCleanup := testhelper.SetupMySQL(t)
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func setupMySQLServer(t *testing.T) (*Server, func()) {
 
 	cacheLocker := locklocal.NewRWLocker()
 
-	c, err := cache.New(newContext(), cacheName, db, dbClient, localStore, localStore, localStore, "",
+	c, err := cache.New(newContext(), cacheName, dbClient, localStore, localStore, localStore, "",
 		downloadLocker, cacheLocker, downloadLockTTL, downloadPollTimeout, cacheLockTTL)
 	require.NoError(t, err)
 
