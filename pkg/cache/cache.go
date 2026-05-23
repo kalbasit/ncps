@@ -4317,6 +4317,20 @@ func upsertNarInfoFromParsed(
 
 		nir, err := nb.Save(ctx)
 		if err != nil {
+			// A concurrent writer (e.g. a background migration racing with
+			// PutNarInfo) may have inserted the row between our query and
+			// our insert.  Treat that as success: re-fetch and return the
+			// winner's row so the caller can continue linking references /
+			// signatures / nar_files against the real record.
+			if ent.IsConstraintError(err) {
+				nir, err = tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("error re-fetching narinfo record after concurrent insert for hash %q: %w", hash, err)
+				}
+
+				return nir, nil
+			}
+
 			return nil, fmt.Errorf("error inserting the narinfo record for hash %q: %w", hash, err)
 		}
 
