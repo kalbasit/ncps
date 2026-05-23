@@ -600,9 +600,8 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
-				// 100ms is long enough for the timestamp precision of every supported
-				// engine (SQLite stores time as RFC3339 with nanoseconds; PG/MySQL keep
-				// microseconds) and short enough not to dominate test wall time.
+				// 100ms is enough here because the assertion uses WithinDuration with a
+				// 2s tolerance — we just need some elapsed time, not a full second boundary.
 				time.Sleep(100 * time.Millisecond)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
@@ -626,7 +625,9 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
-				time.Sleep(100 * time.Millisecond)
+				// MySQL TIMESTAMP has second-level precision; sleep >1s to ensure the
+				// last_accessed_at value lands in a different second than created_at.
+				time.Sleep(1100 * time.Millisecond)
 
 				_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 				require.NoError(t, err)
@@ -975,9 +976,8 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
-				// 100ms is long enough for the timestamp precision of every supported
-				// engine (SQLite stores time as RFC3339 with nanoseconds; PG/MySQL keep
-				// microseconds) and short enough not to dominate test wall time.
+				// 100ms is enough here because the assertion uses WithinDuration with a
+				// 2s tolerance — we just need some elapsed time, not a full second boundary.
 				time.Sleep(100 * time.Millisecond)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
@@ -1003,7 +1003,9 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
-				time.Sleep(100 * time.Millisecond)
+				// MySQL TIMESTAMP has second-level precision; sleep >1s to ensure the
+				// last_accessed_at value lands in a different second than created_at.
+				time.Sleep(1100 * time.Millisecond)
 
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 				_, size, r, err := c.GetNar(context.Background(), nu)
