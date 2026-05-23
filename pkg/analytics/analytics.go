@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -16,11 +17,13 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"golang.org/x/sync/errgroup"
 
+	entnarfile "github.com/kalbasit/ncps/ent/narfile"
 	nooplog "go.opentelemetry.io/otel/log/noop"
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
+	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/database"
 )
 
@@ -68,8 +71,8 @@ func (nr nopReporter) Shutdown(context.Context) error                  { return 
 func (nr nopReporter) WithContext(ctx context.Context) context.Context { return ctx }
 
 type reporter struct {
-	db  database.Querier
-	res *resource.Resource
+	dbClient *database.Client
+	res      *resource.Resource
 
 	logger log.Logger
 	meter  metric.Meter
@@ -83,12 +86,12 @@ type reporter struct {
 // It returns a shutdown function that should be called when the application exits.
 func New(
 	ctx context.Context,
-	db database.Querier,
+	dbClient *database.Client,
 	res *resource.Resource,
 	reportingSamples bool,
 ) (Reporter, error) {
 	r := &reporter{
-		db:               db,
+		dbClient:         dbClient,
 		res:              res,
 		shutdownFns:      make(map[string]shutdownFn),
 		reportingSamples: reportingSamples,
@@ -262,9 +265,13 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 	}
 
 	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		// This uses the existing GetNarTotalSize query from your database package
-		size, err := r.db.GetNarTotalSize(ctx)
-		if err != nil {
+		var sums []struct {
+			Sum sql.NullInt64 `sql:"sum"`
+		}
+
+		if err := r.dbClient.Ent().NarFile.Query().
+			Aggregate(ent.Sum(entnarfile.FieldFileSize)).
+			Scan(ctx, &sums); err != nil {
 			zerolog.Ctx(ctx).
 				Error().
 				Err(err).
@@ -273,6 +280,11 @@ func (r *reporter) registerMeterTotalSizeGaugeCallback(meter metric.Meter) error
 
 			// In case of error, we just skip observing this time rather than crashing
 			return nil
+		}
+
+		var size int64
+		if len(sums) > 0 && sums[0].Sum.Valid {
+			size = sums[0].Sum.Int64
 		}
 
 		o.ObserveInt64(totalSizeGauge, size)
