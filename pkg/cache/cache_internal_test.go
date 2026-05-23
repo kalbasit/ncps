@@ -22,8 +22,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
+	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
@@ -1336,30 +1338,28 @@ func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 
 		// 2. Action: concurrent writes to trigger potential race/locking issues
 		// We use a transaction to wrap multiple operations to ensure the "abort" behavior would be caught if present
-		err = c.withTransaction(ctx, "test_transaction_safety", func(qtx database.Querier) error {
+		err = c.dbClient.WithTransaction(ctx, "test_transaction_safety", func(tx *ent.Tx) error {
 			// Attempt to store the same record again within a transaction
 			// If the logic is "try insert, fail, delete, insert", the "fail" part aborts the transaction in Postgres
 
 			// Note: we can't easily call storeInDatabase here because it starts its own transaction.
-			// Instead, we manually call the CreateNarInfo which is what storeInDatabase does.
-			createNarInfoParams := database.CreateNarInfoParams{
-				Hash: testdata.Nar1.NarInfoHash,
-				// ... other params irrelevant for the crash, it fails on Hash unique constraint
-			}
-
-			// In the *incorrect* impl, this returns an error, which aborts the tx.
-			// In the *correct* impl (UPSERT), this returns success (or 0 rows affected), guarding the tx.
-			_, err := qtx.CreateNarInfo(ctx, createNarInfoParams)
-
-			// With conditional upsert, if no update is performed, SQLite/Postgres might return ErrNoRows
-			// (if using RETURNING). This is NOT a transaction aborting error.
-			if err != nil && !database.IsNotFoundError(err) {
+			// Manually attempt the insert that storeInDatabase performs. The previous
+			// storeInDatabase call has already inserted this hash, so a plain Create
+			// would trip the unique constraint — exactly the abort-the-tx scenario we
+			// want to prove is handled by the OnConflict/Ignore upsert path.
+			err := tx.NarInfo.Create().
+				SetHash(testdata.Nar1.NarInfoHash).
+				OnConflictColumns(entnarinfo.FieldHash).
+				Ignore().
+				Exec(ctx)
+			// With conditional upsert, this should not be a transaction-aborting error.
+			if err != nil && !ent.IsNotFound(err) {
 				return err
 			}
 
-			// If we are using Postgres, and CreateNarInfo failed (aborted tx), this next query would fail
-			// with "current transaction is aborted"
-			_, _ = qtx.GetNarInfoByHash(ctx, testdata.Nar1.NarInfoHash)
+			// If we are using Postgres, and the insert above aborted the tx, this next
+			// query would fail with "current transaction is aborted".
+			_, _ = tx.NarInfo.Query().Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).First(ctx)
 
 			return nil
 		})
