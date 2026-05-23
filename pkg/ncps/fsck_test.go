@@ -429,11 +429,10 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		require.NotNil(t, nf.VerifiedAt, "verified_at should be populated after fsck")
 		verifiedAt1 := *nf.VerifiedAt
 
-		// 2. Run fsck with --verified-since 1h - should skip checking
-		// Since we don't have a direct way to check 'skipped' count from the app return value,
-		// we verify that verified_at was NOT updated.
-		// Wait a bit to ensure CURRENT_TIMESTAMP would be different if it ran.
-		time.Sleep(2 * time.Second)
+		// 2. Run fsck with --verified-since 1h - should skip checking.
+		// MySQL TIMESTAMP has second-level precision; sleep >1s so step 3's fsck
+		// lands in a different second than step 1's verifiedAt1.
+		time.Sleep(1100 * time.Millisecond)
 
 		args = []string{
 			"ncps", "fsck",
@@ -448,12 +447,12 @@ func testFsckVerifiedSince(setup fsckSetupFn) func(*testing.T) {
 		require.NotNil(t, nf.VerifiedAt)
 		assert.Equal(t, verifiedAt1, *nf.VerifiedAt, "verified_at should NOT be updated when skipped")
 
-		// 3. Run fsck with --verified-since 1s - should NOT skip checking
+		// 3. Run fsck with --verified-since 1ms - should NOT skip checking.
 		args = []string{
 			"ncps", "fsck",
 			"--cache-database-url", dbURL,
 			"--cache-storage-local", dir,
-			"--verified-since", "1s",
+			"--verified-since", "1ms",
 		}
 		require.NoError(t, app.Run(ctx, args))
 
