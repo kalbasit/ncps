@@ -7,6 +7,63 @@
       config,
       ...
     }:
+    let
+      # mkCohort builds a backend-cohort test derivation: a stripped-down
+      # variant of packages.ncps that runs `go test -race ./...` with only
+      # one external backend up (Garage, Postgres, MariaDB, or Redis), or
+      # none for the unit cohort. Cohort membership is selected at runtime
+      # by the env vars each pre-check-*.sh script exports — the test
+      # bodies already gate per-backend subtests via `t.Skip` on the
+      # corresponding NCPS_TEST_* env var. Spec: flake-check-topology
+      # "Backend-cohort granularity for integration test derivations" and
+      # "Env-var presence drives integration-cohort membership".
+      #
+      # Args:
+      #   name     — derivation name and the attr it gets bound to
+      #   backends — list of backend slugs ("garage", "postgres", "mysql",
+      #              "redis"). Each one MUST have matching
+      #              pre-check-<slug>.sh / post-check-<slug>.sh scripts
+      #              under nix/packages/ncps/.
+      mkCohort =
+        {
+          name,
+          backends,
+        }:
+        config.packages.ncps.overrideAttrs (_oa: {
+          inherit name;
+          outputs = [ "out" ];
+          # The cohort doesn't need the ncps binary; skip the build phase.
+          buildPhase = ''
+            :
+          '';
+          preCheck =
+            if backends == [ ] then
+              # Unit cohort: no env vars, no backends. All integration
+              # subtests skip at runtime via their NCPS_TEST_* gates.
+              ""
+            else
+              ''
+                cleanup() {
+                ${lib.concatMapStringsSep "\n" (b: ''source "$src/nix/packages/ncps/post-check-${b}.sh"'') backends}
+                }
+                trap cleanup EXIT
+
+                ${lib.concatMapStringsSep "\n" (b: ''source "$src/nix/packages/ncps/pre-check-${b}.sh"'') backends}
+              '';
+          checkPhase = ''
+            runHook preCheck
+            go test -race -count=1 -timeout 20m ./...
+            runHook postCheck
+          '';
+          # No coverage output is produced here, so override the parent
+          # postCheck which moves coverage.txt into the coverage output.
+          postCheck = "";
+          doCheck = true;
+          installPhase = ''
+            touch $out
+          '';
+        });
+    in
     {
       checks =
         self'.packages
@@ -193,6 +250,34 @@
               touch $out
             '';
           });
+
+          # Backend-cohort test derivations. See `mkCohort` above for the
+          # selection mechanism. Phase 3 of openspec/changes/lean-flake-check.
+          # The monolithic `packages.ncps` derivation still runs the full
+          # test suite via `// self'.packages` until Phase 5 drops its
+          # `doCheck = true`; for now the cohorts run alongside as additive
+          # coverage, so a flake-level wall-clock improvement only materializes
+          # once the monolith is removed.
+          ncps-unit-tests = mkCohort {
+            name = "ncps-unit-tests";
+            backends = [ ];
+          };
+          ncps-s3-tests = mkCohort {
+            name = "ncps-s3-tests";
+            backends = [ "garage" ];
+          };
+          ncps-postgres-tests = mkCohort {
+            name = "ncps-postgres-tests";
+            backends = [ "postgres" ];
+          };
+          ncps-mysql-tests = mkCohort {
+            name = "ncps-mysql-tests";
+            backends = [ "mysql" ];
+          };
+          ncps-redis-tests = mkCohort {
+            name = "ncps-redis-tests";
+            backends = [ "redis" ];
+          };
 
           helm-unittest-check = pkgs.stdenvNoCC.mkDerivation {
             name = "ncps-helm-unittest";

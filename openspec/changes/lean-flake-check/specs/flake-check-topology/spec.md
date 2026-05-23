@@ -38,28 +38,41 @@ no others. This replaces the prior topology in which a single
 - **AND** no backend is started in more than one derivation at the
   same time on the same host beyond what its port allocation permits
 
-### Requirement: Build-tag selection drives integration-cohort membership
+### Requirement: Env-var presence drives integration-cohort membership
 
-Membership in each backend-cohort derivation SHALL be determined by Go
-build tags on the test files (e.g., `//go:build integration_s3`,
-`//go:build integration_postgres`, `//go:build integration_mysql`,
-`//go:build integration_redis`). Selection MUST NOT be driven by
-`go test -run` / `-skip` regex matches against test names, because
-regex selection silently drifts when tests are renamed.
+Membership in each backend-cohort derivation SHALL be determined by
+the backend env vars exported in the derivation's `preCheck` (the
+same env vars the dev-shell's `enable-<backend>-tests` helpers
+export). Existing test code already gates per-backend subtests on
+those env vars via `t.Skip`; this requirement codifies that the Nix
+cohort layer reuses that mechanism rather than introducing a parallel
+selection scheme (`go test -tags`, `-run` regex, etc.).
 
-#### Scenario: Adding a new integration test
+Build tags are NOT used for cohort selection because the codebase's
+existing integration test files mix gated and ungated tests in the
+same file (e.g. `pkg/cache/cache_test.go`,
+`pkg/cache/cache_internal_test.go`,
+`pkg/database/migrate/migrate_test.go`,
+`pkg/ncps/migrate_narinfo_test.go`, `pkg/lock/redis/redis_test.go`),
+so file-level tags would silently drop ungated tests from cohorts
+that don't carry the tag.
 
-- **WHEN** a developer adds a new test that needs PostgreSQL
-- **AND** the test file is tagged `//go:build integration_postgres`
-- **THEN** the test runs only in the `ncps-postgres-tests` derivation
-- **AND** the test does not run in the unit-test derivation
+#### Scenario: Adding a new test that needs PostgreSQL
 
-#### Scenario: Forgetting the build tag
+- **WHEN** a developer adds a new test function that gates its body on
+  `os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL")`
+- **THEN** the test runs in the `ncps-postgres-tests` derivation
+  (where the env var is exported and Postgres is up)
+- **AND** the test skips at runtime in every other cohort (the env
+  var is absent there)
 
-- **WHEN** an integration test file lacks any `integration_*` build tag
-- **THEN** a CI lint check MUST fail with a message naming the file
-  and the missing tag
-- **AND** the change MUST NOT merge until the tag is added
+#### Scenario: Adding a new test with no backend dependency
+
+- **WHEN** a developer adds a new test function that does not check
+  any backend env var
+- **THEN** the test runs in every cohort (no skip path triggers)
+- **AND** the test's wall-clock cost is paid once per cohort; this
+  is accepted as the cost of not using build tags
 
 ### Requirement: Lint and drift checks reuse pre-built helper binaries
 

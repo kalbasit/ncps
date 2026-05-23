@@ -54,6 +54,12 @@ BACKEND_MAP: dict[str, list[str]] = {
     "golangci-lint-check": [],
     "helm-unittest-check": [],
     "ncps": ["garage", "postgres", "mariadb", "redis"],
+    "ncps-checktools": [],
+    "ncps-mysql-tests": ["mariadb"],
+    "ncps-postgres-tests": ["postgres"],
+    "ncps-redis-tests": ["redis"],
+    "ncps-s3-tests": ["garage"],
+    "ncps-unit-tests": [],
     "schema-equivalence-check": ["postgres", "mariadb"],
 }
 

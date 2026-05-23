@@ -16,13 +16,13 @@
 
 ## 3. Phase 3 — Per-backend integration cohorts (D1)
 
-- [ ] 3.1 Pick build-tag naming (recommendation: `integration_s3`, `integration_postgres`, `integration_mysql`, `integration_redis`). Document the choice at the top of a new file `pkg/internal/integrationtag/doc.go` (or inline in CLAUDE.md) so reviewers reference it.
-- [ ] 3.2 Audit every `_test.go` file that currently depends on env-var gates (`*_INTEGRATION_TEST_ENABLED`) and add the matching `//go:build integration_<backend>` header.
-- [ ] 3.3 Add a CI lint (small Go program under `cmd/integration-tag-lint`, or a shell `grep` step) that fails when any test file referencing the env-var gate lacks the corresponding build tag, and wire it into the checks attrset.
-- [ ] 3.4 Add `nix/checks/integration.nix` (or extend `flake-module.nix`) with one derivation per backend: `ncps-s3-tests`, `ncps-postgres-tests`, `ncps-mysql-tests`, `ncps-redis-tests`. Each invokes `go test -race -tags=integration_<backend> -timeout <X>m ./...` and starts only its own backend in `preCheck`.
-- [ ] 3.5 Add `ncps-unit-tests` derivation that runs `go test -race ./...` with no integration tags and no backends.
-- [ ] 3.6 Keep the existing `packages.ncps` `doCheck = true` path in place for one release as `ncps-all-tests-compat` (gated off the `checks` attrset; invocable via `nix build .#packages.x86_64-linux.ncps-all-tests-compat`) so rollback is a single revert.
-- [ ] 3.7 Run the Phase 1 helper and commit `after-cohorts-timings.txt`. Confirm cold-cache wall-clock dropped meaningfully and warm-cache invalidation is now per-cohort.
+- [x] 3.1 ~~Pick build-tag naming.~~ **Superseded.** Discovery during Phase 3 (see `design.md` D1) showed that five test files mix gated and ungated tests in the same file, so file-level build tags would silently drop ungated tests. Cohort selection is now env-var driven (which the test code already relies on via `t.Skip`). No build-tag work needed; no per-cohort tag documentation needed.
+- [x] 3.2 ~~Audit `_test.go` files and add `//go:build integration_<backend>` headers.~~ **Superseded by the env-var pivot above.** The audit itself was done (12 test files identified across S3/Postgres/MySQL/Redis), but the conclusion was to leave files alone.
+- [x] 3.3 ~~Add a CI lint that fails when an integration test file lacks the matching build tag.~~ **Superseded.** With no build tags, no tag-presence lint is needed. The "right" gate is "if you check a backend env var in a test, the corresponding cohort will exercise it" — that's emergent from the runtime skip, not a static invariant.
+- [x] 3.4 Add `nix/checks/integration.nix` (or extend `flake-module.nix`) with one derivation per backend: `ncps-s3-tests`, `ncps-postgres-tests`, `ncps-mysql-tests`, `ncps-redis-tests`. Each invokes `go test -race -timeout <X>m ./...` (no tag), starts only its own backend in `preCheck`, and exports only the matching `NCPS_TEST_*` env vars. Implemented via a `mkCohort` helper in `nix/checks/flake-module.nix`. All four cohorts built end-to-end; timings 2m12s (s3), 3m52s (postgres), 6m01s (mysql), 2m19s (redis).
+- [x] 3.5 Add `ncps-unit-tests` derivation that runs `go test -race ./...` with no backend env vars set and no backends started. All integration subtests skip via `t.Skip`. Sanity build completed at 1m57s with all integration subtests skipping correctly.
+- [x] 3.6 Keep the existing `packages.ncps` `doCheck = true` path in place for one release as `ncps-all-tests-compat`. **No action needed in Phase 3.** The monolith is `packages.ncps` itself, still in `checks` via `// self'.packages`. Phase 5 will rename/alias it to `ncps-all-tests-compat` and remove it from `checks`. Phase 3's cohorts run *alongside* the monolith for now (additive — see comment in `flake-module.nix`).
+- [x] 3.7 Run the Phase 1 helper and commit `after-cohorts-timings.txt`. Confirmed: cohort wall-clocks recorded; max cohort = 6m01s (mysql), so parallel wall-clock once monolith drops in Phase 5 will be ~6m vs current ~12m monolith. Phase 3 in isolation does not change `nix flake check` wall-clock — additive only.
 
 ## 4. Phase 4 — `mkDbBackedCheck` helper (D4)
 

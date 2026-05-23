@@ -71,23 +71,58 @@ Constraints:
 
 ## Decisions
 
-### D1. Split `packages.ncps` checks by required backend, not by Go package
+### D1. Split `packages.ncps` checks by required backend; cohort selection via env vars, not build tags
 
 Introduce one check derivation per *backend cohort*:
 
-- `ncps-unit-tests` — no services. Runs all tests that have no
-  integration build tag.
-- `ncps-s3-tests` — starts Garage only.
-- `ncps-postgres-tests` — starts Postgres only.
-- `ncps-mysql-tests` — starts MariaDB only.
-- `ncps-redis-tests` — starts Redis only.
+- `ncps-unit-tests` — no services. No backend env vars exported.
+- `ncps-s3-tests` — starts Garage only; exports `NCPS_TEST_S3_*`.
+- `ncps-postgres-tests` — starts Postgres only; exports
+  `NCPS_TEST_ADMIN_POSTGRES_URL`.
+- `ncps-mysql-tests` — starts MariaDB only; exports
+  `NCPS_TEST_ADMIN_MYSQL_URL`.
+- `ncps-redis-tests` — starts Redis only; exports
+  `NCPS_ENABLE_REDIS_TESTS=1`.
 
-Selection is by **Go build tag**, not by `-run` regex. Each integration
-file gets `//go:build integration_s3` (etc.). The unit derivation
-builds with the default tags; each integration derivation builds with
-its own tag added. Build tags are robust to test renames and let
-`go vet` / `golangci-lint` reason about which files belong to which
-build.
+Every cohort runs the same `go test -race ./...` invocation. The
+existing test code already gates subtests on the matching env vars
+with `t.Skip` (see `TestCacheBackends` in `pkg/cache/cache_test.go`
+and the same pattern across `pkg/database/migrate`, `pkg/cache/cdc`,
+`pkg/ncps/{fsck,migrate_narinfo,migrate_nar_to_chunks}`,
+`pkg/server`, `pkg/config`, `migrations/equivalence`,
+`pkg/cache/healthcheck`, `pkg/lock/redis`,
+`pkg/cache/cache_{internal,distributed}_test.go`). The cohort
+boundary is therefore the env-var set; the Go binary is unchanged.
+
+**Implementation discovery that shaped this decision** (Phase 3 design
+revision): the original design assumed each integration test lived in
+its own file with a `//go:build integration_<backend>` header, so a
+`-tags=integration_postgres` build would compile a strict subset. The
+audit revealed five test files mix gated and ungated test functions
+in the same file:
+
+- `pkg/database/migrate/migrate_test.go` (2 gated + 1 ungated)
+- `pkg/cache/cache_test.go` (2 gated + 2 ungated)
+- `pkg/cache/cache_internal_test.go` (2 gated + 5 ungated)
+- `pkg/ncps/migrate_narinfo_test.go` (1 gated + 1 ungated)
+- `pkg/lock/redis/redis_test.go` (mixed; sub-suite gates)
+
+Build tags are file-level in Go, so applying a tag to any of those
+files silently drops the ungated tests from the unit cohort. The
+choice was therefore between (a) refactoring those five files to
+split unit and integration tests into sibling files (mechanical but
+non-trivial and changes the established "one factory, all backends"
+test idiom) or (b) dropping build tags and using env-var presence as
+the cohort selector instead. (b) is the chosen path: it requires zero
+test-code changes, it preserves the existing skip pattern that the
+codebase already relies on, and it still delivers the Nix-level
+parallelism win because each cohort is its own derivation.
+
+**Cost of the choice**: every cohort pays the full Go test compile
+(test code is identical across cohorts; only env vars differ).
+Estimated +30s–1m per cohort versus a strict tag split. The compile
+parallelizes across cohorts at the Nix level, so the wall-clock
+penalty is one-cohort-worth, not five.
 
 **Alternatives considered:**
 
@@ -96,6 +131,12 @@ build.
   cost per derivation (Go compile, race-detector instrumentation,
   service spin-up where applicable) outweighs the parallelism win, and
   many packages have no service dependency anyway.
+- *Strict `//go:build integration_<backend>` tags*. Rejected per the
+  discovery above.
+- *Single `//go:build integration` tag* (no per-backend distinction).
+  Same trade-off as the env-var-only path but adds a tag the code
+  doesn't need. The lint to keep the tag in sync with env-var usage
+  (originally task 3.3) becomes pure overhead.
 - *`-run` / `-skip` regex selection*. Brittle: relies on a naming
   convention that nothing enforces. Drifts silently the first time a
   test is renamed.
