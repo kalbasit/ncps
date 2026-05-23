@@ -64,6 +64,14 @@ const (
 	// which is critical for databases like MySQL under parallel test load.
 	progressivePollBatchSize = 256
 
+	// cdcCleanupHashBatchSize bounds the size of `WHERE hash IN (…)`
+	// batches issued by the CDC delayed-cleanup job. Stays well under
+	// driver parameter limits (Postgres ≤ 65535, modern SQLite ≤
+	// 32766, older SQLite ≤ 999) while staying well above typical
+	// chunked-NAR-hash counts so the job remains a single query for
+	// almost every install.
+	cdcCleanupHashBatchSize = 500
+
 	// Migration operation constants for metrics.
 	migrationOperationMigrate = "migrate"
 	migrationOperationDelete  = "delete"
@@ -704,12 +712,14 @@ func (c *Cache) GetCDCDeleteDelay() time.Duration {
 
 func (c *Cache) setupMetricCallbacks() error {
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		// Observe total size: SUM(file_size) over nar_files, with
-		// COALESCE-to-zero semantics (empty table returns 0, not NULL).
+		// Observe total size: SUM(file_size) over nar_files. SQL SUM on
+		// an empty set returns NULL, which won't scan into a plain
+		// int64 — use sql.NullInt64 and treat NULL as zero. The column
+		// alias matches the field name Ent emits via ent.Sum.
 		var totalSize int64
 
 		var totals []struct {
-			Sum int64 `sql:"sum"`
+			Sum sql.NullInt64 `sql:"sum"`
 		}
 
 		if err := c.dbClient.Ent().NarFile.Query().
@@ -720,8 +730,8 @@ func (c *Cache) setupMetricCallbacks() error {
 				Err(err).
 				Msg("failed to get total nar size for metrics")
 		} else {
-			if len(totals) > 0 {
-				totalSize = totals[0].Sum
+			if len(totals) > 0 && totals[0].Sum.Valid {
+				totalSize = totals[0].Sum.Int64
 			}
 
 			o.ObserveInt64(totalSizeMetric, totalSize)
@@ -2355,17 +2365,36 @@ func (c *Cache) relinkNarInfosToNarFileWithEntTx(
 		return nil
 	}
 
-	bulk := make([]*ent.NarInfoNarFileCreate, len(narInfoIDs))
-	for i, niID := range narInfoIDs {
-		bulk[i] = tx.NarInfoNarFile.Create().SetNarinfoID(niID).SetNarFileID(int(narFileID))
-	}
+	// Chunk the CreateBulk to stay below driver placeholder limits.
+	// Each row sends 2 parameters (narinfo_id, nar_file_id); 500 rows
+	// per batch = 1000 placeholders, well under Postgres 65535,
+	// modern SQLite 32766, and older SQLite 999. Closures with
+	// thousands of narinfos sharing a NAR URL (large multi-output
+	// derivations, deep dependency trees) are uncommon but real, and
+	// without chunking the bulk insert would silently fail on
+	// older sqlite.
+	const relinkBatchSize = 500
 
-	if err := tx.NarInfoNarFile.CreateBulk(bulk...).
-		OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
-		Ignore().
-		Exec(ctx); err != nil {
-		return fmt.Errorf("failed to link narinfos by URL %q to nar_file %d: %w",
-			narURL.String(), narFileID, err)
+	for start := 0; start < len(narInfoIDs); start += relinkBatchSize {
+		end := start + relinkBatchSize
+		if end > len(narInfoIDs) {
+			end = len(narInfoIDs)
+		}
+
+		batch := narInfoIDs[start:end]
+		bulk := make([]*ent.NarInfoNarFileCreate, len(batch))
+
+		for i, niID := range batch {
+			bulk[i] = tx.NarInfoNarFile.Create().SetNarinfoID(niID).SetNarFileID(int(narFileID))
+		}
+
+		if err := tx.NarInfoNarFile.CreateBulk(bulk...).
+			OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+			Ignore().
+			Exec(ctx); err != nil {
+			return fmt.Errorf("failed to link narinfos batch by URL %q to nar_file %d: %w",
+				narURL.String(), narFileID, err)
+		}
 	}
 
 	return nil
@@ -4904,7 +4933,7 @@ func storeNarInfoInDatabase(
 	hash string,
 	narInfo *narinfo.NarInfo,
 ) error {
-	return dbClient.WithTransaction(ctx, "storeNarInfoInDatabase", func(tx *ent.Tx) error {
+	return withEntTransactionRetry(ctx, dbClient, "storeNarInfoInDatabase", func(tx *ent.Tx) error {
 		nir, err := upsertNarInfoFromParsed(ctx, tx, hash, narInfo)
 		if err != nil {
 			return err
@@ -5418,6 +5447,20 @@ func (c *Cache) withTransaction(ctx context.Context, operation string, fn func(q
 //
 
 func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn func(tx *ent.Tx) error) error {
+	return withEntTransactionRetry(ctx, c.dbClient, operation, fn)
+}
+
+// withEntTransactionRetry wraps dbClient.WithTransaction with the
+// same deadlock-retry policy the legacy *Cache.executeTransaction
+// helper provided. Package-level so it can be reused by callers that
+// don't hold a *Cache (storeNarInfoInDatabase running under
+// MigrateNarInfo / the CLI migrate-narinfo path).
+func withEntTransactionRetry(
+	ctx context.Context,
+	dbClient *database.Client,
+	operation string,
+	fn func(tx *ent.Tx) error,
+) error {
 	const (
 		maxAttempts  = 5
 		initialDelay = 50 * time.Millisecond
@@ -5428,9 +5471,17 @@ func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn fun
 		delay = initialDelay
 	)
 
+	zerolog.Ctx(ctx).Debug().
+		Str("operation", operation).
+		Msg("withEntTransaction: starting transaction")
+
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		err = c.dbClient.WithTransaction(ctx, operation, fn)
+		err = dbClient.WithTransaction(ctx, operation, fn)
 		if err == nil {
+			zerolog.Ctx(ctx).Debug().
+				Str("operation", operation).
+				Msg("withEntTransaction: transaction committed successfully")
+
 			return nil
 		}
 
@@ -5451,10 +5502,16 @@ func (c *Cache) withEntTransaction(ctx context.Context, operation string, fn fun
 			Dur("delay", delay).
 			Msg("database deadlock/busy, retrying transaction")
 
+		// time.NewTimer + Stop instead of time.After to avoid leaking
+		// the underlying timer (and its goroutine on pre-1.23 runtimes)
+		// for the full delay duration when ctx is cancelled mid-wait.
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
+
 			return ctx.Err()
-		case <-time.After(delay):
+		case <-timer.C:
 			delay *= 2
 		}
 	}
@@ -6053,12 +6110,17 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 			// (compression='none', total_chunks>0) representation, then
 			// find the old compressed (total_chunks=0, compression!='none')
 			// records for those hashes whose created_at predates cutoff.
-			ent := c.dbClient.Ent()
+			//
+			// HashIn is batched (cdcCleanupHashBatchSize) to stay below
+			// driver parameter limits (Postgres ≤ 65535, SQLite ≤ 32766
+			// on recent builds, ≤ 999 on older). 500 is well below all
+			// limits, well above typical chunked-NAR-hash counts.
+			entClient := c.dbClient.Ent()
 
 			var chunkedHashRows []struct {
 				Hash string `sql:"hash"`
 			}
-			if err := ent.NarFile.Query().
+			if err := entClient.NarFile.Query().
 				Where(
 					entnarfile.CompressionEQ("none"),
 					entnarfile.TotalChunksGT(0),
@@ -6081,18 +6143,29 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 				chunkedHashes[i] = r.Hash
 			}
 
-			oldFiles, err := ent.NarFile.Query().
-				Where(
-					entnarfile.TotalChunksEQ(0),
-					entnarfile.CompressionNEQ("none"),
-					entnarfile.CreatedAtLT(cutoffTime),
-					entnarfile.HashIn(chunkedHashes...),
-				).
-				All(ctx)
-			if err != nil {
-				log.Error().Err(err).Msg("error getting old compressed NAR files for cleanup")
+			var oldFiles []*ent.NarFile
 
-				return err
+			for start := 0; start < len(chunkedHashes); start += cdcCleanupHashBatchSize {
+				end := start + cdcCleanupHashBatchSize
+				if end > len(chunkedHashes) {
+					end = len(chunkedHashes)
+				}
+
+				batch, err := entClient.NarFile.Query().
+					Where(
+						entnarfile.TotalChunksEQ(0),
+						entnarfile.CompressionNEQ("none"),
+						entnarfile.CreatedAtLT(cutoffTime),
+						entnarfile.HashIn(chunkedHashes[start:end]...),
+					).
+					All(ctx)
+				if err != nil {
+					log.Error().Err(err).Msg("error getting old compressed NAR files for cleanup")
+
+					return err
+				}
+
+				oldFiles = append(oldFiles, batch...)
 			}
 
 			if len(oldFiles) == 0 {
@@ -6111,7 +6184,7 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 				}
 
 				// Delete from database first. If this fails, we'll retry on the next run.
-				if _, err := ent.NarFile.Delete().
+				if _, err := entClient.NarFile.Delete().
 					Where(entnarfile.IDEQ(oldFile.ID)).
 					Exec(ctx); err != nil {
 					log.Error().Err(err).

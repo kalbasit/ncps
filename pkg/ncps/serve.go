@@ -987,7 +987,8 @@ func createDatabaseQuerier(cmd *cli.Command) (database.Querier, *database.Client
 
 	db, err := database.Open(dbURL, poolCfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error opening the database %q: %w", dbURL, err)
+		// Avoid embedding dbURL — it may contain user:password credentials.
+		return nil, nil, fmt.Errorf("error opening the database: %w", err)
 	}
 
 	// §11.1: construct the Ent-backed Client alongside the legacy
@@ -995,12 +996,12 @@ func createDatabaseQuerier(cmd *cli.Command) (database.Querier, *database.Client
 	// connection pool; the Client wraps it via entsql.OpenDB.
 	dbType, err := database.DetectFromDatabaseURL(dbURL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error detecting database type for %q: %w", dbURL, err)
+		return nil, nil, fmt.Errorf("error detecting database type: %w", err)
 	}
 
 	dbClient, err := database.NewClient(db.DB(), dbType)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error constructing database client for %q: %w", dbURL, err)
+		return nil, nil, fmt.Errorf("error constructing database client: %w", err)
 	}
 
 	return db, dbClient, nil
