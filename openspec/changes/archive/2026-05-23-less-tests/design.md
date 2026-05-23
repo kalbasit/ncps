@@ -36,7 +36,7 @@ Use `go test -json -race -count=1 ./...` (with integration env vars set via `ena
 - Per-test wall time (parent + subtests separately)
 - Tests where `Elapsed > 500ms`
 
-**Why this over `gotestsum`**: We already have everything we need in `-json`. A 30-line `awk`/`jq` pipeline is cheaper than adding a tool dependency and is reproducible across local + CI. The output is stored as `openspec/changes/less-tests/baseline-timings.txt` (not committed past archive) for the duration of the work.
+**Why this over `gotestsum`**: We already have everything we need in `-json`. A small Python script is cheaper than adding a tool dependency and is reproducible across local + CI. The output is stored as `openspec/changes/less-tests/baseline-timings.txt` (not committed past archive) for the duration of the work.
 
 **Alternative considered**: CPU profiling per test with `-cpuprofile`. Rejected for this phase — wall-time ranking is enough to find the offenders; CPU profiles add noise without changing the priority list.
 
