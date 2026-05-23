@@ -1,9 +1,8 @@
 echo "🚀 Starting Garage for S3 integration tests..."
 
-# Create temporary directories for Garage state and config.
-export GARAGE_META_DIR=$(mktemp -d)
-export GARAGE_DATA_DIR=$(mktemp -d)
-export GARAGE_CONFIG_FILE="$(mktemp -d)/garage.toml"
+# HOME must point somewhere writable for the awscli2 used by init-garage.sh.
+# Garage's storage paths are managed by start-garage.sh itself (mktemp + EXIT
+# trap), and init-garage.sh discovers the config via the per-UID pointer file.
 export HOME=$(mktemp -d)
 
 # Generate random free ports using python.

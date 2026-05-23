@@ -34,12 +34,11 @@
         NCPS_TEST_S3_BUCKET = "test-bucket";
         NCPS_TEST_S3_SECRET_ACCESS_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-        # Garage-internal settings (RPC + admin API + on-disk dirs + config path).
+        # Garage-internal settings. Storage paths (GARAGE_DATA_DIR / META_DIR /
+        # CONFIG_FILE) are derived per-UID inside start-garage.sh and
+        # init-garage.sh to avoid collisions between users sharing a host.
         GARAGE_RPC_PORT = "3901";
         GARAGE_ADMIN_PORT = "3903";
-        GARAGE_DATA_DIR = "/tmp/ncps-garage-data";
-        GARAGE_META_DIR = "/tmp/ncps-garage-meta";
-        GARAGE_CONFIG_FILE = "/tmp/ncps-garage.toml";
         # Fixed dev secrets — Garage requires these but they're not exposed to tests.
         # 64-char hex RPC secret and an arbitrary admin token.
         GARAGE_RPC_SECRET = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -117,20 +116,26 @@
                   };
                 in
                 ''
-                  # Remove stale marker file from previous runs
-                  rm -f /tmp/ncps-garage-ready
+                  # Per-UID ready marker (avoids collisions when multiple users
+                  # run process-compose on the same host).
+                  READY_MARKER="''${TMPDIR:-/tmp}/ncps-garage-$(id -u).ready"
+
+                  # Remove stale marker file from previous runs, and clean up on
+                  # shutdown so a stale marker doesn't survive into the next run.
+                  rm -f "$READY_MARKER"
+                  trap 'rm -f "$READY_MARKER"' EXIT INT TERM
 
                   ${initGarage}/bin/init-garage
 
                   # Create ready marker file for process-compose health check
-                  touch /tmp/ncps-garage-ready
+                  touch "$READY_MARKER"
 
                   sleep infinity
                 '';
               environment = garageEnvironment;
               depends_on.garage-server.condition = "process_healthy";
               readiness_probe = {
-                exec.command = "test -f /tmp/ncps-garage-ready";
+                exec.command = ''test -f "''${TMPDIR:-/tmp}/ncps-garage-$(id -u).ready"'';
                 initial_delay_seconds = 3;
                 period_seconds = 1;
               };

@@ -8,10 +8,22 @@
 #   - verifies anonymous access is blocked
 #
 # Expects env vars set by flake-module.nix or pre-check-garage.sh:
-#   GARAGE_CONFIG_FILE
 #   NCPS_TEST_S3_ENDPOINT, NCPS_TEST_S3_REGION, NCPS_TEST_S3_BUCKET,
 #   NCPS_TEST_S3_ACCESS_KEY_ID, NCPS_TEST_S3_SECRET_ACCESS_KEY
+#
+# Locates the Garage config by reading the per-UID pointer file written by
+# start-garage.sh. Override by exporting GARAGE_CONFIG_FILE before invocation
+# (e.g. from pre-check-garage.sh in the Nix build sandbox).
 set -euo pipefail
+
+if [ -z "${GARAGE_CONFIG_FILE:-}" ]; then
+  POINTER_FILE="${TMPDIR:-/tmp}/ncps-garage-$(id -u).workdir"
+  if [ ! -f "$POINTER_FILE" ]; then
+    echo "❌ Garage workdir pointer not found at $POINTER_FILE; is start-garage.sh running?" >&2
+    exit 1
+  fi
+  GARAGE_CONFIG_FILE="$(cat "$POINTER_FILE")/garage.toml"
+fi
 
 garage_cli() { garage -c "$GARAGE_CONFIG_FILE" "$@"; }
 
