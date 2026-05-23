@@ -5492,8 +5492,13 @@ func withEntTransactionRetry(
 			return nil
 		}
 
-		// Only retry on deadlock/busy errors
-		if !database.IsDeadlockError(err) {
+		// Retry on deadlock/busy AND duplicate-key — concurrent
+		// transactions doing a "select-then-insert" can both see the
+		// row as missing, both attempt INSERT, and the loser gets a
+		// 23505/1062. Re-running the closure picks the existing row
+		// up via the SELECT and takes the UPDATE branch instead.
+		retryable := database.IsDeadlockError(err) || database.IsDuplicateKeyError(err)
+		if !retryable {
 			return err
 		}
 
@@ -5507,7 +5512,7 @@ func withEntTransactionRetry(
 			Str("operation", operation).
 			Int("attempt", attempt).
 			Dur("delay", delay).
-			Msg("database deadlock/busy, retrying transaction")
+			Msg("retryable transaction error (deadlock/busy/duplicate-key), retrying")
 
 		// time.NewTimer + Stop instead of time.After to avoid leaking
 		// the underlying timer (and its goroutine on pre-1.23 runtimes)
