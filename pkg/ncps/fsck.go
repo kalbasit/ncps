@@ -289,7 +289,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			verifiedSince := cmd.Duration("verified-since")
 
 			// 1. Setup Database
-			db, _, err := createDatabaseQuerier(cmd)
+			db, dbClient, err := createDatabaseQuerier(cmd)
 			if err != nil {
 				logger.Error().Err(err).Msg("error creating database querier")
 
@@ -305,7 +305,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			}
 
 			// 3. Setup OTel
-			extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, db, rwLocker)
+			extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, dbClient, rwLocker)
 			if err != nil {
 				logger.Error().Err(err).Msg("error detecting extra resource attributes")
 

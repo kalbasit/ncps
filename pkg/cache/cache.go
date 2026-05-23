@@ -597,7 +597,7 @@ func New(
 	c := &Cache{
 		db:                   db,
 		dbClient:             dbClient,
-		config:               config.New(db, cacheLocker),
+		config:               config.New(dbClient, cacheLocker),
 		configStore:          configStore,
 		narInfoStore:         narInfoStore,
 		narStore:             narStore,
