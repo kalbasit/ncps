@@ -1,0 +1,59 @@
+## 1. Phase 1 — Baseline measurement
+
+- [x] 1.1 Write a profiling helper (Nix script or shell wrapper) that takes a list of `nix flake show --json | jq '.checks.x86_64-linux | keys'` derivations, builds each on a cold store with `nix build .#checks.x86_64-linux.<name> -L --rebuild`, and records wall-clock per derivation.
+- [x] 1.2 Run the helper on a CI-shaped runner (cold cache) and commit the output to `openspec/changes/lean-flake-check/baseline-timings.txt`. Ran locally with intermediate deps warm; see file caveats. `ncps` failed mid-suite with a pre-existing MariaDB flake (`TestCacheBackends/MySQL#01/PutNarInfoDeadlock`); derivation ran to completion before failing, so timing is still valid.
+- [x] 1.3 In the same file, record the wall-clock of `nix build .#ncps.coverage` and the wall-clock of the `shared / build / build (x86_64-linux)` CI job from a recent main run, with the run ID, for cross-reference. Coverage build skipped — `.#ncps.coverage` is a passthru second output of the `ncps` derivation, so its wall-clock equals the `ncps` row already recorded. CI run 26343867348 numbers captured.
+- [x] 1.4 Document in the same file which derivations start which backends (Garage / Postgres / MariaDB / Redis), so phase-by-phase deltas can be reasoned about.
+
+## 2. Phase 2 — Lint/drift helper binaries (D2)
+
+- [ ] 2.1 Add `packages.ncps-checktools` to `nix/packages/` that builds `cmd/ent-lint` and `cmd/atlas-sum-check` once with a single `buildGoModule` invocation, with a narrow `fileset` (only `cmd/ent-lint`, `cmd/atlas-sum-check`, `go.mod`, `go.sum`, and minimal shared internal packages).
+- [ ] 2.2 Rewrite `ent-lint-check` in `nix/checks/flake-module.nix` as `stdenvNoCC.mkDerivation` that runs `${ncps-checktools}/bin/ent-lint --root $src` against the schema tree; remove the `buildGoModule` override.
+- [ ] 2.3 Rewrite `atlas-sum-check` the same way, consuming `${ncps-checktools}/bin/atlas-sum-check`.
+- [ ] 2.4 For `golangci-lint-check` and `ent-codegen-drift-check`, make them `inherit src vendorHash` from `packages.ncps` (or factor a shared `goModulesSrc` value) so they share cache hits instead of producing distinct fixed-output derivations.
+- [ ] 2.5 Re-run the Phase 1 helper and commit `after-checktools-timings.txt`. Confirm `ent-lint-check` and `atlas-sum-check` dropped to near-zero seconds.
+- [ ] 2.6 `nix flake check -L` passes; no regression in what each check enforces.
+
+## 3. Phase 3 — Per-backend integration cohorts (D1)
+
+- [ ] 3.1 Pick build-tag naming (recommendation: `integration_s3`, `integration_postgres`, `integration_mysql`, `integration_redis`). Document the choice at the top of a new file `pkg/internal/integrationtag/doc.go` (or inline in CLAUDE.md) so reviewers reference it.
+- [ ] 3.2 Audit every `_test.go` file that currently depends on env-var gates (`*_INTEGRATION_TEST_ENABLED`) and add the matching `//go:build integration_<backend>` header.
+- [ ] 3.3 Add a CI lint (small Go program under `cmd/integration-tag-lint`, or a shell `grep` step) that fails when any test file referencing the env-var gate lacks the corresponding build tag, and wire it into the checks attrset.
+- [ ] 3.4 Add `nix/checks/integration.nix` (or extend `flake-module.nix`) with one derivation per backend: `ncps-s3-tests`, `ncps-postgres-tests`, `ncps-mysql-tests`, `ncps-redis-tests`. Each invokes `go test -race -tags=integration_<backend> -timeout <X>m ./...` and starts only its own backend in `preCheck`.
+- [ ] 3.5 Add `ncps-unit-tests` derivation that runs `go test -race ./...` with no integration tags and no backends.
+- [ ] 3.6 Keep the existing `packages.ncps` `doCheck = true` path in place for one release as `ncps-all-tests-compat` (gated off the `checks` attrset; invocable via `nix build .#packages.x86_64-linux.ncps-all-tests-compat`) so rollback is a single revert.
+- [ ] 3.7 Run the Phase 1 helper and commit `after-cohorts-timings.txt`. Confirm cold-cache wall-clock dropped meaningfully and warm-cache invalidation is now per-cohort.
+
+## 4. Phase 4 — `mkDbBackedCheck` helper (D4)
+
+- [ ] 4.1 Add `mkDbBackedCheck { name, backends, checkPhase, ... }` to `nix/checks/` (or `nix/lib/`). It wires the right subset of `pre-check-*.sh` / `post-check-*.sh` scripts and installs a single cleanup trap.
+- [ ] 4.2 Refactor each per-backend integration cohort derivation from Phase 3 to use the helper.
+- [ ] 4.3 Refactor `schema-equivalence-check` to a single call `mkDbBackedCheck { name = "schema-equivalence-check"; backends = [ "postgres" "mysql" ]; checkPhase = "go test -race -count=1 -timeout 10m -run TestSchemaEquivalence ./migrations/..."; }`.
+- [ ] 4.4 Re-run the Phase 1 helper and commit `after-helper-timings.txt`.
+- [ ] 4.5 `nix flake check -L` passes.
+
+## 5. Phase 5 — Coverage split (D3)
+
+- [ ] 5.1 Set `doCheck = false` on `packages.ncps`. Remove the `coverage` second output and the `coverage`-related lines from `preCheck`/`checkPhase`/`postCheck`.
+- [ ] 5.2 Add `packages.ncps-coverage` (or `packages.ncps.coverage` via `passthru`) as a dedicated derivation that runs the union of the unit + per-backend cohort test bodies with `-coverprofile`, then merges the per-cohort `cover.out` files into a single `coverage.txt`. Output is the merged file.
+- [ ] 5.3 Verify the reusable CI workflow's coverage invocation still resolves (`nix build .#ncps.coverage`); rename the derivation or add an alias attribute if needed for compatibility.
+- [ ] 5.4 Confirm codecov receives a single profile covering the same packages as before (compare against pre-change codecov report for `main`).
+- [ ] 5.5 Re-run Phase 1 helper and commit `after-coverage-split-timings.txt`. Confirm `nix build .#ncps` (no check, no coverage) is now seconds, not minutes.
+
+## 6. Phase 6 — Prune (D5)
+
+- [ ] 6.1 Replace `checks = self'.packages // self'.devShells // {...}` in `nix/checks/flake-module.nix` with an explicit enumeration. Each entry gets a one-line comment naming the quality property it asserts.
+- [ ] 6.2 Remove `ncps-all-tests-compat` and any other compat shims left from Phase 3.
+- [ ] 6.3 Run the Phase 1 helper one last time on a cold CI-shaped runner; commit `final-timings.txt`.
+- [ ] 6.4 Verify total wall-clock is at least 40% lower than baseline (per the `flake-check-topology` spec). If not, file a follow-up identifying the remaining bottleneck rather than weakening the gate.
+
+## 7. Documentation
+
+- [ ] 7.1 Update `CLAUDE.md` to describe the new check topology, the build-tag convention, and how to invoke a single cohort (`nix build .#checks.x86_64-linux.ncps-postgres-tests -L`).
+- [ ] 7.2 Update `nix/checks/flake-module.nix` header comment to describe the new structure and the role of `mkDbBackedCheck`.
+- [ ] 7.3 Add a brief note in `README.md` (if it mentions `nix flake check`) about the per-cohort derivations.
+
+## 8. Justification log (mirrors test-suite-efficiency convention)
+
+- [ ] 8.1 For any test file moved into a different cohort (or whose build tag changed which derivation runs it), record a one-line justification here naming the file and the cohort it now belongs to.
+- [ ] 8.2 For any check derivation removed (e.g., from compat shims), record a one-line justification naming the removed derivation and the surviving derivation that asserts the same quality property.
