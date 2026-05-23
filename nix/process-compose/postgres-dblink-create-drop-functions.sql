@@ -34,13 +34,17 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 4. Function to DROP database
+-- Uses WITH (FORCE) (PostgreSQL 13+) so leaked connections from the test process
+-- (e.g. the inner dbClient pool used by ncps subcommands) don't make DROP DATABASE
+-- block for the connection idle timeout. Without FORCE, every per-test cleanup paid
+-- a ~5s wait for connections to drain.
 CREATE OR REPLACE FUNCTION drop_test_db(dbname text) RETURNS void AS $$
 BEGIN
     IF left(dbname, 5) != 'test-' THEN
         RAISE EXCEPTION 'Access Denied: Database name must start with "test-"';
     END IF;
 
-    PERFORM dblink_exec('local_admin_server', 'DROP DATABASE ' || quote_ident(dbname));
+    PERFORM dblink_exec('local_admin_server', 'DROP DATABASE ' || quote_ident(dbname) || ' WITH (FORCE)');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

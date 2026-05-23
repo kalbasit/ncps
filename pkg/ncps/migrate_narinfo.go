@@ -209,6 +209,8 @@ requests. Without Redis, the command uses in-memory locking (no coordination wit
 				return err
 			}
 
+			registerShutdown("database client", func(_ context.Context) error { return dbClient.Close() })
+
 			// 2. Setup Lockers
 			locker, rwLocker, err := getLockers(ctx, cmd)
 			if err != nil {

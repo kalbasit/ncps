@@ -509,6 +509,8 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 			return err
 		}
 
+		registerShutdown("database client", func(_ context.Context) error { return dbClient.Close() })
+
 		locker, rwLocker, err := getLockers(ctx, cmd)
 		if err != nil {
 			zerolog.Ctx(ctx).
