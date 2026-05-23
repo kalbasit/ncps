@@ -1676,9 +1676,11 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
 		require.NoError(t, err)
 
-		// Inject a slow chunker that adds a significant delay before producing chunks.
-		// This simulates chunking a large NAR (e.g., 180 MB taking ~18 s).
-		const chunkingDelay = 2 * time.Second
+		// Inject a slow chunker that adds a delay before producing chunks. This simulates
+		// chunking a large NAR (e.g., 180 MB taking ~18 s) — the only requirement is that
+		// the simulated chunking window is comfortably longer than the streaming path so
+		// the "GetNar returns before chunking finishes" assertion is meaningful.
+		const chunkingDelay = 500 * time.Millisecond
 
 		realChunker, err := chunker.NewCDCChunker(1024, 4096, 8192)
 		require.NoError(t, err)

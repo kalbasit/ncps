@@ -600,7 +600,10 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
-				time.Sleep(time.Second)
+				// 100ms is long enough for the timestamp precision of every supported
+				// engine (SQLite stores time as RFC3339 with nanoseconds; PG/MySQL keep
+				// microseconds) and short enough not to dominate test wall time.
+				time.Sleep(100 * time.Millisecond)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
 
@@ -623,7 +626,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
-				time.Sleep(time.Second)
+				time.Sleep(100 * time.Millisecond)
 
 				_, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 				require.NoError(t, err)
@@ -972,7 +975,10 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
-				time.Sleep(time.Second)
+				// 100ms is long enough for the timestamp precision of every supported
+				// engine (SQLite stores time as RFC3339 with nanoseconds; PG/MySQL keep
+				// microseconds) and short enough not to dominate test wall time.
+				time.Sleep(100 * time.Millisecond)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
 
@@ -997,7 +1003,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
-				time.Sleep(time.Second)
+				time.Sleep(100 * time.Millisecond)
 
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
 				_, size, r, err := c.GetNar(context.Background(), nu)
@@ -1396,6 +1402,17 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 		ts := testdata.NewTestServer(t, 1)
 		t.Cleanup(ts.Close)
 
+		// Payload sized so the slow handler runs long enough for the caller to cancel
+		// mid-stream (cancel happens ~50ms after download starts), but short enough that
+		// the test wall time is dominated by setup, not by the slow stream. 50 chunks at
+		// 5ms each = ~250ms streaming budget.
+		const (
+			payloadChunks = 50
+			chunkSize     = 1024
+			payloadSize   = payloadChunks * chunkSize
+			chunkSleep    = 5 * time.Millisecond
+		)
+
 		testHash := "deadlock-test-hash-123456789012"
 		entry := testdata.Entry{
 			NarInfoHash:    testHash,
@@ -1405,13 +1422,13 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 	URL: nar/` + testHash + `-nar.nar.xz
 	Compression: xz
 	FileHash: sha256:1111111111111111111111111111111111111111111111111111
-	FileSize: 1048576
+	FileSize: 51200
 	NarHash: sha256:1111111111111111111111111111111111111111111111111111
-	NarSize: 1048576
+	NarSize: 51200
 	References: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dummy
 	Sig: cache.nixos.org-1:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==
 	`,
-			NarText: strings.Repeat("x", 1048576), // 1MB of data
+			NarText: strings.Repeat("x", payloadSize),
 		}
 		ts.AddEntry(entry)
 
@@ -1429,7 +1446,6 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 				// Write data slowly in chunks
 				data := []byte(entry.NarText)
 
-				chunkSize := 1024
 				for i := 0; i < len(data); i += chunkSize {
 					end := min(i+chunkSize, len(data))
 
@@ -1451,7 +1467,7 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 					}
 
 					// Sleep to make download slow
-					time.Sleep(10 * time.Millisecond)
+					time.Sleep(chunkSleep)
 				}
 
 				return true
@@ -1509,21 +1525,21 @@ func testDeadlockContextCancellationDuringDownload(factory cacheFactory) func(*t
 		// Cancel the context to trigger cleanup while download is in progress
 		cancel()
 
-		// Wait for the download to complete or timeout
-		// The download should complete even though we canceled, because it continues in the background
+		// Wait for the download to complete or timeout. With the smaller payload, the
+		// background download should finish in well under a second; 3s is generous.
 		select {
 		case <-done:
 			// GetNar returned successfully (no deadlock!)
 			t.Logf("GetNar completed without deadlock, err=%v", getNarErr)
-		case <-time.After(10 * time.Second):
+		case <-time.After(3 * time.Second):
 			t.Fatal("Deadlock detected! GetNar did not complete after context cancellation")
 		}
 
 		// Wait for the slow handler to finish to avoid "httptest.Server blocked in Close"
 		select {
 		case <-slowNarRequestDone:
-		case <-time.After(15 * time.Second):
-			t.Fatal("handler did not finish within 5s after context cancellation")
+		case <-time.After(3 * time.Second):
+			t.Fatal("handler did not finish after context cancellation")
 		}
 
 		// Success! The deadlock is fixed. GetNar completed without hanging.
@@ -3359,10 +3375,12 @@ func TestIssue990_BackgroundJobContextCancellation(t *testing.T) {
 	ts := testdata.NewTestServer(t, 40)
 	defer ts.Close()
 
-	// Add a handler that sleeps for 1 second before responding
+	// Slow the upstream just enough that the caller can cancel mid-request. Originally
+	// 1s — shrunk to 200ms to keep wall time down while preserving the cancel-during-
+	// inflight-upstream-call scenario the test exercises.
 	ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
 		if strings.HasSuffix(r.URL.Path, ".narinfo") {
-			time.Sleep(1 * time.Second)
+			time.Sleep(200 * time.Millisecond)
 			// The default handler will handle it after we Return false here if we didn't write anything,
 			// but we want to actually respond here to be sure.
 			return false
@@ -3393,16 +3411,16 @@ func TestIssue990_BackgroundJobContextCancellation(t *testing.T) {
 		errCh <- err
 	}()
 
-	// Wait a bit then cancel the context
-	time.Sleep(200 * time.Millisecond)
+	// Wait a bit then cancel the context (mid-flight upstream call).
+	time.Sleep(50 * time.Millisecond)
 	cancel()
 
 	// Wait for GetNarInfo to return
 	err = <-errCh
 	require.ErrorIs(t, err, context.Canceled)
 
-	// 4. Wait for the background job to (hopefully) finish
-	time.Sleep(1500 * time.Millisecond)
+	// 4. Wait for the background job to finish (upstream takes 200ms + DB write).
+	time.Sleep(500 * time.Millisecond)
 
 	// 5. Check if the narinfo is in the database
 	var count int
