@@ -48,7 +48,7 @@ ctx := context.Background()
 // Create configuration for a self-hosted S3-compatible endpoint
 cfg := s3.Config{
     Bucket:          "my-nix-cache",
-    Endpoint:        "http://localhost:9000", // Must include scheme
+    Endpoint:        "http://localhost:3900", // Must include scheme; 3900 is Garage's default S3 API port
     AccessKeyID:     "your-access-key",
     SecretAccessKey: "your-secret-key",
     ForcePathStyle:  true,                    // Garage and most self-hosted S3 servers require path-style addressing
