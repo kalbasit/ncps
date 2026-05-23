@@ -39,6 +39,10 @@ sudo nixos-rebuild switch
 helm upgrade ncps ./charts/ncps -n ncps -f values.yaml
 ```
 
+#### Upgrading past the Ent migration release
+
+The migration init container / job no longer invokes `dbmate`; it now invokes the in-binary runner via `ncps migrate up` (which reads the database URL from the `CACHE_DATABASE_URL` env var the chart already wires up — the secret key `database-url` is unchanged). Upgrade the chart and the image together in a single `helm upgrade`; an older chart paired with the new image fails with `exec: "/bin/dbmate": no such file or directory`.
+
 ## High Availability Upgrade
 
 Perform rolling updates:

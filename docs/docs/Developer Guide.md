@@ -26,8 +26,8 @@ nix develop
 
 **Available tools in dev shell:**
 
-- go, golangci-lint, sqlc, sqlfluff
-- dbmate, delve, watchexec
+- go, golangci-lint, sqlfluff
+- dbmate (dev-only DB reset helper), delve, watchexec
 - Integration test helpers
 
 ## Development Workflow
@@ -77,18 +77,20 @@ go test -race ./...
 ### Database Migrations
 
 ```sh
-# Create new migration
-dbmate --migrations-dir db/migrations/sqlite new migration_name
+# Generate per-dialect migrations from the current Ent schema
+task migrations:gen NAME=descriptive_snake_case
 
-# Run migrations
-dbmate migrate up
+# Apply migrations
+ncps migrate up --cache-database-url=sqlite:/path/to/db.sqlite
 ```
 
-### SQL Code Generation
+See [Contributing](Developer%20Guide/Contributing.md) for the full Ent + Atlas + Goose workflow.
+
+### Ent Client Regeneration
 
 ```sh
-# After modifying db/query.sql
-sqlc generate
+# Regenerate the Ent client after editing ent/schema/*.go
+go generate ./ent/...
 ```
 
 ## Testing

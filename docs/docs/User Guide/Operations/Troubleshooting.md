@@ -54,7 +54,7 @@ SQLite only allows one writer:
 
 ```
 # Run migrations manually
-dbmate --url=<database-url> migrate up
+ncps migrate up --cache-database-url=<database-url>
 ```
 
 ## Storage Issues

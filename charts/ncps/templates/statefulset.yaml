@@ -65,8 +65,9 @@ spec:
           image: {{ include "ncps.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
-            - /bin/dbmate
+            - /bin/ncps
           args:
+            - migrate
             - up
           env:
             {{- include "ncps.migrationDatabaseURLEnv" . | nindent 12 }}
