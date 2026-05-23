@@ -154,7 +154,7 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 - [x] 14.6 Add a `.agent/skills/ent-schema/SKILL.md` documenting the five codegen invariants and the snake_case enum-type convention
 - [x] 14.7 Update the project `README.md` to mention Ent + Atlas + Goose under "Architecture" / "Development"
 - [x] 14.8 Add a `CHANGELOG.md` entry calling out the upgrade procedure for operators with existing dbmate-managed deployments (backup advised; first `migrate up` performs the one-shot adoption)
-- [ ] 14.9 Run `nix fmt` and `golangci-lint run --fix` over the entire tree as a final pass
+- [x] 14.9 Run `nix fmt` and `golangci-lint run --fix` over the entire tree as a final pass — both already clean after the per-commit hooks ran throughout the §13/§14 work.
 
 ## 15. Standardize the `data-model` openspec spec
 
