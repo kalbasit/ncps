@@ -81,6 +81,38 @@ jobs:
           sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/packages/ncps/default.nix
 
           git diff
+      - name: Update vendor hash for ent-codegen-drift-check
+        if: needs.filter.outputs.go_deps == 'true'
+        run: |
+          set +e
+          nix build --print-build-logs .#checks.x86_64-linux.ent-codegen-drift-check.goModules 2> /tmp/log
+          ret=$?
+          set -e
+
+          if [[ "$ret" -eq 0 ]]; then
+            set +e
+            nix build --print-build-logs .#checks.x86_64-linux.ent-codegen-drift-check.goModules --rebuild 2> /tmp/log
+            ret=$?
+            set -e
+          fi
+
+          if [[ "$ret" -eq 0 ]]; then
+            echo "::notice::Hash is up to date"
+            exit 0
+          fi
+
+          hash="$(grep 'got:' /tmp/log | awk '{print $2}')"
+          echo "hash=$hash"
+
+          if [[ -z "$hash" ]]; then
+            cat /tmp/log
+            echo "::error::hash is empty"
+            exit 1
+          fi
+
+          sed -e "s#vendorHash =.*\$#vendorHash = \"$hash\";#g" -i nix/checks/flake-module.nix
+
+          git diff
       - uses: stefanzweifel/git-auto-commit-action@v7
         if: needs.filter.outputs.go_deps == 'true'
         with:
