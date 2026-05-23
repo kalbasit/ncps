@@ -37,6 +37,11 @@
               ./post-check-redis.sh
               ./pre-check-redis.sh
 
+              # .golangci.yml lives in the source set so golangci-lint-check
+              # can re-use this fileset (and the goModules cache) instead of
+              # overriding src to the whole repo. Inert for the ncps build
+              # itself.
+              ../../../.golangci.yml
               ../../../cmd
               ../../../ent
               ../../../go.mod

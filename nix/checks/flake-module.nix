@@ -2,6 +2,7 @@
   perSystem =
     {
       self',
+      lib,
       pkgs,
       config,
       ...
@@ -11,11 +12,14 @@
         self'.packages
         // self'.devShells
         // {
-          # TODO: Simplify this to not use buildGoModule as it seems to be a
-          # waste of time. This could be a simple stdenvNoCC.mkDerviation.
+          # golangci-lint-check inherits src and vendorHash from packages.ncps
+          # via overrideAttrs, so it shares the fixed-output goModules
+          # derivation with the main package — the Go module cache is
+          # populated once and re-used across both builds. .golangci.yml is
+          # carried in packages.ncps' fileset so the linter finds its
+          # configuration without needing the full repo as src.
           golangci-lint-check = config.packages.ncps.overrideAttrs (oa: {
             name = "golangci-lint-check";
-            src = ../../.;
             # ensure the output is only out since it's the only thing this package does.
             outputs = [ "out" ];
             nativeBuildInputs = oa.nativeBuildInputs ++ [ pkgs.golangci-lint ];
@@ -40,6 +44,13 @@
           # in module-mode against that cache. The default `buildGoModule`
           # vendor-mode setup is unusable here because Ent's tool dependency
           # is intentionally not vendored.
+          #
+          # Because proxyVendor mode produces a different fixed-output
+          # goModules derivation than packages.ncps' vendor-mode build, this
+          # check carries its own vendorHash and cannot share the module
+          # cache with the rest of the flake. Override src to the whole repo
+          # because the drift check needs all files for the in-build git
+          # init/diff.
           ent-codegen-drift-check = config.packages.ncps.overrideAttrs (oa: {
             name = "ent-codegen-drift-check";
             src = ../../.;
@@ -82,49 +93,63 @@
           # recomputed checksum. Drift indicates a hand-edit of a tracked
           # migration without regenerating atlas.sum, which would break
           # Atlas's replay validator.
-          atlas-sum-check = config.packages.ncps.overrideAttrs (_oa: {
+          #
+          # The binary itself ships in `packages.ncps-checktools`; this
+          # check just runs it against a narrow src containing only the
+          # migrations tree. No Go toolchain needed at check time.
+          atlas-sum-check = pkgs.stdenvNoCC.mkDerivation {
             name = "atlas-sum-check";
-            src = ../../.;
-            outputs = [ "out" ];
+            src = lib.fileset.toSource {
+              fileset = ../../migrations;
+              root = ../..;
+            };
+            dontUnpack = false;
+            dontConfigure = true;
+            dontBuild = false;
+            nativeBuildInputs = [ config.packages.ncps-checktools ];
             buildPhase = ''
-              HOME=$TMPDIR
-
-              go build -o ./atlas-sum-check ./cmd/atlas-sum-check
-              ./atlas-sum-check --root .
+              runHook preBuild
+              atlas-sum-check --root .
+              runHook postBuild
             '';
             installPhase = ''
+              runHook preInstall
               touch $out
+              runHook postInstall
             '';
-            doCheck = false;
-          });
+          };
 
           # ent-lint-check runs cmd/ent-lint against the Ent schema tree and
-          # fails if any [FAIL] line appears in the output.
-          ent-lint-check = config.packages.ncps.overrideAttrs (_oa: {
+          # fails if any [FAIL] line appears in the output. Same pattern as
+          # atlas-sum-check: pre-built helper from `packages.ncps-checktools`,
+          # narrow src (only the ent schema tree).
+          ent-lint-check = pkgs.stdenvNoCC.mkDerivation {
             name = "ent-lint-check";
-            src = ../../.;
-            outputs = [ "out" ];
+            src = lib.fileset.toSource {
+              fileset = ../../ent;
+              root = ../..;
+            };
+            dontUnpack = false;
+            dontConfigure = true;
+            dontBuild = false;
+            nativeBuildInputs = [ config.packages.ncps-checktools ];
             buildPhase = ''
-              set -o pipefail
-              HOME=$TMPDIR
-
-              # Build the lint binary, then run it against the schema tree.
+              runHook preBuild
               # Capture output so we can both display it and grep for FAIL.
-              # set -o pipefail ensures a non-zero exit from ent-lint fails
-              # the pipeline even though tee always exits 0.
-              go build -o ./ent-lint ./cmd/ent-lint
-              ./ent-lint --root . | tee ent-lint.out
+              ent-lint --root . | tee ent-lint.out
 
               if grep -q '^\[FAIL\]' ent-lint.out; then
                 echo "ent-lint reported invariant violations — see [FAIL] lines above." >&2
                 exit 1
               fi
+              runHook postBuild
             '';
             installPhase = ''
+              runHook preInstall
               touch $out
+              runHook postInstall
             '';
-            doCheck = false;
-          });
+          };
 
           # schema-equivalence-check runs migrations/TestSchemaEquivalence
           # for all three dialects (SQLite, Postgres, MySQL). For Postgres

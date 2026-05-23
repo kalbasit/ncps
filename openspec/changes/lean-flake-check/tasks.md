@@ -7,12 +7,12 @@
 
 ## 2. Phase 2 — Lint/drift helper binaries (D2)
 
-- [ ] 2.1 Add `packages.ncps-checktools` to `nix/packages/` that builds `cmd/ent-lint` and `cmd/atlas-sum-check` once with a single `buildGoModule` invocation, with a narrow `fileset` (only `cmd/ent-lint`, `cmd/atlas-sum-check`, `go.mod`, `go.sum`, and minimal shared internal packages).
-- [ ] 2.2 Rewrite `ent-lint-check` in `nix/checks/flake-module.nix` as `stdenvNoCC.mkDerivation` that runs `${ncps-checktools}/bin/ent-lint --root $src` against the schema tree; remove the `buildGoModule` override.
-- [ ] 2.3 Rewrite `atlas-sum-check` the same way, consuming `${ncps-checktools}/bin/atlas-sum-check`.
-- [ ] 2.4 For `golangci-lint-check` and `ent-codegen-drift-check`, make them `inherit src vendorHash` from `packages.ncps` (or factor a shared `goModulesSrc` value) so they share cache hits instead of producing distinct fixed-output derivations.
-- [ ] 2.5 Re-run the Phase 1 helper and commit `after-checktools-timings.txt`. Confirm `ent-lint-check` and `atlas-sum-check` dropped to near-zero seconds.
-- [ ] 2.6 `nix flake check -L` passes; no regression in what each check enforces.
+- [x] 2.1 Add `packages.ncps-checktools` to `nix/packages/` that builds `cmd/ent-lint` and `cmd/atlas-sum-check` once with a single `buildGoModule` invocation, with a narrow `fileset` (only `cmd/ent-lint`, `cmd/atlas-sum-check`, `go.mod`, `go.sum`, and minimal shared internal packages). Neither helper imports any internal package, so the fileset is exactly those four entries.
+- [x] 2.2 Rewrite `ent-lint-check` in `nix/checks/flake-module.nix` as `stdenvNoCC.mkDerivation` that runs `${ncps-checktools}/bin/ent-lint --root $src` against the schema tree; remove the `buildGoModule` override. Narrowed src to `ent/` only.
+- [x] 2.3 Rewrite `atlas-sum-check` the same way, consuming `${ncps-checktools}/bin/atlas-sum-check`. Narrowed src to `migrations/` only.
+- [x] 2.4 For `golangci-lint-check` and `ent-codegen-drift-check`, make them `inherit src vendorHash` from `packages.ncps` (or factor a shared `goModulesSrc` value) so they share cache hits instead of producing distinct fixed-output derivations. `golangci-lint-check`: dropped `src = ../../.` override; added `.golangci.yml` to `packages.ncps`'s fileset so the linter config is available. `ent-codegen-drift-check`: cannot share — `proxyVendor = true` produces a structurally different goModules derivation than ncps's vendor mode. Added a comment documenting this.
+- [x] 2.5 Re-run the Phase 1 helper and commit `after-checktools-timings.txt`. Confirm `ent-lint-check` and `atlas-sum-check` dropped to near-zero seconds. Confirmed: both went 4–5s → 0s. Substitution-hit noise on `golangci-lint-check` and `ncps-checktools` documented in the file. Baseline notes updated to reflect that the baseline ncps figure (8m22s) under-counted due to the #1247 flake — true ncps cost is ~12m.
+- [x] 2.6 `nix flake check -L` passes; no regression in what each check enforces. All seven non-ncps checks built end-to-end (`atlas-sum-check`, `ent-lint-check`, `ent-codegen-drift-check`, `golangci-lint-check`, `helm-unittest-check`, `ncps-checktools`, `schema-equivalence-check`); `nix flake check --no-build` evaluates cleanly. `ncps` deliberately not re-run end-to-end here because it's unchanged in Phase 2 and known to hit the #1247 flake.
 
 ## 3. Phase 3 — Per-backend integration cohorts (D1)
 

@@ -3,6 +3,7 @@
     ./docker.nix
     ./docker-dev.nix
     ./ncps
+    ./ncps-checktools
   ];
 
   perSystem =

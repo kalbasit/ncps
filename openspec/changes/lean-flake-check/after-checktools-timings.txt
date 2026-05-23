@@ -1,0 +1,70 @@
+# Flake check timings — AFTER PHASE 2 (helper-binary reuse)
+
+Measured at HEAD of `improve-flake-check-time` after Phase 2 patches (new
+`packages.ncps-checktools`; `ent-lint-check` and `atlas-sum-check` rewritten
+as `stdenvNoCC.mkDerivation` consumers; `golangci-lint-check` no longer
+overrides `src`; `.golangci.yml` added to `packages.ncps`'s fileset).
+
+Same methodology as baseline (see `dev-scripts/profile-flake-checks.py`):
+each check's top output is deleted from the local Nix store and timed via
+`nix build .#checks.x86_64-linux.<name> --no-link -L`. Intermediate
+dependencies are kept warm to match CI's post-substitution state.
+
+## Per-derivation wall-clock
+
+| Derivation | After | Baseline | Delta | Backends | Status |
+| --- | ---:| ---:| ---:| --- | --- |
+| `ncps` | 12m20s | 8m22s\* | +3m58s | garage, postgres, mariadb, redis | ok |
+| `schema-equivalence-check` | 1m09s | 1m07s | +2s | postgres, mariadb | ok |
+| `ent-codegen-drift-check` | 15s | 15s | 0 | none | ok |
+| `golangci-lint-check` | 1s† | 1m06s | -1m05s† | none | ok |
+| `ent-lint-check` | 0s | 4s | -4s | none | ok |
+| `atlas-sum-check` | 0s | 5s | -5s | none | ok |
+| `helm-unittest-check` | 0s | 0s | 0 | none | ok |
+| `ncps-checktools` (new) | 0s† | n/a | n/a | none | ok |
+
+Sum: **13m48s** (vs baseline 11m01s, dominated by the ncps full-run).
+
+\* The baseline `ncps` figure under-counts: it crashed at 277s into
+`pkg/cache` on a flaky MariaDB test (#1247), so its "8m22s" is partial
+runtime. This after-checktools run finished `ncps` cleanly. The true
+baseline `ncps` cost is roughly the 12m20s observed here, since Phase 2
+did not change anything inside the `ncps` test invocation; the +3m58s
+"delta" is a measurement artifact, not a regression. Baseline notes
+file has been updated to reflect this.
+
+† Substitution hit, not a real rebuild. The profile script deletes the
+top output and then runs `nix build`, which Nix is free to satisfy by
+substituting from Cachix (ncps's configured substituter) instead of
+rebuilding. `golangci-lint-check` and `ncps-checktools` were both built
+manually during Phase 2 implementation; their results landed in the
+local store and/or Cachix, so the timed re-run was a substitution.
+
+**Honest Phase 2 wins (with substitution noise stripped):**
+
+- `atlas-sum-check`: 5s → 0s. Real win: build phase is just running a
+  pre-built binary; no Go compile. The 0s here is a true measurement
+  (the derivation just shells out to `atlas-sum-check --root .`).
+- `ent-lint-check`: 4s → 0s. Same shape.
+- `golangci-lint-check`: structural win, not wall-clock. On CI cold
+  cache, this derivation now shares the `*-go-modules` fixed-output
+  derivation with `packages.ncps`. If a prior main build has populated
+  Cachix with ncps's goModules, golangci-lint-check substitutes the
+  same path instead of pulling its own module set. The non-shared cost
+  on a truly cold cache is identical to baseline (~1m for the
+  golangci-lint pass itself).
+- `ent-codegen-drift-check`: unchanged. `proxyVendor = true` produces a
+  structurally different goModules derivation from ncps's vendor mode,
+  so it cannot share. Documented in the check definition.
+- `ncps-checktools` (new): one-time ~30s cost on cold cache to compile
+  the two helper binaries (`go build` for `cmd/ent-lint` and
+  `cmd/atlas-sum-check`), then cached. Amortizes across both consuming
+  checks; saves ~9s of duplicated Go compile per check on each fresh
+  rebuild. Not visible above because both consumers ran from cache.
+
+## What's *not* changing in Phase 2
+
+`ncps` and `schema-equivalence-check` are deliberately untouched by this
+phase. Their numbers above are noise around the same measurement;
+significant changes to those derivations are deferred to Phase 4
+(`mkDbBackedCheck` extraction) and Phase 5 (drop `doCheck` from `ncps`).

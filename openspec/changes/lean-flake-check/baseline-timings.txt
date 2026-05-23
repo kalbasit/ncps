@@ -31,10 +31,15 @@ Sum of per-derivation runs: **11m01s**.
 \* `ncps` failed at the end of `pkg/cache` with
 `TestCacheBackends/MySQL#01/PutNarInfoDeadlock` reporting
 `context deadline exceeded` (23.91s). This is a pre-existing flaky
-integration test on main HEAD, not introduced by this change. The
-derivation still ran to completion before the failure, so the wall-clock
-above is the full work the check would have done on a successful run.
-Tracked separately; this measurement is not blocked on it.
+integration test on main HEAD, not introduced by this change. Tracked
+separately at https://github.com/kalbasit/ncps/issues/1247.
+
+**The 8m22s figure under-counts the true cost.** The crash happened
+midway through the test suite (277s into `pkg/cache`), so the build
+did not finish. A clean run in `after-checktools-timings.txt` finished
+`ncps` in 12m20s; that is closer to the real per-derivation wall-clock
+for this check. Future phase deltas against `ncps` should be measured
+relative to ~12m, not 8m22s.
 
 ## Cross-reference: CI bundled-job wall-clock
 
