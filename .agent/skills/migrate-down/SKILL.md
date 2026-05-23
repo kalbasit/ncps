@@ -1,17 +1,51 @@
 ---
-description: Roll back the last database migration
+description: Roll back a migration — DON'T. Use the expand-contract policy.
 ---
 
-# Roll Back Migration
+# There Is No `migrate down`
 
-1. Determine the database engine (`sqlite`, `postgres`, or `mysql`).
+`ncps migrate down` exits non-zero with `ErrDownNotSupported`. The
+migration tree is **forward-only by design** — every `.sql` file under
+`migrations/<dialect>/` is sealed by `atlas.sum`, the runtime only
+applies (`goose.Up`), and no operator-facing rollback is provided.
 
-1. Determine the database URL for the target engine.
+This rules out the entire class of "fix it by reverting" patterns that
+mid-deployment column rewrites depend on. To change schema safely, use
+the **expand-contract policy** instead.
 
-1. Run the `dbmate down` command for the target engine. **WARNING**: This will roll back the last migration.
+## Expand-contract policy
 
-```bash
-dbmate --url "your_db_url_here" down
-```
+Column changes that aren't purely additive — type changes, NOT NULL
+additions, renames — must be split across multiple deploys so old and
+new binaries can coexist against the same schema.
 
-1. If you need to update schema files after rolling back, consider running `./dev-scripts/migrate-all.py` (though note it applies all `up` migrations).
+1. **Add** the new column (nullable) in migration N.
+1. **Backfill** the new column in migration N+1 (use `--sql-only` —
+   `go run ./cmd/generate-migrations --sql-only --name=backfill_x`).
+1. **Switch reads** to the new column in the application code; deploy.
+1. **Drop** the old column in migration N+2.
+
+Each migration ships in its own release; the application gracefully
+handles the dual-column state in between.
+
+## Four-step NOT NULL recipe
+
+The specific case of adding a NOT NULL constraint to an existing
+nullable column:
+
+1. **Migration A**: ADD COLUMN nullable, default-able.
+1. **Migration B** (`--sql-only` stub): BACKFILL existing rows.
+1. **Migration C**: ADD CONSTRAINT NOT NULL (or
+   `ALTER COLUMN ... SET NOT NULL`).
+1. **Deploy each step independently**; never combine into a single
+   migration.
+
+## What if I really really need to undo?
+
+You don't. Migrations are sealed; the only path "backward" is forward —
+a new migration that reverses the intent of the previous one. If the
+schema is genuinely broken, restore from backup; never edit a committed
+migration file or its `atlas.sum`.
+
+See `CLAUDE.md` and `openspec/specs/data-model/spec.md` for the
+rationale and additional context.
