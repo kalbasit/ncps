@@ -89,10 +89,6 @@
       # Excluded on purpose (packages that ARE buildable as
       # `nix build .#<name>` but are not gates):
       #
-      #   ncps-coverage      Exists so `nix build .#ncps.coverage`
-      #                      resolves (CI codecov step). `nix flake
-      #                      check` MUST NOT pay the ~12m coverage run
-      #                      on every PR.
       #   docker, docker-dev Runtime images; CI builds them explicitly
       #                      after flake check, validated downstream.
       #   push-docker-image  CLI wrapper for the CI image push step.
@@ -112,6 +108,17 @@
         # Building here surfaces toolchain regressions before the two
         # tiny stdenvNoCC checks that consume them.
         inherit (config.packages) ncps-checktools;
+
+        # ncps-coverage is included in checks so it runs in parallel with
+        # the cohorts during `nix flake check` instead of as a separate
+        # sequential CI step. The shared CI workflow's `nix build
+        # .#ncps.coverage -L` then becomes a near-instant cache hit, which
+        # cuts the build job wall-clock by the ~12m the coverage build
+        # used to spend serially after flake-check. Local-dev impact:
+        # running `nix flake check` directly now pays the coverage cost
+        # too, but in practice devs invoke specific cohort derivations
+        # for iteration rather than the whole flake-check.
+        inherit (config.packages) ncps-coverage;
 
         # Per-backend Go test cohorts (see mkCohort above). Each runs
         # `go test -race ./...` with only its backend up; test bodies
