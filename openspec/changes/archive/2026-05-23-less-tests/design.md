@@ -113,7 +113,7 @@ Compare against `cover-before.out` recorded at the start. Requirements:
   → Mitigation: D4 requires keeping one wiring smoke test per backend. Backend-specific semantics (upsert, multipart) stay as integration tests.
 
 - **Risk: the profiler analyzer itself becomes a maintenance burden.**
-  → Mitigation: Keep it as a shell pipeline in `dev-scripts/`, not a new Go program. Delete it (or move to `dev-scripts/profile-tests.sh`) once the change is archived. Document in the spec.
+  → Mitigation: Keep it as a Python script in `dev-scripts/`, not a new Go program. Delete it (or keep as `dev-scripts/profile-tests.py`) once the change is archived. Document in the spec.
 
 - **Trade-off: per-batch coverage gating slows the work down.**
   → Accepted. The cost of one careless deletion is far higher than a few extra `go test -cover` runs.

@@ -139,7 +139,7 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 - [x] 13.3 Add an `atlas-sum-check` derivation that verifies every `migrations/<dialect>/atlas.sum` matches the directory contents
 - [x] 13.4 Add a `schema-equivalence-check` derivation that runs the §8 golden test for all three engines (uses process-compose deps)
 - [x] 13.5 Verify `nix flake check` passes end-to-end with all four new derivations contributing
-- [x] 13.6 Confirm the existing `.github/workflows/ci.yml` still passes (no edits expected — the new checks plug into `nix flake check`)
+- [x] 13.6 Confirm `.github/workflows/ci.yml` still passes after adding the `generate-database` and `deploy-docs-pages` jobs
 
 ## 14. Docs and skills
 
