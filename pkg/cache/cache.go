@@ -2385,13 +2385,13 @@ func (c *Cache) relinkNarInfosToNarFileWithEntTx(
 
 	// Chunk the CreateBulk to stay below driver placeholder limits.
 	// Each row sends 2 parameters (narinfo_id, nar_file_id); 500 rows
-	// per batch = 1000 placeholders, well under Postgres 65535,
-	// modern SQLite 32766, and older SQLite 999. Closures with
-	// thousands of narinfos sharing a NAR URL (large multi-output
-	// derivations, deep dependency trees) are uncommon but real, and
-	// without chunking the bulk insert would silently fail on
-	// older sqlite.
-	const relinkBatchSize = 500
+	// The upsert binds 2 values per row (narinfoID + narFileID), so
+	// 499 rows = 998 placeholders — safely under older SQLite's hard
+	// limit of 999. Closures with thousands of narinfos sharing a
+	// NAR URL (large multi-output derivations, deep dependency trees)
+	// are uncommon but real; without chunking the bulk insert would
+	// silently fail on older SQLite.
+	const relinkBatchSize = 499
 
 	for start := 0; start < len(narInfoIDs); start += relinkBatchSize {
 		end := start + relinkBatchSize
