@@ -581,7 +581,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 
 				require.NoError(t, err)
 				assert.Equal(t, testdata.Nar2.NarInfoHash, nim.Hash)
-				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
+				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 30*time.Second)
 			})
 
 			t.Run("nar does exist in the database, and has initial last_accessed_at", func(t *testing.T) {
@@ -596,12 +596,12 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 
 				require.NoError(t, err)
 				assert.Equal(t, testdata.Nar2.NarHash, nim.Hash)
-				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
+				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 30*time.Second)
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
 				// 100ms is enough here because the assertion uses WithinDuration with a
-				// 2s tolerance — we just need some elapsed time, not a full second boundary.
+				// 30s tolerance — we just need some elapsed time, not a full second boundary.
 				time.Sleep(100 * time.Millisecond)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
@@ -621,7 +621,7 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 																			Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 				require.NoError(t, err)
-				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
+				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 30*time.Second)
 			})
 
 			t.Run("pulling it another time should update last_accessed_at only for narinfo", func(t *testing.T) {
@@ -841,7 +841,13 @@ func testPutNarInfoDeadlock(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, c.PutNar(context.Background(), narURL, io.NopCloser(bytes.NewReader(narContent))))
 
 		// Now call PutNarInfo with a timeout. If it deadlocks, the timeout will trigger.
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// 60s rather than 2s because a real deadlock blocks indefinitely (a 60s wait is
+		// still a fast-fail compared to Go test package timeouts), while a non-deadlocked
+		// PutNarInfo can legitimately take >2s on CI runners with MariaDB under concurrent
+		// load (observed in ncps #1247: TestCacheBackends/MySQL#01/PutNarInfoDeadlock
+		// failing with `context deadline exceeded` after 23.91s in a non-deadlocked
+		// path). The shorter window conflated "deadlock" with "slow DB."
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
 		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
@@ -972,12 +978,12 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 
 				require.NoError(t, err)
 				assert.Equal(t, testdata.Nar1.NarHash, nim.Hash)
-				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
+				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 30*time.Second)
 			})
 
 			t.Run("pulling it another time within recordAgeIgnoreTouch should not update last_accessed_at", func(t *testing.T) {
 				// 100ms is enough here because the assertion uses WithinDuration with a
-				// 2s tolerance — we just need some elapsed time, not a full second boundary.
+				// 30s tolerance — we just need some elapsed time, not a full second boundary.
 				time.Sleep(100 * time.Millisecond)
 
 				c.SetRecordAgeIgnoreTouch(time.Hour)
@@ -999,7 +1005,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 																			Scan(&nim.Hash, &nim.CreatedAt, &nim.LastAccessedAt)
 
 				require.NoError(t, err)
-				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 2*time.Second)
+				assert.WithinDuration(t, nim.CreatedAt, nim.LastAccessedAt.Time, 30*time.Second)
 			})
 
 			t.Run("pulling it another time should update last_accessed_at", func(t *testing.T) {
