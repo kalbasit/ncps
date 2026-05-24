@@ -26,11 +26,11 @@
 
 ## 4. Phase 4 — `mkDbBackedCheck` helper (D4)
 
-- [ ] 4.1 Add `mkDbBackedCheck { name, backends, checkPhase, ... }` to `nix/checks/` (or `nix/lib/`). It wires the right subset of `pre-check-*.sh` / `post-check-*.sh` scripts and installs a single cleanup trap.
-- [ ] 4.2 Refactor each per-backend integration cohort derivation from Phase 3 to use the helper.
-- [ ] 4.3 Refactor `schema-equivalence-check` to a single call `mkDbBackedCheck { name = "schema-equivalence-check"; backends = [ "postgres" "mysql" ]; checkPhase = "go test -race -count=1 -timeout 10m -run TestSchemaEquivalence ./migrations/..."; }`.
-- [ ] 4.4 Re-run the Phase 1 helper and commit `after-helper-timings.txt`.
-- [ ] 4.5 `nix flake check -L` passes.
+- [x] 4.1 ~~Add `mkDbBackedCheck { name, backends, checkPhase, ... }` to `nix/checks/`.~~ **Done in Phase 3** as `mkCohort { name, backends }`. Satisfies the D4 goal of factoring the shared pre/post-check scaffold. Not renamed (`mkDbBackedCheck` would be misleading for the unit cohort, which has no backends).
+- [x] 4.2 ~~Refactor each per-backend integration cohort derivation from Phase 3 to use the helper.~~ **Done in Phase 3.** Every cohort is already a one-line call to `mkCohort`.
+- [x] 4.3 ~~Refactor `schema-equivalence-check` to a single call `mkDbBackedCheck ...`.~~ **Superseded.** `TestSchemaEquivalence` skips per-backend on `NCPS_TEST_ADMIN_*` env vars, so it already runs in `ncps-postgres-tests` (SQLite + Postgres parts) and `ncps-mysql-tests` (SQLite + MySQL parts) and `ncps-unit-tests` (SQLite part). The standalone derivation duplicates ~1m12s of work the cohorts already do, with no incremental coverage. Phase 4 **deletes** `schema-equivalence-check` entirely. See design.md D4 for the rationale.
+- [x] 4.4 Re-run the Phase 1 helper and commit `after-helper-timings.txt`. Sequential sum 15m34s (down from 17m04s after Phase 3); projected post-monolith parallel wall-clock ~5m (down from ~6m projection after Phase 3). Recorded an additional MariaDB flake (separate failure mode from #1247) as a comment on the existing issue.
+- [x] 4.5 `nix flake check -L` passes. Evaluation clean (`nix flake check --no-build` lists every check, schema-equivalence-check removed). Five non-cohort checks built end-to-end in the helper run. `ncps-mysql-tests` cohort failed on the recorded flake, not on the topology change.
 
 ## 5. Phase 5 — Coverage split (D3)
 

@@ -169,27 +169,41 @@ distinct quality property.
 ### Requirement: Shared helper for database-backed checks
 
 Spinning up backend services (Postgres, MySQL, Redis, Garage) for a
-check SHALL go through a single Nix helper `mkDbBackedCheck`
-(or equivalent) that takes the list of required backends and wires
-the appropriate `pre-check-*.sh` / `post-check-*.sh` scripts plus a
-cleanup trap. Hand-rolled `preCheck` blocks that source the per-backend
-helper scripts directly MUST NOT proliferate across check derivations.
+check SHALL go through a single Nix helper (`mkCohort`, or an
+equivalent successor) that takes the list of required backends and
+wires the appropriate `pre-check-*.sh` / `post-check-*.sh` scripts
+plus a cleanup trap. Hand-rolled `preCheck` blocks that source the
+per-backend helper scripts directly MUST NOT proliferate across check
+derivations.
 
-#### Scenario: schema-equivalence-check uses the helper
+#### Scenario: Cohort derivations use the helper
 
-- **WHEN** a maintainer reads the definition of
-  `schema-equivalence-check`
-- **THEN** the derivation is a single call to `mkDbBackedCheck`
-  with `backends = [ "postgres" "mysql" ]`
-- **AND** the derivation does not directly source `pre-check-postgres.sh`
-  or `pre-check-mysql.sh`
+- **WHEN** a maintainer reads the definitions of `ncps-postgres-tests`,
+  `ncps-mysql-tests`, `ncps-redis-tests`, `ncps-s3-tests`,
+  `ncps-unit-tests`
+- **THEN** each is a single call to `mkCohort` with its `backends`
+  list
+- **AND** no derivation directly sources `pre-check-postgres.sh`,
+  `pre-check-mysql.sh`, `pre-check-redis.sh`, or `pre-check-garage.sh`
 
 #### Scenario: Adding a new backend-cohort check
 
 - **WHEN** a new check that needs PostgreSQL is added
-- **THEN** the check is defined as a call to `mkDbBackedCheck`
-  with `backends = [ "postgres" ]`
+- **THEN** the check is defined as a call to `mkCohort` (or its
+  successor) with `backends = [ "postgres" ]`
 - **AND** no new copy of the Postgres preCheck wiring is introduced
+
+#### Scenario: No standalone derivation duplicates cohort work
+
+- **WHEN** a test gates its body on an `NCPS_TEST_*` env var
+- **THEN** that test runs as part of the matching cohort
+  (`ncps-<backend>-tests`)
+- **AND** no separate check derivation is added that starts the same
+  backend just to run that test — the cohort already covers it
+  (see the Phase 4 removal of the standalone `schema-equivalence-check`
+  for the precedent: `TestSchemaEquivalence`'s Postgres/MySQL paths
+  are now covered by `ncps-postgres-tests` and `ncps-mysql-tests`
+  respectively, and its SQLite path runs in every cohort)
 
 ### Requirement: Quality invariants preserved across the topology change
 

@@ -173,19 +173,47 @@ merges the per-cohort `cover.out` files into a single `coverage.txt`.
 It is **not** in the `checks` set — `nix flake check` doesn't pay for
 coverage instrumentation.
 
-### D4. Extract a `mkDbBackedCheck` helper; de-duplicate `pre-check-*.sh` invocations
+### D4. `mkCohort` helper; delete redundant `schema-equivalence-check`
 
-`schema-equivalence-check` and the new per-backend integration
-derivations share the same Postgres/MySQL/Redis/Garage spin-up scripts
-under `nix/packages/ncps/`. Factor a Nix helper:
+The Phase 3 work already introduced `mkCohort { name, backends }` in
+`nix/checks/flake-module.nix`. It wires the right
+`pre-check-*.sh` / `post-check-*.sh` pair into `preCheck` and
+registers a single cleanup trap, satisfying the D4 goal of factoring
+the shared scaffold.
 
-```nix
-mkDbBackedCheck { name, backends, checkPhase }
-```
+The original D4 plan went further: refactor `schema-equivalence-check`
+to also call the helper. Phase 4 implementation found something
+better. `TestSchemaEquivalence` (in `migrations/equivalence_test.go`)
+already iterates dialects (SQLite + Postgres + MySQL) with `t.Skip`
+on the matching `NCPS_TEST_ADMIN_*` env var, exactly like the rest
+of the integration tests. After Phase 3, that test now runs
+automatically inside:
 
-that wires the right `pre-check-*.sh` / `post-check-*.sh` pair into
-`preCheck` and registers a single cleanup trap. `schema-equivalence-check`
-becomes a one-line call to it.
+- `ncps-unit-tests` — SQLite path only
+- `ncps-postgres-tests` — SQLite + Postgres paths
+- `ncps-mysql-tests` — SQLite + MySQL paths
+
+…via the same `go test ./...` invocation. The standalone
+`schema-equivalence-check` derivation therefore duplicates work the
+cohorts already do (~1m12s of Postgres + MariaDB spin-up plus the
+test itself), with no incremental coverage. Phase 4 deletes it
+rather than refactoring it.
+
+This is a strict improvement over the original D4 plan: fewer
+derivations, less duplicate runtime, no helper rename required, and
+the spec's "shared helper" requirement is satisfied by the existing
+`mkCohort` rather than a separate `mkDbBackedCheck`.
+
+**Alternatives considered:**
+
+- *Generalize `mkCohort` to accept a custom `checkPhase` and keep
+  `schema-equivalence-check` as a thin caller.* Adds API surface to
+  the helper for a single consumer that itself is redundant.
+  Rejected.
+- *Rename `mkCohort` → `mkDbBackedCheck` for naming consistency with
+  the original design.* `mkDbBackedCheck` is misleading because the
+  unit cohort has no backends. Cohort-shaped name fits the actual
+  use; the rename is cosmetic and not worth the churn.
 
 ### D5. Replace `checks = self'.packages // self'.devShells // {...}` with an explicit list
 

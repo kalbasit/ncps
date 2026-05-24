@@ -60,7 +60,6 @@ BACKEND_MAP: dict[str, list[str]] = {
     "ncps-redis-tests": ["redis"],
     "ncps-s3-tests": ["garage"],
     "ncps-unit-tests": [],
-    "schema-equivalence-check": ["postgres", "mariadb"],
 }
 
 
