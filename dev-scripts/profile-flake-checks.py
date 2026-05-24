@@ -2,12 +2,22 @@
 """
 Profile per-derivation wall-clock for entries in the flake's `checks` attrset.
 
-For each selected check, runs `nix build .#checks.<system>.<name> -L --rebuild`
-and records elapsed wall time. The `--rebuild` flag forces re-execution even if
-the derivation is already in the local store, so the timings reflect the cost
-of actually building / running the check — which is what
-`nix flake check` pays on a CI cold cache (modulo cache-pull time, which is
-hardware-bound and not affected by topology changes).
+For each selected check, deletes the top-level output path from the local Nix
+store (when present) and then runs `nix build .#checks.<system>.<name> -L
+--no-link`, recording elapsed wall time. Intermediate dependency derivations
+(`*-go-modules`, etc.) are left cached, so the timings reflect per-check
+build/test work as CI sees it after Cachix has substituted dependencies.
+
+`--rebuild` is deliberately NOT used: it requires the output to already exist
+(it's "rebuild and assert determinism", not "force fresh build") and errors on
+uncached derivations. The delete-then-build pattern is robust to either state.
+
+Known measurement noise: if the top-level output is available on a remote
+substituter (Cachix), `nix build` may satisfy the request by substitution
+instead of rebuilding, returning near-0s instead of the real check cost.
+Suppressing substitution wholesale (`--option substitute false`) would block
+dependency substitution too, over-counting cost. The dev-loop trade-off is
+to accept the occasional substitution hit and flag it in the timings file.
 
 Outputs a markdown-style ranked table to stdout and, if `--out` is given, also
 writes it to that file. Failing derivations are reported but do not abort the
@@ -89,6 +99,12 @@ def delete_top_output(system: str, name: str) -> None:
     Leaves intermediate dependencies (e.g. *-go-modules) in the store, so the
     timed build measures the same work CI's cold cache does after Cachix has
     substituted the deps.
+
+    `nix store delete` can fail (missing path, GC root, permission denied on
+    multi-user installs where only trusted users can delete). A failure here
+    typically means the subsequent `nix build` will be a cache hit and report
+    near-0s; surface the stderr so the user notices instead of silently
+    accepting misleading timings.
     """
     attr = f".#checks.{system}.{name}"
     proc = subprocess.run(
@@ -99,11 +115,17 @@ def delete_top_output(system: str, name: str) -> None:
     if proc.returncode != 0 or not proc.stdout.startswith("/nix/store/"):
         return
     out_path = proc.stdout.strip()
-    subprocess.run(
+    res = subprocess.run(
         ["nix", "store", "delete", "--ignore-liveness", out_path],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
     )
+    if res.returncode != 0:
+        print(
+            f"warning: could not delete {out_path}: {res.stderr.strip()}; "
+            "the next build may be served from cache and report near-0s",
+            file=sys.stderr,
+        )
 
 
 def build_one(system: str, name: str) -> tuple[float, bool]:
