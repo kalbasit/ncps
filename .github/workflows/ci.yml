@@ -47,8 +47,8 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       ent: ${{ steps.filter.outputs.ent }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
         id: filter
         with:
           filters: |
@@ -66,13 +66,13 @@ jobs:
     if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.ent == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{ secrets.GHA_PAT_TOKEN }}
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-      - uses: cachix/install-nix-action@v31
-      - uses: cachix/cachix-action@v17
+      - uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
+      - uses: cachix/cachix-action@02b16339eddcf6ea27126a830c7f1992855cae13 # v17
         with:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -91,9 +91,9 @@ jobs:
     if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)) && needs.filter.outputs.docs == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: cachix/install-nix-action@v31
-      - uses: cachix/cachix-action@v17
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
+      - uses: cachix/cachix-action@02b16339eddcf6ea27126a830c7f1992855cae13 # v17
         with:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -101,14 +101,14 @@ jobs:
         run: nix develop --command bash -c trilium-build-docs
       - name: Deploy docs
         id: deploy-docs-pages
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
         with:
           apiToken: ${{ secrets.CF_NCPS_DEV_EDIT_WORKERS_TOKEN }}
           accountId: ${{ secrets.CF_NCPS_DEV_ACCOUNT_ID }}
           command: pages deploy public/docs --project-name=ncps-docs --commit-dirty=true
       - name: Post Pages Deployment URL on the Pull Request
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             github.rest.issues.createComment({
