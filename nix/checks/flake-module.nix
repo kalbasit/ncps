@@ -1,7 +1,6 @@
 {
   perSystem =
     {
-      self',
       lib,
       pkgs,
       config,
@@ -83,201 +82,217 @@
         });
     in
     {
-      checks =
-        # ncps-coverage is intentionally NOT a check. It exists as a
-        # package so `nix build .#ncps.coverage` keeps working for the
-        # shared CI workflow's codecov upload, but `nix flake check` MUST
-        # NOT pay for the ~12m of coverage instrumentation on every PR.
-        # Per-backend cohort derivations below already cover the
-        # functional checks. Phase 6 will replace this whole
-        # `self'.packages // self'.devShells //` block with an explicit
-        # enumeration; for now this targeted filter avoids a transient
-        # regression between Phases 5 and 6.
-        lib.filterAttrs (n: _: n != "ncps-coverage") self'.packages
-        // self'.devShells
-        // {
-          # golangci-lint-check inherits src and vendorHash from packages.ncps
-          # via overrideAttrs, so it shares the fixed-output goModules
-          # derivation with the main package — the Go module cache is
-          # populated once and re-used across both builds. .golangci.yml is
-          # carried in packages.ncps' fileset so the linter finds its
-          # configuration without needing the full repo as src.
-          golangci-lint-check = config.packages.ncps.overrideAttrs (oa: {
-            name = "golangci-lint-check";
-            # ensure the output is only out since it's the only thing this package does.
-            outputs = [ "out" ];
-            nativeBuildInputs = oa.nativeBuildInputs ++ [ pkgs.golangci-lint ];
-            buildPhase = ''
-              HOME=$TMPDIR
-              golangci-lint run --timeout 10m
-            '';
-            installPhase = ''
-              touch $out
-            '';
-            doCheck = false;
-          });
+      # `checks` is an explicit enumeration of quality-gate derivations
+      # — see the `flake-check-topology` spec, "The `checks` attrset is
+      # an explicit enumeration" requirement.
+      #
+      # Excluded on purpose (packages that ARE buildable as
+      # `nix build .#<name>` but are not gates):
+      #
+      #   ncps-coverage      Exists so `nix build .#ncps.coverage`
+      #                      resolves (CI codecov step). `nix flake
+      #                      check` MUST NOT pay the ~12m coverage run
+      #                      on every PR.
+      #   docker, docker-dev Runtime images; CI builds them explicitly
+      #                      after flake check, validated downstream.
+      #   push-docker-image  CLI wrapper for the CI image push step.
+      #   deps               Process-compose dev dependencies, for
+      #                      `nix run .#deps`.
+      #   k8s-tests          CLI tool for local Kind testing.
+      #   update-cu-base     CLI tool for the container-use base image.
+      #   treefmt            Formatter devShell; `nix fmt` exercises it.
+      #   default            Alias of packages.ncps, listed below as `ncps`.
+      checks = {
+        # Binary build (no tests). Proves the source tree compiles and
+        # the vendor hash is current. Cheap (~1m). Sits at the top of
+        # every other Go-using check's dependency graph.
+        inherit (config.packages) ncps;
 
-          # ent-codegen-drift-check verifies that the committed Ent codegen
-          # output under ./ent matches what `go generate ./ent/...` would
-          # produce from the current ent/schema/*.go files. Fails the build
-          # if any file under ./ent differs after regeneration.
-          #
-          # The drift check uses `proxyVendor = true` so the Go module proxy
-          # cache is populated with *all* module dependencies (including the
-          # `tool` directive's `entgo.io/ent/cmd/ent`), then runs `go generate`
-          # in module-mode against that cache. The default `buildGoModule`
-          # vendor-mode setup is unusable here because Ent's tool dependency
-          # is intentionally not vendored.
-          #
-          # Because proxyVendor mode produces a different fixed-output
-          # goModules derivation than packages.ncps' vendor-mode build, this
-          # check carries its own vendorHash and cannot share the module
-          # cache with the rest of the flake. Override src to the whole repo
-          # because the drift check needs all files for the in-build git
-          # init/diff.
-          ent-codegen-drift-check = config.packages.ncps.overrideAttrs (oa: {
-            name = "ent-codegen-drift-check";
-            src = ../../.;
-            outputs = [ "out" ];
-            proxyVendor = true;
-            vendorHash = "sha256-WPNzzt2cFj6nwpw1VymzsTkGx19ybyrl5RRGP5s7wj4=";
-            nativeBuildInputs = oa.nativeBuildInputs ++ [ pkgs.git ];
-            buildPhase = ''
-              HOME=$TMPDIR
+        # ent-lint + atlas-sum-check helper binaries compile cleanly.
+        # Building here surfaces toolchain regressions before the two
+        # tiny stdenvNoCC checks that consume them.
+        inherit (config.packages) ncps-checktools;
 
-              # Materialize the source tree into a writable copy and turn it
-              # into a git repository so `git diff --exit-code` has something
-              # to compare against. buildGoModule's $src is read-only.
-              cp -r $src ./repo
-              chmod -R u+w ./repo
-              cd ./repo
-
-              git init --quiet
-              git add -A
-              git -c user.email=ci@example.invalid -c user.name=ci \
-                commit --quiet -m baseline
-
-              # Regenerate Ent code using the proxy module cache populated by
-              # buildGoModule (GOPROXY/GOFLAGS are set by the wrapper).
-              go generate ./ent/...
-
-              if ! git diff --exit-code ./ent/; then
-                echo "ent/ codegen is out of date — run 'go generate ./ent/...' and commit the result." >&2
-                exit 1
-              fi
-            '';
-            installPhase = ''
-              touch $out
-            '';
-            doCheck = false;
-          });
-
-          # atlas-sum-check verifies that the atlas.sum file in each
-          # migrations/<dialect>/ directory matches the directory's
-          # recomputed checksum. Drift indicates a hand-edit of a tracked
-          # migration without regenerating atlas.sum, which would break
-          # Atlas's replay validator.
-          #
-          # The binary itself ships in `packages.ncps-checktools`; this
-          # check just runs it against a narrow src containing only the
-          # migrations tree. No Go toolchain needed at check time.
-          atlas-sum-check = pkgs.stdenvNoCC.mkDerivation {
-            name = "atlas-sum-check";
-            src = lib.fileset.toSource {
-              fileset = ../../migrations;
-              root = ../..;
-            };
-            dontUnpack = false;
-            dontConfigure = true;
-            dontBuild = false;
-            nativeBuildInputs = [ config.packages.ncps-checktools ];
-            buildPhase = ''
-              runHook preBuild
-              atlas-sum-check --root .
-              runHook postBuild
-            '';
-            installPhase = ''
-              runHook preInstall
-              touch $out
-              runHook postInstall
-            '';
-          };
-
-          # ent-lint-check runs cmd/ent-lint against the Ent schema tree and
-          # fails if any [FAIL] line appears in the output. Same pattern as
-          # atlas-sum-check: pre-built helper from `packages.ncps-checktools`,
-          # narrow src (only the ent schema tree).
-          ent-lint-check = pkgs.stdenvNoCC.mkDerivation {
-            name = "ent-lint-check";
-            src = lib.fileset.toSource {
-              fileset = ../../ent;
-              root = ../..;
-            };
-            dontUnpack = false;
-            dontConfigure = true;
-            dontBuild = false;
-            nativeBuildInputs = [ config.packages.ncps-checktools ];
-            buildPhase = ''
-              runHook preBuild
-              # Capture output so we can both display it and grep for FAIL.
-              ent-lint --root . | tee ent-lint.out
-
-              if grep -q '^\[FAIL\]' ent-lint.out; then
-                echo "ent-lint reported invariant violations — see [FAIL] lines above." >&2
-                exit 1
-              fi
-              runHook postBuild
-            '';
-            installPhase = ''
-              runHook preInstall
-              touch $out
-              runHook postInstall
-            '';
-          };
-
-          # Backend-cohort test derivations. See `mkCohort` above for the
-          # selection mechanism. Phase 3 of openspec/changes/lean-flake-check.
-          # The monolithic `packages.ncps` derivation still runs the full
-          # test suite via `// self'.packages` until Phase 5 drops its
-          # `doCheck = true`; for now the cohorts run alongside as additive
-          # coverage, so a flake-level wall-clock improvement only materializes
-          # once the monolith is removed.
-          ncps-unit-tests = mkCohort {
-            name = "ncps-unit-tests";
-            backends = [ ];
-          };
-          ncps-s3-tests = mkCohort {
-            name = "ncps-s3-tests";
-            backends = [ "garage" ];
-          };
-          ncps-postgres-tests = mkCohort {
-            name = "ncps-postgres-tests";
-            backends = [ "postgres" ];
-          };
-          ncps-mysql-tests = mkCohort {
-            name = "ncps-mysql-tests";
-            backends = [ "mysql" ];
-          };
-          ncps-redis-tests = mkCohort {
-            name = "ncps-redis-tests";
-            backends = [ "redis" ];
-          };
-
-          helm-unittest-check = pkgs.stdenvNoCC.mkDerivation {
-            name = "ncps-helm-unittest";
-            src = ../../charts/ncps;
-            nativeBuildInputs = [
-              (pkgs.wrapHelm pkgs.kubernetes-helm {
-                plugins = [ pkgs.kubernetes-helmPlugins.helm-unittest ];
-              })
-            ];
-            buildPhase = ''
-              helm unittest .
-            '';
-            installPhase = ''
-              touch $out
-            '';
-          };
+        # Per-backend Go test cohorts (see mkCohort above). Each runs
+        # `go test -race ./...` with only its backend up; test bodies
+        # gate per-backend subtests on NCPS_TEST_* env vars via
+        # `t.Skip`.
+        ncps-unit-tests = mkCohort {
+          name = "ncps-unit-tests";
+          backends = [ ];
         };
+        ncps-s3-tests = mkCohort {
+          name = "ncps-s3-tests";
+          backends = [ "garage" ];
+        };
+        ncps-postgres-tests = mkCohort {
+          name = "ncps-postgres-tests";
+          backends = [ "postgres" ];
+        };
+        ncps-mysql-tests = mkCohort {
+          name = "ncps-mysql-tests";
+          backends = [ "mysql" ];
+        };
+        ncps-redis-tests = mkCohort {
+          name = "ncps-redis-tests";
+          backends = [ "redis" ];
+        };
+
+        # golangci-lint-check inherits src and vendorHash from packages.ncps
+        # via overrideAttrs, so it shares the fixed-output goModules
+        # derivation with the main package — the Go module cache is
+        # populated once and re-used across both builds. .golangci.yml is
+        # carried in packages.ncps' fileset so the linter finds its
+        # configuration without needing the full repo as src.
+        golangci-lint-check = config.packages.ncps.overrideAttrs (oa: {
+          name = "golangci-lint-check";
+          # ensure the output is only out since it's the only thing this package does.
+          outputs = [ "out" ];
+          nativeBuildInputs = oa.nativeBuildInputs ++ [ pkgs.golangci-lint ];
+          buildPhase = ''
+            HOME=$TMPDIR
+            golangci-lint run --timeout 10m
+          '';
+          installPhase = ''
+            touch $out
+          '';
+          doCheck = false;
+        });
+
+        # ent-codegen-drift-check verifies that the committed Ent codegen
+        # output under ./ent matches what `go generate ./ent/...` would
+        # produce from the current ent/schema/*.go files. Fails the build
+        # if any file under ./ent differs after regeneration.
+        #
+        # The drift check uses `proxyVendor = true` so the Go module proxy
+        # cache is populated with *all* module dependencies (including the
+        # `tool` directive's `entgo.io/ent/cmd/ent`), then runs `go generate`
+        # in module-mode against that cache. The default `buildGoModule`
+        # vendor-mode setup is unusable here because Ent's tool dependency
+        # is intentionally not vendored.
+        #
+        # Because proxyVendor mode produces a different fixed-output
+        # goModules derivation than packages.ncps' vendor-mode build, this
+        # check carries its own vendorHash and cannot share the module
+        # cache with the rest of the flake. Override src to the whole repo
+        # because the drift check needs all files for the in-build git
+        # init/diff.
+        ent-codegen-drift-check = config.packages.ncps.overrideAttrs (oa: {
+          name = "ent-codegen-drift-check";
+          src = ../../.;
+          outputs = [ "out" ];
+          proxyVendor = true;
+          vendorHash = "sha256-WPNzzt2cFj6nwpw1VymzsTkGx19ybyrl5RRGP5s7wj4=";
+          nativeBuildInputs = oa.nativeBuildInputs ++ [ pkgs.git ];
+          buildPhase = ''
+            HOME=$TMPDIR
+
+            # Materialize the source tree into a writable copy and turn it
+            # into a git repository so `git diff --exit-code` has something
+            # to compare against. buildGoModule's $src is read-only.
+            cp -r $src ./repo
+            chmod -R u+w ./repo
+            cd ./repo
+
+            git init --quiet
+            git add -A
+            git -c user.email=ci@example.invalid -c user.name=ci \
+              commit --quiet -m baseline
+
+            # Regenerate Ent code using the proxy module cache populated by
+            # buildGoModule (GOPROXY/GOFLAGS are set by the wrapper).
+            go generate ./ent/...
+
+            if ! git diff --exit-code ./ent/; then
+              echo "ent/ codegen is out of date — run 'go generate ./ent/...' and commit the result." >&2
+              exit 1
+            fi
+          '';
+          installPhase = ''
+            touch $out
+          '';
+          doCheck = false;
+        });
+
+        # atlas-sum-check verifies that the atlas.sum file in each
+        # migrations/<dialect>/ directory matches the directory's
+        # recomputed checksum. Drift indicates a hand-edit of a tracked
+        # migration without regenerating atlas.sum, which would break
+        # Atlas's replay validator.
+        #
+        # The binary itself ships in `packages.ncps-checktools`; this
+        # check just runs it against a narrow src containing only the
+        # migrations tree. No Go toolchain needed at check time.
+        atlas-sum-check = pkgs.stdenvNoCC.mkDerivation {
+          name = "atlas-sum-check";
+          src = lib.fileset.toSource {
+            fileset = ../../migrations;
+            root = ../..;
+          };
+          dontUnpack = false;
+          dontConfigure = true;
+          dontBuild = false;
+          nativeBuildInputs = [ config.packages.ncps-checktools ];
+          buildPhase = ''
+            runHook preBuild
+            atlas-sum-check --root .
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            touch $out
+            runHook postInstall
+          '';
+        };
+
+        # ent-lint-check runs cmd/ent-lint against the Ent schema tree and
+        # fails if any [FAIL] line appears in the output. Same pattern as
+        # atlas-sum-check: pre-built helper from `packages.ncps-checktools`,
+        # narrow src (only the ent schema tree).
+        ent-lint-check = pkgs.stdenvNoCC.mkDerivation {
+          name = "ent-lint-check";
+          src = lib.fileset.toSource {
+            fileset = ../../ent;
+            root = ../..;
+          };
+          dontUnpack = false;
+          dontConfigure = true;
+          dontBuild = false;
+          nativeBuildInputs = [ config.packages.ncps-checktools ];
+          buildPhase = ''
+            runHook preBuild
+            # Capture output so we can both display it and grep for FAIL.
+            ent-lint --root . | tee ent-lint.out
+
+            if grep -q '^\[FAIL\]' ent-lint.out; then
+              echo "ent-lint reported invariant violations — see [FAIL] lines above." >&2
+              exit 1
+            fi
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            touch $out
+            runHook postInstall
+          '';
+        };
+
+        # Helm chart unit tests via helm-unittest.
+        helm-unittest-check = pkgs.stdenvNoCC.mkDerivation {
+          name = "ncps-helm-unittest";
+          src = ../../charts/ncps;
+          nativeBuildInputs = [
+            (pkgs.wrapHelm pkgs.kubernetes-helm {
+              plugins = [ pkgs.kubernetes-helmPlugins.helm-unittest ];
+            })
+          ];
+          buildPhase = ''
+            helm unittest .
+          '';
+          installPhase = ''
+            touch $out
+          '';
+        };
+      };
     };
 }

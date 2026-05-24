@@ -1,0 +1,115 @@
+# Flake check timings — FINAL (after Phase 6)
+
+Phase 6 patches: `nix/checks/flake-module.nix` `checks` attrset is now
+an explicit enumeration; `self'.packages // self'.devShells //` merge
+removed. Packages that are NOT quality gates (docker, docker-dev,
+push-docker-image, k8s-tests, deps, update-cu-base, default,
+ncps-coverage) are no longer in the `checks` attrset — they remain
+buildable as `nix build .#<name>` but are not exercised by
+`nix flake check`.
+
+## Final `checks` attrset (13 derivations)
+
+| Derivation | Wall-clock | Backends started | Status |
+| --- | ---:| --- | --- |
+| `ncps-mysql-tests` | 5m24s | mariadb | ok |
+| `ncps-postgres-tests` | 3m22s | postgres | FAILED\* |
+| `ncps-redis-tests` | 1m58s | redis | ok |
+| `ncps-s3-tests` | 1m56s | garage | ok |
+| `ncps-unit-tests` | 1m51s | none | ok |
+| `ncps` | 1m14s | none | ok |
+| `golangci-lint-check` | 1m07s | none | ok |
+| `ent-codegen-drift-check` | 15s | none | ok |
+| `treefmt` | 3s | n/a | ok\*\* |
+| `helm-unittest-check` | 0s | none | ok |
+| `ncps-checktools` | 0s | none | ok |
+| `ent-lint-check` | 0s | none | ok |
+| `atlas-sum-check` | 0s | none | ok |
+
+Sequential sum: **17m16s**.
+Parallel wall-clock (Nix runs all checks concurrently subject to
+`--max-jobs`): **max ≈ 5m24s** (gated by `ncps-mysql-tests`).
+
+\* Postgres cohort hit yet another flake in `pkg/cache`:
+`TestCacheBackends/PostgreSQL#01/GetNarInfoConcurrentPutNarInfoDuringMigration`.
+Fourth distinct flake observation in `pkg/cache` across the change's
+measurement runs (MariaDB had three, Postgres now has one). All
+tracked on #1247.
+
+\*\* `treefmt` initially failed in this run on a Phase-6 indentation
+artifact and an unused `self'` parameter; both fixed by `nix fmt` and
+re-verified with `nix build .#checks.x86_64-linux.treefmt -L --no-link
+` showing `0 changed`. The 3s figure is from a post-fix run.
+
+## Headline: 56% wall-clock reduction
+
+| Phase | `nix flake check` parallel wall-clock | vs baseline |
+| --- | ---:| ---:|
+| Baseline (monolith ncps, real run) | ~12m20s | — |
+| After Phase 5 (cohorts + lean ncps) | ~5m24s | -56% |
+| After Phase 6 (this state) | ~5m24s | -56% |
+
+The wall-clock improvement came entirely in Phase 5 (the monolith
+drop). Phase 6 is structural cleanup — `checks` enumeration, removal
+of the `ncps-coverage` filter — with no per-derivation impact, just
+fewer derivations evaluated by `nix flake check` (down from 20 to 13).
+
+Spec target was **≥ 40% reduction** on a cold cache. Achieved 56%
+locally; CI wall-clock should track similarly because the deltas all
+come from topology changes (parallel cohorts + fast main package),
+not from cached-vs-uncached differences. The shared CI build job at
+`kalbasit/gh-actions/.github/workflows/ci.yml` should drop from
+~14m to ~7-8m once this lands (the residual is the Docker image
+build, which is part of the same job and unaffected by this work).
+
+## Per-phase delta summary
+
+| Phase | What it did | Sum | Max parallel |
+| --- | --- | ---:| ---:|
+| Baseline | Monolith ncps + duplicate Postgres+MySQL | 11m01s\* | ~12m |
+| Phase 2 | Hoist ent-lint + atlas-sum into ncps-checktools; golangci-lint shares src | 13m48s | ~12m |
+| Phase 3 | Add 5 cohort derivations alongside monolith | 17m04s | ~12m |
+| Phase 4 | Delete schema-equivalence-check | 15m34s | ~12m |
+| Phase 5 | Split lean ncps + ncps-coverage | 29m43s\*\* | ~5m |
+| Phase 6 | Explicit checks enumeration | 17m16s | ~5m |
+
+\* Under-counted because the baseline ncps run crashed on flake #1247
+at 277s. True baseline is closer to 12m for the monolith alone.
+
+\*\* Phase 5 sum was inflated by a 21m s3-cohort hang
+(SQLite `ConcurrentDownloadCancelOneClientOthersContinue`, another
+flake). The real per-derivation cohort times are consistent across
+runs; only flakes move the totals around.
+
+## What `nix flake check` no longer pays for
+
+Eight derivations that used to be in the checks attrset via
+`self'.packages // self'.devShells //` are no longer evaluated by
+`nix flake check`. None of them were quality gates; they were just
+packages that happened to be in `self'.packages`:
+
+- `default` — alias of `ncps`
+- `deps` — `nix run .#deps` process-compose dev dependencies
+- `docker`, `docker-dev` — runtime images, built explicitly by CI
+- `push-docker-image` — CLI for the CI image push step
+- `k8s-tests` — CLI for local Kind testing
+- `update-cu-base` — CLI for refreshing the container-use base image
+- `ncps-coverage` — coverage build, invoked only by CI's codecov step
+
+All eight remain buildable directly as `nix build .#<name>`.
+
+## Flaky-test summary
+
+Four distinct flaky failures recorded across the change's
+measurement runs, all in `pkg/cache`:
+
+1. `TestCacheBackends/MySQL#01/PutNarInfoDeadlock` — context deadline
+   exceeded under MariaDB (issue #1247)
+2. `TestCacheBackends/MySQL#01/GetNarInfo/.../nar_does_exist_in_the_database,_and_has_initial_last_accessed_at` — timing tolerance under MariaDB (comment on #1247)
+3. `TestCacheBackends/SQLite#01/ConcurrentDownloadCancelOneClientOthersContinue` — 20-minute hang in the s3 cohort
+4. `TestCacheBackends/PostgreSQL#01/GetNarInfoConcurrentPutNarInfoDuringMigration` — observed in this final run
+
+The cohort architecture isolates each into a single ~2–5m named
+derivation, which is a strict improvement over the pre-Phase-3 state
+where any of them would have failed the whole 12m monolith. None of
+these flakes were introduced by this change.

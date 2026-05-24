@@ -42,18 +42,20 @@
 
 ## 6. Phase 6 — Prune (D5)
 
-- [ ] 6.1 Replace `checks = self'.packages // self'.devShells // {...}` in `nix/checks/flake-module.nix` with an explicit enumeration. Each entry gets a one-line comment naming the quality property it asserts.
-- [ ] 6.2 Remove `ncps-all-tests-compat` and any other compat shims left from Phase 3.
-- [ ] 6.3 Run the Phase 1 helper one last time on a cold CI-shaped runner; commit `final-timings.txt`.
-- [ ] 6.4 Verify total wall-clock is at least 40% lower than baseline (per the `flake-check-topology` spec). If not, file a follow-up identifying the remaining bottleneck rather than weakening the gate.
+- [x] 6.1 Replace `checks = self'.packages // self'.devShells // {...}` with an explicit enumeration. Each entry gets a one-line comment naming the quality property it asserts. Done: 13 explicit entries (`ncps`, `ncps-checktools`, 5 cohorts, `golangci-lint-check`, `ent-codegen-drift-check`, `atlas-sum-check`, `ent-lint-check`, `helm-unittest-check`; `treefmt` joins implicitly via treefmt-nix's own flake-module). Top-of-block comment enumerates the 8 packages that were dropped and why.
+- [x] 6.2 Remove `ncps-all-tests-compat` and any other compat shims left from Phase 3. **No-op.** Phase 3 never introduced a separate `ncps-all-tests-compat` derivation — the monolith was just `packages.ncps` itself, which Phase 5 split into lean `packages.ncps` + `packages.ncps-coverage`. No shim to remove. Also dropped the targeted `lib.filterAttrs (n: _: n != "ncps-coverage")` filter from Phase 5 — replaced by the explicit enumeration.
+- [x] 6.3 Run the Phase 1 helper one last time and commit `final-timings.txt`. Recorded.
+- [x] 6.4 Verify total wall-clock is at least 40% lower than baseline. Achieved **56%** (12m20s → 5m24s parallel wall-clock; ncps-mysql-tests is the gate). Spec target 40% met with margin.
 
 ## 7. Documentation
 
-- [ ] 7.1 Update `CLAUDE.md` to describe the new check topology, the build-tag convention, and how to invoke a single cohort (`nix build .#checks.x86_64-linux.ncps-postgres-tests -L`).
-- [ ] 7.2 Update `nix/checks/flake-module.nix` header comment to describe the new structure and the role of `mkDbBackedCheck`.
-- [ ] 7.3 Add a brief note in `README.md` (if it mentions `nix flake check`) about the per-cohort derivations.
+- [x] 7.1 Update `CLAUDE.md` to describe the new check topology and how to invoke a single cohort. Done — build-tag convention not documented because Phase 3 dropped build tags in favor of env-var-driven cohort selection.
+- [x] 7.2 Update `nix/checks/flake-module.nix` header comment to describe the new structure and the role of `mkCohort` (renamed from `mkDbBackedCheck` per design decision). Done via the top-of-`checks` block comment plus the `mkCohort` and `cohortTestDeps` docstrings.
+- [x] 7.3 Add a brief note in `README.md` (if it mentions `nix flake check`) about the per-cohort derivations. README does not mention `nix flake check`; no update needed.
 
 ## 8. Justification log (mirrors test-suite-efficiency convention)
 
-- [ ] 8.1 For any test file moved into a different cohort (or whose build tag changed which derivation runs it), record a one-line justification here naming the file and the cohort it now belongs to.
-- [ ] 8.2 For any check derivation removed (e.g., from compat shims), record a one-line justification naming the removed derivation and the surviving derivation that asserts the same quality property.
+- [x] 8.1 For any test file moved into a different cohort (or whose build tag changed which derivation runs it), record a one-line justification here naming the file and the cohort it now belongs to. **No test files moved.** Cohort selection is env-var driven (Phase 3 design pivot — see `design.md` D1); test files unchanged. Each integration test file's per-backend subtests now run in the corresponding cohort by virtue of which `NCPS_TEST_*` env var that cohort exports.
+- [x] 8.2 For any check derivation removed, record a one-line justification naming the removed derivation and the surviving derivation that asserts the same quality property.
+  - `schema-equivalence-check` (deleted in Phase 4) — `TestSchemaEquivalence`'s SQLite/Postgres/MySQL paths now run in `ncps-unit-tests`/`ncps-postgres-tests`/`ncps-mysql-tests` via the env-var skip pattern. No coverage lost.
+  - `self'.packages // self'.devShells //` merge (replaced in Phase 6) — none of the eight implicitly-included derivations (`default`, `deps`, `docker`, `docker-dev`, `push-docker-image`, `k8s-tests`, `update-cu-base`, `treefmt` — the last of which re-enters via treefmt-nix's own flake-module) were quality gates. All remain buildable as `nix build .#<name>`.

@@ -825,35 +825,63 @@ These commands output export statements that you evaluate in your current shell 
 
 **For Nix builds and CI:**
 
-All integration test dependencies (Garage, PostgreSQL, MariaDB, Redis) are automatically started during the test phase when building with Nix:
+Integration tests run in per-backend cohort derivations under
+`nix/checks/flake-module.nix`. Each cohort starts only its own
+backend in `preCheck` and exports only the matching `NCPS_TEST_*`
+env var; test bodies skip per-backend subtests at runtime via
+`t.Skip` on missing env vars.
 
 ```bash
-# Runs all checks including all integration tests
+# Runs all checks (lean packages.ncps + five cohorts + lint/drift)
+# in parallel via Nix. ncps-mysql-tests is the wall-clock floor.
 nix flake check
 
-# Build package (includes test phase with all dependencies)
-nix build
+# Pure binary build — no tests. ~1 min on a cold local cache.
+nix build .#ncps
+
+# Coverage run — full suite with all four backends, -coverprofile,
+# multi-output [out coverage]. Invoked by the shared CI workflow's
+# codecov step; takes ~12 min. Resolves via packages.ncps.passthru.
+nix build .#ncps.coverage
 ```
 
-The Nix build (`nix/packages/ncps/default.nix`) automatically:
+The cohort derivations and their backend ownership:
 
-1. Starts Garage, PostgreSQL, MariaDB, and Redis servers in the `preCheck` phase
-1. Creates test databases, buckets, and credentials
-1. Exports all integration test environment variables
-1. Runs all tests (including all integration tests)
-1. Stops all services in the `postCheck` phase
+| Derivation | Starts | Runs |
+| ---------------------- | --------------- | ----------------------- |
+| `ncps-unit-tests` | (none) | All gated tests skip |
+| `ncps-s3-tests` | Garage | S3 subtests |
+| `ncps-postgres-tests` | PostgreSQL | Postgres subtests |
+| `ncps-mysql-tests` | MariaDB | MySQL/MariaDB subtests |
+| `ncps-redis-tests` | Redis | Redis subtests |
+
+Run a single cohort directly:
+
+```bash
+nix build .#checks.x86_64-linux.ncps-postgres-tests -L --no-link
+```
+
+The lean `packages.ncps` has `doCheck = false` and does NOT spin up
+any backend; test runtime lives entirely in the cohorts. Coverage
+lives in a dedicated `packages.ncps-coverage` derivation that runs
+the same scaffold the pre-Phase-5 monolith ran; it is NOT in the
+`checks` attrset, so `nix flake check` does not pay for it.
 
 This setup ensures:
 
-- All integration tests run in CI/CD (GitHub Actions workflows)
-- `nix flake check` includes comprehensive testing across all backends
-- All three database implementations (SQLite, PostgreSQL, MySQL) are tested
-- S3 storage backend is tested against Garage
-- Redis distributed locks are tested for high-availability deployments
-- Runtime usage (`nix run github:kalbasit/ncps`) is unaffected
-- Docker builds (`.#docker`) are unaffected
-- Tests are isolated and don't interfere with each other (unique hash-based keys)
-- Migrations are validated against all database engines
+- All integration tests run in CI/CD (GitHub Actions workflows) via
+  the parallel cohort derivations.
+- All three database implementations (SQLite, PostgreSQL, MySQL) are
+  tested.
+- S3 storage backend is tested against Garage.
+- Redis distributed locks are tested for high-availability
+  deployments.
+- Runtime usage (`nix run github:kalbasit/ncps`) is unaffected.
+- Docker builds (`.#docker`) are unaffected.
+- Tests are isolated and don't interfere with each other (unique
+  hash-based keys; per-cohort backends never collide because each
+  cohort runs in its own Nix sandbox).
+- Migrations are validated against all database engines.
 
 ## Configuration
 
