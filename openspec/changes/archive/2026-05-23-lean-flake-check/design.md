@@ -233,12 +233,20 @@ after each phase. Same shape as `openspec/changes/archive/2026-05-23-less-tests/
 
 ## Risks / Trade-offs
 
-- **[Build-tag tax]** Every integration test file needs a build-tag
-  header; a missing tag silently demotes a test to the unit cohort,
-  losing service coverage. → **Mitigation**: add a one-shot codemod
-  that tags all current integration files; add a CI lint
-  (`go list -tags=... ./... | diff`) that fails if any file in the
-  integration directories lacks a tag.
+- **[Env-var gating tax]** Cohort membership depends on integration
+  tests checking the matching `NCPS_TEST_*` env var via `t.Skip`.
+  A new integration test that forgets the gate would run in EVERY
+  cohort (since no env var triggers the skip), inflating each
+  cohort's runtime and potentially failing in cohorts whose backend
+  isn't running. → **Mitigation**: the existing convention is well-
+  established across `pkg/cache`, `pkg/ncps`, `pkg/server`,
+  `pkg/database/migrate`, `migrations/equivalence`,
+  `pkg/cache/healthcheck`, `pkg/lock/redis`, and `pkg/config`
+  (see audit recorded with the Phase 3 design pivot). New tests
+  added to those packages will be reviewed in context; the small
+  risk of drift is preferable to either rejected option in D1
+  (file-level build tags drop ungated tests; file splits churn the
+  established `testCacheBackends` factory idiom).
 - **[Cachix re-warming]** New derivation names mean a cold Cachix until
   the next push to `main`. → **Mitigation**: land behind a feature
   branch, push once to warm Cachix, then merge.
@@ -262,36 +270,52 @@ after each phase. Same shape as `openspec/changes/archive/2026-05-23-less-tests/
 
 ## Migration Plan
 
-Forward-only, one phase per PR:
+Forward-only, one phase per PR. The shape below reflects what was
+actually executed; the original plan called for build-tag work in
+Phase 3 and a `mkDbBackedCheck` refactor in Phase 4, both of which
+were superseded by the pivots documented in D1 and D4.
 
 1. **Phase 1 — Baseline.** Add `baseline-timings.txt` capturing each
    current check's wall time. No behavior change.
 2. **Phase 2 — Helper binaries (D2).** Introduce `ncps-checktools` and
    switch `atlas-sum-check` + `ent-lint-check` to `stdenvNoCC`
    consumers. Re-measure; commit `after-checktools-timings.txt`.
-3. **Phase 3 — Per-backend integration cohorts (D1).** Add build tags
-   to integration files; introduce `ncps-{s3,postgres,mysql,redis}-tests`
-   derivations and `ncps-unit-tests`. Keep the monolith as
-   `ncps-all-tests-compat` (gated off `checks` but invocable) for one
-   release cycle. Re-measure.
-4. **Phase 4 — Helper extraction (D4).** Land `mkDbBackedCheck`,
-   migrate `schema-equivalence-check`. Re-measure.
+3. **Phase 3 — Per-backend integration cohorts (D1).** Introduce
+   `ncps-{unit,s3,postgres,mysql,redis}-tests` via a `mkCohort` helper.
+   Cohort membership is selected by which `NCPS_TEST_*` env vars each
+   derivation's preCheck exports; no test files are modified. Keep
+   `packages.ncps` (the monolith) in the `checks` attrset for now —
+   Phase 3 is additive coverage, the wall-clock win materializes in
+   Phase 5.
+4. **Phase 4 — Drop redundant `schema-equivalence-check` (D4).**
+   `TestSchemaEquivalence` already runs in `ncps-postgres-tests`,
+   `ncps-mysql-tests`, and `ncps-unit-tests` via the env-var skip
+   pattern, so the standalone derivation duplicates work. Delete it.
+   `mkCohort` from Phase 3 satisfies the "shared helper" goal of the
+   original D4 plan; no rename to `mkDbBackedCheck` is needed.
 5. **Phase 5 — Coverage split (D3).** Set `doCheck = false` on
-   `packages.ncps`; move coverage to its own derivation that merges
-   profiles. Re-measure.
-6. **Phase 6 — Prune (D5).** Drop `self'.packages // self'.devShells`
-   from `checks`. Remove `ncps-all-tests-compat`. Final measurement
-   commits `final-timings.txt`.
+   `packages.ncps`; create `packages.ncps-coverage` carrying the
+   test scaffold, exposed as `packages.ncps.passthru.coverage` so
+   the shared CI workflow's `nix build .#ncps.coverage` invocation
+   keeps working. Re-measure; commit `after-coverage-split-timings.txt`.
+6. **Phase 6 — Prune (D5).** Replace `self'.packages // self'.devShells`
+   merge with an explicit `checks` enumeration. Drops eight non-gate
+   packages from `nix flake check` (`default`, `deps`, `docker`,
+   `docker-dev`, `push-docker-image`, `k8s-tests`, `update-cu-base`,
+   `ncps-coverage`); all remain buildable as `nix build .#<name>`.
+   Final measurement commits `final-timings.txt`.
 
-Rollback: each phase is a single PR; revert that PR. The monolith path
-remains intact through Phase 3 to keep rollback cheap.
+Rollback: each phase is a single commit; revert in reverse order.
+Phase 5 (coverage split) is the riskiest because it touches the
+output set of `packages.ncps`; a single revert restores the old
+behavior.
 
 ## Open Questions
 
-- **Build-tag naming.** `integration_s3` vs `integration` (single tag)
-  vs `integration_garage`? Single tag is simpler but loses
-  per-backend selection. Recommendation: per-backend (`integration_s3`,
-  `integration_postgres`, …) — leave decision to the spec.
+- ~~Build-tag naming.~~ **Resolved by D1.** Build tags are not used
+  for cohort selection; the env-var-driven approach sidesteps the
+  question entirely. See D1 for the discovery (five mixed-cohort
+  test files) that forced the pivot away from any build-tag scheme.
 - ~~Drop `aarch64-darwin` from `flake.nix` `systems`?~~ **Resolved:
   keep it.** Darwin is intentionally listed so downstream consumers
   can import ncps's flake on darwin; CI does not run it (verified
