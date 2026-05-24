@@ -5677,6 +5677,13 @@ func (c *Cache) deleteLRURecordsFromDB(
 		return nil, nil, nil, nil
 	}
 
+	if len(candidates) == maxFetchRows {
+		log.Warn().Int("limit", maxFetchRows).Msg(
+			"LRU candidate fetch hit the row cap; narinfos beyond this " +
+				"window are not considered for eviction in this pass",
+		)
+	}
+
 	// Apply the legacy cumulative-byte filter: keep the LRU prefix whose
 	// cumulative file_size is <= max(2*cleanupSize, smallest-single-row).
 	// For cleanupSize == 0 ("delete all") keep every candidate.
