@@ -2426,42 +2426,87 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 	}
 
 	return c.withEntTransaction(ctx, "recordChunkBatch", func(tx *ent.Tx) error {
-		chunkIDs := make([]int, len(batch))
+		// Collect unique hashes from this batch.
+		uniqueHashes := make([]string, 0, len(batch))
 
-		for i, chunkMetadata := range batch {
-			// Insert the chunk if it doesn't exist yet; skip silently if the
-			// hash is already present. Chunks are content-addressed immutable
-			// blobs — an existing row is always correct and needs no update.
-			// Using DO NOTHING avoids touching the auto-increment PK path at
-			// all when the row pre-exists, which prevents failures when the
-			// PK sequence is desynced with the table data.
-			if err := tx.Chunk.Create().
-				SetHash(chunkMetadata.Hash).
-				SetSize(chunkMetadata.Size).
-				SetCompressedSize(chunkMetadata.CompressedSize).
+		seenInBatch := make(map[string]struct{}, len(batch))
+		for _, cm := range batch {
+			if _, ok := seenInBatch[cm.Hash]; !ok {
+				uniqueHashes = append(uniqueHashes, cm.Hash)
+				seenInBatch[cm.Hash] = struct{}{}
+			}
+		}
+
+		// Bulk-fetch all chunks that already exist in one SELECT. This
+		// avoids generating new auto-increment PKs (and hitting the
+		// sequence-desync bug) for chunks whose hash is already in the
+		// table.
+		existing, err := tx.Chunk.Query().Where(entchunk.HashIn(uniqueHashes...)).All(ctx)
+		if err != nil {
+			return fmt.Errorf("error fetching existing chunks: %w", err)
+		}
+
+		idByHash := make(map[string]int, len(uniqueHashes))
+		for _, ch := range existing {
+			idByHash[ch.Hash] = ch.ID
+		}
+
+		// Build CREATE calls only for hashes genuinely absent from the DB.
+		var creates []*ent.ChunkCreate
+
+		newHashSet := make(map[string]struct{})
+
+		for _, cm := range batch {
+			if _, exists := idByHash[cm.Hash]; exists {
+				continue
+			}
+
+			if _, queued := newHashSet[cm.Hash]; queued {
+				continue // duplicate within batch — only INSERT once
+			}
+
+			newHashSet[cm.Hash] = struct{}{}
+			creates = append(creates, tx.Chunk.Create().
+				SetHash(cm.Hash).
+				SetSize(cm.Size).
+				SetCompressedSize(cm.CompressedSize))
+		}
+
+		if len(creates) > 0 {
+			// Bulk-insert new chunks. ON CONFLICT (hash) DO NOTHING handles
+			// the narrow race where another goroutine inserted the same hash
+			// between our SELECT and this INSERT.
+			if err := tx.Chunk.CreateBulk(creates...).
 				OnConflictColumns(entchunk.FieldHash).
 				Ignore().
 				Exec(ctx); err != nil {
-				return fmt.Errorf("error creating chunk record: %w", err)
+				return fmt.Errorf("error creating new chunk records: %w", err)
 			}
 
-			// SELECT after the INSERT (whether it inserted or was skipped) to
-			// retrieve the chunk's PK for the nar_file_chunks link.
-			ch, err := tx.Chunk.Query().Where(entchunk.HashEQ(chunkMetadata.Hash)).Only(ctx)
+			// Re-fetch newly inserted (or race-won-by-another) chunks to
+			// populate idByHash with their PKs.
+			newHashes := make([]string, 0, len(newHashSet))
+			for h := range newHashSet {
+				newHashes = append(newHashes, h)
+			}
+
+			freshChunks, err := tx.Chunk.Query().Where(entchunk.HashIn(newHashes...)).All(ctx)
 			if err != nil {
-				return fmt.Errorf("error fetching chunk ID after insert: %w", err)
+				return fmt.Errorf("error fetching new chunk IDs: %w", err)
 			}
 
-			chunkIDs[i] = ch.ID
+			for _, ch := range freshChunks {
+				idByHash[ch.Hash] = ch.ID
+			}
 		}
 
-		// Link to NAR file in bulk; ON CONFLICT (nar_file_id,
-		// chunk_index) DO NOTHING per the legacy LinkNarFileToChunks.
+		// Link every batch entry to the NAR file in bulk; ON CONFLICT
+		// (nar_file_id, chunk_index) DO NOTHING is idempotent on retry.
 		bulk := make([]*ent.NarFileChunkCreate, len(batch))
-		for i, id := range chunkIDs {
+		for i, cm := range batch {
 			bulk[i] = tx.NarFileChunk.Create().
 				SetNarFileID(int(narFileID)).
-				SetChunkID(id).
+				SetChunkID(idByHash[cm.Hash]).
 				SetChunkIndex(int(startIndex) + i)
 		}
 
