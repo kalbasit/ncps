@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,10 +59,13 @@ func compressXz(t *testing.T, data string) string {
 // `started` (when non-nil) is closed once the delay expires and the wrapper is about to
 // hand off to the real chunker. Tests use it to assert "GetNar finished before chunking
 // began" without depending on absolute wall-clock time, which is brittle under CI load.
+// `startedOnce` ensures the channel is closed at most once even if Chunk is invoked
+// repeatedly on the same wrapper.
 type slowChunker struct {
-	real    chunker.Chunker
-	delay   time.Duration
-	started chan struct{}
+	real        chunker.Chunker
+	delay       time.Duration
+	started     chan struct{}
+	startedOnce sync.Once
 }
 
 func (s *slowChunker) Chunk(ctx context.Context, r io.Reader) (<-chan *chunker.Chunk, <-chan error) {
@@ -85,8 +89,10 @@ func (s *slowChunker) Chunk(ctx context.Context, r io.Reader) (<-chan *chunker.C
 
 		// Signal observers that the slow-chunking window has elapsed and the real
 		// chunker is about to run. Tests doing happens-before checks rely on this.
+		// Guarded by sync.Once so repeated Chunk calls on the same wrapper don't
+		// double-close.
 		if s.started != nil {
-			close(s.started)
+			s.startedOnce.Do(func() { close(s.started) })
 		}
 
 		// Delegate to the real chunker.
@@ -1690,11 +1696,14 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 		// Inject a slow chunker that adds a delay before producing chunks. This simulates
 		// chunking a large NAR (e.g., 180 MB taking ~18 s) — the only requirement is that
 		// the simulated chunking window is comfortably longer than the streaming path,
-		// even on slow CI runners under concurrent test load. 10 s was chosen because
-		// the assertion below is happens-before-style (chunking-started signal vs.
-		// GetNar-finished), not absolute-time-based, so a generous delay only matters
-		// when the bug regresses: it bounds how long a regression test will wait.
-		const chunkingDelay = 10 * time.Second
+		// even on slow CI runners under concurrent test load. 30 s was chosen with
+		// generous headroom over the worst observed CI streaming time (~8 s under
+		// MariaDB load, ncps #1247). The assertion below is happens-before-style
+		// (chunking-started signal vs. GetNar-finished), not absolute-time-based, so
+		// a generous delay only matters when the bug regresses: it bounds how long
+		// a regression test will wait before failing, not how long a passing test
+		// takes (passing tests still complete in seconds via the streaming path).
+		const chunkingDelay = 30 * time.Second
 
 		realChunker, err := chunker.NewCDCChunker(1024, 4096, 8192)
 		require.NoError(t, err)
