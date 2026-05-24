@@ -94,10 +94,22 @@ func TestNameValidation(t *testing.T) {
 	}
 }
 
-// buildGenerateMigrations returns the path to a built copy of the binary, built once
-// per package run. Subsequent callers reuse the same executable.
+// buildGenerateMigrations returns the path to a built copy of the binary.
+//
+// If `NCPS_TEST_GENERATE_MIGRATIONS_BIN` is set (Nix passes it in cohort
+// checkPhase), use that pre-built binary directly — skip the in-test
+// `go build`, which on slow CI runners (aarch64 ubuntu-24.04 in particular)
+// can take >180 s on this package thanks to Atlas + Ent's heavy imports.
+//
+// Without the env var (local `go test`), fall back to `go build`. Built
+// once per package run via sync.Once.
 func buildGenerateMigrations(t *testing.T) string {
 	t.Helper()
+
+	if bin := os.Getenv("NCPS_TEST_GENERATE_MIGRATIONS_BIN"); bin != "" {
+		return bin
+	}
+
 	sharedBuildOnce.Do(func() {
 		dir, err := os.MkdirTemp("", "generate-migrations-bin-*")
 		if err != nil {
@@ -109,13 +121,8 @@ func buildGenerateMigrations(t *testing.T) string {
 		sharedBinaryDir = dir
 		sharedBinary = filepath.Join(dir, "generate-migrations")
 
-		// 180s rather than 60s because this test runs in every cohort
-		// derivation under nix/checks/flake-module.nix (cmd/generate-migrations
-		// is part of `go test ./...`), and the resulting concurrent `go build`
-		// invocations across 5+ cohorts on a CI runner have been observed
-		// blowing a 60s budget under load. The compile itself takes ~5-10s
-		// on a quiet machine; the generous window only matters under heavy
-		// CI contention.
+		// 180s for local dev; CI cohorts use NCPS_TEST_GENERATE_MIGRATIONS_BIN
+		// to skip this build entirely.
 		buildCtx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 

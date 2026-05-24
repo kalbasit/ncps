@@ -63,10 +63,25 @@
           # Append the backend tools to whatever the base derivation already
           # has (the Go toolchain etc.).
           nativeBuildInputs = oa.nativeBuildInputs ++ cohortTestDeps;
-          # The cohort doesn't need the ncps binary; skip the build phase.
-          buildPhase = ''
-            :
-          '';
+          # The cohort doesn't need the ncps binary; skip the buildPhase
+          # except for the cmd cohort, which uses it to pre-build
+          # cmd/generate-migrations so its test doesn't pay an in-test
+          # `go build` that has been observed taking >180 s on aarch64 CI.
+          # The path is passed to the test via NCPS_TEST_GENERATE_MIGRATIONS_BIN
+          # in checkPhase below; see cmd/generate-migrations/main_test.go.
+          buildPhase =
+            if backends == [ ] then
+              ''
+                runHook preBuild
+                mkdir -p $TMPDIR/cohort-bin
+                go build -o $TMPDIR/cohort-bin/generate-migrations ./cmd/generate-migrations
+                export NCPS_TEST_GENERATE_MIGRATIONS_BIN=$TMPDIR/cohort-bin/generate-migrations
+                runHook postBuild
+              ''
+            else
+              ''
+                :
+              '';
           preCheck =
             if backends == [ ] then
               # Unit cohort: no env vars, no backends. All integration
