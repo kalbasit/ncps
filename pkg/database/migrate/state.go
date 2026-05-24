@@ -21,6 +21,11 @@ var (
 	// migrate operation encounters an unrecognised database.Type value.
 	ErrUnknownDialect = errors.New("migrate: unknown dialect")
 
+	// ErrUnknownState is returned when adopt encounters an unrecognised
+	// State value. Distinct from ErrUnknownDialect, which is for
+	// database.Type values.
+	ErrUnknownState = errors.New("migrate: unknown state")
+
 	// ErrCorruptState is returned when probe detects ncps application
 	// tables but no schema_migrations tracking table. This should never
 	// happen during normal operation and requires manual intervention.
