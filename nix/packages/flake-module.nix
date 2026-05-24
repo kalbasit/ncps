@@ -4,6 +4,7 @@
     ./docker-dev.nix
     ./ncps
     ./ncps-checktools
+    ./ncps-coverage
   ];
 
   perSystem =

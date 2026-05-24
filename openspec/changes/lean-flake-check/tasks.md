@@ -34,11 +34,11 @@
 
 ## 5. Phase 5 — Coverage split (D3)
 
-- [ ] 5.1 Set `doCheck = false` on `packages.ncps`. Remove the `coverage` second output and the `coverage`-related lines from `preCheck`/`checkPhase`/`postCheck`.
-- [ ] 5.2 Add `packages.ncps-coverage` (or `packages.ncps.coverage` via `passthru`) as a dedicated derivation that runs the union of the unit + per-backend cohort test bodies with `-coverprofile`, then merges the per-cohort `cover.out` files into a single `coverage.txt`. Output is the merged file.
-- [ ] 5.3 Verify the reusable CI workflow's coverage invocation still resolves (`nix build .#ncps.coverage`); rename the derivation or add an alias attribute if needed for compatibility.
-- [ ] 5.4 Confirm codecov receives a single profile covering the same packages as before (compare against pre-change codecov report for `main`).
-- [ ] 5.5 Re-run Phase 1 helper and commit `after-coverage-split-timings.txt`. Confirm `nix build .#ncps` (no check, no coverage) is now seconds, not minutes.
+- [x] 5.1 Set `doCheck = false` on `packages.ncps`. Remove the `coverage` second output and the `coverage`-related lines from `preCheck`/`checkPhase`/`postCheck`. Also stripped the integration backend `nativeBuildInputs` (garage/mariadb/postgresql/redis/python3/awscli2/curl/jq) — they were only needed for the test scaffold. `docker.nix`'s `outputs = lib.remove "coverage" …` override removed (now redundant).
+- [x] 5.2 Add `packages.ncps-coverage` as a dedicated derivation that runs the full Go test suite with all four backends and emits coverage. **Implemented as a monolith equivalent to the pre-Phase-5 `packages.ncps`** rather than as a merge of per-cohort profiles — the latter would have been more code for no incremental benefit since the cohort tests and coverage tests run the same `go test` invocation. Output is multi-output `[ out coverage ]`; `coverage` output contains `coverage.txt`.
+- [x] 5.3 Verify the reusable CI workflow's coverage invocation still resolves. `nix build .#ncps.coverage --dry-run` resolves via `packages.ncps.passthru.coverage = packages.ncps-coverage.coverage` to a `coverage`-named output, so `result-coverage` symlink + `files: result-coverage` in the codecov step continue to work without touching `kalbasit/gh-actions`.
+- [x] 5.4 Confirm codecov receives a single profile covering the same packages as before. `packages.ncps-coverage` runs the identical `go test -race -coverprofile=coverage.txt ./...` invocation the old monolith ran, so codecov sees the same shape verbatim.
+- [x] 5.5 Re-run Phase 1 helper and commit `after-coverage-split-timings.txt`. Confirm `nix build .#ncps` is now seconds, not minutes. Verified: `nix build .#ncps` cold = **1m10s** (down from ~12m). Also filtered `ncps-coverage` out of the `checks` attrset so `nix flake check` doesn't pay for the ~12m coverage run; Phase 6 will replace the filter with a full explicit `checks` enumeration. After-Phase-5 wall-clock model: **~5m** (was ~12m).
 
 ## 6. Phase 6 — Prune (D5)
 

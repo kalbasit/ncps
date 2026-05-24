@@ -24,14 +24,32 @@
       #              "redis"). Each one MUST have matching
       #              pre-check-<slug>.sh / post-check-<slug>.sh scripts
       #              under nix/packages/ncps/.
+      # Tools the pre-check-*.sh scripts need: python3 generates ephemeral
+      # ports for every backend, and each backend binary is required to
+      # actually start that backend. packages.ncps no longer carries these
+      # (Phase 5 stripped them when ncps lost its tests); re-introduce them
+      # at the cohort layer so the preCheck plumbing works inside the build
+      # sandbox.
+      cohortTestDeps = with pkgs; [
+        awscli2 # init-garage smoke test (put/get/presign)
+        curl # HTTP health checks
+        garage # S3-compatible storage
+        jq # init-garage validation
+        mariadb # MySQL/MariaDB integration tests
+        postgresql # PostgreSQL integration tests
+        python3 # ephemeral port allocation
+        redis # Redis distributed-lock integration tests
+      ];
+
       mkCohort =
         {
           name,
           backends,
         }:
-        config.packages.ncps.overrideAttrs (_oa: {
+        config.packages.ncps.overrideAttrs (oa: {
           inherit name;
           outputs = [ "out" ];
+          nativeBuildInputs = oa.nativeBuildInputs ++ cohortTestDeps;
           # The cohort doesn't need the ncps binary; skip the build phase.
           buildPhase = ''
             :
@@ -66,7 +84,16 @@
     in
     {
       checks =
-        self'.packages
+        # ncps-coverage is intentionally NOT a check. It exists as a
+        # package so `nix build .#ncps.coverage` keeps working for the
+        # shared CI workflow's codecov upload, but `nix flake check` MUST
+        # NOT pay for the ~12m of coverage instrumentation on every PR.
+        # Per-backend cohort derivations below already cover the
+        # functional checks. Phase 6 will replace this whole
+        # `self'.packages // self'.devShells //` block with an explicit
+        # enumeration; for now this targeted filter avoids a transient
+        # regression between Phases 5 and 6.
+        lib.filterAttrs (n: _: n != "ncps-coverage") self'.packages
         // self'.devShells
         // {
           # golangci-lint-check inherits src and vendorHash from packages.ncps

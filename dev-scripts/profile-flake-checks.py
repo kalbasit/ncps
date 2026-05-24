@@ -53,8 +53,9 @@ BACKEND_MAP: dict[str, list[str]] = {
     "ent-lint-check": [],
     "golangci-lint-check": [],
     "helm-unittest-check": [],
-    "ncps": ["garage", "postgres", "mariadb", "redis"],
+    "ncps": [],  # post-Phase-5: lean binary build, no tests, no backends
     "ncps-checktools": [],
+    "ncps-coverage": ["garage", "postgres", "mariadb", "redis"],
     "ncps-mysql-tests": ["mariadb"],
     "ncps-postgres-tests": ["postgres"],
     "ncps-redis-tests": ["redis"],

@@ -2,7 +2,6 @@
   perSystem =
     {
       config,
-      lib,
       pkgs,
       ...
     }:
@@ -50,16 +49,11 @@
                     cp -a ${pkgs.tzdata}/share/zoneinfo $out/share/
                   '')
 
-                  # the ncps package
-                  (config.packages.ncps.overrideAttrs (oa: {
-                    # Disable tests for the docker image build. Also remove the
-                    # coverage output that's only generated when tests run.
-                    # This is because the tests takes a while to start databases and
-                    # run and they provide no value in this package since the default
-                    # package (ncps) of the flake already runs the tests.
-                    doCheck = false;
-                    outputs = lib.remove "coverage" (oa.outputs or [ ]);
-                  }))
+                  # the ncps package. packages.ncps now has doCheck = false
+                  # and a single `out` output by default (Phase 5 of
+                  # openspec/changes/lean-flake-check), so no overrideAttrs
+                  # is needed here to strip tests or extra outputs.
+                  config.packages.ncps
                 ];
               }).overrideAttrs
                 (_: {
