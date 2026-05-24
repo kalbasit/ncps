@@ -1,0 +1,67 @@
+# Flake check timings — AFTER PHASE 4 (drop schema-equivalence-check)
+
+Measured at HEAD after Phase 4 patches: `schema-equivalence-check`
+removed; `TestSchemaEquivalence` continues to run via the per-backend
+cohorts. No code changes to the cohorts themselves — they're a Phase 3
+artifact.
+
+Same methodology as prior phases (excluded `ncps` monolith because
+it's unchanged through Phase 5).
+
+## Per-derivation wall-clock
+
+| Derivation | Wall-clock | Backends started | Status |
+| --- | ---:| --- | --- |
+| `ncps-mysql-tests` | 5m16s | mariadb | FAILED* |
+| `ncps-postgres-tests` | 3m20s | postgres | ok |
+| `ncps-s3-tests` | 1m51s | garage | ok |
+| `ncps-redis-tests` | 1m51s | redis | ok |
+| `ncps-unit-tests` | 1m50s | none | ok |
+| `golangci-lint-check` | 1m07s | none | ok |
+| `ent-codegen-drift-check` | 15s | none | ok |
+| `ncps-checktools` | 0s | none | ok |
+| `helm-unittest-check` | 0s | none | ok |
+| `atlas-sum-check` | 0s | none | ok |
+| `ent-lint-check` | 0s | none | ok |
+
+Sum (sequential): **15m34s**, down from **17m04s** in
+`after-cohorts-timings.txt`. The Δ of ~1m30s is roughly the deleted
+`schema-equivalence-check` plus normal variance.
+
+\* `ncps-mysql-tests` failed on a *different* flaky test in
+`pkg/cache` than the one observed in baseline. This one is a timing
+assertion in `TestCacheBackends/MySQL#01/GetNarInfo/.../nar_does_exist_in_the_database,_and_has_initial_last_accessed_at`:
+
+    cache_test.go:599: Max difference between
+        2026-05-24 00:03:00 +0000 UTC and 2026-05-24 00:03:03 +0000 UTC
+        allowed is 2s, but difference was -3s
+
+This is a separate failure mode from #1247 (`PutNarInfoDeadlock`,
+also in the MySQL cohort). Both surface only under MariaDB and only
+intermittently. Worth a follow-up comment on #1247 noting both flakes;
+not actioning here. The cohort architecture is doing exactly what
+it's supposed to do: localize MariaDB flakes to a single ~5m named
+derivation instead of bringing down the whole ~12m monolith.
+
+## Wall-clock model update
+
+The Phase 5 dropping of the `packages.ncps` monolith now reveals an
+even cleaner end state. Max-of-cohorts (the parallel Nix wall-clock
+once the monolith is gone):
+
+    Phase 3 (with schema-equivalence-check): max(6m01s, 3m52s, 2m19s,
+        2m12s, 1m12s, 1m08s, ...) ≈ 6m
+    Phase 4 (without schema-equivalence-check): max(5m16s, 3m20s,
+        1m51s, 1m51s, 1m50s, 1m07s, ...) ≈ 5m
+
+Phase 4 alone shaves ~1m off the projected post-monolith wall-clock,
+on top of removing 1m12s of duplicate work from the sequential sum.
+
+## Observations
+
+- Cohorts that did real work all match Phase 3 timings within noise.
+- `helm-unittest-check`, `atlas-sum-check`, `ent-lint-check`, and
+  `ncps-checktools` continue to substitute instantly.
+- `ent-codegen-drift-check` remains the only non-cohort check with
+  meaningful runtime (15s). Phase 6 will reflect on whether it should
+  be carried explicitly in the trimmed `checks` enumeration.

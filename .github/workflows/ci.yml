@@ -30,6 +30,7 @@ jobs:
       languages: |
         {"go":{"targets":[
           {"attr":"ncps",                                        "file":"nix/packages/ncps/default.nix"},
+          {"attr":"ncps-checktools",                             "file":"nix/packages/ncps-checktools/default.nix"},
           {"attr":"checks.x86_64-linux.ent-codegen-drift-check", "file":"nix/checks/flake-module.nix"}
         ]}}
     secrets:

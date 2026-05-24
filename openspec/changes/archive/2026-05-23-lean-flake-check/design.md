@@ -1,0 +1,327 @@
+## Context
+
+`nix flake check` is part of the gate the reusable CI workflow
+(`kalbasit/gh-actions/.github/workflows/ci.yml`) runs against every PR.
+The relevant CI jobs are `shared / build / build (x86_64-linux)` and
+`shared / build / build (aarch64-linux)`, which run in parallel and take
+~13–14 minutes each (observed: 768s / 861s on run 26343867348 of `main`).
+These jobs do *both* `nix flake check` and the Docker image build in one
+shot, so the ~13 min figure is an upper bound on what this change can
+move — the Docker build is unaffected floor time. The dedicated
+`shared / flake-check` job is gated by `if: ${{ inputs.oci == false }}`
+in the upstream `kalbasit/gh-actions/.github/workflows/ci.yml`; ncps
+sets `oci: true`, so that job is intentionally skipped and the flake
+check work happens inside the build job instead. It is not on the
+critical path.
+
+The bottleneck inside the flake-check half of those jobs is structural,
+not test-internal:
+
+- `packages.ncps` (in `nix/packages/ncps/default.nix`) is one derivation
+  whose `checkPhase` runs `go test -race -coverprofile=coverage.txt ./...`
+  while `preCheck` starts Garage + Postgres + MariaDB + Redis serially.
+  Nix cannot parallelize anything inside a single derivation, so the entire
+  graph waits on this one node.
+- Four lint/drift checks (`golangci-lint-check`, `ent-codegen-drift-check`,
+  `atlas-sum-check`, `ent-lint-check`, in `nix/checks/flake-module.nix`)
+  each `overrideAttrs` `packages.ncps` → each re-vendors Go, re-fetches
+  modules, and re-compiles the binary just to run a small tool.
+- `schema-equivalence-check` separately spins Postgres + MySQL up *again*
+  to run one `TestSchemaEquivalence`.
+- `checks = self'.packages // self'.devShells // {...}` drags every
+  devShell + every package into the check set, multiplying derivations
+  with no quality signal.
+
+Constraints:
+
+- Race detector stays on for every test that currently has it.
+- Every integration backend currently exercised stays exercised.
+- All lint rules stay enforced; no `--skip` additions.
+- `nix flake check` must remain the single entry point — the reusable
+  workflow at `kalbasit/gh-actions` is shared with other repos and we
+  can't (and don't want to) change its invocation.
+- Coverage output for codecov must keep working
+  (`nix build .#ncps.coverage` is invoked separately by the reusable
+  workflow).
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- Cut `nix flake check` wall-clock on a cold cache by at least 40% on
+  CI hardware, measured against a recorded baseline.
+- On a warm cache, ensure that a change touching only one Go package
+  (or only one DB backend's integration tests) invalidates only the
+  derivations that actually depend on that input.
+- Make the check graph legible: each derivation has a single,
+  named-by-purpose responsibility (unit, S3, Postgres, MySQL, Redis,
+  schema-equivalence, lint, drift, helm).
+- Run the lint/drift tooling without re-vendoring Go each time.
+
+**Non-Goals:**
+
+- Trimming what is tested. No race-detector drop, no skipped backends,
+  no lint loosening. (Enforced by spec requirements.)
+- Replacing Nix as the driver, or restructuring the reusable CI
+  workflow.
+- Tuning Cachix or GHA cache settings.
+- Helm chart test changes — `helm-unittest-check` is already cheap.
+- Cross-platform parallelism (e.g., farming aarch64 work out). The
+  reusable workflow already handles per-system fan-out.
+
+## Decisions
+
+### D1. Split `packages.ncps` checks by required backend; cohort selection via env vars, not build tags
+
+Introduce one check derivation per *backend cohort*:
+
+- `ncps-unit-tests` — no services. No backend env vars exported.
+- `ncps-s3-tests` — starts Garage only; exports `NCPS_TEST_S3_*`.
+- `ncps-postgres-tests` — starts Postgres only; exports
+  `NCPS_TEST_ADMIN_POSTGRES_URL`.
+- `ncps-mysql-tests` — starts MariaDB only; exports
+  `NCPS_TEST_ADMIN_MYSQL_URL`.
+- `ncps-redis-tests` — starts Redis only; exports
+  `NCPS_ENABLE_REDIS_TESTS=1`.
+
+Every cohort runs the same `go test -race ./...` invocation. The
+existing test code already gates subtests on the matching env vars
+with `t.Skip` (see `TestCacheBackends` in `pkg/cache/cache_test.go`
+and the same pattern across `pkg/database/migrate`, `pkg/cache/cdc`,
+`pkg/ncps/{fsck,migrate_narinfo,migrate_nar_to_chunks}`,
+`pkg/server`, `pkg/config`, `migrations/equivalence`,
+`pkg/cache/healthcheck`, `pkg/lock/redis`,
+`pkg/cache/cache_{internal,distributed}_test.go`). The cohort
+boundary is therefore the env-var set; the Go binary is unchanged.
+
+**Implementation discovery that shaped this decision** (Phase 3 design
+revision): the original design assumed each integration test lived in
+its own file with a `//go:build integration_<backend>` header, so a
+`-tags=integration_postgres` build would compile a strict subset. The
+audit revealed five test files mix gated and ungated test functions
+in the same file:
+
+- `pkg/database/migrate/migrate_test.go` (2 gated + 1 ungated)
+- `pkg/cache/cache_test.go` (2 gated + 2 ungated)
+- `pkg/cache/cache_internal_test.go` (2 gated + 5 ungated)
+- `pkg/ncps/migrate_narinfo_test.go` (1 gated + 1 ungated)
+- `pkg/lock/redis/redis_test.go` (mixed; sub-suite gates)
+
+Build tags are file-level in Go, so applying a tag to any of those
+files silently drops the ungated tests from the unit cohort. The
+choice was therefore between (a) refactoring those five files to
+split unit and integration tests into sibling files (mechanical but
+non-trivial and changes the established "one factory, all backends"
+test idiom) or (b) dropping build tags and using env-var presence as
+the cohort selector instead. (b) is the chosen path: it requires zero
+test-code changes, it preserves the existing skip pattern that the
+codebase already relies on, and it still delivers the Nix-level
+parallelism win because each cohort is its own derivation.
+
+**Cost of the choice**: every cohort pays the full Go test compile
+(test code is identical across cohorts; only env vars differ).
+Estimated +30s–1m per cohort versus a strict tag split. The compile
+parallelizes across cohorts at the Nix level, so the wall-clock
+penalty is one-cohort-worth, not five.
+
+**Alternatives considered:**
+
+- *Per-package derivations* (`pkg/cache`, `pkg/storage/s3`, …). Too
+  fine-grained: cache invalidation per package is good, but startup
+  cost per derivation (Go compile, race-detector instrumentation,
+  service spin-up where applicable) outweighs the parallelism win, and
+  many packages have no service dependency anyway.
+- *Strict `//go:build integration_<backend>` tags*. Rejected per the
+  discovery above.
+- *Single `//go:build integration` tag* (no per-backend distinction).
+  Same trade-off as the env-var-only path but adds a tag the code
+  doesn't need. The lint to keep the tag in sync with env-var usage
+  (originally task 3.3) becomes pure overhead.
+- *`-run` / `-skip` regex selection*. Brittle: relies on a naming
+  convention that nothing enforces. Drifts silently the first time a
+  test is renamed.
+- *Single derivation, parallel `preCheck`*. Doesn't help: the Nix-level
+  bottleneck is the one-derivation serialization of the whole check.
+  Internal parallelism is already on (`t.Parallel()`).
+
+### D2. Build lint/drift helper binaries once; consume them from `stdenvNoCC` checks
+
+Add a small `packages.ncps-checktools` derivation (or `passthru.checktools`
+on `packages.ncps`) that does one `buildGoModule` and emits:
+`bin/ent-lint`, `bin/atlas-sum-check`. The corresponding checks become
+`stdenvNoCC.mkDerivation` with `nativeBuildInputs = [ ncps-checktools ]`
+and a one-liner `buildPhase`. No `overrideAttrs` of the main package, no
+re-vendoring.
+
+`golangci-lint-check` and `ent-codegen-drift-check` still need the Go
+toolchain + module cache (they invoke `go generate` / a full-tree type
+check), so they keep using `buildGoModule` — but should `inherit src
+vendorHash` from `packages.ncps` so they hit Cachix on identical inputs
+instead of producing distinct fixed-output derivations per check.
+
+### D3. Drop the main `packages.ncps` `doCheck = true`; coverage moves to a dedicated derivation
+
+Today the main binary build *is* the test run. After D1, tests live in
+the new per-backend derivations. The main `packages.ncps` becomes a
+pure build (`doCheck = false`) — fast, cacheable, and what every
+downstream consumer actually wants from `nix build .#ncps`.
+
+Coverage stays as a separate derivation invocable as
+`nix build .#ncps.coverage` (CI already calls it explicitly). It runs
+the union of the per-backend test suites with `-coverprofile` and
+merges the per-cohort `cover.out` files into a single `coverage.txt`.
+It is **not** in the `checks` set — `nix flake check` doesn't pay for
+coverage instrumentation.
+
+### D4. `mkCohort` helper; delete redundant `schema-equivalence-check`
+
+The Phase 3 work already introduced `mkCohort { name, backends }` in
+`nix/checks/flake-module.nix`. It wires the right
+`pre-check-*.sh` / `post-check-*.sh` pair into `preCheck` and
+registers a single cleanup trap, satisfying the D4 goal of factoring
+the shared scaffold.
+
+The original D4 plan went further: refactor `schema-equivalence-check`
+to also call the helper. Phase 4 implementation found something
+better. `TestSchemaEquivalence` (in `migrations/equivalence_test.go`)
+already iterates dialects (SQLite + Postgres + MySQL) with `t.Skip`
+on the matching `NCPS_TEST_ADMIN_*` env var, exactly like the rest
+of the integration tests. After Phase 3, that test now runs
+automatically inside:
+
+- `ncps-unit-tests` — SQLite path only
+- `ncps-postgres-tests` — SQLite + Postgres paths
+- `ncps-mysql-tests` — SQLite + MySQL paths
+
+…via the same `go test ./...` invocation. The standalone
+`schema-equivalence-check` derivation therefore duplicates work the
+cohorts already do (~1m12s of Postgres + MariaDB spin-up plus the
+test itself), with no incremental coverage. Phase 4 deletes it
+rather than refactoring it.
+
+This is a strict improvement over the original D4 plan: fewer
+derivations, less duplicate runtime, no helper rename required, and
+the spec's "shared helper" requirement is satisfied by the existing
+`mkCohort` rather than a separate `mkDbBackedCheck`.
+
+**Alternatives considered:**
+
+- *Generalize `mkCohort` to accept a custom `checkPhase` and keep
+  `schema-equivalence-check` as a thin caller.* Adds API surface to
+  the helper for a single consumer that itself is redundant.
+  Rejected.
+- *Rename `mkCohort` → `mkDbBackedCheck` for naming consistency with
+  the original design.* `mkDbBackedCheck` is misleading because the
+  unit cohort has no backends. Cohort-shaped name fits the actual
+  use; the rename is cosmetic and not worth the churn.
+
+### D5. Replace `checks = self'.packages // self'.devShells // {...}` with an explicit list
+
+The `// self'.devShells` clause adds N derivations that are not quality
+gates — they're already realised by anyone running `nix develop`. Remove
+both `self'.packages` and `self'.devShells` from the `checks` attrset
+and enumerate exactly the named checks. The main `packages.ncps` build
+is implicitly exercised by every check derivation that depends on it,
+so we lose nothing by not listing it as its own check.
+
+### D6. Baseline + measure (mirror the `less-tests` pattern)
+
+Before any structural change, record per-derivation wall times on CI
+hardware (or a local CI-shaped runner) and commit them to
+`openspec/changes/lean-flake-check/baseline-timings.txt`. Re-measure
+after each phase. Same shape as `openspec/changes/archive/2026-05-23-less-tests/`.
+
+## Risks / Trade-offs
+
+- **[Env-var gating tax]** Cohort membership depends on integration
+  tests checking the matching `NCPS_TEST_*` env var via `t.Skip`.
+  A new integration test that forgets the gate would run in EVERY
+  cohort (since no env var triggers the skip), inflating each
+  cohort's runtime and potentially failing in cohorts whose backend
+  isn't running. → **Mitigation**: the existing convention is well-
+  established across `pkg/cache`, `pkg/ncps`, `pkg/server`,
+  `pkg/database/migrate`, `migrations/equivalence`,
+  `pkg/cache/healthcheck`, `pkg/lock/redis`, and `pkg/config`
+  (see audit recorded with the Phase 3 design pivot). New tests
+  added to those packages will be reviewed in context; the small
+  risk of drift is preferable to either rejected option in D1
+  (file-level build tags drop ungated tests; file splits churn the
+  established `testCacheBackends` factory idiom).
+- **[Cachix re-warming]** New derivation names mean a cold Cachix until
+  the next push to `main`. → **Mitigation**: land behind a feature
+  branch, push once to warm Cachix, then merge.
+- **[Per-derivation startup overhead]** Spinning Postgres four times
+  (once per Postgres-touching check) loses against starting it once
+  for a giant test if the per-Postgres cohort is small. → **Mitigation**:
+  this is exactly what D1's *backend-cohort* granularity (vs.
+  per-package) is designed to avoid: at most one derivation per
+  backend.
+- **[Coverage drift]** Splitting tests across derivations risks
+  losing coverage from cross-package interactions. → **Mitigation**:
+  the dedicated `ncps.coverage` derivation in D3 still runs the
+  full union and merges profiles, so codecov sees the same shape as
+  today.
+- **[Reusable workflow assumes one job]** The CI gate in
+  `kalbasit/gh-actions` expects `nix flake check` as a single step;
+  splitting into many derivations is fine (Nix handles it internally)
+  but breaks the assumption that any one derivation is the long pole
+  — log readability changes. → **Mitigation**: documented in tasks.md;
+  no upstream change required.
+
+## Migration Plan
+
+Forward-only, one phase per PR. The shape below reflects what was
+actually executed; the original plan called for build-tag work in
+Phase 3 and a `mkDbBackedCheck` refactor in Phase 4, both of which
+were superseded by the pivots documented in D1 and D4.
+
+1. **Phase 1 — Baseline.** Add `baseline-timings.txt` capturing each
+   current check's wall time. No behavior change.
+2. **Phase 2 — Helper binaries (D2).** Introduce `ncps-checktools` and
+   switch `atlas-sum-check` + `ent-lint-check` to `stdenvNoCC`
+   consumers. Re-measure; commit `after-checktools-timings.txt`.
+3. **Phase 3 — Per-backend integration cohorts (D1).** Introduce
+   `ncps-{unit,s3,postgres,mysql,redis}-tests` via a `mkCohort` helper.
+   Cohort membership is selected by which `NCPS_TEST_*` env vars each
+   derivation's preCheck exports; no test files are modified. Keep
+   `packages.ncps` (the monolith) in the `checks` attrset for now —
+   Phase 3 is additive coverage, the wall-clock win materializes in
+   Phase 5.
+4. **Phase 4 — Drop redundant `schema-equivalence-check` (D4).**
+   `TestSchemaEquivalence` already runs in `ncps-postgres-tests`,
+   `ncps-mysql-tests`, and `ncps-unit-tests` via the env-var skip
+   pattern, so the standalone derivation duplicates work. Delete it.
+   `mkCohort` from Phase 3 satisfies the "shared helper" goal of the
+   original D4 plan; no rename to `mkDbBackedCheck` is needed.
+5. **Phase 5 — Coverage split (D3).** Set `doCheck = false` on
+   `packages.ncps`; create `packages.ncps-coverage` carrying the
+   test scaffold, exposed as `packages.ncps.passthru.coverage` so
+   the shared CI workflow's `nix build .#ncps.coverage` invocation
+   keeps working. Re-measure; commit `after-coverage-split-timings.txt`.
+6. **Phase 6 — Prune (D5).** Replace `self'.packages // self'.devShells`
+   merge with an explicit `checks` enumeration. Drops eight non-gate
+   packages from `nix flake check` (`default`, `deps`, `docker`,
+   `docker-dev`, `push-docker-image`, `k8s-tests`, `update-cu-base`,
+   `ncps-coverage`); all remain buildable as `nix build .#<name>`.
+   Final measurement commits `final-timings.txt`.
+
+Rollback: each phase is a single commit; revert in reverse order.
+Phase 5 (coverage split) is the riskiest because it touches the
+output set of `packages.ncps`; a single revert restores the old
+behavior.
+
+## Open Questions
+
+- ~~Build-tag naming.~~ **Resolved by D1.** Build tags are not used
+  for cohort selection; the env-var-driven approach sidesteps the
+  question entirely. See D1 for the discovery (five mixed-cohort
+  test files) that forced the pivot away from any build-tag scheme.
+- ~~Drop `aarch64-darwin` from `flake.nix` `systems`?~~ **Resolved:
+  keep it.** Darwin is intentionally listed so downstream consumers
+  can import ncps's flake on darwin; CI does not run it (verified
+  across recent main runs) and therefore it contributes 0s to flake
+  check wall time. Not a lever.
+- **Should `nix flake check` invoke the merged coverage build, or
+  should it stay out-of-band?** Today CI builds `.#ncps.coverage`
+  separately. Decision in this design: keep it out-of-band.
+  Worth confirming with the reusable-workflow author.

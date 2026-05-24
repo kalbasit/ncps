@@ -2,132 +2,132 @@
 {
   perSystem =
     {
+      config,
       lib,
       pkgs,
       ...
     }:
-    {
-      packages.ncps =
+    let
+      version =
         let
-          version =
-            let
-              rev = self.rev or self.dirtyRev;
-              tag = lib.trim (builtins.readFile ./version.txt);
-            in
-            if tag != "" then tag else rev;
-
-          vendorHash = "sha256-ubKcWD80jnH8UyCiXUdf/m2ddLJhzybXCEtyA1NEWiw=";
+          rev = self.rev or self.dirtyRev;
+          tag = lib.trim (builtins.readFile ./version.txt);
         in
-        pkgs.buildGoModule {
-          inherit version vendorHash;
+        if tag != "" then tag else rev;
 
-          pname = "ncps";
+      vendorHash = "sha256-ubKcWD80jnH8UyCiXUdf/m2ddLJhzybXCEtyA1NEWiw=";
 
-          src = lib.fileset.toSource {
-            fileset = lib.fileset.unions [
-              ./post-check-garage.sh
-              ./pre-check-garage.sh
+      ncpsSrc = lib.fileset.toSource {
+        fileset = lib.fileset.unions [
+          ./post-check-garage.sh
+          ./pre-check-garage.sh
 
-              ./post-check-mysql.sh
-              ./pre-check-mysql.sh
+          ./post-check-mysql.sh
+          ./pre-check-mysql.sh
 
-              ./post-check-postgres.sh
-              ./pre-check-postgres.sh
+          ./post-check-postgres.sh
+          ./pre-check-postgres.sh
 
-              ./post-check-redis.sh
-              ./pre-check-redis.sh
+          ./post-check-redis.sh
+          ./pre-check-redis.sh
 
-              ../../../cmd
-              ../../../ent
-              ../../../go.mod
-              ../../../go.sum
-              ../../../internal
-              ../../../main.go
-              ../../../migrations
-              ../../../nix/process-compose/init-garage.sh
-              ../../../nix/process-compose/init-mysql.sh
-              ../../../nix/process-compose/init-postgres.sh
-              ../../../nix/process-compose/postgres-dblink-create-drop-functions.sql
-              ../../../nix/process-compose/start-garage.sh
-              ../../../nix/process-compose/start-mysql.sh
-              ../../../nix/process-compose/start-postgres.sh
-              ../../../nix/process-compose/start-redis.sh
-              ../../../pkg
-              ../../../testdata
-              ../../../testhelper
-            ];
-            root = ../../..;
-          };
+          # .golangci.yml lives in the source set so golangci-lint-check
+          # can re-use this fileset (and the goModules cache) instead of
+          # overriding src to the whole repo. Inert for the ncps build
+          # itself.
+          ../../../.golangci.yml
+          ../../../cmd
+          ../../../ent
+          ../../../go.mod
+          ../../../go.sum
+          ../../../internal
+          ../../../main.go
+          ../../../migrations
+          ../../../nix/process-compose/init-garage.sh
+          ../../../nix/process-compose/init-mysql.sh
+          ../../../nix/process-compose/init-postgres.sh
+          ../../../nix/process-compose/postgres-dblink-create-drop-functions.sql
+          ../../../nix/process-compose/start-garage.sh
+          ../../../nix/process-compose/start-mysql.sh
+          ../../../nix/process-compose/start-postgres.sh
+          ../../../nix/process-compose/start-redis.sh
+          ../../../pkg
+          ../../../testdata
+          ../../../testhelper
+        ];
+        root = ../../..;
+      };
+    in
+    {
+      # packages._ncps-base is a private buildGoModule with the shared src,
+      # vendor hash, and Go toolchain — but no passthru, no binary wrapping.
+      # It exists so cohort derivations under nix/checks/flake-module.nix can
+      # `overrideAttrs` from it without going through packages.ncps' passthru
+      # (which references packages.ncps-coverage, which in turn depends on the
+      # cohorts via self'.checks.* — a cycle if cohorts went through ncps).
+      packages._ncps-base = pkgs.buildGoModule {
+        inherit version vendorHash;
+        pname = "ncps-base";
+        src = ncpsSrc;
+        doCheck = false;
+      };
 
-          ldflags = [
-            "-X github.com/kalbasit/ncps/pkg/ncps.Version=${version}"
-          ];
+      packages.ncps = pkgs.buildGoModule {
+        inherit version vendorHash;
 
-          buildInputs = [
-            pkgs.xz # required for xz decompression
-          ];
+        pname = "ncps";
 
-          nativeBuildInputs = [
-            pkgs.makeBinaryWrapper # used for wrapping the binary so it can always find the xz binary
+        src = ncpsSrc;
 
-            pkgs.awscli2 # used by init-garage smoke test (put/get/presign)
-            pkgs.curl # used for HTTP health checks and anonymous-access check
-            pkgs.garage # S3-compatible storage for integration tests
-            pkgs.jq # used for testing by init-garage
-            pkgs.mariadb # MySQL/MariaDB for integration tests
-            pkgs.postgresql # PostgreSQL for integration tests
-            pkgs.python3 # used for generating the ports
-            pkgs.redis # Redis for distributed locking integration tests
-          ];
+        ldflags = [
+          "-X github.com/kalbasit/ncps/pkg/ncps.Version=${version}"
+        ];
 
-          doCheck = true;
-          checkFlags = [
-            "-race"
-            "-coverprofile=coverage.txt"
-          ];
+        buildInputs = [
+          pkgs.xz # required for xz decompression
+        ];
 
-          preCheck = ''
-            # Set up cleanup trap to ensure background processes are killed even if tests fail
-            cleanup() {
-              source $src/nix/packages/ncps/post-check-garage.sh
-              source $src/nix/packages/ncps/post-check-mysql.sh
-              source $src/nix/packages/ncps/post-check-postgres.sh
-              source $src/nix/packages/ncps/post-check-redis.sh
-            }
-            trap cleanup EXIT
+        nativeBuildInputs = [
+          pkgs.makeBinaryWrapper # used for wrapping the binary so it can always find the xz binary
+        ];
 
-            source $src/nix/packages/ncps/pre-check-garage.sh
-            source $src/nix/packages/ncps/pre-check-mysql.sh
-            source $src/nix/packages/ncps/pre-check-postgres.sh
-            source $src/nix/packages/ncps/pre-check-redis.sh
-          '';
+        # Tests run in the per-backend cohort derivations under
+        # nix/checks/flake-module.nix; coverage runs in packages.ncps-coverage
+        # (exposed via passthru.coverage below so `nix build .#ncps.coverage`
+        # keeps working unchanged for the shared CI workflow at
+        # kalbasit/gh-actions). The main ncps build is a pure binary build
+        # — fast, cacheable, and what every downstream consumer of
+        # `nix build .#ncps` actually wants.
+        doCheck = false;
 
-          outputs = [
-            "out"
-            "coverage"
-          ];
+        postInstall = ''
+          # ncps makes use of xz for decompression as it's 3-5x faster than
+          # using the native Go implementation of xz. By wrapping ncps, and
+          # setting the XZ_BINARY_PATH environment variable, we ensure that
+          # ncps can always find the xz binary. This environment variable is
+          # read by a flag in pkg/ncps and can be overriden by using calling
+          # ncps with the --xz-binary-path flag.
+          wrapProgram $out/bin/ncps --set XZ_BINARY_PATH ${lib.getExe' pkgs.xz "xz"}
+        '';
 
-          postCheck = ''
-            mv coverage.txt $coverage
-          '';
-
-          postInstall = ''
-            # ncps makes use of xz for decompression as it's 3-5x faster than
-            # using the native Go implementation of xz. By wrapping ncps, and
-            # setting the XZ_BINARY_PATH environment variable, we ensure that
-            # ncps can always find the xz binary. This environment variable is
-            # read by a flag in pkg/ncps and can be overriden by using calling
-            # ncps with the --xz-binary-path flag.
-            wrapProgram $out/bin/ncps --set XZ_BINARY_PATH ${lib.getExe' pkgs.xz "xz"}
-          '';
-
-          meta = {
-            description = "Nix binary cache proxy service";
-            homepage = "https://github.com/kalbasit/ncps";
-            license = lib.licenses.mit;
-            mainProgram = "ncps";
-            maintainers = [ lib.maintainers.kalbasit ];
-          };
+        # Expose the coverage output of packages.ncps-coverage as `.coverage`
+        # on this derivation. The shared CI workflow at
+        # kalbasit/gh-actions/.github/workflows/build.yml invokes
+        # `nix build ".#${PRIMARY_PACKAGE}.coverage" -L` and consumes
+        # `result-coverage`; with this passthru that invocation continues
+        # to resolve to a multi-output derivation with a `coverage` output,
+        # so the symlink name and codecov payload shape are preserved.
+        passthru = {
+          inherit (config.packages.ncps-coverage) coverage;
         };
+
+        meta = {
+          description = "Nix binary cache proxy service";
+          homepage = "https://github.com/kalbasit/ncps";
+          license = lib.licenses.mit;
+          mainProgram = "ncps";
+          maintainers = [ lib.maintainers.kalbasit ];
+        };
+      };
     };
 }

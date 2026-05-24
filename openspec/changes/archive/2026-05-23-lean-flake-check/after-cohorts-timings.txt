@@ -1,0 +1,94 @@
+# Flake check timings — AFTER PHASE 3 (per-backend cohorts)
+
+Measured at HEAD after Phase 3 patches: five new cohort derivations
+(`ncps-{unit,s3,postgres,mysql,redis}-tests`) added via a `mkCohort`
+helper in `nix/checks/flake-module.nix`. Cohort selection is env-var
+driven (see `design.md` D1 for why build tags were dropped).
+
+`packages.ncps` (the monolith with `doCheck = true`) is **excluded
+from this measurement run** because it is unchanged in Phase 3 (still
+~12m, see `after-checktools-timings.txt`). Phase 5 removes the
+monolith from the check set; only then does the parallel-cohort win
+materialize at the `nix flake check` wall-clock.
+
+## Per-derivation wall-clock
+
+| Derivation | Wall-clock | Backends started | Status |
+| --- | ---:| --- | --- |
+| `ncps-mysql-tests` | 6m01s | mariadb | ok |
+| `ncps-postgres-tests` | 3m52s | postgres | ok |
+| `ncps-redis-tests` | 2m19s | redis | ok |
+| `ncps-s3-tests` | 2m12s | garage | ok |
+| `schema-equivalence-check` | 1m12s | postgres, mariadb | ok |
+| `golangci-lint-check` | 1m08s | none | ok |
+| `ent-codegen-drift-check` | 15s | none | ok |
+| `ncps-unit-tests` | 1s† | none | ok |
+| `ent-lint-check` | 0s | none | ok |
+| `ncps-checktools` | 0s | none | ok |
+| `atlas-sum-check` | 0s | none | ok |
+| `helm-unittest-check` | 0s | none | ok |
+
+† Substitution hit — `ncps-unit-tests` was built once manually during
+Phase 3 implementation to validate the `mkCohort` pattern. The
+profile script's "delete top output" step left dependencies cached
+and Nix substituted the output from the local store. The real
+wall-clock observed during the validation build was **1m57s** (no
+flake, full test suite ran with all integration subtests skipping
+correctly). Use 1m57s when reasoning about parallel wall-clock.
+
+## What changed vs baseline / after-checktools
+
+Cohort introduction is additive in Phase 3. The interesting numbers
+are the per-cohort wall-clocks themselves:
+
+| Cohort | Wall-clock | What ran |
+| --- | ---:| --- |
+| unit | ~2m | All packages compile; all integration subtests skip |
+| s3 | 2m12s | Compile + S3/Garage integration subtests |
+| postgres | 3m52s | Compile + PostgreSQL integration subtests |
+| mysql | 6m01s | Compile + MariaDB integration subtests |
+| redis | 2m19s | Compile + Redis integration subtests |
+
+**Sum** of per-cohort runs: ~16m. **Max** of per-cohort runs (the
+true Nix wall-clock when run in parallel): ~6m. The monolith
+`packages.ncps` does roughly the same work at ~12m wall-clock by
+running everything in a single Go process.
+
+## Wall-clock model for the flake check graph
+
+Today (Phase 3, monolith + cohorts both in checks):
+
+    max(monolith ~12m, max(cohorts) ~6m, schema-equiv ~1m, lint ~1m,
+        drift ~15s, helm 0s, atlas 0s, ent-lint 0s, checktools 0s)
+    ≈ 12m   (monolith dominates)
+
+After Phase 5 (monolith removed from checks):
+
+    max(unit ~2m, s3 ~2m, pg ~4m, mysql ~6m, redis ~2m, schema-equiv
+        ~1m, lint ~1m, ...)
+    ≈ 6m   (mysql cohort dominates)
+
+That's the headline win this change is aiming at — ~50% reduction
+in flake-check wall-clock once the monolith is dropped. Phase 3 has
+laid the wiring; Phases 4–6 collect the dividend.
+
+## Other observations
+
+- The **MariaDB flake from issue #1247** (`TestCacheBackends/MySQL#01/
+  PutNarInfoDeadlock`) did not reproduce in `ncps-mysql-tests` this
+  run. The cohort completed cleanly at 6m01s. This is consistent with
+  the flake being intermittent rather than deterministic; isolating
+  MySQL into its own derivation makes future occurrences easier to
+  triage (one named job fails, not a 12m monolith).
+- `schema-equivalence-check` at 1m12s still spins up Postgres + MySQL
+  on top of what `ncps-postgres-tests` and `ncps-mysql-tests` already
+  do. Phase 4 (`mkDbBackedCheck`) shares Nix code but does not
+  de-duplicate runtime service startup. A follow-up could fold
+  `TestSchemaEquivalence` into the cohort runs (the test already
+  skips per-backend on missing env vars), letting us drop the
+  standalone derivation entirely — flagging here, not actioning.
+- `golangci-lint-check` at 1m08s now matches its baseline (1m06s)
+  rather than the Phase 2 measurement glitch (1s substitution hit).
+  Phase 2's structural win (shared goModules with `packages.ncps`)
+  remains real but is invisible in local timings since both share
+  Cachix already.

@@ -1,0 +1,87 @@
+# Flake check timings — BASELINE
+
+Measured at commit 61405fb5d3c9cf1bd3130d32f9ad1fc7853a4218 (main) via
+`dev-scripts/profile-flake-checks.py`. See that script's docstring for the
+methodology; in short, each derivation's top output is deleted from the local
+Nix store (intermediate deps like `*-go-modules` are left cached, matching
+CI's post-substitution state), then `nix build .#checks.x86_64-linux.<name>
+--no-link -L` is timed.
+
+Local dev hardware (x86_64-linux). Intermediate dependency derivations
+(go modules, base images, etc.) are warm. This matches CI's expected steady
+state once Cachix has been populated from a prior main build; the absolute
+numbers below will be a few minutes lower than a cold-cache CI run, but
+**per-derivation deltas across the phases of this change should be stable
+and meaningful** because every phase pays the same cache-pull floor.
+
+## Per-derivation wall-clock
+
+| Derivation | Wall-clock | Backends started | Status |
+| --- | ---:| --- | --- |
+| `ncps` | 8m22s | garage, postgres, mariadb, redis | failed* |
+| `schema-equivalence-check` | 1m07s | postgres, mariadb | ok |
+| `golangci-lint-check` | 1m06s | none | ok |
+| `ent-codegen-drift-check` | 15s | none | ok |
+| `atlas-sum-check` | 5s | none | ok |
+| `ent-lint-check` | 4s | none | ok |
+| `helm-unittest-check` | 0s | none | ok |
+
+Sum of per-derivation runs: **11m01s**.
+
+\* `ncps` failed at the end of `pkg/cache` with
+`TestCacheBackends/MySQL#01/PutNarInfoDeadlock` reporting
+`context deadline exceeded` (23.91s). This is a pre-existing flaky
+integration test on main HEAD, not introduced by this change. Tracked
+separately at https://github.com/kalbasit/ncps/issues/1247.
+
+**The 8m22s figure under-counts the true cost.** The crash happened
+midway through the test suite (277s into `pkg/cache`), so the build
+did not finish. A clean run in `after-checktools-timings.txt` finished
+`ncps` in 12m20s; that is closer to the real per-derivation wall-clock
+for this check. Future phase deltas against `ncps` should be measured
+relative to ~12m, not 8m22s.
+
+## Cross-reference: CI bundled-job wall-clock
+
+The shared CI workflow at `kalbasit/gh-actions/.github/workflows/ci.yml`
+runs `nix flake check` *and* the Docker image build in a single job
+(`shared / build / build`), because `inputs.oci = true` gates the
+standalone `shared / flake-check` job off. From the latest successful main
+run as of measurement:
+
+| CI job | System | Wall-clock | Run |
+| --- | --- | ---:| --- |
+| `shared / build / build` | `x86_64-linux` | 14m21s (861s) | 26343867348 |
+| `shared / build / build` | `aarch64-linux` | 12m48s (768s) | 26343867348 |
+| `shared / flake-check` | x86_64-linux | skipped (oci=true) | 26343867348 |
+| `shared / build / oci-manifest` | n/a | 14s | 26343867348 |
+
+So the ~13–14 min CI figure is an **upper bound** on what this change can
+move; the Docker image build itself is unchanged floor time. Anything we
+shave off the flake-check half of the build job is a direct PR-cycle win.
+
+## Backend-to-derivation map (task 1.4)
+
+The "Backends started" column above is the source of truth. Spelled out for
+phase-by-phase reasoning:
+
+| Backend | Started by |
+| --- | --- |
+| Garage (S3) | `ncps` |
+| PostgreSQL | `ncps`, `schema-equivalence-check` |
+| MariaDB (MySQL) | `ncps`, `schema-equivalence-check` |
+| Redis | `ncps` |
+
+Implications for the topology change:
+
+- Postgres and MariaDB are paid for **twice** today (once for `ncps`, once
+  for `schema-equivalence-check`). After the per-backend cohort split
+  (Phase 3) each backend should start once per Nix evaluation across the
+  whole `nix flake check` graph.
+- Redis and Garage are paid for once today, only inside `ncps`. After
+  Phase 3 they move to dedicated cohorts (`ncps-redis-tests`,
+  `ncps-s3-tests`); the cost shifts, the count stays the same.
+- The four small lint/drift checks (`golangci-lint-check`,
+  `ent-codegen-drift-check`, `atlas-sum-check`, `ent-lint-check`) start
+  no backends, so Phase 2 (helper-binary reuse) is pure compile-time
+  shaving with no service interaction.

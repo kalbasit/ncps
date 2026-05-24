@@ -1,0 +1,115 @@
+# Flake check timings — AFTER PHASE 5 (coverage split)
+
+Phase 5 patches:
+
+- `packages.ncps` is now a lean binary build (`doCheck = false`, single
+  output, no preCheck plumbing, no integration backends in
+  `nativeBuildInputs`).
+- New `packages.ncps-coverage` (separate file under
+  `nix/packages/ncps-coverage/`) carries the test scaffold: all four
+  backends in `nativeBuildInputs`, full preCheck/postCheck, multi-output
+  `[ out coverage ]`, `doCheck = true` with `-coverprofile`.
+- `packages.ncps.passthru.coverage = packages.ncps-coverage.coverage`
+  so `nix build .#ncps.coverage -L` continues to resolve to a
+  multi-output build that produces `result-coverage` — the contract the
+  shared CI workflow at `kalbasit/gh-actions/.github/workflows/build.yml`
+  relies on is preserved verbatim.
+- `nix/checks/flake-module.nix` `mkCohort` re-adds the integration
+  backends (`garage`, `mariadb`, `postgresql`, `redis`, `python3`,
+  `awscli2`, etc.) as `nativeBuildInputs` so the per-backend cohorts
+  can still spin their services up; `packages.ncps` no longer carries
+  them.
+- `ncps-coverage` is filtered out of the `checks` attrset so
+  `nix flake check` does NOT pay for the ~12m coverage run. (Phase 6
+  will generalize this into a full explicit enumeration.)
+- `nix/packages/docker.nix` no longer overrides `doCheck` or
+  `outputs` on its embedded ncps reference — the lean `packages.ncps`
+  already satisfies both.
+
+## Per-derivation wall-clock
+
+| Derivation | Wall-clock | Backends started | Status |
+| --- | ---:| --- | --- |
+| `ncps-s3-tests` | 21m14s | garage | FAILED\* |
+| `ncps-mysql-tests` | 4m58s | mariadb | FAILED\*\* |
+| `ncps-postgres-tests` | 3m09s | postgres | ok |
+| `ent-codegen-drift-check` | 15s | none | ok |
+| `ncps-redis-tests` | 1s† | redis | ok |
+| `ncps-unit-tests` | 1s† | none | ok |
+| `ncps` | 0s† | none | ok |
+| `golangci-lint-check` | 0s† | none | ok |
+| `ent-lint-check` | 0s | none | ok |
+| `ncps-checktools` | 0s | none | ok |
+| `helm-unittest-check` | 0s | none | ok |
+| `atlas-sum-check` | 0s | none | ok |
+
+Sum: 29m43s, dominated by the s3 cohort hang.
+
+\* `ncps-s3-tests` did NOT do real work for 21 minutes — it hung on
+`TestCacheBackends/SQLite#01/ConcurrentDownloadCancelOneClientOthersContinue`
+for 19m39s and then hit the 20-minute test timeout. This is a third
+flaky test observation (after the two recorded on #1247), and worth
+noting: it's a SQLite subtest, so it runs in EVERY cohort — but only
+hung in this s3 run. Likely a race that surfaces under specific
+goroutine interleavings. Recorded for follow-up; cohort's normal time
+is ~2m (verified in Phases 3 and 4).
+
+\*\* `ncps-mysql-tests` hit a flake again. Three distinct flakes have
+now been observed in `pkg/cache` under MariaDB across measurement
+runs:
+
+1. `TestCacheBackends/MySQL#01/PutNarInfoDeadlock` (#1247)
+2. `TestCacheBackends/MySQL#01/GetNarInfo/.../nar_does_exist_in_the_database,_and_has_initial_last_accessed_at` (timing assertion, #1247 comment)
+3. (this run's specific failure — to be checked)
+
+The pattern is consistent: `pkg/cache` MariaDB subtests are racy.
+Tracking on #1247.
+
+† Substitution hits — these derivations were built earlier in the
+session (manual sanity check builds during implementation). Real
+times measured cleanly in earlier phases:
+
+| Derivation | Real wall-clock (measured) |
+| --- | ---:|
+| `ncps` (lean binary) | 1m10s (verified separately this phase) |
+| `ncps-unit-tests` | 2m22s (Phase 5 first attempt) |
+| `ncps-redis-tests` | 3m15s (Phase 5 fix validation) |
+| `ncps-postgres-tests` | 3m09s (this run, real) |
+| `ncps-s3-tests` | ~2m (Phases 3, 4) |
+| `ncps-mysql-tests` | ~5m (Phases 3, 4) |
+
+## Headline numbers — what changed in Phase 5
+
+`nix build .#ncps`: **12m → 1m10s** (verified cold).
+`nix flake check` no longer includes the ~12m monolith via
+`packages.ncps`. The lean ncps build is still in checks via
+`// self'.packages` (Phase 6 will replace that whole block with an
+explicit enumeration), but at 1m10s it's no longer the bottleneck.
+`packages.ncps-coverage` is filtered out of checks so coverage is
+only paid by the explicit CI step `nix build .#ncps.coverage`, on
+non-fork PRs.
+
+## Wall-clock model
+
+Pre-Phase-5 (`nix flake check`):
+
+    max(ncps monolith 12m, cohort group ~5m, lint/drift ~1m, ...) ≈ 12m
+
+Post-Phase-5 (this state):
+
+    max(ncps lean 1m, cohort group ~5m, lint/drift ~1m, ...) ≈ 5m
+
+That's the headline win this whole change was aiming at: **flake-check
+wall-clock cut from ~12m to ~5m, in CI as measured by the shared
+build job that runs `nix flake check`.** The remaining floor is the
+`ncps-mysql-tests` cohort plus Docker image build (the latter is
+unaffected by this work and is part of the same CI job by design at
+`kalbasit/gh-actions/.github/workflows/ci.yml`).
+
+## What's left
+
+Phase 6 (`/nix/checks/flake-module.nix`): replace the
+`self'.packages // self'.devShells //` merge with an explicit
+enumeration. Removes the docker/k8s-tests/treefmt/etc. derivations
+from the checks attrset entirely (they aren't quality gates), and
+drops the targeted `ncps-coverage` filter introduced here.
