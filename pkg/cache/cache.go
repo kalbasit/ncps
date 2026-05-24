@@ -145,6 +145,8 @@ var (
 	// ErrNarAlreadyChunked is returned when the nar is already chunked.
 	ErrNarAlreadyChunked = errors.New("nar is already chunked")
 
+	errMissingChunkEdge = errors.New("nar_file_chunk is missing eager-loaded chunk edge")
+
 	//nolint:gochecknoglobals
 	meter metric.Meter
 
@@ -5994,7 +5996,9 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 				return err
 			}
 
-			if len(narInfoHashesToRemove) == 0 && len(chunkHashesToRemove) == 0 {
+			if len(narInfoHashesToRemove) == 0 &&
+				len(narURLsToRemove) == 0 &&
+				len(chunkHashesToRemove) == 0 {
 				return nil
 			}
 
@@ -6535,16 +6539,14 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		totalSize = int64(nr.FileSize)
 		totalChunks = nr.TotalChunks
 
-		// Touch the NAR file
+		// Touch the NAR file by the fetched row's ID. getNarFileFromDB may
+		// return a compression=none fallback row whose key differs from
+		// narURL, so filtering on narURL fields can silently miss it.
 		if nr.LastAccessedAt == nil || time.Since(*nr.LastAccessedAt) > c.recordAgeIgnoreTouch {
-			if _, err := tx.NarFile.Update().
-				Where(
-					entnarfile.HashEQ(narURL.Hash),
-					entnarfile.CompressionEQ(narURL.Compression.String()),
-					entnarfile.QueryEQ(narURL.Query.Encode()),
-				).
-				SetLastAccessedAt(time.Now()).
-				SetUpdatedAt(time.Now()).
+			now := time.Now()
+			if _, err := tx.NarFile.UpdateOneID(nr.ID).
+				SetLastAccessedAt(now).
+				SetUpdatedAt(now).
 				Save(ctx); err != nil {
 				return fmt.Errorf("error touching the nar record: %w", err)
 			}
@@ -6614,9 +6616,11 @@ func (c *Cache) streamCompleteChunks(
 	}
 
 	for _, link := range links {
-		if link.Edges.Chunk != nil {
-			chunkHashes = append(chunkHashes, link.Edges.Chunk.Hash)
+		if link.Edges.Chunk == nil {
+			return fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge)
 		}
+
+		chunkHashes = append(chunkHashes, link.Edges.Chunk.Hash)
 	}
 
 	if len(chunkHashes) != int(totalChunks) {
@@ -6762,7 +6766,11 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				// Feed all available chunks from the batch into the pipeline.
 				for _, link := range batch {
 					if link.Edges.Chunk == nil {
-						continue
+						chunkChan <- &prefetchedChunk{
+							err: fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge),
+						}
+
+						return
 					}
 
 					ch := link.Edges.Chunk
@@ -6861,7 +6869,11 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					// Feed the newly-available chunks and break out of the wait loop.
 					for _, link := range batch2 {
 						if link.Edges.Chunk == nil {
-							continue
+							chunkChan <- &prefetchedChunk{
+								err: fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge),
+							}
+
+							return
 						}
 
 						ch := link.Edges.Chunk
