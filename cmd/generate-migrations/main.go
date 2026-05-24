@@ -59,8 +59,11 @@ const (
 	defaultMySQLURL    = "test-user:test-password@tcp(127.0.0.1:3306)/test-db?parseTime=true&loc=UTC"
 )
 
-var errPlaceholderName = errors.New(
-	"placeholder migration name is forbidden — provide a descriptive snake_case identifier")
+var (
+	errPlaceholderName = errors.New(
+		"placeholder migration name is forbidden — provide a descriptive snake_case identifier")
+	errInvalidDialect = errors.New("unknown dialect in --skip (allowed: sqlite,postgres,mysql)")
+)
 
 func main() {
 	var (
@@ -90,7 +93,10 @@ func main() {
 	stamp := time.Now().UTC().Format("20060102150405")
 	fname := fmt.Sprintf("%s_%s.sql", stamp, *name)
 
-	skipSet := parseSkip(*skip)
+	skipSet, err := parseSkip(*skip)
+	if err != nil {
+		log.Fatalf("generate-migrations: invalid --skip: %v", err)
+	}
 
 	for _, d := range []dialectSpec{
 		{name: "sqlite", goDialect: dialect.SQLite, driver: "sqlite3", openDSN: "file::memory:?_fk=1&cache=shared"},
@@ -109,17 +115,26 @@ func main() {
 	}
 }
 
-func parseSkip(s string) map[string]struct{} {
+func parseSkip(s string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
+	allowed := map[string]struct{}{
+		"sqlite":   {},
+		"postgres": {},
+		"mysql":    {},
+	}
 
 	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
+		part = strings.ToLower(strings.TrimSpace(part))
 		if part != "" {
+			if _, ok := allowed[part]; !ok {
+				return nil, fmt.Errorf("%w: %q", errInvalidDialect, part)
+			}
+
 			out[part] = struct{}{}
 		}
 	}
 
-	return out
+	return out, nil
 }
 
 type dialectSpec struct {
@@ -141,6 +156,15 @@ func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName 
 
 		if err := os.WriteFile(path, []byte(stub), 0o600); err != nil {
 			return fmt.Errorf("write stub: %w", err)
+		}
+
+		gdir, err := sqltool.NewGooseDir(dir)
+		if err != nil {
+			return fmt.Errorf("NewGooseDir(%s): %w", dir, err)
+		}
+
+		if err := ensureAtlasSum(gdir); err != nil {
+			return fmt.Errorf("ensureAtlasSum: %w", err)
 		}
 
 		fmt.Println(path)

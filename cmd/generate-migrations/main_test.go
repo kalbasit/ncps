@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,7 +40,7 @@ func TestSQLOnlyEmitsThreeDialects(t *testing.T) {
 
 	matches, err := filepath.Glob(filepath.Join(root, "migrations", "*", "*.sql"))
 	require.NoError(t, err)
-	assert.Len(t, matches, 3, "expected exactly 3 .sql files (one per dialect); got %v", matches)
+	require.Len(t, matches, 3, "expected exactly 3 .sql files (one per dialect); got %v", matches)
 
 	// All three files should share the same timestamp prefix.
 	stamps := make([]string, 0, len(matches))
@@ -107,7 +108,11 @@ func buildGenerateMigrations(t *testing.T) string {
 
 		sharedBinaryDir = dir
 		sharedBinary = filepath.Join(dir, "generate-migrations")
-		cmd := exec.CommandContext(context.Background(), "go", "build", "-o", sharedBinary, ".")
+
+		buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(buildCtx, "go", "build", "-o", sharedBinary, ".")
 		cmd.Dir = "."
 
 		out, err := cmd.CombinedOutput()
