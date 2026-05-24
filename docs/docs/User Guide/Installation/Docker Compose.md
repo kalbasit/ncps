@@ -174,7 +174,7 @@ services:
       postgres:
         condition: service_healthy
     command: >
-      /bin/ncps migrate up --cache-database-url=postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable
+      /bin/ncps migrate up --cache-database-url="postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable"
     restart: "no"
 
   # ncps instance 1
