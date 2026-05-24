@@ -6512,12 +6512,19 @@ func (c *Cache) maybeCDCNormalizeNarInfoURL(ctx context.Context, narURL nar.URL,
 		return
 	}
 
-	hasChunks, err := c.HasNarInChunks(ctx, narURL)
+	// Normalize the URL before querying so nix-serve-style prefixed hashes
+	// (e.g. "abc-hash") match the normalized hashes stored in nar_file rows.
+	normalizedURL, err := narURL.Normalize()
+	if err != nil {
+		return
+	}
+
+	hasChunks, err := c.HasNarInChunks(ctx, normalizedURL)
 	if err != nil || !hasChunks {
 		return
 	}
 
-	noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+	noneURL := nar.URL{Hash: normalizedURL.Hash, Compression: nar.CompressionTypeNone, Query: normalizedURL.Query}
 	narInfo.URL = noneURL.String()
 	narInfo.Compression = nar.CompressionTypeNone.String()
 	narInfo.FileHash = nil

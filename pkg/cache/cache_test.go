@@ -3887,6 +3887,9 @@ func testGetNarInfoCDCNormalizesCompressionWhenChunked(factory cacheFactory) fun
 			SetNarHash(parsed.NarHash.String()).
 			//nolint:gosec // G115: NarSize is non-negative by spec
 			SetNarSize(int64(parsed.NarSize)).
+			SetFileHash(parsed.FileHash.String()).
+			//nolint:gosec // G115: FileSize is non-negative by spec
+			SetFileSize(int64(parsed.FileSize)).
 			Save(ctx)
 		require.NoError(t, err)
 
