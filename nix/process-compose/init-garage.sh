@@ -132,7 +132,7 @@ echo "  Endpoint:     $NCPS_TEST_S3_ENDPOINT"
 echo "  Region:       $NCPS_TEST_S3_REGION"
 echo "  Bucket:       $NCPS_TEST_S3_BUCKET"
 echo "  Access Key:   $NCPS_TEST_S3_ACCESS_KEY_ID"
-echo "  Secret Key:   $NCPS_TEST_S3_SECRET_ACCESS_KEY"
+echo "  Secret Key:   [redacted]"
 echo
 echo "  Garage CLI:   garage -c \$GARAGE_CONFIG_FILE <cmd>"
 echo "                (e.g. garage status, garage bucket list)"
