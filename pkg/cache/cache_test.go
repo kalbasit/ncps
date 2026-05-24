@@ -2957,6 +2957,9 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("PinUnpinNonExistentClosure", testPinUnpinNonExistentClosure(factory))
 	t.Run("GetPinnedClosureHashesSimple", testGetPinnedClosureHashesSimple(factory))
 	t.Run("LRUEvictionSkipsPinnedClosures", testLRUEvictionSkipsPinnedClosures(factory))
+	t.Run("GetNarInfo_CDCNormalizesCompressionWhenChunked", testGetNarInfoCDCNormalizesCompressionWhenChunked(factory))
+	t.Run("GetNarInfo_CDCNoNormalizationWhenNotChunked", testGetNarInfoCDCNoNormalizationWhenNotChunked(factory))
+	t.Run("GetNarInfo_CDCDisabledNoNormalization", testGetNarInfoCDCDisabledNoNormalization(factory))
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
@@ -3844,4 +3847,158 @@ func TestGetNarInfoDistributedCoordination(t *testing.T) {
 
 	// 6. Verify only one upstream call was made
 	assert.Equal(t, int32(1), atomic.LoadInt32(&upstreamCallCount), "Only one upstream call should have been made")
+}
+
+// testGetNarInfoCDCNormalizesCompressionWhenChunked verifies that GetNarInfo normalizes
+// the narinfo URL in-memory when CDC is enabled and the NAR has already been migrated
+// to chunks. This prevents "input compression not recognized" errors that occur when Nix
+// receives a stale "Compression: xz" narinfo but ncps serves uncompressed data from chunks.
+func testGetNarInfoCDCNormalizesCompressionWhenChunked(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, dbClient, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(cs)
+		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
+
+		// Parse the narinfo to get required fields (NarHash, NarSize) for a valid DB record.
+		parsed, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		// Insert a narinfo into the DB with xz compression, bypassing PutNarInfo
+		// normalization to simulate the race window: chunking completed but the
+		// DB narinfo URL hasn't been updated yet by migrateNarToChunksCleanup.
+		xzURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+
+		_, err = dbClient.Ent().NarInfo.Create().
+			SetHash(testdata.Nar1.NarInfoHash).
+			SetURL(xzURL.String()).
+			SetCompression(xzURL.Compression.String()).
+			SetStorePath(parsed.StorePath).
+			SetNarHash(parsed.NarHash.String()).
+			//nolint:gosec // G115: NarSize is non-negative by spec
+			SetNarSize(int64(parsed.NarSize)).
+			Save(ctx)
+		require.NoError(t, err)
+
+		// Insert a nar_file record with TotalChunks > 0 to simulate a fully chunked NAR.
+		// CDC stores NARs with Compression=none regardless of the original compression.
+		noneURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
+
+		_, err = dbClient.Ent().NarFile.Create().
+			SetHash(noneURL.Hash).
+			SetCompression(noneURL.Compression.String()).
+			SetQuery(noneURL.Query.Encode()).
+			SetFileSize(0).
+			SetTotalChunks(1).
+			Save(ctx)
+		require.NoError(t, err)
+
+		ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		require.NoError(t, err)
+
+		assert.Equal(t, noneURL.Compression.String(), ni.Compression,
+			"GetNarInfo should normalize Compression to none when NAR is already in CDC chunks")
+		assert.Equal(t, noneURL.String(), ni.URL,
+			"GetNarInfo should normalize URL to .nar when NAR is already in CDC chunks")
+		assert.Nil(t, ni.FileHash, "FileHash should be nil for in-memory normalized narinfo")
+		assert.Equal(t, uint64(0), ni.FileSize, "FileSize should be 0 for in-memory normalized narinfo")
+	}
+}
+
+// testGetNarInfoCDCNoNormalizationWhenNotChunked verifies that GetNarInfo does NOT
+// normalize when CDC is enabled but the NAR has not yet been migrated to chunks.
+// The xz narinfo must be returned as-is so Nix can fetch the xz NAR file.
+func testGetNarInfoCDCNoNormalizationWhenNotChunked(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, dbClient, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(cs)
+		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
+
+		parsed, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		xzURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+
+		_, err = dbClient.Ent().NarInfo.Create().
+			SetHash(testdata.Nar1.NarInfoHash).
+			SetURL(xzURL.String()).
+			SetCompression(xzURL.Compression.String()).
+			SetStorePath(parsed.StorePath).
+			SetNarHash(parsed.NarHash.String()).
+			//nolint:gosec // G115: NarSize is non-negative by spec
+			SetNarSize(int64(parsed.NarSize)).
+			Save(ctx)
+		require.NoError(t, err)
+
+		// TotalChunks=0 simulates a placeholder nar_file record created when chunking
+		// starts but before chunks have been written (chunking in progress).
+		noneURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
+
+		_, err = dbClient.Ent().NarFile.Create().
+			SetHash(noneURL.Hash).
+			SetCompression(noneURL.Compression.String()).
+			SetQuery(noneURL.Query.Encode()).
+			SetFileSize(0).
+			SetTotalChunks(0).
+			Save(ctx)
+		require.NoError(t, err)
+
+		ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		require.NoError(t, err)
+
+		assert.Equal(t, xzURL.Compression.String(), ni.Compression,
+			"GetNarInfo should NOT normalize Compression when NAR is not yet fully chunked")
+		assert.Equal(t, xzURL.String(), ni.URL,
+			"GetNarInfo should NOT normalize URL when NAR is not yet fully chunked")
+	}
+}
+
+// testGetNarInfoCDCDisabledNoNormalization verifies that GetNarInfo does NOT normalize
+// when CDC is disabled, even for narinfos with non-none compression.
+func testGetNarInfoCDCDisabledNoNormalization(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// PutNarInfo with CDC disabled stores the narinfo as-is (no URL normalization).
+		r := io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, c.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, r))
+
+		// Create the xz NAR file in local storage so HasNarInStore returns true,
+		// preventing the narinfo from being purged by getNarInfoFromDatabase.
+		narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
+		require.NoError(t, os.WriteFile(narPath, []byte("fake_xz_data"), 0o600))
+
+		ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		require.NoError(t, err)
+
+		xzURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+
+		assert.Equal(t, xzURL.Compression.String(), ni.Compression,
+			"GetNarInfo should NOT normalize Compression when CDC is disabled")
+		assert.Equal(t, xzURL.String(), ni.URL,
+			"GetNarInfo should NOT normalize URL when CDC is disabled")
+	}
 }

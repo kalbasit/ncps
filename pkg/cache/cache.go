@@ -3182,6 +3182,9 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 			// CDC) will still be migrated when they are served via GetNar.
 			if narURL.Compression != nar.CompressionTypeNone {
 				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
+				// If the NAR is already in CDC chunks, normalize in-memory before
+				// returning (see maybeCDCNormalizeNarInfoURL for rationale).
+				c.maybeCDCNormalizeNarInfoURL(ctx, narURL, narInfo)
 			}
 
 			zerolog.Ctx(ctx).
@@ -6481,6 +6484,29 @@ func derefInt64Ptr(p *int64) int64 {
 	}
 
 	return *p
+}
+
+// maybeCDCNormalizeNarInfoURL normalizes the narinfo URL and Compression in-memory
+// when CDC is enabled and the NAR has already been migrated to chunks. Without this,
+// there is a race window where GetNarInfo returns "Compression: xz" but GetNar serves
+// uncompressed data from chunks — causing Nix to fail with "input compression not
+// recognized". The DB update happens asynchronously via migrateNarToChunksCleanup;
+// this call makes the in-flight response correct immediately.
+func (c *Cache) maybeCDCNormalizeNarInfoURL(ctx context.Context, narURL nar.URL, narInfo *narinfo.NarInfo) {
+	if !c.isCDCEnabled() {
+		return
+	}
+
+	hasChunks, err := c.HasNarInChunks(ctx, narURL)
+	if err != nil || !hasChunks {
+		return
+	}
+
+	noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+	narInfo.URL = noneURL.String()
+	narInfo.Compression = nar.CompressionTypeNone.String()
+	narInfo.FileHash = nil
+	narInfo.FileSize = 0
 }
 
 // HasNarInChunks returns true if the NAR is already in chunks and chunking is complete.
