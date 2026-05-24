@@ -65,12 +65,12 @@ BACKEND_MAP: dict[str, list[str]] = {
     "helm-unittest-check": [],
     "ncps": [],  # post-Phase-5: lean binary build, no tests, no backends
     "ncps-checktools": [],
-    "ncps-coverage": ["garage", "postgres", "mariadb", "redis"],
+    "ncps-cmd-tests": [],
+    "ncps-coverage": [],  # post-iter-5: tiny merger of cohort cover.out
     "ncps-mysql-tests": ["mariadb"],
     "ncps-postgres-tests": ["postgres"],
     "ncps-redis-tests": ["redis"],
     "ncps-s3-tests": ["garage"],
-    "ncps-unit-tests": [],
 }
 
 

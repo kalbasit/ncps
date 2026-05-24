@@ -37,7 +37,7 @@ _: {
         # Depending on the cohort outputs is enough; we read their cover.out
         # by path in buildPhase.
         buildInputs = [
-          self'.checks.ncps-unit-tests.coverage
+          self'.checks.ncps-cmd-tests.coverage
           self'.checks.ncps-s3-tests.coverage
           self'.checks.ncps-postgres-tests.coverage
           self'.checks.ncps-mysql-tests.coverage
@@ -56,7 +56,7 @@ _: {
           # cover.out paths as positional args and writes the merged
           # profile to stdout, which we redirect to merged.cov.
           python3 ${./merge_coverage.py} \
-            ${self'.checks.ncps-unit-tests.coverage}/cover.out \
+            ${self'.checks.ncps-cmd-tests.coverage}/cover.out \
             ${self'.checks.ncps-s3-tests.coverage}/cover.out \
             ${self'.checks.ncps-postgres-tests.coverage}/cover.out \
             ${self'.checks.ncps-mysql-tests.coverage}/cover.out \

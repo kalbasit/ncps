@@ -84,29 +84,30 @@
           checkPhase = ''
             runHook preCheck
             # Test path + coverage scope selection:
-            #   Unit cohort (no backends) tests and instruments `./...`. It's
-            #   the only cohort that covers cmd/*, ent/*, main.go and any
-            #   other path that doesn't gate on a backend env var. Running
-            #   cmd/* in every cohort burned 5x the `go build` contention
-            #   on CI for zero incremental coverage and blew the 180s build
-            #   timeout in cmd/generate-migrations tests.
+            #   Backend cohorts (s3, postgres, mysql, redis) test AND
+            #   instrument the trees that contain integration tests
+            #   (pkg/, internal/, migrations/, testhelper/). The -coverpkg
+            #   scope matches the test paths so we don't pay the race-
+            #   detector tax instrumenting packages whose tests aren't run.
             #
-            #   Backend cohorts test AND instrument only the trees that
-            #   contain integration tests (pkg/, internal/, migrations/,
-            #   testhelper/). The -coverpkg scope matches the -test path
-            #   list so we don't pay the race-detector-tax for instrumenting
-            #   packages whose tests this cohort doesn't even run.
+            #   The "cmd cohort" (a degenerate `backends = []` cohort with a
+            #   testPaths override below) covers cmd/*, ent/*, main package.
+            #   These tests don't gate on any backend env var, so running
+            #   them in every cohort was 5x redundant work and was blowing
+            #   the 180 s build timeout in cmd/generate-migrations under
+            #   parallel `go build` contention on CI.
             #
             #   The merged coverage profile (assembled by ncps-coverage from
-            #   per-cohort cover.out) covers the full code base: unit cohort
-            #   contributes cmd/* + ent/* + everything, backend cohorts
-            #   contribute their backend-specific hits on pkg/* etc., and
-            #   the merger sums hit counts for keys that appear in both.
+            #   per-cohort cover.out) covers the full code base: cmd cohort
+            #   contributes cmd/+ent/+main, backend cohorts contribute their
+            #   pkg/* etc. hits, and the merger sums hit counts for keys
+            #   that appear in both.
             #
             # -covermode=atomic is required when combined with -race.
             ${
               if backends == [ ] then
-                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./... ./..."
+                # cmd cohort: cover cmd/, ent/, main package only.
+                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./cmd/...,./ent/...,. ./cmd/... ./ent/... ."
               else
                 "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./pkg/...,./internal/...,./migrations/...,./testhelper/... ./pkg/... ./internal/... ./migrations/... ./testhelper/..."
             }
@@ -160,12 +161,19 @@
         # tiny stdenvNoCC checks that consume them.
         inherit (config.packages) ncps-checktools;
 
-        # Per-backend Go test cohorts (see mkCohort above). Each runs
-        # `go test -race ./...` with only its backend up; test bodies
-        # gate per-backend subtests on NCPS_TEST_* env vars via
-        # `t.Skip`.
-        ncps-unit-tests = mkCohort {
-          name = "ncps-unit-tests";
+        # Per-backend Go test cohorts (see mkCohort above). Each backend
+        # cohort starts its backend and runs `go test ./pkg/... ./internal/...
+        # ./migrations/... ./testhelper/...`; test bodies gate per-backend
+        # subtests on NCPS_TEST_* env vars via `t.Skip`.
+        #
+        # The cmd cohort is a degenerate "no backends" cohort that covers
+        # ./cmd/..., ./ent/..., and the main package — paths that don't
+        # gate on any backend env var. Runs in parallel with the backend
+        # cohorts; eliminates the redundancy of having a full unit cohort
+        # that re-runs all the pkg/* unit tests the backend cohorts already
+        # exercise.
+        ncps-cmd-tests = mkCohort {
+          name = "ncps-cmd-tests";
           backends = [ ];
         };
         ncps-s3-tests = mkCohort {
