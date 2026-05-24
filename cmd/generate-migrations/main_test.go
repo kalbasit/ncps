@@ -109,7 +109,14 @@ func buildGenerateMigrations(t *testing.T) string {
 		sharedBinaryDir = dir
 		sharedBinary = filepath.Join(dir, "generate-migrations")
 
-		buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		// 180s rather than 60s because this test runs in every cohort
+		// derivation under nix/checks/flake-module.nix (cmd/generate-migrations
+		// is part of `go test ./...`), and the resulting concurrent `go build`
+		// invocations across 5+ cohorts on a CI runner have been observed
+		// blowing a 60s budget under load. The compile itself takes ~5-10s
+		// on a quiet machine; the generous window only matters under heavy
+		// CI contention.
+		buildCtx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
 		cmd := exec.CommandContext(buildCtx, "go", "build", "-o", sharedBinary, ".")
