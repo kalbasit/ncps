@@ -3455,10 +3455,6 @@ func (c *Cache) pullNarInfo(
 	// The storage backend (S3/filesystem) is used only for NAR files.
 	// Legacy narinfos in storage are handled by background migration during GetNarInfo.
 
-	// Signal that the asset is now in final storage and the distributed lock can be released
-	// This prevents the race condition where other instances check hasAsset() before storage completes
-	ds.storedOnce.Do(func() { close(ds.stored) })
-
 	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
 		zerolog.Ctx(ctx).
 			Error().
@@ -3469,6 +3465,16 @@ func (c *Cache) pullNarInfo(
 
 		return
 	}
+
+	// Signal that the asset is now in final storage and the distributed lock
+	// can be released. MUST be after storeInDatabase succeeds: the coordinator
+	// at coordinateDownload waits on ds.stored and then releases the download
+	// lock; if we signaled before the DB write, another instance polling
+	// hasAsset() (which checks the database) would acquire the lock, find the
+	// DB empty, and start a redundant upstream download — surfacing as
+	// TestGetNarInfoDistributedCoordination failures with two upstream calls
+	// instead of one.
+	ds.storedOnce.Do(func() { close(ds.stored) })
 
 	zerolog.Ctx(ctx).
 		Info().
