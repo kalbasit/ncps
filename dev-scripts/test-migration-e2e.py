@@ -22,7 +22,7 @@ For each (db, cdc, storage) scenario:
  14. Build a *new* package — proves the write path works on the new schema.
  15. Stop ncps cleanly.
 
-Results are written to var/ncps/e2e-results/<timestamp>/.
+Results are written to .e2e-results/<timestamp>/.
 """
 
 import argparse
@@ -167,18 +167,14 @@ def reset_everything():
     subprocess.run(
         ["mc", "mb", f"e2e/{S3['bucket']}"],
         env=mc_env,
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        check=True,
         timeout=15,
     )
 
     log("reset: flushing Redis", Y)
     subprocess.run(
         ["redis-cli", "-h", "127.0.0.1", "-p", "6379", "flushall"],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        check=True,
         timeout=10,
     )
 
