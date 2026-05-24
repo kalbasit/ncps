@@ -161,8 +161,15 @@ func RegisterNarInfoAsUnmigrated(
 		builder = builder.SetFileHash(ni.FileHash.String())
 	}
 
+	// Mirror narFileSize(): compression=none narinfos omit FileSize (0);
+	// NarSize is the correct fallback so nar_files.file_size is always non-zero.
+	fileSize := ni.FileSize
+	if fileSize == 0 {
+		fileSize = ni.NarSize
+	}
+
 	//nolint:gosec
-	builder = builder.SetFileSize(int64(ni.FileSize))
+	builder = builder.SetFileSize(int64(fileSize))
 
 	if ni.NarHash != nil {
 		builder = builder.SetNarHash(ni.NarHash.String())
@@ -224,8 +231,15 @@ func getOrCreateNarInfo(
 		builder = builder.SetFileHash(ni.FileHash.String())
 	}
 
+	// Mirror narFileSize(): compression=none narinfos omit FileSize (0);
+	// NarSize is the correct fallback so nar_files.file_size is always non-zero.
+	fileSize := ni.FileSize
+	if fileSize == 0 {
+		fileSize = ni.NarSize
+	}
+
 	//nolint:gosec
-	builder = builder.SetFileSize(int64(ni.FileSize))
+	builder = builder.SetFileSize(int64(fileSize))
 
 	if ni.NarHash != nil {
 		builder = builder.SetNarHash(ni.NarHash.String())
