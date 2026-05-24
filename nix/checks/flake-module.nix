@@ -261,6 +261,10 @@
           nativeBuildInputs = [ config.packages.ncps-checktools ];
           buildPhase = ''
             runHook preBuild
+            # pipefail so a non-[FAIL] ent-lint exit (crash, signal, non-zero
+            # without diagnostics) still fails the build instead of being
+            # masked by tee's exit code.
+            set -o pipefail
             # Capture output so we can both display it and grep for FAIL.
             ent-lint --root . | tee ent-lint.out
 
