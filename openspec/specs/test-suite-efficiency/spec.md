@@ -45,7 +45,7 @@ The Go test suite MUST NOT contain two tests (or subtests) where the second test
 
 ### Requirement: Coverage parity gate
 
-When tests are removed or restructured, line coverage per affected package MUST NOT decrease from the pre-change baseline. Branch coverage per affected package MUST NOT decrease by more than 1 percentage point. The check MUST be applied per batch of changes, not only at the end.
+When tests are removed or restructured, line coverage per affected package MUST NOT decrease from the pre-change baseline. Statement/instrumented-block coverage per affected package MUST NOT decrease by more than 1 percentage point. The check MUST be applied per batch of changes, not only at the end.
 
 #### Scenario: Removing a test passes the coverage gate
 

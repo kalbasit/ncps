@@ -17,7 +17,7 @@ Constraints:
 - Measure first: produce a reproducible profile of per-package and per-test wall time before any deletion.
 - Establish a written decision procedure for "is this test redundant?" that future reviewers can apply.
 - Reduce `go test -race ./...` wall time on a clean machine by a meaningful margin (target: ≥30% reduction; stretch: ≥50%) without losing coverage signal.
-- Keep coverage parity: line coverage MUST NOT drop; branch coverage MUST NOT drop by more than 1pp per package.
+- Keep coverage parity: line coverage MUST NOT drop; statement/block coverage MUST NOT drop by more than 1pp per package.
 - Leave the suite easier to extend — shared fixtures named clearly, table-driven where natural.
 
 **Non-Goals:**
@@ -36,7 +36,7 @@ Use `go test -json -race -count=1 ./...` (with integration env vars set via `ena
 - Per-test wall time (parent + subtests separately)
 - Tests where `Elapsed > 500ms`
 
-**Why this over `gotestsum`**: We already have everything we need in `-json`. A small Python script is cheaper than adding a tool dependency and is reproducible across local + CI. The output is stored as `openspec/changes/less-tests/baseline-timings.txt` (not committed past archive) for the duration of the work.
+**Why this over `gotestsum`**: We already have everything we need in `-json`. A small Python script is cheaper than adding a tool dependency and is reproducible across local + CI. The output is stored as `openspec/changes/archive/2026-05-23-less-tests/baseline-timings.txt` (not committed past archive) for the duration of the work.
 
 **Alternative considered**: CPU profiling per test with `-cpuprofile`. Rejected for this phase — wall-time ranking is enough to find the offenders; CPU profiles add noise without changing the priority list.
 
@@ -80,7 +80,7 @@ For each backend (Postgres, MySQL, S3/MinIO, Redis):
 
 Enforced in `tasks.md` as a checkpoint after every batch of removals/restructuring:
 
-```
+```bash
 go test -coverpkg=./... -coverprofile=cover-after.out -race ./<changed-pkg>/...
 ```
 
