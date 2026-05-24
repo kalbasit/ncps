@@ -67,9 +67,9 @@ Garage has no web console. We free up port 9001 and remove the `MINIO_CONSOLE*` 
 
 Garage publishes an official container image (`dxflrs/garage`). For k8s-tests we keep the same shape as today's MinIO deployment: a single-replica Deployment + Service + initContainer that runs `garage layout assign` and bucket/key bootstrap. We do *not* introduce a Helm chart dependency — a small templated YAML in `nix/k8s-tests/` matches the existing pattern.
 
-### D6: Keep test credentials stable (`test-access-key` / `test-secret-key`, `test-bucket`)
+### D6: Keep test credentials stable (`GK1234567890abcdef12345678` / 64-char hex secret, `test-bucket`)
 
-Garage allows specifying access key IDs and secrets explicitly at key-creation time. We pin them to the same values MinIO used so no Go test code needs updating beyond the env var rename.
+Garage requires key IDs that follow its `GK<hex>` format and secrets that are 64-character hex strings. The implementation pins `NCPS_TEST_S3_ACCESS_KEY_ID=GK1234567890abcdef12345678` and `NCPS_TEST_S3_SECRET_ACCESS_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`, with bucket name `test-bucket`. These stable values mean no Go test code needs updating beyond the env var rename from the MinIO names.
 
 ## Risks / Trade-offs
 

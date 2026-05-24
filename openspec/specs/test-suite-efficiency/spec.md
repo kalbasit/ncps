@@ -15,7 +15,7 @@ The project SHALL provide a reproducible workflow that ranks Go test execution t
 - **WHEN** a developer has integration env vars enabled (`eval "$(enable-integration-tests)"`) and runs the profiling workflow
 - **THEN** the workflow produces a ranked list of packages by total wall time
 - **AND** produces a ranked list of individual tests (parent and subtests) with `Elapsed > 500ms`
-- **AND** when run locally, writes the ranking to a deterministic output file under `dev-scripts/` or `openspec/changes/<change>/`
+- **AND** writes the ranking to a deterministic output file under `dev-scripts/` or `openspec/changes/<change>/`
 
 #### Scenario: Profiling without integration env vars
 
@@ -45,18 +45,18 @@ The Go test suite MUST NOT contain two tests (or subtests) where the second test
 
 ### Requirement: Coverage parity gate
 
-When tests are removed or restructured, line coverage per affected package MUST NOT decrease from the pre-change baseline. Branch coverage per affected package MUST NOT decrease by more than 1 percentage point. The check MUST be applied per batch of changes, not only at the end.
+When tests are removed or restructured, line coverage per affected package MUST NOT decrease from the pre-change baseline. Statement/instrumented-block coverage per affected package MUST NOT decrease by more than 1 percentage point. The check MUST be applied per batch of changes, not only at the end.
 
 #### Scenario: Removing a test passes the coverage gate
 
 - **WHEN** a batch of test removals is proposed for package `pkg/X`
 - **AND** `go test -coverpkg=./... -coverprofile=cover-after.out -race ./pkg/X/...` is run on the post-change tree
 - **THEN** line coverage of `cover-after.out` is greater than or equal to line coverage of the pre-change `cover-before.out`
-- **AND** branch coverage of `cover-after.out` is greater than or equal to `cover-before.out` minus 1 percentage point
+- **AND** statement/instrumented-block coverage of `cover-after.out` is greater than or equal to `cover-before.out` minus 1 percentage point
 
 #### Scenario: A batch fails the coverage gate
 
-- **WHEN** a batch of test removals causes line coverage to drop or branch coverage to drop by more than 1 percentage point for any affected package
+- **WHEN** a batch of test removals causes line coverage to drop or statement/instrumented-block coverage to drop by more than 1 percentage point for any affected package
 - **THEN** the batch MUST be reverted in full
 - **AND** the offending removal MUST be re-evaluated against the four-gate rule before any further attempt
 

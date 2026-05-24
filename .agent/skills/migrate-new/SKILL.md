@@ -90,8 +90,9 @@ backfills and the four-step NOT NULL recipe.
 
 - `task ent:check` (or `go generate ./ent/... && git diff --exit-code ./ent/`)
   confirms the Ent client is up to date.
-- `go run ./cmd/ent-lint --root .` checks every schema against the five
-  codegen invariants.
+- `go run ./cmd/ent-lint --root .` checks schemas against the
+  implemented invariants (A1, A2, A4); A3 and A5 are enforced by code
+  review until wired into the linter.
 - `go run ./cmd/atlas-sum-check --root .` confirms every `atlas.sum`
   matches the directory contents.
 - `go test -race -run TestSchemaEquivalence ./migrations/...` runs the

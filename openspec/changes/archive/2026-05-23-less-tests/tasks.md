@@ -2,9 +2,10 @@
 
 - [x] 1.1 Write `dev-scripts/profile-tests.py` that runs `go test -json -race -count=1 ./...` and emits two ranked tables: per-package wall time and per-test wall time (parent + subtests, `Elapsed > 500ms`). *(Implemented as Python to match existing `dev-scripts/` conventions. Supports `--packages`, `--threshold`, `--out`, `--from-file`, `--no-race`.)*
 - [x] 1.2 Verify `profile-tests.py` works inside the Nix dev shell (smoke-tested on `./pkg/chunker/...` — 5 tests, 1.466s total, correctly ranked subtests). `nix flake check` integration deferred to task 8.1 end-to-end run.
-- [x] 1.3 Run `profile-tests.py` against current branch tip with no test changes and save output to `openspec/changes/less-tests/baseline-timings.txt`. *(Unit-test-only baseline captured. Integration env vars not set — Postgres/MySQL/Redis tests show as skipped. Total wall time: **88.13s**.)*
+- [x] 1.3 Run `profile-tests.py` against current branch tip with no test changes and save output to `openspec/changes/archive/2026-05-23-less-tests/baseline-timings.txt`. *(Unit-test-only baseline captured. Integration env vars not set — Postgres/MySQL/Redis tests show as skipped. Total wall time: **88.13s**.)*
 
   **Top-5 packages by wall time:**
+
   | rank | package | s | notes |
   |--:|---|--:|---|
   | 1 | `pkg/cache` | 16.5 | 226 tests, the suspected hotspot — but no single dominant slow test |
@@ -60,7 +61,7 @@
 
 ## 7. Re-derive the -short gated set
 
-- [ ] 7.1 Re-run `profile-tests.sh` on the post-change tree. Save as `openspec/changes/less-tests/post-change-timings.txt`.
+- [ ] 7.1 Re-run `profile-tests.py` on the post-change tree. Save as `openspec/changes/archive/2026-05-23-less-tests/post-change-timings.txt`.
 - [ ] 7.2 For each test newly above 500ms, add a `if testing.Short() { t.Skip(...) }` guard at the top.
 - [ ] 7.3 For each currently-guarded test now below 500ms, remove the guard. Record each removal in this task with old/new timings.
 - [ ] 7.4 Verify `go test -short -race ./...` completes in noticeably less time than `go test -race ./...` on the same machine; record both numbers in this task.

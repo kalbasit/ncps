@@ -22,7 +22,7 @@ For each (db, cdc, storage) scenario:
  14. Build a *new* package — proves the write path works on the new schema.
  15. Stop ncps cleanly.
 
-Results are written to var/ncps/e2e-results/<timestamp>/.
+Results are written to .e2e-results/<timestamp>/.
 """
 
 import argparse
@@ -167,18 +167,14 @@ def reset_everything():
     subprocess.run(
         ["mc", "mb", f"e2e/{S3['bucket']}"],
         env=mc_env,
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        check=True,
         timeout=15,
     )
 
     log("reset: flushing Redis", Y)
     subprocess.run(
         ["redis-cli", "-h", "127.0.0.1", "-p", "6379", "flushall"],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        check=True,
         timeout=10,
     )
 
@@ -243,13 +239,20 @@ def stop_ncps(p, f):
                 pass
             p.wait(timeout=5)
     f.close()
-    wait_port_close(PORT, timeout=15)
+    if not wait_port_close(PORT, timeout=15):
+        raise RuntimeError(f"stop_ncps: port {PORT} still in use after 15s")
 
 
-def wait_ready(timeout=120):
+def wait_ready(proc, timeout=120):
+    """Poll until ncps answers HTTP, or proc dies, or timeout expires."""
     deadline = time.time() + timeout
     url = f"http://127.0.0.1:{PORT}/nix-cache-info"
     while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"wait_ready: ncps exited with code {proc.returncode} "
+                "before becoming ready"
+            )
         try:
             with urllib.request.urlopen(url, timeout=2) as r:
                 if r.status == 200:
@@ -458,7 +461,7 @@ def run_scenario(scenario, fix_branch, results_dir):
         # Stage 2: main
         git_checkout(MAIN_BRANCH)
         srv, f = start_ncps(scenario, os.path.join(sdir, "main-server.log"))
-        if not wait_ready():
+        if not wait_ready(srv):
             raise RuntimeError("ncps did not become ready on main")
 
         result["stages"]["main_pubkey"] = get_pubkey()
@@ -493,8 +496,11 @@ def run_scenario(scenario, fix_branch, results_dir):
         import re
         m = re.search(r"pending versions:\s*(\d+)", dry2)
         if m is None:
-            log(f"WARN: dry-run output did not contain 'pending versions: N': {dry2!r}", Y)
-        elif int(m.group(1)) != 0:
+            raise RuntimeError(
+                f"idempotency check: dry-run output did not contain "
+                f"'pending versions: N': {dry2!r}"
+            )
+        if int(m.group(1)) != 0:
             raise RuntimeError(
                 f"idempotency check failed: {m.group(1)} migration(s) still "
                 f"pending after migrate up"
@@ -517,7 +523,7 @@ def run_scenario(scenario, fix_branch, results_dir):
 
         # Stage 6: restart on fix branch (no --clean)
         srv, f = start_ncps(scenario, os.path.join(sdir, "fix-server.log"))
-        if not wait_ready():
+        if not wait_ready(srv):
             raise RuntimeError("ncps did not become ready on fix branch")
 
         new_pubkey = get_pubkey()

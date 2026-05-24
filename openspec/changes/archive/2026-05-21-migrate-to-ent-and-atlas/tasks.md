@@ -104,13 +104,13 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 
 ## 10. `pkg/database/` rewrite
 
-- [x] 10.1 Replace `database.Querier` return type with `*database.Client` (wraps `*ent.Client` + driver metadata) in `database.Open(url, poolCfg)` (introduced parallel surface in §10; signature swap deferred to §11 to keep build green)
+- [x] 10.1 Introduce `*database.Client` (wraps `*ent.Client` + driver metadata) alongside the existing `database.Querier` surface in `database.Open(url, poolCfg)` (parallel surface added here; caller migration to use `*database.Client` completed in §11)
 - [x] 10.2 Implement `(*database.Client).WithTransaction(ctx, name, fn func(*ent.Tx) error) error` preserving the OTel span/error wrapping the legacy helper provided
 - [x] 10.3 Keep `database.DetectFromDatabaseURL` and `database.PoolConfig` as-is; verify their tests still pass
 
 ## 11. Caller migration
 
-- [x] 11.1 Rewrite `pkg/cache/cache.go` storage of `database.Querier` to `*database.Client`; convert call sites one method at a time (added `*Client` field + `dbClient` param threaded through `cache.New`, testhelpers, and all call sites; call-site method conversions in §11.2-§11.8)
+- [x] 11.1 Thread `*database.Client` in parallel through `cache.New`, testhelpers, and all call sites alongside existing `database.Querier` (actual removal of `Querier` storage completed as part of this §11 caller migration; method conversions in §11.2-§11.8)
 - [x] 11.2 Convert `GetNarInfo*` paths in `pkg/cache/` to Ent fluent API; run package tests
 - [x] 11.3 Convert `PutNarInfo*` paths; run package tests
 - [x] 11.4 Convert `GetNarFile*` / `PutNarFile*` paths (including CDC chunk insertion); run package tests
@@ -139,7 +139,7 @@ Per design D6 (Option E), the adoption decision tree has four branches: empty DB
 - [x] 13.3 Add an `atlas-sum-check` derivation that verifies every `migrations/<dialect>/atlas.sum` matches the directory contents
 - [x] 13.4 Add a `schema-equivalence-check` derivation that runs the §8 golden test for all three engines (uses process-compose deps)
 - [x] 13.5 Verify `nix flake check` passes end-to-end with all four new derivations contributing
-- [x] 13.6 Confirm the existing `.github/workflows/ci.yml` still passes (no edits expected — the new checks plug into `nix flake check`)
+- [x] 13.6 Confirm `.github/workflows/ci.yml` still passes after adding the `generate-database` and `deploy-docs-pages` jobs
 
 ## 14. Docs and skills
 

@@ -176,17 +176,28 @@ func TestPrefetchErrorPropagation(t *testing.T) {
 	err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
 	require.NoError(t, err)
 
+	// Resolve the NarFile row by (hash, compression, query) so the test
+	// is not sensitive to insertion order when other tests run in parallel.
+	narFileRec, err := dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.Hash(nu.Hash),
+			entnarfile.Compression(nu.Compression.String()),
+			entnarfile.Query(nu.Query.Encode()),
+		).
+		Only(ctx)
+	require.NoError(t, err)
+
 	// Get the chunks and delete one from storage (but not from DB)
 	chunkLinks, err := dbClient.Ent().NarFileChunk.Query().
-		Where(entnarfilechunk.NarFileIDEQ(1)).
+		Where(entnarfilechunk.NarFileIDEQ(narFileRec.ID)).
 		Order(ent.Asc(entnarfilechunk.FieldChunkIndex)).
 		WithChunk().
 		All(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, chunkLinks)
+	require.GreaterOrEqual(t, len(chunkLinks), 2, "need at least 2 chunks to exercise the missing-chunk path")
 
 	// Delete the second chunk from storage to simulate a missing chunk
-	if len(chunkLinks) > 1 {
+	{
 		// Find the chunk file
 		chunkHash := chunkLinks[1].Edges.Chunk.Hash
 		chunkPath := filepath.Join(chunkStoreDir, chunkHash[:2], chunkHash)

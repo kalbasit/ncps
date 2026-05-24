@@ -105,7 +105,7 @@ No `migrations/<shard>/<dialect>/` layer — ncps has one logical database. The 
 
 #### Adoption decision tree at `ncps migrate up`
 
-```
+```text
 probe dialect-specific catalog →
 
   empty DB
@@ -151,7 +151,7 @@ Once no operator is on a pre-v1 install, the 14/8/8 translated dbmate-era files 
 
 - **Translate + bridge alone (option A)**: new installs would run 14/8/8 dbmate-era migrations then the bridge, wasting first-boot time on a sequence of intermediate schemas they never need. Eliminated by (3): Schema.Create skips straight to the end state.
 
-- **Schema overrides to match dbmate exactly (option D)**: would require `SchemaType` overrides on every `id` column (to force Postgres `BIGSERIAL`), `StorageKey` overrides on every index name, and creative workarounds for dbmate's anonymous CHECK constraints (Ent's invariant A1 requires named CHECKs). Maintains the existing schema forever, but locks ncps into legacy Postgres patterns. Rejected: v1 is the right moment to modernize.
+- **Schema overrides to match dbmate exactly (option D)**: would require `SchemaType` overrides on every `id` column (to force Postgres `BIGSERIAL`), `StorageKey` overrides on every index name, and creative workarounds for dbmate's anonymous CHECK constraints (Ent's invariant A1 requires CHECK constraints to be named). Maintains the existing schema forever, but locks ncps into legacy Postgres patterns. Rejected: v1 is the right moment to modernize.
 
 - **Rebaseline (option C)**: drop the dbmate-era files and create one fresh "initial_baseline" — but this breaks the upgrade path for existing v0.x installs, which is unacceptable per the rule the user set out at the start of this change ("users could be on older versions of ncps, like v0.4").
 

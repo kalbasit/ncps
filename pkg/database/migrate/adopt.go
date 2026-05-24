@@ -52,7 +52,7 @@ func adopt(ctx context.Context, db *sql.DB, d database.Type, st State) error {
 	case StateUnknown:
 		fallthrough
 	default:
-		return fmt.Errorf("adopt: %w %v", ErrUnknownDialect, st)
+		return fmt.Errorf("adopt: %w %v", ErrUnknownState, st)
 	}
 }
 

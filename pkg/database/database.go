@@ -68,7 +68,14 @@ func Open(dbURL string, poolCfg *PoolConfig) (*Client, error) {
 		return nil, fmt.Errorf("error opening the database at %q: %w", dbURL, err)
 	}
 
-	return NewClient(sdb, dbType)
+	client, err := NewClient(sdb, dbType)
+	if err != nil {
+		_ = sdb.Close()
+
+		return nil, err
+	}
+
+	return client, nil
 }
 
 // applyPoolSettings applies connection pool settings to the database connection.

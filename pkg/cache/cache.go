@@ -145,6 +145,8 @@ var (
 	// ErrNarAlreadyChunked is returned when the nar is already chunked.
 	ErrNarAlreadyChunked = errors.New("nar is already chunked")
 
+	errMissingChunkEdge = errors.New("nar_file_chunk is missing eager-loaded chunk edge")
+
 	//nolint:gochecknoglobals
 	meter metric.Meter
 
@@ -2385,13 +2387,13 @@ func (c *Cache) relinkNarInfosToNarFileWithEntTx(
 
 	// Chunk the CreateBulk to stay below driver placeholder limits.
 	// Each row sends 2 parameters (narinfo_id, nar_file_id); 500 rows
-	// per batch = 1000 placeholders, well under Postgres 65535,
-	// modern SQLite 32766, and older SQLite 999. Closures with
-	// thousands of narinfos sharing a NAR URL (large multi-output
-	// derivations, deep dependency trees) are uncommon but real, and
-	// without chunking the bulk insert would silently fail on
-	// older sqlite.
-	const relinkBatchSize = 500
+	// The upsert binds 2 values per row (narinfoID + narFileID), so
+	// 499 rows = 998 placeholders — safely under older SQLite's hard
+	// limit of 999. Closures with thousands of narinfos sharing a
+	// NAR URL (large multi-output derivations, deep dependency trees)
+	// are uncommon but real; without chunking the bulk insert would
+	// silently fail on older SQLite.
+	const relinkBatchSize = 499
 
 	for start := 0; start < len(narInfoIDs); start += relinkBatchSize {
 		end := start + relinkBatchSize
@@ -5675,6 +5677,13 @@ func (c *Cache) deleteLRURecordsFromDB(
 		return nil, nil, nil, nil
 	}
 
+	if len(candidates) == maxFetchRows {
+		log.Warn().Int("limit", maxFetchRows).Msg(
+			"LRU candidate fetch hit the row cap; narinfos beyond this " +
+				"window are not considered for eviction in this pass",
+		)
+	}
+
 	// Apply the legacy cumulative-byte filter: keep the LRU prefix whose
 	// cumulative file_size is <= max(2*cleanupSize, smallest-single-row).
 	// For cleanupSize == 0 ("delete all") keep every candidate.
@@ -5994,7 +6003,9 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 				return err
 			}
 
-			if len(narInfoHashesToRemove) == 0 && len(chunkHashesToRemove) == 0 {
+			if len(narInfoHashesToRemove) == 0 &&
+				len(narURLsToRemove) == 0 &&
+				len(chunkHashesToRemove) == 0 {
 				return nil
 			}
 
@@ -6535,16 +6546,14 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		totalSize = int64(nr.FileSize)
 		totalChunks = nr.TotalChunks
 
-		// Touch the NAR file
+		// Touch the NAR file by the fetched row's ID. getNarFileFromDB may
+		// return a compression=none fallback row whose key differs from
+		// narURL, so filtering on narURL fields can silently miss it.
 		if nr.LastAccessedAt == nil || time.Since(*nr.LastAccessedAt) > c.recordAgeIgnoreTouch {
-			if _, err := tx.NarFile.Update().
-				Where(
-					entnarfile.HashEQ(narURL.Hash),
-					entnarfile.CompressionEQ(narURL.Compression.String()),
-					entnarfile.QueryEQ(narURL.Query.Encode()),
-				).
-				SetLastAccessedAt(time.Now()).
-				SetUpdatedAt(time.Now()).
+			now := time.Now()
+			if _, err := tx.NarFile.UpdateOneID(nr.ID).
+				SetLastAccessedAt(now).
+				SetUpdatedAt(now).
 				Save(ctx); err != nil {
 				return fmt.Errorf("error touching the nar record: %w", err)
 			}
@@ -6614,9 +6623,11 @@ func (c *Cache) streamCompleteChunks(
 	}
 
 	for _, link := range links {
-		if link.Edges.Chunk != nil {
-			chunkHashes = append(chunkHashes, link.Edges.Chunk.Hash)
+		if link.Edges.Chunk == nil {
+			return fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge)
 		}
+
+		chunkHashes = append(chunkHashes, link.Edges.Chunk.Hash)
 	}
 
 	if len(chunkHashes) != int(totalChunks) {
@@ -6762,7 +6773,14 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				// Feed all available chunks from the batch into the pipeline.
 				for _, link := range batch {
 					if link.Edges.Chunk == nil {
-						continue
+						select {
+						case chunkChan <- &prefetchedChunk{
+							err: fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge),
+						}:
+						case <-ctx.Done():
+						}
+
+						return
 					}
 
 					ch := link.Edges.Chunk
@@ -6861,7 +6879,14 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					// Feed the newly-available chunks and break out of the wait loop.
 					for _, link := range batch2 {
 						if link.Edges.Chunk == nil {
-							continue
+							select {
+							case chunkChan <- &prefetchedChunk{
+								err: fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge),
+							}:
+							case <-ctx.Done():
+							}
+
+							return
 						}
 
 						ch := link.Edges.Chunk

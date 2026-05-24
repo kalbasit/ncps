@@ -117,7 +117,14 @@ func MigrateNarInfoToDatabase(
 		}
 
 		// Get or Create NarFile
-		narFile, err := getOrCreateNarFile(ctx, tx, &narURL, ni.FileSize)
+		// Mirror narFileSize(): compression=none narinfos omit FileSize (0);
+		// NarSize is the correct fallback so nar_files.file_size is always non-zero.
+		narFileSize := ni.FileSize
+		if narFileSize == 0 {
+			narFileSize = ni.NarSize
+		}
+
+		narFile, err := getOrCreateNarFile(ctx, tx, &narURL, narFileSize)
 		if err != nil {
 			return err
 		}
@@ -161,8 +168,15 @@ func RegisterNarInfoAsUnmigrated(
 		builder = builder.SetFileHash(ni.FileHash.String())
 	}
 
+	// Mirror narFileSize(): compression=none narinfos omit FileSize (0);
+	// NarSize is the correct fallback so nar_files.file_size is always non-zero.
+	fileSize := ni.FileSize
+	if fileSize == 0 {
+		fileSize = ni.NarSize
+	}
+
 	//nolint:gosec
-	builder = builder.SetFileSize(int64(ni.FileSize))
+	builder = builder.SetFileSize(int64(fileSize))
 
 	if ni.NarHash != nil {
 		builder = builder.SetNarHash(ni.NarHash.String())
@@ -198,6 +212,12 @@ func getOrCreateNarInfo(
 	// First, try to get the record.
 	existing, err := tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
 	if err == nil {
+		// If the existing record is a placeholder (no URL), update it with the
+		// full narinfo so MigrateNarInfoToDatabase fills in migrated fields.
+		if existing.URL == nil || *existing.URL == "" {
+			return updatePlaceholderNarInfo(ctx, tx, existing.ID, ni)
+		}
+
 		return existing, nil
 	}
 
@@ -224,8 +244,15 @@ func getOrCreateNarInfo(
 		builder = builder.SetFileHash(ni.FileHash.String())
 	}
 
+	// Mirror narFileSize(): compression=none narinfos omit FileSize (0);
+	// NarSize is the correct fallback so nar_files.file_size is always non-zero.
+	fileSize := ni.FileSize
+	if fileSize == 0 {
+		fileSize = ni.NarSize
+	}
+
 	//nolint:gosec
-	builder = builder.SetFileSize(int64(ni.FileSize))
+	builder = builder.SetFileSize(int64(fileSize))
 
 	if ni.NarHash != nil {
 		builder = builder.SetNarHash(ni.NarHash.String())
@@ -312,6 +339,62 @@ func getOrCreateNarFile(
 	}
 
 	return narFile, nil
+}
+
+// updatePlaceholderNarInfo fills in a placeholder (URL-less) narinfo row
+// with the full narinfo fields so MigrateNarInfoToDatabase correctly
+// transitions RegisterNarInfoAsUnmigrated rows to fully-migrated state.
+func updatePlaceholderNarInfo(
+	ctx context.Context,
+	tx *ent.Tx,
+	id int,
+	ni *narinfo.NarInfo,
+) (*ent.NarInfo, error) {
+	upd := tx.NarInfo.UpdateOneID(id)
+
+	if ni.URL != "" {
+		upd = upd.SetURL(ni.URL)
+	}
+
+	if ni.StorePath != "" {
+		upd = upd.SetStorePath(ni.StorePath)
+	}
+
+	if ni.Compression != "" {
+		upd = upd.SetCompression(ni.Compression)
+	}
+
+	if ni.FileHash != nil {
+		upd = upd.SetFileHash(ni.FileHash.String())
+	}
+
+	if ni.NarHash != nil {
+		upd = upd.SetNarHash(ni.NarHash.String())
+	}
+
+	fileSize := ni.FileSize
+	if fileSize == 0 {
+		fileSize = ni.NarSize
+	}
+
+	//nolint:gosec
+	upd = upd.SetFileSize(int64(fileSize))
+	//nolint:gosec
+	upd = upd.SetNarSize(int64(ni.NarSize))
+
+	if ni.Deriver != "" {
+		upd = upd.SetDeriver(ni.Deriver)
+	}
+
+	if ni.System != "" {
+		upd = upd.SetSystem(ni.System)
+	}
+
+	if ni.CA != "" {
+		upd = upd.SetCa(ni.CA)
+	}
+
+	return upd.Save(ctx)
 }
 
 // isDuplicateKey returns true if the error appears to be a unique-key

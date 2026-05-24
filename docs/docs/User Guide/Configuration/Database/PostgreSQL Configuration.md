@@ -112,7 +112,7 @@ cache:
 
 ```
 # Run migrations
-ncps migrate up --cache-database-url=postgresql://ncps:password@localhost:5432/ncps?sslmode=disable
+ncps migrate up --cache-database-url="postgresql://ncps:password@localhost:5432/ncps?sslmode=disable"
 ```
 
 ### Performance Tuning

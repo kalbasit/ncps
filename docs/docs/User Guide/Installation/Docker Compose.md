@@ -142,7 +142,7 @@ services:
       - "3900:3900"   # S3 API
       - "3903:3903"   # admin API
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3903/health"]
+      test: ["CMD", "/garage", "-c", "/etc/garage.toml", "status"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -174,7 +174,7 @@ services:
       postgres:
         condition: service_healthy
     command: >
-      /bin/ncps migrate up --cache-database-url=postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable
+      /bin/ncps migrate up --cache-database-url="postgresql://ncps:changeme@postgres:5432/ncps?sslmode=disable"
     restart: "no"
 
   # ncps instance 1

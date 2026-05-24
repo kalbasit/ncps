@@ -105,10 +105,13 @@
             src = ../../.;
             outputs = [ "out" ];
             buildPhase = ''
+              set -o pipefail
               HOME=$TMPDIR
 
               # Build the lint binary, then run it against the schema tree.
               # Capture output so we can both display it and grep for FAIL.
+              # set -o pipefail ensures a non-zero exit from ent-lint fails
+              # the pipeline even though tee always exits 0.
               go build -o ./ent-lint ./cmd/ent-lint
               ./ent-lint --root . | tee ent-lint.out
 

@@ -84,8 +84,6 @@
                   };
                 in
                 ''
-                  # Ensure the data + metadata dirs exist before garage starts.
-                  mkdir -p "$GARAGE_DATA_DIR" "$GARAGE_META_DIR"
                   exec ${startGarage}/bin/start-garage
                 '';
               environment = garageEnvironment;

@@ -59,8 +59,11 @@ const (
 	defaultMySQLURL    = "test-user:test-password@tcp(127.0.0.1:3306)/test-db?parseTime=true&loc=UTC"
 )
 
-var errPlaceholderName = errors.New(
-	"placeholder migration name is forbidden — provide a descriptive snake_case identifier")
+var (
+	errPlaceholderName = errors.New(
+		"placeholder migration name is forbidden — provide a descriptive snake_case identifier")
+	errInvalidDialect = errors.New("unknown dialect in --skip (allowed: sqlite,postgres,mysql)")
+)
 
 func main() {
 	var (
@@ -90,7 +93,12 @@ func main() {
 	stamp := time.Now().UTC().Format("20060102150405")
 	fname := fmt.Sprintf("%s_%s.sql", stamp, *name)
 
-	skipSet := parseSkip(*skip)
+	skipSet, err := parseSkip(*skip)
+	if err != nil {
+		log.Fatalf("generate-migrations: invalid --skip: %v", err)
+	}
+
+	var generatedStamps []string
 
 	for _, d := range []dialectSpec{
 		{name: "sqlite", goDialect: dialect.SQLite, driver: "sqlite3", openDSN: "file::memory:?_fk=1&cache=shared"},
@@ -103,23 +111,48 @@ func main() {
 			continue
 		}
 
-		if err := runDialect(ctx, *root, d, fname, *name, *sqlOnly); err != nil {
+		generated, err := runDialect(ctx, *root, d, fname, *name, *sqlOnly)
+		if err != nil {
 			log.Fatalf("generate-migrations: %s: %v", d.name, err)
+		}
+
+		// Collect the 14-char timestamp prefix for consistency check.
+		if base := filepath.Base(generated); len(base) >= 14 {
+			generatedStamps = append(generatedStamps, base[:14])
+		}
+	}
+
+	// Warn when a second boundary fell between dialect runs; callers can
+	// re-run to produce a consistent set.
+	for i := 1; i < len(generatedStamps); i++ {
+		if generatedStamps[i] != generatedStamps[0] {
+			log.Printf("generate-migrations: WARNING: timestamp prefix %q for dialect %d "+
+				"differs from %q; re-run if a shared prefix is required",
+				generatedStamps[i], i+1, generatedStamps[0])
 		}
 	}
 }
 
-func parseSkip(s string) map[string]struct{} {
+func parseSkip(s string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
+	allowed := map[string]struct{}{
+		"sqlite":   {},
+		"postgres": {},
+		"mysql":    {},
+	}
 
 	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
+		part = strings.ToLower(strings.TrimSpace(part))
 		if part != "" {
+			if _, ok := allowed[part]; !ok {
+				return nil, fmt.Errorf("%w: %q", errInvalidDialect, part)
+			}
+
 			out[part] = struct{}{}
 		}
 	}
 
-	return out
+	return out, nil
 }
 
 type dialectSpec struct {
@@ -129,10 +162,10 @@ type dialectSpec struct {
 	openDSN   string
 }
 
-func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName string, sqlOnly bool) error {
+func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName string, sqlOnly bool) (string, error) {
 	dir := filepath.Join(root, "migrations", d.name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
+		return "", fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 
 	if sqlOnly {
@@ -140,27 +173,36 @@ func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName 
 		stub := "-- +goose Up\n\n-- +goose Down\n"
 
 		if err := os.WriteFile(path, []byte(stub), 0o600); err != nil {
-			return fmt.Errorf("write stub: %w", err)
+			return "", fmt.Errorf("write stub: %w", err)
+		}
+
+		gdir, err := sqltool.NewGooseDir(dir)
+		if err != nil {
+			return "", fmt.Errorf("NewGooseDir(%s): %w", dir, err)
+		}
+
+		if err := ensureAtlasSum(gdir); err != nil {
+			return "", fmt.Errorf("ensureAtlasSum: %w", err)
 		}
 
 		fmt.Println(path)
 
-		return nil
+		return path, nil
 	}
 
 	db, err := openDevDB(d)
 	if err != nil {
-		return fmt.Errorf("open dev db: %w", err)
+		return "", fmt.Errorf("open dev db: %w", err)
 	}
 	defer db.Close()
 
 	if err := resetDevDB(ctx, db, d); err != nil {
-		return fmt.Errorf("reset dev db: %w", err)
+		return "", fmt.Errorf("reset dev db: %w", err)
 	}
 
 	gdir, err := sqltool.NewGooseDir(dir)
 	if err != nil {
-		return fmt.Errorf("NewGooseDir(%s): %w", dir, err)
+		return "", fmt.Errorf("NewGooseDir(%s): %w", dir, err)
 	}
 
 	// Ensure atlas.sum exists and is current before Atlas validates the
@@ -168,7 +210,18 @@ func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName 
 	// first run after a migration tree is hand-edited (notably the §7
 	// translation) and refreshes it on every subsequent generation.
 	if err := ensureAtlasSum(gdir); err != nil {
-		return fmt.Errorf("ensureAtlasSum: %w", err)
+		return "", fmt.Errorf("ensureAtlasSum: %w", err)
+	}
+
+	// Snapshot existing SQL files so we can identify the newly created one.
+	beforeFiles, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+	if err != nil {
+		return "", fmt.Errorf("glob before: %w", err)
+	}
+
+	beforeSet := make(map[string]struct{}, len(beforeFiles))
+	for _, f := range beforeFiles {
+		beforeSet[f] = struct{}{}
 	}
 
 	drv := entsql.OpenDB(d.goDialect, db)
@@ -180,14 +233,29 @@ func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName 
 		schema.WithFormatter(sqltool.GooseFormatter),
 	)
 	if err != nil {
-		return fmt.Errorf("NewMigrate: %w", err)
+		return "", fmt.Errorf("NewMigrate: %w", err)
 	}
 
 	if err := m.NamedDiff(ctx, migName, migrate.Tables...); err != nil {
-		return fmt.Errorf("NamedDiff: %w", err)
+		return "", fmt.Errorf("NamedDiff: %w", err)
 	}
 
-	return nil
+	// Find the newly created file.
+	afterFiles, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+	if err != nil {
+		return "", fmt.Errorf("glob after: %w", err)
+	}
+
+	for _, f := range afterFiles {
+		if _, exists := beforeSet[f]; !exists {
+			fmt.Println(f)
+
+			return f, nil
+		}
+	}
+
+	// No new file — schema was already up to date (no-op diff).
+	return "", nil
 }
 
 func openDevDB(d dialectSpec) (*sql.DB, error) {
@@ -284,7 +352,7 @@ func validateName(name string) error {
 	}
 
 	switch strings.ToLower(s) {
-	case "auto", "wip", "tmp", "todo", "temp", "test":
+	case "auto", "wip", "tmp", "todo", "temp", "test", "empty":
 		return fmt.Errorf("%w: %q", errPlaceholderName, s)
 	}
 

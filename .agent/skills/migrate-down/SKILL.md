@@ -23,7 +23,9 @@ new binaries can coexist against the same schema.
 1. **Backfill** the new column in migration N+1 (use `--sql-only` —
    `go run ./cmd/generate-migrations --sql-only --name=backfill_x`).
 1. **Switch reads** to the new column in the application code; deploy.
-1. **Drop** the old column in migration N+2.
+1. **Remove** the old column in migration N+2. `DROP COLUMN` is flagged
+   as sensitive DDL by the migration spec and is only permissible at
+   this final step, once no deployed binary references the old column.
 
 Each migration ships in its own release; the application gracefully
 handles the dual-column state in between.
@@ -34,7 +36,9 @@ The specific case of adding a NOT NULL constraint to an existing
 nullable column:
 
 1. **Migration A**: ADD COLUMN nullable, default-able.
-1. **Migration B** (`--sql-only` stub): BACKFILL existing rows.
+1. **Deploy** application code that always writes a non-null value for
+   the new column (so all rows written after this deploy have a value).
+1. **Migration B** (`--sql-only` stub): BACKFILL existing null rows.
 1. **Migration C**: ADD CONSTRAINT NOT NULL (or
    `ALTER COLUMN ... SET NOT NULL`).
 1. **Deploy each step independently**; never combine into a single
