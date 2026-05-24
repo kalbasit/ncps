@@ -21,14 +21,23 @@ no others. This replaces the prior topology in which a single
   cache without rebuilding
 - **AND** no service backend is started for any cached derivation
 
-#### Scenario: Touching a Postgres-only integration test
+#### Scenario: Touching the Postgres preCheck script
 
-- **WHEN** a developer changes a file tagged `//go:build integration_postgres`
+- **WHEN** a developer changes `nix/packages/ncps/pre-check-postgres.sh`
   and runs `nix flake check`
 - **THEN** Nix invalidates only the `ncps-postgres-tests` derivation
+  (and `packages.ncps-coverage`, which is NOT in the checks attrset)
 - **AND** only PostgreSQL is started during that derivation's `preCheck`
-- **AND** the S3, MySQL, Redis, and unit-test derivations are served
-  from cache
+- **AND** the S3, MySQL, Redis, and unit-test cohorts are served from
+  cache
+
+  Note: per-backend cache invalidation applies to backend-specific
+  *inputs* (the matching pre-check script, the matching nativeBuildInputs
+  binaries). It does NOT apply to Go source changes in shared packages
+  like `pkg/cache` — those invalidate every cohort because the cohorts
+  share `packages.ncps`'s narrow fileset. That trade-off is documented
+  in design.md D1: file-level cache granularity was the cost of the
+  env-var cohort approach over the rejected build-tag-per-file split.
 
 #### Scenario: Cold cache full check
 
@@ -216,8 +225,14 @@ the previous topology. Specifically:
 - The full set of `golangci-lint` linters and configured timeouts
   remains in effect (no narrowing).
 - `ent-codegen-drift-check`, `atlas-sum-check`, `ent-lint-check`,
-  `schema-equivalence-check`, and `helm-unittest-check` continue to
-  fail the gate on the same inputs they fail on today.
+  and `helm-unittest-check` continue to fail the gate on the same
+  inputs they fail on today.
+- `TestSchemaEquivalence` (formerly run by the standalone
+  `schema-equivalence-check` derivation, removed in Phase 4) continues
+  to be exercised: its SQLite path runs in every cohort, its Postgres
+  path runs in `ncps-postgres-tests`, and its MySQL path runs in
+  `ncps-mysql-tests` — all via the same `t.Skip` env-var pattern the
+  test already uses internally. No coverage lost; one fewer derivation.
 - Codecov continues to receive a single merged coverage profile.
 
 #### Scenario: Race detector remains on
