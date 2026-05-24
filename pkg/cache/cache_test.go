@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1913,8 +1914,20 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 		// Verify client B got the complete data
 		require.NotNil(t, readerB, "client B reader should not be nil")
 
-		bodyB, err := io.ReadAll(readerB)
-		require.NoError(t, err, "should be able to read NAR content from client B")
+		// Bounded io.ReadAll: previously this could hang for the 20 min outer
+		// `go test -timeout` if client A's cancellation left the shared streaming
+		// goroutine in a state where the writer never closed. See ncps #1252.
+		// Fail fast with a goroutine dump so future hangs are actionable.
+		var (
+			bodyB   []byte
+			readErr error
+		)
+
+		runWithTimeout(t, 30*time.Second, "io.ReadAll(readerB)", func() {
+			bodyB, readErr = io.ReadAll(readerB)
+		})
+
+		require.NoError(t, readErr, "should be able to read NAR content from client B")
 		readerB.Close()
 
 		assert.Equal(t, entry.NarText, string(bodyB), "NAR content should match for client B")
@@ -1929,7 +1942,7 @@ func testConcurrentDownloadCancelOneClientOthersContinue(factory cacheFactory) f
 		nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
 		assert.True(t, localStore.HasNar(newContext(), nu), "HasNar should return true")
 
-		wg.Wait()
+		runWithTimeout(t, 30*time.Second, "wg.Wait()", wg.Wait)
 
 		t.Log("✅ Client B completed successfully despite client A cancellation - download coordination works!")
 	}
@@ -1939,6 +1952,46 @@ func newContext() context.Context {
 	return zerolog.
 		New(io.Discard).
 		WithContext(context.Background())
+}
+
+// runWithTimeout runs fn in a goroutine and fails the test if it doesn't
+// complete within d. On timeout it dumps all goroutines via runtime.Stack
+// so the next reader can pinpoint where a hang originated, then calls
+// t.Fatalf. Used to convert hangs that would otherwise consume the entire
+// `go test -timeout` budget into fast-failing tests with actionable
+// diagnostics. See ncps #1252 for the originating hang in
+// TestCacheBackends/.../ConcurrentDownloadCancelOneClientOthersContinue.
+func runWithTimeout(t *testing.T, d time.Duration, what string, fn func()) {
+	t.Helper()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		fn()
+	}()
+
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+	case <-timer.C:
+		buf := make([]byte, 64<<10)
+		for {
+			n := runtime.Stack(buf, true)
+			if n < len(buf) {
+				buf = buf[:n]
+
+				break
+			}
+
+			buf = make([]byte, 2*len(buf))
+		}
+
+		t.Fatalf("%s did not complete within %s; goroutine dump:\n%s", what, d, buf)
+	}
 }
 
 func waitForFile(t *testing.T, path string) {
