@@ -82,6 +82,25 @@ func IsDuplicateKeyError(err error) bool {
 	return false
 }
 
+// IsAbortedTransactionError returns true when err carries PostgreSQL SQLSTATE
+// 25P02 ("in_failed_sql_transaction"). This state arises when a prior
+// statement in the same transaction failed, leaving the transaction aborted.
+// Subsequent statements on that connection will also fail until a ROLLBACK is
+// issued. Detecting this lets callers clean up the connection before returning
+// it to the pool.
+func IsAbortedTransactionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "25P02"
+	}
+
+	return strings.Contains(err.Error(), "current transaction is aborted")
+}
+
 // IsNotFoundError checks if the error indicates a row was not found.
 // Accepts both the package-level ErrNotFound sentinel and Ent's
 // *NotFoundError wrapper.
