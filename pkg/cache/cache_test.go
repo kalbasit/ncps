@@ -4049,7 +4049,9 @@ func testGetNarCDCXzRequestReturnsErrWhenChunked(factory cacheFactory) func(*tes
 
 // testGetNarCDCXzServesFromStoreWhenBothExist verifies that GetNar still serves
 // the xz file from whole-file storage when both the xz file and CDC chunks exist.
-// This guards the transition period (chunking complete but xz file not yet deleted).
+// This guards the transition period (chunking complete but xz file not yet deleted),
+// which only occurs when lazy chunking is enabled — the xz file is kept until the
+// background cleanup job removes it.
 func testGetNarCDCXzServesFromStoreWhenBothExist(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
@@ -4063,6 +4065,10 @@ func testGetNarCDCXzServesFromStoreWhenBothExist(factory cacheFactory) func(*tes
 		require.NoError(t, err)
 		c.SetChunkStore(cs)
 		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
+		// Enable lazy chunking: this is the only mode where the xz whole-file coexists
+		// with chunks (immediate deletion is skipped). It also prevents the background
+		// migration goroutine from deleting the xz file during the test assertion.
+		c.SetCDCLazyChunking(true, 1)
 
 		// Insert a nar_file record with Compression=none and TotalChunks=1.
 		noneURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
