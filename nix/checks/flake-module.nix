@@ -83,26 +83,32 @@
               '';
           checkPhase = ''
             runHook preCheck
-            # Test path selection:
-            #   Unit cohort (no backends) tests `./...` — it's the only cohort
-            #   that covers cmd/* and any other path that doesn't gate on a
-            #   backend env var. Running cmd/* in every cohort burned 5x the
-            #   `go build` contention on CI for zero incremental coverage and
-            #   blew the 180s build timeout in cmd/generate-migrations tests.
+            # Test path + coverage scope selection:
+            #   Unit cohort (no backends) tests and instruments `./...`. It's
+            #   the only cohort that covers cmd/*, ent/*, main.go and any
+            #   other path that doesn't gate on a backend env var. Running
+            #   cmd/* in every cohort burned 5x the `go build` contention
+            #   on CI for zero incremental coverage and blew the 180s build
+            #   timeout in cmd/generate-migrations tests.
             #
-            #   Backend cohorts test only the trees that contain integration
-            #   tests (pkg/, internal/, migrations/, testhelper/). cmd/*
-            #   coverage still lands in the merged profile via the unit cohort.
+            #   Backend cohorts test AND instrument only the trees that
+            #   contain integration tests (pkg/, internal/, migrations/,
+            #   testhelper/). The -coverpkg scope matches the -test path
+            #   list so we don't pay the race-detector-tax for instrumenting
+            #   packages whose tests this cohort doesn't even run.
             #
-            # -coverpkg=./... keeps the coverage scope at the whole module
-            # regardless of which packages run their tests, so the merged
-            # profile reflects production code in all packages.
+            #   The merged coverage profile (assembled by ncps-coverage from
+            #   per-cohort cover.out) covers the full code base: unit cohort
+            #   contributes cmd/* + ent/* + everything, backend cohorts
+            #   contribute their backend-specific hits on pkg/* etc., and
+            #   the merger sums hit counts for keys that appear in both.
+            #
             # -covermode=atomic is required when combined with -race.
             ${
               if backends == [ ] then
                 "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./... ./..."
               else
-                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./... ./pkg/... ./internal/... ./migrations/... ./testhelper/..."
+                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./pkg/...,./internal/...,./migrations/...,./testhelper/... ./pkg/... ./internal/... ./migrations/... ./testhelper/..."
             }
             runHook postCheck
           '';
