@@ -103,7 +103,7 @@ func (s *Server) createRouter() {
 	s.router = chi.NewRouter()
 
 	s.router.Use(middleware.Heartbeat("/healthz"))
-	s.router.Use(middleware.RealIP)
+	s.router.Use(middleware.ClientIPFromXFF())
 	s.router.Use(recoverer)
 
 	s.router.Use(s.skipTelemetryForInfraRoutes)
@@ -218,10 +218,15 @@ func recoverer(next http.Handler) http.Handler {
 func getZeroLogForRequest(r *http.Request) zerolog.Logger {
 	span := trace.SpanFromContext(r.Context())
 
+	from := middleware.GetClientIP(r.Context())
+	if from == "" {
+		from = r.RemoteAddr
+	}
+
 	logContext := zerolog.Ctx(r.Context()).With().
 		Str("method", r.Method).
 		Str("request_uri", r.RequestURI).
-		Str("from", r.RemoteAddr)
+		Str("from", from)
 
 	if span.SpanContext().HasTraceID() {
 		logContext = logContext.Str("trace_id", span.SpanContext().TraceID().String())
