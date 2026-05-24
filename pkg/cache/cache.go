@@ -2880,11 +2880,26 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	if hasInStore && c.isCDCEnabled() {
 		// Check if the nar is chunked by looking at the nar_file record
 		nr, nrErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, *narURL)
-		if nrErr == nil && nr.TotalChunks > 0 {
+		// Only upgrade to chunks when the request is for the uncompressed NAR.
+		// Chunks are always stored uncompressed; serving them for a compressed
+		// request (e.g. .nar.xz) would send raw bytes the client cannot decode.
+		if nrErr == nil && nr.TotalChunks > 0 && narURL.Compression == nar.CompressionTypeNone {
 			// Nar is chunked, serve from chunks for better performance
 			serveFromChunks = true
 		}
-		// If nrErr (not found) or total_chunks=0, serve from store (raw or legacy)
+		// If nrErr (not found), total_chunks=0, or request wants compressed data,
+		// serve from store (raw or legacy).
+	}
+
+	// Chunks are always uncompressed. If the client requested a compressed NAR
+	// (e.g. .nar.xz) but the whole-file is no longer in storage (only chunks
+	// remain), we cannot reconstruct the compressed stream. Return not-found so
+	// the client falls back to an upstream cache that still has the original
+	// compressed file. This prevents "input compression not recognized" errors
+	// caused by serving raw chunk bytes to a client expecting xz data.
+	if serveFromChunks && narURL.Compression != nar.CompressionTypeNone {
+		return 0, nil, fmt.Errorf("NAR %s is only available as chunks, cannot serve as %s: %w",
+			narURL.Hash, narURL.Compression, storage.ErrNotFound)
 	}
 
 	if serveFromChunks {

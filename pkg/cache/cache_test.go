@@ -2960,6 +2960,8 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfo_CDCNormalizesCompressionWhenChunked", testGetNarInfoCDCNormalizesCompressionWhenChunked(factory))
 	t.Run("GetNarInfo_CDCNoNormalizationWhenNotChunked", testGetNarInfoCDCNoNormalizationWhenNotChunked(factory))
 	t.Run("GetNarInfo_CDCDisabledNoNormalization", testGetNarInfoCDCDisabledNoNormalization(factory))
+	t.Run("GetNar_CDCXzRequestReturnsErrWhenChunked", testGetNarCDCXzRequestReturnsErrWhenChunked(factory))
+	t.Run("GetNar_CDCXzServesFromStoreWhenBothExist", testGetNarCDCXzServesFromStoreWhenBothExist(factory))
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
@@ -4000,5 +4002,94 @@ func testGetNarInfoCDCDisabledNoNormalization(factory cacheFactory) func(*testin
 			"GetNarInfo should NOT normalize Compression when CDC is disabled")
 		assert.Equal(t, xzURL.String(), ni.URL,
 			"GetNarInfo should NOT normalize URL when CDC is disabled")
+	}
+}
+
+// testGetNarCDCXzRequestReturnsErrWhenChunked verifies that GetNar returns an error
+// when the NAR is only available as CDC chunks and the client requests the xz form.
+// Without the fix in serveNarFromStorageViaPipe, this served raw uncompressed chunk
+// bytes for a .nar.xz request, causing "input compression not recognized" on the
+// Nix client side.
+func testGetNarCDCXzRequestReturnsErrWhenChunked(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, dbClient, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+		c.SetChunkStore(cs)
+		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
+
+		// Insert a nar_file record with Compression=none and TotalChunks=1, simulating a
+		// fully-chunked NAR. No xz file exists on disk (deleted after chunking completed).
+		noneURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
+		_, err = dbClient.Ent().NarFile.Create().
+			SetHash(noneURL.Hash).
+			SetCompression(noneURL.Compression.String()).
+			SetQuery(noneURL.Query.Encode()).
+			SetFileSize(0).
+			SetTotalChunks(1).
+			Save(ctx)
+		require.NoError(t, err)
+
+		// Confirm the xz file is absent from local storage.
+		assert.NoFileExists(t, filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath))
+
+		// GetNar for the xz URL must return an error, not serve raw chunk bytes.
+		xzURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+		_, _, _, err = c.GetNar(ctx, xzURL)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
+	}
+}
+
+// testGetNarCDCXzServesFromStoreWhenBothExist verifies that GetNar still serves
+// the xz file from whole-file storage when both the xz file and CDC chunks exist.
+// This guards the transition period (chunking complete but xz file not yet deleted).
+func testGetNarCDCXzServesFromStoreWhenBothExist(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, dbClient, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+		c.SetChunkStore(cs)
+		require.NoError(t, c.SetCDCConfiguration(true, 1024, 2048, 4096))
+
+		// Insert a nar_file record with Compression=none and TotalChunks=1.
+		noneURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
+		_, err = dbClient.Ent().NarFile.Create().
+			SetHash(noneURL.Hash).
+			SetCompression(noneURL.Compression.String()).
+			SetQuery(noneURL.Query.Encode()).
+			SetFileSize(0).
+			SetTotalChunks(1).
+			Save(ctx)
+		require.NoError(t, err)
+
+		// Also place the xz file in local storage, simulating the transition period
+		// where both the original xz file and CDC chunks exist simultaneously.
+		narPath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
+		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+		// GetNar for the xz URL must succeed by serving from the xz file, not from chunks.
+		xzURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+		_, _, r, err := c.GetNar(ctx, xzURL)
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = r.Close() })
+
+		body, err := io.ReadAll(r)
+		require.NoError(t, err)
+		assert.Equal(t, testdata.Nar1.NarText, string(body))
 	}
 }
