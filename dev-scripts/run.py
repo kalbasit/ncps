@@ -369,6 +369,9 @@ def run_db_migration(db_url):
         path = db_url.replace("sqlite:", "")
         os.makedirs(os.path.dirname(path), exist_ok=True)
     else:
+        if not shutil.which("dbmate"):
+            log("'dbmate' is required for PostgreSQL/MySQL. Run inside the Nix dev shell.", RED)
+            raise FileNotFoundError("dbmate not found in PATH")
         subprocess.run(
             ["dbmate", "--url", db_url, "create"],
             check=False,

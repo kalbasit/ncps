@@ -484,12 +484,11 @@ func testDistributedLockFailover(_ distributedDBFactory) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Locker 2 should initially fail to acquire (lock held by locker1).
-		// Bounded by 200ms — well under shortTTL so it must still be held.
-		ctx2, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-		defer cancel()
-
-		err = locker2.Lock(ctx2, testKey, shortTTL)
-		require.Error(t, err, "locker2 should fail to acquire lock held by locker1")
+		// Use TryLock (non-blocking) so the check is instant and deterministic
+		// even under race-detector scheduling pressure.
+		acquired, err := locker2.TryLock(ctx, testKey, shortTTL)
+		require.NoError(t, err, "TryLock should not error when lock is already held")
+		require.False(t, acquired, "locker2 should not acquire lock held by locker1")
 
 		// Simulate locker1 failure (don't unlock, let it expire). Wait TTL + safety.
 		time.Sleep(shortTTL + 300*time.Millisecond)
