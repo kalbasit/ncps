@@ -83,17 +83,27 @@
               '';
           checkPhase = ''
             runHook preCheck
-            # -coverpkg=./... so coverage reflects production code in all
-            # packages, not just the test's own package. -covermode=atomic
-            # is required when combined with -race.
-            go test \
-              -race \
-              -count=1 \
-              -timeout 20m \
-              -coverprofile=cover.out \
-              -covermode=atomic \
-              -coverpkg=./... \
-              ./...
+            # Test path selection:
+            #   Unit cohort (no backends) tests `./...` — it's the only cohort
+            #   that covers cmd/* and any other path that doesn't gate on a
+            #   backend env var. Running cmd/* in every cohort burned 5x the
+            #   `go build` contention on CI for zero incremental coverage and
+            #   blew the 180s build timeout in cmd/generate-migrations tests.
+            #
+            #   Backend cohorts test only the trees that contain integration
+            #   tests (pkg/, internal/, migrations/, testhelper/). cmd/*
+            #   coverage still lands in the merged profile via the unit cohort.
+            #
+            # -coverpkg=./... keeps the coverage scope at the whole module
+            # regardless of which packages run their tests, so the merged
+            # profile reflects production code in all packages.
+            # -covermode=atomic is required when combined with -race.
+            ${
+              if backends == [ ] then
+                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./... ./..."
+              else
+                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./... ./pkg/... ./internal/... ./migrations/... ./testhelper/..."
+            }
             runHook postCheck
           '';
           # Stage cover.out into the coverage output.
