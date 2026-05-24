@@ -1972,12 +1972,25 @@ func runWithTimeout(t *testing.T, d time.Duration, what string, fn func()) {
 		fn()
 	}()
 
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
 	select {
 	case <-done:
-	case <-time.After(d):
-		buf := make([]byte, 1<<20)
-		n := runtime.Stack(buf, true)
-		t.Fatalf("%s did not complete within %s; goroutine dump:\n%s", what, d, buf[:n])
+	case <-timer.C:
+		buf := make([]byte, 64<<10)
+		for {
+			n := runtime.Stack(buf, true)
+			if n < len(buf) {
+				buf = buf[:n]
+
+				break
+			}
+
+			buf = make([]byte, 2*len(buf))
+		}
+
+		t.Fatalf("%s did not complete within %s; goroutine dump:\n%s", what, d, buf)
 	}
 }
 
