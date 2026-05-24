@@ -45,9 +45,23 @@
           name,
           backends,
         }:
-        config.packages.ncps.overrideAttrs (oa: {
+        # Cohorts build from packages._ncps-base (a passthru-free buildGoModule
+        # with the shared src + vendorHash) rather than packages.ncps. This
+        # avoids the cycle that would otherwise form: ncps-coverage depends on
+        # the cohorts → cohorts depend on the base → if the base were
+        # packages.ncps, ncps's passthru.coverage points back to ncps-coverage.
+        config.packages._ncps-base.overrideAttrs (oa: {
           inherit name;
-          outputs = [ "out" ];
+          # Two outputs: an empty `out` sentinel and `coverage`, which
+          # holds this cohort's `cover.out` profile. ncps-coverage merges
+          # these per-cohort profiles into a single coverage.txt for
+          # codecov upload, avoiding a separate monolith test run.
+          outputs = [
+            "out"
+            "coverage"
+          ];
+          # Append the backend tools to whatever the base derivation already
+          # has (the Go toolchain etc.).
           nativeBuildInputs = oa.nativeBuildInputs ++ cohortTestDeps;
           # The cohort doesn't need the ncps binary; skip the build phase.
           buildPhase = ''
@@ -69,12 +83,24 @@
               '';
           checkPhase = ''
             runHook preCheck
-            go test -race -count=1 -timeout 20m ./...
+            # -coverpkg=./... so coverage reflects production code in all
+            # packages, not just the test's own package. -covermode=atomic
+            # is required when combined with -race.
+            go test \
+              -race \
+              -count=1 \
+              -timeout 20m \
+              -coverprofile=cover.out \
+              -covermode=atomic \
+              -coverpkg=./... \
+              ./...
             runHook postCheck
           '';
-          # No coverage output is produced here, so override the parent
-          # postCheck which moves coverage.txt into the coverage output.
-          postCheck = "";
+          # Stage cover.out into the coverage output.
+          postCheck = ''
+            mkdir -p $coverage
+            mv cover.out $coverage/cover.out
+          '';
           doCheck = true;
           installPhase = ''
             touch $out
@@ -89,6 +115,15 @@
       # Excluded on purpose (packages that ARE buildable as
       # `nix build .#<name>` but are not gates):
       #
+      #   ncps-coverage      Now a tiny merger of per-cohort cover.out
+      #                      profiles (~30 s) rather than a monolith
+      #                      test run. The CI build job builds it
+      #                      via `nix build .#ncps.coverage` after the
+      #                      cohort outputs are cached, which costs
+      #                      seconds. Adding it to `checks` would
+      #                      also cycle (cohorts → ncps base →
+      #                      ncps.passthru.coverage → ncps-coverage →
+      #                      cohorts).
       #   docker, docker-dev Runtime images; CI builds them explicitly
       #                      after flake check, validated downstream.
       #   push-docker-image  CLI wrapper for the CI image push step.
@@ -108,17 +143,6 @@
         # Building here surfaces toolchain regressions before the two
         # tiny stdenvNoCC checks that consume them.
         inherit (config.packages) ncps-checktools;
-
-        # ncps-coverage is included in checks so it runs in parallel with
-        # the cohorts during `nix flake check` instead of as a separate
-        # sequential CI step. The shared CI workflow's `nix build
-        # .#ncps.coverage -L` then becomes a near-instant cache hit, which
-        # cuts the build job wall-clock by the ~12m the coverage build
-        # used to spend serially after flake-check. Local-dev impact:
-        # running `nix flake check` directly now pays the coverage cost
-        # too, but in practice devs invoke specific cohort derivations
-        # for iteration rather than the whole flake-check.
-        inherit (config.packages) ncps-coverage;
 
         # Per-backend Go test cohorts (see mkCohort above). Each runs
         # `go test -race ./...` with only its backend up; test bodies
