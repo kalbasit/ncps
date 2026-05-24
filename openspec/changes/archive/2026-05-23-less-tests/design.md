@@ -86,7 +86,7 @@ go test -coverpkg=./... -coverprofile=cover-after.out -race ./<changed-pkg>/...
 
 Compare against `cover-before.out` recorded at the start. Requirements:
 - Line coverage per package: `after >= before`.
-- Branch coverage per package: `after >= before - 1pp` (tolerance for inlining/optimization artifacts).
+- Statement/instrumented-block coverage per package: `after >= before - 1pp` (tolerance for inlining/optimization artifacts).
 - Any regression beyond the tolerance reverts the batch.
 
 **Why a per-batch gate instead of one final gate**: catching a coverage drop after every batch lets us bisect the offending removal in seconds, not hours.

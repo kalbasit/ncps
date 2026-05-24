@@ -52,11 +52,11 @@ When tests are removed or restructured, line coverage per affected package MUST 
 - **WHEN** a batch of test removals is proposed for package `pkg/X`
 - **AND** `go test -coverpkg=./... -coverprofile=cover-after.out -race ./pkg/X/...` is run on the post-change tree
 - **THEN** line coverage of `cover-after.out` is greater than or equal to line coverage of the pre-change `cover-before.out`
-- **AND** branch coverage of `cover-after.out` is greater than or equal to `cover-before.out` minus 1 percentage point
+- **AND** statement/instrumented-block coverage of `cover-after.out` is greater than or equal to `cover-before.out` minus 1 percentage point
 
 #### Scenario: A batch fails the coverage gate
 
-- **WHEN** a batch of test removals causes line coverage to drop or branch coverage to drop by more than 1 percentage point for any affected package
+- **WHEN** a batch of test removals causes line coverage to drop or statement/instrumented-block coverage to drop by more than 1 percentage point for any affected package
 - **THEN** the batch MUST be reverted in full
 - **AND** the offending removal MUST be re-evaluated against the four-gate rule before any further attempt
 

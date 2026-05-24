@@ -6773,8 +6773,11 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				// Feed all available chunks from the batch into the pipeline.
 				for _, link := range batch {
 					if link.Edges.Chunk == nil {
-						chunkChan <- &prefetchedChunk{
+						select {
+						case chunkChan <- &prefetchedChunk{
 							err: fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge),
+						}:
+						case <-ctx.Done():
 						}
 
 						return
@@ -6876,8 +6879,11 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					// Feed the newly-available chunks and break out of the wait loop.
 					for _, link := range batch2 {
 						if link.Edges.Chunk == nil {
-							chunkChan <- &prefetchedChunk{
+							select {
+							case chunkChan <- &prefetchedChunk{
 								err: fmt.Errorf("nar_file_chunk %d: %w", link.ID, errMissingChunkEdge),
+							}:
+							case <-ctx.Done():
 							}
 
 							return
