@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,9 +55,17 @@ func compressXz(t *testing.T, data string) string {
 // slowChunker wraps a real Chunker and adds a configurable delay before producing any chunks.
 // Used to simulate slow CDC chunking in tests to verify that the HTTP response does not
 // block on CDC chunking completion.
+//
+// `started` (when non-nil) is closed once the delay expires and the wrapper is about to
+// hand off to the real chunker. Tests use it to assert "GetNar finished before chunking
+// began" without depending on absolute wall-clock time, which is brittle under CI load.
+// `startedOnce` ensures the channel is closed at most once even if Chunk is invoked
+// repeatedly on the same wrapper.
 type slowChunker struct {
-	real  chunker.Chunker
-	delay time.Duration
+	real        chunker.Chunker
+	delay       time.Duration
+	started     chan struct{}
+	startedOnce sync.Once
 }
 
 func (s *slowChunker) Chunk(ctx context.Context, r io.Reader) (<-chan *chunker.Chunk, <-chan error) {
@@ -76,6 +85,14 @@ func (s *slowChunker) Chunk(ctx context.Context, r io.Reader) (<-chan *chunker.C
 			errChan <- ctx.Err()
 
 			return
+		}
+
+		// Signal observers that the slow-chunking window has elapsed and the real
+		// chunker is about to run. Tests doing happens-before checks rely on this.
+		// Guarded by sync.Once so repeated Chunk calls on the same wrapper don't
+		// double-close.
+		if s.started != nil {
+			s.startedOnce.Do(func() { close(s.started) })
 		}
 
 		// Delegate to the real chunker.
@@ -1678,14 +1695,21 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 
 		// Inject a slow chunker that adds a delay before producing chunks. This simulates
 		// chunking a large NAR (e.g., 180 MB taking ~18 s) — the only requirement is that
-		// the simulated chunking window is comfortably longer than the streaming path so
-		// the "GetNar returns before chunking finishes" assertion is meaningful.
-		const chunkingDelay = 500 * time.Millisecond
+		// the simulated chunking window is comfortably longer than the streaming path,
+		// even on slow CI runners under concurrent test load. 30 s was chosen with
+		// generous headroom over the worst observed CI streaming time (~8 s under
+		// MariaDB load, ncps #1247). The assertion below is happens-before-style
+		// (chunking-started signal vs. GetNar-finished), not absolute-time-based, so
+		// a generous delay only matters when the bug regresses: it bounds how long
+		// a regression test will wait before failing, not how long a passing test
+		// takes (passing tests still complete in seconds via the streaming path).
+		const chunkingDelay = 30 * time.Second
 
 		realChunker, err := chunker.NewCDCChunker(1024, 4096, 8192)
 		require.NoError(t, err)
 
-		c.SetChunker(&slowChunker{real: realChunker, delay: chunkingDelay})
+		chunkingStarted := make(chan struct{})
+		c.SetChunker(&slowChunker{real: realChunker, delay: chunkingDelay, started: chunkingStarted})
 
 		// Create real xz-compressed NAR content.
 		// The test server will serve this at Nar2's NAR URL so that the streaming
@@ -1730,8 +1754,6 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 		// GetNar piggybacks on the active xz download started by prePullNarInfo.
 		narURL := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeNone}
 
-		start := time.Now()
-
 		_, _, rc, err := c.GetNar(context.Background(), narURL)
 		require.NoError(t, err)
 
@@ -1740,15 +1762,24 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 		body, err := io.ReadAll(rc)
 		require.NoError(t, err)
 
-		elapsed := time.Since(start)
-
-		// Bug 1 assertion: reading all NAR bytes must complete BEFORE the slow chunker
-		// delay expires. If ds.stored is correctly signaled right after the nar_file DB
-		// record is created (not after chunking finishes), elapsed will be well under
-		// chunkingDelay.
-		assert.Less(t, elapsed, chunkingDelay,
-			"GetNar response must complete before CDC chunking finishes (elapsed: %s, chunking delay: %s)",
-			elapsed, chunkingDelay)
+		// Bug 1 assertion (happens-before): the slow chunker must NOT have finished
+		// its delay by the time GetNar returned. If ds.stored is correctly signaled
+		// right after the nar_file DB record is created, the streaming path completes
+		// well before chunkingDelay elapses. If the bug regresses, GetNar will block
+		// until chunking completes — at which point chunkingStarted will already be
+		// closed.
+		//
+		// This is a non-blocking select rather than a wall-clock comparison so the
+		// test is robust to CI runners where the streaming path itself can take
+		// seconds under concurrent load. The behaviour we actually care about is
+		// "GetNar does not wait for chunking", not "GetNar finishes within N ms."
+		select {
+		case <-chunkingStarted:
+			t.Fatal("GetNar returned after the slow chunker began producing chunks " +
+				"— ds.stored must be signaled when the nar_file DB record is created, " +
+				"not when chunking finishes")
+		default:
+		}
 
 		// Bug 2 assertion: the client must receive the ORIGINAL uncompressed content.
 		// Even though prePullNarInfo downloaded xz-compressed bytes, the streaming
