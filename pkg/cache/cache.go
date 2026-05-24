@@ -4460,6 +4460,18 @@ func upsertNarInfoFromParsed(
 			return nil, fmt.Errorf("error fetching narinfo record after insert for hash %q: %w", hash, err)
 		}
 
+		// If the concurrent writer inserted a stub (URL=NULL), fill it
+		// in now — otherwise the caller links an incomplete narinfo row.
+		if nir.URL == nil || *nir.URL == "" {
+			ub := tx.NarInfo.UpdateOneID(nir.ID)
+			applyNarInfoUpdate(ub, narInfo)
+
+			nir, err = ub.Save(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("error updating raced stub narinfo record for hash %q: %w", hash, err)
+			}
+		}
+
 		return nir, nil
 	case err != nil:
 		return nil, fmt.Errorf("error fetching the narinfo record for hash %q: %w", hash, err)
