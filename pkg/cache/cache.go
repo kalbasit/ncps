@@ -4335,17 +4335,16 @@ func (c *Cache) purgeNarInfo(
 		return err
 	}
 
-	if c.narInfoStore.HasNarInfo(ctx, hash) {
-		if err := c.deleteNarInfoFromStore(ctx, hash); err != nil {
-			return fmt.Errorf("error removing narinfo from store: %w", err)
-		}
+	// Ignore ErrNotFound: purge is idempotent. A concurrent goroutine may
+	// have already removed the file between the DB transaction above and
+	// the store delete below (TOCTOU), which is fine — the goal is gone.
+	if err := c.deleteNarInfoFromStore(ctx, hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return fmt.Errorf("error removing narinfo from store: %w", err)
 	}
 
 	if narURL.Hash != "" {
-		if c.HasNarInStore(ctx, *narURL) {
-			if err := c.deleteNarFromStore(ctx, narURL); err != nil {
-				return fmt.Errorf("error removing nar from store: %w", err)
-			}
+		if err := c.deleteNarFromStore(ctx, narURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("error removing nar from store: %w", err)
 		}
 	}
 
