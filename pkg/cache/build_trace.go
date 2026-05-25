@@ -151,7 +151,7 @@ func (c *Cache) PutBuildTrace(ctx context.Context, drvName, outputName string, r
 	)
 	defer span.End()
 
-	raw, err := io.ReadAll(r)
+	raw, err := io.ReadAll(io.LimitReader(r, 1024*1024))
 	if err != nil {
 		return fmt.Errorf("read body: %w", err)
 	}
