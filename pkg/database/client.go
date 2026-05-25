@@ -140,6 +140,17 @@ func (c *Client) WithTransaction(
 			return fmt.Errorf("transaction for %s failed (rollback also failed: %w): %w", name, rbErr, err)
 		}
 
+		// If the error carries SQLSTATE 25P02 (in_failed_sql_transaction),
+		// the pgx driver may have returned the connection to the pool before
+		// the PostgreSQL-side transaction was fully rolled back. Issue an
+		// explicit ROLLBACK via the pool so that any connection in the aborted
+		// state is cleaned up before the next caller acquires it. This is
+		// best-effort: use a fresh context so a cancelled caller ctx does not
+		// prevent the cleanup.
+		if IsAbortedTransactionError(err) {
+			_, _ = c.sdb.ExecContext(context.Background(), "ROLLBACK") //nolint:contextcheck
+		}
+
 		return err
 	}
 

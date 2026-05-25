@@ -22,7 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	entchunk "github.com/kalbasit/ncps/ent/chunk"
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
+	entnarfilechunk "github.com/kalbasit/ncps/ent/narfilechunk"
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	entnarinfonarfile "github.com/kalbasit/ncps/ent/narinfonarfile"
 	entnarinforeference "github.com/kalbasit/ncps/ent/narinforeference"
@@ -31,6 +33,7 @@ import (
 
 	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
+	"github.com/kalbasit/ncps/pkg/chunker"
 	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
@@ -2252,5 +2255,177 @@ func TestStoreNarWithCDC_TruncatedStream(t *testing.T) {
 			require.NoError(t, dbErr)
 			assert.Equal(t, int64(0), nf.TotalChunks, "truncated stream must leave total_chunks = 0")
 		})
+	}
+}
+
+// TestRecordChunkBatch tests the recordChunkBatch method across all backends.
+func TestRecordChunkBatch(t *testing.T) {
+	t.Parallel()
+
+	backends := []struct {
+		name   string
+		envVar string
+		setup  cacheFactory
+	}{
+		{name: "SQLite", setup: setupSQLiteFactory},
+		{name: "PostgreSQL", envVar: "NCPS_TEST_ADMIN_POSTGRES_URL", setup: setupPostgresFactory},
+		{name: "MySQL", envVar: "NCPS_TEST_ADMIN_MYSQL_URL", setup: setupMySQLFactory},
+	}
+
+	for _, b := range backends {
+		t.Run(b.name, func(t *testing.T) {
+			t.Parallel()
+
+			if b.envVar != "" && os.Getenv(b.envVar) == "" {
+				t.Skipf("Skipping %s: %s not set", b.name, b.envVar)
+			}
+
+			t.Run("NewChunk", testRecordChunkBatchNewChunk(b.setup))
+			t.Run("PreExistingChunk", testRecordChunkBatchPreExistingChunk(b.setup))
+			t.Run("DuplicateHashInBatch", testRecordChunkBatchDuplicateHashInBatch(b.setup))
+		})
+	}
+}
+
+// testRecordChunkBatch_NewChunk verifies that a brand-new chunk hash inserts
+// a new chunks row and creates the nar_file_chunks link with the correct ID.
+func testRecordChunkBatchNewChunk(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, dbClient, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := newContext()
+
+		nf, err := dbClient.Ent().NarFile.Create().
+			SetHash("newchunktestnarfile0000000000000000000000000000000000000").
+			SetCompression("none").
+			SetFileSize(0).
+			Save(ctx)
+		require.NoError(t, err)
+
+		const hash = "newchunkhash0000000000000000000000000000000000000000"
+
+		batch := []*chunker.Chunk{
+			{Hash: hash, Size: 100, CompressedSize: 50},
+		}
+
+		err = c.recordChunkBatch(ctx, int64(nf.ID), 0, batch)
+		require.NoError(t, err)
+
+		ch, err := dbClient.Ent().Chunk.Query().Where(entchunk.HashEQ(hash)).Only(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, hash, ch.Hash)
+
+		links, err := dbClient.Ent().NarFileChunk.Query().
+			Where(entnarfilechunk.NarFileID(nf.ID)).
+			All(ctx)
+		require.NoError(t, err)
+		require.Len(t, links, 1)
+		assert.Equal(t, ch.ID, links[0].ChunkID, "nar_file_chunks must reference the inserted chunk ID")
+		assert.Equal(t, 0, links[0].ChunkIndex)
+	}
+}
+
+// testRecordChunkBatch_PreExistingChunk verifies that when a chunk with the
+// same hash already exists, recordChunkBatch succeeds without error and the
+// nar_file_chunks link uses the pre-existing chunk's ID (not a duplicate row).
+func testRecordChunkBatchPreExistingChunk(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, dbClient, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := newContext()
+
+		nf, err := dbClient.Ent().NarFile.Create().
+			SetHash("preexistingchunknarfile000000000000000000000000000000000").
+			SetCompression("none").
+			SetFileSize(0).
+			Save(ctx)
+		require.NoError(t, err)
+
+		const hash = "preexistinghash000000000000000000000000000000000000000"
+
+		// Seed the chunk directly, bypassing recordChunkBatch.
+		existing, err := dbClient.Ent().Chunk.Create().
+			SetHash(hash).
+			SetSize(200).
+			SetCompressedSize(80).
+			Save(ctx)
+		require.NoError(t, err)
+
+		// Now call recordChunkBatch with the same hash — must not error.
+		batch := []*chunker.Chunk{
+			{Hash: hash, Size: 200, CompressedSize: 80},
+		}
+
+		err = c.recordChunkBatch(ctx, int64(nf.ID), 0, batch)
+		require.NoError(t, err)
+
+		// Only one chunk row should exist.
+		count, err := dbClient.Ent().Chunk.Query().Where(entchunk.HashEQ(hash)).Count(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count, "must not duplicate the chunk row")
+
+		// The nar_file_chunks link must reference the pre-existing chunk ID.
+		links, err := dbClient.Ent().NarFileChunk.Query().
+			Where(entnarfilechunk.NarFileID(nf.ID)).
+			All(ctx)
+		require.NoError(t, err)
+		require.Len(t, links, 1)
+		assert.Equal(t, existing.ID, links[0].ChunkID,
+			"link must reference the pre-existing chunk ID, not a new one")
+	}
+}
+
+// testRecordChunkBatch_DuplicateHashInBatch verifies that a batch containing
+// two entries with the same hash succeeds: no duplicate chunk rows are created
+// and both nar_file_chunks links reference the same chunk ID.
+func testRecordChunkBatchDuplicateHashInBatch(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		c, dbClient, _, _, _, cleanup := factory(t)
+		defer cleanup()
+
+		ctx := newContext()
+
+		nf, err := dbClient.Ent().NarFile.Create().
+			SetHash("dupehashbatchnarfile00000000000000000000000000000000000").
+			SetCompression("none").
+			SetFileSize(0).
+			Save(ctx)
+		require.NoError(t, err)
+
+		const hash = "dupehash00000000000000000000000000000000000000000000000"
+
+		// Two entries with identical hash in the same batch.
+		batch := []*chunker.Chunk{
+			{Hash: hash, Size: 100, CompressedSize: 50},
+			{Hash: hash, Size: 100, CompressedSize: 50},
+		}
+
+		err = c.recordChunkBatch(ctx, int64(nf.ID), 0, batch)
+		require.NoError(t, err)
+
+		// Exactly one chunk row.
+		chunks, err := dbClient.Ent().Chunk.Query().Where(entchunk.HashEQ(hash)).All(ctx)
+		require.NoError(t, err)
+		require.Len(t, chunks, 1, "duplicate hash must not create two chunk rows")
+
+		// Two nar_file_chunks links (different indices), both referencing the same chunk.
+		links, err := dbClient.Ent().NarFileChunk.Query().
+			Where(entnarfilechunk.NarFileID(nf.ID)).
+			Order(entnarfilechunk.ByChunkIndex()).
+			All(ctx)
+		require.NoError(t, err)
+		require.Len(t, links, 2)
+		assert.Equal(t, chunks[0].ID, links[0].ChunkID, "index 0 must reference the shared chunk ID")
+		assert.Equal(t, chunks[0].ID, links[1].ChunkID, "index 1 must reference the same chunk ID")
+		assert.Equal(t, 0, links[0].ChunkIndex)
+		assert.Equal(t, 1, links[1].ChunkIndex)
 	}
 }

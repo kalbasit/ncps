@@ -2429,25 +2429,30 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 		chunkIDs := make([]int, len(batch))
 
 		for i, chunkMetadata := range batch {
-			// Create-or-touch chunk: ON CONFLICT(hash) DO UPDATE SET
-			// updated_at = CURRENT_TIMESTAMP. Ent's UpsertOne.Update
-			// expresses the touch; .ID(ctx) returns the existing
-			// (or newly-inserted) chunk row's PK regardless of which
-			// branch fired.
-			id, err := tx.Chunk.Create().
+			// Insert the chunk if it doesn't exist yet; skip silently if the
+			// hash is already present. Chunks are content-addressed immutable
+			// blobs — an existing row is always correct and needs no update.
+			// Using DO NOTHING avoids touching the auto-increment PK path at
+			// all when the row pre-exists, which prevents failures when the
+			// PK sequence is desynced with the table data.
+			if err := tx.Chunk.Create().
 				SetHash(chunkMetadata.Hash).
 				SetSize(chunkMetadata.Size).
 				SetCompressedSize(chunkMetadata.CompressedSize).
 				OnConflictColumns(entchunk.FieldHash).
-				Update(func(u *ent.ChunkUpsert) {
-					u.SetUpdatedAt(time.Now())
-				}).
-				ID(ctx)
-			if err != nil {
+				Ignore().
+				Exec(ctx); err != nil {
 				return fmt.Errorf("error creating chunk record: %w", err)
 			}
 
-			chunkIDs[i] = id
+			// SELECT after the INSERT (whether it inserted or was skipped) to
+			// retrieve the chunk's PK for the nar_file_chunks link.
+			ch, err := tx.Chunk.Query().Where(entchunk.HashEQ(chunkMetadata.Hash)).Only(ctx)
+			if err != nil {
+				return fmt.Errorf("error fetching chunk ID after insert: %w", err)
+			}
+
+			chunkIDs[i] = ch.ID
 		}
 
 		// Link to NAR file in bulk; ON CONFLICT (nar_file_id,
