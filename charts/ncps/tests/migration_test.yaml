@@ -70,6 +70,66 @@ tests:
                 name: RELEASE-NAME-ncps
                 key: database-url
 
+  # ---- migration-job volume assertions ----
+  - it: migration-job has no volumes for postgresql + local storage
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: postgresql
+      config.database.postgresql.host: pg
+      config.database.postgresql.password: pw
+      config.storage.type: local
+      config.storage.local.path: /storage
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - isNull:
+          path: spec.template.spec.volumes
+      - isNull:
+          path: spec.template.spec.containers[0].volumeMounts
+
+  - it: migration-job has no volumes for mysql + local storage
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: mysql
+      config.database.mysql.host: mysql
+      config.database.mysql.password: pw
+      config.storage.type: local
+      config.storage.local.path: /storage
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - isNull:
+          path: spec.template.spec.volumes
+      - isNull:
+          path: spec.template.spec.containers[0].volumeMounts
+
+  - it: migration-job retains storage volume for sqlite + local storage
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      config.storage.type: local
+      config.storage.local.path: /storage
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: storage
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-ncps
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: storage
+            mountPath: /storage
+
   # ---- deployment initContainer ----
   - it: deployment migration initContainer invokes ncps migrate up
     template: deployment.yaml

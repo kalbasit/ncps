@@ -60,12 +60,8 @@ spec:
             - |
               mkdir -p $(dirname {{ .Values.config.database.sqlite.path }})
           volumeMounts:
-            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
             - name: storage
               mountPath: /storage
-            {{- end }}
-            - name: tmp
-              mountPath: {{ .Values.config.cache.tempPath }}
           resources:
             {{- toYaml .Values.initImage.resources | nindent 12 }}
           securityContext:
@@ -93,22 +89,15 @@ spec:
             {{- include "ncps.migrationDatabaseURLEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
+          {{- if eq .Values.config.database.type "sqlite" }}
           volumeMounts:
-            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
             - name: storage
               mountPath: /storage
-            {{- end }}
-            - name: tmp
-              mountPath: {{ .Values.config.cache.tempPath }}
+          {{- end }}
+      {{- if eq .Values.config.database.type "sqlite" }}
       volumes:
-        {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
         - name: storage
-          {{- if or .Values.config.storage.local.persistence.enabled (eq .Values.config.database.type "sqlite") }}
           persistentVolumeClaim:
             claimName: {{ include "ncps.fullname" . }}
-          {{- else }}
-          emptyDir: {}
-          {{- end }}
-        {{- end }}
-        {{- include "ncps.tempVolume" . | nindent 8 }}
+      {{- end }}
 {{- end }}
