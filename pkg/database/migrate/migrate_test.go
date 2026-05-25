@@ -516,20 +516,27 @@ func seedDbmateFullState(t *testing.T, db *sql.DB, dx dialectFixture) {
 	seedDbmateSchemaMigrations(t, db, dx.dialect, fileVersions(pre))
 }
 
+// bridgeEraStart is the timestamp of the first §8 bridge migration
+// (20260520000000). Any migration with a version >= this value is
+// post-bridge and must be excluded from the dbmate-era seed.
+const bridgeEraStart int64 = 20260520000000
+
 func filterDbmateEra(files []string) []string {
 	out := make([]string, 0, len(files))
 
 	for _, f := range files {
-		// The translated dbmate-era files cover 2024-01 through
-		// 2026-03-18. The §8 bridge files start at 2026-05-20.
-		// Filter by name pattern: anything containing "ent_baseline"
-		// or "serial_to_identity" is post-bridge.
 		base := f
 		if idx := strings.LastIndex(base, "/"); idx >= 0 {
 			base = base[idx+1:]
 		}
 
-		if strings.Contains(base, "ent_baseline") || strings.Contains(base, "serial_to_identity") {
+		var v int64
+
+		for i := 0; i < 14 && i < len(base); i++ {
+			v = v*10 + int64(base[i]-'0')
+		}
+
+		if v >= bridgeEraStart {
 			continue
 		}
 
