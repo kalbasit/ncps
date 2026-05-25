@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 error() {
-  echo -e "\033[0;31m$@\033[0m"
+  printf "\033[0;31m%s\033[0m\n" "$*"
 }
 
 fatal() {
@@ -10,15 +11,12 @@ fatal() {
 }
 
 info() {
-  echo -e "\033[0;33m$@\033[0m"
+  printf "\033[0;33m%s\033[0m\n" "$*"
 }
 
 if [[ -d .git ]]; then
-  error "This must only run from within a new Git worktree"
-  exit 0
+  fatal "This must only run from within a new Git worktree"
 fi
 
-readonly main_worktree_path="$(git worktree list --porcelain | head -n 1 | cut -d ' ' -f 2-)"
-
-info Allow direnv to load this path
+info "Allow direnv to load this path"
 direnv allow .
