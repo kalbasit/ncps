@@ -96,8 +96,10 @@
               fi
 
               echo "✅ Redis tests enabled, don't forget to run 'nix run .#deps' to start Redis." >&2
-              cat <<'EOF'
+              _redis_port="''${REDIS_PORT:-6379}"
+              cat <<EOF
               export NCPS_ENABLE_REDIS_TESTS=1
+              export NCPS_TEST_REDIS_ADDRS="127.0.0.1:$_redis_port"
               EOF
             '')
             (pkgs.writeShellScriptBin "enable-integration-tests" ''
