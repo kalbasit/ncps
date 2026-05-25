@@ -1,0 +1,73 @@
+version: "3"
+set:
+  - errexit
+  - nounset
+  - pipefail
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+  fmt:
+    desc: Format all project files
+    cmds:
+      - nix fmt
+  lint:
+    desc: Lint Go code
+    cmds:
+      - golangci-lint run
+  lint:fix:
+    desc: Lint Go code and auto-fix fixable issues
+    cmds:
+      - golangci-lint run --fix
+  test:
+    desc: Run unit tests (no backend services required)
+    cmds:
+      - go test -race ./...
+  test:integration:
+    desc: Run full test suite (backing services must already be running)
+    cmds:
+      - eval "$(enable-integration-tests)" && go test -race ./...
+  test:auto:
+    desc: Auto-start backing services if needed, run full suite, teardown
+    cmds:
+      - bash dev-scripts/test-auto.sh
+  build:
+    desc: Build the ncps binary
+    cmds:
+      - go build .
+  dev:
+    desc: Start the development server with hot-reload
+    cmds:
+      - ./dev-scripts/run.py
+  deps:
+    desc: Start backing services (Garage, PostgreSQL, MariaDB, Redis)
+    cmds:
+      - nix run .#deps
+  ent:generate:
+    desc: Regenerate the Ent client from schemas
+    cmds:
+      - go generate ./ent/...
+  ent:lint:
+    desc: Lint Ent schemas for codegen invariant violations
+    cmds:
+      - go run ./cmd/ent-lint --root .
+  ent:check:
+    desc: Regenerate Ent client and lint schemas (CI check)
+    deps:
+      - ent:generate
+      - ent:lint
+  migrations:gen:
+    desc: Generate per-dialect Atlas migrations (NAME=<snake_case_name> required)
+    requires:
+      vars:
+        - NAME
+    cmds:
+      - go run ./cmd/generate-migrations --name={{.NAME}}
+  migrations:sql:
+    desc: Generate an empty SQL-only migration stub (NAME=<snake_case_name> required)
+    requires:
+      vars:
+        - NAME
+    cmds:
+      - go run ./cmd/generate-migrations --sql-only --name={{.NAME}}
