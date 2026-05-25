@@ -19,6 +19,11 @@
             # runtime — `ncps migrate up` is the supported path.
             pkgs.dbmate
 
+            # go-task provides the `task` command for running Taskfile.yml.
+            # Kept devshell-only (not in dev-packages.nix) since it is a
+            # developer ergonomics tool, not a runtime or build dependency.
+            pkgs.go-task
+
             # python environment for dev-scripts.
             (pkgs.python3.withPackages (
               ps: with ps; [
