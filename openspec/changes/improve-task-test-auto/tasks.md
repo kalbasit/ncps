@@ -39,4 +39,4 @@
 - [x] 6.1 Run `task fmt` and confirm it exits 0
 - [x] 6.2 Run `task lint` and confirm it exits 0
 - [x] 6.3 Run `task test` (unit tests) and confirm it exits 0
-- [ ] 6.4 Manually verify `task test:auto` allocates random ports, runs tests, and tears down (smoke test)
+- [x] 6.4 Manually verify `task test:auto` allocates random ports, runs tests, and tears down (smoke test)
