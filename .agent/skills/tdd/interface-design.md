@@ -4,36 +4,6 @@ Good interfaces make testing natural:
 
 1. **Accept dependencies, don't create them**
 
-   ```typescript
-   // Testable
-   function processOrder(order, paymentGateway) {}
-
-   // Hard to test
-   function processOrder(order) {
-     const gateway = new StripeGateway();
-   }
-   ```
-
-2. **Return results, don't produce side effects**
-
-   ```typescript
-   // Testable
-   function calculateDiscount(cart): Discount {}
-
-   // Hard to test
-   function applyDiscount(cart): void {
-     cart.total -= discount;
-   }
-   ```
-
-3. **Small surface area**
-   - Fewer methods = fewer tests needed
-   - Fewer params = simpler test setup
-
-## Go Examples
-
-**Accept interfaces, return structs (Go idiom):**
-
 ```go
 // Testable: depends on interface, caller can swap in a stub
 type OrderStore interface {
@@ -49,7 +19,7 @@ func NewOrderService() *OrderService {
 }
 ```
 
-**Return results, don't mutate inputs:**
+2. **Return results, don't produce side effects**
 
 ```go
 // Testable: pure function, easy to assert on return value
@@ -63,3 +33,7 @@ func ApplyDiscount(cart *Cart, pct float64) {
     cart.Total = cart.Total * (1 - pct/100)
 }
 ```
+
+3. **Small surface area**
+   - Fewer methods = fewer tests needed
+   - Fewer params = simpler test setup

@@ -21,47 +21,6 @@ At system boundaries, design interfaces that are easy to mock:
 
 Pass external dependencies in rather than creating them internally:
 
-```typescript
-// Easy to mock
-function processPayment(order, paymentClient) {
-  return paymentClient.charge(order.total);
-}
-
-// Hard to mock
-function processPayment(order) {
-  const client = new StripeClient(process.env.STRIPE_KEY);
-  return client.charge(order.total);
-}
-```
-
-**2. Prefer SDK-style interfaces over generic fetchers**
-
-Create specific functions for each external operation instead of one generic function with conditional logic:
-
-```typescript
-// GOOD: Each function is independently mockable
-const api = {
-  getUser: (id) => fetch(`/users/${id}`),
-  getOrders: (userId) => fetch(`/users/${userId}/orders`),
-  createOrder: (data) => fetch('/orders', { method: 'POST', body: data }),
-};
-
-// BAD: Mocking requires conditional logic inside the mock
-const api = {
-  fetch: (endpoint, options) => fetch(endpoint, options),
-};
-```
-
-The SDK approach means:
-- Each mock returns one specific shape
-- No conditional logic in test setup
-- Easier to see which endpoints a test exercises
-- Type safety per endpoint
-
-## Go Examples
-
-**Dependency injection via interface:**
-
 ```go
 // Easy to test — PaymentGateway is an interface
 type PaymentGateway interface {
@@ -83,7 +42,9 @@ func ProcessPayment(ctx context.Context, order Order) (ChargeID, error) {
 }
 ```
 
-**SDK-style interface vs generic fetcher:**
+**2. Prefer SDK-style interfaces over generic fetchers**
+
+Create specific methods for each external operation instead of one generic method with conditional logic:
 
 ```go
 // GOOD: each method is independently implementable in tests
