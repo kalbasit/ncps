@@ -184,6 +184,69 @@ Delete a cached NAR from storage and the database.
 
 ---
 
+#### `HEAD /build-trace-v2/{drvName}/{outputName}.doi`
+
+Returns `200 OK` if the build trace entry exists or `404 Not Found` if it does not. No body is returned.
+
+##### Scenario: Entry exists
+- **WHEN** a client sends `HEAD /build-trace-v2/{drvName}/{outputName}.doi` for a stored entry
+- **THEN** the system SHALL return `200 OK` with no body
+
+##### Scenario: Entry does not exist
+- **WHEN** a client sends `HEAD /build-trace-v2/{drvName}/{outputName}.doi` for an unknown entry
+- **THEN** the system SHALL return `404 Not Found`
+
+---
+
+#### `GET /build-trace-v2/{drvName}/{outputName}.doi`
+
+Returns the stored build trace entry as JSON.
+
+**Response:** `Content-Type: application/json`, body is the build trace v3 JSON object with `key` and `value` fields, `value.signatures` containing all stored signatures including ncps's own.
+
+**Failure modes:**
+- `404 Not Found` — entry not found.
+- `500 Internal Server Error` — database error.
+
+##### Scenario: Successful GET
+- **WHEN** a client sends `GET /build-trace-v2/{drvName}/{outputName}.doi` and the entry exists
+- **THEN** the system SHALL return `200 OK` with a JSON body containing `key` and `value` fields
+
+##### Scenario: Not found
+- **WHEN** a client sends `GET /build-trace-v2/{drvName}/{outputName}.doi` for an unknown entry
+- **THEN** the system SHALL return `404 Not Found`
+
+---
+
+#### `PUT /upload/build-trace-v2/{drvName}/{outputName}.doi`
+
+Stores a build trace entry. Only available under the `/upload` prefix. Authorization follows the same `putPermitted` boolean gate used by narinfo and NAR uploads.
+
+**Request:** `Content-Type: application/json`, body is a build trace v3 JSON object.
+
+**Response:** `204 No Content` on success. (Consistent with `putNarInfo` and `putNar`.)
+
+**Authorization:** `putPermitted == false` (the default) causes an immediate `405 Method Not Allowed` response before any body is read. No per-request authentication. (Consistent with existing narinfo/NAR upload behavior.)
+
+**Failure modes:**
+- `400 Bad Request` — malformed JSON or URL/body mismatch.
+- `405 Method Not Allowed` — PUT not permitted.
+- `500 Internal Server Error` — database error.
+
+##### Scenario: Successful PUT
+- **WHEN** `putPermitted == true` and the client sends a valid build trace JSON body
+- **THEN** the system SHALL return `204 No Content`
+
+##### Scenario: PUT not permitted
+- **WHEN** `putPermitted == false`
+- **THEN** the system SHALL return `405 Method Not Allowed`
+
+##### Scenario: Invalid body
+- **WHEN** the body is not valid JSON or missing required fields
+- **THEN** the system SHALL return `400 Bad Request`
+
+---
+
 ## `pkg/cache.Cache` — Core Methods
 
 ### NarInfo Operations
