@@ -1729,7 +1729,7 @@ func chunksForNarFile(
 			Limit(fsckEagerLoadBatchSize).
 			All(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("query nar_file_chunks for nar_file %d: %w", narFileID, err)
 		}
 
 		if len(links) == 0 {
@@ -1745,7 +1745,7 @@ func chunksForNarFile(
 			Where(entchunk.IDIn(ids...)).
 			All(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("query chunks for nar_file %d: %w", narFileID, err)
 		}
 
 		byID := make(map[int]*ent.Chunk, len(rows))
