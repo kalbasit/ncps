@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+
 error() {
   printf "\033[0;31m%s\033[0m\n" "$*"
 }
