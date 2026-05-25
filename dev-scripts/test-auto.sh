@@ -16,10 +16,10 @@ trap cleanup EXIT
 
 # Returns 0 if all four backend ports are reachable
 ports_ready() {
-  nc -z localhost 9000 2>/dev/null \
-    && nc -z localhost 5432 2>/dev/null \
-    && nc -z localhost 3306 2>/dev/null \
-    && nc -z localhost 6379 2>/dev/null
+  (echo > /dev/tcp/127.0.0.1/9000) 2>/dev/null \
+    && (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null \
+    && (echo > /dev/tcp/127.0.0.1/3306) 2>/dev/null \
+    && (echo > /dev/tcp/127.0.0.1/6379) 2>/dev/null
 }
 
 if ports_ready; then
@@ -33,6 +33,12 @@ else
   echo "Waiting for all services to be ready (up to 60s)..." >&2
   elapsed=0
   until ports_ready; do
+    if ! kill -0 "$DEPS_PID" 2>/dev/null; then
+      echo "ERROR: Backing services process died unexpectedly." >&2
+      echo "Deps log:" >&2
+      cat "$DEPS_LOG" >&2
+      exit 1
+    fi
     sleep 2
     elapsed=$((elapsed + 2))
     if [[ $elapsed -ge 60 ]]; then

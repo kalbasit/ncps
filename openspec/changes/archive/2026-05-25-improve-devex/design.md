@@ -49,7 +49,7 @@ _Alternative considered_: `includes:` with per-domain task files (`tasks/ent.yml
 | `migrations:gen` | `go run ./cmd/generate-migrations --name={{.NAME}}` | Generate Atlas migrations |
 | `migrations:sql` | `go run ./cmd/generate-migrations --sql-only --name={{.NAME}}` | Generate SQL-only stub |
 | `build` | `go build .` | Build binary |
-| `dev` | `./dev-scripts/run.sh` | Start dev server (hot-reload) |
+| `dev` | `./dev-scripts/run.py` | Start dev server (hot-reload) |
 | `deps` | `nix run .#deps` | Start backing services |
 
 The three tasks referenced by `verify-before-completion` (`fmt`, `lint`, `test`) are the critical ones. All others make CLAUDE.md's command table accurate and discoverable.

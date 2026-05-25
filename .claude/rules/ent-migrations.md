@@ -90,7 +90,7 @@ change; it does NOT alter the SQL column definition and requires no migration.
 ## Snake_case enum types
 
 When a `field.Enum(...)` field generates a Postgres ENUM type, give it an
-explicit snake\*case name via `entsql.Annotation{Type: "<table>*<column>\_enum"}`
+explicit snake_case name via `entsql.Annotation{Type: "<table>_<column>_enum"}`
 on the field. Without it, Ent emits PascalCase enum type names that do not
 match the project's naming convention.
 

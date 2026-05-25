@@ -13,8 +13,8 @@ Production code in non-`main` packages MUST NOT call `panic()`. Return an `error
 ## Exceptions
 
 - `_test.go` files may panic (e.g. in mock stubs for unused interface methods).
-- Generated code (e.g. files under `apps/uar/ent/<db>/` that are produced by `ent generate`) is exempt — do not hand-edit generated files to remove panics.
-- Hand-written schema files under `ent/<db>/schema/` are NOT generated code and MUST follow this rule.
+- Generated code (e.g. files under `ent/` that are produced by `ent generate`) is exempt — do not hand-edit generated files to remove panics.
+- Hand-written schema files under `ent/schema/` are NOT generated code and MUST follow this rule.
 
 ## Applies To
 
