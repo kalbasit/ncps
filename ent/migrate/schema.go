@@ -9,6 +9,62 @@ import (
 )
 
 var (
+	// BuildTraceEntriesColumns holds the columns for the "build_trace_entries" table.
+	BuildTraceEntriesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP"},
+		{Name: "updated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "drv_path", Type: field.TypeString},
+		{Name: "output_name", Type: field.TypeString},
+		{Name: "out_path", Type: field.TypeString},
+		{Name: "raw_json", Type: field.TypeString, Size: 2147483647},
+	}
+	// BuildTraceEntriesTable holds the schema information for the "build_trace_entries" table.
+	BuildTraceEntriesTable = &schema.Table{
+		Name:       "build_trace_entries",
+		Columns:    BuildTraceEntriesColumns,
+		PrimaryKey: []*schema.Column{BuildTraceEntriesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "buildtraceentry_drv_path_output_name",
+				Unique:  true,
+				Columns: []*schema.Column{BuildTraceEntriesColumns[3], BuildTraceEntriesColumns[4]},
+			},
+		},
+	}
+	// BuildTraceSignaturesColumns holds the columns for the "build_trace_signatures" table.
+	BuildTraceSignaturesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "key_name", Type: field.TypeString},
+		{Name: "signature", Type: field.TypeString},
+		{Name: "build_trace_entry_id", Type: field.TypeInt},
+	}
+	// BuildTraceSignaturesTable holds the schema information for the "build_trace_signatures" table.
+	BuildTraceSignaturesTable = &schema.Table{
+		Name:       "build_trace_signatures",
+		Columns:    BuildTraceSignaturesColumns,
+		PrimaryKey: []*schema.Column{BuildTraceSignaturesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "build_trace_signatures_build_trace_entries_signatures",
+				Columns:    []*schema.Column{BuildTraceSignaturesColumns[3]},
+				RefColumns: []*schema.Column{BuildTraceEntriesColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "buildtracesignature_build_trace_entry_id_key_name",
+				Unique:  true,
+				Columns: []*schema.Column{BuildTraceSignaturesColumns[3], BuildTraceSignaturesColumns[1]},
+			},
+			{
+				Name:    "buildtracesignature_build_trace_entry_id",
+				Unique:  false,
+				Columns: []*schema.Column{BuildTraceSignaturesColumns[3]},
+			},
+		},
+	}
 	// ChunksColumns holds the columns for the "chunks" table.
 	ChunksColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -288,6 +344,8 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		BuildTraceEntriesTable,
+		BuildTraceSignaturesTable,
 		ChunksTable,
 		ConfigTable,
 		NarFilesTable,
@@ -301,6 +359,13 @@ var (
 )
 
 func init() {
+	BuildTraceEntriesTable.Annotation = &entsql.Annotation{
+		Table: "build_trace_entries",
+	}
+	BuildTraceSignaturesTable.ForeignKeys[0].RefTable = BuildTraceEntriesTable
+	BuildTraceSignaturesTable.Annotation = &entsql.Annotation{
+		Table: "build_trace_signatures",
+	}
 	ChunksTable.Annotation = &entsql.Annotation{}
 	ChunksTable.Annotation.Checks = map[string]string{
 		"chunks_compressed_size_nonneg": "compressed_size >= 0",

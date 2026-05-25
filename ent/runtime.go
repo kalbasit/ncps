@@ -5,6 +5,8 @@ package ent
 import (
 	"time"
 
+	"github.com/kalbasit/ncps/ent/buildtraceentry"
+	"github.com/kalbasit/ncps/ent/buildtracesignature"
 	"github.com/kalbasit/ncps/ent/chunk"
 	"github.com/kalbasit/ncps/ent/configentry"
 	"github.com/kalbasit/ncps/ent/narfile"
@@ -19,6 +21,41 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	buildtraceentryMixin := schema.BuildTraceEntry{}.Mixin()
+	buildtraceentryMixinFields0 := buildtraceentryMixin[0].Fields()
+	_ = buildtraceentryMixinFields0
+	buildtraceentryFields := schema.BuildTraceEntry{}.Fields()
+	_ = buildtraceentryFields
+	// buildtraceentryDescCreatedAt is the schema descriptor for created_at field.
+	buildtraceentryDescCreatedAt := buildtraceentryMixinFields0[0].Descriptor()
+	// buildtraceentry.DefaultCreatedAt holds the default value on creation for the created_at field.
+	buildtraceentry.DefaultCreatedAt = buildtraceentryDescCreatedAt.Default.(func() time.Time)
+	// buildtraceentryDescDrvPath is the schema descriptor for drv_path field.
+	buildtraceentryDescDrvPath := buildtraceentryFields[0].Descriptor()
+	// buildtraceentry.DrvPathValidator is a validator for the "drv_path" field. It is called by the builders before save.
+	buildtraceentry.DrvPathValidator = buildtraceentryDescDrvPath.Validators[0].(func(string) error)
+	// buildtraceentryDescOutputName is the schema descriptor for output_name field.
+	buildtraceentryDescOutputName := buildtraceentryFields[1].Descriptor()
+	// buildtraceentry.OutputNameValidator is a validator for the "output_name" field. It is called by the builders before save.
+	buildtraceentry.OutputNameValidator = buildtraceentryDescOutputName.Validators[0].(func(string) error)
+	// buildtraceentryDescOutPath is the schema descriptor for out_path field.
+	buildtraceentryDescOutPath := buildtraceentryFields[2].Descriptor()
+	// buildtraceentry.OutPathValidator is a validator for the "out_path" field. It is called by the builders before save.
+	buildtraceentry.OutPathValidator = buildtraceentryDescOutPath.Validators[0].(func(string) error)
+	// buildtraceentryDescRawJSON is the schema descriptor for raw_json field.
+	buildtraceentryDescRawJSON := buildtraceentryFields[3].Descriptor()
+	// buildtraceentry.RawJSONValidator is a validator for the "raw_json" field. It is called by the builders before save.
+	buildtraceentry.RawJSONValidator = buildtraceentryDescRawJSON.Validators[0].(func(string) error)
+	buildtracesignatureFields := schema.BuildTraceSignature{}.Fields()
+	_ = buildtracesignatureFields
+	// buildtracesignatureDescKeyName is the schema descriptor for key_name field.
+	buildtracesignatureDescKeyName := buildtracesignatureFields[1].Descriptor()
+	// buildtracesignature.KeyNameValidator is a validator for the "key_name" field. It is called by the builders before save.
+	buildtracesignature.KeyNameValidator = buildtracesignatureDescKeyName.Validators[0].(func(string) error)
+	// buildtracesignatureDescSignature is the schema descriptor for signature field.
+	buildtracesignatureDescSignature := buildtracesignatureFields[2].Descriptor()
+	// buildtracesignature.SignatureValidator is a validator for the "signature" field. It is called by the builders before save.
+	buildtracesignature.SignatureValidator = buildtracesignatureDescSignature.Validators[0].(func(string) error)
 	chunkMixin := schema.Chunk{}.Mixin()
 	chunkMixinFields0 := chunkMixin[0].Fields()
 	_ = chunkMixinFields0

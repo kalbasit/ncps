@@ -12,6 +12,8 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/kalbasit/ncps/ent/buildtraceentry"
+	"github.com/kalbasit/ncps/ent/buildtracesignature"
 	"github.com/kalbasit/ncps/ent/chunk"
 	"github.com/kalbasit/ncps/ent/configentry"
 	"github.com/kalbasit/ncps/ent/narfile"
@@ -81,15 +83,17 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			chunk.Table:            chunk.ValidColumn,
-			configentry.Table:      configentry.ValidColumn,
-			narfile.Table:          narfile.ValidColumn,
-			narfilechunk.Table:     narfilechunk.ValidColumn,
-			narinfo.Table:          narinfo.ValidColumn,
-			narinfonarfile.Table:   narinfonarfile.ValidColumn,
-			narinforeference.Table: narinforeference.ValidColumn,
-			narinfosignature.Table: narinfosignature.ValidColumn,
-			pinnedclosure.Table:    pinnedclosure.ValidColumn,
+			buildtraceentry.Table:     buildtraceentry.ValidColumn,
+			buildtracesignature.Table: buildtracesignature.ValidColumn,
+			chunk.Table:               chunk.ValidColumn,
+			configentry.Table:         configentry.ValidColumn,
+			narfile.Table:             narfile.ValidColumn,
+			narfilechunk.Table:        narfilechunk.ValidColumn,
+			narinfo.Table:             narinfo.ValidColumn,
+			narinfonarfile.Table:      narinfonarfile.ValidColumn,
+			narinforeference.Table:    narinforeference.ValidColumn,
+			narinfosignature.Table:    narinfosignature.ValidColumn,
+			pinnedclosure.Table:       pinnedclosure.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)
