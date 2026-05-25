@@ -29,9 +29,30 @@ tasks:
     cmds:
       - eval "$(enable-integration-tests)" && go test -race ./...
   test:auto:
-    desc: Auto-start backing services if needed, run full suite, teardown
+    desc: Start fresh backing services on random ports, run full suite, teardown
     cmds:
       - bash dev-scripts/test-auto.sh
+  test:deps:start:
+    desc: Allocate random ports, start backing services in detached mode, write state file
+    cmds:
+      - bash dev-scripts/test-auto.sh --start-only
+  test:deps:stop:
+    desc: Stop backing services started by test:deps:start
+    cmds:
+      - |
+        STATE_FILE="${TMPDIR:-/tmp}/ncps-test-deps.env"
+        if [ ! -f "$STATE_FILE" ]; then
+          echo "No state file found at $STATE_FILE, nothing to stop." >&2
+          exit 0
+        fi
+        # shellcheck source=/dev/null
+        . "$STATE_FILE"
+        if command -v process-compose >/dev/null 2>&1; then
+          process-compose down -p "$TEST_PC_PORT" || true
+        else
+          nix run .#test-deps -- down -p "$TEST_PC_PORT" 2>/dev/null || true
+        fi
+        rm -f "$STATE_FILE"
   build:
     desc: Build the ncps binary
     cmds:

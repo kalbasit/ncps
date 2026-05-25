@@ -1,55 +1,83 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPS_PID=""
-DEPS_LOG=""
+# Run with --start-only to allocate ports, start services, and return
+# without running tests or tearing down (used by task test:deps:start).
+START_ONLY=false
+if [[ "${1:-}" == "--start-only" ]]; then
+  START_ONLY=true
+fi
 
-cleanup() {
-  if [[ -n "$DEPS_PID" ]]; then
-    echo "Stopping backing services (PID $DEPS_PID)..." >&2
-    kill "$DEPS_PID" 2>/dev/null || true
-    wait "$DEPS_PID" 2>/dev/null || true
-    [[ -n "$DEPS_LOG" && -f "$DEPS_LOG" ]] && rm -f "$DEPS_LOG"
+STATE_FILE="${TMPDIR:-/tmp}/ncps-test-deps.env"
+
+# Allocate 7 distinct free ports simultaneously.
+# Binding all sockets before closing any ensures each port is unique
+# and avoids races between the bind and the service startup.
+read -r NCPS_TEST_S3_PORT GARAGE_RPC_PORT GARAGE_ADMIN_PORT PGPORT MYSQL_TCP_PORT REDIS_PORT TEST_PC_PORT \
+  < <(python3 -c "
+import socket
+ss = [socket.socket() for _ in range(7)]
+[s.bind(('', 0)) for s in ss]
+ports = [str(s.getsockname()[1]) for s in ss]
+[s.close() for s in ss]
+print(' '.join(ports))
+")
+
+export NCPS_TEST_S3_PORT GARAGE_RPC_PORT GARAGE_ADMIN_PORT PGPORT MYSQL_TCP_PORT REDIS_PORT TEST_PC_PORT
+export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:${NCPS_TEST_S3_PORT}"
+
+# Write state file so test:deps:stop can tear down this instance.
+{
+  echo "NCPS_TEST_S3_PORT=${NCPS_TEST_S3_PORT}"
+  echo "GARAGE_RPC_PORT=${GARAGE_RPC_PORT}"
+  echo "GARAGE_ADMIN_PORT=${GARAGE_ADMIN_PORT}"
+  echo "PGPORT=${PGPORT}"
+  echo "MYSQL_TCP_PORT=${MYSQL_TCP_PORT}"
+  echo "REDIS_PORT=${REDIS_PORT}"
+  echo "TEST_PC_PORT=${TEST_PC_PORT}"
+} > "${STATE_FILE}"
+
+echo "Starting backing services on random ports..." >&2
+echo "  S3/Garage: ${NCPS_TEST_S3_PORT}  PG: ${PGPORT}  MySQL: ${MYSQL_TCP_PORT}  Redis: ${REDIS_PORT}" >&2
+echo "  (PC control port: ${TEST_PC_PORT}, state file: ${STATE_FILE})" >&2
+
+nix run .#test-deps -- up --detached --tui=false -p "${TEST_PC_PORT}"
+
+# Returns 0 if all four test-facing service ports are reachable.
+ports_ready() {
+  (echo > /dev/tcp/127.0.0.1/"${NCPS_TEST_S3_PORT}") 2>/dev/null \
+    && (echo > /dev/tcp/127.0.0.1/"${PGPORT}") 2>/dev/null \
+    && (echo > /dev/tcp/127.0.0.1/"${MYSQL_TCP_PORT}") 2>/dev/null \
+    && (echo > /dev/tcp/127.0.0.1/"${REDIS_PORT}") 2>/dev/null
+}
+
+echo "Waiting for all services to be ready (up to 120s)..." >&2
+elapsed=0
+until ports_ready; do
+  sleep 2
+  elapsed=$((elapsed + 2))
+  if [[ $elapsed -ge 120 ]]; then
+    echo "ERROR: Services did not become ready within 120s." >&2
+    exit 1
   fi
+done
+echo "All services ready." >&2
+
+if [[ "$START_ONLY" == "true" ]]; then
+  exit 0
+fi
+
+# Tear down the process-compose instance on exit (success or failure).
+cleanup() {
+  echo "Stopping backing services (PC port: ${TEST_PC_PORT})..." >&2
+  if command -v process-compose >/dev/null 2>&1; then
+    process-compose down -p "${TEST_PC_PORT}" 2>/dev/null || true
+  else
+    nix run .#test-deps -- down -p "${TEST_PC_PORT}" 2>/dev/null || true
+  fi
+  rm -f "${STATE_FILE}"
 }
 trap cleanup EXIT
-
-# Returns 0 if all four backend ports are reachable
-ports_ready() {
-  (echo > /dev/tcp/127.0.0.1/9000) 2>/dev/null \
-    && (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null \
-    && (echo > /dev/tcp/127.0.0.1/3306) 2>/dev/null \
-    && (echo > /dev/tcp/127.0.0.1/6379) 2>/dev/null
-}
-
-if ports_ready; then
-  echo "Backing services already running — skipping auto-start." >&2
-else
-  DEPS_LOG=$(mktemp /tmp/ncps-deps-XXXXXX.log)
-  echo "Starting backing services (log: $DEPS_LOG)..." >&2
-  nix run .#deps >"$DEPS_LOG" 2>&1 &
-  DEPS_PID=$!
-
-  echo "Waiting for all services to be ready (up to 60s)..." >&2
-  elapsed=0
-  until ports_ready; do
-    if ! kill -0 "$DEPS_PID" 2>/dev/null; then
-      echo "ERROR: Backing services process died unexpectedly." >&2
-      echo "Deps log:" >&2
-      cat "$DEPS_LOG" >&2
-      exit 1
-    fi
-    sleep 2
-    elapsed=$((elapsed + 2))
-    if [[ $elapsed -ge 60 ]]; then
-      echo "ERROR: Services did not become ready within 60s." >&2
-      echo "Deps log:" >&2
-      cat "$DEPS_LOG" >&2
-      exit 1
-    fi
-  done
-  echo "All services ready." >&2
-fi
 
 eval "$(enable-integration-tests)"
 go test -race ./...

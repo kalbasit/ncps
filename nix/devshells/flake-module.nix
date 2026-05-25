@@ -54,10 +54,12 @@
                 exit 0
               fi
 
-              echo "✅ S3 tests enabled, don't forget to run 'nix run .#deps' to start Garage." >&2
-              cat <<'EOF'
+              echo "✅ S3 tests enabled, don't forget to start Garage." >&2
+              _s3_port="''${NCPS_TEST_S3_PORT:-9000}"
+              cat <<EOF
                 export NCPS_TEST_S3_BUCKET="test-bucket"
-                export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:9000"
+                export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:$_s3_port"
+                export NCPS_TEST_S3_PORT="$_s3_port"
                 export NCPS_TEST_S3_REGION="us-east-1"
                 export NCPS_TEST_S3_ACCESS_KEY_ID="GK1234567890abcdef12345678"
                 export NCPS_TEST_S3_SECRET_ACCESS_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -69,9 +71,10 @@
                 exit 0
               fi
 
-              echo "✅ PostgreSQL tests enabled, don't forget to run 'nix run .#deps' to start PostgreSQL." >&2
-              cat <<'EOF'
-              export NCPS_TEST_ADMIN_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
+              echo "✅ PostgreSQL tests enabled, don't forget to start PostgreSQL." >&2
+              _pg_port="''${PGPORT:-5432}"
+              cat <<EOF
+              export NCPS_TEST_ADMIN_POSTGRES_URL="postgresql://test-user:test-password@127.0.0.1:$_pg_port/test-db?sslmode=disable"
               EOF
             '')
             (pkgs.writeShellScriptBin "enable-mysql-tests" ''
@@ -80,9 +83,10 @@
                 exit 0
               fi
 
-              echo "✅ MySQL tests enabled, don't forget to run 'nix run .#deps' to start MySQL." >&2
-              cat <<'EOF'
-              export NCPS_TEST_ADMIN_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:3306/test-db"
+              echo "✅ MySQL tests enabled, don't forget to start MySQL." >&2
+              _mysql_port="''${MYSQL_TCP_PORT:-3306}"
+              cat <<EOF
+              export NCPS_TEST_ADMIN_MYSQL_URL="mysql://test-user:test-password@127.0.0.1:$_mysql_port/test-db"
               EOF
             '')
             (pkgs.writeShellScriptBin "enable-redis-tests" ''
