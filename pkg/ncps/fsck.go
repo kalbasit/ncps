@@ -41,6 +41,12 @@ import (
 // ErrFsckIssuesFound is returned when fsck finds consistency issues.
 var ErrFsckIssuesFound = errors.New("consistency issues found")
 
+// fsckEagerLoadBatchSize bounds the page size of any fsck query that follows up
+// with an Ent `With*(...)` eager-load or an `In(...)` predicate over the page's
+// IDs. Kept well below PostgreSQL's 65535 extended-protocol parameter cap so the
+// secondary `IN ($1...$N)` cannot exceed the driver limit on any supported engine.
+const fsckEagerLoadBatchSize = 1000
+
 // fsckResults holds the results of a fsck run.
 type fsckResults struct {
 	// narinfosWithoutNarFiles: narinfos in DB with no linked nar_file.
@@ -779,40 +785,79 @@ func collectFsckSuspects(
 // queryCDCNarFilesWithSizeMismatch returns CDC nar_files (total_chunks > 0) whose
 // stored file_size differs from the linked narinfo's declared nar_size. Mirrors
 // the legacy GetCDCNarFilesWithSizeMismatch SQL.
+//
+// Implementation walks CDC nar_file rows in keyset-paginated batches of
+// fsckEagerLoadBatchSize and, per page, resolves the linked narinfos with a
+// bounded `NarFileIDIn(...)` + `WithNarinfo()` query. Eager-loading every CDC
+// row in one shot would emit `WHERE nar_file_id IN ($1...$N)` and trip
+// PostgreSQL's 65535 extended-protocol parameter cap once a cache grows past the
+// threshold.
 func queryCDCNarFilesWithSizeMismatch(
 	ctx context.Context,
 	dbClient *database.Client,
 ) ([]*ent.NarFile, error) {
-	// Fetch every CDC nar_file along with its linked narinfo via the join
-	// table. We compare in-memory because Ent's fluent API cannot express a
-	// cross-table column comparison directly.
-	rows, err := dbClient.Ent().NarFile.Query().
-		Where(entnarfile.TotalChunksGT(0)).
-		WithNarInfoNarFiles(func(q *ent.NarInfoNarFileQuery) {
-			q.WithNarinfo()
-		}).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query CDC nar_files: %w", err)
-	}
+	var (
+		mismatched []*ent.NarFile
+		lastID     int
+	)
 
-	var mismatched []*ent.NarFile
+	for {
+		page, err := dbClient.Ent().NarFile.Query().
+			Where(
+				entnarfile.TotalChunksGT(0),
+				entnarfile.IDGT(lastID),
+			).
+			Order(ent.Asc(entnarfile.FieldID)).
+			Limit(fsckEagerLoadBatchSize).
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("query CDC nar_files: %w", err)
+		}
 
-	for _, nf := range rows {
-		for _, link := range nf.Edges.NarInfoNarFiles {
-			ni := link.Edges.Narinfo
-			if ni == nil || ni.NarSize == nil {
-				continue
+		if len(page) == 0 {
+			break
+		}
+
+		ids := make([]int, len(page))
+		for i, nf := range page {
+			ids[i] = nf.ID
+		}
+
+		links, err := dbClient.Ent().NarInfoNarFile.Query().
+			Where(entnarinfonarfile.NarFileIDIn(ids...)).
+			WithNarinfo().
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("query CDC nar_file links: %w", err)
+		}
+
+		linksByNarFile := make(map[int][]*ent.NarInfoNarFile, len(page))
+		for _, link := range links {
+			linksByNarFile[link.NarFileID] = append(linksByNarFile[link.NarFileID], link)
+		}
+
+		for _, nf := range page {
+			for _, link := range linksByNarFile[nf.ID] {
+				ni := link.Edges.Narinfo
+				if ni == nil || ni.NarSize == nil {
+					continue
+				}
+				// file_size is uint64; nar_size is *int64. Cast both to int64
+				// for comparison — file_size never exceeds int64 in practice
+				// (real NARs are bounded by storage limits).
+				//nolint:gosec // G115: NAR sizes are well below math.MaxInt64.
+				if int64(nf.FileSize) != *ni.NarSize {
+					mismatched = append(mismatched, nf)
+
+					break
+				}
 			}
-			// file_size is uint64; nar_size is *int64. Cast both to int64 for
-			// comparison — file_size never exceeds int64 in practice (real
-			// NARs are bounded by storage limits).
-			//nolint:gosec // G115: NAR sizes are well below math.MaxInt64.
-			if int64(nf.FileSize) != *ni.NarSize {
-				mismatched = append(mismatched, nf)
+		}
 
-				break
-			}
+		lastID = page[len(page)-1].ID
+
+		if len(page) < fsckEagerLoadBatchSize {
+			break
 		}
 	}
 
@@ -1658,25 +1703,66 @@ func repairSizeMismatchCDCNarFiles(
 
 // chunksForNarFile returns the chunk rows linked to nf via nar_file_chunks,
 // ordered by chunk_index. Mirrors the legacy GetChunksByNarFileID SQL.
+//
+// Implementation walks nar_file_chunks rows in keyset-paginated batches of
+// fsckEagerLoadBatchSize and, per page, fetches chunks with a bounded
+// `IDIn(...)` query. A single oversized CDC NAR with > 65535 chunks would
+// otherwise emit `WHERE id IN ($1...$M)` via `WithChunk()` and trip
+// PostgreSQL's 65535 extended-protocol parameter cap.
 func chunksForNarFile(
 	ctx context.Context,
 	dbClient *database.Client,
 	narFileID int,
 ) ([]*ent.Chunk, error) {
-	links, err := dbClient.Ent().NarFileChunk.Query().
-		Where(entnarfilechunk.NarFileIDEQ(narFileID)).
-		Order(ent.Asc(entnarfilechunk.FieldChunkIndex)).
-		WithChunk().
-		All(ctx)
-	if err != nil {
-		return nil, err
-	}
+	var (
+		chunks    []*ent.Chunk
+		lastIndex = -1
+	)
 
-	chunks := make([]*ent.Chunk, 0, len(links))
+	for {
+		links, err := dbClient.Ent().NarFileChunk.Query().
+			Where(
+				entnarfilechunk.NarFileIDEQ(narFileID),
+				entnarfilechunk.ChunkIndexGT(lastIndex),
+			).
+			Order(ent.Asc(entnarfilechunk.FieldChunkIndex)).
+			Limit(fsckEagerLoadBatchSize).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	for _, link := range links {
-		if link.Edges.Chunk != nil {
-			chunks = append(chunks, link.Edges.Chunk)
+		if len(links) == 0 {
+			break
+		}
+
+		ids := make([]int, len(links))
+		for i, link := range links {
+			ids[i] = link.ChunkID
+		}
+
+		rows, err := dbClient.Ent().Chunk.Query().
+			Where(entchunk.IDIn(ids...)).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		byID := make(map[int]*ent.Chunk, len(rows))
+		for _, ch := range rows {
+			byID[ch.ID] = ch
+		}
+
+		for _, link := range links {
+			if ch, ok := byID[link.ChunkID]; ok {
+				chunks = append(chunks, ch)
+			}
+		}
+
+		lastIndex = links[len(links)-1].ChunkIndex
+
+		if len(links) < fsckEagerLoadBatchSize {
+			break
 		}
 	}
 

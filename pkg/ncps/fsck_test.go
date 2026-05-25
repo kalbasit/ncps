@@ -1645,3 +1645,198 @@ func testFsckCDCRepairHashMismatch(setup fsckSetupFn) func(*testing.T) {
 		assert.True(t, database.IsNotFoundError(dbErr), "nar_file must be deleted")
 	}
 }
+
+// TestQueryCDCNarFilesWithSizeMismatch_LargePostgreSQL is a regression test for
+// the "extended protocol limited to 65535 parameters" failure that the
+// pre-batching implementation hit on production-sized caches. It seeds more CDC
+// nar_file rows than the PostgreSQL extended-protocol parameter cap and then
+// confirms the function completes and returns exactly the seeded mismatched rows.
+func TestQueryCDCNarFilesWithSizeMismatch_LargePostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	if os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL") == "" {
+		t.Skip("Skipping: NCPS_TEST_ADMIN_POSTGRES_URL not set")
+	}
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+	dbClient, _, _, _, cleanup := setupFsckPostgres(t)
+	t.Cleanup(cleanup)
+
+	// totalRows must exceed PostgreSQL's 65535 extended-protocol parameter cap so
+	// that the pre-fix code path (single `WHERE nar_file_id IN ($1...$N)` Ent
+	// eager-load) would fail. mismatchCount stays small so the assertion is cheap.
+	const (
+		totalRows         = 70_000
+		mismatchCount     = 5
+		matchingNarSize   = int64(1000)
+		mismatchedSize    = uint64(2000)
+		nfInsertBatchSize = 5000
+		linkInsertBatch   = 10_000
+	)
+
+	// One shared narinfo. Matching nar_files set file_size == narSize; mismatched
+	// ones set file_size != narSize.
+	narInfo, err := dbClient.Ent().NarInfo.Create().
+		SetHash("largepg-shared-narinfo").
+		SetURL("nar/largepg.nar.xz").
+		SetNarSize(matchingNarSize).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Bulk insert CDC nar_files in batches sized to stay below the parameter cap
+	// for the multi-row INSERT itself (5 columns per row * 5000 rows = 25k params).
+	mismatchedHashes := make(map[string]struct{}, mismatchCount)
+
+	for start := 0; start < totalRows; start += nfInsertBatchSize {
+		end := start + nfInsertBatchSize
+		if end > totalRows {
+			end = totalRows
+		}
+
+		creates := make([]*ent.NarFileCreate, 0, end-start)
+
+		for i := start; i < end; i++ {
+			hash := fmt.Sprintf("largepg-narfile-%06d", i)
+
+			size := uint64(matchingNarSize)
+			if i < mismatchCount {
+				size = mismatchedSize
+				mismatchedHashes[hash] = struct{}{}
+			}
+
+			creates = append(creates, dbClient.Ent().NarFile.Create().
+				SetHash(hash).
+				SetCompression("xz").
+				SetQuery("").
+				SetFileSize(size).
+				SetTotalChunks(2))
+		}
+
+		_, err := dbClient.Ent().NarFile.CreateBulk(creates...).Save(ctx)
+		require.NoError(t, err, "bulk-create nar_files batch starting at %d", start)
+	}
+
+	// Fetch all seeded nar_file IDs so we can bulk-link them to the shared narinfo.
+	seeded, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.CompressionEQ("xz"), entnarfile.HashHasPrefix("largepg-narfile-")).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, seeded, totalRows)
+
+	for start := 0; start < len(seeded); start += linkInsertBatch {
+		end := start + linkInsertBatch
+		if end > len(seeded) {
+			end = len(seeded)
+		}
+
+		links := make([]*ent.NarInfoNarFileCreate, 0, end-start)
+		for _, nf := range seeded[start:end] {
+			links = append(links, dbClient.Ent().NarInfoNarFile.Create().
+				SetNarinfoID(narInfo.ID).
+				SetNarFileID(nf.ID))
+		}
+
+		_, err := dbClient.Ent().NarInfoNarFile.CreateBulk(links...).Save(ctx)
+		require.NoError(t, err, "bulk-create narinfo_nar_file links batch starting at %d", start)
+	}
+
+	got, err := ncps.QueryCDCNarFilesWithSizeMismatchForTest(ctx, dbClient)
+	require.NoError(t, err, "queryCDCNarFilesWithSizeMismatch must succeed on a large CDC cache")
+
+	gotHashes := make(map[string]struct{}, len(got))
+	for _, nf := range got {
+		gotHashes[nf.Hash] = struct{}{}
+	}
+
+	assert.Equal(t, mismatchedHashes, gotHashes,
+		"returned set must equal exactly the seeded mismatched hashes")
+}
+
+// TestChunksForNarFile_LargePostgreSQL is a regression test for the same
+// 65535-parameter cap, exercised through the `WithChunk()` eager-load that the
+// pre-fix `chunksForNarFile` issued for a single oversized CDC NAR.
+func TestChunksForNarFile_LargePostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	if os.Getenv("NCPS_TEST_ADMIN_POSTGRES_URL") == "" {
+		t.Skip("Skipping: NCPS_TEST_ADMIN_POSTGRES_URL not set")
+	}
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+	dbClient, _, _, _, cleanup := setupFsckPostgres(t)
+	t.Cleanup(cleanup)
+
+	// chunkCount must exceed 65535 so the pre-fix `WithChunk()` follow-up would
+	// emit `WHERE id IN ($1...$M)` with M > 65535 and trip the cap.
+	const (
+		chunkCount       = 70_000
+		chunkInsertBatch = 10_000
+		linkInsertBatch  = 10_000
+	)
+
+	narFile, err := dbClient.Ent().NarFile.Create().
+		SetHash("largepg-chunky-narfile").
+		SetCompression("xz").
+		SetQuery("").
+		SetFileSize(1).
+		SetTotalChunks(int64(chunkCount)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Bulk-insert chunks (3 columns per row * 10000 rows = 30k params per batch).
+	for start := 0; start < chunkCount; start += chunkInsertBatch {
+		end := start + chunkInsertBatch
+		if end > chunkCount {
+			end = chunkCount
+		}
+
+		creates := make([]*ent.ChunkCreate, 0, end-start)
+		for i := start; i < end; i++ {
+			creates = append(creates, dbClient.Ent().Chunk.Create().
+				SetHash(fmt.Sprintf("largepg-chunk-%06d", i)).
+				SetSize(uint32(64)).
+				SetCompressedSize(uint32(32)))
+		}
+
+		_, err := dbClient.Ent().Chunk.CreateBulk(creates...).Save(ctx)
+		require.NoError(t, err, "bulk-create chunks batch starting at %d", start)
+	}
+
+	// Fetch seeded chunk IDs in hash order — hash order matches the index we will
+	// assign in the link table, which lets the test check ordering deterministically.
+	chunks, err := dbClient.Ent().Chunk.Query().
+		Where(entchunk.HashHasPrefix("largepg-chunk-")).
+		Order(ent.Asc(entchunk.FieldHash)).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, chunks, chunkCount)
+
+	for start := 0; start < chunkCount; start += linkInsertBatch {
+		end := start + linkInsertBatch
+		if end > chunkCount {
+			end = chunkCount
+		}
+
+		links := make([]*ent.NarFileChunkCreate, 0, end-start)
+		for i := start; i < end; i++ {
+			links = append(links, dbClient.Ent().NarFileChunk.Create().
+				SetNarFileID(narFile.ID).
+				SetChunkID(chunks[i].ID).
+				SetChunkIndex(i))
+		}
+
+		_, err := dbClient.Ent().NarFileChunk.CreateBulk(links...).Save(ctx)
+		require.NoError(t, err, "bulk-create nar_file_chunks batch starting at %d", start)
+	}
+
+	got, err := ncps.ChunksForNarFileForTest(ctx, dbClient, narFile.ID)
+	require.NoError(t, err, "chunksForNarFile must succeed on a NAR with > 65535 chunks")
+	require.Len(t, got, chunkCount, "returned chunk count must match seeded count")
+
+	for i, ch := range got {
+		require.NotNil(t, ch, "chunk at index %d must not be nil", i)
+		assert.Equal(t, chunks[i].ID, ch.ID, "chunk at index %d must be in chunk_index order", i)
+	}
+}
