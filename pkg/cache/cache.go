@@ -147,6 +147,8 @@ var (
 
 	errMissingChunkEdge = errors.New("nar_file_chunk is missing eager-loaded chunk edge")
 
+	errChunkIDFetchMismatch = errors.New("chunk count mismatch after bulk insert")
+
 	//nolint:gochecknoglobals
 	meter metric.Meter
 
@@ -2493,6 +2495,11 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 			freshChunks, err := tx.Chunk.Query().Where(entchunk.HashIn(newHashes...)).All(ctx)
 			if err != nil {
 				return fmt.Errorf("error fetching new chunk IDs: %w", err)
+			}
+
+			if len(freshChunks) != len(newHashes) {
+				return fmt.Errorf("error fetching new chunk IDs: expected %d got %d: %w",
+					len(newHashes), len(freshChunks), errChunkIDFetchMismatch)
 			}
 
 			for _, ch := range freshChunks {
