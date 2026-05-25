@@ -321,7 +321,7 @@ CREATE TABLE "build_trace_signatures" (
     "id"                   BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
     "build_trace_entry_id" BIGINT       NOT NULL REFERENCES "build_trace_entries" ("id") ON DELETE CASCADE,
     "key_name"             VARCHAR(255) NOT NULL,
-    "signature"            TEXT         NOT NULL
+    "signature"            VARCHAR(255) NOT NULL
 );
 CREATE INDEX "idx_build_trace_signatures_entry_id"
     ON "build_trace_signatures" ("build_trace_entry_id");

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -165,15 +164,11 @@ func (c *Cache) PutBuildTrace(ctx context.Context, drvName, outputName string, r
 		return fmt.Errorf("%w: missing required fields in build trace entry", ErrBadRequest)
 	}
 
-	// Validate that the URL path matches the body key.
-	// drvName in the URL is the basename of the derivation path.
-	bodyDrvName := entry.Key.DrvPath
-	if idx := strings.LastIndex(bodyDrvName, "/"); idx >= 0 {
-		bodyDrvName = bodyDrvName[idx+1:]
-	}
-
-	if bodyDrvName != drvName {
-		return fmt.Errorf("%w: URL drvName %q does not match body drvPath basename %q", ErrBadRequest, drvName, bodyDrvName)
+	// Validate that the body key matches the full expected store path.
+	expectedDrvPath := drvFullPath(drvName)
+	if entry.Key.DrvPath != expectedDrvPath {
+		return fmt.Errorf("%w: expected drvPath %q, got %q",
+			ErrBadRequest, expectedDrvPath, entry.Key.DrvPath)
 	}
 
 	if entry.Key.OutputName != outputName {

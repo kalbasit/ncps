@@ -30,7 +30,7 @@ Build trace entries are small, structured JSON blobs. Unlike NARs, there is no b
 
 ### 2. Ent schema: two new entities mirroring narinfos/narinfo_signatures
 
-```
+```text
 build_trace_entries
   id           BIGINT / UUID  PK
   drv_path     TEXT           NOT NULL   -- e.g. "/nix/store/qwwz...-skopeo.drv" (full store path from body)
