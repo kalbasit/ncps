@@ -4441,27 +4441,23 @@ func upsertNarInfoFromParsed(
 
 	switch {
 	case ent.IsNotFound(err):
-		// Insert new
+		// Insert new, ignoring a concurrent insert racing between our
+		// SELECT above and this INSERT. Using DO NOTHING instead of
+		// DO UPDATE keeps the transaction alive on conflict — a
+		// competing INSERT (DO UPDATE) would abort the PostgreSQL
+		// transaction (SQLSTATE 25P02), making the re-fetch below fail.
 		nb := tx.NarInfo.Create().SetHash(hash)
 		applyNarInfoCreate(nb, narInfo)
 
-		nir, err := nb.Save(ctx)
-		if err != nil {
-			// A concurrent writer (e.g. a background migration racing with
-			// PutNarInfo) may have inserted the row between our query and
-			// our insert.  Treat that as success: re-fetch and return the
-			// winner's row so the caller can continue linking references /
-			// signatures / nar_files against the real record.
-			if ent.IsConstraintError(err) {
-				nir, err = tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
-				if err != nil {
-					return nil, fmt.Errorf("error re-fetching narinfo record after concurrent insert for hash %q: %w", hash, err)
-				}
-
-				return nir, nil
-			}
-
+		if err := nb.OnConflictColumns(entnarinfo.FieldHash).Ignore().Exec(ctx); err != nil {
 			return nil, fmt.Errorf("error inserting the narinfo record for hash %q: %w", hash, err)
+		}
+
+		// Always SELECT after to get the row's ID, whether we inserted
+		// it or a concurrent writer did.
+		nir, err := tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching narinfo record after insert for hash %q: %w", hash, err)
 		}
 
 		return nir, nil
