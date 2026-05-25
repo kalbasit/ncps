@@ -530,17 +530,32 @@ func filterDbmateEra(files []string) []string {
 			base = base[idx+1:]
 		}
 
-		var v int64
+		// Require exactly 14 leading digits; anything else can't be a
+		// migration version and is included unchanged.
+		if len(base) < 14 {
+			out = append(out, f)
 
-		for i := 0; i < 14 && i < len(base); i++ {
-			v = v*10 + int64(base[i]-'0')
-		}
-
-		if v >= bridgeEraStart {
 			continue
 		}
 
-		out = append(out, f)
+		var v int64
+
+		valid := true
+
+		for i := range 14 {
+			c := base[i]
+			if c < '0' || c > '9' {
+				valid = false
+
+				break
+			}
+
+			v = v*10 + int64(c-'0')
+		}
+
+		if !valid || v < bridgeEraStart {
+			out = append(out, f)
+		}
 	}
 
 	return out
