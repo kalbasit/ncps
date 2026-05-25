@@ -98,6 +98,6 @@ spec:
       volumes:
         - name: storage
           persistentVolumeClaim:
-            claimName: {{ include "ncps.fullname" . }}
+            claimName: {{ .Values.config.storage.local.persistence.existingClaim | default (include "ncps.fullname" .) }}
       {{- end }}
 {{- end }}

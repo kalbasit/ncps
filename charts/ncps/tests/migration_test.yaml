@@ -130,6 +130,25 @@ tests:
             name: storage
             mountPath: /storage
 
+  - it: migration-job uses existingClaim for sqlite + existingClaim
+    template: migration-job.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      config.storage.type: local
+      config.storage.local.path: /storage
+      config.storage.local.persistence.existingClaim: my-existing-pvc
+      migration.enabled: true
+      migration.mode: job
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: storage
+            persistentVolumeClaim:
+              claimName: my-existing-pvc
+
   # ---- deployment initContainer ----
   - it: deployment migration initContainer invokes ncps migrate up
     template: deployment.yaml
