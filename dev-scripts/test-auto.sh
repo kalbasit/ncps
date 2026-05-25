@@ -13,15 +13,17 @@ STATE_FILE="${TMPDIR:-/tmp}/ncps-test-deps.env"
 # Allocate 7 distinct free ports simultaneously.
 # Binding all sockets before closing any ensures each port is unique
 # and avoids races between the bind and the service startup.
-read -r NCPS_TEST_S3_PORT GARAGE_RPC_PORT GARAGE_ADMIN_PORT PGPORT MYSQL_TCP_PORT REDIS_PORT TEST_PC_PORT \
-  < <(python3 -c "
+ports_list=$(python3 -c "
 import socket
 ss = [socket.socket() for _ in range(7)]
-[s.bind(('', 0)) for s in ss]
+for s in ss:
+    s.bind(('', 0))
 ports = [str(s.getsockname()[1]) for s in ss]
-[s.close() for s in ss]
+for s in ss:
+    s.close()
 print(' '.join(ports))
 ")
+read -r NCPS_TEST_S3_PORT GARAGE_RPC_PORT GARAGE_ADMIN_PORT PGPORT MYSQL_TCP_PORT REDIS_PORT TEST_PC_PORT <<< "$ports_list"
 
 export NCPS_TEST_S3_PORT GARAGE_RPC_PORT GARAGE_ADMIN_PORT PGPORT MYSQL_TCP_PORT REDIS_PORT TEST_PC_PORT
 export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:${NCPS_TEST_S3_PORT}"
@@ -36,6 +38,19 @@ export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:${NCPS_TEST_S3_PORT}"
   echo "REDIS_PORT=${REDIS_PORT}"
   echo "TEST_PC_PORT=${TEST_PC_PORT}"
 } > "${STATE_FILE}"
+
+# Registered before service startup so failures during startup or readiness
+# polling are also caught and services are cleaned up.
+cleanup() {
+  echo "Stopping backing services (PC port: ${TEST_PC_PORT})..." >&2
+  if command -v process-compose >/dev/null 2>&1; then
+    process-compose down -p "${TEST_PC_PORT}" 2>/dev/null || true
+  else
+    nix run .#test-deps -- down -p "${TEST_PC_PORT}" 2>/dev/null || true
+  fi
+  rm -f "${STATE_FILE}"
+}
+trap cleanup EXIT
 
 echo "Starting backing services on random ports..." >&2
 echo "  S3/Garage: ${NCPS_TEST_S3_PORT}  PG: ${PGPORT}  MySQL: ${MYSQL_TCP_PORT}  Redis: ${REDIS_PORT}" >&2
@@ -64,20 +79,9 @@ done
 echo "All services ready." >&2
 
 if [[ "$START_ONLY" == "true" ]]; then
+  trap - EXIT
   exit 0
 fi
-
-# Tear down the process-compose instance on exit (success or failure).
-cleanup() {
-  echo "Stopping backing services (PC port: ${TEST_PC_PORT})..." >&2
-  if command -v process-compose >/dev/null 2>&1; then
-    process-compose down -p "${TEST_PC_PORT}" 2>/dev/null || true
-  else
-    nix run .#test-deps -- down -p "${TEST_PC_PORT}" 2>/dev/null || true
-  fi
-  rm -f "${STATE_FILE}"
-}
-trap cleanup EXIT
 
 eval "$(enable-integration-tests)"
 go test -race ./...

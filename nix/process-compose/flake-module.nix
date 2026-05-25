@@ -303,24 +303,26 @@
               environment = testDepsGarageEnvironment;
               readiness_probe = {
                 # http_get.port cannot reference an env var; use exec + curl instead.
-                exec.command = "curl -sf http://127.0.0.1:\${GARAGE_ADMIN_PORT:-3903}/health";
+                exec.command = "${pkgs.curl}/bin/curl -sf http://127.0.0.1:\${GARAGE_ADMIN_PORT:-3903}/health";
                 initial_delay_seconds = 2;
                 period_seconds = 5;
               };
             };
             garage-init = {
               command = ''
-                READY_MARKER="''${TMPDIR:-/tmp}/ncps-garage-$(id -u).ready"
+                READY_MARKER="''${TMPDIR:-/tmp}/ncps-garage-''${TEST_PC_PORT:-0}.ready"
                 rm -f "$READY_MARKER"
                 trap 'rm -f "$READY_MARKER"' EXIT INT TERM
                 ${initGarageApp}/bin/init-garage
                 touch "$READY_MARKER"
                 sleep infinity
               '';
-              environment = testDepsGarageEnvironment;
+              environment = testDepsGarageEnvironment // {
+                TEST_PC_PORT = "\${TEST_PC_PORT:-0}";
+              };
               depends_on.garage-server.condition = "process_healthy";
               readiness_probe = {
-                exec.command = ''test -f "''${TMPDIR:-/tmp}/ncps-garage-$(id -u).ready"'';
+                exec.command = "test -f \${TMPDIR:-/tmp}/ncps-garage-\${TEST_PC_PORT:-0}.ready";
                 initial_delay_seconds = 3;
                 period_seconds = 1;
               };
