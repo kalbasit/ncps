@@ -26,7 +26,9 @@ task lint                         # Lint Go code
 task lint:fix                     # Auto-fix lint issues
 task test                         # Unit tests — no backends required
 task test:integration             # Full suite — deps must already be running
-task test:auto                    # Auto-start deps, run full suite, teardown
+task test:auto                    # Start fresh services on random ports, run full suite, teardown
+task test:deps:start              # Start backing services in detached mode (random ports)
+task test:deps:stop               # Stop services started by test:deps:start
 
 # Development
 task dev                          # Start dev server (hot-reload via run.py)
