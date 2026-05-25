@@ -11,6 +11,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/kalbasit/ncps/ent/buildtraceentry"
+	"github.com/kalbasit/ncps/ent/buildtracesignature"
 	"github.com/kalbasit/ncps/ent/chunk"
 	"github.com/kalbasit/ncps/ent/configentry"
 	"github.com/kalbasit/ncps/ent/narfile"
@@ -32,16 +34,1220 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeChunk            = "Chunk"
-	TypeConfigEntry      = "ConfigEntry"
-	TypeNarFile          = "NarFile"
-	TypeNarFileChunk     = "NarFileChunk"
-	TypeNarInfo          = "NarInfo"
-	TypeNarInfoNarFile   = "NarInfoNarFile"
-	TypeNarInfoReference = "NarInfoReference"
-	TypeNarInfoSignature = "NarInfoSignature"
-	TypePinnedClosure    = "PinnedClosure"
+	TypeBuildTraceEntry     = "BuildTraceEntry"
+	TypeBuildTraceSignature = "BuildTraceSignature"
+	TypeChunk               = "Chunk"
+	TypeConfigEntry         = "ConfigEntry"
+	TypeNarFile             = "NarFile"
+	TypeNarFileChunk        = "NarFileChunk"
+	TypeNarInfo             = "NarInfo"
+	TypeNarInfoNarFile      = "NarInfoNarFile"
+	TypeNarInfoReference    = "NarInfoReference"
+	TypeNarInfoSignature    = "NarInfoSignature"
+	TypePinnedClosure       = "PinnedClosure"
 )
+
+// BuildTraceEntryMutation represents an operation that mutates the BuildTraceEntry nodes in the graph.
+type BuildTraceEntryMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *int
+	created_at        *time.Time
+	updated_at        *time.Time
+	drv_path          *string
+	output_name       *string
+	out_path          *string
+	raw_json          *string
+	clearedFields     map[string]struct{}
+	signatures        map[int]struct{}
+	removedsignatures map[int]struct{}
+	clearedsignatures bool
+	done              bool
+	oldValue          func(context.Context) (*BuildTraceEntry, error)
+	predicates        []predicate.BuildTraceEntry
+}
+
+var _ ent.Mutation = (*BuildTraceEntryMutation)(nil)
+
+// buildtraceentryOption allows management of the mutation configuration using functional options.
+type buildtraceentryOption func(*BuildTraceEntryMutation)
+
+// newBuildTraceEntryMutation creates new mutation for the BuildTraceEntry entity.
+func newBuildTraceEntryMutation(c config, op Op, opts ...buildtraceentryOption) *BuildTraceEntryMutation {
+	m := &BuildTraceEntryMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBuildTraceEntry,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBuildTraceEntryID sets the ID field of the mutation.
+func withBuildTraceEntryID(id int) buildtraceentryOption {
+	return func(m *BuildTraceEntryMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BuildTraceEntry
+		)
+		m.oldValue = func(ctx context.Context) (*BuildTraceEntry, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BuildTraceEntry.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBuildTraceEntry sets the old BuildTraceEntry of the mutation.
+func withBuildTraceEntry(node *BuildTraceEntry) buildtraceentryOption {
+	return func(m *BuildTraceEntryMutation) {
+		m.oldValue = func(context.Context) (*BuildTraceEntry, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BuildTraceEntryMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BuildTraceEntryMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BuildTraceEntryMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BuildTraceEntryMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BuildTraceEntry.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BuildTraceEntryMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BuildTraceEntryMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BuildTraceEntry entity.
+// If the BuildTraceEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceEntryMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BuildTraceEntryMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BuildTraceEntryMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BuildTraceEntryMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BuildTraceEntry entity.
+// If the BuildTraceEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceEntryMutation) OldUpdatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (m *BuildTraceEntryMutation) ClearUpdatedAt() {
+	m.updated_at = nil
+	m.clearedFields[buildtraceentry.FieldUpdatedAt] = struct{}{}
+}
+
+// UpdatedAtCleared returns if the "updated_at" field was cleared in this mutation.
+func (m *BuildTraceEntryMutation) UpdatedAtCleared() bool {
+	_, ok := m.clearedFields[buildtraceentry.FieldUpdatedAt]
+	return ok
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BuildTraceEntryMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+	delete(m.clearedFields, buildtraceentry.FieldUpdatedAt)
+}
+
+// SetDrvPath sets the "drv_path" field.
+func (m *BuildTraceEntryMutation) SetDrvPath(s string) {
+	m.drv_path = &s
+}
+
+// DrvPath returns the value of the "drv_path" field in the mutation.
+func (m *BuildTraceEntryMutation) DrvPath() (r string, exists bool) {
+	v := m.drv_path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDrvPath returns the old "drv_path" field's value of the BuildTraceEntry entity.
+// If the BuildTraceEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceEntryMutation) OldDrvPath(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDrvPath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDrvPath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDrvPath: %w", err)
+	}
+	return oldValue.DrvPath, nil
+}
+
+// ResetDrvPath resets all changes to the "drv_path" field.
+func (m *BuildTraceEntryMutation) ResetDrvPath() {
+	m.drv_path = nil
+}
+
+// SetOutputName sets the "output_name" field.
+func (m *BuildTraceEntryMutation) SetOutputName(s string) {
+	m.output_name = &s
+}
+
+// OutputName returns the value of the "output_name" field in the mutation.
+func (m *BuildTraceEntryMutation) OutputName() (r string, exists bool) {
+	v := m.output_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputName returns the old "output_name" field's value of the BuildTraceEntry entity.
+// If the BuildTraceEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceEntryMutation) OldOutputName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputName: %w", err)
+	}
+	return oldValue.OutputName, nil
+}
+
+// ResetOutputName resets all changes to the "output_name" field.
+func (m *BuildTraceEntryMutation) ResetOutputName() {
+	m.output_name = nil
+}
+
+// SetOutPath sets the "out_path" field.
+func (m *BuildTraceEntryMutation) SetOutPath(s string) {
+	m.out_path = &s
+}
+
+// OutPath returns the value of the "out_path" field in the mutation.
+func (m *BuildTraceEntryMutation) OutPath() (r string, exists bool) {
+	v := m.out_path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutPath returns the old "out_path" field's value of the BuildTraceEntry entity.
+// If the BuildTraceEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceEntryMutation) OldOutPath(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutPath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutPath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutPath: %w", err)
+	}
+	return oldValue.OutPath, nil
+}
+
+// ResetOutPath resets all changes to the "out_path" field.
+func (m *BuildTraceEntryMutation) ResetOutPath() {
+	m.out_path = nil
+}
+
+// SetRawJSON sets the "raw_json" field.
+func (m *BuildTraceEntryMutation) SetRawJSON(s string) {
+	m.raw_json = &s
+}
+
+// RawJSON returns the value of the "raw_json" field in the mutation.
+func (m *BuildTraceEntryMutation) RawJSON() (r string, exists bool) {
+	v := m.raw_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawJSON returns the old "raw_json" field's value of the BuildTraceEntry entity.
+// If the BuildTraceEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceEntryMutation) OldRawJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawJSON: %w", err)
+	}
+	return oldValue.RawJSON, nil
+}
+
+// ResetRawJSON resets all changes to the "raw_json" field.
+func (m *BuildTraceEntryMutation) ResetRawJSON() {
+	m.raw_json = nil
+}
+
+// AddSignatureIDs adds the "signatures" edge to the BuildTraceSignature entity by ids.
+func (m *BuildTraceEntryMutation) AddSignatureIDs(ids ...int) {
+	if m.signatures == nil {
+		m.signatures = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.signatures[ids[i]] = struct{}{}
+	}
+}
+
+// ClearSignatures clears the "signatures" edge to the BuildTraceSignature entity.
+func (m *BuildTraceEntryMutation) ClearSignatures() {
+	m.clearedsignatures = true
+}
+
+// SignaturesCleared reports if the "signatures" edge to the BuildTraceSignature entity was cleared.
+func (m *BuildTraceEntryMutation) SignaturesCleared() bool {
+	return m.clearedsignatures
+}
+
+// RemoveSignatureIDs removes the "signatures" edge to the BuildTraceSignature entity by IDs.
+func (m *BuildTraceEntryMutation) RemoveSignatureIDs(ids ...int) {
+	if m.removedsignatures == nil {
+		m.removedsignatures = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.signatures, ids[i])
+		m.removedsignatures[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedSignatures returns the removed IDs of the "signatures" edge to the BuildTraceSignature entity.
+func (m *BuildTraceEntryMutation) RemovedSignaturesIDs() (ids []int) {
+	for id := range m.removedsignatures {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// SignaturesIDs returns the "signatures" edge IDs in the mutation.
+func (m *BuildTraceEntryMutation) SignaturesIDs() (ids []int) {
+	for id := range m.signatures {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetSignatures resets all changes to the "signatures" edge.
+func (m *BuildTraceEntryMutation) ResetSignatures() {
+	m.signatures = nil
+	m.clearedsignatures = false
+	m.removedsignatures = nil
+}
+
+// Where appends a list predicates to the BuildTraceEntryMutation builder.
+func (m *BuildTraceEntryMutation) Where(ps ...predicate.BuildTraceEntry) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BuildTraceEntryMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BuildTraceEntryMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BuildTraceEntry, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BuildTraceEntryMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BuildTraceEntryMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BuildTraceEntry).
+func (m *BuildTraceEntryMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BuildTraceEntryMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.created_at != nil {
+		fields = append(fields, buildtraceentry.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, buildtraceentry.FieldUpdatedAt)
+	}
+	if m.drv_path != nil {
+		fields = append(fields, buildtraceentry.FieldDrvPath)
+	}
+	if m.output_name != nil {
+		fields = append(fields, buildtraceentry.FieldOutputName)
+	}
+	if m.out_path != nil {
+		fields = append(fields, buildtraceentry.FieldOutPath)
+	}
+	if m.raw_json != nil {
+		fields = append(fields, buildtraceentry.FieldRawJSON)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BuildTraceEntryMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case buildtraceentry.FieldCreatedAt:
+		return m.CreatedAt()
+	case buildtraceentry.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case buildtraceentry.FieldDrvPath:
+		return m.DrvPath()
+	case buildtraceentry.FieldOutputName:
+		return m.OutputName()
+	case buildtraceentry.FieldOutPath:
+		return m.OutPath()
+	case buildtraceentry.FieldRawJSON:
+		return m.RawJSON()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BuildTraceEntryMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case buildtraceentry.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case buildtraceentry.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case buildtraceentry.FieldDrvPath:
+		return m.OldDrvPath(ctx)
+	case buildtraceentry.FieldOutputName:
+		return m.OldOutputName(ctx)
+	case buildtraceentry.FieldOutPath:
+		return m.OldOutPath(ctx)
+	case buildtraceentry.FieldRawJSON:
+		return m.OldRawJSON(ctx)
+	}
+	return nil, fmt.Errorf("unknown BuildTraceEntry field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BuildTraceEntryMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case buildtraceentry.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case buildtraceentry.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case buildtraceentry.FieldDrvPath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDrvPath(v)
+		return nil
+	case buildtraceentry.FieldOutputName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputName(v)
+		return nil
+	case buildtraceentry.FieldOutPath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutPath(v)
+		return nil
+	case buildtraceentry.FieldRawJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawJSON(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceEntry field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BuildTraceEntryMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BuildTraceEntryMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BuildTraceEntryMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown BuildTraceEntry numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BuildTraceEntryMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(buildtraceentry.FieldUpdatedAt) {
+		fields = append(fields, buildtraceentry.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BuildTraceEntryMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BuildTraceEntryMutation) ClearField(name string) error {
+	switch name {
+	case buildtraceentry.FieldUpdatedAt:
+		m.ClearUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceEntry nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BuildTraceEntryMutation) ResetField(name string) error {
+	switch name {
+	case buildtraceentry.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case buildtraceentry.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case buildtraceentry.FieldDrvPath:
+		m.ResetDrvPath()
+		return nil
+	case buildtraceentry.FieldOutputName:
+		m.ResetOutputName()
+		return nil
+	case buildtraceentry.FieldOutPath:
+		m.ResetOutPath()
+		return nil
+	case buildtraceentry.FieldRawJSON:
+		m.ResetRawJSON()
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceEntry field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BuildTraceEntryMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.signatures != nil {
+		edges = append(edges, buildtraceentry.EdgeSignatures)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BuildTraceEntryMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case buildtraceentry.EdgeSignatures:
+		ids := make([]ent.Value, 0, len(m.signatures))
+		for id := range m.signatures {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BuildTraceEntryMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removedsignatures != nil {
+		edges = append(edges, buildtraceentry.EdgeSignatures)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BuildTraceEntryMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case buildtraceentry.EdgeSignatures:
+		ids := make([]ent.Value, 0, len(m.removedsignatures))
+		for id := range m.removedsignatures {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BuildTraceEntryMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedsignatures {
+		edges = append(edges, buildtraceentry.EdgeSignatures)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BuildTraceEntryMutation) EdgeCleared(name string) bool {
+	switch name {
+	case buildtraceentry.EdgeSignatures:
+		return m.clearedsignatures
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BuildTraceEntryMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown BuildTraceEntry unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BuildTraceEntryMutation) ResetEdge(name string) error {
+	switch name {
+	case buildtraceentry.EdgeSignatures:
+		m.ResetSignatures()
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceEntry edge %s", name)
+}
+
+// BuildTraceSignatureMutation represents an operation that mutates the BuildTraceSignature nodes in the graph.
+type BuildTraceSignatureMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int
+	key_name                 *string
+	signature                *string
+	clearedFields            map[string]struct{}
+	build_trace_entry        *int
+	clearedbuild_trace_entry bool
+	done                     bool
+	oldValue                 func(context.Context) (*BuildTraceSignature, error)
+	predicates               []predicate.BuildTraceSignature
+}
+
+var _ ent.Mutation = (*BuildTraceSignatureMutation)(nil)
+
+// buildtracesignatureOption allows management of the mutation configuration using functional options.
+type buildtracesignatureOption func(*BuildTraceSignatureMutation)
+
+// newBuildTraceSignatureMutation creates new mutation for the BuildTraceSignature entity.
+func newBuildTraceSignatureMutation(c config, op Op, opts ...buildtracesignatureOption) *BuildTraceSignatureMutation {
+	m := &BuildTraceSignatureMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBuildTraceSignature,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBuildTraceSignatureID sets the ID field of the mutation.
+func withBuildTraceSignatureID(id int) buildtracesignatureOption {
+	return func(m *BuildTraceSignatureMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BuildTraceSignature
+		)
+		m.oldValue = func(ctx context.Context) (*BuildTraceSignature, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BuildTraceSignature.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBuildTraceSignature sets the old BuildTraceSignature of the mutation.
+func withBuildTraceSignature(node *BuildTraceSignature) buildtracesignatureOption {
+	return func(m *BuildTraceSignatureMutation) {
+		m.oldValue = func(context.Context) (*BuildTraceSignature, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BuildTraceSignatureMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BuildTraceSignatureMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BuildTraceSignatureMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BuildTraceSignatureMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BuildTraceSignature.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetBuildTraceEntryID sets the "build_trace_entry_id" field.
+func (m *BuildTraceSignatureMutation) SetBuildTraceEntryID(i int) {
+	m.build_trace_entry = &i
+}
+
+// BuildTraceEntryID returns the value of the "build_trace_entry_id" field in the mutation.
+func (m *BuildTraceSignatureMutation) BuildTraceEntryID() (r int, exists bool) {
+	v := m.build_trace_entry
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBuildTraceEntryID returns the old "build_trace_entry_id" field's value of the BuildTraceSignature entity.
+// If the BuildTraceSignature object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceSignatureMutation) OldBuildTraceEntryID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBuildTraceEntryID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBuildTraceEntryID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBuildTraceEntryID: %w", err)
+	}
+	return oldValue.BuildTraceEntryID, nil
+}
+
+// ResetBuildTraceEntryID resets all changes to the "build_trace_entry_id" field.
+func (m *BuildTraceSignatureMutation) ResetBuildTraceEntryID() {
+	m.build_trace_entry = nil
+}
+
+// SetKeyName sets the "key_name" field.
+func (m *BuildTraceSignatureMutation) SetKeyName(s string) {
+	m.key_name = &s
+}
+
+// KeyName returns the value of the "key_name" field in the mutation.
+func (m *BuildTraceSignatureMutation) KeyName() (r string, exists bool) {
+	v := m.key_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKeyName returns the old "key_name" field's value of the BuildTraceSignature entity.
+// If the BuildTraceSignature object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceSignatureMutation) OldKeyName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKeyName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKeyName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKeyName: %w", err)
+	}
+	return oldValue.KeyName, nil
+}
+
+// ResetKeyName resets all changes to the "key_name" field.
+func (m *BuildTraceSignatureMutation) ResetKeyName() {
+	m.key_name = nil
+}
+
+// SetSignature sets the "signature" field.
+func (m *BuildTraceSignatureMutation) SetSignature(s string) {
+	m.signature = &s
+}
+
+// Signature returns the value of the "signature" field in the mutation.
+func (m *BuildTraceSignatureMutation) Signature() (r string, exists bool) {
+	v := m.signature
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSignature returns the old "signature" field's value of the BuildTraceSignature entity.
+// If the BuildTraceSignature object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BuildTraceSignatureMutation) OldSignature(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSignature is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSignature requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSignature: %w", err)
+	}
+	return oldValue.Signature, nil
+}
+
+// ResetSignature resets all changes to the "signature" field.
+func (m *BuildTraceSignatureMutation) ResetSignature() {
+	m.signature = nil
+}
+
+// ClearBuildTraceEntry clears the "build_trace_entry" edge to the BuildTraceEntry entity.
+func (m *BuildTraceSignatureMutation) ClearBuildTraceEntry() {
+	m.clearedbuild_trace_entry = true
+	m.clearedFields[buildtracesignature.FieldBuildTraceEntryID] = struct{}{}
+}
+
+// BuildTraceEntryCleared reports if the "build_trace_entry" edge to the BuildTraceEntry entity was cleared.
+func (m *BuildTraceSignatureMutation) BuildTraceEntryCleared() bool {
+	return m.clearedbuild_trace_entry
+}
+
+// BuildTraceEntryIDs returns the "build_trace_entry" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// BuildTraceEntryID instead. It exists only for internal usage by the builders.
+func (m *BuildTraceSignatureMutation) BuildTraceEntryIDs() (ids []int) {
+	if id := m.build_trace_entry; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetBuildTraceEntry resets all changes to the "build_trace_entry" edge.
+func (m *BuildTraceSignatureMutation) ResetBuildTraceEntry() {
+	m.build_trace_entry = nil
+	m.clearedbuild_trace_entry = false
+}
+
+// Where appends a list predicates to the BuildTraceSignatureMutation builder.
+func (m *BuildTraceSignatureMutation) Where(ps ...predicate.BuildTraceSignature) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BuildTraceSignatureMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BuildTraceSignatureMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BuildTraceSignature, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BuildTraceSignatureMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BuildTraceSignatureMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BuildTraceSignature).
+func (m *BuildTraceSignatureMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BuildTraceSignatureMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.build_trace_entry != nil {
+		fields = append(fields, buildtracesignature.FieldBuildTraceEntryID)
+	}
+	if m.key_name != nil {
+		fields = append(fields, buildtracesignature.FieldKeyName)
+	}
+	if m.signature != nil {
+		fields = append(fields, buildtracesignature.FieldSignature)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BuildTraceSignatureMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case buildtracesignature.FieldBuildTraceEntryID:
+		return m.BuildTraceEntryID()
+	case buildtracesignature.FieldKeyName:
+		return m.KeyName()
+	case buildtracesignature.FieldSignature:
+		return m.Signature()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BuildTraceSignatureMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case buildtracesignature.FieldBuildTraceEntryID:
+		return m.OldBuildTraceEntryID(ctx)
+	case buildtracesignature.FieldKeyName:
+		return m.OldKeyName(ctx)
+	case buildtracesignature.FieldSignature:
+		return m.OldSignature(ctx)
+	}
+	return nil, fmt.Errorf("unknown BuildTraceSignature field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BuildTraceSignatureMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case buildtracesignature.FieldBuildTraceEntryID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBuildTraceEntryID(v)
+		return nil
+	case buildtracesignature.FieldKeyName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKeyName(v)
+		return nil
+	case buildtracesignature.FieldSignature:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSignature(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceSignature field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BuildTraceSignatureMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BuildTraceSignatureMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BuildTraceSignatureMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown BuildTraceSignature numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BuildTraceSignatureMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BuildTraceSignatureMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BuildTraceSignatureMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown BuildTraceSignature nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BuildTraceSignatureMutation) ResetField(name string) error {
+	switch name {
+	case buildtracesignature.FieldBuildTraceEntryID:
+		m.ResetBuildTraceEntryID()
+		return nil
+	case buildtracesignature.FieldKeyName:
+		m.ResetKeyName()
+		return nil
+	case buildtracesignature.FieldSignature:
+		m.ResetSignature()
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceSignature field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BuildTraceSignatureMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.build_trace_entry != nil {
+		edges = append(edges, buildtracesignature.EdgeBuildTraceEntry)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BuildTraceSignatureMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case buildtracesignature.EdgeBuildTraceEntry:
+		if id := m.build_trace_entry; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BuildTraceSignatureMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BuildTraceSignatureMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BuildTraceSignatureMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedbuild_trace_entry {
+		edges = append(edges, buildtracesignature.EdgeBuildTraceEntry)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BuildTraceSignatureMutation) EdgeCleared(name string) bool {
+	switch name {
+	case buildtracesignature.EdgeBuildTraceEntry:
+		return m.clearedbuild_trace_entry
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BuildTraceSignatureMutation) ClearEdge(name string) error {
+	switch name {
+	case buildtracesignature.EdgeBuildTraceEntry:
+		m.ClearBuildTraceEntry()
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceSignature unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BuildTraceSignatureMutation) ResetEdge(name string) error {
+	switch name {
+	case buildtracesignature.EdgeBuildTraceEntry:
+		m.ResetBuildTraceEntry()
+		return nil
+	}
+	return fmt.Errorf("unknown BuildTraceSignature edge %s", name)
+}
 
 // ChunkMutation represents an operation that mutates the Chunk nodes in the graph.
 type ChunkMutation struct {

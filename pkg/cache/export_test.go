@@ -15,6 +15,23 @@ import (
 	"github.com/kalbasit/ncps/pkg/zstd"
 )
 
+// BuildTraceFingerprint is a test-only export of buildTraceFingerprint.
+func BuildTraceFingerprint(e BuildTraceEntryJSON) (string, error) {
+	return buildTraceFingerprint(e)
+}
+
+// BuildTraceEntryJSON is a test-only re-export of the unexported type.
+type BuildTraceEntryJSON = buildTraceEntryJSON
+
+// BuildTraceKey is a test-only re-export.
+type BuildTraceKey = buildTraceKey
+
+// BuildTraceValue is a test-only re-export.
+type BuildTraceValue = buildTraceValue
+
+// BuildTraceSig is a test-only re-export.
+type BuildTraceSig = buildTraceSig
+
 // SetChunker is a test-only export to inject a custom chunker implementation.
 func (c *Cache) SetChunker(ch chunker.Chunker) {
 	c.cdcMu.Lock()

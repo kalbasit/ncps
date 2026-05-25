@@ -43,6 +43,7 @@ const (
 	routeCachePublicKey = "/pubkey"
 	routePinClosure     = "/pin/{hash:" + narinfo.HashPattern + "}.narinfo"
 	routePins           = "/pins"
+	routeBuildTrace     = "/build-trace-v2/{drvName}/{outputName}"
 
 	contentLength      = "Content-Length"
 	contentType        = "Content-Type"
@@ -138,6 +139,7 @@ func (s *Server) createRouter() {
 		r.Put(routeNarInfo, s.putNarInfo)
 		r.Put(routeNarCompression, s.putNar)
 		r.Put(routeNar, s.putNar)
+		r.Put(routeBuildTrace, s.putBuildTrace)
 	})
 
 	// Add Prometheus metrics endpoint if gatherer is configured
@@ -187,6 +189,9 @@ func (s *Server) registerRoutes(r chi.Router) {
 
 	r.Head(routeNar, s.getNar(false))
 	r.Get(routeNar, s.getNar(true))
+
+	r.Head(routeBuildTrace, s.getBuildTrace(false))
+	r.Get(routeBuildTrace, s.getBuildTrace(true))
 }
 
 func recoverer(next http.Handler) http.Handler {
@@ -460,6 +465,120 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 			Error().
 			Err(err).
 			Msg("error putting the NAR in cache")
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getBuildTrace(withBody bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		drvName := chi.URLParam(r, "drvName")
+		outputName := strings.TrimSuffix(chi.URLParam(r, "outputName"), ".doi")
+
+		ctx, span := tracer.Start(
+			r.Context(),
+			"server.getBuildTrace",
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("drv_name", drvName),
+				attribute.String("output_name", outputName),
+			),
+		)
+		defer span.End()
+
+		r = r.WithContext(
+			zerolog.Ctx(ctx).
+				With().
+				Str("drv_name", drvName).
+				Str("output_name", outputName).
+				Logger().
+				WithContext(ctx))
+
+		data, err := s.cache.GetBuildTrace(r.Context(), drvName, outputName)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+
+				return
+			}
+
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error fetching build trace")
+
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+			return
+		}
+
+		h := w.Header()
+		h.Set(contentType, "application/json")
+		h.Set(contentLength, strconv.Itoa(len(data)))
+
+		if !withBody {
+			w.WriteHeader(http.StatusOK)
+
+			return
+		}
+
+		if _, err := w.Write(data); err != nil {
+			zerolog.Ctx(r.Context()).
+				Error().
+				Err(err).
+				Msg("error writing build trace response")
+		}
+	}
+}
+
+func (s *Server) putBuildTrace(w http.ResponseWriter, r *http.Request) {
+	drvName := chi.URLParam(r, "drvName")
+	outputName := strings.TrimSuffix(chi.URLParam(r, "outputName"), ".doi")
+
+	ctx, span := tracer.Start(
+		r.Context(),
+		"server.putBuildTrace",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("drv_name", drvName),
+			attribute.String("output_name", outputName),
+		),
+	)
+	defer span.End()
+
+	r = r.WithContext(
+		zerolog.Ctx(ctx).
+			With().
+			Str("drv_name", drvName).
+			Str("output_name", outputName).
+			Logger().
+			WithContext(ctx))
+
+	if !s.putPermitted {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+
+		return
+	}
+
+	if err := s.cache.PutBuildTrace(r.Context(), drvName, outputName, r.Body); err != nil {
+		if errors.Is(err, cache.ErrBadRequest) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+
+			return
+		}
+
+		zerolog.Ctx(r.Context()).
+			Error().
+			Err(err).
+			Msg("error storing build trace")
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 
 		return
 	}

@@ -6,6 +6,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// BuildTraceEntry is the predicate function for buildtraceentry builders.
+type BuildTraceEntry func(*sql.Selector)
+
+// BuildTraceSignature is the predicate function for buildtracesignature builders.
+type BuildTraceSignature func(*sql.Selector)
+
 // Chunk is the predicate function for chunk builders.
 type Chunk func(*sql.Selector)
 

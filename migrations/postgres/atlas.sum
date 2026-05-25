@@ -1,4 +1,4 @@
-h1:67EbIioear5FDUkpaXy9uMkdsE8blgZ37mm1CndAre8=
+h1:ZqCreYcGcq3zJuMqoKaudVXhIKQbCPegxohRmI/8Vek=
 20260101000000_init_schema.sql h1:iedAD2OJAMzrmUpAUO8zhQCuLu5qe5Faz3Tp1qVfVgY=
 20260117195000_add_narinfo_de_normalized.sql h1:p1+8hB881Dg9E0XmzJVJUFic/kI9rLUzJrDRUhu8UPM=
 20260127223000_allow_multiple_nar_representations.sql h1:cys3Xi4rBtMzSeKR7iRNGaoOilKYrC0nqrJ2vuNDMN0=
@@ -9,3 +9,4 @@ h1:67EbIioear5FDUkpaXy9uMkdsE8blgZ37mm1CndAre8=
 20260318053904_add_pinned_closures_table.sql h1:fmPY7x2hwA5xHolRd3jmQL7pXk0QY0128gLxogR0ASg=
 20260520212038_postgres_serial_to_identity.sql h1:NxSWMVTc8QrQziw53m+FcHJeMFA1uEuNJH/Qh6Lt2w4=
 20260521021523_ent_baseline.sql h1:utQyB6Qx7h38hR/my9Q9UG5/b9NYIa8LccHktNv6ppE=
+20260525175108_add_build_trace_entries.sql h1:GBTZ7v+jdR75k8aiU37kwGrI4RAxWRL9JkFwkD3g3Is=

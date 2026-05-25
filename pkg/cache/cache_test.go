@@ -2962,6 +2962,9 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfo_CDCDisabledNoNormalization", testGetNarInfoCDCDisabledNoNormalization(factory))
 	t.Run("GetNar_CDCXzRequestReturnsErrWhenChunked", testGetNarCDCXzRequestReturnsErrWhenChunked(factory))
 	t.Run("GetNar_CDCXzServesFromStoreWhenBothExist", testGetNarCDCXzServesFromStoreWhenBothExist(factory))
+
+	// Build trace tests
+	t.Run("BuildTrace", testBuildTrace(factory))
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {

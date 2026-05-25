@@ -12,6 +12,10 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// BuildTraceEntry is the client for interacting with the BuildTraceEntry builders.
+	BuildTraceEntry *BuildTraceEntryClient
+	// BuildTraceSignature is the client for interacting with the BuildTraceSignature builders.
+	BuildTraceSignature *BuildTraceSignatureClient
 	// Chunk is the client for interacting with the Chunk builders.
 	Chunk *ChunkClient
 	// ConfigEntry is the client for interacting with the ConfigEntry builders.
@@ -161,6 +165,8 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.BuildTraceEntry = NewBuildTraceEntryClient(tx.config)
+	tx.BuildTraceSignature = NewBuildTraceSignatureClient(tx.config)
 	tx.Chunk = NewChunkClient(tx.config)
 	tx.ConfigEntry = NewConfigEntryClient(tx.config)
 	tx.NarFile = NewNarFileClient(tx.config)
@@ -179,7 +185,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: Chunk.QueryXXX(), the query will be executed
+// applies a query, for example: BuildTraceEntry.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

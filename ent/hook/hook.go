@@ -9,6 +9,30 @@ import (
 	"github.com/kalbasit/ncps/ent"
 )
 
+// The BuildTraceEntryFunc type is an adapter to allow the use of ordinary
+// function as BuildTraceEntry mutator.
+type BuildTraceEntryFunc func(context.Context, *ent.BuildTraceEntryMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BuildTraceEntryFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BuildTraceEntryMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BuildTraceEntryMutation", m)
+}
+
+// The BuildTraceSignatureFunc type is an adapter to allow the use of ordinary
+// function as BuildTraceSignature mutator.
+type BuildTraceSignatureFunc func(context.Context, *ent.BuildTraceSignatureMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BuildTraceSignatureFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BuildTraceSignatureMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BuildTraceSignatureMutation", m)
+}
+
 // The ChunkFunc type is an adapter to allow the use of ordinary
 // function as Chunk mutator.
 type ChunkFunc func(context.Context, *ent.ChunkMutation) (ent.Value, error)
