@@ -495,13 +495,15 @@ func (r *fileAvailableReader) Read(p []byte) (int, error) {
 	r.ds.mu.Lock()
 
 	for r.offset >= r.ds.bytesWritten && r.ds.finalSize == 0 && r.ds.downloadError == nil {
-		r.ds.cond.Wait()
-
-		if r.ctx.Err() != nil {
+		// Check before Wait so a broadcast that already fired is not missed.
+		// sync.Cond has no memory: a Broadcast that arrives before Wait() is lost.
+		if r.ctx != nil && r.ctx.Err() != nil {
 			r.ds.mu.Unlock()
 
 			return 0, r.ctx.Err()
 		}
+
+		r.ds.cond.Wait()
 	}
 
 	if r.ds.downloadError != nil {
@@ -2771,7 +2773,7 @@ func (c *Cache) pullNarIntoStore(
 
 			// fileAvailableReader blocks until bytes are available and returns
 			// EOF when ds.finalSize is set (download goroutine finished writing).
-			cdcReader := &fileAvailableReader{f: fForCDC, ds: ds}
+			cdcReader := &fileAvailableReader{f: fForCDC, ds: ds, ctx: ctx}
 
 			// onNarFileReady fires right after the nar_file DB record is created
 			// (before chunking starts). Concurrent GetNar clients waiting for
