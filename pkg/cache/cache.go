@@ -4124,6 +4124,23 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 
 	// Check if this narinfo should be purged
 	if !hasNar && !isBeingDownloadedLocally && !isBeingDownloadedRemotely { //nolint:nestif // deferred
+		// Double-check HasNarInStore to close the TOCTOU window: if the NAR download
+		// completed (os.Rename) between the initial HasNarInStore check and hasUpstreamJob
+		// returning false (job removed after os.Rename), the NAR is already on disk.
+		hasNar = c.HasNarInStore(ctx, *narURL)
+		if !hasNar {
+			var recheckErr error
+
+			hasNar, recheckErr = c.HasNarInChunks(ctx, *narURL)
+			if recheckErr != nil {
+				return nil, fmt.Errorf("failed to recheck if nar exists in chunks: %w", recheckErr)
+			}
+		}
+
+		if hasNar {
+			return ni, nil
+		}
+
 		// For CDC: if a nar_files record exists with total_chunks=0, CDC chunking is
 		// in progress in a background goroutine (the job was removed from upstreamJobs
 		// when pullNarIntoStore returned early, before chunking finished). Don't purge.
