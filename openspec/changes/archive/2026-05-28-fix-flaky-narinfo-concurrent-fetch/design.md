@@ -8,7 +8,7 @@
 
 The race is in `getNarInfoFromDatabase`'s purge guard. The sequence of checks is non-atomic:
 
-```
+```text
 // goroutine A (concurrent request that piggybacked)
 1. HasNarInStore(narURL) → false        // NAR rename not yet visible
    [goroutine B's NAR download completes: os.Rename(tmp→narPath)]

@@ -2948,7 +2948,7 @@ func testGetNarInfoConcurrentColdCacheFetch(factory cacheFactory) func(*testing.
 			go func() {
 				defer wg.Done()
 
-				ni, err := c.GetNarInfo(context.Background(), testdata.Nar7.NarInfoHash)
+				ni, err := c.GetNarInfo(newContext(), testdata.Nar7.NarInfoHash)
 
 				mu.Lock()
 				defer mu.Unlock()
