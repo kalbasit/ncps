@@ -2909,6 +2909,69 @@ func TestCacheBackends(t *testing.T) {
 	}
 }
 
+func testGetNarInfoConcurrentColdCacheFetch(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		c, _, _, _, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+			PublicKeys: testdata.PublicKeys(),
+		})
+		require.NoError(t, err)
+
+		c.AddUpstreamCaches(newContext(), uc)
+
+		// Wait for upstream caches to become available.
+		<-c.GetHealthChecker().Trigger()
+
+		const concurrency = 10
+
+		var (
+			wg      sync.WaitGroup
+			mu      sync.Mutex
+			results = make([]*narinfo.NarInfo, 0, concurrency)
+			errs    []error
+		)
+
+		// Launch concurrent requests for the same hash against a cold cache.
+		// Nar7 has Compression:none and a 113KB NAR body, which creates a window
+		// where the NAR download has not completed when piggybacking goroutines
+		// call getNarInfoFromDatabase — the scenario that triggers a spurious purge.
+		for range concurrency {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				ni, err := c.GetNarInfo(context.Background(), testdata.Nar7.NarInfoHash)
+
+				mu.Lock()
+				defer mu.Unlock()
+
+				if err != nil {
+					errs = append(errs, err)
+				} else {
+					results = append(results, ni)
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		require.Empty(t, errs, "all concurrent GetNarInfo requests should succeed without error")
+		require.Len(t, results, concurrency, "all goroutines should receive the narinfo")
+
+		for i, ni := range results {
+			require.NotNil(t, ni, "result %d should not be nil", i)
+		}
+	}
+}
+
 func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Helper()
 
@@ -2945,6 +3008,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoRaceConditionDuringMigrationDeletion", testGetNarInfoRaceConditionDuringMigrationDeletion(factory))
 	t.Run("GetNarInfoRaceConditionBeforeHasNarInfo", testGetNarInfoRaceConditionBeforeHasNarInfo(factory))
 	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
+	t.Run("GetNarInfoConcurrentColdCacheFetch", testGetNarInfoConcurrentColdCacheFetch(factory))
 	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
 	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
 	t.Run("HasNarFileRecord", testHasNarFileRecord(factory))

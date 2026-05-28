@@ -5281,8 +5281,9 @@ func (c *Cache) hasUpstreamJob(hash string) bool {
 	defer c.upstreamJobsMu.Unlock()
 
 	_, narJobExists := c.upstreamJobs[narJobKey(hash)]
+	_, narInfoJobExists := c.upstreamJobs[narInfoJobKey(hash)]
 
-	return narJobExists
+	return narJobExists || narInfoJobExists
 }
 
 func (c *Cache) isRemoteDownloadInProgress(ctx context.Context, hash string) bool {
