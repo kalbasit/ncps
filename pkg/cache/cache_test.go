@@ -4169,3 +4169,18 @@ func testGetNarCDCXzServesFromStoreWhenBothExist(factory cacheFactory) func(*tes
 		assert.Equal(t, testdata.Nar1.NarText, string(body))
 	}
 }
+
+// TestConcurrentDownloadCancelStress runs testConcurrentDownloadCancelOneClientOthersContinue
+// 50 times in sequence to surface the once-in-CI hang described in ncps #1252.
+// Skipped in short mode (-short) to avoid adding wall time to the normal test suite.
+func TestConcurrentDownloadCancelStress(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping stress test in short mode")
+	}
+
+	for i := range 50 { //nolint:paralleltest // t.Parallel() is called inside the returned func
+		t.Run(fmt.Sprintf("iter%02d", i), testConcurrentDownloadCancelOneClientOthersContinue(setupSQLiteFactory))
+	}
+}
