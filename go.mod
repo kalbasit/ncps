@@ -14,7 +14,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/kalbasit/fastcdc v0.0.0-20260524004426-c645bfd0a15d
+	github.com/kalbasit/fastcdc v1.0.0
 	github.com/klauspost/compress v1.18.6
 	github.com/lib/pq v1.12.3
 	github.com/mattn/go-sqlite3 v1.14.44
