@@ -209,6 +209,10 @@ var (
 
 	//nolint:gochecknoglobals
 	backgroundMigrationDuration metric.Float64Histogram
+
+	// Download coordination metrics
+	//nolint:gochecknoglobals
+	downloadCoordinationFallbackTotal metric.Int64Counter
 )
 
 //nolint:gochecknoinits
@@ -370,6 +374,18 @@ func init() {
 		"ncps_background_migration_duration_seconds",
 		metric.WithDescription("Duration of background object migration operations"),
 		metric.WithUnit("s"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	downloadCoordinationFallbackTotal, err = meter.Int64Counter(
+		"ncps_download_coordination_fallback_total",
+		metric.WithDescription(
+			"Counts download-lock contention fallbacks by outcome "+
+				"(served_by_peer, take_over, give_up, caller_canceled).",
+		),
+		metric.WithUnit("{event}"),
 	)
 	if err != nil {
 		panic(err)
@@ -5411,57 +5427,18 @@ func (c *Cache) coordinateDownload(
 			Err(err).
 			Str("hash", hash).
 			Str("lock_key", lockKey).
-			Msg("failed to acquire download lock, will poll storage for completion by another server")
+			Msg("failed to acquire download lock, will poll storage and re-attempt acquisition")
 
-		// Lock acquisition failed, likely because another server is downloading.
-		// Poll storage periodically to check if the download completes.
-		// This handles distributed coordination where servers don't share the upstreamJobs map.
-		const pollInterval = 200 * time.Millisecond
-
-		pollTimeout := c.downloadPollTimeout
-
-		pollCtx, cancel := context.WithTimeout(coordCtx, pollTimeout)
-		defer cancel()
-
-		ticker := time.NewTicker(pollInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if hasAsset(pollCtx) {
-					zerolog.Ctx(ctx).Debug().
-						Str("hash", hash).
-						Msg("asset appeared in storage while polling (downloaded by another server)")
-
-					// Return a completed downloadState
-					ds := newDownloadState()
-					ds.closed = true
-					ds.startOnce.Do(func() { close(ds.start) })
-					ds.storedOnce.Do(func() { close(ds.stored) })
-					ds.doneOnce.Do(func() { close(ds.done) })
-
-					return ds
-				}
-			case <-pollCtx.Done():
-				// Polling timeout or context canceled
-				zerolog.Ctx(ctx).Error().
-					Err(pollCtx.Err()).
-					Str("hash", hash).
-					Str("lock_key", lockKey).
-					Dur("poll_timeout", pollTimeout).
-					Msg("timeout waiting for download by another server")
-
-				ds := newDownloadState()
-				ds.downloadError = fmt.Errorf("failed to acquire download lock and timeout polling for completion: %w", err)
-				// Signal that the download is done (with error) to prevent deadlocks
-				ds.startOnce.Do(func() { close(ds.start) })
-				ds.storedOnce.Do(func() { close(ds.stored) })
-				ds.doneOnce.Do(func() { close(ds.done) })
-
-				return ds
-			}
+		// Another server holds the lock. Rather than dead-ending in an HTTP 500,
+		// poll storage for the asset while periodically re-attempting lock
+		// acquisition so we can take over if the holder finishes or fails.
+		ds, tookOver := c.pollForDownloadOrTakeOver(coordCtx, ctx, lockKey, hash, err, hasAsset)
+		if !tookOver {
+			return ds
 		}
+
+		// Fell through: we re-acquired the lock and now own the download.
+		// Continue into the normal post-lock path below.
 	}
 
 	// Start a background goroutine to refresh the lock TTL periodically.
@@ -5565,6 +5542,116 @@ func (c *Cache) coordinateDownload(
 	}
 
 	return ds
+}
+
+// pollForDownloadOrTakeOver runs the distributed fallback when the download lock
+// is held by another server. It polls storage for the asset while periodically
+// re-attempting lock acquisition, up to a bound of max(downloadLockTTL,
+// downloadPollTimeout) — the window during which a live holder could still be
+// refreshing its lock and making progress on a large NAR.
+//
+// It returns either:
+//   - (ds, false): a terminal downloadState the caller should return directly —
+//     a completed state if the asset appeared, or an errored state (a cache miss
+//     via storage.ErrNotFound, or the caller's context error); or
+//   - (nil, true): the lock was re-acquired, so the caller now owns the download
+//     and should continue into the normal post-lock path. Taking over only after
+//     re-acquisition keeps downloads serialized (at most one per hash across the
+//     cluster), so the concurrent-CDC path is never exercised by this fallback.
+func (c *Cache) pollForDownloadOrTakeOver(
+	coordCtx context.Context,
+	ctx context.Context,
+	lockKey string,
+	hash string,
+	initialErr error,
+	hasAsset func(context.Context) bool,
+) (*downloadState, bool) {
+	const pollInterval = 200 * time.Millisecond
+
+	giveUpBound := c.downloadLockTTL
+	if c.downloadPollTimeout > giveUpBound {
+		giveUpBound = c.downloadPollTimeout
+	}
+
+	deadlineCtx, cancel := context.WithTimeout(coordCtx, giveUpBound)
+	defer cancel()
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if hasAsset(coordCtx) {
+				zerolog.Ctx(ctx).Debug().
+					Str("hash", hash).
+					Msg("asset appeared in storage while polling (downloaded by another server)")
+
+				downloadCoordinationFallbackTotal.Add(ctx, 1,
+					metric.WithAttributes(attribute.String("outcome", "served_by_peer")))
+
+				// Return a completed downloadState.
+				ds := newDownloadState()
+				ds.closed = true
+				ds.startOnce.Do(func() { close(ds.start) })
+				ds.storedOnce.Do(func() { close(ds.stored) })
+				ds.doneOnce.Do(func() { close(ds.done) })
+
+				return ds, false
+			}
+
+			// Re-attempt acquisition. Success means the previous holder released
+			// the lock (it finished or failed) without the asset appearing, so we
+			// take over as the sole downloader.
+			if lockErr := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); lockErr == nil {
+				zerolog.Ctx(ctx).Debug().
+					Str("hash", hash).
+					Str("lock_key", lockKey).
+					Msg("re-acquired download lock, taking over the download")
+
+				downloadCoordinationFallbackTotal.Add(ctx, 1,
+					metric.WithAttributes(attribute.String("outcome", "take_over")))
+
+				return nil, true
+			}
+		case <-deadlineCtx.Done():
+			ds := newDownloadState()
+
+			// Distinguish caller cancellation (the client went away) from our own
+			// give-up. Caller cancellation surfaces as a context error, which the
+			// server treats as "no response"; a genuine give-up surfaces as a
+			// cache miss so Nix falls back to another substituter instead of
+			// retrying a 500.
+			if coordCtx.Err() != nil {
+				downloadCoordinationFallbackTotal.Add(ctx, 1,
+					metric.WithAttributes(attribute.String("outcome", "caller_canceled")))
+
+				ds.downloadError = coordCtx.Err()
+			} else {
+				zerolog.Ctx(ctx).Warn().
+					Err(initialErr).
+					Str("hash", hash).
+					Str("lock_key", lockKey).
+					Dur("give_up_bound", giveUpBound).
+					Msg("gave up waiting for download by another server, returning cache miss")
+
+				downloadCoordinationFallbackTotal.Add(ctx, 1,
+					metric.WithAttributes(attribute.String("outcome", "give_up")))
+
+				ds.downloadError = fmt.Errorf(
+					"gave up after %s waiting for another server to download %q: %w",
+					giveUpBound, hash, storage.ErrNotFound,
+				)
+			}
+
+			// Signal that the download is done (with error) to prevent deadlocks.
+			ds.startOnce.Do(func() { close(ds.start) })
+			ds.storedOnce.Do(func() { close(ds.stored) })
+			ds.doneOnce.Do(func() { close(ds.done) })
+
+			return ds, false
+		}
+	}
 }
 
 // withEntTransaction wraps c.dbClient.WithTransaction with the same
