@@ -25,7 +25,8 @@ import (
 var SchemaCreateMu sync.Mutex
 
 // ErrUnknownDialect is returned when a database.Type cannot be mapped to
-// an ent dialect string. Mirrors the sentinel in pkg/database/migrate.
+// an ent dialect string. This is the single sentinel for unmapped
+// dialects; pkg/database/migrate returns and matches this same value.
 var ErrUnknownDialect = errors.New("database: unknown dialect")
 
 // ErrNilDB is returned by NewClient when the caller passes a nil
@@ -151,9 +152,9 @@ func (c *Client) WithTransaction(
 }
 
 // EntDialectFor maps ncps's database.Type to the corresponding ent
-// dialect string. Kept exported so pkg/database/migrate can share the
-// same mapping (it owns its own *sql.DB and needs to build its own
-// ent driver for Schema.Create).
+// dialect string. Exported and shared: pkg/database/migrate calls it
+// when building its own ent driver for Schema.Create, so the mapping
+// lives in exactly one place.
 func EntDialectFor(t Type) (string, error) {
 	switch t {
 	case TypeSQLite:

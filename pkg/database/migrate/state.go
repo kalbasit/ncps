@@ -15,14 +15,13 @@ import (
 	"github.com/kalbasit/ncps/pkg/database"
 )
 
-// Sentinel errors for state detection.
+// Sentinel errors for state detection. Unrecognised database.Type
+// values are reported via the package-level database.ErrUnknownDialect
+// sentinel (see pkg/database) so callers match a single value regardless
+// of which layer produced the error.
 var (
-	// ErrUnknownDialect is returned when state detection or any other
-	// migrate operation encounters an unrecognised database.Type value.
-	ErrUnknownDialect = errors.New("migrate: unknown dialect")
-
 	// ErrUnknownState is returned when adopt encounters an unrecognised
-	// State value. Distinct from ErrUnknownDialect, which is for
+	// State value. Distinct from database.ErrUnknownDialect, which is for
 	// database.Type values.
 	ErrUnknownState = errors.New("migrate: unknown state")
 
@@ -116,7 +115,7 @@ func Detect(ctx context.Context, db *sql.DB, d database.Type) (State, error) {
 	case database.TypeUnknown:
 		fallthrough
 	default:
-		return StateUnknown, fmt.Errorf("%w %v", ErrUnknownDialect, d)
+		return StateUnknown, fmt.Errorf("%w %v", database.ErrUnknownDialect, d)
 	}
 }
 
@@ -220,7 +219,7 @@ func tableExists(ctx context.Context, db *sql.DB, d database.Type, name string) 
 	case database.TypeUnknown:
 		fallthrough
 	default:
-		return false, fmt.Errorf("tableExists: %w %v", ErrUnknownDialect, d)
+		return false, fmt.Errorf("tableExists: %w %v", database.ErrUnknownDialect, d)
 	}
 
 	var ok int
@@ -285,7 +284,7 @@ func columnExists(ctx context.Context, db *sql.DB, d database.Type, table, colum
 	case database.TypeUnknown:
 		fallthrough
 	default:
-		return false, fmt.Errorf("columnExists: %w %v", ErrUnknownDialect, d)
+		return false, fmt.Errorf("columnExists: %w %v", database.ErrUnknownDialect, d)
 	}
 
 	var ok int

@@ -41,7 +41,7 @@ func adopt(ctx context.Context, db *sql.DB, d database.Type, st State) error {
 		case database.TypeUnknown:
 			fallthrough
 		default:
-			return fmt.Errorf("adopt: %w %v", ErrUnknownDialect, d)
+			return fmt.Errorf("adopt: %w %v", database.ErrUnknownDialect, d)
 		}
 	case StateMySQLS4:
 		return adoptMySQLFromS4(ctx, db)
@@ -94,7 +94,7 @@ func adoptTransactional(ctx context.Context, db *sql.DB, d database.Type) error 
 	case database.TypeMySQL, database.TypeUnknown:
 		fallthrough
 	default:
-		return fmt.Errorf("adoptTransactional: %w %v", ErrUnknownDialect, d)
+		return fmt.Errorf("adoptTransactional: %w %v", database.ErrUnknownDialect, d)
 	}
 	// 5. Verify row-count parity.
 	var postCount int

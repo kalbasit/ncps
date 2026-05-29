@@ -168,7 +168,7 @@ func validateOptions(opts Options) error {
 	case database.TypeUnknown:
 		fallthrough
 	default:
-		return fmt.Errorf("migrate: %w %v", ErrUnknownDialect, opts.Dialect)
+		return fmt.Errorf("migrate: %w %v", database.ErrUnknownDialect, opts.Dialect)
 	}
 }
 
@@ -241,6 +241,6 @@ func gooseDialectFor(d database.Type) (goose.Dialect, error) {
 	case database.TypeUnknown:
 		fallthrough
 	default:
-		return "", fmt.Errorf("gooseDialectFor: %w %v", ErrUnknownDialect, d)
+		return "", fmt.Errorf("gooseDialectFor: %w %v", database.ErrUnknownDialect, d)
 	}
 }
