@@ -8,7 +8,7 @@ CI SHALL execute the flake's checks by fanning them out — running each
 `checks.<system>.<name>` derivation as its own parallel job
 (`nix build .#checks.<system>.<name>`) — rather than as a single monolithic
 `nix flake check` on one runner. The set of jobs MUST be derived from the live
-checks enumeration (`nix eval .#checks.<system> --apply builtins.attrNames`), so
+checks enumeration (`nix eval .#checks.<system> --apply builtins.attrNames --json`), so
 adding or removing a check automatically adds or removes its job with no further
 wiring. A single check's failure MUST NOT cancel the others (`fail-fast: false`),
 and the CI gate MUST fail if any check job fails.
@@ -31,7 +31,7 @@ artifacts rather than rebuilding them.
 
 - **WHEN** a check is added to or removed from the flake's `checks` attrset
 - **THEN** its CI job SHALL appear or disappear automatically, because the matrix
-  is computed from `nix eval .#checks.x86_64-linux --apply builtins.attrNames`
+  is computed from `nix eval .#checks.x86_64-linux --apply builtins.attrNames --json`
 
 ### Requirement: Coverage is produced by a job consuming the fanned-out cohorts
 

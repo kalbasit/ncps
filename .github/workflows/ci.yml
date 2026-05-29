@@ -90,7 +90,13 @@ jobs:
           name: ncps
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Build check
-        run: nix build ".#checks.x86_64-linux.${{ matrix.check }}" -L
+        # Pass the matrix value via env, not direct `${{ }}` expansion into the
+        # shell: on fork PRs the check names come from `builtins.attrNames` over
+        # the attacker-controlled flake, so interpolating them into `run:` would
+        # be a template-injection vector. Quoted env reference treats it as data.
+        env:
+          CHECK: ${{ matrix.check }}
+        run: nix build ".#checks.x86_64-linux.$CHECK" -L
   coverage:
     needs: checks
     # Coverage is informational (not a gate) and needs the Codecov token, so skip

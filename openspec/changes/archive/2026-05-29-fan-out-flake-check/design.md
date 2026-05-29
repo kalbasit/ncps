@@ -82,8 +82,12 @@ still correct and parallel.
 ## Risks / Trade-offs
 
 - **Cold Cachix → duplicate base rebuilds across jobs** → still correct/parallel;
-  warm cache is the steady state. Mitigated by `check-matrix` building the base
-  once before fan-out (its `nix eval` realizes the base), warming Cachix.
+  warm Cachix is the steady state (every merged run pushes `_ncps-test-cache`/
+  `_ncps-base`). `check-matrix` only evaluates (`nix eval` does NOT realize
+  derivations, so it does not warm the cache); deliberately not building the base
+  there, since that would add ~2m to the critical path on every run for a
+  cold-cache-only benefit. A cold cache just means a few jobs rebuild the base in
+  parallel — accepted.
 - **Final-gate wiring**: the ncps `ci` gate must `needs` the new
   `check-matrix`/`checks`/`coverage` jobs and treat `skipped` (fork PRs) as pass.
 - **`run_flake_check` drift**: if ncps forgets to set it, checks run twice

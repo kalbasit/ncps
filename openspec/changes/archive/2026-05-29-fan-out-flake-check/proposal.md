@@ -12,7 +12,7 @@ not further reducible by caching; they need more cores, in parallel.
 ## What Changes
 
 - Replace the monolithic `nix flake check` with a **CI matrix**: enumerate the
-  check attrs via `nix eval .#checks.<system> --apply builtins.attrNames` and run
+  check attrs via `nix eval .#checks.<system> --apply builtins.attrNames --json` and run
   each as its own parallel job (`nix build .#checks.<system>.<name> -L`) on its
   own free runner. Wall-clock collapses from sum-under-contention to
   **slowest-single-check + nix setup (~3–4m)**.
