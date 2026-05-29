@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -715,28 +714,16 @@ func (c *Cache) GetCDCDeleteDelay() time.Duration {
 
 func (c *Cache) setupMetricCallbacks() error {
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		// Observe total size: SUM(file_size) over nar_files. SQL SUM on
-		// an empty set returns NULL, which won't scan into a plain
-		// int64 — use sql.NullInt64 and treat NULL as zero. The column
-		// alias matches the field name Ent emits via ent.Sum.
-		var totalSize int64
-
-		var totals []struct {
-			Sum sql.NullInt64 `sql:"sum"`
-		}
-
-		if err := c.dbClient.Ent().NarFile.Query().
-			Aggregate(ent.Sum(entnarfile.FieldFileSize)).
-			Scan(ctx, &totals); err != nil {
+		// Observe total size: SUM(file_size) over nar_files (0 when the
+		// table is empty). totalSize is reused below for the cache
+		// utilization ratio, so it stays in the callback scope.
+		totalSize, err := totalNarFileSize(ctx, c.dbClient.Ent().NarFile)
+		if err != nil {
 			zerolog.Ctx(ctx).
 				Warn().
 				Err(err).
 				Msg("failed to get total nar size for metrics")
 		} else {
-			if len(totals) > 0 && totals[0].Sum.Valid {
-				totalSize = totals[0].Sum.Int64
-			}
-
 			o.ObserveInt64(totalSizeMetric, totalSize)
 		}
 
@@ -2480,7 +2467,7 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 		// avoids generating new auto-increment PKs (and hitting the
 		// sequence-desync bug) for chunks whose hash is already in the
 		// table.
-		existing, err := tx.Chunk.Query().Where(entchunk.HashIn(uniqueHashes...)).All(ctx)
+		existing, err := chunksByHashes(ctx, tx.Chunk, uniqueHashes)
 		if err != nil {
 			return fmt.Errorf("error fetching existing chunks: %w", err)
 		}
@@ -2529,7 +2516,7 @@ func (c *Cache) recordChunkBatch(ctx context.Context, narFileID int64, startInde
 				newHashes = append(newHashes, h)
 			}
 
-			freshChunks, err := tx.Chunk.Query().Where(entchunk.HashIn(newHashes...)).All(ctx)
+			freshChunks, err := chunksByHashes(ctx, tx.Chunk, newHashes)
 			if err != nil {
 				return fmt.Errorf("error fetching new chunk IDs: %w", err)
 			}
@@ -3973,7 +3960,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	}
 
 	err = c.withEntTransaction(ctx, "getNarInfoFromStore", func(tx *ent.Tx) error {
-		nir, err := tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+		nir, err := narInfoByHash(ctx, tx.NarInfo, hash)
 		if err != nil {
 			if ent.IsNotFound(err) {
 				c.backgroundMigrateNarInfo(ctx, hash, ni)
@@ -4493,7 +4480,7 @@ func upsertNarInfoFromParsed(
 	hash string,
 	narInfo *narinfo.NarInfo,
 ) (*ent.NarInfo, error) {
-	existing, err := tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+	existing, err := narInfoByHash(ctx, tx.NarInfo, hash)
 
 	switch {
 	case ent.IsNotFound(err):
@@ -4511,7 +4498,7 @@ func upsertNarInfoFromParsed(
 
 		// Always SELECT after to get the row's ID, whether we inserted
 		// it or a concurrent writer did.
-		nir, err := tx.NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+		nir, err := narInfoByHash(ctx, tx.NarInfo, hash)
 		if err != nil {
 			return nil, fmt.Errorf("error fetching narinfo record after insert for hash %q: %w", hash, err)
 		}
@@ -4801,7 +4788,7 @@ func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL) (int64, error)
 func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	// First check if we have the NarInfo in DB using direct DB access
 	// to avoid higher-level cache logic (like purging or storage checks)
-	niRow, err := c.dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(hash)).Only(ctx)
+	niRow, err := narInfoByHash(ctx, c.dbClient.Ent().NarInfo, hash)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil
@@ -5745,21 +5732,11 @@ func (c *Cache) withTryLock(ctx context.Context, operation string, lockKey strin
 // calculateCleanupSize validates the total NAR size and calculates how much needs to be cleaned up.
 // Returns 0 if no cleanup is needed.
 func (c *Cache) calculateCleanupSize(ctx context.Context, tx *ent.Tx, log zerolog.Logger) (uint64, error) {
-	var sums []struct {
-		Sum sql.NullInt64 `sql:"sum"`
-	}
-
-	if err := tx.NarFile.Query().
-		Aggregate(ent.Sum(entnarfile.FieldFileSize)).
-		Scan(ctx, &sums); err != nil {
+	narTotalSize, err := totalNarFileSize(ctx, tx.NarFile)
+	if err != nil {
 		log.Error().Err(err).Msg("error fetching the total nar size")
 
 		return 0, err
-	}
-
-	var narTotalSize int64
-	if len(sums) > 0 && sums[0].Sum.Valid {
-		narTotalSize = sums[0].Sum.Int64
 	}
 
 	if narTotalSize == 0 {
@@ -5770,12 +5747,14 @@ func (c *Cache) calculateCleanupSize(ctx context.Context, tx *ent.Tx, log zerolo
 
 	log = log.With().Int64("nar_total_size", narTotalSize).Logger()
 
+	//nolint:gosec // G115: SUM over nar_files.file_size (a uint64 column) is non-negative
 	if uint64(narTotalSize) <= c.maxSize {
 		log.Info().Msg("store size is less than max-size, not removing any nars")
 
 		return 0, nil
 	}
 
+	//nolint:gosec // G115: SUM over nar_files.file_size (a uint64 column) is non-negative
 	cleanupSize := uint64(narTotalSize) - c.maxSize
 
 	log = log.With().Uint64("cleanup_size", cleanupSize).Logger()
