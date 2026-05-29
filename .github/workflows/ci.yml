@@ -27,6 +27,13 @@ jobs:
       primary_package: ncps
       dockerhub_image: kalbasit/ncps
       dockerhub_username: ${{ vars.DOCKERHUB_USERNAME }}
+      # Integration cohorts (Garage/Postgres/MySQL/Redis) are
+      # architecture-independent, so validate them — and coverage — on
+      # x86_64-linux only. The aarch64-linux leg still builds/pushes its OCI
+      # image for the multi-arch manifest, but no longer re-runs the suite on
+      # the slower ARM runner where Postgres times out. See OpenSpec change
+      # speed-up-ci; requires kalbasit/gh-actions test_systems input.
+      test_systems: '["x86_64-linux"]'
       languages: |
         {"go":{"targets":[
           {"attr":"ncps",                                        "file":"nix/packages/ncps/default.nix"},
