@@ -488,12 +488,21 @@ type fileAvailableReader struct {
 	f      *os.File
 	ds     *downloadState
 	offset int64
+	ctx    context.Context
 }
 
 func (r *fileAvailableReader) Read(p []byte) (int, error) {
 	r.ds.mu.Lock()
 
 	for r.offset >= r.ds.bytesWritten && r.ds.finalSize == 0 && r.ds.downloadError == nil {
+		// Check before Wait so a broadcast that already fired is not missed.
+		// sync.Cond has no memory: a Broadcast that arrives before Wait() is lost.
+		if r.ctx != nil && r.ctx.Err() != nil {
+			r.ds.mu.Unlock()
+
+			return 0, r.ctx.Err()
+		}
+
 		r.ds.cond.Wait()
 	}
 
@@ -1180,6 +1189,21 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			// before ds.start is closed, and this goroutine runs after <-ds.start.
 			tempFileCompression := ds.tempFileCompression
 
+			// If the client's context is cancelled while this goroutine is blocked
+			// in cond.Wait, the watcher below broadcasts to wake it immediately.
+			// Without this, a cancelled client can hold the goroutine open until
+			// the next data broadcast from the download goroutine. See ncps #1252.
+			watcherDone := make(chan struct{})
+			defer close(watcherDone)
+
+			go func() {
+				select {
+				case <-ctx.Done():
+					ds.cond.Broadcast()
+				case <-watcherDone:
+				}
+			}()
+
 			// When the temp file holds compressed data but the client expects
 			// uncompressed bytes (CDC-normalized URL), decompress on-the-fly.
 			// This happens when GetNar piggybacks on a download started by
@@ -1196,7 +1220,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 
 				defer f.Close()
 
-				fileReader := &fileAvailableReader{f: f, ds: ds}
+				fileReader := &fileAvailableReader{f: f, ds: ds, ctx: ctx}
 
 				decompReader, err := nar.DecompressReader(ctx, fileReader, tempFileCompression)
 				if err != nil {
@@ -1227,6 +1251,10 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 							Str("nar_url", narURL.String()).
 							Msg("download completed with error during decompressed streaming")
 					}
+				case <-ctx.Done():
+					zerolog.Ctx(ctx).Debug().
+						Str("nar_url", narURL.String()).
+						Msg("client context cancelled while waiting for NAR storage (decompress path)")
 				}
 
 				return
@@ -1242,10 +1270,11 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 				for bytesSent >= ds.bytesWritten && ds.finalSize == 0 {
 					ds.cond.Wait() // Put this goroutine to sleep until a broadcast is received from the downloader
 
-					// check for error just in case otherwise we'd end up sleeping forever
-					// in case an error happened and the downloader bailed after its last
-					// broadcast in the defered function.
-					if ds.downloadError != nil {
+					// Exit on download error or client context cancellation so the
+					// goroutine does not block indefinitely. The watcher goroutine above
+					// calls cond.Broadcast when ctx is cancelled, ensuring this loop
+					// wakes promptly rather than waiting for the next data broadcast.
+					if ds.downloadError != nil || ctx.Err() != nil {
 						ds.mu.Unlock()
 
 						return
@@ -1309,6 +1338,12 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 								Str("nar_url", narURL.String()).
 								Msg("download completed with error during streaming")
 						}
+					case <-ctx.Done():
+						// Client cancelled — all bytes were already delivered; skip
+						// waiting for storage so this goroutine does not block cleanup.
+						zerolog.Ctx(ctx).Debug().
+							Str("nar_url", narURL.String()).
+							Msg("client context cancelled while waiting for NAR storage")
 					}
 
 					return
@@ -2738,7 +2773,7 @@ func (c *Cache) pullNarIntoStore(
 
 			// fileAvailableReader blocks until bytes are available and returns
 			// EOF when ds.finalSize is set (download goroutine finished writing).
-			cdcReader := &fileAvailableReader{f: fForCDC, ds: ds}
+			cdcReader := &fileAvailableReader{f: fForCDC, ds: ds, ctx: ctx}
 
 			// onNarFileReady fires right after the nar_file DB record is created
 			// (before chunking starts). Concurrent GetNar clients waiting for
