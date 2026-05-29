@@ -466,13 +466,13 @@ func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
-				count, err := dbClient.Ent().NarInfo.Query().Count(context.Background())
+				count, err := dbClient.Ent().NarInfo.Query().Count(newContext())
 				require.NoError(t, err)
 				assert.Equal(t, 0, count)
 			})
 
 			t.Run("nar does not exist in the database yet", func(t *testing.T) {
-				count, err := dbClient.Ent().NarFile.Query().Count(context.Background())
+				count, err := dbClient.Ent().NarFile.Query().Count(newContext())
 				require.NoError(t, err)
 				assert.Equal(t, 0, count)
 			})
@@ -715,13 +715,13 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 		})
 
 		t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
-			count, err := dbClient.Ent().NarInfo.Query().Count(context.Background())
+			count, err := dbClient.Ent().NarInfo.Query().Count(newContext())
 			require.NoError(t, err)
 			assert.Equal(t, 0, count)
 		})
 
 		t.Run("nar does not exist in the database yet", func(t *testing.T) {
-			count, err := dbClient.Ent().NarFile.Query().Count(context.Background())
+			count, err := dbClient.Ent().NarFile.Query().Count(newContext())
 			require.NoError(t, err)
 			assert.Equal(t, 0, count)
 		})
@@ -928,7 +928,7 @@ func testGetNar(factory cacheFactory) func(*testing.T) {
 			})
 
 			t.Run("nar does not exist in database yet", func(t *testing.T) {
-				count, err := dbClient.Ent().NarFile.Query().Count(context.Background())
+				count, err := dbClient.Ent().NarFile.Query().Count(newContext())
 				require.NoError(t, err)
 				assert.Equal(t, 0, count)
 			})
