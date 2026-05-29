@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 
 	"github.com/kalbasit/ncps/pkg/cache"
@@ -178,11 +179,9 @@ func TestServeHTTP(t *testing.T) {
 
 			t.Run("narInfo", func(t *testing.T) {
 				t.Run("narinfo does not exist in the database yet", func(t *testing.T) {
-					var count int
-
-					err := dbClient.DB().QueryRowContext(newContext(),
-						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
-						testdata.Nar1.NarInfoHash).Scan(&count)
+					count, err := dbClient.Ent().NarInfo.Query().
+						Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+						Count(newContext())
 					require.NoError(t, err)
 					assert.Equal(t, 0, count)
 				})
@@ -191,11 +190,9 @@ func TestServeHTTP(t *testing.T) {
 				require.NoError(t, err)
 
 				t.Run("narinfo does exist in the database", func(t *testing.T) {
-					var count int
-
-					err := dbClient.DB().QueryRowContext(newContext(),
-						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
-						testdata.Nar1.NarInfoHash).Scan(&count)
+					count, err := dbClient.Ent().NarInfo.Query().
+						Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+						Count(newContext())
 					require.NoError(t, err)
 					assert.Equal(t, 1, count, "narinfo should exist in database")
 				})
@@ -213,11 +210,9 @@ func TestServeHTTP(t *testing.T) {
 				})
 
 				t.Run("narinfo is gone from the database", func(t *testing.T) {
-					var count int
-
-					err := dbClient.DB().QueryRowContext(newContext(),
-						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
-						testdata.Nar1.NarInfoHash).Scan(&count)
+					count, err := dbClient.Ent().NarInfo.Query().
+						Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+						Count(newContext())
 					require.NoError(t, err)
 					assert.Equal(t, 0, count, "narinfo should be gone from database")
 				})
@@ -616,11 +611,9 @@ Deriver: test.drv
 				})
 
 				t.Run("narinfo does exist in the database", func(t *testing.T) {
-					var count int
-
-					err := dbClient.DB().QueryRowContext(newContext(),
-						"SELECT COUNT(*) FROM narinfos WHERE hash = ?",
-						testdata.Nar1.NarInfoHash).Scan(&count)
+					count, err := dbClient.Ent().NarInfo.Query().
+						Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+						Count(newContext())
 					require.NoError(t, err)
 					assert.Equal(t, 1, count, "narinfo should exist in database")
 				})
@@ -815,11 +808,9 @@ func TestGetNarInfo_Head(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	// Verify it's in the database
-	var count int
-
-	err = dbClient.DB().
-		QueryRowContext(newContext(), "SELECT COUNT(*) FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).
-		Scan(&count)
+	count, err := dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+		Count(newContext())
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "narinfo should be in the database after PUT")
 
