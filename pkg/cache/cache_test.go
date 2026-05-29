@@ -4178,6 +4178,78 @@ func testGetNarCDCXzServesFromStoreWhenBothExist(factory cacheFactory) func(*tes
 	}
 }
 
+// TestGetNarCloseDoesNotHangAfterContextCancelledBeforeStart is a regression
+// test for a ds.wg imbalance: when canStream=true, ds.wg.Add(1) is called but
+// GetNar's ctx.Done() early-return path never calls ds.wg.Done(). This leaves
+// pullNarIntoStore.func1 blocked at ds.wg.Wait() forever, causing
+// c.Close() → backgroundWG.Wait() to hang indefinitely.
+func TestGetNarCloseDoesNotHangAfterContextCancelledBeforeStart(t *testing.T) {
+	t.Parallel()
+
+	c, _, _, _, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	entry := testdata.Nar5
+
+	ts := testdata.NewTestServer(t, 1)
+	t.Cleanup(ts.Close)
+
+	// Signal when the download goroutine's HTTP request arrives. The server
+	// responds normally (not hung) so getNarFromUpstream succeeds, the cleanup
+	// goroutine is launched into backgroundWG, and it will call ds.wg.Wait().
+	serverReceivedNar := make(chan struct{})
+
+	var serverReceivedOnce sync.Once
+
+	handlerIdx := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/nar/"+entry.NarHash+".nar.xz" {
+			serverReceivedOnce.Do(func() { close(serverReceivedNar) })
+		}
+
+		return false // let the default handler serve the response
+	})
+	defer ts.RemoveMaybeHandler(handlerIdx)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), nil)
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+
+	select {
+	case <-c.GetHealthChecker().Trigger():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for upstream health check")
+	}
+
+	// Pre-cancel ctxA: when GetNar enters the select, ctx.Done() is already
+	// closed while ds.start is not yet (download hasn't begun), so GetNar takes
+	// the ctx.Done() early-return path without calling ds.wg.Done() (the bug).
+	ctxA, cancelA := context.WithCancel(newContext())
+	cancelA()
+
+	nu := nar.URL{Hash: entry.NarHash, Compression: entry.NarCompression}
+
+	_, _, r, _ := c.GetNar(ctxA, nu)
+	if r != nil {
+		r.Close()
+	}
+
+	// Wait for the download goroutine to reach the upstream server. At this
+	// point getNarFromUpstream will succeed, the cleanup goroutine will be added
+	// to backgroundWG, and it will eventually call ds.wg.Wait() — blocking
+	// forever if ds.wg.Done() was never called.
+	select {
+	case <-serverReceivedNar:
+	case <-time.After(10 * time.Second):
+		t.Fatal("download goroutine never reached the upstream server")
+	}
+
+	// c.Close() must not hang. Without the fix, ds.wg count=1 (never
+	// decremented), so the cleanup goroutine blocks at ds.wg.Wait() and
+	// backgroundWG never drains.
+	runWithTimeout(t, 10*time.Second, "c.Close() must not hang after ctx cancelled before ds.start", c.Close)
+}
+
 // TestConcurrentDownloadCancelStress runs testConcurrentDownloadCancelOneClientOthersContinue
 // 50 times in sequence to surface the once-in-CI hang described in ncps #1252.
 // Skipped in short mode (-short) to avoid adding wall time to the normal test suite.
