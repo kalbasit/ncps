@@ -11,6 +11,12 @@ jobs:
     uses: kalbasit/gh-actions/.github/workflows/build.yml@main
     with:
       systems: '["x86_64-linux", "aarch64-linux"]'
+      # Validate the integration suite + coverage on x86_64-linux only (the
+      # cohorts are architecture-independent). The aarch64-linux leg still
+      # builds and pushes its OCI image for the multi-arch manifest, but no
+      # longer re-runs the suite on the slower/flakier ARM runner. Mirrors the
+      # CI workflow; see the flake-check-topology spec.
+      test_systems: '["x86_64-linux"]'
       cachix_cache: ncps
       primary_package: ncps
       dockerhub_image: kalbasit/ncps
