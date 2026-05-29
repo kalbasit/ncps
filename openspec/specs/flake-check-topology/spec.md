@@ -302,8 +302,8 @@ i.e. the backend cohorts and coverage) — both the CI workflow (PRs/pushes) and
 the release workflow (tag builds) — SHALL run it on exactly one canonical
 architecture (`x86_64-linux`). Non-canonical architectures in the build matrix
 (`aarch64-linux`) MUST NOT run `nix flake check` or build coverage; they MUST
-still build their deployable OCI image so the multi-arch manifest remains
-complete. This is configured by the caller passing
+still build their respective deployable OCI images so the multi-arch manifest
+remains complete. This is configured by the caller passing
 `test_systems: '["x86_64-linux"]'` to the shared `kalbasit/gh-actions` workflow
 (both `ci.yml` and `releases.yml`).
 
@@ -336,8 +336,8 @@ those all derive from the canonical (x86_64) run.
   `test_systems: '["x86_64-linux"]'`
 - **THEN** the `x86_64-linux` leg SHALL run `nix flake check` + coverage and the
   `aarch64-linux` leg SHALL skip them
-- **AND** both legs SHALL still build and push their OCI image, and the
-  multi-arch manifest SHALL still be assembled
+- **AND** both legs SHALL still build and push their respective OCI images, and
+  the multi-arch manifest SHALL still be assembled
 
 #### Scenario: Local flake check is unaffected
 
