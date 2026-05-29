@@ -34,16 +34,18 @@ Repo: `../gh-actions` (`/home/wnasreddine/.../github.com/kalbasit/gh-actions`).
 
 ## 2. ncps: opt in
 
-- [ ] 2.1 `.github/workflows/ci.yml`: in the `shared` job `with:`, add
+- [x] 2.1 `.github/workflows/ci.yml`: in the `shared` job `with:`, add
   `test_systems: '["x86_64-linux"]'`.
-- [ ] 2.2 Keep `systems` default (both arches) so the aarch64 image still builds.
-- [ ] 2.3 Spec delta `flake-check-topology` (already written) reflects single-arch
-  CI validation — re-read after gh-actions lands to confirm wording matches the
-  final input name.
-- [ ] 2.4 `openspec validate --change speed-up-ci` passes.
-- [ ] 2.5 `/git-commit` / `gs-create` on a feature branch; open a PR.
+- [x] 2.2 Keep `systems` default (both arches) so the aarch64 image still builds.
+- [x] 2.3 Spec delta `flake-check-topology` (already written) reflects single-arch
+  CI validation; input name `test_systems` matches the gh-actions PR.
+- [x] 2.4 `openspec validate --change speed-up-ci` passes.
+- [x] 2.5 Commit on the feature branch; open a PR. → kalbasit/ncps#1291
 
 ## 3. Verify
+
+> Blocked on merge order: kalbasit/gh-actions#8 must land before kalbasit/ncps#1291's
+> CI exercises the new input. These are observed on the ncps PR's CI run after #8 merges.
 
 - [ ] 3.1 On the ncps PR, confirm the `build (aarch64-linux)` leg does **not**
   run `nix flake check` / coverage (check the job log) but **does** run the
