@@ -20,7 +20,10 @@ permissions:
   packages: write
 jobs:
   shared:
-    uses: kalbasit/gh-actions/.github/workflows/ci.yml@main
+    # TEMP: pinned to the gh-actions feature branch to validate run_flake_check
+    # end-to-end before kalbasit/gh-actions#9 merges. REVERT to @main before
+    # merging this PR — see OpenSpec change fan-out-flake-check.
+    uses: kalbasit/gh-actions/.github/workflows/ci.yml@user/wnasreddine/further-improvement
     with:
       cachix_cache: ncps
       oci: true
@@ -34,6 +37,11 @@ jobs:
       # the slower ARM runner where Postgres times out. See OpenSpec change
       # speed-up-ci; requires kalbasit/gh-actions test_systems input.
       test_systems: '["x86_64-linux"]'
+      # The shared build job no longer runs the monolithic `nix flake check` or
+      # coverage; the `check-matrix`/`checks`/`coverage` jobs below fan each
+      # check out into its own parallel runner instead (much lower wall-clock).
+      # The shared build job still builds/pushes the OCI image per arch.
+      run_flake_check: false
       languages: |
         {"go":{"targets":[
           {"attr":"ncps",                                        "file":"nix/packages/ncps/default.nix"},
@@ -45,6 +53,70 @@ jobs:
       gha_pat_token: ${{ secrets.GHA_PAT_TOKEN }}
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
       dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+  # ---- Fanned-out flake checks -----------------------------------------------------
+  # Instead of one `nix flake check` building every check derivation on a single
+  # contended runner, enumerate the checks and run each as its own parallel job.
+  # Wall-clock collapses to the slowest single check + nix setup. Each job pulls
+  # the shared compile cache (_ncps-test-cache/_ncps-base) from Cachix rather than
+  # rebuilding it. See OpenSpec change fan-out-flake-check.
+  check-matrix:
+    runs-on: ubuntu-24.04
+    outputs:
+      checks: ${{ steps.list.outputs.checks }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: ncps
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Enumerate checks
+        id: list
+        run: |
+          echo "checks=$(nix eval .#checks.x86_64-linux --apply builtins.attrNames --json)" >> "$GITHUB_OUTPUT"
+  checks:
+    needs: check-matrix
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJson(needs.check-matrix.outputs.checks) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: ncps
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build check
+        run: nix build ".#checks.x86_64-linux.${{ matrix.check }}" -L
+  coverage:
+    needs: checks
+    # Coverage is informational (not a gate) and needs the Codecov token, so skip
+    # it on fork PRs. Merges the per-cohort cover.out (built by the `checks` jobs
+    # and pulled from Cachix) into one profile.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: ncps
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build coverage
+        run: nix build ".#ncps.coverage" -L
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: result-coverage
   # ---- ncps-specific sibling jobs --------------------------------------------------
   # These stay here because they don't generalize across the other consumers.
   # They run their own paths-filter because the reusable workflow doesn't (currently)
@@ -135,6 +207,9 @@ jobs:
     if: always()
     needs:
       - shared
+      - check-matrix
+      - checks
+      - coverage
       - filter
       - generate-database
       - deploy-docs-pages
@@ -142,6 +217,9 @@ jobs:
       - name: Check Workflow Status
         env:
           SHARED_RESULT: ${{ needs.shared.result }}
+          CHECK_MATRIX_RESULT: ${{ needs.check-matrix.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
           FILTER_RESULT: ${{ needs.filter.result }}
           GENERATE_DATABASE_RESULT: ${{ needs.generate-database.result }}
           DEPLOY_DOCS_PAGES_RESULT: ${{ needs.deploy-docs-pages.result }}
@@ -151,6 +229,9 @@ jobs:
 
           declare -A results=(
             ["shared"]="$SHARED_RESULT"
+            ["check-matrix"]="$CHECK_MATRIX_RESULT"
+            ["checks"]="$CHECKS_RESULT"
+            ["coverage"]="$COVERAGE_RESULT"
             ["filter"]="$FILTER_RESULT"
             ["generate-database"]="$GENERATE_DATABASE_RESULT"
             ["deploy-docs-pages"]="$DEPLOY_DOCS_PAGES_RESULT"
