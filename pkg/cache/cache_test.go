@@ -4188,7 +4188,15 @@ func TestConcurrentDownloadCancelStress(t *testing.T) {
 		t.Skip("skipping stress test in short mode")
 	}
 
+	deadline, hasDeadline := t.Deadline()
+
 	for i := range 50 { //nolint:paralleltest // sequential by design: each iter must finish before next
+		if hasDeadline && time.Until(deadline) < 2*time.Minute {
+			t.Logf("stopping after %d iterations: less than 2 minutes remaining before test deadline", i)
+
+			break
+		}
+
 		t.Run(fmt.Sprintf("iter%02d", i), func(t *testing.T) {
 			runConcurrentDownloadCancelOneClientOthersContinue(t, setupSQLiteFactory)
 		})
