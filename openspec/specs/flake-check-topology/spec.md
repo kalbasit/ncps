@@ -297,13 +297,15 @@ cache.
 
 ### Requirement: Integration cohorts validated on a single CI architecture
 
-CI SHALL validate the integration test suite (`nix flake check`, i.e. the
-backend cohorts and coverage) on exactly one canonical architecture
-(`x86_64-linux`). Non-canonical architectures in the build matrix
-(`aarch64-linux`) MUST NOT run `nix flake check` or build coverage in CI; they
-MUST still build their deployable OCI image so the multi-arch manifest remains
+Every workflow that validates the integration test suite (`nix flake check`,
+i.e. the backend cohorts and coverage) — both the CI workflow (PRs/pushes) and
+the release workflow (tag builds) — SHALL run it on exactly one canonical
+architecture (`x86_64-linux`). Non-canonical architectures in the build matrix
+(`aarch64-linux`) MUST NOT run `nix flake check` or build coverage; they MUST
+still build their deployable OCI image so the multi-arch manifest remains
 complete. This is configured by the caller passing
-`test_systems: '["x86_64-linux"]'` to the shared `kalbasit/gh-actions` workflow.
+`test_systems: '["x86_64-linux"]'` to the shared `kalbasit/gh-actions` workflow
+(both `ci.yml` and `releases.yml`).
 
 This narrows where the suite runs, not what it covers: the cohorts, backends,
 race detector, and the single merged Codecov profile are unchanged from the
@@ -326,6 +328,16 @@ those all derive from the canonical (x86_64) run.
 - **THEN** the `x86_64-linux` build leg SHALL run `nix flake check -L` across all
   backend cohorts and produce the single merged coverage profile uploaded to
   Codecov
+
+#### Scenario: Release tag build scopes the suite to x86_64
+
+- **WHEN** a `v*.*.*` tag triggers the release workflow with
+  `systems: '["x86_64-linux","aarch64-linux"]'` and
+  `test_systems: '["x86_64-linux"]'`
+- **THEN** the `x86_64-linux` leg SHALL run `nix flake check` + coverage and the
+  `aarch64-linux` leg SHALL skip them
+- **AND** both legs SHALL still build and push their OCI image, and the
+  multi-arch manifest SHALL still be assembled
 
 #### Scenario: Local flake check is unaffected
 
