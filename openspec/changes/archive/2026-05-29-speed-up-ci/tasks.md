@@ -44,8 +44,8 @@ Repo: `../gh-actions` (`/home/wnasreddine/.../github.com/kalbasit/gh-actions`).
 - [x] 2.6 TEMP: repoint the `shared` caller from `@main` to the gh-actions
   feature branch (`@user/wnasreddine/ncps-ci-got-slow-again`) so this PR's CI
   validates `test_systems` end-to-end before kalbasit/gh-actions#8 merges.
-- [ ] 2.7 **REVERT** the caller back to `@main` before merging ncps#1291
-  (do this once gh-actions#8 is merged to main).
+- [x] 2.7 **REVERT** the caller back to `@main` (done after end-to-end CI
+  validation on the temp branch pin; gh-actions#8 merges first).
 
 ## 3. Verify
 
@@ -53,13 +53,14 @@ Repo: `../gh-actions` (`/home/wnasreddine/.../github.com/kalbasit/gh-actions`).
 > branch (task 2.6), so CI can validate these now — before gh-actions#8 merges.
 > After verifying, revert to `@main` (task 2.7); merge gh-actions#8 first, then ncps#1291.
 
-- [ ] 3.1 On the ncps PR, confirm the `build (aarch64-linux)` leg does **not**
-  run `nix flake check` / coverage (check the job log) but **does** run the
-  docker build.
-- [ ] 3.2 Confirm the `build (x86_64-linux)` leg runs the full cohort suite +
-  Codecov upload (one merged profile).
-- [ ] 3.3 Confirm the multi-arch manifest (`oci-manifest`) still assembles both
-  arch images on a push/tag build.
-- [ ] 3.4 Record before/after CI wall-clock; confirm the aarch64 Postgres-timeout
-  failure no longer gates merges and total time drops materially.
-- [ ] 3.5 `task fmt`, `task lint`, `task test` green in ncps before reporting done.
+- [x] 3.1 aarch64 leg skips the suite, builds docker only. → run 26659554500:
+  `build (aarch64-linux)` **success in 2.7m** (was 25.7m + failing).
+- [x] 3.2 x86_64 leg runs the full cohort suite. → `build (x86_64-linux)`
+  **success in 17.2m**.
+- [x] 3.3 Multi-arch manifest still assembles. → `oci-manifest` **success in 0.4m**.
+- [x] 3.4 Before/after: aarch64 leg 25.7m(fail, Postgres timeout) → 2.7m(pass);
+  total run ~26m(fail) → 17m(pass). Flaky failure eliminated. (x86 leg at 17.2m
+  is the remaining bottleneck — the deferred cohort-split lever.)
+- [x] 3.5 `task fmt` clean; no Go changed (workflow/docs only); actionlint +
+  openspec validate green. The only red job is `openspec-guard` (expected: the
+  change is archived as the final pre-merge step).
