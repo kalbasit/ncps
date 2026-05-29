@@ -5,7 +5,7 @@ must exist before ncps can pass it), then ncps, then verify.
 
 ## 1. gh-actions: add opt-in `test_systems` (land first)
 
-Repo: `../gh-actions` (`/home/wnasreddine/.../github.com/kalbasit/gh-actions`).
+Repo: `../gh-actions` (relative to this repo's parent in your workspace).
 
 - [x] 1.1 Scaffold a sibling OpenSpec change in gh-actions:
   `scope-flake-check-systems`.
