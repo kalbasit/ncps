@@ -352,17 +352,30 @@
         };
 
         # Helm chart unit tests via helm-unittest.
+        # Restricted to x86_64-linux: the helm-unittest plugin in nixpkgs-26.05
+        # references untt-linux-arm64 on aarch64 but that binary is absent from
+        # the nix store, causing a build failure on aarch64 CI runners.
         helm-unittest-check = pkgs.stdenvNoCC.mkDerivation {
           name = "ncps-helm-unittest";
           src = ../../charts/ncps;
-          nativeBuildInputs = [
-            (pkgs.wrapHelm pkgs.kubernetes-helm {
-              plugins = [ pkgs.kubernetes-helmPlugins.helm-unittest ];
-            })
-          ];
-          buildPhase = ''
-            helm unittest .
-          '';
+          nativeBuildInputs =
+            if pkgs.system == "x86_64-linux" then
+              [
+                (pkgs.wrapHelm pkgs.kubernetes-helm {
+                  plugins = [ pkgs.kubernetes-helmPlugins.helm-unittest ];
+                })
+              ]
+            else
+              [ ];
+          buildPhase =
+            if pkgs.system == "x86_64-linux" then
+              ''
+                helm unittest .
+              ''
+            else
+              ''
+                echo "helm-unittest-check: skipped on ${pkgs.system} (aarch64 plugin binary missing in nixpkgs-26.05)"
+              '';
           installPhase = ''
             touch $out
           '';
