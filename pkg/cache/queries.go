@@ -22,8 +22,14 @@ func narInfoByHash(ctx context.Context, q *ent.NarInfoClient, hash string) (*ent
 }
 
 // chunksByHashes returns every chunk row whose hash is in hashes. q may be
-// a client or transaction chunk client.
+// a client or transaction chunk client. An empty hashes slice returns no
+// rows without issuing a query — both avoiding a needless round-trip and
+// sidestepping the dialect-specific pitfalls of an empty SQL `IN ()`.
 func chunksByHashes(ctx context.Context, q *ent.ChunkClient, hashes []string) ([]*ent.Chunk, error) {
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+
 	return q.Query().Where(entchunk.HashIn(hashes...)).All(ctx)
 }
 
