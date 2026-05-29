@@ -1145,6 +1145,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			// Context canceled before download started
 			metricAttrs = append(metricAttrs, attribute.String("status", "error"))
 
+			ds.wg.Done()
+
 			return ctx.Err()
 		}
 
@@ -1157,6 +1159,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 				metricAttrs = append(metricAttrs,
 					attribute.String("upstream_hostname", upstreamHostname))
 			}
+
+			ds.wg.Done()
 
 			return err
 		}
