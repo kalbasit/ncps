@@ -20,7 +20,10 @@ permissions:
   packages: write
 jobs:
   shared:
-    uses: kalbasit/gh-actions/.github/workflows/ci.yml@main
+    # TEMP: pinned to the gh-actions feature branch to validate test_systems
+    # end-to-end before kalbasit/gh-actions#8 merges. REVERT to @main before
+    # merging this PR — see OpenSpec change speed-up-ci, task 2.6.
+    uses: kalbasit/gh-actions/.github/workflows/ci.yml@user/wnasreddine/ncps-ci-got-slow-again
     with:
       cachix_cache: ncps
       oci: true

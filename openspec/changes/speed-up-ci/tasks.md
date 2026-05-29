@@ -41,11 +41,17 @@ Repo: `../gh-actions` (`/home/wnasreddine/.../github.com/kalbasit/gh-actions`).
   CI validation; input name `test_systems` matches the gh-actions PR.
 - [x] 2.4 `openspec validate --change speed-up-ci` passes.
 - [x] 2.5 Commit on the feature branch; open a PR. → kalbasit/ncps#1291
+- [x] 2.6 TEMP: repoint the `shared` caller from `@main` to the gh-actions
+  feature branch (`@user/wnasreddine/ncps-ci-got-slow-again`) so this PR's CI
+  validates `test_systems` end-to-end before kalbasit/gh-actions#8 merges.
+- [ ] 2.7 **REVERT** the caller back to `@main` before merging ncps#1291
+  (do this once gh-actions#8 is merged to main).
 
 ## 3. Verify
 
-> Blocked on merge order: kalbasit/gh-actions#8 must land before kalbasit/ncps#1291's
-> CI exercises the new input. These are observed on the ncps PR's CI run after #8 merges.
+> ncps#1291 temporarily pins the `shared` caller to the gh-actions feature
+> branch (task 2.6), so CI can validate these now — before gh-actions#8 merges.
+> After verifying, revert to `@main` (task 2.7); merge gh-actions#8 first, then ncps#1291.
 
 - [ ] 3.1 On the ncps PR, confirm the `build (aarch64-linux)` leg does **not**
   run `nix flake check` / coverage (check the job log) but **does** run the
