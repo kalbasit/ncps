@@ -15,6 +15,7 @@ import (
 	entbuildtracesignature "github.com/kalbasit/ncps/ent/buildtracesignature"
 
 	"github.com/kalbasit/ncps/ent"
+	"github.com/kalbasit/ncps/pkg/database"
 	"github.com/kalbasit/ncps/pkg/storage"
 )
 
@@ -101,7 +102,7 @@ func (c *Cache) GetBuildTrace(ctx context.Context, drvName, outputName string) (
 		WithSignatures().
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if database.IsNotFoundError(err) {
 			return nil, storage.ErrNotFound
 		}
 

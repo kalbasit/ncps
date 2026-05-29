@@ -1040,7 +1040,7 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 				if time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL {
 					hasNar = true
 				}
-			} else if nrErr != nil && !ent.IsNotFound(nrErr) {
+			} else if nrErr != nil && !database.IsNotFoundError(nrErr) {
 				return fmt.Errorf("failed to check nar file record for progressive streaming: %w", nrErr)
 			}
 		}
@@ -1366,7 +1366,7 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 
 	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, nu)
 	if err != nil {
-		if !ent.IsNotFound(err) {
+		if !database.IsNotFoundError(err) {
 			zerolog.Ctx(ctx).Error().Err(err).Msg("error querying nar file size from database")
 		}
 
@@ -1398,7 +1398,7 @@ func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.U
 		First(ctx)
 	if err != nil {
 		// Not found is an expected case. We should log any other database errors.
-		if !ent.IsNotFound(err) {
+		if !database.IsNotFoundError(err) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup original nar URL")
 		}
 
@@ -1431,7 +1431,7 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 		Where(entnarinfo.URL(narURL.String())).
 		First(ctx)
 	if err != nil {
-		if !ent.IsNotFound(err) {
+		if !database.IsNotFoundError(err) {
 			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to lookup narinfo hash by nar URL")
 		}
 
@@ -3092,7 +3092,7 @@ func (c *Cache) getNarFromStore(
 	err = c.withEntTransaction(ctx, "getNarFromStore", func(tx *ent.Tx) error {
 		nr, err := c.getNarFileFromDB(ctx, tx.NarFile, *narURL)
 		if err != nil {
-			if ent.IsNotFound(err) {
+			if database.IsNotFoundError(err) {
 				// NAR is in storage but has no DB record — this is an orphan left by a
 				// crash between narStore.PutNar and ensureNarFileRecord. Schedule healing.
 				needsDBRecord = true
@@ -3832,7 +3832,7 @@ func (c *Cache) getNarFileFromDB(
 		return nr, nil
 	}
 
-	if ent.IsNotFound(err) && first != second {
+	if database.IsNotFoundError(err) && first != second {
 		return nfc.Query().
 			Where(
 				entnarfile.HashEQ(narURL.Hash),
@@ -3962,7 +3962,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	err = c.withEntTransaction(ctx, "getNarInfoFromStore", func(tx *ent.Tx) error {
 		nir, err := narInfoByHash(ctx, tx.NarInfo, hash)
 		if err != nil {
-			if ent.IsNotFound(err) {
+			if database.IsNotFoundError(err) {
 				c.backgroundMigrateNarInfo(ctx, hash, ni)
 
 				return nil
@@ -4215,7 +4215,7 @@ func (c *Cache) populateNarInfoFromDatabase(
 		WithSignatures().
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if database.IsNotFoundError(err) {
 			return nil, nil, storage.ErrNotFound
 		}
 
@@ -4483,7 +4483,7 @@ func upsertNarInfoFromParsed(
 	existing, err := narInfoByHash(ctx, tx.NarInfo, hash)
 
 	switch {
-	case ent.IsNotFound(err):
+	case database.IsNotFoundError(err):
 		// Insert new, ignoring a concurrent insert racing between our
 		// SELECT above and this INSERT. Using DO NOTHING instead of
 		// DO UPDATE keeps the transaction alive on conflict — a
@@ -4772,7 +4772,7 @@ func (c *Cache) fixNarInfoFileSize(
 func (c *Cache) getNarActualSize(ctx context.Context, nu nar.URL) (int64, error) {
 	narFileRow, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, nu)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if database.IsNotFoundError(err) {
 			return -1, nil
 		}
 
@@ -4790,7 +4790,7 @@ func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 	// to avoid higher-level cache logic (like purging or storage checks)
 	niRow, err := narInfoByHash(ctx, c.dbClient.Ent().NarInfo, hash)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if database.IsNotFoundError(err) {
 			return nil
 		}
 
@@ -5008,7 +5008,7 @@ func MigrateNarInfo(
 
 			return nil
 		}
-	case ent.IsNotFound(err):
+	case database.IsNotFoundError(err):
 		// Expected: narinfo not yet in DB; fall through to migrate.
 	default:
 		// Unexpected DB error — log but still attempt migration; if the
@@ -5181,7 +5181,7 @@ func (c *Cache) deleteNarInfoFromStore(ctx context.Context, hash string) error {
 	inStorage := c.narInfoStore.HasNarInfo(ctx, hash)
 
 	_, err := c.dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(hash)).First(ctx)
-	if err != nil && !ent.IsNotFound(err) {
+	if err != nil && !database.IsNotFoundError(err) {
 		return fmt.Errorf("error checking for narinfo in database: %w", err)
 	}
 
@@ -6643,7 +6643,7 @@ func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error
 
 	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if database.IsNotFoundError(err) {
 			return false, nil
 		}
 
@@ -6659,7 +6659,7 @@ func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error
 func (c *Cache) HasNarFileRecord(ctx context.Context, narURL nar.URL) (bool, error) {
 	_, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if database.IsNotFoundError(err) {
 			return false, nil
 		}
 
@@ -6921,7 +6921,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 				WithChunk().
 				Limit(progressivePollBatchSize).
 				All(ctx)
-			if err != nil && !ent.IsNotFound(err) {
+			if err != nil && !database.IsNotFoundError(err) {
 				chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunks from index %d: %w", chunkIndex, err)}
 
 				return
@@ -7027,7 +7027,7 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 					WithChunk().
 					Limit(progressivePollBatchSize).
 					All(ctx)
-				if batchErr != nil && !ent.IsNotFound(batchErr) {
+				if batchErr != nil && !database.IsNotFoundError(batchErr) {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("error querying chunks from index %d: %w", chunkIndex, batchErr)}
 
 					return
@@ -7406,7 +7406,7 @@ func (c *Cache) PinClosure(ctx context.Context, hash string) error {
 	if _, err := c.dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HashEQ(hash)).
 		First(ctx); err != nil {
-		if ent.IsNotFound(err) {
+		if database.IsNotFoundError(err) {
 			return storage.ErrNotFound
 		}
 
@@ -7512,7 +7512,7 @@ func (c *Cache) GetPinnedClosureHashes(ctx context.Context) (map[string]struct{}
 				WithReferences().
 				Only(ctx)
 			if err != nil {
-				if ent.IsNotFound(err) {
+				if database.IsNotFoundError(err) {
 					continue // Narinfo not in database, skip
 				}
 
