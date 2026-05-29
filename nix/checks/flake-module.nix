@@ -40,6 +40,66 @@
         redis # Redis distributed-lock integration tests
       ];
 
+      # Compile-affecting `go test` config, shared VERBATIM between the
+      # _ncps-test-cache derivation (which compiles the instrumented test
+      # binaries once) and every cohort's own `go test` (which reuses them via
+      # GOCACHE). Only `-race`, `-covermode`, `-coverpkg`, the package set, and
+      # the source affect Go's build cache key; the run-only flags each cohort
+      # adds (`-count=1`, `-timeout`, `-coverprofile`) do not, so they may differ
+      # without causing a cache miss. If THESE drift between cache and cohort,
+      # the cohort silently recompiles (correct, just slow) — keep them in this
+      # single binding so the two sites can never disagree.
+      testSpecs = {
+        # Backend cohorts (s3, postgres, mysql, redis) all compile this set.
+        backend = {
+          coverpkg = "./pkg/...,./internal/...,./migrations/...,./testhelper/...";
+          paths = "./pkg/... ./internal/... ./migrations/... ./testhelper/...";
+        };
+        # The degenerate cmd cohort compiles this set.
+        cmd = {
+          coverpkg = "./cmd/...,./ent/...,.";
+          paths = "./cmd/... ./ent/... .";
+        };
+      };
+      compileFlags = spec: "-race -covermode=atomic -coverpkg=${spec.coverpkg}";
+
+      # _ncps-test-cache compiles the race+coverage-instrumented test binaries
+      # for BOTH cohort sets exactly once and exports the populated Go build
+      # cache. The 4 backend cohorts otherwise each recompile the identical
+      # binaries (cgo mattn/go-sqlite3 under -race, ~2 min apiece on CI's
+      # 4-core runners) — 3 of those compiles are pure waste that core
+      # contention can't parallelize away. `-run '^$'` compiles and links the
+      # test binaries but runs zero test functions, so no backend is needed and
+      # nothing flakes. See the flake-check-topology spec, "Race+coverage test
+      # binaries are compiled once and shared".
+      testCache = config.packages._ncps-base.overrideAttrs (_oa: {
+        name = "ncps-test-cache";
+        outputs = [ "out" ];
+        buildPhase = ''
+          runHook preBuild
+          export GOCACHE="$TMPDIR/gocache"
+          mkdir -p "$GOCACHE"
+          go test ${compileFlags testSpecs.backend} -run '^$' ${testSpecs.backend.paths}
+          go test ${compileFlags testSpecs.cmd} -run '^$' ${testSpecs.cmd.paths}
+          runHook postBuild
+        '';
+        doCheck = false;
+        installPhase = ''
+          runHook preInstall
+          mkdir -p "$out"
+          cp -r "$GOCACHE/." "$out/"
+          runHook postInstall
+        '';
+        # The output IS a Go build cache, so it deliberately contains objects
+        # compiled by — and referencing — the Go toolchain. buildGoModule's
+        # default `disallowedReferences = [ go ]` would reject that; clear it.
+        disallowedReferences = [ ];
+        # Skip fixup: patchelf/strip/RPATH-shrinking would rewrite the cached
+        # object files and invalidate Go's content hashes, turning every cohort
+        # lookup into a miss. The cache must be byte-preserved.
+        dontFixup = true;
+      });
+
       mkCohort =
         {
           name,
@@ -83,19 +143,31 @@
                 :
               '';
           preCheck =
-            if backends == [ ] then
-              # Unit cohort: no env vars, no backends. All integration
-              # subtests skip at runtime via their NCPS_TEST_* gates.
-              ""
-            else
-              ''
-                cleanup() {
-                ${lib.concatMapStringsSep "\n" (b: ''source "$src/nix/packages/ncps/post-check-${b}.sh"'') backends}
-                }
-                trap cleanup EXIT
+            # Seed a writable GOCACHE from the shared _ncps-test-cache so this
+            # cohort's `go test` reuses the once-compiled race+coverage test
+            # binaries instead of recompiling. The store copy is read-only; Go
+            # must be able to write the cache (locks, trimming), so copy it with
+            # mode dropped. Runs for every cohort, including the cmd cohort
+            # (which has no backends to start).
+            ''
+              export GOCACHE="$TMPDIR/gocache"
+              mkdir -p "$GOCACHE"
+              # Preserve mode on copy — the cache contains executables (e.g. the
+              # `covdata` tool) that Go fork/execs during coverage processing, so
+              # their +x bit must survive. Then add user-write back, since store
+              # paths are read-only and Go must be able to update the cache.
+              cp -r ${testCache}/. "$GOCACHE/"
+              chmod -R u+w "$GOCACHE"
+            ''
+            + lib.optionalString (backends != [ ]) ''
 
-                ${lib.concatMapStringsSep "\n" (b: ''source "$src/nix/packages/ncps/pre-check-${b}.sh"'') backends}
-              '';
+              cleanup() {
+              ${lib.concatMapStringsSep "\n" (b: ''source "$src/nix/packages/ncps/post-check-${b}.sh"'') backends}
+              }
+              trap cleanup EXIT
+
+              ${lib.concatMapStringsSep "\n" (b: ''source "$src/nix/packages/ncps/pre-check-${b}.sh"'') backends}
+            '';
           checkPhase = ''
             runHook preCheck
             # Test path + coverage scope selection:
@@ -119,12 +191,17 @@
             #   that appear in both.
             #
             # -covermode=atomic is required when combined with -race.
+            #
+            # The compile-affecting flags (${compileFlags testSpecs.backend}
+            # / .cmd) match _ncps-test-cache exactly, so test-binary compilation
+            # is a GOCACHE hit (seeded in preCheck). The run-only flags added
+            # here — -count=1, -timeout, -coverprofile — do not affect the cache
+            # key.
             ${
-              if backends == [ ] then
-                # cmd cohort: cover cmd/, ent/, main package only.
-                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./cmd/...,./ent/...,. ./cmd/... ./ent/... ."
-              else
-                "go test -race -count=1 -timeout 20m -coverprofile=cover.out -covermode=atomic -coverpkg=./pkg/...,./internal/...,./migrations/...,./testhelper/... ./pkg/... ./internal/... ./migrations/... ./testhelper/..."
+              let
+                spec = if backends == [ ] then testSpecs.cmd else testSpecs.backend;
+              in
+              "go test ${compileFlags spec} -count=1 -timeout 20m -coverprofile=cover.out ${spec.paths}"
             }
             runHook postCheck
           '';
@@ -140,6 +217,12 @@
         });
     in
     {
+      # The shared compile cache (see `testCache` above). Exposed as a package
+      # so it can be built/inspected directly (`nix build .#_ncps-test-cache`)
+      # and so Nix builds it once and feeds all cohorts. Not a `check` — it is
+      # build infrastructure, not a quality gate.
+      packages._ncps-test-cache = testCache;
+
       # `checks` is an explicit enumeration of quality-gate derivations
       # — see the `flake-check-topology` spec, "The `checks` attrset is
       # an explicit enumeration" requirement.
