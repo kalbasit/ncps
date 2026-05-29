@@ -211,7 +211,7 @@ var (
 	backgroundMigrationDuration metric.Float64Histogram
 
 	// Download coordination metrics
-	//nolint:gochecknoglobals
+	//nolint:gochecknoglobals // package-level OTel metric instrument, initialized once in init() and reused.
 	downloadCoordinationFallbackTotal metric.Int64Counter
 )
 
@@ -5600,10 +5600,15 @@ func (c *Cache) pollForDownloadOrTakeOver(
 				return ds, false
 			}
 
-			// Re-attempt acquisition. Success means the previous holder released
-			// the lock (it finished or failed) without the asset appearing, so we
-			// take over as the sole downloader.
-			if lockErr := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); lockErr == nil {
+			// Re-attempt acquisition without blocking, bounded by the give-up
+			// deadline. TryLock is a single non-blocking attempt, so a tick can
+			// never stall the poll loop or outlive deadlineCtx / caller
+			// cancellation (a blocking Lock retries internally and could do
+			// exactly that). Success means the previous holder released the lock
+			// (it finished or failed) without the asset appearing, so we take
+			// over as the sole downloader.
+			acquired, lockErr := c.downloadLocker.TryLock(deadlineCtx, lockKey, c.downloadLockTTL)
+			if lockErr == nil && acquired {
 				zerolog.Ctx(ctx).Debug().
 					Str("hash", hash).
 					Str("lock_key", lockKey).
