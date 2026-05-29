@@ -1,0 +1,57 @@
+# Tasks: speed-up-ci
+
+Cross-repo change. Land the `kalbasit/gh-actions` tasks first (the new input
+must exist before ncps can pass it), then ncps, then verify.
+
+## 1. gh-actions: add opt-in `test_systems` (land first)
+
+Repo: `../gh-actions` (`/home/wnasreddine/.../github.com/kalbasit/gh-actions`).
+
+- [x] 1.1 Scaffold a sibling OpenSpec change in gh-actions:
+  `scope-flake-check-systems`.
+- [x] 1.2 `build.yml`: add a `test_systems` input (JSON-array string, default
+  `"[]"`). Document: empty ⇒ all `systems`; non-empty ⇒ flake-check/coverage
+  only on listed systems.
+- [x] 1.3 `build.yml`: gate the **Flake check**, **Build coverage**, and
+  **Upload coverage to Codecov** steps with
+  `if: inputs.test_systems == '[]' || contains(fromJson(inputs.test_systems), matrix.system)`
+  (preserve the existing non-fork condition on coverage/codecov by ANDing).
+- [x] 1.4 `build.yml`: confirm **Build the OCI image** (and pusher/login/push)
+  and the `oci-manifest` job remain ungated (run on every system).
+- [x] 1.5 `ci.yml` (orchestrator): add a `test_systems` input and forward it to
+  the `build` job; apply the same gating to the standalone `flake-check` job
+  (used when `oci: false`).
+- [x] 1.6 Update spec `openspec/specs/oci-build/spec.md` delta: MODIFY
+  `Reusable OCI build workflow` so flake-check/coverage are scoped to
+  `test_systems`; image build/push stays per-arch. Update the two scenarios
+  accordingly.
+- [x] 1.7 Update spec `openspec/specs/reusable-ci/spec.md` delta for the new
+  forwarded `test_systems` input.
+- [x] 1.8 `openspec validate` (gh-actions) passes; `_lint-workflows.yml` /
+  actionlint clean.
+- [x] 1.9 `/git-commit` on a feature branch in gh-actions; open a PR.
+  → kalbasit/gh-actions#8
+
+## 2. ncps: opt in
+
+- [ ] 2.1 `.github/workflows/ci.yml`: in the `shared` job `with:`, add
+  `test_systems: '["x86_64-linux"]'`.
+- [ ] 2.2 Keep `systems` default (both arches) so the aarch64 image still builds.
+- [ ] 2.3 Spec delta `flake-check-topology` (already written) reflects single-arch
+  CI validation — re-read after gh-actions lands to confirm wording matches the
+  final input name.
+- [ ] 2.4 `openspec validate --change speed-up-ci` passes.
+- [ ] 2.5 `/git-commit` / `gs-create` on a feature branch; open a PR.
+
+## 3. Verify
+
+- [ ] 3.1 On the ncps PR, confirm the `build (aarch64-linux)` leg does **not**
+  run `nix flake check` / coverage (check the job log) but **does** run the
+  docker build.
+- [ ] 3.2 Confirm the `build (x86_64-linux)` leg runs the full cohort suite +
+  Codecov upload (one merged profile).
+- [ ] 3.3 Confirm the multi-arch manifest (`oci-manifest`) still assembles both
+  arch images on a push/tag build.
+- [ ] 3.4 Record before/after CI wall-clock; confirm the aarch64 Postgres-timeout
+  failure no longer gates merges and total time drops materially.
+- [ ] 3.5 `task fmt`, `task lint`, `task test` green in ncps before reporting done.
