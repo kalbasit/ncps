@@ -20,10 +20,7 @@ permissions:
   packages: write
 jobs:
   shared:
-    # TEMP: pinned to the gh-actions feature branch to validate run_flake_check
-    # end-to-end before kalbasit/gh-actions#9 merges. REVERT to @main before
-    # merging this PR — see OpenSpec change fan-out-flake-check.
-    uses: kalbasit/gh-actions/.github/workflows/ci.yml@user/wnasreddine/further-improvement
+    uses: kalbasit/gh-actions/.github/workflows/ci.yml@main
     with:
       cachix_cache: ncps
       oci: true

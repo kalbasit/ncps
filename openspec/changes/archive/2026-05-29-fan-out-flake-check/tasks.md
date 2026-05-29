@@ -29,7 +29,7 @@ Repo: `../gh-actions` (branch already created).
 - [x] 2.6 `shared` build job no longer runs flake-check (run_flake_check:false).
 - [x] 2.7 TEMP: pinned the `shared` caller to the gh-actions feature branch to
   validate end-to-end before kalbasit/gh-actions#9 merges.
-- [ ] 2.8 **REVERT** the caller to `@main` before merging (after #9 lands).
+- [x] 2.8 **REVERT** the caller to `@main` (done after gh-actions#9 merged).
 
 ## 3. Verify
 
