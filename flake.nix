@@ -13,7 +13,7 @@
       url = "github:cachix/git-hooks.nix";
     };
 
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     process-compose-flake.url = "github:Platonic-Systems/process-compose-flake";
 

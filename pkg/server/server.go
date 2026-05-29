@@ -353,7 +353,8 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 				With().
 				Str("narinfo_hash", hash).
 				Logger().
-				WithContext(ctx))
+				WithContext(ctx),
+		)
 
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
@@ -421,7 +422,7 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		if _, err := w.Write(narInfoBytes); err != nil {
+		if _, err := w.Write(narInfoBytes); err != nil { //nolint:gosec // G705: not user input
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 
 			zerolog.Ctx(r.Context()).
@@ -450,7 +451,8 @@ func (s *Server) putNarInfo(w http.ResponseWriter, r *http.Request) {
 			With().
 			Str("narinfo_hash", hash).
 			Logger().
-			WithContext(ctx))
+			WithContext(ctx),
+	)
 
 	if !s.putPermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -494,7 +496,8 @@ func (s *Server) getBuildTrace(withBody bool) http.HandlerFunc {
 				Str("drv_name", drvName).
 				Str("output_name", outputName).
 				Logger().
-				WithContext(ctx))
+				WithContext(ctx),
+		)
 
 		data, err := s.cache.GetBuildTrace(r.Context(), drvName, outputName)
 		if err != nil {
@@ -528,7 +531,7 @@ func (s *Server) getBuildTrace(withBody bool) http.HandlerFunc {
 			return
 		}
 
-		if _, err := w.Write(data); err != nil {
+		if _, err := w.Write(data); err != nil { //nolint:gosec // G705: not user input
 			zerolog.Ctx(r.Context()).
 				Error().
 				Err(err).
@@ -558,7 +561,8 @@ func (s *Server) putBuildTrace(w http.ResponseWriter, r *http.Request) {
 			Str("drv_name", drvName).
 			Str("output_name", outputName).
 			Logger().
-			WithContext(ctx))
+			WithContext(ctx),
+	)
 
 	if !s.putPermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -604,7 +608,8 @@ func (s *Server) deleteNarInfo(w http.ResponseWriter, r *http.Request) {
 			With().
 			Str("narinfo_hash", hash).
 			Logger().
-			WithContext(ctx))
+			WithContext(ctx),
+	)
 
 	if !s.deletePermitted {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -650,7 +655,8 @@ func (s *Server) pinClosure(w http.ResponseWriter, r *http.Request) {
 			With().
 			Str("narinfo_hash", hash).
 			Logger().
-			WithContext(ctx))
+			WithContext(ctx),
+	)
 
 	if err := s.cache.PinClosure(r.Context(), hash); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -690,7 +696,8 @@ func (s *Server) unpinClosure(w http.ResponseWriter, r *http.Request) {
 			With().
 			Str("narinfo_hash", hash).
 			Logger().
-			WithContext(ctx))
+			WithContext(ctx),
+	)
 
 	if err := s.cache.UnpinClosure(r.Context(), hash); err != nil {
 		zerolog.Ctx(r.Context()).

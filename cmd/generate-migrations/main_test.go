@@ -82,7 +82,7 @@ func TestNameValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			out, err := exec.CommandContext(t.Context(), binary,
+			out, err := exec.CommandContext(t.Context(), binary, //nolint:gosec // G204: test-controlled binary
 				"--sql-only", "--name="+tc.name, "--root="+filepath.Join(root, tc.name+"-out")).
 				CombinedOutput()
 			if tc.wantFail {

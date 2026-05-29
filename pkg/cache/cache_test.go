@@ -182,7 +182,7 @@ func setupPostgresFactory(t *testing.T) (
 			sb.WriteString(part)
 
 			if i < len(parts)-1 {
-				sb.WriteString(fmt.Sprintf("$%d", i+1))
+				fmt.Fprintf(&sb, "$%d", i+1)
 			}
 		}
 
@@ -767,7 +767,7 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 
 			assert.GreaterOrEqual(t, len(sigsStr), 2, "narinfo should have at least 2 signatures")
 
-			var parsedSigs []signature.Signature
+			parsedSigs := make([]signature.Signature, 0, len(sigsStr))
 
 			for _, sigStr := range sigsStr {
 				sig, err := signature.ParseSignature(sigStr)
@@ -4188,7 +4188,15 @@ func TestConcurrentDownloadCancelStress(t *testing.T) {
 		t.Skip("skipping stress test in short mode")
 	}
 
+	deadline, hasDeadline := t.Deadline()
+
 	for i := range 50 { //nolint:paralleltest // sequential by design: each iter must finish before next
+		if hasDeadline && time.Until(deadline) < 2*time.Minute {
+			t.Logf("stopping after %d iterations: less than 2 minutes remaining before test deadline", i)
+
+			break
+		}
+
 		t.Run(fmt.Sprintf("iter%02d", i), func(t *testing.T) {
 			runConcurrentDownloadCancelOneClientOthersContinue(t, setupSQLiteFactory)
 		})

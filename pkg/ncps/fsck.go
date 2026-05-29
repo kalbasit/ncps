@@ -136,7 +136,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				Usage: "Automatically fix detected issues (delete orphaned records and files)",
 			},
 			&cli.BoolFlag{
-				Name:  "dry-run",
+				Name:  flagNameDryRun,
 				Usage: "Show what would be fixed without making any changes",
 			},
 			&cli.DurationFlag{
@@ -151,141 +151,141 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 
 			// Storage Flags
 			&cli.StringFlag{
-				Name:    "cache-storage-local",
-				Usage:   "The local data path used for configuration and cache storage (use this OR S3 storage)",
+				Name:    flagNameStorageLocal,
+				Usage:   flagUsageStorageLocal,
 				Sources: flagSources("cache.storage.local", "CACHE_STORAGE_LOCAL"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-storage-s3-bucket",
-				Usage:   "S3 bucket name for storage (use this OR --cache-storage-local for local storage)",
+				Name:    flagNameS3Bucket,
+				Usage:   flagUsageS3Bucket,
 				Sources: flagSources("cache.storage.s3.bucket", "CACHE_STORAGE_S3_BUCKET"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-storage-s3-endpoint",
-				Usage:   "S3-compatible endpoint URL with scheme",
+				Name:    flagNameS3Endpoint,
+				Usage:   flagUsageS3Endpoint,
 				Sources: flagSources("cache.storage.s3.endpoint", "CACHE_STORAGE_S3_ENDPOINT"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-storage-s3-region",
-				Usage:   "S3 region (optional)",
+				Name:    flagNameS3Region,
+				Usage:   flagUsageS3Region,
 				Sources: flagSources("cache.storage.s3.region", "CACHE_STORAGE_S3_REGION"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-storage-s3-access-key-id",
-				Usage:   "S3 access key ID",
+				Name:    flagNameS3AccessKeyID,
+				Usage:   flagUsageS3AccessKeyID,
 				Sources: flagSources("cache.storage.s3.access-key-id", "CACHE_STORAGE_S3_ACCESS_KEY_ID"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-storage-s3-secret-access-key",
-				Usage:   "S3 secret access key",
+				Name:    flagNameS3SecretKey,
+				Usage:   flagUsageS3SecretKey,
 				Sources: flagSources("cache.storage.s3.secret-access-key", "CACHE_STORAGE_S3_SECRET_ACCESS_KEY"),
 			},
 			&cli.BoolFlag{
-				Name:    "cache-storage-s3-force-path-style",
-				Usage:   "Force path-style S3 addressing",
+				Name:    flagNameS3ForcePathStyle,
+				Usage:   flagUsageS3ForcePathStyle,
 				Sources: flagSources("cache.storage.s3.force-path-style", "CACHE_STORAGE_S3_FORCE_PATH_STYLE"),
 			},
 
 			// Database Flags
 			&cli.StringFlag{
-				Name:     "cache-database-url",
-				Usage:    "The URL of the database",
+				Name:     flagNameDBURL,
+				Usage:    flagUsageDBURL,
 				Sources:  flagSources("cache.database-url", "CACHE_DATABASE_URL"),
 				Required: true,
 			},
 			&cli.IntFlag{
-				Name:    "cache-database-pool-max-open-conns",
-				Usage:   "Maximum number of open connections to the database",
+				Name:    flagNameDBMaxOpenConns,
+				Usage:   flagUsageDBMaxOpenConns,
 				Sources: flagSources("cache.database.pool.max-open-conns", "CACHE_DATABASE_POOL_MAX_OPEN_CONNS"),
 			},
 			&cli.IntFlag{
-				Name:    "cache-database-pool-max-idle-conns",
-				Usage:   "Maximum number of idle connections in the pool",
+				Name:    flagNameDBMaxIdleConns,
+				Usage:   flagUsageDBMaxIdleConns,
 				Sources: flagSources("cache.database.pool.max-idle-conns", "CACHE_DATABASE_POOL_MAX_IDLE_CONNS"),
 			},
 
 			// Lock Backend Flags (optional)
 			&cli.StringSliceFlag{
-				Name:    "cache-redis-addrs",
+				Name:    flagNameRedisAddrs,
 				Usage:   "Redis server addresses for distributed locking",
 				Sources: flagSources("cache.redis.addrs", "CACHE_REDIS_ADDRS"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-redis-username",
-				Usage:   "Redis username",
+				Name:    flagNameRedisUsername,
+				Usage:   flagUsageRedisUsername,
 				Sources: flagSources("cache.redis.username", "CACHE_REDIS_USERNAME"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-redis-password",
-				Usage:   "Redis password",
+				Name:    flagNameRedisPassword,
+				Usage:   flagUsageRedisPassword,
 				Sources: flagSources("cache.redis.password", "CACHE_REDIS_PASSWORD"),
 			},
 			&cli.IntFlag{
-				Name:    "cache-redis-db",
-				Usage:   "Redis database number",
+				Name:    flagNameRedisDB,
+				Usage:   flagUsageRedisDB,
 				Sources: flagSources("cache.redis.db", "CACHE_REDIS_DB"),
 			},
 			&cli.BoolFlag{
-				Name:    "cache-redis-use-tls",
-				Usage:   "Use TLS for Redis connections",
+				Name:    flagNameRedisTLS,
+				Usage:   flagUsageRedisTLS,
 				Sources: flagSources("cache.redis.use-tls", "CACHE_REDIS_USE_TLS"),
 			},
 			&cli.StringFlag{
-				Name:    "cache-lock-backend",
-				Usage:   "Lock backend to use: 'local' (single instance) or 'redis' (distributed)",
+				Name:    flagNameLockBackend,
+				Usage:   flagUsageLockBackend,
 				Sources: flagSources("cache.lock.backend", "CACHE_LOCK_BACKEND"),
-				Value:   "local",
+				Value:   lockBackendLocal,
 			},
 			&cli.StringFlag{
-				Name:    "cache-lock-redis-key-prefix",
+				Name:    flagNameLockRedisKeyPrefix,
 				Usage:   "Prefix for all Redis lock keys",
 				Sources: flagSources("cache.lock.redis.key-prefix", "CACHE_LOCK_REDIS_KEY_PREFIX"),
-				Value:   "ncps:lock:",
+				Value:   flagDefaultLockRedisKeyPrefix,
 			},
 			&cli.DurationFlag{
-				Name:    "cache-lock-download-ttl",
+				Name:    flagNameLockDownloadTTL,
 				Usage:   "TTL for download locks",
 				Sources: flagSources("cache.lock.download-lock-ttl", "CACHE_LOCK_DOWNLOAD_TTL"),
 				Value:   5 * time.Minute,
 			},
 			&cli.DurationFlag{
-				Name:    "cache-lock-lru-ttl",
+				Name:    flagNameLockLRUTTL,
 				Usage:   "TTL for LRU lock",
 				Sources: flagSources("cache.lock.lru-lock-ttl", "CACHE_LOCK_LRU_TTL"),
 				Value:   30 * time.Minute,
 			},
 			&cli.IntFlag{
-				Name:    "cache-lock-retry-max-attempts",
-				Usage:   "Maximum number of retry attempts for distributed locks",
+				Name:    flagNameLockMaxRetries,
+				Usage:   flagUsageLockMaxRetries,
 				Sources: flagSources("cache.lock.retry.max-attempts", "CACHE_LOCK_RETRY_MAX_ATTEMPTS"),
 				Value:   3,
 			},
 			&cli.DurationFlag{
-				Name:    "cache-lock-retry-initial-delay",
-				Usage:   "Initial retry delay for distributed locks",
+				Name:    flagNameLockInitialDelay,
+				Usage:   flagUsageLockInitialDelay,
 				Sources: flagSources("cache.lock.retry.initial-delay", "CACHE_LOCK_RETRY_INITIAL_DELAY"),
 				Value:   100 * time.Millisecond,
 			},
 			&cli.DurationFlag{
-				Name:    "cache-lock-retry-max-delay",
+				Name:    flagNameLockMaxDelay,
 				Usage:   "Maximum retry delay for distributed locks",
 				Sources: flagSources("cache.lock.retry.max-delay", "CACHE_LOCK_RETRY_MAX_DELAY"),
 				Value:   2 * time.Second,
 			},
 			&cli.BoolFlag{
-				Name:    "cache-lock-retry-jitter",
+				Name:    flagNameLockJitter,
 				Usage:   "Enable jitter in retry delays",
 				Sources: flagSources("cache.lock.retry.jitter", "CACHE_LOCK_RETRY_JITTER"),
 				Value:   true,
 			},
 			&cli.BoolFlag{
-				Name:    "cache-lock-allow-degraded-mode",
+				Name:    flagNameLockAllowDegraded,
 				Usage:   "Allow falling back to local locks if Redis is unavailable",
 				Sources: flagSources("cache.lock.allow-degraded-mode", "CACHE_LOCK_ALLOW_DEGRADED_MODE"),
 			},
 			&cli.IntFlag{
-				Name:    "cache-redis-pool-size",
-				Usage:   "Redis connection pool size",
+				Name:    flagNameRedisPoolSize,
+				Usage:   flagUsageRedisPoolSize,
 				Sources: flagSources("cache.redis.pool-size", "CACHE_REDIS_POOL_SIZE"),
 				Value:   10,
 			},
@@ -553,6 +553,7 @@ func collectFsckSuspects(
 	if narWalker, ok := narStore.(NarWalker); ok {
 		if err := narWalker.WalkNars(ctx, func(narURL nar.URL) error {
 			presentNars[narURL.String()] = struct{}{}
+
 			storageNarCount.Add(1)
 
 			return nil
@@ -628,6 +629,7 @@ func collectFsckSuspects(
 
 			if !exists {
 				suspects.Add(1)
+
 				results.orphanedNarFilesInStorage = append(results.orphanedNarFilesInStorage, narURL)
 			}
 
@@ -1117,7 +1119,8 @@ func printFsckSummary(r *fsckResults) {
 	}
 
 	if r.cdcMode {
-		dataRows = append(dataRows,
+		dataRows = append(
+			dataRows,
 			fsckRow{"Orphaned chunks (DB only):", len(r.orphanedChunksInDB)},
 			fsckRow{"NAR files w/ chunk issues:", len(r.narFilesWithChunkIssues)},
 			fsckRow{"CDC NARs w/ size mismatch:", len(r.narFilesWithSizeMismatch)},
@@ -1125,7 +1128,8 @@ func printFsckSummary(r *fsckResults) {
 		)
 
 		if r.verifyContent {
-			dataRows = append(dataRows,
+			dataRows = append(
+				dataRows,
 				fsckRow{"NAR files w/ corrupt chunks:", len(r.narFilesWithCorruptChunks)},
 				fsckRow{"NAR files w/ hash mismatch:", len(r.narFilesWithHashMismatch)},
 			)

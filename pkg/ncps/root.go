@@ -39,6 +39,65 @@ var (
 	Version = "dev"
 )
 
+// Flag name and usage strings shared across multiple sub-commands.
+const (
+	// Flag names and default values shared across sub-commands.
+	flagNameDryRun                = "dry-run"
+	flagDefaultLockRedisKeyPrefix = "ncps:lock:"
+	flagNameStorageLocal          = "cache-storage-local"
+	flagNameS3Bucket              = "cache-storage-s3-bucket"
+	flagNameS3Endpoint            = "cache-storage-s3-endpoint"
+	flagNameS3Region              = "cache-storage-s3-region"
+	flagNameS3AccessKeyID         = "cache-storage-s3-access-key-id"
+	flagNameS3SecretKey           = "cache-storage-s3-secret-access-key" //nolint:gosec // G101: flag name
+	flagNameS3ForcePathStyle      = "cache-storage-s3-force-path-style"
+	flagNameDBURL                 = "cache-database-url"
+	flagNameDBMaxOpenConns        = "cache-database-pool-max-open-conns"
+	flagNameDBMaxIdleConns        = "cache-database-pool-max-idle-conns"
+	flagNameRedisAddrs            = "cache-redis-addrs"
+	flagNameRedisUsername         = "cache-redis-username"
+	flagNameRedisPassword         = "cache-redis-password"
+	flagNameRedisDB               = "cache-redis-db"
+	flagNameRedisTLS              = "cache-redis-use-tls"
+	flagNameRedisPoolSize         = "cache-redis-pool-size"
+	flagNameLockBackend           = "cache-lock-backend"
+	flagNameLockRedisKeyPrefix    = "cache-lock-redis-key-prefix"
+	flagNameLockDownloadTTL       = "cache-lock-download-ttl"
+	flagNameLockLRUTTL            = "cache-lock-lru-ttl"
+	flagNameLockMaxRetries        = "cache-lock-retry-max-attempts"
+	flagNameLockInitialDelay      = "cache-lock-retry-initial-delay"
+	flagNameLockMaxDelay          = "cache-lock-retry-max-delay"
+	flagNameLockJitter            = "cache-lock-retry-jitter"
+	flagNameLockAllowDegraded     = "cache-lock-allow-degraded-mode"
+
+	// Flag usage strings.
+	flagUsageStorageLocal       = "The local data path used for configuration and cache storage (use this OR S3 storage)"
+	flagUsageS3Bucket           = "S3 bucket name for storage (use this OR --cache-storage-local for local storage)"
+	flagUsageS3AccessKeyID      = "S3 access key ID"
+	flagUsageS3Endpoint         = "S3-compatible endpoint URL with scheme"
+	flagUsageS3Region           = "S3 region (optional)"
+	flagUsageS3SecretKey        = "S3 secret access key"
+	flagUsageS3ForcePathStyle   = "Force path-style S3 addressing"
+	flagUsageDBURL              = "The URL of the database"
+	flagUsageDBMaxOpenConns     = "Maximum number of open connections to the database"
+	flagUsageDBMaxIdleConns     = "Maximum number of idle connections in the pool"
+	flagUsageRedisUsername      = "Redis username"
+	flagUsageRedisPassword      = "Redis password"
+	flagUsageRedisDB            = "Redis database number"
+	flagUsageRedisTLS           = "Use TLS for Redis connections"
+	flagUsageLockBackend        = "Lock backend to use: 'local' (single instance) or 'redis' (distributed)"
+	flagUsageLockRedisKeyPrefix = "Prefix for all Redis lock keys (only used when Redis is configured)"
+	flagUsageLockDownloadTTL    = "TTL for download locks (per-hash locks)"
+	flagUsageLockLRUTTL         = "TTL for LRU lock (global exclusive lock)"
+	flagUsageLockAllowDegraded  = "Allow falling back to local locks if Redis is unavailable" +
+		" (WARNING: breaks HA guarantees)"
+	flagUsageLockMaxRetries   = "Maximum number of retry attempts for distributed locks"
+	flagUsageLockMaxDelay     = "Maximum retry delay for distributed locks (exponential backoff caps at this)"
+	flagUsageLockInitialDelay = "Initial retry delay for distributed locks"
+	flagUsageLockJitter       = "Enable jitter in retry delays to prevent thundering herd"
+	flagUsageRedisPoolSize    = "Redis connection pool size"
+)
+
 type flagSourcesFn func(configFileKey, envVar string) cli.ValueSourceChain
 
 type registerShutdownFn func(name string, sfn shutdownFn)

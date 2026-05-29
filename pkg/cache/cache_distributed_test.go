@@ -217,7 +217,7 @@ func testDistributedDownloadDeduplication(factory distributedDBFactory) func(*te
 		}
 
 		// Create multiple cache instances
-		var caches []*cache.Cache
+		caches := make([]*cache.Cache, 0, numInstances)
 
 		for range numInstances {
 			downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
@@ -377,7 +377,7 @@ func testDistributedConcurrentReads(factory distributedDBFactory) func(*testing.
 		time.Sleep(500 * time.Millisecond)
 
 		// Now create multiple instances that will read concurrently
-		var caches []*cache.Cache
+		caches := make([]*cache.Cache, 0, numInstances)
 
 		for range numInstances {
 			downloadLocker := locklocal.NewLocker()
@@ -987,7 +987,7 @@ func testCDCProgressiveStreamingDuringChunking(factory distributedDBFactory) fun
 		}
 
 		// Create multiple cache instances with CDC enabled
-		var caches []*cache.Cache
+		caches := make([]*cache.Cache, 0, numInstances)
 
 		for range numInstances {
 			downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)

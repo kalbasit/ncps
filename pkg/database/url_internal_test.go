@@ -17,7 +17,7 @@ func TestParsePostgreSQLURL(t *testing.T) {
 		expected string
 		wantErr  bool
 	}{
-		{
+		{ //nolint:gosec // G101: fake credentials used only in URL parsing tests
 			name:     "Standard TCP URL",
 			dbURL:    "postgres://user:pass@localhost:5432/dbname?sslmode=disable",
 			expected: "postgres://user:pass@localhost:5432/dbname?sslmode=disable",
@@ -77,7 +77,7 @@ func TestParseMySQLConfig(t *testing.T) {
 		expectedDBName string
 		wantErr        bool
 	}{
-		{
+		{ //nolint:gosec // G101: fake credentials used only in URL parsing tests
 			name:           "Standard TCP URL",
 			dbURL:          "mysql://user:pass@localhost:3306/dbname",
 			expectedNet:    "tcp",

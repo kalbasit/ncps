@@ -30,7 +30,8 @@ func GenerateEntry(t *testing.T, narData []byte) (Entry, error) {
 	// Note: Generated entries do not include signatures since we don't have the private key.
 	// Tests using these entries should not use public key verification.
 	// Use the narinfo hash as a self-reference since this is a generated test package with no dependencies.
-	narInfoText := fmt.Sprintf(`StorePath: %s
+	narInfoText := fmt.Sprintf(
+		`StorePath: %s
 URL: %s
 Compression: none
 FileHash: sha256:%s

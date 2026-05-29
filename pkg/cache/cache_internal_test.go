@@ -192,7 +192,7 @@ func setupPostgresFactory(t *testing.T) (*Cache, *database.Client, *local.Store,
 			sb.WriteString(part)
 
 			if i < len(parts)-1 {
-				sb.WriteString(fmt.Sprintf("$%d", i+1))
+				fmt.Fprintf(&sb, "$%d", i+1)
 			}
 		}
 
@@ -433,7 +433,6 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			sizePulled += size
 		}
 
-		//nolint:gosec
 		expectedSize := int64(maxSize) + int64(len(lastEntry.NarText))
 
 		assert.Equal(t, expectedSize, sizePulled, "size pulled is less than maxSize by exactly the last one")
@@ -514,11 +513,12 @@ func testRunLRU(factory cacheFactory) func(*testing.T) {
 			"Final sizes: expectedMaxSize=%d, sizePulled=%d, diff=%d",
 			expectedMaxSize,
 			sizePulled,
-			int64(expectedMaxSize)-sizePulled, //nolint:gosec
+			int64(expectedMaxSize)-sizePulled,
 		)
 
-		assert.Equal(t,
-			int64(expectedMaxSize), //nolint:gosec
+		assert.Equal(
+			t,
+			int64(expectedMaxSize),
 			sizePulled,
 			"confirm size pulled is exactly maxSize (accounting for zstd compression)",
 		)
@@ -800,7 +800,6 @@ func testRunLRUCleanupInconsistentNarInfoState(factory cacheFactory) func(*testi
 		// Note: In phase 2, we pull the same entries again, so the size should equal maxSize.
 		// However, due to how GetNar returns sizes (may be different from phase 1 due to caching),
 		// we allow a small tolerance.
-		//nolint:gosec
 		assert.InDelta(t, int64(maxSize), sizePulled, 100, "confirm size pulled is approximately maxSize")
 
 		// all narinfo records are in the database
@@ -2056,7 +2055,8 @@ func TestRunCDCLazyRecovery(t *testing.T) {
 	// - Ensure chunking_started_at = NULL (no active chunking)
 	// - Update created_at to be old (older than the recovery interval)
 	oldCreatedAt := time.Now().Add(-10 * time.Minute)
-	_, err = db.DB().ExecContext(ctx,
+	_, err = db.DB().ExecContext(
+		ctx,
 		rebind("UPDATE nar_files SET total_chunks = 0, created_at = ? WHERE hash = ?"),
 		oldCreatedAt,
 		entry.NarHash,

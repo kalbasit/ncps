@@ -1307,7 +1307,7 @@ func setupFsckCDCNarFileWithRealHashes(
 		SetHash(narHash).
 		SetCompression("none").
 		SetQuery("").
-		SetFileSize(uint64(totalSize)). //nolint:gosec
+		SetFileSize(uint64(totalSize)).
 		SetTotalChunks(int64(len(chunkDataParts))).
 		Save(ctx)
 	require.NoError(t, err)

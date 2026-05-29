@@ -36,7 +36,8 @@ func TestGooseApplySQLite(t *testing.T) {
 	sub, err := fs.Sub(migrations.FS, "sqlite")
 	require.NoError(t, err)
 
-	provider, err := goose.NewProvider(goose.DialectSQLite3, db, sub,
+	provider, err := goose.NewProvider(
+		goose.DialectSQLite3, db, sub,
 		goose.WithTableName("schema_migrations"),
 	)
 	require.NoError(t, err)

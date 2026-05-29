@@ -30,7 +30,8 @@ var (
 	// tables but no schema_migrations tracking table. This should never
 	// happen during normal operation and requires manual intervention.
 	ErrCorruptState = errors.New(
-		"migrate: ncps application tables exist but schema_migrations does not — refusing to adopt")
+		"migrate: ncps application tables exist but schema_migrations does not — refusing to adopt",
+	)
 )
 
 // State describes what `ncps migrate up` finds when it probes the

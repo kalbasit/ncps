@@ -85,7 +85,8 @@ func RecordMigrationObject(ctx context.Context, migrationType, operation, result
 		return
 	}
 
-	migrationObjectsTotal.Add(ctx, 1,
+	migrationObjectsTotal.Add(
+		ctx, 1,
 		metric.WithAttributes(
 			attribute.String("migration_type", migrationType),
 			attribute.String("operation", operation),
@@ -103,7 +104,8 @@ func RecordMigrationDuration(ctx context.Context, migrationType, operation strin
 		return
 	}
 
-	migrationDuration.Record(ctx, duration,
+	migrationDuration.Record(
+		ctx, duration,
 		metric.WithAttributes(
 			attribute.String("migration_type", migrationType),
 			attribute.String("operation", operation),
@@ -118,7 +120,8 @@ func RecordMigrationBatchSize(ctx context.Context, migrationType string, size in
 		return
 	}
 
-	migrationBatchSize.Record(ctx, size,
+	migrationBatchSize.Record(
+		ctx, size,
 		metric.WithAttributes(
 			attribute.String("migration_type", migrationType),
 		),

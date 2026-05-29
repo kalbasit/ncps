@@ -55,7 +55,8 @@ func freshInstall(
 
 	drv := entsql.OpenDB(entDialect, db)
 
-	m, err := entschema.NewMigrate(drv,
+	m, err := entschema.NewMigrate(
+		drv,
 		entschema.WithDialect(entDialect),
 	)
 	if err != nil {

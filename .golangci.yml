@@ -63,6 +63,10 @@ linters:
       - std-error-handling
     paths:
       - nix/dbmate-wrapper/src/
+    rules:
+      - path: _test\.go
+        linters:
+          - goconst
   settings:
     wsl_v5:
       allow-first-in-block: true

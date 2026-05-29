@@ -1276,7 +1276,8 @@ func TestGetNarInfo_Integration(t *testing.T) {
 		ni2, err := store.GetNarInfo(ctx, hash)
 		require.NoError(t, err)
 
-		assert.Equal(t,
+		assert.Equal(
+			t,
 			strings.TrimSpace(testdata.Nar1.NarInfoText),
 			strings.TrimSpace(ni2.String()),
 		)
