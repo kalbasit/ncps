@@ -43,7 +43,7 @@ func migrateUpCommand(flagSources flagSourcesFn) *cli.Command {
 		Flags: []cli.Flag{
 			cacheDatabaseURLFlag(flagSources),
 			&cli.BoolFlag{
-				Name:  "dry-run",
+				Name:  flagNameDryRun,
 				Usage: "Print the detected state + pending migrations without issuing any DDL.",
 				Value: false,
 			},
@@ -119,7 +119,7 @@ func migrateDownCommand(flagSources flagSourcesFn) *cli.Command {
 // by every migrate subcommand. Keeps the wiring DRY.
 func cacheDatabaseURLFlag(flagSources flagSourcesFn) cli.Flag {
 	return &cli.StringFlag{
-		Name:     "cache-database-url",
+		Name:     flagNameDBURL,
 		Usage:    "Database URL: sqlite:/path, postgresql://..., mysql://...",
 		Sources:  flagSources("cache.database.url", "CACHE_DATABASE_URL"),
 		Required: true,

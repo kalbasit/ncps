@@ -55,13 +55,18 @@ import (
 )
 
 const (
-	defaultPostgresURL = "postgres://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable"
+	defaultPostgresURL = "postgres://test-user:test-password@127.0.0.1:5432/test-db?sslmode=disable" //nolint:gosec,lll // G101: test credentials
 	defaultMySQLURL    = "test-user:test-password@tcp(127.0.0.1:3306)/test-db?parseTime=true&loc=UTC"
+
+	dialectSQLite   = "sqlite"
+	dialectPostgres = "postgres"
+	dialectMySQL    = "mysql"
 )
 
 var (
 	errPlaceholderName = errors.New(
-		"placeholder migration name is forbidden — provide a descriptive snake_case identifier")
+		"placeholder migration name is forbidden — provide a descriptive snake_case identifier",
+	)
 	errInvalidDialect = errors.New("unknown dialect in --skip (allowed: sqlite,postgres,mysql)")
 )
 
@@ -101,9 +106,9 @@ func main() {
 	var generatedStamps []string
 
 	for _, d := range []dialectSpec{
-		{name: "sqlite", goDialect: dialect.SQLite, driver: "sqlite3", openDSN: "file::memory:?_fk=1&cache=shared"},
-		{name: "postgres", goDialect: dialect.Postgres, driver: "pgx", openDSN: pgURL},
-		{name: "mysql", goDialect: dialect.MySQL, driver: "mysql", openDSN: myURL},
+		{name: dialectSQLite, goDialect: dialect.SQLite, driver: "sqlite3", openDSN: "file::memory:?_fk=1&cache=shared"},
+		{name: dialectPostgres, goDialect: dialect.Postgres, driver: "pgx", openDSN: pgURL},
+		{name: dialectMySQL, goDialect: dialect.MySQL, driver: dialectMySQL, openDSN: myURL},
 	} {
 		if _, ok := skipSet[d.name]; ok {
 			log.Printf("generate-migrations: skipping %s (per --skip)", d.name)
@@ -136,9 +141,9 @@ func main() {
 func parseSkip(s string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
 	allowed := map[string]struct{}{
-		"sqlite":   {},
-		"postgres": {},
-		"mysql":    {},
+		dialectSQLite:   {},
+		dialectPostgres: {},
+		dialectMySQL:    {},
 	}
 
 	for _, part := range strings.Split(s, ",") {
@@ -226,7 +231,8 @@ func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName 
 
 	drv := entsql.OpenDB(d.goDialect, db)
 
-	m, err := schema.NewMigrate(drv,
+	m, err := schema.NewMigrate(
+		drv,
 		schema.WithDir(gdir),
 		schema.WithMigrationMode(schema.ModeReplay),
 		schema.WithDialect(d.goDialect),
@@ -260,7 +266,7 @@ func runDialect(ctx context.Context, root string, d dialectSpec, fname, migName 
 
 func openDevDB(d dialectSpec) (*sql.DB, error) {
 	switch d.driver {
-	case "mysql":
+	case dialectMySQL:
 		// Force ANSI quotes off (we use backticks in MySQL DDL anyway) and
 		// ensure the connection's DSN has parseTime + loc set.
 		cfg, err := mysqldriver.ParseDSN(d.openDSN)
@@ -271,7 +277,7 @@ func openDevDB(d dialectSpec) (*sql.DB, error) {
 		cfg.ParseTime = true
 		cfg.MultiStatements = true
 
-		db, err := sql.Open("mysql", cfg.FormatDSN())
+		db, err := sql.Open(dialectMySQL, cfg.FormatDSN())
 		if err != nil {
 			return nil, err
 		}
@@ -290,7 +296,7 @@ func openDevDB(d dialectSpec) (*sql.DB, error) {
 // For SQLite, in-memory databases start empty so this is a no-op (the
 // in-memory DSN is fresh on each open).
 func resetDevDB(ctx context.Context, db *sql.DB, d dialectSpec) error {
-	if d.name == "sqlite" {
+	if d.name == dialectSQLite {
 		return nil
 	}
 
@@ -305,7 +311,7 @@ func resetDevDB(ctx context.Context, db *sql.DB, d dialectSpec) error {
 	tables = append(tables, "schema_migrations")
 
 	switch d.name {
-	case "mysql":
+	case dialectMySQL:
 		if _, err := db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=0"); err != nil {
 			return fmt.Errorf("disable fk checks: %w", err)
 		}
@@ -322,7 +328,7 @@ func resetDevDB(ctx context.Context, db *sql.DB, d dialectSpec) error {
 
 		return nil
 
-	case "postgres":
+	case dialectPostgres:
 		// Cascade-drop so FKs go with the tables.
 		for _, t := range tables {
 			if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS "`+t+`" CASCADE`); err != nil {

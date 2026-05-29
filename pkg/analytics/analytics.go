@@ -190,7 +190,8 @@ func (r *reporter) newLogger(ctx context.Context) error {
 	if r.reportingSamples {
 		exporter, err = stdoutlog.New()
 	} else {
-		exporter, err = otlploghttp.New(ctx,
+		exporter, err = otlploghttp.New(
+			ctx,
 			otlploghttp.WithEndpoint(DefaultEndpoint),
 			otlploghttp.WithCompression(otlploghttp.GzipCompression),
 		)
@@ -220,7 +221,8 @@ func (r *reporter) newMeter(ctx context.Context) error {
 	if r.reportingSamples {
 		exporter, err = stdoutmetric.New()
 	} else {
-		exporter, err = otlpmetrichttp.New(ctx,
+		exporter, err = otlpmetrichttp.New(
+			ctx,
 			otlpmetrichttp.WithEndpoint(DefaultEndpoint),
 			otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression),
 		)

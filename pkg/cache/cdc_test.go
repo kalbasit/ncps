@@ -1337,7 +1337,8 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		require.NoError(t, err)
 
 		// Move chunking_started_at to 2 hours in the past to simulate a stale lock.
-		_, err = dbClient.DB().ExecContext(ctx,
+		_, err = dbClient.DB().ExecContext(
+			ctx,
 			rebind("UPDATE nar_files SET chunking_started_at = ? WHERE id = ?"),
 			time.Now().Add(-2*time.Hour),
 			narFile.ID,
@@ -1376,7 +1377,8 @@ func testCDCMigrateNarToChunksRecoversFromPartialChunking(factory cacheFactory) 
 		// chunks record from the DB (not just the junction table entry).
 		var fakeChunkLinkCount int
 
-		err = dbClient.DB().QueryRowContext(ctx,
+		err = dbClient.DB().QueryRowContext(
+			ctx,
 			rebind(`SELECT COUNT(*) FROM nar_file_chunks nfc
 				INNER JOIN chunks c ON c.id = nfc.chunk_id
 				WHERE c.hash = ?`),
@@ -1626,7 +1628,8 @@ func testCDCStaleLockCleansUpChunkFiles(factory cacheFactory) func(*testing.T) {
 		_, err = dbClient.Ent().NarFile.UpdateOneID(narFile.ID).SetChunkingStartedAt(time.Now()).Save(ctx)
 		require.NoError(t, err)
 
-		_, err = dbClient.DB().ExecContext(ctx,
+		_, err = dbClient.DB().ExecContext(
+			ctx,
 			rebind("UPDATE nar_files SET chunking_started_at = ? WHERE id = ?"),
 			time.Now().Add(-2*time.Hour),
 			narFile.ID,

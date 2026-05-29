@@ -884,7 +884,7 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 		referencesBuilder.WriteString("References:")
 
 		for i := range numReferences {
-			referencesBuilder.WriteString(fmt.Sprintf(" ref%d-abcdefgh1234567890abcdefgh1234567890", i))
+			fmt.Fprintf(&referencesBuilder, " ref%d-abcdefgh1234567890abcdefgh1234567890", i)
 		}
 
 		referencesStr := referencesBuilder.String()
@@ -912,10 +912,11 @@ func testMigrateNarInfoLargeNarInfo(factory migrationFactory) func(*testing.T) {
 
 		// Add many signatures
 		for i := range numSignatures {
-			narInfoBuilder.WriteString(fmt.Sprintf(
+			fmt.Fprintf(
+				&narInfoBuilder,
 				"Sig: cache.test.org-%d:MadTCU1OSFCGUw4aqCKpLCZJpqBc7AbLvO7wgdlls0eq1DwaSnF/82SZE+wJGEiwlHbnZR+14daSaec0W3XoBQ==\n",
 				i,
-			))
+			)
 		}
 
 		narInfoText := narInfoBuilder.String()
@@ -1108,7 +1109,7 @@ func setupNarInfoMigrationPostgres(t *testing.T) (
 		for _, r := range query {
 			if r == '?' {
 				paramCount++
-				builder.WriteString(fmt.Sprintf("$%d", paramCount))
+				fmt.Fprintf(&builder, "$%d", paramCount)
 			} else {
 				builder.WriteRune(r)
 			}

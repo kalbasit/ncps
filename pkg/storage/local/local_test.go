@@ -386,7 +386,8 @@ func TestGetNarInfo(t *testing.T) {
 		ni, err := s.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
 		require.NoError(t, err)
 
-		assert.Equal(t,
+		assert.Equal(
+			t,
 			strings.TrimSpace(testdata.Nar1.NarInfoText),
 			strings.TrimSpace(ni.String()),
 		)
@@ -431,7 +432,8 @@ func TestPutNarInfo(t *testing.T) {
 		ni2, err := narinfopkg.Parse(ni2c)
 		require.NoError(t, err)
 
-		assert.Equal(t,
+		assert.Equal(
+			t,
 			strings.TrimSpace(ni1.String()),
 			strings.TrimSpace(ni2.String()),
 		)
@@ -486,7 +488,8 @@ func TestDeleteNarInfo(t *testing.T) {
 		s, err := local.New(ctx, dir)
 		require.NoError(t, err)
 
-		assert.ErrorIs(t,
+		assert.ErrorIs(
+			t,
 			s.DeleteNarInfo(ctx, testdata.Nar1.NarInfoHash),
 			storage.ErrNotFound,
 		)
@@ -646,7 +649,8 @@ func TestGetNar(t *testing.T) {
 		assert.EqualValues(t, len(testdata.Nar1.NarText), size)
 
 		if assert.Len(t, testdata.Nar1.NarText, len(nt)) {
-			assert.Equal(t,
+			assert.Equal(
+				t,
 				strings.TrimSpace(testdata.Nar1.NarText),
 				strings.TrimSpace(string(nt)),
 			)
@@ -693,7 +697,8 @@ func TestPutNar(t *testing.T) {
 		require.NoError(t, err)
 
 		if assert.Len(t, testdata.Nar1.NarText, len(string(cs))) {
-			assert.Equal(t,
+			assert.Equal(
+				t,
 				strings.TrimSpace(testdata.Nar1.NarText),
 				strings.TrimSpace(string(cs)),
 			)
@@ -756,7 +761,8 @@ func TestDeleteNar(t *testing.T) {
 			Compression: testdata.Nar1.NarCompression,
 		}
 
-		assert.ErrorIs(t,
+		assert.ErrorIs(
+			t,
 			s.DeleteNar(ctx, narURL),
 			storage.ErrNotFound,
 		)

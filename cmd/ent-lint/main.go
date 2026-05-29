@@ -62,7 +62,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	var results []result
+	results := make([]result, 0, len(schemas))
 
 	results = append(results, checkA1(schemas)...)
 	results = append(results, checkA2(schemas)...)
@@ -224,7 +224,8 @@ func checkA1(schemas []schemaFile) []result {
 					pass: false, id: "A1",
 					detail: fmt.Sprintf(
 						"%s:%d field-level entsql.Check is forbidden (use Annotations() on the schema)",
-						relPath(sf.path), v),
+						relPath(sf.path), v,
+					),
 				})
 			}
 		}
@@ -502,7 +503,8 @@ func checkA4(schemas []schemaFile) []result {
 				pass: true, id: "A4",
 				detail: fmt.Sprintf(
 					"%s:%d edge.To(%q, %s.Type) has reciprocal edge.From().Ref()",
-					relPath(t.path), t.line, t.edgeName, t.target),
+					relPath(t.path), t.line, t.edgeName, t.target,
+				),
 			})
 		} else {
 			out = append(out, result{
@@ -511,7 +513,8 @@ func checkA4(schemas []schemaFile) []result {
 					"%s:%d edge.To(%q, %s.Type) has no reciprocal edge.From(%s.Type).Ref(%q) on %s — "+
 						"Ent will fabricate a phantom FK column",
 					relPath(t.path), t.line, t.edgeName, t.target,
-					t.source, t.edgeName, t.target),
+					t.source, t.edgeName, t.target,
+				),
 			})
 		}
 	}

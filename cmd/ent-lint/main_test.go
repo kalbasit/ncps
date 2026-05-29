@@ -41,7 +41,8 @@ func TestEntLint(t *testing.T) {
 			t.Parallel()
 
 			dir := filepath.Join("testdata", tc.fixture)
-			out, err := exec.CommandContext(t.Context(), binary, "--schema-dir="+dir).CombinedOutput()
+			cmd := exec.CommandContext(t.Context(), binary, "--schema-dir="+dir) //nolint:gosec // G204: test-controlled binary
+			out, err := cmd.CombinedOutput()
 			combined := string(out)
 
 			if tc.wantFail {

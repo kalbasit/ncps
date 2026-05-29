@@ -1127,7 +1127,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 				ds.wg.Done()
 			}
 
-			metricAttrs = append(metricAttrs,
+			metricAttrs = append(
+				metricAttrs,
 				attribute.String("result", "hit"),
 				attribute.String("status", "success"),
 			)
@@ -1142,7 +1143,8 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			return err
 		}
 
-		metricAttrs = append(metricAttrs,
+		metricAttrs = append(
+			metricAttrs,
 			attribute.String("result", "miss"),
 			attribute.String("status", "success"),
 		)
@@ -3273,7 +3275,8 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
 	if err == nil {
-		metricAttrs = append(metricAttrs,
+		metricAttrs = append(
+			metricAttrs,
 			attribute.String("result", "hit"),
 			attribute.String("status", "success"),
 			attribute.String("source", "database"),
@@ -3317,7 +3320,8 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	}
 
 	if c.narInfoStore.HasNarInfo(ctx, hash) {
-		metricAttrs = append(metricAttrs,
+		metricAttrs = append(
+			metricAttrs,
 			attribute.String("result", "hit"),
 			attribute.String("status", "success"),
 			attribute.String("source", "storage"),
@@ -4053,7 +4057,8 @@ func (c *Cache) handleStorageFetchError(
 				Msg("Failed to unlock migration lock after waiting in handleStorageFetchError")
 		}
 
-		if err := c.withReadLock(ctx,
+		if err := c.withReadLock(
+			ctx,
 			"handleStorageFetchError-wait-put",
 			narInfoLockKey(hash),
 			func() error {
@@ -5042,12 +5047,14 @@ func MigrateNarInfo(
 	if err != nil {
 		log.Error().Err(err).Msg("failed to migrate narinfo to database")
 
-		backgroundMigrationObjectsTotal.Add(ctx, 1,
+		backgroundMigrationObjectsTotal.Add(
+			ctx, 1,
 			metric.WithAttributes(
 				append(migrateAttrs, attribute.String("result", migrationResultFailure))...,
 			),
 		)
-		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
+		backgroundMigrationDuration.Record(
+			ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(migrateAttrs...),
 		)
 
@@ -5056,12 +5063,14 @@ func MigrateNarInfo(
 
 	log.Debug().Dur("duration", time.Since(opStartTime)).Msg("successfully migrated narinfo to database")
 
-	backgroundMigrationObjectsTotal.Add(ctx, 1,
+	backgroundMigrationObjectsTotal.Add(
+		ctx, 1,
 		metric.WithAttributes(
 			append(migrateAttrs, attribute.String("result", migrationResultSuccess))...,
 		),
 	)
-	backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
+	backgroundMigrationDuration.Record(
+		ctx, time.Since(opStartTime).Seconds(),
 		metric.WithAttributes(migrateAttrs...),
 	)
 
@@ -5075,7 +5084,8 @@ func MigrateNarInfo(
 
 		if err := narInfoStore.DeleteNarInfo(ctx, hash); err != nil {
 			log.Error().Err(err).Msg("failed to delete narinfo from store after migration")
-			backgroundMigrationObjectsTotal.Add(ctx, 1,
+			backgroundMigrationObjectsTotal.Add(
+				ctx, 1,
 				metric.WithAttributes(
 					append(deleteAttrs, attribute.String("result", migrationResultFailure))...,
 				),
@@ -5083,14 +5093,16 @@ func MigrateNarInfo(
 			// Don't return error - migration succeeded, only cleanup failed
 		} else {
 			log.Debug().Msg("deleted narinfo from storage after successful migration")
-			backgroundMigrationObjectsTotal.Add(ctx, 1,
+			backgroundMigrationObjectsTotal.Add(
+				ctx, 1,
 				metric.WithAttributes(
 					append(deleteAttrs, attribute.String("result", migrationResultSuccess))...,
 				),
 			)
 		}
 
-		backgroundMigrationDuration.Record(ctx, time.Since(deleteStartTime).Seconds(),
+		backgroundMigrationDuration.Record(
+			ctx, time.Since(deleteStartTime).Seconds(),
 			metric.WithAttributes(deleteAttrs...),
 		)
 	}
@@ -5758,14 +5770,12 @@ func (c *Cache) calculateCleanupSize(ctx context.Context, tx *ent.Tx, log zerolo
 
 	log = log.With().Int64("nar_total_size", narTotalSize).Logger()
 
-	//nolint:gosec
 	if uint64(narTotalSize) <= c.maxSize {
 		log.Info().Msg("store size is less than max-size, not removing any nars")
 
 		return 0, nil
 	}
 
-	//nolint:gosec
 	cleanupSize := uint64(narTotalSize) - c.maxSize
 
 	log = log.With().Uint64("cleanup_size", cleanupSize).Logger()
@@ -6155,7 +6165,6 @@ func (c *Cache) runLRU(ctx context.Context) func() {
 			lruChunksEvictedTotal.Add(ctx, int64(len(chunkHashesToRemove)))
 
 			// Track bytes freed (approximate as cleanupSize)
-			//nolint:gosec // G115: Cleanup size is bounded by cache max size, unlikely to exceed int64 max
 			lruBytesFreedTotal.Add(ctx, int64(cleanupSize))
 
 			// Remove all the files from the store as fast as possible
@@ -7360,7 +7369,8 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 			return
 		}
 
-		backgroundMigrationDuration.Record(ctx, time.Since(opStartTime).Seconds(),
+		backgroundMigrationDuration.Record(
+			ctx, time.Since(opStartTime).Seconds(),
 			metric.WithAttributes(
 				attribute.String("migration_type", migrationTypeNarToChunks),
 				attribute.String("operation", migrationOperationMigrate),
@@ -7372,7 +7382,8 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 			if errors.Is(err, ErrNarAlreadyChunked) {
 				log.Debug().Msg("skipping background migration to chunks, nar already chunked")
 
-				backgroundMigrationObjectsTotal.Add(ctx, 1,
+				backgroundMigrationObjectsTotal.Add(
+					ctx, 1,
 					metric.WithAttributes(
 						attribute.String("migration_type", migrationTypeNarToChunks),
 						attribute.String("operation", migrationOperationMigrate),
@@ -7384,7 +7395,8 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 			}
 
 			log.Error().Err(err).Msg("error migrating nar to chunks")
-			backgroundMigrationObjectsTotal.Add(ctx, 1,
+			backgroundMigrationObjectsTotal.Add(
+				ctx, 1,
 				metric.WithAttributes(
 					attribute.String("migration_type", migrationTypeNarToChunks),
 					attribute.String("operation", migrationOperationMigrate),
@@ -7395,7 +7407,8 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 			return
 		}
 
-		backgroundMigrationObjectsTotal.Add(ctx, 1,
+		backgroundMigrationObjectsTotal.Add(
+			ctx, 1,
 			metric.WithAttributes(
 				attribute.String("migration_type", migrationTypeNarToChunks),
 				attribute.String("operation", migrationOperationMigrate),

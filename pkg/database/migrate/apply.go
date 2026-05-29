@@ -17,7 +17,8 @@ import (
 // four-step NOT NULL recipe).
 var ErrDownNotSupported = errors.New(
 	"migrate: down migrations are not supported — use the expand-contract recipe " +
-		"and the four-step NOT NULL promotion procedure documented in CLAUDE.md")
+		"and the four-step NOT NULL promotion procedure documented in CLAUDE.md",
+)
 
 // ErrOptionsDBNil / ErrOptionsMigrationsFSNil signal misuse of the
 // migrate.Options struct.
@@ -177,7 +178,8 @@ func runGoose(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	provider, err := goose.NewProvider(gooseDia, opts.DB, opts.MigrationsFS,
+	provider, err := goose.NewProvider(
+		gooseDia, opts.DB, opts.MigrationsFS,
 		goose.WithTableName("schema_migrations"),
 	)
 	if err != nil {
@@ -199,7 +201,8 @@ func goosePending(ctx context.Context, opts Options) (int, []int64, error) {
 		return 0, nil, err
 	}
 
-	provider, err := goose.NewProvider(gooseDia, opts.DB, opts.MigrationsFS,
+	provider, err := goose.NewProvider(
+		gooseDia, opts.DB, opts.MigrationsFS,
 		goose.WithTableName("schema_migrations"),
 	)
 	if err != nil {

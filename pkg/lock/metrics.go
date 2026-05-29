@@ -107,7 +107,8 @@ func RecordLockAcquisition(ctx context.Context, lockType, mode, result string) {
 		return
 	}
 
-	lockAcquisitionsTotal.Add(ctx, 1,
+	lockAcquisitionsTotal.Add(
+		ctx, 1,
 		metric.WithAttributes(
 			attribute.String("type", lockType),
 			attribute.String("mode", mode),
@@ -125,7 +126,8 @@ func RecordLockDuration(ctx context.Context, lockType, mode string, duration flo
 		return
 	}
 
-	lockHoldDuration.Record(ctx, duration,
+	lockHoldDuration.Record(
+		ctx, duration,
 		metric.WithAttributes(
 			attribute.String("type", lockType),
 			attribute.String("mode", mode),
@@ -142,7 +144,8 @@ func RecordLockFailure(ctx context.Context, lockType, mode, reason string) {
 		return
 	}
 
-	lockFailuresTotal.Add(ctx, 1,
+	lockFailuresTotal.Add(
+		ctx, 1,
 		metric.WithAttributes(
 			attribute.String("type", lockType),
 			attribute.String("mode", mode),
@@ -158,7 +161,8 @@ func RecordLockRetryAttempt(ctx context.Context, lockType string) {
 		return
 	}
 
-	lockRetryAttemptsTotal.Add(ctx, 1,
+	lockRetryAttemptsTotal.Add(
+		ctx, 1,
 		metric.WithAttributes(
 			attribute.String("type", lockType),
 		),

@@ -363,7 +363,7 @@ Deriver: test.drv
 				testServer := server.New(testCache)
 
 				// Request the narinfo via HTTP server
-				r := httptest.NewRequest(http.MethodGet, "/"+narInfoHash+".narinfo", nil)
+				r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/"+narInfoHash+".narinfo", nil)
 				w := httptest.NewRecorder()
 				testServer.ServeHTTP(w, r)
 
@@ -415,7 +415,7 @@ Deriver: test.drv
 			})
 
 			t.Run("narinfo does not exist upstream", func(t *testing.T) {
-				r := httptest.NewRequest(http.MethodGet, "/doesnotexist.narinfo", nil)
+				r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/doesnotexist.narinfo", nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -424,7 +424,8 @@ Deriver: test.drv
 			})
 
 			t.Run("narinfo exists upstream", func(t *testing.T) {
-				r := httptest.NewRequest(http.MethodGet, helper.NarInfoURLPath(testdata.Nar1.NarInfoHash), nil)
+				narInfoPath := helper.NarInfoURLPath(testdata.Nar1.NarInfoHash)
+				r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, narInfoPath, nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -458,7 +459,7 @@ Deriver: test.drv
 
 		t.Run("nar", func(t *testing.T) {
 			t.Run("nar does not exist upstream", func(t *testing.T) {
-				r := httptest.NewRequest(http.MethodGet, "/nar/doesnotexist.nar", nil)
+				r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/nar/doesnotexist.nar", nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -471,7 +472,7 @@ Deriver: test.drv
 				require.NoError(t, err)
 
 				nu := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
-				r := httptest.NewRequest(http.MethodGet, nu.JoinURL(u).String(), nil)
+				r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, nu.JoinURL(u).String(), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -498,7 +499,7 @@ Deriver: test.drv
 
 				nu := nar.URL{Hash: testdata.Nar2.NarHash, Compression: nar.CompressionTypeXz, Query: q}
 
-				r := httptest.NewRequest(http.MethodGet, nu.JoinURL(u).String(), nil)
+				r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, nu.JoinURL(u).String(), nil)
 				w := httptest.NewRecorder()
 
 				s.ServeHTTP(w, r)
@@ -645,7 +646,7 @@ Deriver: test.drv
 
 					assert.GreaterOrEqual(t, len(sigsStr), 1, "narinfo should have at least 1 signature")
 
-					var parsedSigs []signature.Signature
+					parsedSigs := make([]signature.Signature, 0, len(sigsStr))
 
 					for _, sigStr := range sigsStr {
 						sig, err := signature.ParseSignature(sigStr)
@@ -794,8 +795,8 @@ func TestGetNarInfo_Head(t *testing.T) {
 	s.SetPutPermitted(true)
 
 	// 1. Put a Nar into the cache.
-	req := httptest.NewRequest(
-		http.MethodPut,
+	req := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPut,
 		"/upload/nar/"+testdata.Nar1.NarHash+".nar.xz",
 		strings.NewReader(testdata.Nar1.NarText),
 	)
@@ -804,8 +805,8 @@ func TestGetNarInfo_Head(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	// 2. Put a NarInfo into the cache.
-	req = httptest.NewRequest(
-		http.MethodPut,
+	req = httptest.NewRequestWithContext(
+		t.Context(), http.MethodPut,
 		"/upload/"+testdata.Nar1.NarInfoHash+".narinfo",
 		strings.NewReader(testdata.Nar1.NarInfoText),
 	)
@@ -823,7 +824,7 @@ func TestGetNarInfo_Head(t *testing.T) {
 	assert.Equal(t, 1, count, "narinfo should be in the database after PUT")
 
 	// 3. Make a HEAD request for the NarInfo.
-	req = httptest.NewRequest(http.MethodHead, "/"+testdata.Nar1.NarInfoHash+".narinfo", nil)
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/"+testdata.Nar1.NarInfoHash+".narinfo", nil)
 	w = httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
@@ -941,7 +942,7 @@ func TestGetNar_ZstdCompression(t *testing.T) {
 	resp.Body.Close()
 
 	// 2. Request the NAR with Accept-Encoding: zstd
-	req = httptest.NewRequest(http.MethodGet, "/nar/"+narHash+".nar", nil)
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/nar/"+narHash+".nar", nil)
 	req.Header.Set("Accept-Encoding", "zstd")
 
 	w := httptest.NewRecorder()
@@ -1084,7 +1085,7 @@ func TestGetNar_ZstdCompression_Head(t *testing.T) {
 	resp.Body.Close()
 
 	// 2. Request the NAR with HEAD and Accept-Encoding: zstd
-	req = httptest.NewRequest(http.MethodHead, "/nar/"+narHash+".nar", nil)
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/nar/"+narHash+".nar", nil)
 	req.Header.Set("Accept-Encoding", "zstd")
 
 	w := httptest.NewRecorder()
@@ -1159,13 +1160,13 @@ func TestGetNar_HeaderSettingSequence(t *testing.T) {
 	narHash := "0000000000000000000000000000000000000000000000000004"
 	narURL := "/nar/" + narHash + ".nar"
 
-	req := httptest.NewRequest(http.MethodPut, "/upload"+narURL, strings.NewReader(narData))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/upload"+narURL, strings.NewReader(narData))
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusNoContent, w.Code)
 
 	t.Run("Content-Encoding header is set AFTER determining compression is used", func(t *testing.T) {
-		req = httptest.NewRequest(http.MethodGet, narURL, nil)
+		req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, narURL, nil)
 		req.Header.Set("Accept-Encoding", "zstd")
 
 		recorder := &responseWriterRecorder{
@@ -1214,7 +1215,8 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 	narHash := "0000000000000000000000000000000000000000000000000002"
 
 	putReq, err := http.NewRequestWithContext(
-		newContext(), http.MethodPut, ts.URL+"/upload/nar/"+narHash+".nar", strings.NewReader(narData))
+		newContext(), http.MethodPut, ts.URL+"/upload/nar/"+narHash+".nar", strings.NewReader(narData),
+	)
 	require.NoError(t, err)
 
 	putResp, err := ts.Client().Do(putReq)
@@ -1227,7 +1229,8 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 		t.Parallel()
 
 		req, err := http.NewRequestWithContext(
-			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil,
+		)
 		require.NoError(t, err)
 
 		req.Header.Set("Accept-Encoding", "br")
@@ -1251,7 +1254,8 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 		t.Parallel()
 
 		req, err := http.NewRequestWithContext(
-			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil,
+		)
 		require.NoError(t, err)
 
 		req.Header.Set("Accept-Encoding", "gzip")
@@ -1283,7 +1287,8 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 		t.Parallel()
 
 		req, err := http.NewRequestWithContext(
-			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil,
+		)
 		require.NoError(t, err)
 
 		req.Header.Set("Accept-Encoding", "gzip, zstd")
@@ -1305,7 +1310,8 @@ func TestGetNar_TransparentEncoding(t *testing.T) {
 		t.Parallel()
 
 		req, err := http.NewRequestWithContext(
-			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil)
+			newContext(), http.MethodGet, ts.URL+"/nar/"+narHash+".nar", nil,
+		)
 		require.NoError(t, err)
 
 		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
@@ -1371,7 +1377,7 @@ func TestGetNar_Base16Hash(t *testing.T) {
 	resp.Body.Close()
 
 	// 2. Request the NAR
-	req = httptest.NewRequest(http.MethodGet, "/nar/"+narHash+".nar", nil)
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/nar/"+narHash+".nar", nil)
 
 	w := httptest.NewRecorder()
 

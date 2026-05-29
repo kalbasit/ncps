@@ -182,7 +182,7 @@ func setupPostgresFactory(t *testing.T) (
 			sb.WriteString(part)
 
 			if i < len(parts)-1 {
-				sb.WriteString(fmt.Sprintf("$%d", i+1))
+				fmt.Fprintf(&sb, "$%d", i+1)
 			}
 		}
 
@@ -767,7 +767,7 @@ func testPutNarInfo(factory cacheFactory) func(*testing.T) {
 
 			assert.GreaterOrEqual(t, len(sigsStr), 2, "narinfo should have at least 2 signatures")
 
-			var parsedSigs []signature.Signature
+			parsedSigs := make([]signature.Signature, 0, len(sigsStr))
 
 			for _, sigStr := range sigsStr {
 				sig, err := signature.ParseSignature(sigStr)

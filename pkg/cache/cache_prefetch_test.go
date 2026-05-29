@@ -129,7 +129,7 @@ func TestPrefetchPipelineOrdering(t *testing.T) {
 	// Use a pattern that makes it easy to verify ordering
 	var contentBuilder strings.Builder
 	for i := range 10 {
-		contentBuilder.WriteString(fmt.Sprintf("CHUNK_%02d_", i))
+		fmt.Fprintf(&contentBuilder, "CHUNK_%02d_", i)
 		contentBuilder.WriteString(strings.Repeat("X", 500))
 	}
 
@@ -286,7 +286,8 @@ func TestPrefetchContextCancellation(t *testing.T) {
 	// Check for goroutine leaks. We expect the number of goroutines back to baseline.
 	// We allow a small tolerance if needed, but here it should be exact.
 	finalGoroutines := runtime.NumGoroutine()
-	assert.LessOrEqual(t,
+	assert.LessOrEqual(
+		t,
 		finalGoroutines,
 		initialGoroutines+2,
 		"should not leak many goroutines (allowing for test infrastructure)",

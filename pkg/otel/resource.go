@@ -17,10 +17,8 @@ func NewResource(
 	schemaURL string,
 	extraAttrs ...attribute.KeyValue,
 ) (*resource.Resource, error) {
-	attrs := []attribute.KeyValue{
-		semconv.ServiceName(serviceName),
-		semconv.ServiceVersionKey.String(serviceVersion),
-	}
+	attrs := make([]attribute.KeyValue, 0, 2+len(extraAttrs))
+	attrs = append(attrs, semconv.ServiceName(serviceName), semconv.ServiceVersionKey.String(serviceVersion))
 	attrs = append(attrs, extraAttrs...)
 
 	return resource.New(
