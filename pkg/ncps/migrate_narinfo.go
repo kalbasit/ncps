@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
 	"github.com/kalbasit/ncps/pkg/cache"
 	"github.com/kalbasit/ncps/pkg/otel"

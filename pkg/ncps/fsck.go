@@ -27,7 +27,7 @@ import (
 	entnarfilechunk "github.com/kalbasit/ncps/ent/narfilechunk"
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 	entnarinfonarfile "github.com/kalbasit/ncps/ent/narinfonarfile"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
 	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/config"
