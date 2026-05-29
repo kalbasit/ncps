@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"entgo.io/ent/dialect"
 	"github.com/pressly/goose/v3/database"
 
 	entsql "entgo.io/ent/dialect/sql"
@@ -43,7 +42,7 @@ func freshInstall(
 	d ncpsdb.Type,
 	migrationsFS fs.FS,
 ) error {
-	entDialect, err := entDialectFor(d)
+	entDialect, err := ncpsdb.EntDialectFor(d)
 	if err != nil {
 		return err
 	}
@@ -76,7 +75,7 @@ func freshInstall(
 	// 2. Use goose's own store to create schema_migrations + insert
 	//    versions. Going through goose's API guarantees the table
 	//    shape exactly matches what goose subsequently expects.
-	gooseDia, err := gooseStoreDialectFor(d)
+	gooseDia, err := gooseDialectFor(d)
 	if err != nil {
 		return err
 	}
@@ -111,39 +110,6 @@ func freshInstall(
 	}
 
 	return nil
-}
-
-// entDialectFor maps ncps's dialect enum to ent's dialect string.
-func entDialectFor(d ncpsdb.Type) (string, error) {
-	switch d {
-	case ncpsdb.TypeSQLite:
-		return dialect.SQLite, nil
-	case ncpsdb.TypePostgreSQL:
-		return dialect.Postgres, nil
-	case ncpsdb.TypeMySQL:
-		return dialect.MySQL, nil
-	case ncpsdb.TypeUnknown:
-		fallthrough
-	default:
-		return "", fmt.Errorf("entDialectFor: %w %v", ErrUnknownDialect, d)
-	}
-}
-
-// gooseStoreDialectFor maps ncps's dialect enum to goose's database
-// dialect identifier (the one used by `database.NewStore`).
-func gooseStoreDialectFor(d ncpsdb.Type) (database.Dialect, error) {
-	switch d {
-	case ncpsdb.TypeSQLite:
-		return database.DialectSQLite3, nil
-	case ncpsdb.TypePostgreSQL:
-		return database.DialectPostgres, nil
-	case ncpsdb.TypeMySQL:
-		return database.DialectMySQL, nil
-	case ncpsdb.TypeUnknown:
-		fallthrough
-	default:
-		return "", fmt.Errorf("gooseStoreDialectFor: %w %v", ErrUnknownDialect, d)
-	}
 }
 
 // listEmbeddedVersions walks the dialect-specific sub-FS and returns the
