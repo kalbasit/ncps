@@ -329,23 +329,33 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	return nil
 }
 
-// HasNar returns true if the store has the nar.
+// HasNar returns true if the store has the nar. Any error (confirmed absence or
+// an undeterminable stat) collapses to false; use StatNar to distinguish them.
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
+	present, _ := s.StatNar(ctx, narURL)
+
+	return present
+}
+
+// StatNar reports whether the store has the nar, distinguishing a confirmed
+// absence (false, nil) from an undeterminable result (false, err). See the
+// storage.NarStore interface for the contract.
+func (s *Store) StatNar(ctx context.Context, narURL nar.URL) (bool, error) {
 	normalizedURL, err := narURL.Normalize()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("error normalizing the nar URL: %w", err)
 	}
 
 	tfp, err := normalizedURL.ToFilePath()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("error computing the nar file path: %w", err)
 	}
 
 	narPath := filepath.Join(s.storeNarPath(), tfp)
 
 	_, span := tracer.Start(
 		ctx,
-		"local.HasNar",
+		"local.StatNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
@@ -354,9 +364,17 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	)
 	defer span.End()
 
-	_, err = os.Stat(narPath)
+	if _, err := os.Stat(narPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
 
-	return err == nil
+		// Any other error (permission, I/O timeout, stale NFS handle) means we
+		// could not determine presence — surface it instead of claiming absence.
+		return false, fmt.Errorf("error stating the nar file: %w", err)
+	}
+
+	return true, nil
 }
 
 // GetNar returns nar from the store.

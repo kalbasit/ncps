@@ -411,6 +411,14 @@ func serveCommand(
 				Sources: flagSources("cache.download.poll-timeout", "CACHE_DOWNLOAD_POLL_TIMEOUT"),
 				Value:   30 * time.Second,
 			},
+			&cli.DurationFlag{
+				Name: "cache-cdc-chunk-wait-timeout",
+				Usage: "Max time progressive CDC streaming waits for the next chunk before failing the " +
+					"transfer. Keep it below your reverse-proxy gateway timeout so a stalled chunk on " +
+					"high-latency storage surfaces as a retryable error instead of a gateway 504.",
+				Sources: flagSources("cache.cdc.chunk-wait-timeout", "CACHE_CDC_CHUNK_WAIT_TIMEOUT"),
+				Value:   30 * time.Second,
+			},
 			&cli.IntFlag{
 				Name:    flagNameLockMaxRetries,
 				Usage:   flagUsageLockMaxRetries,
@@ -1092,6 +1100,8 @@ func createCache(
 	if err := c.SetCDCConfiguration(cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
 		return nil, fmt.Errorf("error configuring CDC: %w", err)
 	}
+
+	c.SetChunkWaitTimeout(cmd.Duration("cache-cdc-chunk-wait-timeout"))
 
 	// Configure lazy chunking
 	cdcLazyChunkingEnabled := cmd.Bool("cache-cdc-lazy-chunking-enabled")

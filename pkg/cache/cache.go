@@ -439,6 +439,12 @@ type Cache struct {
 	downloadPollTimeout time.Duration
 	cacheLockTTL        time.Duration
 
+	// chunkWaitTimeout bounds how long progressive CDC streaming waits for the
+	// next chunk to be produced/become readable before treating the transfer as
+	// failed. Defaults to defaultChunkWaitTimeout; operators on high-latency
+	// storage can raise or lower it (and align it with their gateway timeout).
+	chunkWaitTimeout time.Duration
+
 	// upstreamJobs is used to store in-progress jobs for pulling nars from
 	// upstream cache so incoming requests for the same nar can find and wait
 	// for jobs. Protected by upstreamJobsMu for local synchronization.
@@ -626,6 +632,7 @@ func New(
 		downloadLockTTL:      downloadLockTTL,
 		downloadPollTimeout:  downloadPollTimeout,
 		cacheLockTTL:         cacheLockTTL,
+		chunkWaitTimeout:     defaultChunkWaitTimeout,
 		upstreamJobs:         make(map[string]*downloadState),
 		upstreamCaches:       make([]*upstream.Cache, 0),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
@@ -3893,17 +3900,33 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
 func (c *Cache) HasNarInStore(ctx context.Context, narURL nar.URL) bool {
+	present, _ := c.statNarInStore(ctx, narURL)
+
+	return present
+}
+
+// statNarInStore reports whether the NAR is in storage, distinguishing a
+// confirmed absence (false, nil) from an undeterminable result (false, err).
+// Decision paths that must not treat an ambiguous storage error as "absent"
+// (e.g. before purging a narinfo) MUST use this instead of HasNarInStore.
+func (c *Cache) statNarInStore(ctx context.Context, narURL nar.URL) (bool, error) {
 	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
 	if narURL.Compression == nar.CompressionTypeNone {
 		zstdURL := narURL
 
 		zstdURL.Compression = nar.CompressionTypeZstd
-		if c.narStore.HasNar(ctx, zstdURL) {
-			return true
+
+		present, err := c.narStore.StatNar(ctx, zstdURL)
+		if err != nil {
+			return false, err
+		}
+
+		if present {
+			return true, nil
 		}
 	}
 
-	return c.narStore.HasNar(ctx, narURL)
+	return c.narStore.StatNar(ctx, narURL)
 }
 
 func (c *Cache) signNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error {
@@ -3980,17 +4003,18 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		NewLogger(*zerolog.Ctx(ctx)).
 		WithContext(ctx)
 
-	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
-	hasNarInStore := false
+	// Verify the NAR exists in storage. Use statNarInStore (which also handles the
+	// .nar.zst fallback for Compression:none) so an ambiguous storage error — a
+	// timed-out or stale stat on a network filesystem — is NOT mistaken for a
+	// confirmed absence and does not drive a destructive purge.
+	hasNarInStore, storeErr := c.statNarInStore(ctx, narURL)
+	if storeErr != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(storeErr).
+			Msg("ambiguous storage error checking nar presence, skipping purge")
 
-	if narURL.Compression == nar.CompressionTypeNone {
-		zstdURL := narURL
-		zstdURL.Compression = nar.CompressionTypeZstd
-		hasNarInStore = c.narStore.HasNar(ctx, zstdURL)
-	}
-
-	if !hasNarInStore {
-		hasNarInStore = c.narStore.HasNar(ctx, narURL)
+		return ni, nil
 	}
 
 	if !hasNarInStore && !c.hasUpstreamJob(narURL.Hash) {
@@ -4197,10 +4221,24 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 
 	// Check if this narinfo should be purged
 	if !hasNar && !isBeingDownloadedLocally && !isBeingDownloadedRemotely { //nolint:nestif // deferred
-		// Double-check HasNarInStore to close the TOCTOU window: if the NAR download
-		// completed (os.Rename) between the initial HasNarInStore check and hasUpstreamJob
+		// Double-check store presence to close the TOCTOU window: if the NAR download
+		// completed (os.Rename) between the initial check and hasUpstreamJob
 		// returning false (job removed after os.Rename), the NAR is already on disk.
-		hasNar = c.HasNarInStore(ctx, *narURL)
+		// Use statNarInStore (not HasNarInStore) so an ambiguous storage error — a
+		// timed-out or stale stat on a network filesystem — is NOT mistaken for a
+		// confirmed absence and does not drive a destructive purge.
+		var storeErr error
+
+		hasNar, storeErr = c.statNarInStore(ctx, *narURL)
+		if storeErr != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(storeErr).
+				Msg("ambiguous storage error checking nar presence, skipping purge")
+
+			return ni, nil
+		}
+
 		if !hasNar {
 			var recheckErr error
 
@@ -7177,13 +7215,42 @@ func (c *Cache) streamChunksWithPrefetch(ctx context.Context, w io.Writer, chunk
 	return nil
 }
 
+// defaultChunkWaitTimeout is the default bound on how long progressive CDC
+// streaming waits for the next chunk before treating the transfer as failed.
+// It is intentionally below common reverse-proxy gateway timeouts so a stalled
+// chunk surfaces as a retryable error rather than a gateway 504.
+const defaultChunkWaitTimeout = 30 * time.Second
+
+// SetChunkWaitTimeout overrides the per-chunk wait bound used by progressive CDC
+// streaming. A non-positive value resets it to defaultChunkWaitTimeout. Operators
+// on high-latency storage can raise it; those behind a short gateway timeout can
+// lower it to fail fast and let the client retry.
+func (c *Cache) SetChunkWaitTimeout(d time.Duration) {
+	if d <= 0 {
+		d = defaultChunkWaitTimeout
+	}
+
+	// Guard with cdcMu (the same mutex protecting the other CDC config) so a
+	// concurrent reader in streamProgressiveChunks never sees a torn write.
+	c.cdcMu.Lock()
+	c.chunkWaitTimeout = d
+	c.cdcMu.Unlock()
+}
+
 // streamProgressiveChunks streams chunks as they become available during an in-progress chunking operation.
 // This allows concurrent downloads while another instance is still chunking the NAR.
 // It uses a batch query to fetch multiple available chunks at once, eliminating per-chunk
 // poll latency when chunks are already created. Only polls (200ms) when no new chunks are available yet.
 func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64, raw bool) error {
 	pollInterval := 200 * time.Millisecond
-	maxWaitPerChunk := 30 * time.Second
+
+	c.cdcMu.RLock()
+	maxWaitPerChunk := c.chunkWaitTimeout
+	c.cdcMu.RUnlock()
+
+	if maxWaitPerChunk <= 0 {
+		maxWaitPerChunk = defaultChunkWaitTimeout
+	}
 
 	chunkChan := make(chan *prefetchedChunk, prefetchBufferSize)
 

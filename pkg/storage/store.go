@@ -63,7 +63,21 @@ type NarInfoStore interface {
 // NarStore represents a store capable of storing nars.
 type NarStore interface {
 	// HasNar returns true if the store has the nar.
+	//
+	// HasNar collapses every failure mode into false: a confirmed absence and an
+	// undeterminable result (e.g. a timed-out or stale stat on a network
+	// filesystem) are indistinguishable. Callers that must not treat "could not
+	// determine" as "absent" — e.g. before a destructive purge — MUST use StatNar.
 	HasNar(ctx context.Context, narURL nar.URL) bool
+
+	// StatNar reports whether the store has the nar, distinguishing a confirmed
+	// absence from an undeterminable result:
+	//   - (true, nil):  the nar is present.
+	//   - (false, nil): the nar is confirmed absent (e.g. ENOENT / NoSuchKey).
+	//   - (false, err): presence could not be determined (transient/ambiguous
+	//                   error such as an I/O timeout or a stale NFS handle).
+	// Callers MUST NOT treat the (false, err) case as a confirmed absence.
+	StatNar(ctx context.Context, narURL nar.URL) (bool, error)
 
 	// GetNar returns nar from the store.
 	// NOTE: The caller must close the returned io.ReadCloser!
