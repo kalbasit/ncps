@@ -199,6 +199,11 @@ config:
     # Use @every X format (e.g., @every 1h, @every 30m) or standard cron expressions
     lazyCleanupSchedule: "@every 1h"
 
+    # Maximum time to wait for a single chunk during progressive CDC streaming (default: 30s)
+    # Set this to align with your reverse-proxy/gateway timeout on high-latency storage,
+    # avoiding spurious 504s. Leave null to use the server default (30s).
+    chunkWaitTimeout: null
+
     # Bypass flag for HA validation without CDC
     # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
     # See https://github.com/kalbasit/ncps/issues/660 for more details.

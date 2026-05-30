@@ -106,6 +106,25 @@ tests:
           path: data["config.yaml"]
           pattern: 'delete-delay: "48h"'
 
+  - it: should configure CDC chunk wait timeout when set
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+      config.cdc.chunkWaitTimeout: 60s
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'chunk-wait-timeout: "60s"'
+
+  - it: should omit CDC chunk wait timeout when unset
+    set:
+      config.hostname: test.example.com
+      config.cdc.enabled: true
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "chunk-wait-timeout:"
+
   - it: should enable analytics reporting by default
     set:
       config.hostname: test.example.com

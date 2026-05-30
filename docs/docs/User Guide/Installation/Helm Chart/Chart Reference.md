@@ -185,6 +185,7 @@ Configuration for the temporary directory used for downloads and transient opera
 | `config.cdc.lazyChunkingEnabled` | Enable lazy chunking (store compressed NAR first, chunk in background) | `false` |
 | `config.cdc.backgroundWorkers` | Number of background workers for lazy chunking | `null` (server default: number of CPUs) |
 | `config.cdc.deleteDelay` | Delay before deleting compressed NAR files after chunking completes | `24h` |
+| `config.cdc.chunkWaitTimeout` | Maximum time to wait for a single chunk during progressive CDC streaming. Align with your gateway timeout on high-latency storage. | `null` (server default: `30s`) |
 | `config.cdc.iLoveTimeouts` | Bypass flag for HA validation without CDC | `false` |
 
 ### Database Configuration
