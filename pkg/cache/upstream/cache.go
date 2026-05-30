@@ -33,6 +33,12 @@ const (
 	defaultHTTPTimeout = 3 * time.Second
 
 	defaultHTTPRetries = 3
+
+	// defaultRetryBackoff is the base delay before the first transient-error
+	// retry; it doubles per attempt up to defaultRetryBackoffCap. This avoids
+	// hammering an upstream that is brown-out failing.
+	defaultRetryBackoff    = 100 * time.Millisecond
+	defaultRetryBackoffCap = 2 * time.Second
 )
 
 var (
@@ -82,6 +88,9 @@ type Cache struct {
 
 	dialerTimeout         time.Duration
 	responseHeaderTimeout time.Duration
+
+	retryBackoff    time.Duration
+	retryBackoffCap time.Duration
 }
 
 // NetrcCredentials holds authentication credentials.
@@ -111,6 +120,11 @@ type Options struct {
 	// Transport is the HTTP transport to use.
 	// If nil, a default transport will be created.
 	Transport http.RoundTripper
+
+	// RetryBackoff is the base delay before the first transient-error retry on
+	// idempotent requests; it doubles per attempt up to an internal cap. If zero,
+	// defaults to defaultRetryBackoff. Set a small value in tests to keep them fast.
+	RetryBackoff time.Duration
 }
 
 // New creates a new upstream cache with the given URL and options.
@@ -136,10 +150,17 @@ func New(ctx context.Context, u *url.URL, opts *Options) (*Cache, error) {
 		responseHeaderTimeout = opts.ResponseHeaderTimeout
 	}
 
+	retryBackoff := defaultRetryBackoff
+	if opts.RetryBackoff > 0 {
+		retryBackoff = opts.RetryBackoff
+	}
+
 	c := &Cache{
 		url:                   u,
 		dialerTimeout:         dialerTimeout,
 		responseHeaderTimeout: responseHeaderTimeout,
+		retryBackoff:          retryBackoff,
+		retryBackoffCap:       defaultRetryBackoffCap,
 		httpClient: &http.Client{
 			Transport: opts.Transport,
 		},
@@ -281,6 +302,37 @@ func isRetriableTransportError(err error) bool {
 	return false
 }
 
+// waitRetryBackoff sleeps for the capped exponential backoff for the given
+// zero-based attempt before the next retry, returning early with the context
+// error if the context is cancelled during the wait. A non-positive base
+// disables the delay but still honours cancellation.
+func (c *Cache) waitRetryBackoff(ctx context.Context, attempt int) error {
+	base := c.retryBackoff
+	if base <= 0 {
+		return ctx.Err()
+	}
+
+	// base * 2^attempt, capped (and guarded against shift overflow).
+	delay := base
+	for n := 0; n < attempt && delay < c.retryBackoffCap; n++ {
+		delay *= 2
+	}
+
+	if delay > c.retryBackoffCap {
+		delay = c.retryBackoffCap
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // doRequest creates and executes an HTTP request with authentication.
 // The caller is responsible for closing the response body.
 func (c *Cache) doRequest(
@@ -316,6 +368,12 @@ func (c *Cache) doRequest(
 					Int("attempt", i+1).
 					Int("max_retries", defaultHTTPRetries).
 					Msg("transient transport error from upstream, retrying request")
+
+				// Back off before retrying so a brown-out upstream is not
+				// hammered. Abort promptly if the context is cancelled.
+				if waitErr := c.waitRetryBackoff(ctx, i); waitErr != nil {
+					return nil, waitErr
+				}
 
 				continue
 			}

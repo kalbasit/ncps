@@ -16,10 +16,10 @@
 
 ## 3. Bounded backoff for upstream transient retries (upstream-fetch-resilience)
 
-- [ ] 3.1 Write a failing test: a GET that fails repeatedly with a transient transport error is retried with a measurable, capped backoff between attempts (not immediate), bounded in count.
-- [ ] 3.2 Implement capped backoff in `upstream.doRequest` between transient retries (gated on `isRetriableTransportError`, applies to GOAWAY too), respecting `ctx` cancellation. Make 3.1 pass.
-- [ ] 3.3 Write a test: cancelling the context during a backoff wait returns promptly with the context error.
-- [ ] 3.4 Confirm a genuine 404 is still not retried and incurs no backoff (extend the existing not-retried test).
+- [x] 3.1 Write a failing test: a GET that fails repeatedly with a transient transport error is retried with a measurable, capped backoff between attempts (not immediate), bounded in count. (`TestDoRequest_RetriesUseBackoff`)
+- [x] 3.2 Implement capped backoff in `upstream.doRequest` between transient retries (gated on `isRetriableTransportError`, applies to GOAWAY too), respecting `ctx` cancellation. (`waitRetryBackoff`; base/cap via `defaultRetryBackoff*`, override `Options.RetryBackoff`.)
+- [x] 3.3 Write a test: cancelling the context during a backoff wait returns promptly with the context error. (`TestDoRequest_BackoffRespectsContextCancellation`)
+- [x] 3.4 Confirm a genuine 404 is still not retried and incurs no backoff: 404 returns a response (not a transport error), so `waitRetryBackoff` is never reached. (Covered by `TestDoRequest_GenuineNotFoundIsNotRetried`.)
 
 ## 4. Verify & finalize
 
