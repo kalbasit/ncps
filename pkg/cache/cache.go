@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	entchunk "github.com/kalbasit/ncps/ent/chunk"
+	entconfigentry "github.com/kalbasit/ncps/ent/configentry"
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
 	entnarfilechunk "github.com/kalbasit/ncps/ent/narfilechunk"
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
@@ -6430,17 +6432,13 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 	}
 }
 
+// cdcRecoveryCursorKey is the config-table key under which the CDC lazy-recovery
+// keyset cursor is persisted, so the scan resumes across restarts and lock handoffs
+// instead of restarting at 0 (which would let a low-id backlog starve higher-id rows).
+const cdcRecoveryCursorKey = "cdc_lazy_recovery_cursor"
+
 // runCDCLazyRecovery runs the CDC lazy recovery job to recover stuck NAR files.
 func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, batchSize int) func() {
-	// cursorID is a keyset cursor over nar_files.id that persists across cron
-	// invocations (the returned closure is scheduled once). Each run resumes after
-	// the highest id it examined last time and resets to 0 once it reaches the end.
-	// Backing-less rows are skipped without being mutated, so without this cursor a
-	// backlog of them at the low end of the id space (e.g. the failed-download
-	// placeholders this job exists to tolerate) would fill every batchSize-limited
-	// snapshot and permanently starve genuinely re-drivable rows with higher ids.
-	var cursorID int
-
 	return func() {
 		startTime := time.Now()
 
@@ -6470,6 +6468,13 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 				batchSize = math.MaxInt32
 			}
 
+			// Resume the keyset scan from the persisted cursor so progress survives
+			// restarts and lock handoffs to other instances; a per-process cursor would
+			// restart at 0 and let a low-id backlog (e.g. failed-download placeholders)
+			// starve genuinely re-drivable higher-id rows. Backing-less rows are skipped
+			// without mutation, so this cursor is the only thing advancing past them.
+			cursorID := c.loadRecoveryCursor(ctx)
+
 			stuckFiles, err := c.dbClient.Ent().NarFile.Query().
 				Where(
 					entnarfile.TotalChunksEQ(0),
@@ -6491,6 +6496,7 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 				// the cursor); wrap back to the start so the next run rescans from the
 				// beginning and picks up newly-stuck rows.
 				cursorID = 0
+				c.saveRecoveryCursor(ctx, cursorID)
 
 				log.Debug().Msg("no stuck NAR files found for recovery")
 
@@ -6504,6 +6510,8 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			if len(stuckFiles) < batchSize {
 				cursorID = 0
 			}
+
+			c.saveRecoveryCursor(ctx, cursorID)
 
 			log.Info().Int("count", len(stuckFiles)).Msg("found stuck NAR files for recovery")
 
@@ -6561,31 +6569,101 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 	}
 }
 
+// loadRecoveryCursor reads the persisted CDC lazy-recovery keyset cursor, returning 0
+// (start of scan) when it is unset or unreadable.
+func (c *Cache) loadRecoveryCursor(ctx context.Context) int {
+	e, err := c.dbClient.Ent().ConfigEntry.Query().
+		Where(entconfigentry.KeyEQ(cdcRecoveryCursorKey)).
+		Only(ctx)
+	if err != nil {
+		// A missing entry is expected (first run / after a wrap to 0). Any other
+		// error (transient DB issue, lock) resets the scan to 0, which can revive the
+		// low-id starvation this cursor prevents, so surface it for diagnosis.
+		if !database.IsNotFoundError(err) {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to load CDC lazy-recovery cursor; resuming from 0")
+		}
+
+		return 0
+	}
+
+	id, err := strconv.Atoi(e.Value)
+	if err != nil || id < 0 {
+		return 0
+	}
+
+	return id
+}
+
+// saveRecoveryCursor persists the CDC lazy-recovery keyset cursor. The
+// cdc-lazy-recovery distributed lock serializes sweeps, so a plain upsert suffices. A
+// failure is non-fatal: the next sweep simply resumes from the last persisted value.
+func (c *Cache) saveRecoveryCursor(ctx context.Context, cursorID int) {
+	value := strconv.Itoa(cursorID)
+
+	if err := c.dbClient.Ent().ConfigEntry.Create().
+		SetKey(cdcRecoveryCursorKey).
+		SetValue(value).
+		OnConflictColumns(entconfigentry.FieldKey).
+		Update(func(u *ent.ConfigEntryUpsert) {
+			u.SetValue(value)
+			u.SetUpdatedAt(time.Now())
+		}).
+		Exec(ctx); err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to persist CDC lazy-recovery cursor")
+	}
+}
+
 // gcOrSkipBackingLessNarFile handles a stuck nar_file row that has no whole-file in
 // the store (a placeholder that migration cannot help). If the NAR is provably gone
 // from every healthy upstream, the row is garbage-collected so it stops being
 // re-scanned every sweep; on-delete cascades clean up its narinfo_nar_files and
 // nar_file_chunks links. Otherwise the row is left for on-demand GetNar recovery.
 func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, narURL nar.URL, log *zerolog.Logger) {
-	// The narinfo path is unambiguous to probe (unlike the CDC-normalized NAR path),
-	// so resolve the narinfo linked to this nar_file by its URL.
-	ni, err := c.dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.URL(narURL.String())).
-		First(ctx)
+	// Resolve every narinfo linked to this nar_file via the narinfo_nar_files relation
+	// (the source of truth for linkage; URL equality is narrower and can miss links).
+	// Several store paths can reference the same NAR, so every linked narinfo must be
+	// genuinely gone upstream before we delete the row — otherwise an active store path
+	// would lose its NAR.
+	nis, err := c.dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileID(narFileID))).
+		All(ctx)
 	if err != nil {
 		log.Debug().
+			Err(err).
 			Str("hash", narURL.Hash).
-			Msg("skipping backing-less stuck NAR file (no narinfo to verify upstream absence)")
+			Msg("skipping backing-less stuck NAR file (failed to query linked narinfos)")
 
 		return
 	}
 
-	if !c.narInfoGenuinelyAbsentUpstream(ctx, ni.Hash) {
-		log.Debug().
+	// An orphan with no linked narinfo can never be resolved or served, so it is dead
+	// weight that would be re-scanned forever; garbage-collect it outright. A later
+	// request re-creates it on demand.
+	if len(nis) == 0 {
+		if err := c.dbClient.Ent().NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
+			log.Warn().
+				Err(err).
+				Str("hash", narURL.Hash).
+				Msg("failed to garbage-collect orphaned placeholder nar_file")
+
+			return
+		}
+
+		log.Info().
 			Str("hash", narURL.Hash).
-			Msg("skipping backing-less stuck NAR file (still present or unverifiable upstream)")
+			Msg("garbage-collected orphaned placeholder nar_file (no linked narinfo)")
 
 		return
+	}
+
+	for _, ni := range nis {
+		if !c.narInfoGenuinelyAbsentUpstream(ctx, ni.Hash) {
+			log.Debug().
+				Str("hash", narURL.Hash).
+				Msg("skipping backing-less stuck NAR file (still present or unverifiable upstream)")
+
+			return
+		}
 	}
 
 	if err := c.dbClient.Ent().NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
@@ -6599,7 +6677,7 @@ func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, n
 
 	log.Info().
 		Str("hash", narURL.Hash).
-		Str("narinfo_hash", ni.Hash).
+		Int("narinfo_count", len(nis)).
 		Msg("garbage-collected genuinely-absent placeholder nar_file")
 }
 

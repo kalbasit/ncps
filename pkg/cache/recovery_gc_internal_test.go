@@ -64,7 +64,7 @@ func (f *gcTestFixture) seedBackingLessRow(t *testing.T, narHash, narInfoHash st
 
 	narURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone}
 
-	_, err := f.c.dbClient.Ent().NarFile.Create().
+	nf, err := f.c.dbClient.Ent().NarFile.Create().
 		SetHash(narHash).
 		SetCompression(nar.CompressionTypeNone.String()).
 		SetQuery("").
@@ -72,11 +72,18 @@ func (f *gcTestFixture) seedBackingLessRow(t *testing.T, narHash, narInfoHash st
 		Save(f.ctx)
 	require.NoError(t, err)
 
-	_, err = f.c.dbClient.Ent().NarInfo.Create().
+	ni, err := f.c.dbClient.Ent().NarInfo.Create().
 		SetHash(narInfoHash).
 		SetURL(narURL.String()).
 		Save(f.ctx)
 	require.NoError(t, err)
+
+	// Link the narinfo to the nar_file via narinfo_nar_files (the relation the GC
+	// resolves through), mirroring how storeInDatabase wires them.
+	require.NoError(t, f.c.dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(ni.ID).
+		SetNarFileID(nf.ID).
+		Exec(f.ctx))
 
 	if old {
 		_, err = f.db.DB().ExecContext(f.ctx,
