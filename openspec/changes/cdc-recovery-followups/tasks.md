@@ -10,9 +10,9 @@
 
 ## 2. Progressive-streaming abort/stall regression test (nar-concurrent-streaming)
 
-- [ ] 2.1 Add a test driving `streamProgressiveChunks`/`getNarFromChunks` into the aborted state (`total_chunks=0 && chunking_started_at==NULL`): assert an error is surfaced and no short body is closed as a successful 200.
-- [ ] 2.2 Add a test for the stalled-producer state (no progress past `cdcChunkingLockTTL`, NAR not otherwise present): assert the streaming path surfaces an error rather than completing the response.
-- [ ] 2.3 If either test reveals a real gap (a truncated 200 actually escapes), fix the streaming path; otherwise the tests stand as pure regression guards (no production change).
+- [x] 2.1 Add a test driving `streamProgressiveChunks`/`getNarFromChunks` into the aborted state (`total_chunks=0 && chunking_started_at==NULL`): assert an error is surfaced and no short body. (`TestGetNarFromChunks_AbortedChunkingErrorsNotShortBody` — passed unchanged; characterization guard.)
+- [x] 2.2 Add a test for the stalled-producer state (`chunking_started_at` older than `cdcChunkingLockTTL`, `total_chunks=0`, no chunks): assert the streaming path surfaces an error rather than blocking. (`TestGetNarFromChunks_StalledChunkingFailsFast`.)
+- [x] 2.3 Real gap found and fixed: `streamProgressiveChunks` only failed a stalled stream after the 30s per-chunk timeout. Added a stale-lock fast-fail (`time.Since(chunking_started_at) > cdcChunkingLockTTL → ErrNotFound`) at both the initial and wait-loop record checks, so a dead producer fails in ~200ms instead of 30s.
 
 ## 3. Bounded backoff for upstream transient retries (upstream-fetch-resilience)
 

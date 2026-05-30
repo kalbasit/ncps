@@ -7153,6 +7153,16 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 					return
 				}
+
+				// A non-NULL but stale chunking_started_at means the producing job died
+				// without clearing the lock. Fail fast rather than waiting the full
+				// per-chunk timeout for chunks that will never arrive.
+				if totalChunks == 0 && nr.ChunkingStartedAt != nil &&
+					time.Since(*nr.ChunkingStartedAt) > cdcChunkingLockTTL {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking stalled (stale lock): %w", storage.ErrNotFound)}
+
+					return
+				}
 			}
 
 			// Check if we're already done (batch returned empty after total is known).
@@ -7261,6 +7271,14 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 				if nr2.ChunkingStartedAt == nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
+
+					return
+				}
+
+				// Lock went stale while we were waiting: the producer died without
+				// clearing it. Fail fast instead of waiting out maxWaitPerChunk.
+				if time.Since(*nr2.ChunkingStartedAt) > cdcChunkingLockTTL {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking stalled (stale lock): %w", storage.ErrNotFound)}
 
 					return
 				}
