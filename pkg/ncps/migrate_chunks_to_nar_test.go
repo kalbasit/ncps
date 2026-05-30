@@ -107,12 +107,33 @@ func TestMigrateChunksToNar_CLI_Success(t *testing.T) {
 		"--cache-storage-local", dir,
 	}))
 
-	assert.Zero(t, countChunks(ctx, t, dbClient), "all chunks of the only NAR should be reclaimed")
-
 	var totalChunks int
 	require.NoError(t, dbClient.DB().QueryRowContext(ctx,
 		"SELECT total_chunks FROM nar_files WHERE hash = ?", testdata.Nar1.NarHash).Scan(&totalChunks))
 	assert.Zero(t, totalChunks, "nar_file should be flipped to whole-file")
+	assert.Positive(t, countChunks(ctx, t, dbClient),
+		"the default run leaves now-orphaned chunks for the GC (no --force-reclaim)")
+}
+
+func TestMigrateChunksToNar_CLI_ForceReclaim(t *testing.T) {
+	t.Parallel()
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+	dbClient, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+	configureCDCInDatabase(ctx, t, dbClient)
+
+	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
+	fixupNarHash(ctx, t, dbClient)
+
+	require.NoError(t, app.Run(ctx, []string{
+		"ncps", "migrate-chunks-to-nar",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+		"--force-reclaim",
+	}))
+
+	assert.Zero(t, countChunks(ctx, t, dbClient), "--force-reclaim must reclaim the now-orphaned chunks")
 }
 
 func TestMigrateChunksToNar_CLI_DryRunMakesNoChanges(t *testing.T) {

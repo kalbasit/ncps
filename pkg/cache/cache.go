@@ -7537,21 +7537,27 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 	return nil
 }
 
-// MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
-// narURL is taken by pointer because storeNarWithCDC normalizes compression to "none".
 // MigrateChunksToNar is the reverse of MigrateNarToChunks: it reconstructs a
 // CDC-chunked NAR into a whole file so a deployment can exit CDC. It reconstructs
 // the NAR from its chunks, verifies the assembled bytes against the linked
-// narinfo's recorded NarHash (and size), and writes the whole file to the NAR
-// store. It does NOT mutate the nar_file record or delete chunks (that is handled
-// by later, destructive steps) — write-first ordering keeps an interrupted run
-// recoverable.
+// narinfo's recorded NarHash (and size), writes the whole file to the NAR store
+// via narStore.PutNar, then flips the nar_file record to the whole-file
+// representation (total_chunks=0, chunk links removed). The write-then-flip
+// ordering keeps an interrupted run recoverable.
+//
+// Orphaned chunks (no longer referenced by any nar_file) are NOT deleted by
+// default: an in-flight chunk-serve that started before the flip may still be
+// reading chunk files, and deleting them mid-stream would truncate that transfer.
+// They are left for the regular GC to reclaim. When forceReclaim is true the
+// caller asserts traffic is drained (e.g. a maintenance-window run), and orphaned
+// chunks are reclaimed immediately and dedup-safely (chunks still referenced by
+// another nar_file are retained).
 //
 // It returns ErrNarAlreadyWholeFile when there is nothing chunked to migrate,
 // ErrNoNarHashToVerify when the linked narinfo lacks a NarHash (the NAR is left
 // chunked rather than de-chunked unverified), and ErrNarHashMismatch when the
 // reconstructed bytes do not match the recorded hash/size.
-func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL) error {
+func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceReclaim bool) error {
 	if !c.isCDCEnabled() {
 		return ErrCDCDisabled
 	}
@@ -7658,13 +7664,17 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL) error {
 		return fmt.Errorf("error storing reconstructed whole nar: %w", err)
 	}
 
-	// Collect the chunks this nar_file references before dropping the links, so we
-	// can reclaim the ones that become orphaned.
-	prevChunks, err := c.dbClient.Ent().Chunk.Query().
-		Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("error listing chunks for nar_file %d: %w", nr.ID, err)
+	// When reclaiming immediately, capture the chunks this nar_file references
+	// before dropping the links so we can delete the ones that become orphaned.
+	var prevChunks []*ent.Chunk
+
+	if forceReclaim {
+		prevChunks, err = c.dbClient.Ent().Chunk.Query().
+			Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
+			All(ctx)
+		if err != nil {
+			return fmt.Errorf("error listing chunks for nar_file %d: %w", nr.ID, err)
+		}
 	}
 
 	// Flip the nar_file to the whole-file representation: drop its chunk links and
@@ -7691,10 +7701,15 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL) error {
 		return err
 	}
 
-	// Reclaim chunks that are now orphaned. cleanupStaleLockChunks is dedup-safe:
-	// a chunk still referenced by another nar_file (no HasNarFileLinks() == false)
-	// is retained.
-	c.cleanupStaleLockChunks(ctx, c.chunkStore, prevChunks)
+	// By default the now-orphaned chunks are left for the regular GC to reclaim:
+	// an in-flight chunk-serve that began before the flip may still be reading
+	// those chunk files, and deleting them mid-stream would truncate that
+	// transfer. With forceReclaim the caller asserts traffic is drained, so we
+	// reclaim immediately. cleanupStaleLockChunks is dedup-safe: a chunk still
+	// referenced by another nar_file is retained.
+	if forceReclaim {
+		c.cleanupStaleLockChunks(ctx, c.chunkStore, prevChunks)
+	}
 
 	return nil
 }
@@ -7726,6 +7741,8 @@ func (c *Cache) linkedNarinfoNarHash(ctx context.Context, narFileID int) (*nixha
 	return expected, nil
 }
 
+// MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
+// narURL is taken by pointer because storeNarWithCDC normalizes compression to "none".
 func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 	if !c.isCDCEnabled() {
 		return ErrCDCDisabled

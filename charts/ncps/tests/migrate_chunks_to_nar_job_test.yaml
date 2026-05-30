@@ -1,0 +1,66 @@
+suite: test migrate-chunks-to-nar job rendering
+templates:
+  - migrate-chunks-to-nar-job.yaml
+  - configmap.yaml
+  - secret.yaml
+tests:
+  - it: should not create the job by default
+    template: migrate-chunks-to-nar-job.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create a hook Job when enabled
+    template: migrate-chunks-to-nar-job.yaml
+    set:
+      migrateChunksToNar.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-ncps-migrate-chunks-to-nar
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - --config
+            - /etc/ncps/config.yaml
+            - migrate-chunks-to-nar
+            - --concurrency
+            - "10"
+
+  - it: should add --force-reclaim when enabled
+    template: migrate-chunks-to-nar-job.yaml
+    set:
+      migrateChunksToNar.enabled: true
+      migrateChunksToNar.forceReclaim: true
+      config.hostname: test.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --force-reclaim
+
+  - it: should not add --force-reclaim by default
+    template: migrate-chunks-to-nar-job.yaml
+    set:
+      migrateChunksToNar.enabled: true
+      config.hostname: test.example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --force-reclaim
+
+  - it: should add --dry-run when enabled
+    template: migrate-chunks-to-nar-job.yaml
+    set:
+      migrateChunksToNar.enabled: true
+      migrateChunksToNar.dryRun: true
+      config.hostname: test.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --dry-run

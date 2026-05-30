@@ -44,6 +44,12 @@ NARs whose narinfo has no recorded NarHash are left chunked (skipped) rather tha
 				Name:  flagNameDryRun,
 				Usage: "Report which NARs would be de-chunked without writing whole files, mutating records, or deleting chunks",
 			},
+			&cli.BoolFlag{
+				Name: "force-reclaim",
+				Usage: "Immediately delete chunks left unreferenced by the migration instead of leaving them for the GC. " +
+					"Only use when traffic is drained (e.g. a maintenance window): deleting a chunk while a client is " +
+					"mid-stream from chunks would truncate that transfer.",
+			},
 
 			&cli.StringFlag{
 				Name:    flagNameCacheTempPath,
@@ -210,6 +216,7 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 		ctx = logger.WithContext(ctx)
 
 		dryRun := cmd.Bool("dry-run")
+		forceReclaim := cmd.Bool("force-reclaim")
 
 		dbClient, err := createDatabaseClient(cmd)
 		if err != nil {
@@ -341,7 +348,7 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 				}
 
 				opStartTime := time.Now()
-				err := c.MigrateChunksToNar(ctx, &narURL)
+				err := c.MigrateChunksToNar(ctx, &narURL, forceReclaim)
 				RecordMigrationDuration(
 					ctx,
 					MigrationTypeChunksToNar,

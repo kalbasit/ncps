@@ -1,7 +1,9 @@
 # chunks-to-nar-migration Specification
 
 ## Purpose
-TBD - created by archiving change migrate-chunks-to-nar. Update Purpose after archive.
+
+Defines the `migrate-chunks-to-nar` operation — the reverse of `migrate-nar-to-chunks` — which reconstructs CDC-chunked NARs back into verified whole files so a deployment can safely exit CDC, with idempotent/resumable execution and dedup-safe chunk reclamation.
+
 ## Requirements
 ### Requirement: Reconstruct a whole NAR from its chunks, verified against the recorded hash
 
@@ -48,21 +50,28 @@ The operation SHALL be safe to re-run and safe to resume after interruption. A N
 - **THEN** it SHALL bring `H` to a consistent whole-file state without producing a corrupt or short whole file
 - **AND** SHALL NOT require manual cleanup of partial artifacts
 
-### Requirement: Chunk reclamation MUST be dedup-safe
+### Requirement: Chunk reclamation MUST be deferred by default and always dedup-safe
 
-After a NAR is migrated to whole-file, the system SHALL delete only those chunks that are no longer referenced by any `nar_file` (no remaining `nar_file_chunks` links). A chunk shared with another still-chunked NAR SHALL NOT be deleted.
+The system SHALL NOT delete a NAR's chunks as part of de-chunking by default: a concurrent serve that began streaming from chunks before the record was flipped may still be reading those chunk files, and deleting them mid-stream would truncate that transfer. By default the now-unreferenced chunks SHALL be left for the regular garbage collector to reclaim. The operation SHALL provide an explicit opt-in (`--force-reclaim`) for callers that assert traffic is drained (e.g. a maintenance-window run), which reclaims unreferenced chunks immediately. In either path a chunk SHALL be deleted only when no `nar_file` references it (no remaining `nar_file_chunks` links); a chunk shared with another still-chunked NAR SHALL NEVER be deleted.
 
-#### Scenario: Shared chunk is retained
+#### Scenario: Default run does not delete chunks
 
-- **GIVEN** chunk `C` is referenced by both hash `H1` (being migrated) and hash `H2` (still chunked)
-- **WHEN** `H1` is migrated to whole-file and its chunk links removed
-- **THEN** chunk `C` SHALL remain in the chunk store because `H2` still references it
+- **GIVEN** a chunked NAR `H` whose chunks are referenced only by `H`
+- **WHEN** `H` is migrated to whole-file without `--force-reclaim`
+- **THEN** the `nar_file` SHALL be flipped to whole-file (links removed, `total_chunks = 0`)
+- **AND** the chunk objects SHALL remain in the store (left for the GC), so an in-flight chunk-serve is not truncated
 
-#### Scenario: Now-orphaned chunk is reclaimed
+#### Scenario: Force-reclaim deletes a now-orphaned chunk
 
 - **GIVEN** chunk `C` is referenced only by hash `H` (being migrated)
-- **WHEN** `H` is migrated to whole-file and its chunk links removed
+- **WHEN** `H` is migrated to whole-file with `--force-reclaim`
 - **THEN** chunk `C` SHALL be deleted from the chunk store as it is now unreferenced
+
+#### Scenario: Shared chunk is retained even with force-reclaim
+
+- **GIVEN** chunk `C` is referenced by both hash `H1` (migrated with `--force-reclaim`) and hash `H2` (still chunked)
+- **WHEN** `H1` is migrated to whole-file and its chunk links removed
+- **THEN** chunk `C` SHALL remain in the chunk store because `H2` still references it
 
 ### Requirement: A dry-run mode MUST make no changes
 

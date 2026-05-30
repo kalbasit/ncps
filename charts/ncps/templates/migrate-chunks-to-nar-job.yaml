@@ -1,0 +1,151 @@
+{{- if .Values.migrateChunksToNar.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ncps.fullname" . }}-migrate-chunks-to-nar
+  labels:
+    {{- include "ncps.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate-chunks-to-nar
+  annotations:
+    # Run after the (upgraded) application is in place. The new code serves
+    # whole files once a NAR is flipped, so de-chunking is a post-deploy step.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+    {{- with .Values.migrateChunksToNar.job.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if not (kindIs "invalid" .Values.migrateChunksToNar.job.backoffLimit) }}
+  backoffLimit: {{ .Values.migrateChunksToNar.job.backoffLimit }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.migrateChunksToNar.job.ttlSecondsAfterFinished) }}
+  ttlSecondsAfterFinished: {{ .Values.migrateChunksToNar.job.ttlSecondsAfterFinished }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ncps.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate-chunks-to-nar
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ncps.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.migrateChunksToNar.job.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migrateChunksToNar.job.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migrateChunksToNar.job.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate-chunks-to-nar
+          securityContext:
+            {{- toYaml .Values.migrateChunksToNar.securityContext | nindent 12 }}
+          image: {{ include "ncps.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/ncps
+          args:
+            - --config
+            - /etc/ncps/config.yaml
+            - migrate-chunks-to-nar
+            {{- if .Values.migrateChunksToNar.dryRun }}
+            - --dry-run
+            {{- end }}
+            {{- if .Values.migrateChunksToNar.forceReclaim }}
+            - --force-reclaim
+            {{- end }}
+            {{- if .Values.migrateChunksToNar.concurrency }}
+            - --concurrency
+            - {{ .Values.migrateChunksToNar.concurrency | quote }}
+            {{- end }}
+          env:
+            {{- include "ncps.cacheDatabaseURLEnv" . | nindent 12 }}
+            {{- if and (eq .Values.config.storage.type "s3") (or .Values.config.storage.s3.existingSecret (and .Values.config.storage.s3.accessKeyId .Values.config.storage.s3.secretAccessKey)) }}
+            - name: CACHE_STORAGE_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.storage.s3.existingSecret | default (include "ncps.fullname" .) }}
+                  key: {{ if .Values.config.storage.s3.existingSecret }}"access-key-id"{{ else }}"s3-access-key-id"{{ end }}
+            - name: CACHE_STORAGE_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.storage.s3.existingSecret | default (include "ncps.fullname" .) }}
+                  key: {{ if .Values.config.storage.s3.existingSecret }}"secret-access-key"{{ else }}"s3-secret-access-key"{{ end }}
+            {{- end }}
+            {{- if .Values.config.redis.enabled }}
+            {{- if and .Values.config.redis.existingSecret (not .Values.config.redis.username) }}
+            - name: CACHE_REDIS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.redis.existingSecret }}
+                  key: username
+                  optional: true
+            {{- end }}
+            {{- if or .Values.config.redis.existingSecret .Values.config.redis.password }}
+            - name: CACHE_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.redis.existingSecret | default (include "ncps.fullname" .) }}
+                  key: {{ if .Values.config.redis.existingSecret }}"password"{{ else }}"redis-password"{{ end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.migrateChunksToNar.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ncps/config.yaml
+              readOnly: true
+              subPath: config.yaml
+            - name: tmp
+              mountPath: {{ .Values.config.cache.tempPath | quote }}
+            {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+            - name: storage
+              mountPath: /storage
+            {{- end }}
+            {{- if or .Values.config.upstream.netrcFile .Values.config.upstream.existingNetrcSecret }}
+            - name: netrc
+              mountPath: /etc/ncps/netrc
+              subPath: netrc
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "ncps.fullname" . }}
+        {{- include "ncps.tempVolume" . | nindent 8 }}
+        {{- if or (eq .Values.config.storage.type "local") (eq .Values.config.database.type "sqlite") }}
+        - name: storage
+          {{- if or .Values.config.storage.local.persistence.enabled (eq .Values.config.database.type "sqlite") }}
+          persistentVolumeClaim:
+            claimName: {{ include "ncps.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if or .Values.config.upstream.netrcFile .Values.config.upstream.existingNetrcSecret }}
+        - name: netrc
+          secret:
+            secretName: {{ .Values.config.upstream.existingNetrcSecret | default (include "ncps.fullname" .) }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

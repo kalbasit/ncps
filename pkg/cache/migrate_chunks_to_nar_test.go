@@ -77,7 +77,7 @@ func TestMigrateChunksToNar_ReconstructsVerifiesAndStoresWholeFile(t *testing.T)
 	require.False(t, c.HasNarInStore(ctx, noneURL),
 		"precondition: chunked NAR should have no whole file in the store")
 
-	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL))
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false))
 
 	assert.True(t, c.HasNarInStore(ctx, noneURL),
 		"the whole NAR must be present in the store after de-chunking")
@@ -105,7 +105,7 @@ func TestMigrateChunksToNar_FlipsRecordToWholeFile(t *testing.T) {
 
 	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
 
-	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL))
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false))
 
 	nf, err := dbClient.Ent().NarFile.Query().
 		Where(entnarfile.HashEQ(noneURL.Hash), entnarfile.CompressionEQ(nar.CompressionTypeNone.String())).
@@ -120,9 +120,10 @@ func TestMigrateChunksToNar_FlipsRecordToWholeFile(t *testing.T) {
 	assert.Zero(t, linkCount, "chunk links must be removed after de-chunking")
 }
 
-// TestMigrateChunksToNar_ReclaimsOrphanedChunks (slice 3): chunks referenced
-// only by the migrated NAR are reclaimed.
-func TestMigrateChunksToNar_ReclaimsOrphanedChunks(t *testing.T) {
+// TestMigrateChunksToNar_DefaultLeavesChunksForGC (slice 3): by default the
+// migration flips the record but does NOT delete the now-orphaned chunks — they
+// are left for the GC so an in-flight chunk-serve is never truncated.
+func TestMigrateChunksToNar_DefaultLeavesChunksForGC(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -136,16 +137,40 @@ func TestMigrateChunksToNar_ReclaimsOrphanedChunks(t *testing.T) {
 	require.NoError(t, err)
 	require.Positive(t, before, "fixture should have created chunks")
 
-	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL))
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false))
 
 	after, err := dbClient.Ent().Chunk.Query().Count(ctx)
 	require.NoError(t, err)
-	assert.Zero(t, after, "orphaned chunks must be reclaimed after de-chunking the only referencing NAR")
+	assert.Equal(t, before, after, "default migration must NOT delete chunks (left for GC)")
 }
 
-// TestMigrateChunksToNar_RetainsSharedChunks (slice 3): chunks still referenced
-// by another nar_file are NOT deleted (dedup-safe reclamation).
-func TestMigrateChunksToNar_RetainsSharedChunks(t *testing.T) {
+// TestMigrateChunksToNar_ForceReclaimDeletesOrphans (slice 3): with
+// forceReclaim, chunks referenced only by the migrated NAR are deleted.
+func TestMigrateChunksToNar_ForceReclaimDeletesOrphans(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	before, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Positive(t, before, "fixture should have created chunks")
+
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, true))
+
+	after, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, after, "force-reclaim must delete chunks orphaned by de-chunking the only referencing NAR")
+}
+
+// TestMigrateChunksToNar_ForceReclaimRetainsSharedChunks (slice 3): even with
+// forceReclaim, chunks still referenced by another nar_file are NOT deleted
+// (dedup-safe reclamation).
+func TestMigrateChunksToNar_ForceReclaimRetainsSharedChunks(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -188,9 +213,9 @@ func TestMigrateChunksToNar_RetainsSharedChunks(t *testing.T) {
 	before, err := dbClient.Ent().Chunk.Query().Count(ctx)
 	require.NoError(t, err)
 
-	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL))
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, true))
 
 	after, err := dbClient.Ent().Chunk.Query().Count(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, before, after, "chunks shared with another nar_file must be retained")
+	assert.Equal(t, before, after, "chunks shared with another nar_file must be retained even with force-reclaim")
 }

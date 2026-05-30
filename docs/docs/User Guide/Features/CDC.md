@@ -105,6 +105,7 @@ Processing NAR files through the CDC chunker adds some CPU overhead during the i
 ## Related Documentation
 
 - <a class="reference-link" href="../Operations/NAR%20to%20Chunks%20Migration.md">NAR to Chunks Migration</a>
+- <a class="reference-link" href="../Operations/Chunks%20to%20NAR%20Migration.md">Chunks to NAR Migration</a> (reverse — exit CDC)
 - <a class="reference-link" href="../Configuration/Reference.md">Reference</a>
 - <a class="reference-link" href="../Configuration/Storage.md">Storage</a>
 - <a class="reference-link" href="../Deployment/High%20Availability.md">High Availability</a>
