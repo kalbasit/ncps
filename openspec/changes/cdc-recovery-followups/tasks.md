@@ -1,12 +1,12 @@
 ## 1. Backing-less placeholder row GC (cdc-chunking)
 
-- [ ] 1.1 Add a definitive upstream-absence check (distinct from `upstream.Cache.HasNar`, which returns `(false, nil)` on timeout): report genuinely-absent only on a confirmed not-found status, transient/timeout as "unknown". Add a focused test.
-- [ ] 1.2 Confirm whether deleting a `nar_file` row cascades `narinfo_nar_files` in the current Ent schema, or whether an explicit transactional link cleanup is required; document the finding (resolves design Open Question D2).
-- [ ] 1.3 Write a failing test: a backing-less placeholder row (older than cutoff, no store file) for a genuinely-absent hash is removed (row + link gone) by the recovery process.
-- [ ] 1.4 Implement GC in the recovery path: for a backing-less stuck row confirmed genuinely absent upstream, delete the row and its link in one transaction. Make 1.3 pass.
-- [ ] 1.5 Write a test: a backing-less placeholder whose NAR upstream still has is NOT removed, and a later `GetNar` re-downloads it.
-- [ ] 1.6 Write a test: a transient/timeout upstream check does NOT remove the placeholder row (remains eligible later).
-- [ ] 1.7 Bound the GC (batch size / recovery interval) and only consider rows older than the cutoff so it cannot race a fresh in-flight placeholder; add/extend a test asserting fresh rows are untouched.
+- [x] 1.1 Added a definitive tri-state probe `upstream.Cache.NarInfoExistence(hash) → Existence{Present,Absent,Unknown}` (timeout/transport/5xx → Unknown; 404 → Absent). Probes the *narinfo* path (unambiguous), not the NAR path whose CDC-normalized compression would falsely 404. (`TestNarInfoExistence`.)
+- [x] 1.2 Confirmed: deleting a `nar_file` cascades `narinfo_nar_files` AND `nar_file_chunks` via `ON DELETE CASCADE` (FK in migrations + `entsql.OnDelete(entsql.Cascade)` on edges). `DeleteOneID` suffices — no manual link cleanup.
+- [x] 1.3 `TestRecoveryGCDeletesGenuinelyAbsentPlaceholder`: a backing-less placeholder (older than cutoff) whose narinfo 404s on every healthy upstream is deleted.
+- [x] 1.4 Implemented `gcOrSkipBackingLessNarFile` + `narInfoGenuinelyAbsentUpstream` in `runCDCLazyRecovery`: resolve the narinfo by URL, probe all healthy upstreams, delete only when EVERY healthy upstream is definitively Absent (≥1 healthy upstream, none Present/Unknown).
+- [x] 1.5 `TestRecoveryGCKeepsPlaceholderPresentUpstream`: a placeholder whose narinfo is still present upstream is NOT deleted.
+- [x] 1.6 `TestRecoveryGCKeepsPlaceholderOnTransientProbe`: a 503/Unknown probe does NOT delete the placeholder.
+- [x] 1.7 `TestRecoveryGCSkipsFreshPlaceholder`: GC only considers rows older than the recovery cutoff (`CreatedAtLT`), so a fresh in-flight placeholder is never deleted even if genuinely absent.
 
 ## 2. Progressive-streaming abort/stall regression test (nar-concurrent-streaming)
 

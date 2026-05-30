@@ -662,6 +662,64 @@ func (c *Cache) HasNar(ctx context.Context, narURL nar.URL, mutators ...func(*ht
 	return exists, nil
 }
 
+// Existence is a three-valued result of probing whether an asset exists upstream.
+// Unlike HasNarInfo/HasNar (which collapse a timeout into "false"), it distinguishes
+// a definitive not-found from an inconclusive (transient/timeout) probe so callers
+// can safely act on genuine absence without mistaking a transient outage for it.
+type Existence int
+
+const (
+	// ExistenceUnknown means the probe was inconclusive (timeout, transport error,
+	// or a non-404 error status). Callers MUST NOT treat this as absence.
+	ExistenceUnknown Existence = iota
+
+	// ExistencePresent means the upstream returned a success status.
+	ExistencePresent
+
+	// ExistenceAbsent means the upstream definitively returned not-found (404).
+	ExistenceAbsent
+)
+
+// NarInfoExistence probes the upstream for the narinfo with a HEAD request and
+// reports a definitive present/absent result, or unknown when the probe is
+// inconclusive. The narinfo path (/<hash>.narinfo) is unambiguous, unlike the NAR
+// path whose compression extension may differ from a CDC-normalized record.
+func (c *Cache) NarInfoExistence(ctx context.Context, hash string) Existence {
+	u := c.url.JoinPath(helper.NarInfoURLPath(hash)).String()
+
+	ctx, span := tracer.Start(
+		ctx,
+		"upstream.NarInfoExistence",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("narinfo_url", u),
+			attribute.String("upstream_url", c.url.String()),
+		),
+	)
+	defer span.End()
+
+	resp, err := c.doRequest(ctx, http.MethodHead, u)
+	if err != nil {
+		return ExistenceUnknown
+	}
+
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return ExistenceAbsent
+	case resp.StatusCode < http.StatusBadRequest:
+		return ExistencePresent
+	default:
+		return ExistenceUnknown
+	}
+}
+
 // GetPriority returns the priority of this upstream cache.
 func (c *Cache) GetPriority() uint64 { return c.priority }
 
