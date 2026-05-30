@@ -23,6 +23,6 @@
 
 ## 4. Verify & finalize
 
-- [ ] 4.1 Run `task fmt` and confirm it exits zero with no pending changes.
-- [ ] 4.2 Run `task lint` and confirm changed packages are clean (every `//nolint` carries a comment).
-- [ ] 4.3 Run `task test` (cache + upstream under `-race`) and confirm all pass.
+- [x] 4.1 `task fmt` clean (0 pending changes).
+- [x] 4.2 Changed packages lint clean (package-scoped `golangci-lint`; the one `//nolint` in the migrations CI fix carries a comment).
+- [x] 4.3 `pkg/cache/...` (cache + upstream) pass under `-race`; full unit suite green.
