@@ -7486,7 +7486,14 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 	// Use a detached context to prevent the background migration from being aborted by the request context's cancellation.
 	ctx = context.WithoutCancel(ctx)
 
+	// Track the migration in backgroundWG so Close() drains in-flight migrations on
+	// shutdown. Without this, the detached goroutine can keep writing chunk files
+	// after the owning cache (and, in tests, its temp chunk store) is torn down.
+	c.backgroundWG.Add(1)
+
 	analytics.SafeGo(ctx, func() {
+		defer c.backgroundWG.Done()
+
 		log := zerolog.Ctx(ctx).With().
 			Str("op", "BackgroundMigrateNarToChunks").
 			Str("nar_hash", narURL.Hash).
