@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	entchunk "github.com/kalbasit/ncps/ent/chunk"
+	entconfigentry "github.com/kalbasit/ncps/ent/configentry"
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
 	entnarfilechunk "github.com/kalbasit/ncps/ent/narfilechunk"
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
@@ -6430,17 +6432,13 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 	}
 }
 
+// cdcRecoveryCursorKey is the config-table key under which the CDC lazy-recovery
+// keyset cursor is persisted, so the scan resumes across restarts and lock handoffs
+// instead of restarting at 0 (which would let a low-id backlog starve higher-id rows).
+const cdcRecoveryCursorKey = "cdc_lazy_recovery_cursor"
+
 // runCDCLazyRecovery runs the CDC lazy recovery job to recover stuck NAR files.
 func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, batchSize int) func() {
-	// cursorID is a keyset cursor over nar_files.id that persists across cron
-	// invocations (the returned closure is scheduled once). Each run resumes after
-	// the highest id it examined last time and resets to 0 once it reaches the end.
-	// Backing-less rows are skipped without being mutated, so without this cursor a
-	// backlog of them at the low end of the id space (e.g. the failed-download
-	// placeholders this job exists to tolerate) would fill every batchSize-limited
-	// snapshot and permanently starve genuinely re-drivable rows with higher ids.
-	var cursorID int
-
 	return func() {
 		startTime := time.Now()
 
@@ -6470,6 +6468,13 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 				batchSize = math.MaxInt32
 			}
 
+			// Resume the keyset scan from the persisted cursor so progress survives
+			// restarts and lock handoffs to other instances; a per-process cursor would
+			// restart at 0 and let a low-id backlog (e.g. failed-download placeholders)
+			// starve genuinely re-drivable higher-id rows. Backing-less rows are skipped
+			// without mutation, so this cursor is the only thing advancing past them.
+			cursorID := c.loadRecoveryCursor(ctx)
+
 			stuckFiles, err := c.dbClient.Ent().NarFile.Query().
 				Where(
 					entnarfile.TotalChunksEQ(0),
@@ -6491,6 +6496,7 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 				// the cursor); wrap back to the start so the next run rescans from the
 				// beginning and picks up newly-stuck rows.
 				cursorID = 0
+				c.saveRecoveryCursor(ctx, cursorID)
 
 				log.Debug().Msg("no stuck NAR files found for recovery")
 
@@ -6504,6 +6510,8 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			if len(stuckFiles) < batchSize {
 				cursorID = 0
 			}
+
+			c.saveRecoveryCursor(ctx, cursorID)
 
 			log.Info().Int("count", len(stuckFiles)).Msg("found stuck NAR files for recovery")
 
@@ -6558,6 +6566,43 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 		} else if !acquired {
 			zerolog.Ctx(ctx).Debug().Msg("another instance is running CDC lazy recovery, skipping")
 		}
+	}
+}
+
+// loadRecoveryCursor reads the persisted CDC lazy-recovery keyset cursor, returning 0
+// (start of scan) when it is unset or unreadable.
+func (c *Cache) loadRecoveryCursor(ctx context.Context) int {
+	e, err := c.dbClient.Ent().ConfigEntry.Query().
+		Where(entconfigentry.KeyEQ(cdcRecoveryCursorKey)).
+		Only(ctx)
+	if err != nil {
+		return 0
+	}
+
+	id, err := strconv.Atoi(e.Value)
+	if err != nil || id < 0 {
+		return 0
+	}
+
+	return id
+}
+
+// saveRecoveryCursor persists the CDC lazy-recovery keyset cursor. The
+// cdc-lazy-recovery distributed lock serializes sweeps, so a plain upsert suffices. A
+// failure is non-fatal: the next sweep simply resumes from the last persisted value.
+func (c *Cache) saveRecoveryCursor(ctx context.Context, cursorID int) {
+	value := strconv.Itoa(cursorID)
+
+	if err := c.dbClient.Ent().ConfigEntry.Create().
+		SetKey(cdcRecoveryCursorKey).
+		SetValue(value).
+		OnConflictColumns(entconfigentry.FieldKey).
+		Update(func(u *ent.ConfigEntryUpsert) {
+			u.SetValue(value)
+			u.SetUpdatedAt(time.Now())
+		}).
+		Exec(ctx); err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Msg("failed to persist CDC lazy-recovery cursor")
 	}
 }
 
