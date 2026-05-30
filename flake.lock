@@ -113,6 +113,21 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1780171249,
+        "narHash": "sha256-yUxeqsQThRK52AcSQGbTjAjfMJ7uCEuJZZvbXr6Zhco=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "54288f108f87e8497403b34168658a7155f61e68",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "pnpm2nix": {
       "inputs": {
         "flake-utils": [
@@ -125,16 +140,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1778690633,
-        "narHash": "sha256-aCw5ZrbO02VTuF+Pf6APotGvDR0dH+0N1HqocK1UhU8=",
-        "owner": "TriliumNext",
+        "lastModified": 1749022118,
+        "narHash": "sha256-7Qzmy1snKbxFBKoqUrfyxxmEB8rPxDdV7PQwRiAR01o=",
+        "owner": "FliegendeWurst",
         "repo": "pnpm2nix-nzbr",
-        "rev": "31d00012c26b14303702a35885ccc97943888366",
+        "rev": "35f88a41d29839b3989f31871263451c8e092cb1",
         "type": "github"
       },
       "original": {
-        "owner": "TriliumNext",
-        "ref": "main",
+        "owner": "FliegendeWurst",
         "repo": "pnpm2nix-nzbr",
         "type": "github"
       }
@@ -202,22 +216,20 @@
     "trilium": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "nixpkgs": [
-          "nixpkgs"
-        ],
+        "nixpkgs": "nixpkgs_2",
         "pnpm2nix": "pnpm2nix"
       },
       "locked": {
-        "lastModified": 1778702022,
-        "narHash": "sha256-PAGP/qZPud4vHSS7V3iH4wdNLYhIXX7S81/KPRwni10=",
+        "lastModified": 1775406604,
+        "narHash": "sha256-vYs06tpTxqJ6JTFTgBc3mBeuu7Nnms9ug1MCcKgeKD4=",
         "owner": "TriliumNext",
         "repo": "Trilium",
-        "rev": "44f5be88b776078fe268dc9877411cb144df3a46",
+        "rev": "bf234397923e912b4f8c5b898ab79aa37f5cc286",
         "type": "github"
       },
       "original": {
         "owner": "TriliumNext",
-        "ref": "v0.103.0",
+        "ref": "v0.102.2",
         "repo": "Trilium",
         "type": "github"
       }
