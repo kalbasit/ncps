@@ -192,6 +192,10 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNar with TransparentZstd returns decompressed content from CDC chunks",
 		testCDCGetNarTransparentZstd(factory))
 	t.Run("lazy chunking preserves old nar_file record", testCDCLazyChunkingPreservesOldNarFile(factory))
+	t.Run("backing-less record recovers after transient upstream failure",
+		testCDCBackingLessRecordRecoversAfterTransientFailure(factory))
+	t.Run("backing-less record with genuine upstream 404 returns not found",
+		testCDCBackingLessRecordGenuine404ReturnsNotFound(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
