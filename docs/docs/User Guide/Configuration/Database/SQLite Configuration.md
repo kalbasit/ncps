@@ -46,10 +46,7 @@ The SQLite database is stored as a single file:
 ncps migrate up --cache-database-url=sqlite:/var/lib/ncps/db/db.sqlite
 ```
 
-The database URL may also be supplied via the `CACHE_DATABASE_URL`
-environment variable. The server applies any pending migrations
-automatically on startup; this CLI command is for previewing
-(`--dry-run`) or running migrations out-of-band.
+The database URL may also be supplied via the `CACHE_DATABASE_URL` environment variable. The server applies any pending migrations automatically on startup; this CLI command is for previewing (`--dry-run`) or running migrations out-of-band.
 
 ### Connection Pool Settings
 

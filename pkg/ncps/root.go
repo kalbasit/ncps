@@ -42,7 +42,12 @@ var (
 // Flag name and usage strings shared across multiple sub-commands.
 const (
 	// Flag names and default values shared across sub-commands.
-	flagNameDryRun                = "dry-run"
+	flagNameDryRun        = "dry-run"
+	flagNameCacheTempPath = "cache-temp-path"
+	flagNameConcurrency   = "concurrency"
+	flagUsageConcurrency  = "Number of concurrent migration workers"
+	flagUsageRedisAddrs   = "Redis server addresses for distributed locking " +
+		"(enables coordination with running ncps instances)"
 	flagDefaultLockRedisKeyPrefix = "ncps:lock:"
 	flagNameStorageLocal          = "cache-storage-local"
 	flagNameS3Bucket              = "cache-storage-s3-bucket"
@@ -283,6 +288,7 @@ func New() (*cli.Command, error) {
 			migrateCommand(flagSources),
 			migrateNarInfoCommand(flagSources, registerShutdown),
 			migrateNarToChunksCommand(flagSources, registerShutdown),
+			migrateChunksToNarCommand(flagSources, registerShutdown),
 			fsckCommand(flagSources, registerShutdown),
 		},
 	}

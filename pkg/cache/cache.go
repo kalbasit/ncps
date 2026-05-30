@@ -1,7 +1,9 @@
 package cache
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -145,6 +147,19 @@ var (
 
 	// ErrNarAlreadyChunked is returned when the nar is already chunked.
 	ErrNarAlreadyChunked = errors.New("nar is already chunked")
+
+	// ErrNarAlreadyWholeFile is returned by MigrateChunksToNar when the nar is
+	// already stored as a whole file (nothing chunked to migrate back).
+	ErrNarAlreadyWholeFile = errors.New("nar is already a whole file")
+
+	// ErrNoNarHashToVerify is returned by MigrateChunksToNar when a chunked nar's
+	// linked narinfo has no NarHash, so the reconstructed bytes cannot be
+	// content-verified before de-chunking. Such nars are skipped, not migrated.
+	ErrNoNarHashToVerify = errors.New("no narinfo NarHash to verify reconstructed nar against")
+
+	// ErrNarHashMismatch is returned by MigrateChunksToNar when the bytes
+	// reconstructed from chunks do not match the recorded NarHash or size.
+	ErrNarHashMismatch = errors.New("reconstructed nar does not match recorded hash or size")
 
 	errMissingChunkEdge = errors.New("nar_file_chunk is missing eager-loaded chunk edge")
 
@@ -7522,6 +7537,226 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 	return nil
 }
 
+// MigrateChunksToNar is the reverse of MigrateNarToChunks: it reconstructs a
+// CDC-chunked NAR into a whole file so a deployment can exit CDC. It reconstructs
+// the NAR from its chunks, verifies the assembled bytes against the linked
+// narinfo's recorded NarHash (and size), writes the whole file to the NAR store
+// via narStore.PutNar, then flips the nar_file record to the whole-file
+// representation (total_chunks=0, chunk links removed). The write-then-flip
+// ordering keeps an interrupted run recoverable.
+//
+// Orphaned chunks (no longer referenced by any nar_file) are NOT deleted by
+// default: an in-flight chunk-serve that started before the flip may still be
+// reading chunk files, and deleting them mid-stream would truncate that transfer.
+// They are left for the regular GC to reclaim. When forceReclaim is true the
+// caller asserts traffic is drained (e.g. a maintenance-window run), and orphaned
+// chunks are reclaimed immediately and dedup-safely (chunks still referenced by
+// another nar_file are retained).
+//
+// It returns ErrNarAlreadyWholeFile when there is nothing chunked to migrate,
+// ErrNoNarHashToVerify when the linked narinfo lacks a NarHash (the NAR is left
+// chunked rather than de-chunked unverified), and ErrNarHashMismatch when the
+// reconstructed bytes do not match the recorded hash/size.
+func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceReclaim bool) error {
+	if !c.isCDCEnabled() {
+		return ErrCDCDisabled
+	}
+
+	// Coordinate with running instances and the forward migration using a
+	// non-blocking lock keyed on the hash. Both directions share one key so a
+	// concurrent background re-chunk of the same NAR cannot race this flip.
+	lockKey := migrationLockKey(narURL.Hash)
+
+	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
+	if err != nil {
+		return fmt.Errorf("failed to acquire migration lock: %w", err)
+	}
+
+	if !acquired {
+		zerolog.Ctx(ctx).Debug().
+			Str("nar_hash", narURL.Hash).
+			Msg("migration to nar already in progress by another instance")
+
+		return ErrMigrationInProgress
+	}
+
+	defer func() {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Str("nar_hash", narURL.Hash).Msg("failed to release migration lock")
+		}
+	}()
+
+	// Reconstructing + verifying + uploading a large NAR (e.g. to a remote S3
+	// backend) can exceed downloadLockTTL. Keep the lock held for the whole
+	// migration so another replica can't acquire it and migrate the same NAR
+	// concurrently. Registered after the Unlock defer so it stops first (LIFO).
+	defer lock.StartRefresher(ctx, c.downloadLocker, lockKey, c.downloadLockTTL)()
+
+	// Chunks are always stored against the Compression:none URL.
+	noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, noneURL)
+	if err != nil {
+		return fmt.Errorf("error looking up nar_file record: %w", err)
+	}
+
+	if nr.TotalChunks == 0 {
+		// Nothing chunked to migrate back.
+		return ErrNarAlreadyWholeFile
+	}
+
+	// Resolve the expected NAR hash from the linked narinfo. Per policy, refuse to
+	// de-chunk (and later delete chunks for) a NAR we cannot content-verify.
+	expected, err := c.linkedNarinfoNarHash(ctx, nr.ID)
+	if err != nil {
+		return err
+	}
+
+	if expected == nil {
+		zerolog.Ctx(ctx).Warn().
+			Str("nar_hash", narURL.Hash).
+			Msg("no narinfo NarHash to verify against; skipping de-chunk migration")
+
+		return ErrNoNarHashToVerify
+	}
+
+	// Reconstruct the whole NAR from chunks into a temp file while hashing, so we
+	// can verify before committing anything to the store (verified-or-nothing).
+	_, rc, err := c.getNarFromChunks(ctx, &noneURL)
+	if err != nil {
+		return fmt.Errorf("error reconstructing nar from chunks: %w", err)
+	}
+	defer rc.Close()
+
+	f, err := os.CreateTemp(c.tempDir, "ncps-dechunk-*.nar")
+	if err != nil {
+		return fmt.Errorf("error creating temp file: %w", err)
+	}
+
+	tempPath := f.Name()
+	defer os.Remove(tempPath)
+
+	hasher := sha256.New()
+
+	size, err := io.Copy(f, io.TeeReader(rc, hasher))
+	if err != nil {
+		_ = f.Close()
+
+		return fmt.Errorf("error reconstructing nar to temp file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing temp file: %w", err)
+	}
+
+	if !bytes.Equal(hasher.Sum(nil), expected.Digest()) {
+		return fmt.Errorf("hash mismatch for %s: %w", narURL.Hash, ErrNarHashMismatch)
+	}
+
+	//nolint:gosec // file_size is a non-negative byte count
+	if size != int64(nr.FileSize) {
+		return fmt.Errorf("size mismatch for %s (got %d, want %d): %w",
+			narURL.Hash, size, nr.FileSize, ErrNarHashMismatch)
+	}
+
+	// Write the whole file straight to the NAR store. We deliberately bypass
+	// c.PutNar here because, with CDC enabled, it would re-chunk the input.
+	rf, err := os.Open(tempPath)
+	if err != nil {
+		return fmt.Errorf("error reopening reconstructed nar: %w", err)
+	}
+	defer rf.Close()
+
+	if _, err := c.narStore.PutNar(ctx, noneURL, rf, size); err != nil {
+		// A prior run may have written the whole file but crashed before the DB
+		// flip. The bytes were verified before that write, so an existing object
+		// is a resumable state, not a failure — fall through to the flip.
+		if !errors.Is(err, storage.ErrAlreadyExists) {
+			return fmt.Errorf("error storing reconstructed whole nar: %w", err)
+		}
+
+		zerolog.Ctx(ctx).Debug().
+			Str("nar_hash", narURL.Hash).
+			Msg("reconstructed whole nar already in storage; resuming the record flip")
+	}
+
+	// When reclaiming immediately, capture the chunks this nar_file references
+	// before dropping the links so we can delete the ones that become orphaned.
+	var prevChunks []*ent.Chunk
+
+	if forceReclaim {
+		prevChunks, err = c.dbClient.Ent().Chunk.Query().
+			Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
+			All(ctx)
+		if err != nil {
+			return fmt.Errorf("error listing chunks for nar_file %d: %w", nr.ID, err)
+		}
+	}
+
+	// Flip the nar_file to the whole-file representation: drop its chunk links and
+	// zero total_chunks in one transaction. After this the NAR is served from the
+	// whole file written above. This happens after the durable PutNar so an
+	// interrupted run is recoverable by re-running.
+	if err := c.withEntTransaction(ctx, "MigrateChunksToNar.flip", func(tx *ent.Tx) error {
+		if _, err := tx.NarFileChunk.Delete().
+			Where(entnarfilechunk.NarFileID(nr.ID)).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("error deleting chunk links: %w", err)
+		}
+
+		if _, err := tx.NarFile.UpdateOneID(nr.ID).
+			SetTotalChunks(0).
+			ClearChunkingStartedAt().
+			SetUpdatedAt(time.Now()).
+			Save(ctx); err != nil {
+			return fmt.Errorf("error flipping nar_file to whole-file: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// By default the now-orphaned chunks are left for the regular GC to reclaim:
+	// an in-flight chunk-serve that began before the flip may still be reading
+	// those chunk files, and deleting them mid-stream would truncate that
+	// transfer. With forceReclaim the caller asserts traffic is drained, so we
+	// reclaim immediately. cleanupStaleLockChunks is dedup-safe: a chunk still
+	// referenced by another nar_file is retained.
+	if forceReclaim {
+		c.cleanupStaleLockChunks(ctx, c.chunkStore, prevChunks)
+	}
+
+	return nil
+}
+
+// linkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
+// given nar_file, or (nil, nil) when no link exists or the narinfo has no
+// recorded NarHash.
+func (c *Cache) linkedNarinfoNarHash(ctx context.Context, narFileID int) (*nixhash.HashWithEncoding, error) {
+	ni, err := c.dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(narFileID))).
+		First(ctx)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return nil, nil //nolint:nilnil // no linked narinfo == nothing to verify against
+		}
+
+		return nil, fmt.Errorf("error resolving linked narinfo for nar_file %d: %w", narFileID, err)
+	}
+
+	if ni.NarHash == nil || *ni.NarHash == "" {
+		return nil, nil //nolint:nilnil // narinfo without a NarHash == nothing to verify against
+	}
+
+	expected, err := nixhash.ParseAny(*ni.NarHash, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing narinfo NarHash %q: %w", *ni.NarHash, err)
+	}
+
+	return expected, nil
+}
+
 // MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
 // narURL is taken by pointer because storeNarWithCDC normalizes compression to "none".
 func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
@@ -7531,7 +7766,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 
 	// Use a non-blocking lock to coordinate migrations and prevent a "thundering herd".
 	// A long TTL is used because migrating a large NAR can be a long-running operation.
-	lockKey := "migration-to-chunks:" + narURL.Hash
+	lockKey := migrationLockKey(narURL.Hash)
 
 	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
 	if err != nil {
