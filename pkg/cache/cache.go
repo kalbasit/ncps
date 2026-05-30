@@ -6568,11 +6568,13 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 // nar_file_chunks links. Otherwise the row is left for on-demand GetNar recovery.
 func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, narURL nar.URL, log *zerolog.Logger) {
 	// The narinfo path is unambiguous to probe (unlike the CDC-normalized NAR path),
-	// so resolve the narinfo linked to this nar_file by its URL.
-	ni, err := c.dbClient.Ent().NarInfo.Query().
+	// so resolve ALL narinfos linked to this nar_file by its URL. Several store paths
+	// can reference the same NAR, so every one of them must be genuinely gone upstream
+	// before we delete the row — otherwise an active store path would lose its NAR.
+	nis, err := c.dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.URL(narURL.String())).
-		First(ctx)
-	if err != nil {
+		All(ctx)
+	if err != nil || len(nis) == 0 {
 		log.Debug().
 			Str("hash", narURL.Hash).
 			Msg("skipping backing-less stuck NAR file (no narinfo to verify upstream absence)")
@@ -6580,12 +6582,14 @@ func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, n
 		return
 	}
 
-	if !c.narInfoGenuinelyAbsentUpstream(ctx, ni.Hash) {
-		log.Debug().
-			Str("hash", narURL.Hash).
-			Msg("skipping backing-less stuck NAR file (still present or unverifiable upstream)")
+	for _, ni := range nis {
+		if !c.narInfoGenuinelyAbsentUpstream(ctx, ni.Hash) {
+			log.Debug().
+				Str("hash", narURL.Hash).
+				Msg("skipping backing-less stuck NAR file (still present or unverifiable upstream)")
 
-		return
+			return
+		}
 	}
 
 	if err := c.dbClient.Ent().NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
@@ -6599,7 +6603,7 @@ func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, n
 
 	log.Info().
 		Str("hash", narURL.Hash).
-		Str("narinfo_hash", ni.Hash).
+		Int("narinfo_count", len(nis)).
 		Msg("garbage-collected genuinely-absent placeholder nar_file")
 }
 
