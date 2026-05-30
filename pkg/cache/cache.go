@@ -6531,10 +6531,7 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 				// and indefinitely retries a hash that can never be migrated. Such rows
 				// are recovered on demand by GetNar, which re-downloads from upstream.
 				if !c.HasNarInStore(ctx, narURL) {
-					log.Debug().
-						Str("hash", stuckFile.Hash).
-						Str("compression", stuckFile.Compression).
-						Msg("skipping backing-less stuck NAR file (no whole-file in store to migrate)")
+					c.gcOrSkipBackingLessNarFile(ctx, stuckFile.ID, narURL, &log)
 
 					continue
 				}
@@ -6562,6 +6559,73 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			zerolog.Ctx(ctx).Debug().Msg("another instance is running CDC lazy recovery, skipping")
 		}
 	}
+}
+
+// gcOrSkipBackingLessNarFile handles a stuck nar_file row that has no whole-file in
+// the store (a placeholder that migration cannot help). If the NAR is provably gone
+// from every healthy upstream, the row is garbage-collected so it stops being
+// re-scanned every sweep; on-delete cascades clean up its narinfo_nar_files and
+// nar_file_chunks links. Otherwise the row is left for on-demand GetNar recovery.
+func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, narURL nar.URL, log *zerolog.Logger) {
+	// The narinfo path is unambiguous to probe (unlike the CDC-normalized NAR path),
+	// so resolve the narinfo linked to this nar_file by its URL.
+	ni, err := c.dbClient.Ent().NarInfo.Query().
+		Where(entnarinfo.URL(narURL.String())).
+		First(ctx)
+	if err != nil {
+		log.Debug().
+			Str("hash", narURL.Hash).
+			Msg("skipping backing-less stuck NAR file (no narinfo to verify upstream absence)")
+
+		return
+	}
+
+	if !c.narInfoGenuinelyAbsentUpstream(ctx, ni.Hash) {
+		log.Debug().
+			Str("hash", narURL.Hash).
+			Msg("skipping backing-less stuck NAR file (still present or unverifiable upstream)")
+
+		return
+	}
+
+	if err := c.dbClient.Ent().NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
+		log.Warn().
+			Err(err).
+			Str("hash", narURL.Hash).
+			Msg("failed to garbage-collect genuinely-absent placeholder nar_file")
+
+		return
+	}
+
+	log.Info().
+		Str("hash", narURL.Hash).
+		Str("narinfo_hash", ni.Hash).
+		Msg("garbage-collected genuinely-absent placeholder nar_file")
+}
+
+// narInfoGenuinelyAbsentUpstream reports whether EVERY healthy upstream definitively
+// lacks the narinfo for hash. It is deliberately conservative: a single Present or
+// inconclusive (Unknown) probe, or having no healthy upstreams, yields false, so a
+// transient outage never causes a placeholder row to be deleted for a NAR an upstream
+// can still provide.
+func (c *Cache) narInfoGenuinelyAbsentUpstream(ctx context.Context, hash string) bool {
+	ups := c.getHealthyUpstreams()
+	if len(ups) == 0 {
+		return false
+	}
+
+	sawAbsent := false
+
+	for _, uc := range ups {
+		switch uc.NarInfoExistence(ctx, hash) {
+		case upstream.ExistencePresent, upstream.ExistenceUnknown:
+			return false
+		case upstream.ExistenceAbsent:
+			sawAbsent = true
+		}
+	}
+
+	return sawAbsent
 }
 
 type upstreamSelectionFn func(
@@ -7153,6 +7217,16 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 					return
 				}
+
+				// A non-NULL but stale chunking_started_at means the producing job died
+				// without clearing the lock. Fail fast rather than waiting the full
+				// per-chunk timeout for chunks that will never arrive.
+				if totalChunks == 0 && nr.ChunkingStartedAt != nil &&
+					time.Since(*nr.ChunkingStartedAt) > cdcChunkingLockTTL {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking stalled (stale lock): %w", storage.ErrNotFound)}
+
+					return
+				}
 			}
 
 			// Check if we're already done (batch returned empty after total is known).
@@ -7261,6 +7335,14 @@ func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFil
 
 				if nr2.ChunkingStartedAt == nil {
 					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking was aborted: %w", storage.ErrNotFound)}
+
+					return
+				}
+
+				// Lock went stale while we were waiting: the producer died without
+				// clearing it. Fail fast instead of waiting out maxWaitPerChunk.
+				if time.Since(*nr2.ChunkingStartedAt) > cdcChunkingLockTTL {
+					chunkChan <- &prefetchedChunk{err: fmt.Errorf("chunking stalled (stale lock): %w", storage.ErrNotFound)}
 
 					return
 				}
