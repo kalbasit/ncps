@@ -21,7 +21,7 @@
 
 **Command-line:**
 
-```bash
+```
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
   --cache-storage-s3-endpoint=https://s3.amazonaws.com \
@@ -51,7 +51,7 @@ cache:
 
 **Command-line:**
 
-```bash
+```
 ncps serve \
   --cache-storage-s3-bucket=ncps-cache \
   --cache-storage-s3-endpoint=http://garage.example.com:3900 \
@@ -140,7 +140,7 @@ Example `bucket-policy.json`:
 
 #### Garage
 
-```bash
+```
 # Create a bucket and an access key using the Garage CLI.
 # Run these commands on the Garage server (or via `garage` over the admin API).
 garage bucket create ncps-cache

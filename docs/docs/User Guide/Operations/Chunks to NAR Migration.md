@@ -21,7 +21,7 @@ CDC's many small chunk reads suit low-latency storage (local SSD, NVMe-backed ob
 For each chunked NAR, `ncps`:
 
 1. **Reconstructs** the whole NAR by concatenating its chunks in order.
-1. **Verifies** the reconstructed bytes against the linked narinfo's recorded `NarHash` (and size). A NAR is never de-chunked unless it verifies — *verified-or-nothing*.
+1. **Verifies** the reconstructed bytes against the linked narinfo's recorded `NarHash` (and size). A NAR is never de-chunked unless it verifies — _verified-or-nothing_.
 1. **Writes** the whole file to the NAR store.
 1. **Flips** the `nar_file` record to the whole-file representation (drops chunk links, `total_chunks = 0`).
 1. **Leaves** the now-unreferenced chunks for the garbage collector (see [Chunk reclamation](#chunk-reclamation)).
@@ -65,7 +65,7 @@ ncps migrate-chunks-to-nar --force-reclaim \
 Reclamation is always **dedup-safe**: a chunk still referenced by another (still-chunked) NAR is never deleted, with or without `--force-reclaim`.
 
 > [!NOTE]
-> `--force-reclaim` only reclaims chunks orphaned by NARs migrated in *that* run. If you ran the default (deferred) migration first, run the garbage collector (or run with `--force-reclaim` is a no-op for already-flipped NARs) — those chunks are reclaimed on the next GC cycle. Reclaim **before** disabling CDC, since a disabled-CDC GC may not sweep chunks.
+> `--force-reclaim` only reclaims chunks orphaned by NARs migrated in _that_ run. If you ran the default (deferred) migration first, run the garbage collector (or run with `--force-reclaim` is a no-op for already-flipped NARs) — those chunks are reclaimed on the next GC cycle. Reclaim **before** disabling CDC, since a disabled-CDC GC may not sweep chunks.
 
 ### Concurrency Tuning
 
@@ -117,7 +117,7 @@ When OpenTelemetry is enabled (`--otel-enabled`), the process exports:
 
 ## Verification
 
-```sql
+```mariadb
 -- No chunked NARs should remain after a full migration:
 SELECT count(*) FROM nar_files WHERE total_chunks > 0;
 ```

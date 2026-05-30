@@ -1783,6 +1783,91 @@
                         },
                         {
                             "isClone": false,
+                            "noteId": "MOpVLDkI8rwp",
+                            "notePath": [
+                                "C3Wj5rq7ksjn",
+                                "0RC0xXheV6Ng",
+                                "MOpVLDkI8rwp"
+                            ],
+                            "title": "Features",
+                            "notePosition": 30,
+                            "prefix": null,
+                            "isExpanded": false,
+                            "type": "text",
+                            "mime": "text/html",
+                            "attributes": [
+                                {
+                                    "type": "label",
+                                    "name": "shareAlias",
+                                    "value": "features",
+                                    "isInheritable": false,
+                                    "position": 30
+                                }
+                            ],
+                            "format": "markdown",
+                            "attachments": [],
+                            "dirFileName": "Features",
+                            "children": [
+                                {
+                                    "isClone": false,
+                                    "noteId": "3KmyOKL2lhmq",
+                                    "notePath": [
+                                        "C3Wj5rq7ksjn",
+                                        "0RC0xXheV6Ng",
+                                        "MOpVLDkI8rwp",
+                                        "3KmyOKL2lhmq"
+                                    ],
+                                    "title": "CDC",
+                                    "notePosition": 10,
+                                    "prefix": null,
+                                    "isExpanded": false,
+                                    "type": "text",
+                                    "mime": "text/html",
+                                    "attributes": [
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "ZBLjSKKfK6yH",
+                                            "isInheritable": false,
+                                            "position": 10
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "QXVK8oy1Fxt4",
+                                            "isInheritable": false,
+                                            "position": 20
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "IjYqLhriG6Le",
+                                            "isInheritable": false,
+                                            "position": 30
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "3PqatYARSWot",
+                                            "isInheritable": false,
+                                            "position": 40
+                                        },
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "cdc",
+                                            "isInheritable": false,
+                                            "position": 40
+                                        }
+                                    ],
+                                    "format": "markdown",
+                                    "dataFileName": "CDC.md",
+                                    "attachments": []
+                                }
+                            ]
+                        },
+                        {
+                            "isClone": false,
                             "noteId": "K0wEjEG3fVtD",
                             "notePath": [
                                 "C3Wj5rq7ksjn",
@@ -1790,7 +1875,7 @@
                                 "K0wEjEG3fVtD"
                             ],
                             "title": "Getting Started",
-                            "notePosition": 30,
+                            "notePosition": 40,
                             "prefix": null,
                             "isExpanded": false,
                             "type": "text",
@@ -2687,6 +2772,118 @@
                                 },
                                 {
                                     "isClone": false,
+                                    "noteId": "Chnk2NarMig1",
+                                    "notePath": [
+                                        "C3Wj5rq7ksjn",
+                                        "0RC0xXheV6Ng",
+                                        "NzeU5J2tfb2t",
+                                        "Chnk2NarMig1"
+                                    ],
+                                    "title": "Chunks to NAR Migration",
+                                    "notePosition": 20,
+                                    "prefix": null,
+                                    "isExpanded": false,
+                                    "type": "text",
+                                    "mime": "text/html",
+                                    "attributes": [
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "ZBLjSKKfK6yH",
+                                            "isInheritable": false,
+                                            "position": 30
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "IjYqLhriG6Le",
+                                            "isInheritable": false,
+                                            "position": 40
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "3KmyOKL2lhmq",
+                                            "isInheritable": false,
+                                            "position": 50
+                                        },
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "chunks-to-nar-migration",
+                                            "isInheritable": false,
+                                            "position": 60
+                                        }
+                                    ],
+                                    "format": "markdown",
+                                    "dataFileName": "Chunks to NAR Migration.md",
+                                    "attachments": []
+                                },
+                                {
+                                    "isClone": false,
+                                    "noteId": "ffvvrpwSQuBp",
+                                    "notePath": [
+                                        "C3Wj5rq7ksjn",
+                                        "0RC0xXheV6Ng",
+                                        "NzeU5J2tfb2t",
+                                        "ffvvrpwSQuBp"
+                                    ],
+                                    "title": "Integrity Check (fsck)",
+                                    "notePosition": 30,
+                                    "prefix": null,
+                                    "isExpanded": false,
+                                    "type": "text",
+                                    "mime": "text/html",
+                                    "attributes": [
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "W6VXRIUUO0ya",
+                                            "isInheritable": false,
+                                            "position": 10
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "CgyeembF6J3W",
+                                            "isInheritable": false,
+                                            "position": 20
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "ZBLjSKKfK6yH",
+                                            "isInheritable": false,
+                                            "position": 30
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "BWy0GQ2M438N",
+                                            "isInheritable": false,
+                                            "position": 40
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "IjYqLhriG6Le",
+                                            "isInheritable": false,
+                                            "position": 50
+                                        },
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "integrity-check-fsck",
+                                            "isInheritable": false,
+                                            "position": 30
+                                        }
+                                    ],
+                                    "format": "markdown",
+                                    "dataFileName": "Integrity Check (fsck).md",
+                                    "attachments": []
+                                },
+                                {
+                                    "isClone": false,
                                     "noteId": "XGLieGaoykBR",
                                     "notePath": [
                                         "C3Wj5rq7ksjn",
@@ -2695,7 +2892,7 @@
                                         "XGLieGaoykBR"
                                     ],
                                     "title": "Monitoring",
-                                    "notePosition": 20,
+                                    "notePosition": 40,
                                     "prefix": null,
                                     "isExpanded": false,
                                     "type": "text",
@@ -2729,100 +2926,51 @@
                                 },
                                 {
                                     "isClone": false,
-                                    "noteId": "btAHOppSLATG",
+                                    "noteId": "ZBLjSKKfK6yH",
                                     "notePath": [
                                         "C3Wj5rq7ksjn",
                                         "0RC0xXheV6Ng",
                                         "NzeU5J2tfb2t",
-                                        "btAHOppSLATG"
+                                        "ZBLjSKKfK6yH"
                                     ],
-                                    "title": "Troubleshooting",
-                                    "notePosition": 30,
+                                    "title": "NAR to Chunks Migration",
+                                    "notePosition": 50,
                                     "prefix": null,
                                     "isExpanded": false,
                                     "type": "text",
-                                    "mime": "text/markdown",
+                                    "mime": "text/html",
                                     "attributes": [
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
-                                            "value": "kvh5y1D2GXM5",
+                                            "value": "3KmyOKL2lhmq",
                                             "isInheritable": false,
                                             "position": 10
                                         },
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
-                                            "value": "XGLieGaoykBR",
+                                            "value": "IjYqLhriG6Le",
                                             "isInheritable": false,
                                             "position": 20
                                         },
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
-                                            "value": "NzeU5J2tfb2t",
+                                            "value": "BWy0GQ2M438N",
                                             "isInheritable": false,
                                             "position": 30
                                         },
                                         {
                                             "type": "label",
                                             "name": "shareAlias",
-                                            "value": "troubleshooting",
+                                            "value": "nar-to-chunks-migration",
                                             "isInheritable": false,
-                                            "position": 30
+                                            "position": 60
                                         }
                                     ],
                                     "format": "markdown",
-                                    "dataFileName": "Troubleshooting.md",
-                                    "attachments": []
-                                },
-                                {
-                                    "isClone": false,
-                                    "noteId": "Bj05XwpRo8b0",
-                                    "notePath": [
-                                        "C3Wj5rq7ksjn",
-                                        "0RC0xXheV6Ng",
-                                        "NzeU5J2tfb2t",
-                                        "Bj05XwpRo8b0"
-                                    ],
-                                    "title": "Upgrading",
-                                    "notePosition": 40,
-                                    "prefix": null,
-                                    "isExpanded": false,
-                                    "type": "text",
-                                    "mime": "text/markdown",
-                                    "attributes": [
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "CgyeembF6J3W",
-                                            "isInheritable": false,
-                                            "position": 10
-                                        },
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "Xfu0l3KoHmVw",
-                                            "isInheritable": false,
-                                            "position": 20
-                                        },
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "Zjh0gpeFlaIp",
-                                            "isInheritable": false,
-                                            "position": 30
-                                        },
-                                        {
-                                            "type": "label",
-                                            "name": "shareAlias",
-                                            "value": "upgrading",
-                                            "isInheritable": false,
-                                            "position": 30
-                                        }
-                                    ],
-                                    "format": "markdown",
-                                    "dataFileName": "Upgrading.md",
+                                    "dataFileName": "NAR to Chunks Migration.md",
                                     "attachments": []
                                 },
                                 {
@@ -2835,7 +2983,7 @@
                                         "CgyeembF6J3W"
                                     ],
                                     "title": "NarInfo Migration",
-                                    "notePosition": 50,
+                                    "notePosition": 60,
                                     "prefix": null,
                                     "isExpanded": false,
                                     "type": "text",
@@ -2890,149 +3038,100 @@
                                 },
                                 {
                                     "isClone": false,
-                                    "noteId": "ZBLjSKKfK6yH",
+                                    "noteId": "btAHOppSLATG",
                                     "notePath": [
                                         "C3Wj5rq7ksjn",
                                         "0RC0xXheV6Ng",
                                         "NzeU5J2tfb2t",
-                                        "ZBLjSKKfK6yH"
+                                        "btAHOppSLATG"
                                     ],
-                                    "title": "NAR to Chunks Migration",
-                                    "notePosition": 60,
+                                    "title": "Troubleshooting",
+                                    "notePosition": 70,
                                     "prefix": null,
                                     "isExpanded": false,
                                     "type": "text",
-                                    "mime": "text/html",
+                                    "mime": "text/markdown",
                                     "attributes": [
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
-                                            "value": "3KmyOKL2lhmq",
+                                            "value": "kvh5y1D2GXM5",
                                             "isInheritable": false,
                                             "position": 10
                                         },
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
-                                            "value": "IjYqLhriG6Le",
+                                            "value": "XGLieGaoykBR",
                                             "isInheritable": false,
                                             "position": 20
                                         },
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
-                                            "value": "BWy0GQ2M438N",
+                                            "value": "NzeU5J2tfb2t",
                                             "isInheritable": false,
                                             "position": 30
                                         },
                                         {
                                             "type": "label",
                                             "name": "shareAlias",
-                                            "value": "nar-to-chunks-migration",
+                                            "value": "troubleshooting",
                                             "isInheritable": false,
-                                            "position": 60
+                                            "position": 30
                                         }
                                     ],
                                     "format": "markdown",
-                                    "dataFileName": "NAR to Chunks Migration.md",
+                                    "dataFileName": "Troubleshooting.md",
                                     "attachments": []
                                 },
                                 {
                                     "isClone": false,
-                                    "noteId": "Chnk2NarMig1",
+                                    "noteId": "Bj05XwpRo8b0",
                                     "notePath": [
                                         "C3Wj5rq7ksjn",
                                         "0RC0xXheV6Ng",
                                         "NzeU5J2tfb2t",
-                                        "Chnk2NarMig1"
+                                        "Bj05XwpRo8b0"
                                     ],
-                                    "title": "Chunks to NAR Migration",
-                                    "notePosition": 65,
+                                    "title": "Upgrading",
+                                    "notePosition": 80,
                                     "prefix": null,
                                     "isExpanded": false,
                                     "type": "text",
-                                    "mime": "text/html",
+                                    "mime": "text/markdown",
                                     "attributes": [
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "ZBLjSKKfK6yH",
-                                            "isInheritable": false,
-                                            "position": 10
-                                        },
-                                        {
-                                            "type": "label",
-                                            "name": "shareAlias",
-                                            "value": "chunks-to-nar-migration",
-                                            "isInheritable": false,
-                                            "position": 60
-                                        }
-                                    ],
-                                    "format": "markdown",
-                                    "dataFileName": "Chunks to NAR Migration.md",
-                                    "attachments": []
-                                },
-                                {
-                                    "isClone": false,
-                                    "noteId": "ffvvrpwSQuBp",
-                                    "notePath": [
-                                        "C3Wj5rq7ksjn",
-                                        "0RC0xXheV6Ng",
-                                        "NzeU5J2tfb2t",
-                                        "ffvvrpwSQuBp"
-                                    ],
-                                    "title": "Integrity Check (fsck)",
-                                    "notePosition": 70,
-                                    "prefix": null,
-                                    "isExpanded": false,
-                                    "type": "text",
-                                    "mime": "text/html",
-                                    "attributes": [
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "W6VXRIUUO0ya",
-                                            "isInheritable": false,
-                                            "position": 10
-                                        },
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
                                             "value": "CgyeembF6J3W",
                                             "isInheritable": false,
+                                            "position": 10
+                                        },
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "Xfu0l3KoHmVw",
+                                            "isInheritable": false,
                                             "position": 20
                                         },
                                         {
                                             "type": "relation",
                                             "name": "internalLink",
-                                            "value": "ZBLjSKKfK6yH",
+                                            "value": "Zjh0gpeFlaIp",
                                             "isInheritable": false,
                                             "position": 30
                                         },
                                         {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "BWy0GQ2M438N",
-                                            "isInheritable": false,
-                                            "position": 40
-                                        },
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "IjYqLhriG6Le",
-                                            "isInheritable": false,
-                                            "position": 50
-                                        },
-                                        {
                                             "type": "label",
                                             "name": "shareAlias",
-                                            "value": "integrity-check-fsck",
+                                            "value": "upgrading",
                                             "isInheritable": false,
                                             "position": 30
                                         }
                                     ],
                                     "format": "markdown",
-                                    "dataFileName": "Integrity Check (fsck).md",
+                                    "dataFileName": "Upgrading.md",
                                     "attachments": []
                                 }
                             ]
@@ -3217,91 +3316,6 @@
                                     ],
                                     "format": "markdown",
                                     "dataFileName": "Client Setup.md",
-                                    "attachments": []
-                                }
-                            ]
-                        },
-                        {
-                            "isClone": false,
-                            "noteId": "MOpVLDkI8rwp",
-                            "notePath": [
-                                "C3Wj5rq7ksjn",
-                                "0RC0xXheV6Ng",
-                                "MOpVLDkI8rwp"
-                            ],
-                            "title": "Features",
-                            "notePosition": 80,
-                            "prefix": null,
-                            "isExpanded": false,
-                            "type": "text",
-                            "mime": "text/html",
-                            "attributes": [
-                                {
-                                    "type": "label",
-                                    "name": "shareAlias",
-                                    "value": "features",
-                                    "isInheritable": false,
-                                    "position": 30
-                                }
-                            ],
-                            "format": "markdown",
-                            "attachments": [],
-                            "dirFileName": "Features",
-                            "children": [
-                                {
-                                    "isClone": false,
-                                    "noteId": "3KmyOKL2lhmq",
-                                    "notePath": [
-                                        "C3Wj5rq7ksjn",
-                                        "0RC0xXheV6Ng",
-                                        "MOpVLDkI8rwp",
-                                        "3KmyOKL2lhmq"
-                                    ],
-                                    "title": "CDC",
-                                    "notePosition": 10,
-                                    "prefix": null,
-                                    "isExpanded": false,
-                                    "type": "text",
-                                    "mime": "text/html",
-                                    "attributes": [
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "ZBLjSKKfK6yH",
-                                            "isInheritable": false,
-                                            "position": 10
-                                        },
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "QXVK8oy1Fxt4",
-                                            "isInheritable": false,
-                                            "position": 20
-                                        },
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "IjYqLhriG6Le",
-                                            "isInheritable": false,
-                                            "position": 30
-                                        },
-                                        {
-                                            "type": "relation",
-                                            "name": "internalLink",
-                                            "value": "3PqatYARSWot",
-                                            "isInheritable": false,
-                                            "position": 40
-                                        },
-                                        {
-                                            "type": "label",
-                                            "name": "shareAlias",
-                                            "value": "cdc",
-                                            "isInheritable": false,
-                                            "position": 40
-                                        }
-                                    ],
-                                    "format": "markdown",
-                                    "dataFileName": "CDC.md",
                                     "attachments": []
                                 }
                             ]
