@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/stretchr/testify/require"
 
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
@@ -87,4 +89,53 @@ func TestGetNarInfoFromDatabase_AmbiguousStorageErrorDoesNotPurge(t *testing.T) 
 	// The narinfo row must still exist — it was not purged.
 	_, err = fetchNarInfo(ctx, dbClient, testdata.Nar1.NarInfoHash)
 	require.NoError(t, err, "narinfo must not be purged on an ambiguous storage error")
+}
+
+// TestGetNarInfoFromStore_AmbiguousStorageErrorDoesNotPurge is the store-path
+// counterpart: getNarInfoFromStore must likewise not destructively purge a
+// narinfo when the backing NAR's presence cannot be determined (ambiguous
+// storage error), as opposed to a confirmed absence.
+func TestGetNarInfoFromStore_AmbiguousStorageErrorDoesNotPurge(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dbClient.Close() })
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+
+	narURL, err := nar.ParseURL(ni.URL)
+	require.NoError(t, err)
+
+	narStore := &ambiguousNarStore{Store: localStore, failHash: narURL.Hash}
+
+	c, err := New(ctx, cacheName, dbClient, localStore, localStore, narStore, "",
+		locklocal.NewLocker(), locklocal.NewRWLocker(), downloadLockTTL, downloadPollTimeout, cacheLockTTL)
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+
+	// Place the narinfo in the store so getNarInfoFromStore finds it.
+	require.NoError(t, localStore.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni))
+
+	got, err := c.getNarInfoFromStore(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err,
+		"an ambiguous storage error must not purge the narinfo nor surface as an error")
+	require.NotNil(t, got)
+
+	// The narinfo must still be in the store — it was not purged.
+	require.True(t, localStore.HasNarInfo(ctx, testdata.Nar1.NarInfoHash),
+		"narinfo must not be purged from the store on an ambiguous storage error")
 }

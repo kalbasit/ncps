@@ -4003,17 +4003,18 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		NewLogger(*zerolog.Ctx(ctx)).
 		WithContext(ctx)
 
-	// For Compression:none NARs, the physical file is stored as .nar.zst; check that first.
-	hasNarInStore := false
+	// Verify the NAR exists in storage. Use statNarInStore (which also handles the
+	// .nar.zst fallback for Compression:none) so an ambiguous storage error — a
+	// timed-out or stale stat on a network filesystem — is NOT mistaken for a
+	// confirmed absence and does not drive a destructive purge.
+	hasNarInStore, storeErr := c.statNarInStore(ctx, narURL)
+	if storeErr != nil {
+		zerolog.Ctx(ctx).
+			Warn().
+			Err(storeErr).
+			Msg("ambiguous storage error checking nar presence, skipping purge")
 
-	if narURL.Compression == nar.CompressionTypeNone {
-		zstdURL := narURL
-		zstdURL.Compression = nar.CompressionTypeZstd
-		hasNarInStore = c.narStore.HasNar(ctx, zstdURL)
-	}
-
-	if !hasNarInStore {
-		hasNarInStore = c.narStore.HasNar(ctx, narURL)
+		return ni, nil
 	}
 
 	if !hasNarInStore && !c.hasUpstreamJob(narURL.Hash) {
@@ -7229,7 +7230,11 @@ func (c *Cache) SetChunkWaitTimeout(d time.Duration) {
 		d = defaultChunkWaitTimeout
 	}
 
+	// Guard with cdcMu (the same mutex protecting the other CDC config) so a
+	// concurrent reader in streamProgressiveChunks never sees a torn write.
+	c.cdcMu.Lock()
 	c.chunkWaitTimeout = d
+	c.cdcMu.Unlock()
 }
 
 // streamProgressiveChunks streams chunks as they become available during an in-progress chunking operation.
@@ -7239,7 +7244,10 @@ func (c *Cache) SetChunkWaitTimeout(d time.Duration) {
 func (c *Cache) streamProgressiveChunks(ctx context.Context, w io.Writer, narFileID int64, raw bool) error {
 	pollInterval := 200 * time.Millisecond
 
+	c.cdcMu.RLock()
 	maxWaitPerChunk := c.chunkWaitTimeout
+	c.cdcMu.RUnlock()
+
 	if maxWaitPerChunk <= 0 {
 		maxWaitPerChunk = defaultChunkWaitTimeout
 	}
