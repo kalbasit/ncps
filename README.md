@@ -87,6 +87,25 @@ Your cache will be available at `http://localhost:8501`. See the [Quick Start Gu
 
 See the [Deployment Guide](https://docs.ncps.dev/user-guide/deployment.html) for detailed setup instructions.
 
+### Choosing a storage backend
+
+The `local` filesystem backend assumes single-writer POSIX semantics: one process
+owning the directory, with read-after-write consistency. Use it for single-instance
+deployments.
+
+For **multiple replicas, use the S3-compatible backend.** Do not point the `local`
+backend at a shared network filesystem (NFS/SMB) written by more than one replica:
+network filesystems provide only close-to-open consistency with client-side
+attribute caching, so one replica can read stale metadata for a file another replica
+just wrote — which presents to ncps as a NAR that is in the database but "missing"
+from storage, and to clients as spurious cache misses or truncated transfers. An
+object store gives every replica a single, read-after-write-consistent view.
+
+Storage latency also drives the CDC decision (see `cache.cdc` in
+[`config.example.yaml`](config.example.yaml)): CDC's many small chunk reads suit
+low-latency backends, while high-latency or spinning-disk storage is better served
+whole-file with CDC disabled.
+
 ## Architecture
 
 ncps is written in Go. The notable internal dependencies:

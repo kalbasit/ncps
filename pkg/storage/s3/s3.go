@@ -411,16 +411,26 @@ func (s *Store) DeleteNarInfo(ctx context.Context, hash string) error {
 	return nil
 }
 
-// HasNar returns true if the store has the nar.
+// HasNar returns true if the store has the nar. Any error (confirmed absence or
+// an undeterminable stat) collapses to false; use StatNar to distinguish them.
 func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
+	present, _ := s.StatNar(ctx, narURL)
+
+	return present
+}
+
+// StatNar reports whether the store has the nar, distinguishing a confirmed
+// absence (false, nil) from an undeterminable result (false, err). See the
+// storage.NarStore interface for the contract.
+func (s *Store) StatNar(ctx context.Context, narURL nar.URL) (bool, error) {
 	key, err := s.narPath(narURL)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("error computing the nar key: %w", err)
 	}
 
 	_, span := tracer.Start(
 		ctx,
-		"s3.HasNar",
+		"s3.StatNar",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nar_url", narURL.String()),
@@ -429,9 +439,17 @@ func (s *Store) HasNar(ctx context.Context, narURL nar.URL) bool {
 	)
 	defer span.End()
 
-	_, err = s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if _, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{}); err != nil {
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return false, nil
+		}
 
-	return err == nil
+		// Any other error (network, timeout, throttling) means we could not
+		// determine presence — surface it instead of claiming absence.
+		return false, fmt.Errorf("error stating the nar object: %w", err)
+	}
+
+	return true, nil
 }
 
 // GetNar returns nar from the store.

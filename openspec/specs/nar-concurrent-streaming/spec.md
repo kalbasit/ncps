@@ -6,13 +6,11 @@ Defines correctness and termination requirements for the per-client streaming go
 serve NAR content to multiple concurrent clients requesting the same NAR hash. In particular,
 governs how client context cancellation propagates so that cancelled clients exit promptly
 without blocking non-cancelled peers.
-
 ## Requirements
-
 ### Requirement: Concurrent NAR streaming goroutines MUST terminate within a bounded time
 
-When multiple clients concurrently request the same NAR hash and one client's context is
-cancelled mid-download, the streaming goroutine for the cancelled client SHALL exit promptly
+The streaming goroutine for a cancelled client SHALL exit promptly when multiple clients
+concurrently request the same NAR hash and one client's context is cancelled mid-download
 (without waiting for the next `cond.Broadcast()`) and the streaming goroutines for all
 remaining clients SHALL continue to completion unaffected.
 
@@ -57,9 +55,9 @@ arrive infrequently.
 
 ### Requirement: Storage-wait `select` MUST include a client context escape
 
-After the streaming goroutine has forwarded all bytes, it waits for `ds.stored` or `ds.done`
-before closing the pipe. This `select` SHALL also include `ctx.Done()` so that a cancelled
-client does not remain blocked if the storage operation stalls.
+The storage-wait `select` SHALL include `ctx.Done()` so that a cancelled client does not remain
+blocked if the storage operation stalls. After the streaming goroutine has forwarded all bytes, it
+waits for `ds.stored` or `ds.done` before closing the pipe — and that `select` is where the escape lives.
 
 #### Scenario: Cancelled client does not block at storage-wait select
 
@@ -131,9 +129,9 @@ re-acquiring the lock, guaranteeing at most one active downloader per hash.
 
 ### Requirement: Progressive chunk streaming MUST NOT deliver a truncated NAR body
 
-When serving a NAR via progressive CDC streaming (`streamProgressiveChunks`/`getNarFromChunks`),
-the system SHALL NOT emit a successful (HTTP 200) response whose body is shorter than the NAR's
-declared size. If chunks stop arriving before the full NAR is produced — because chunking was
+The system SHALL NOT emit a successful (HTTP 200) response whose body is shorter than the NAR's
+declared size when serving via progressive CDC streaming (`streamProgressiveChunks`/`getNarFromChunks`).
+If chunks stop arriving before the full NAR is produced — because chunking was
 aborted, stalled past the lock TTL, or the producing download failed — the streaming path SHALL
 surface an error (so the client sees a failed transfer / retryable condition) rather than closing
 a short, well-formed-looking body.
@@ -166,3 +164,36 @@ a synchronous upstream re-download over emitting a partial body.
 - **AND** the NAR is not otherwise present (no whole-file, `total_chunks = 0`)
 - **WHEN** the wait elapses
 - **THEN** the streaming path SHALL surface an error rather than completing the response
+
+### Requirement: The chunk-wait deadline MUST be bounded and configurable
+
+The serving path SHALL bound the time it waits on chunk production and chunk reads by an explicit, operator-configurable deadline that defaults to a value fitting within a typical reverse-proxy gateway timeout. It SHALL NOT wait indefinitely (or in unbounded per-chunk increments) such that total serving time can exceed the gateway timeout and surface to the client as a gateway 504.
+
+#### Scenario: Per-request serving time is bounded below the gateway timeout
+
+- **GIVEN** a NAR is being served and a chunk read stalls
+- **AND** the configured serving deadline is shorter than the gateway timeout
+- **WHEN** the serving deadline elapses
+- **THEN** the system SHALL terminate the request with a retryable error
+- **AND** SHALL NOT allow the request to hang until the gateway returns a 504
+
+#### Scenario: The deadline is configurable
+
+- **GIVEN** an operator sets the chunk-wait / serving deadline via configuration
+- **WHEN** the server loads its configuration
+- **THEN** the serving path SHALL honor the configured deadline
+- **AND** in the absence of explicit configuration SHALL apply a documented default
+
+### Requirement: A chunk stall after the response is committed MUST surface as a stream error, not a clean EOF
+
+The streaming path SHALL terminate a post-commit chunk stall in a way the client observes as a failed/aborted transfer (an abnormal stream/connection termination), never as a clean end-of-body that a client could mistake for a complete NAR. This applies once the response status and some body bytes have already been committed; a short body that decodes as a truncated archive is a forbidden outcome.
+
+#### Scenario: Mid-stream stall aborts the transfer rather than ending it cleanly
+
+- **GIVEN** a NAR for hash `H` is mid-transfer from chunks and bytes are already committed
+- **AND** the next required chunk does not arrive within the serving deadline
+- **WHEN** the wait elapses
+- **THEN** the system SHALL abort the response so the client sees a failed transfer
+- **AND** SHALL NOT close the body at the truncation point as if the NAR were complete
+- **AND** the client SHALL be free to retry the request
+
