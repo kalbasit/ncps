@@ -93,6 +93,34 @@ func TestMigrateChunksToNar_ReconstructsVerifiesAndStoresWholeFile(t *testing.T)
 	assert.Equal(t, content, string(data))
 }
 
+// TestMigrateChunksToNar_ResumesWhenWholeFileAlreadyPresent: an interrupted
+// prior run may have written the (verified) whole file but crashed before the
+// record flip. Re-running must treat the already-present object as resumable —
+// PutNar's ErrAlreadyExists is not fatal — and still flip the record.
+func TestMigrateChunksToNar_ResumesWhenWholeFileAlreadyPresent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, localStore, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, content := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	// Simulate the interrupted state: whole file already in the store, record still chunked.
+	_, err := localStore.PutNar(ctx, noneURL, strings.NewReader(content), int64(len(content)))
+	require.NoError(t, err)
+
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false),
+		"an already-present whole file must be treated as resumable, not fatal")
+
+	nf, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.HashEQ(noneURL.Hash), entnarfile.CompressionEQ(nar.CompressionTypeNone.String())).
+		Only(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, nf.TotalChunks, "the record must still be flipped to whole-file on resume")
+}
+
 // TestMigrateChunksToNar_FlipsRecordToWholeFile (slice 2): the nar_file is
 // flipped to the whole-file representation (total_chunks=0, no chunk links).
 func TestMigrateChunksToNar_FlipsRecordToWholeFile(t *testing.T) {

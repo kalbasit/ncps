@@ -7563,8 +7563,9 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 	}
 
 	// Coordinate with running instances and the forward migration using a
-	// non-blocking lock keyed on the hash.
-	lockKey := "migration-to-nar:" + narURL.Hash
+	// non-blocking lock keyed on the hash. Both directions share one key so a
+	// concurrent background re-chunk of the same NAR cannot race this flip.
+	lockKey := migrationLockKey(narURL.Hash)
 
 	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
 	if err != nil {
@@ -7584,6 +7585,12 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 			zerolog.Ctx(ctx).Error().Err(err).Str("nar_hash", narURL.Hash).Msg("failed to release migration lock")
 		}
 	}()
+
+	// Reconstructing + verifying + uploading a large NAR (e.g. to a remote S3
+	// backend) can exceed downloadLockTTL. Keep the lock held for the whole
+	// migration so another replica can't acquire it and migrate the same NAR
+	// concurrently. Registered after the Unlock defer so it stops first (LIFO).
+	defer lock.StartRefresher(ctx, c.downloadLocker, lockKey, c.downloadLockTTL)()
 
 	// Chunks are always stored against the Compression:none URL.
 	noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
@@ -7661,7 +7668,16 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 	defer rf.Close()
 
 	if _, err := c.narStore.PutNar(ctx, noneURL, rf, size); err != nil {
-		return fmt.Errorf("error storing reconstructed whole nar: %w", err)
+		// A prior run may have written the whole file but crashed before the DB
+		// flip. The bytes were verified before that write, so an existing object
+		// is a resumable state, not a failure — fall through to the flip.
+		if !errors.Is(err, storage.ErrAlreadyExists) {
+			return fmt.Errorf("error storing reconstructed whole nar: %w", err)
+		}
+
+		zerolog.Ctx(ctx).Debug().
+			Str("nar_hash", narURL.Hash).
+			Msg("reconstructed whole nar already in storage; resuming the record flip")
 	}
 
 	// When reclaiming immediately, capture the chunks this nar_file references
@@ -7750,7 +7766,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 
 	// Use a non-blocking lock to coordinate migrations and prevent a "thundering herd".
 	// A long TTL is used because migrating a large NAR can be a long-running operation.
-	lockKey := "migration-to-chunks:" + narURL.Hash
+	lockKey := migrationLockKey(narURL.Hash)
 
 	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
 	if err != nil {

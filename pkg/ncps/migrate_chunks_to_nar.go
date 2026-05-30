@@ -311,11 +311,24 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 			totalSkipped   int32
 		)
 
+		// Clamp to >= 1: errgroup.SetLimit(0) makes the first g.Go block forever.
+		concurrency := cmd.Int("concurrency")
+		if concurrency < 1 {
+			logger.Warn().Int("concurrency", concurrency).Msg("concurrency must be >= 1; using 1")
+			concurrency = 1
+		}
+
 		g, ctx := errgroup.WithContext(ctx)
-		g.SetLimit(cmd.Int("concurrency"))
+		g.SetLimit(concurrency)
 
 		for _, row := range narFiles {
 			g.Go(func() error {
+				// If the group context is already cancelled (shutdown/interrupt),
+				// exit early instead of failing the migration and flooding logs.
+				if ctx.Err() != nil {
+					return nil //nolint:nilerr // cancellation is a graceful skip, not a per-NAR failure
+				}
+
 				log := logger.With().Str("nar_hash", row.Hash).Logger()
 
 				narURL := nar.URL{
@@ -323,6 +336,10 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 					Compression: nar.CompressionType(row.Compression),
 					Query:       make(map[string][]string),
 				}
+
+				// Count it as processed up front so a query-parse failure (counted
+				// below) still reconciles with the processed total in the summary.
+				atomic.AddInt32(&totalProcessed, 1)
 
 				if row.Query != "" {
 					q, err := url.ParseQuery(row.Query)
@@ -336,8 +353,6 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 
 					narURL.Query = q
 				}
-
-				atomic.AddInt32(&totalProcessed, 1)
 
 				if dryRun {
 					log.Info().Msg("[DRY-RUN] would reconstruct, verify, and de-chunk nar to a whole file")

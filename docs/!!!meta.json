@@ -2939,6 +2939,41 @@
                                 },
                                 {
                                     "isClone": false,
+                                    "noteId": "Chnk2NarMig1",
+                                    "notePath": [
+                                        "C3Wj5rq7ksjn",
+                                        "0RC0xXheV6Ng",
+                                        "NzeU5J2tfb2t",
+                                        "Chnk2NarMig1"
+                                    ],
+                                    "title": "Chunks to NAR Migration",
+                                    "notePosition": 65,
+                                    "prefix": null,
+                                    "isExpanded": false,
+                                    "type": "text",
+                                    "mime": "text/html",
+                                    "attributes": [
+                                        {
+                                            "type": "relation",
+                                            "name": "internalLink",
+                                            "value": "ZBLjSKKfK6yH",
+                                            "isInheritable": false,
+                                            "position": 10
+                                        },
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "chunks-to-nar-migration",
+                                            "isInheritable": false,
+                                            "position": 60
+                                        }
+                                    ],
+                                    "format": "markdown",
+                                    "dataFileName": "Chunks to NAR Migration.md",
+                                    "attachments": []
+                                },
+                                {
+                                    "isClone": false,
                                     "noteId": "ffvvrpwSQuBp",
                                     "notePath": [
                                         "C3Wj5rq7ksjn",

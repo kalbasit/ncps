@@ -14,7 +14,7 @@
 
 - [x] 3.1 A chunk shared with another `nar_file` is retained. RED→GREEN: `TestMigrateChunksToNar_RetainsSharedChunks`.
 - [x] 3.2 Orphaned chunks reclaimed via the existing `cleanupStaleLockChunks` (orphan predicate: `entchunk.Not(HasNarFileLinks())`). RED→GREEN: `TestMigrateChunksToNar_ReclaimsOrphanedChunks`.
-- [~] 3.3 DEVIATION from the design's deferred-reclaim default: reclamation is **immediate and dedup-safe** (no `delete-delay` deferral, no `--force-reclaim` flag). Justification: the spec scenarios require the migration itself to delete now-orphaned chunks, and the per-hash migration lock + the operator-run-on-quiesced-deployment model make immediate reclaim safe. Recorded here so it can be revisited if a live-traffic use case emerges.
+- [x] 3.3 Reclamation is **deferred by default** — the migration flips the record and leaves now-orphaned chunks for the GC, so an in-flight chunk-serve is never truncated mid-stream — with an explicit **`--force-reclaim`** opt-in (for drained/maintenance-window runs) that reclaims immediately. Both paths are dedup-safe (chunks still referenced by another `nar_file` are retained).
 
 ## 4. CLI command `migrate-chunks-to-nar`
 
