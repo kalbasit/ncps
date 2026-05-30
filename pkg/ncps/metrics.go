@@ -23,6 +23,7 @@ const (
 	// Migration type constants for metrics.
 	MigrationTypeNarInfoToDB = "narinfo-to-db"
 	MigrationTypeNarToChunks = "nar-to-chunks"
+	MigrationTypeChunksToNar = "chunks-to-nar"
 )
 
 var (

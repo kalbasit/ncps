@@ -104,7 +104,10 @@ object store gives every replica a single, read-after-write-consistent view.
 Storage latency also drives the CDC decision (see `cache.cdc` in
 [`config.example.yaml`](config.example.yaml)): CDC's many small chunk reads suit
 low-latency backends, while high-latency or spinning-disk storage is better served
-whole-file with CDC disabled.
+whole-file with CDC disabled. To move an existing deployment between the two,
+`ncps migrate-nar-to-chunks` chunks whole files and `ncps migrate-chunks-to-nar`
+reconstructs whole files from chunks (verified against each narinfo's `NarHash`) so
+you can safely exit CDC.
 
 ## Architecture
 
