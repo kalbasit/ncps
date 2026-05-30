@@ -6427,6 +6427,15 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 
 // runCDCLazyRecovery runs the CDC lazy recovery job to recover stuck NAR files.
 func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, batchSize int) func() {
+	// cursorID is a keyset cursor over nar_files.id that persists across cron
+	// invocations (the returned closure is scheduled once). Each run resumes after
+	// the highest id it examined last time and resets to 0 once it reaches the end.
+	// Backing-less rows are skipped without being mutated, so without this cursor a
+	// backlog of them at the low end of the id space (e.g. the failed-download
+	// placeholders this job exists to tolerate) would fill every batchSize-limited
+	// snapshot and permanently starve genuinely re-drivable rows with higher ids.
+	var cursorID int
+
 	return func() {
 		startTime := time.Now()
 
@@ -6461,6 +6470,7 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 					entnarfile.TotalChunksEQ(0),
 					entnarfile.ChunkingStartedAtIsNil(),
 					entnarfile.CreatedAtLT(cutoffTime),
+					entnarfile.IDGT(cursorID),
 				).
 				Order(ent.Asc(entnarfile.FieldID)).
 				Limit(batchSize).
@@ -6472,9 +6482,22 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			}
 
 			if len(stuckFiles) == 0 {
+				// Reached the end of the id space (or there were never any rows past
+				// the cursor); wrap back to the start so the next run rescans from the
+				// beginning and picks up newly-stuck rows.
+				cursorID = 0
+
 				log.Debug().Msg("no stuck NAR files found for recovery")
 
 				return nil
+			}
+
+			// Advance the keyset cursor past the batch we are about to examine so the
+			// next run resumes after it instead of re-fetching the same low-id rows. A
+			// short batch means we hit the end, so wrap back to the start next time.
+			cursorID = stuckFiles[len(stuckFiles)-1].ID
+			if len(stuckFiles) < batchSize {
+				cursorID = 0
 			}
 
 			log.Info().Int("count", len(stuckFiles)).Msg("found stuck NAR files for recovery")

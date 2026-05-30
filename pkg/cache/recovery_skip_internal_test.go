@@ -131,3 +131,99 @@ func TestRunCDCLazyRecoverySkipsBackingLessRows(t *testing.T) {
 	assert.Equal(t, 0, spy.count(absentHash),
 		"recovery must skip a backing-less stuck row, not re-drive it")
 }
+
+// TestRunCDCLazyRecoveryAdvancesPastBackingLessRows verifies that a backlog of
+// backing-less stuck rows — which the sweep skips without mutating them — cannot
+// permanently starve a genuinely re-drivable stuck row that sorts after them by id.
+//
+// The query orders by id ascending and limits to batchSize. If more than batchSize
+// backing-less rows sit at the low end of the id space, a per-run snapshot can never
+// reach a store-present row beyond them, so it would be starved forever (head-of-line
+// blocking). The job carries a keyset cursor across runs, so successive runs advance
+// past the skipped backlog and eventually reach the re-drivable row.
+func TestRunCDCLazyRecoveryAdvancesPastBackingLessRows(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dbClient.Close() })
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	spy := &countingNarStore{NarStore: localStore}
+
+	c, err := New(newContext(), cacheName, dbClient, localStore, localStore, spy, "",
+		locklocal.NewLocker(), locklocal.NewRWLocker(), downloadLockTTL, downloadPollTimeout, cacheLockTTL)
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+
+	chunkStore, err := chunk.NewLocalStore(filepath.Join(dir, "chunks-store"))
+	require.NoError(t, err)
+	c.SetChunkStore(chunkStore)
+
+	// Insert a backlog of backing-less stuck rows FIRST so they take the lowest ids
+	// and fill the first batches. Their count exceeds the batch size used below.
+	backingLessHashes := []string{
+		"backinglessrowaaaaaaaaaaaaaaaaaa",
+		"backinglessrowbbbbbbbbbbbbbbbbbb",
+		"backinglessrowcccccccccccccccccc",
+	}
+	for _, h := range backingLessHashes {
+		_, err = c.dbClient.Ent().NarFile.Create().
+			SetHash(h).
+			SetCompression(nar.CompressionTypeXz.String()).
+			SetQuery("").
+			SetFileSize(1234).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	// A genuinely re-drivable stuck row WITH a whole-file in the store, stored AFTER
+	// the backlog so its id sorts after them. PutNar runs before CDC is enabled so it
+	// persists a whole-file (HasNarInStore=true) that recovery can migrate.
+	present := testdata.Nar1
+	presentURL := nar.URL{Hash: present.NarHash, Compression: present.NarCompression}
+	require.NoError(t, c.PutNar(ctx, presentURL, io.NopCloser(strings.NewReader(present.NarText))))
+
+	require.NoError(t, c.SetCDCConfiguration(true, 1024, 4096, 8192))
+	c.SetCDCLazyChunking(true, 1)
+
+	// Mark every row stuck (total_chunks=0, chunking_started_at=NULL) and old enough
+	// to fall outside the recovery cutoff.
+	old := time.Now().Add(-10 * time.Minute)
+	_, err = dbClient.DB().ExecContext(ctx,
+		"UPDATE nar_files SET total_chunks = 0, chunking_started_at = NULL, created_at = ?", old)
+	require.NoError(t, err)
+
+	schedule, err := cron.ParseStandard("@every 5m")
+	require.NoError(t, err)
+
+	// Batch size smaller than the backing-less backlog: a single per-run snapshot can
+	// never reach the store-present row. Create the job ONCE (as the cron scheduler
+	// does) so its keyset cursor persists across invocations.
+	job := c.runCDCLazyRecovery(ctx, schedule, 2)
+
+	require.Eventually(t, func() bool {
+		job()
+
+		return spy.count(present.NarHash) >= 1
+	}, 5*time.Second, 50*time.Millisecond,
+		"recovery must advance past the backing-less backlog and re-drive the store-present row")
+
+	// The backing-less rows must never be re-driven (no whole-file to migrate).
+	for _, h := range backingLessHashes {
+		assert.Equal(t, 0, spy.count(h),
+			"recovery must never re-drive a backing-less stuck row")
+	}
+}
