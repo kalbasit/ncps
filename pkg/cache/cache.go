@@ -976,11 +976,16 @@ func (c *Cache) StartCron(ctx context.Context) {
 
 // Close waits for all background operations to complete.
 func (c *Cache) Close() {
-	c.backgroundWG.Wait()
-
+	// Stop the cron first and wait for any in-flight scheduled job (e.g. CDC lazy
+	// recovery) to return: cron.Stop() prevents new scheduling and returns a context
+	// that completes once running jobs finish. This guarantees no scheduled job can
+	// enqueue more backgroundWG-tracked work (BackgroundMigrateNarToChunks) after we
+	// begin draining, avoiding an Add-concurrent-with-Wait race on backgroundWG.
 	if c.cron != nil {
-		c.cron.Stop()
+		<-c.cron.Stop().Done()
 	}
+
+	c.backgroundWG.Wait()
 }
 
 // SetRecordAgeIgnoreTouch changes the duration at which a record is considered
