@@ -57,6 +57,7 @@ cache:
 | `--cache-cdc-lazy-chunking-enabled` | Enable lazy chunking: store compressed NAR first, chunk in background | `CACHE_CDC_LAZY_CHUNKING_ENABLED` | `false` |
 | `--cache-cdc-background-workers` | Number of background workers for lazy chunking | `CACHE_CDC_BACKGROUND_WORKERS` | (number of CPUs) |
 | `--cache-cdc-delete-delay` | Delay before deleting compressed NAR files after chunking completes | `CACHE_CDC_DELETE_DELAY` | `24h` |
+| `--cache-cdc-chunk-wait-timeout` | Maximum time to wait for a single chunk during progressive CDC streaming | `CACHE_CDC_CHUNK_WAIT_TIMEOUT` | `30s` |
 
 ### Lazy Chunking
 

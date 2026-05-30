@@ -177,6 +177,7 @@ Content-Defined Chunking (CDC) enables deduplication of NAR files by splitting t
 | `--cache-cdc-lazy-recovery-schedule` | Cron schedule for recovering stuck NARs in lazy chunking mode | `CACHE_CDC_LAZY_RECOVERY_SCHEDULE` | `@every 5m` |
 | `--cache-cdc-lazy-recovery-batch-size` | Maximum number of stuck NARs to process per recovery cron run | `CACHE_CDC_LAZY_RECOVERY_BATCH_SIZE` | `100` |
 | `--cache-cdc-lazy-cleanup-schedule` | Cron schedule for cleaning up deleted NAR files after lazy chunking | `CACHE_CDC_LAZY_CLEANUP_SCHEDULE` | `@every 1h` |
+| `--cache-cdc-chunk-wait-timeout` | Maximum time to wait for a single chunk during progressive CDC streaming (align with the gateway timeout on high-latency storage) | `CACHE_CDC_CHUNK_WAIT_TIMEOUT` | `30s` |
 
 **Example:**
 

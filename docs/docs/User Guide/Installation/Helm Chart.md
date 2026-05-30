@@ -496,6 +496,10 @@ config:
     # Delay before deleting compressed NAR files after chunking completes (default: 24h)
     # This allows clients to update their cache before the original compressed file is removed
     deleteDelay: 24h
+
+    # Maximum time to wait for a single chunk during progressive CDC streaming (default: 30s)
+    # Align with your reverse-proxy/gateway timeout on high-latency storage to avoid 504s
+    chunkWaitTimeout: 30s
 ```
 
 ## Temporary Volume Configuration
