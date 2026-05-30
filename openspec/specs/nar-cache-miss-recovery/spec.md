@@ -64,8 +64,11 @@ a terminal 404. A later request for the same hash SHALL be able to re-attempt th
 
 #### Scenario: Recovery sweep re-drives stuck records
 
-- **GIVEN** one or more `nar_file` rows are stuck (backing-less, chunking not progressing)
+- **GIVEN** one or more `nar_file` rows are stuck (`total_chunks=0`, chunking not progressing)
 - **WHEN** the CDC lazy-recovery job runs
-- **THEN** it SHALL either re-drive those rows to a servable state or clear them so the next
-  `GetNar` performs a clean upstream download
+- **THEN** it SHALL re-drive rows that have a whole-file in the store to a servable (chunked) state
+- **AND** it MAY skip backing-less rows that lack a whole-file, leaving them for on-demand recovery
+  by `GetNar` (which re-downloads from upstream)
 - **AND** SHALL NOT indefinitely retry a hash that upstream genuinely does not have
+- **AND** skipped backing-less rows SHALL NOT block the sweep from reaching genuinely re-drivable
+  rows on subsequent runs (no head-of-line starvation)
