@@ -976,11 +976,16 @@ func (c *Cache) StartCron(ctx context.Context) {
 
 // Close waits for all background operations to complete.
 func (c *Cache) Close() {
-	c.backgroundWG.Wait()
-
+	// Stop the cron first and wait for any in-flight scheduled job (e.g. CDC lazy
+	// recovery) to return: cron.Stop() prevents new scheduling and returns a context
+	// that completes once running jobs finish. This guarantees no scheduled job can
+	// enqueue more backgroundWG-tracked work (BackgroundMigrateNarToChunks) after we
+	// begin draining, avoiding an Add-concurrent-with-Wait race on backgroundWG.
 	if c.cron != nil {
-		c.cron.Stop()
+		<-c.cron.Stop().Done()
 	}
+
+	c.backgroundWG.Wait()
 }
 
 // SetRecordAgeIgnoreTouch changes the duration at which a record is considered
@@ -1027,37 +1032,28 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 
 		hasNarInStore := c.HasNarInStore(ctx, narURL)
 
-		var err error
-
-		hasNar := hasNarInStore
-		if !hasNar {
-			hasNar, err = c.HasNarInChunks(ctx, narURL)
-			if err != nil {
-				return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
-			}
-		}
-
-		// If CDC is enabled and we have a nar_file record with chunking_started_at set
-		// but total_chunks == 0, another instance is still chunking. Fall into the
-		// progressive streaming path. Records with chunking_started_at=NULL are
-		// placeholder records (e.g. from a failed download) and should not be served.
-		//
-		// Skip this check when there is an active local download job: in that case we
-		// use the faster temp-file streaming path (prePullNar below) rather than
-		// progressive CDC streaming which blocks until chunks are produced.
 		c.upstreamJobsMu.Lock()
 		_, hasActiveLocalJob := c.upstreamJobs[narJobKey(narURL.Hash)]
 		c.upstreamJobsMu.Unlock()
 
-		if !hasNar && !hasNarInStore && c.isCDCEnabled() && !hasActiveLocalJob {
-			nr, nrErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
-			if nrErr == nil && nr.ChunkingStartedAt != nil {
-				// Chunking is actively in progress; use progressive streaming if not stale.
-				if time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL {
-					hasNar = true
-				}
-			} else if nrErr != nil && !database.IsNotFoundError(nrErr) {
-				return fmt.Errorf("failed to check nar file record for progressive streaming: %w", nrErr)
+		// hasNar decides whether we can serve immediately (whole-file in store, fully
+		// chunked, or chunking actively in progress) versus falling through to a
+		// download. isServable is the single source of truth; see its doc comment.
+		// A backing-less placeholder row is therefore never served — it falls through
+		// to prePullNar below and re-downloads instead of returning a 404.
+		hasNar, err := c.isServable(ctx, narURL)
+		if err != nil {
+			return err
+		}
+
+		// When a local download job is already active, prefer the faster temp-file
+		// streaming path (prePullNar below) over progressive CDC streaming. A NAR that
+		// is only "actively chunking" (not in store and not yet fully chunked) must not
+		// count as servable here, so re-evaluate without the active-chunking term.
+		if hasActiveLocalJob && !hasNarInStore {
+			hasNar, err = c.HasNarInChunks(ctx, narURL)
+			if err != nil {
+				return fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 			}
 		}
 
@@ -3783,40 +3779,21 @@ func (c *Cache) prePullNar(
 		narURL.Hash,
 		false,
 		func(ctx context.Context) bool {
-			hasInStore := c.HasNarInStore(ctx, *narURL)
-			if hasInStore {
-				return true
-			}
-
-			// Check if NAR is already in chunks or actively being chunked.
-			// We distinguish three states using total_chunks and chunking_started_at:
-			//   - total_chunks > 0                        → fully chunked, treat as available
-			//   - total_chunks = 0, chunking_started_at set AND fresh → actively chunking on
-			//                                               another server, stream progressively
-			//   - total_chunks = 0, chunking_started_at NULL (placeholder from storeInDatabase)
-			//     OR chunking_started_at stale (>= TTL)  → not being chunked, trigger download
-			//
-			// This prevents treating placeholder nar_file records (created by storeInDatabase
-			// before NAR chunking starts) as "has asset", which would cause streamProgressiveChunks
-			// to wait 30s for chunks that never arrive, resulting in truncated NAR responses.
-			if c.isCDCEnabled() {
-				nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, *narURL)
-				if err != nil {
-					return false
-				}
-
-				if nr.TotalChunks > 0 {
-					return true
-				}
-
-				if nr.ChunkingStartedAt != nil {
-					return time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL
-				}
+			// A placeholder nar_file row (created by storeInDatabase before chunking
+			// starts, or left by a failed download) must NOT count as an available
+			// asset: otherwise coordinateDownload returns a completed state and skips
+			// the re-download, and streamProgressiveChunks waits 30s for chunks that
+			// never arrive, yielding a truncated NAR response. isServable is the single
+			// predicate gating this; see its doc comment.
+			servable, err := c.isServable(ctx, *narURL)
+			if err != nil {
+				zerolog.Ctx(ctx).Warn().Err(err).
+					Msg("error checking servability for download coordination; treating as cache miss")
 
 				return false
 			}
 
-			return false
+			return servable
 		},
 		func(ds *downloadState) {
 			c.pullNarIntoStore(ctx, narURL, preferredUpstreamURL, uc, ds, narInfo)
@@ -3863,6 +3840,53 @@ func (c *Cache) getNarFileFromDB(
 	}
 
 	return nil, err
+}
+
+// narFileServable reports whether an existing nar_file record represents servable
+// backing data: it is fully chunked (TotalChunks > 0) or chunking is actively in
+// progress within cdcChunkingLockTTL. A placeholder record (TotalChunks == 0 with a
+// NULL or stale ChunkingStartedAt) is NOT servable.
+func narFileServable(nr *ent.NarFile) bool {
+	if nr.TotalChunks > 0 {
+		return true
+	}
+
+	if nr.ChunkingStartedAt != nil {
+		return time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL
+	}
+
+	return false
+}
+
+// isServable is the single source of truth for whether a NAR can be served right
+// now: a whole-file exists in the store, OR (with CDC enabled) a nar_file record
+// exists that is fully chunked or actively chunking within the lock TTL.
+//
+// The mere existence of a nar_file row NEVER makes a NAR servable: a backing-less
+// placeholder row (created by storeInDatabase at narinfo-fetch time, or left behind
+// by a failed download) is a cache miss that must trigger an upstream (re-)download,
+// never a terminal 404. Every read-path servability decision routes through this
+// helper so the placeholder regression (ncps #1255/#1263/#1279/#1290), which kept
+// recurring via divergent ad-hoc checks, cannot return.
+func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
+	if c.HasNarInStore(ctx, narURL) {
+		return true, nil
+	}
+
+	if !c.isCDCEnabled() {
+		return false, nil
+	}
+
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("failed to look up nar_file record for servability: %w", err)
+	}
+
+	return narFileServable(nr), nil
 }
 
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
@@ -6408,6 +6432,15 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 
 // runCDCLazyRecovery runs the CDC lazy recovery job to recover stuck NAR files.
 func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, batchSize int) func() {
+	// cursorID is a keyset cursor over nar_files.id that persists across cron
+	// invocations (the returned closure is scheduled once). Each run resumes after
+	// the highest id it examined last time and resets to 0 once it reaches the end.
+	// Backing-less rows are skipped without being mutated, so without this cursor a
+	// backlog of them at the low end of the id space (e.g. the failed-download
+	// placeholders this job exists to tolerate) would fill every batchSize-limited
+	// snapshot and permanently starve genuinely re-drivable rows with higher ids.
+	var cursorID int
+
 	return func() {
 		startTime := time.Now()
 
@@ -6442,6 +6475,7 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 					entnarfile.TotalChunksEQ(0),
 					entnarfile.ChunkingStartedAtIsNil(),
 					entnarfile.CreatedAtLT(cutoffTime),
+					entnarfile.IDGT(cursorID),
 				).
 				Order(ent.Asc(entnarfile.FieldID)).
 				Limit(batchSize).
@@ -6453,9 +6487,22 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			}
 
 			if len(stuckFiles) == 0 {
+				// Reached the end of the id space (or there were never any rows past
+				// the cursor); wrap back to the start so the next run rescans from the
+				// beginning and picks up newly-stuck rows.
+				cursorID = 0
+
 				log.Debug().Msg("no stuck NAR files found for recovery")
 
 				return nil
+			}
+
+			// Advance the keyset cursor past the batch we are about to examine so the
+			// next run resumes after it instead of re-fetching the same low-id rows. A
+			// short batch means we hit the end, so wrap back to the start next time.
+			cursorID = stuckFiles[len(stuckFiles)-1].ID
+			if len(stuckFiles) < batchSize {
+				cursorID = 0
 			}
 
 			log.Info().Int("count", len(stuckFiles)).Msg("found stuck NAR files for recovery")
@@ -6474,6 +6521,22 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 					Hash:        stuckFile.Hash,
 					Compression: nar.CompressionType(stuckFile.Compression),
 					Query:       parsedQuery,
+				}
+
+				// Only re-drive rows that have a whole-file in the store:
+				// BackgroundMigrateNarToChunks chunks an existing whole-file NAR and
+				// cannot help a backing-less row (placeholder created at narinfo-fetch
+				// time, or a NAR upstream genuinely does not have). Re-driving those
+				// every interval just spams "error fetching nar from store: not found"
+				// and indefinitely retries a hash that can never be migrated. Such rows
+				// are recovered on demand by GetNar, which re-downloads from upstream.
+				if !c.HasNarInStore(ctx, narURL) {
+					log.Debug().
+						Str("hash", stuckFile.Hash).
+						Str("compression", stuckFile.Compression).
+						Msg("skipping backing-less stuck NAR file (no whole-file in store to migrate)")
+
+					continue
 				}
 
 				// Trigger background migration - this uses distributed locking internally
@@ -7428,7 +7491,14 @@ func (c *Cache) BackgroundMigrateNarToChunks(ctx context.Context, narURL nar.URL
 	// Use a detached context to prevent the background migration from being aborted by the request context's cancellation.
 	ctx = context.WithoutCancel(ctx)
 
+	// Track the migration in backgroundWG so Close() drains in-flight migrations on
+	// shutdown. Without this, the detached goroutine can keep writing chunk files
+	// after the owning cache (and, in tests, its temp chunk store) is torn down.
+	c.backgroundWG.Add(1)
+
 	analytics.SafeGo(ctx, func() {
+		defer c.backgroundWG.Done()
+
 		log := zerolog.Ctx(ctx).With().
 			Str("op", "BackgroundMigrateNarToChunks").
 			Str("nar_hash", narURL.Hash).

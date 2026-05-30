@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -48,6 +49,17 @@ import (
 // If any dialect produces a diff, the schemas have drifted and either
 // the translation, the bridge, or the Ent schema must be fixed until the
 // diff is empty.
+// atlasReplayMu serializes the Ent/Atlas schema-replay section across the
+// dialect subtests. schema.NewMigrate/NamedDiff -> planReplay -> realm ->
+// tables -> aIndexes reads process-global state in entgo.io/ent's Atlas
+// integration that is not safe for concurrent use; running the dialect
+// subtests in parallel (each performing a replay-diff) trips a data race in
+// entgo.io/ent/dialect/sql/schema/atlas.go under the race detector. Holding
+// this lock only around the replay keeps t.Parallel() for setup/teardown.
+//
+//nolint:gochecknoglobals // serializes shared Ent/Atlas replay globals across parallel subtests
+var atlasReplayMu sync.Mutex
+
 func TestSchemaEquivalence(t *testing.T) {
 	t.Parallel()
 
@@ -120,9 +132,21 @@ func TestSchemaEquivalence(t *testing.T) {
 				opts = append(opts, schema.WithDiffHook(tc.diffHooks...))
 			}
 
-			m, err := schema.NewMigrate(drv, opts...)
-			require.NoError(t, err)
-			require.NoError(t, m.NamedDiff(t.Context(), "equivalence_check", migrate.Tables...))
+			// Serialize the replay-diff: Ent/Atlas shares process-global state
+			// here that races across the parallel dialect subtests. Capture
+			// errors under the lock and assert after unlocking so a failed
+			// require never leaves the mutex held.
+			atlasReplayMu.Lock()
+			m, mErr := schema.NewMigrate(drv, opts...)
+
+			var diffErr error
+			if mErr == nil {
+				diffErr = m.NamedDiff(t.Context(), "equivalence_check", migrate.Tables...)
+			}
+			atlasReplayMu.Unlock()
+
+			require.NoError(t, mErr)
+			require.NoError(t, diffErr)
 
 			after := mustListSQLFiles(t, tmpDir)
 

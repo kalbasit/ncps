@@ -253,6 +253,34 @@ func (c *Cache) ParsePriority(ctx context.Context) (uint64, error) {
 // GetHostname returns the hostname.
 func (c *Cache) GetHostname() string { return c.url.Hostname() }
 
+// isRetriableTransportError reports whether err is a transient transport failure
+// that should be retried for idempotent (GET/HEAD) requests. These are
+// connection-level failures where the request never produced a response, so a retry
+// cannot cause duplicate side effects, and a transient failure must never be treated
+// as a permanent not-found.
+func isRetriableTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Substrings of transient network/HTTP2 transport errors worth retrying.
+	retriable := []string{
+		"http2: server sent GOAWAY",
+		"http2: timeout awaiting response headers",
+		"connection reset by peer",
+		"broken pipe",
+	}
+
+	msg := err.Error()
+	for _, sub := range retriable {
+		if strings.Contains(msg, sub) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // doRequest creates and executes an HTTP request with authentication.
 // The caller is responsible for closing the response body.
 func (c *Cache) doRequest(
@@ -282,12 +310,12 @@ func (c *Cache) doRequest(
 		resp, err = c.httpClient.Do(r)
 		if err != nil {
 			if (method == http.MethodGet || method == http.MethodHead) &&
-				strings.Contains(err.Error(), "http2: server sent GOAWAY") {
+				isRetriableTransportError(err) {
 				zerolog.Ctx(ctx).Warn().
 					Err(err).
 					Int("attempt", i+1).
 					Int("max_retries", defaultHTTPRetries).
-					Msg("GOAWAY error from upstream, retrying request")
+					Msg("transient transport error from upstream, retrying request")
 
 				continue
 			}
