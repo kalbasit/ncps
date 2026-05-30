@@ -22,11 +22,7 @@
       url = "github:numtide/treefmt-nix";
     };
 
-    trilium = {
-      inputs.nixpkgs.follows = "nixpkgs";
-      # TODO: Recent version broke, fix it upstream
-      url = "github:TriliumNext/Trilium/v0.103.0";
-    };
+    trilium.url = "github:TriliumNext/Trilium/v0.102.2";
   };
 
   outputs =
