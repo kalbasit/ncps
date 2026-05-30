@@ -47,6 +47,10 @@ func TestDoRequest_NoBackoffOnFinalAttempt(t *testing.T) {
 
 	require.Error(t, err, "an always-failing transient request must ultimately error")
 
+	// All attempts must run (3 == defaultHTTPRetries): this guards against a
+	// regression that skips retries entirely, which the timing check alone would miss.
+	assert.Equal(t, 3, rt.count, "every retry attempt must be made")
+
 	// Backoffs are base*2^i for i = 0, 1 (after attempts 1 and 2) but NOT after the
 	// final attempt (i = 2). Total ~= base + 2*base = 3*base. With a needless final
 	// backoff it would be ~3*base + 4*base = 7*base.
