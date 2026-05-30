@@ -360,28 +360,32 @@ func (c *Cache) doRequest(
 		}
 
 		resp, err = c.httpClient.Do(r)
-		if err != nil {
-			if (method == http.MethodGet || method == http.MethodHead) &&
-				isRetriableTransportError(err) {
-				zerolog.Ctx(ctx).Warn().
-					Err(err).
-					Int("attempt", i+1).
-					Int("max_retries", defaultHTTPRetries).
-					Msg("transient transport error from upstream, retrying request")
+		if err == nil {
+			return resp, nil
+		}
 
-				// Back off before retrying so a brown-out upstream is not
-				// hammered. Abort promptly if the context is cancelled.
-				if waitErr := c.waitRetryBackoff(ctx, i); waitErr != nil {
-					return nil, waitErr
-				}
-
-				continue
-			}
-
+		// Only idempotent requests that failed with a transient transport error are
+		// retried; everything else fails immediately.
+		retriable := (method == http.MethodGet || method == http.MethodHead) &&
+			isRetriableTransportError(err)
+		if !retriable {
 			return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
 		}
 
-		return resp, nil
+		zerolog.Ctx(ctx).Warn().
+			Err(err).
+			Int("attempt", i+1).
+			Int("max_retries", defaultHTTPRetries).
+			Msg("transient transport error from upstream, retrying request")
+
+		// Back off before retrying so a brown-out upstream is not hammered, aborting
+		// promptly if the context is cancelled. Skip the wait on the final attempt —
+		// no retry follows it, so a backoff would only add latency.
+		if i < defaultHTTPRetries-1 {
+			if waitErr := c.waitRetryBackoff(ctx, i); waitErr != nil {
+				return nil, waitErr
+			}
+		}
 	}
 
 	return nil, fmt.Errorf("error performing %s request to %s: %w", method, url, err)
