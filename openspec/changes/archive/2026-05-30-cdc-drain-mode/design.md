@@ -31,7 +31,7 @@ PR #1304 (`allow-disabling-cdc`) introduced `DeleteCDCConfig` which clears
 
 **Non-Goals:**
 - Automatic background drain job (tracked separately).
-- Auto-clearing DB config when drain completes (tracked separately).
+- Automatic background drain job (not implemented; operator runs migrate-chunks-to-nar manually).
 - Enforcing chunk-store write prohibition at the storage layer (cache layer is sufficient).
 - Changing the chunk-store flags or configuration surface.
 
@@ -143,4 +143,4 @@ signal is whether chunked NAR records exist.
 3. Operator runs `migrate-chunks-to-nar` concurrently (or afterward) at their own pace.
 4. Chunked NARs are served from the chunk store until migrated.
 5. Once migration completes (`total_chunks=0` for all rows), the DB config can be
-   cleared manually if desired (operator command or future feature).
+   startup auto-clears the stored CDC config and the server runs fully disabled.

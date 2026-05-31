@@ -1130,7 +1130,13 @@ func createCache(
 
 	// Capture stored CDC state before validation so drain mode can be detected afterward.
 	storedEnabledStr, storedEnabledErr := cfg.GetCDCEnabled(ctx)
-	storedWasEnabled := storedEnabledErr == nil && storedEnabledStr == "true"
+	storedWasEnabled := false
+
+	if storedEnabledErr == nil {
+		storedWasEnabled = storedEnabledStr == configValueTrue
+	} else if !errors.Is(storedEnabledErr, config.ErrConfigNotFound) {
+		return nil, fmt.Errorf("failed to read stored CDC enabled state: %w", storedEnabledErr)
+	}
 
 	if err := cfg.ValidateOrStoreCDCConfig(ctx, cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
 		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)

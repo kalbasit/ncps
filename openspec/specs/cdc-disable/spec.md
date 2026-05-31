@@ -28,7 +28,7 @@ When this transition is detected at startup, the system SHALL:
 - **AND** all `nar_file` rows have `total_chunks = 0` (migration complete)
 - **WHEN** the server starts with `cdc.enabled: false`
 - **THEN** the server SHALL start successfully
-- **AND** the stored CDC config keys SHALL remain intact
+- **AND** the stored CDC config keys SHALL be auto-cleared from the database
 - **AND** no warning about un-migrated chunks SHALL be logged
 
 #### Scenario: Drain mode — un-migrated chunks remain, still served
