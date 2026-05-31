@@ -1023,6 +1023,48 @@ func getChunkStorageBackend(ctx context.Context, cmd *cli.Command, locker lock.L
 	}
 }
 
+// initCDCDrainMode handles drain mode startup: CDC was previously enabled but is now disabled.
+// It counts remaining chunked NARs and either auto-completes the drain (clearing the stored
+// config when none remain) or initializes the chunk store read-only for in-progress drain.
+func initCDCDrainMode(
+	ctx context.Context,
+	cmd *cli.Command,
+	locker lock.Locker,
+	c *cache.Cache,
+	cfg *config.Config,
+	dbClient *database.Client,
+) error {
+	chunkedCount, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.TotalChunksGT(0)).
+		Count(ctx)
+	if err != nil {
+		return fmt.Errorf("error querying chunked NAR count for drain mode detection: %w", err)
+	}
+
+	if chunkedCount == 0 {
+		if err := cfg.DeleteCDCConfig(ctx); err != nil {
+			return fmt.Errorf("error clearing CDC config after drain completion: %w", err)
+		}
+
+		zerolog.Ctx(ctx).Info().Msg("CDC drain complete: all NARs migrated, stored config cleared")
+
+		return nil
+	}
+
+	chunkStore, err := getChunkStorageBackend(ctx, cmd, locker)
+	if err != nil {
+		return fmt.Errorf("error creating chunk storage backend for CDC drain mode: %w", err)
+	}
+
+	c.SetChunkStore(chunkStore)
+
+	zerolog.Ctx(ctx).Warn().
+		Int("chunked_nar_count", chunkedCount).
+		Msg("CDC disabled with chunked NARs remaining; drain mode active; run migrate-chunks-to-nar")
+
+	return nil
+}
+
 func createCache(
 	ctx context.Context,
 	cmd *cli.Command,
@@ -1086,21 +1128,18 @@ func createCache(
 		}
 	}
 
-	if err := cfg.ValidateOrStoreCDCConfig(ctx, cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
-		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)
+	// Capture stored CDC state before validation so drain mode can be detected afterward.
+	storedEnabledStr, storedEnabledErr := cfg.GetCDCEnabled(ctx)
+	storedWasEnabled := false
+
+	if storedEnabledErr == nil {
+		storedWasEnabled = storedEnabledStr == configValueTrue
+	} else if !errors.Is(storedEnabledErr, config.ErrConfigNotFound) {
+		return nil, fmt.Errorf("failed to read stored CDC enabled state: %w", storedEnabledErr)
 	}
 
-	if !cdcEnabled {
-		chunkedCount, countErr := dbClient.Ent().NarFile.Query().
-			Where(entnarfile.TotalChunksGT(0)).
-			Count(ctx)
-		if countErr != nil {
-			zerolog.Ctx(ctx).Warn().Err(countErr).Msg("failed to count remaining chunked NARs")
-		} else if chunkedCount > 0 {
-			zerolog.Ctx(ctx).Warn().
-				Int("chunked_nar_count", chunkedCount).
-				Msg("CDC is disabled but chunked NARs remain; run 'ncps migrate-chunks-to-nar' to convert")
-		}
+	if err := cfg.ValidateOrStoreCDCConfig(ctx, cdcEnabled, cdcMin, cdcAvg, cdcMax); err != nil {
+		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)
 	}
 
 	zerolog.Ctx(ctx).
@@ -1130,7 +1169,12 @@ func createCache(
 
 	c.SetCDCLazyChunking(cdcLazyChunkingEnabled, cdcBackgroundWorkers)
 
-	// Configure Chunk Store
+	// Configure Chunk Store.
+	//
+	// Full CDC mode: chunk store initialized with write gate on.
+	// Drain mode (storedWasEnabled && !cdcEnabled): CDC was previously active; chunked NARs may
+	// still exist. Initialize the chunk store for reads only (cdcEnabled=false keeps the write
+	// gate off). If no chunked NARs remain, clear the stored config and start fully disabled.
 	if cdcEnabled {
 		chunkStore, err := getChunkStorageBackend(ctx, cmd, locker)
 		if err != nil {
@@ -1138,6 +1182,10 @@ func createCache(
 		}
 
 		c.SetChunkStore(chunkStore)
+	} else if storedWasEnabled {
+		if err := initCDCDrainMode(ctx, cmd, locker, c, cfg, dbClient); err != nil {
+			return nil, err
+		}
 	}
 
 	c.AddUpstreamCaches(ctx, ucs...)

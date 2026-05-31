@@ -1,12 +1,4 @@
-# Capability Spec: CDC Disable
-
-## Purpose
-
-Defines requirements for disabling Content-Defined Chunking (CDC) after it has been
-previously enabled, including the startup drain-mode transition behavior, stored config
-preservation, and how un-migrated chunked NARs are served during the drain period.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: CDC MAY be disabled after being enabled — chunked NARs continue to serve during drain
 
@@ -28,7 +20,7 @@ When this transition is detected at startup, the system SHALL:
 - **AND** all `nar_file` rows have `total_chunks = 0` (migration complete)
 - **WHEN** the server starts with `cdc.enabled: false`
 - **THEN** the server SHALL start successfully
-- **AND** the stored CDC config keys SHALL be auto-cleared from the database
+- **AND** the stored CDC config keys SHALL remain intact
 - **AND** no warning about un-migrated chunks SHALL be logged
 
 #### Scenario: Drain mode — un-migrated chunks remain, still served

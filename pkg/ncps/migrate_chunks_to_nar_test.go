@@ -90,6 +90,29 @@ func countChunks(ctx context.Context, t *testing.T, dbClient *database.Client) i
 	return n
 }
 
+// TestMigrateChunksToNar_CLI_NothingToMigrate verifies that the command exits cleanly
+// when no chunked NARs exist — regardless of whether cdc_enabled is in the database.
+// This covers both the "CDC never used" case and the "drain complete" case.
+func TestMigrateChunksToNar_CLI_NothingToMigrate(t *testing.T) {
+	t.Parallel()
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+	_, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+
+	// No configureCDCInDatabase call — cdc_enabled absent from DB.
+	// No setupChunkedNar call — no nar_file rows with total_chunks > 0.
+
+	app, err := ncps.New()
+	require.NoError(t, err)
+
+	require.NoError(t, app.Run(ctx, []string{
+		"ncps", "migrate-chunks-to-nar",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+	}))
+}
+
 func TestMigrateChunksToNar_CLI_Success(t *testing.T) {
 	t.Parallel()
 

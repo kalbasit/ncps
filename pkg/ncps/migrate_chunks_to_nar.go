@@ -18,7 +18,6 @@ import (
 
 	"github.com/kalbasit/ncps/ent"
 	"github.com/kalbasit/ncps/pkg/cache"
-	"github.com/kalbasit/ncps/pkg/config"
 	"github.com/kalbasit/ncps/pkg/nar"
 	"github.com/kalbasit/ncps/pkg/otel"
 )
@@ -230,24 +229,17 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 			return fmt.Errorf("error creating lockers: %w", err)
 		}
 
-		cfg := config.New(dbClient, rwLocker)
-
-		cdcEnabledStr, err := cfg.GetCDCEnabled(ctx)
+		chunkedCount, err := dbClient.Ent().NarFile.Query().
+			Where(entnarfile.TotalChunksGT(0)).
+			Count(ctx)
 		if err != nil {
-			if errors.Is(err, config.ErrConfigNotFound) {
-				//nolint:err113 // no need to define a package-level error for this one-off message.
-				return errors.New(
-					"migrate-chunks-to-nar command requires CDC to have been enabled in the database; " +
-						"there is nothing chunked to migrate back",
-				)
-			}
-
-			return fmt.Errorf("error loading CDC enabled flag from database: %w", err)
+			return fmt.Errorf("error querying chunked NAR count: %w", err)
 		}
 
-		if cdcEnabledStr != configValueTrue {
-			//nolint:err113 // no need to define a package-level error for this one-off message.
-			return errors.New("migrate-chunks-to-nar command requires CDC to have been enabled in the database")
+		if chunkedCount == 0 {
+			zerolog.Ctx(ctx).Info().Msg("migrate-chunks-to-nar: nothing to migrate; no chunked NARs found")
+
+			return nil
 		}
 
 		extraResourceAttrs, err := detectExtraResourceAttrs(ctx, cmd, dbClient, rwLocker)
