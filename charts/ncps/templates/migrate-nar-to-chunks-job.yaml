@@ -1,27 +1,27 @@
-{{- if .Values.migrateChunksToNar.enabled -}}
+{{- if .Values.migrateNarToChunks.enabled -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "ncps.fullname" . }}-migrate-chunks-to-nar
+  name: {{ include "ncps.fullname" . }}-migrate-nar-to-chunks
   labels:
     {{- include "ncps.labels" . | nindent 4 }}
-    app.kubernetes.io/component: migrate-chunks-to-nar
-  {{- with .Values.migrateChunksToNar.job.annotations }}
+    app.kubernetes.io/component: migrate-nar-to-chunks
+  {{- with .Values.migrateNarToChunks.job.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if not (kindIs "invalid" .Values.migrateChunksToNar.job.backoffLimit) }}
-  backoffLimit: {{ .Values.migrateChunksToNar.job.backoffLimit }}
+  {{- if not (kindIs "invalid" .Values.migrateNarToChunks.job.backoffLimit) }}
+  backoffLimit: {{ .Values.migrateNarToChunks.job.backoffLimit }}
   {{- end }}
-  {{- if not (kindIs "invalid" .Values.migrateChunksToNar.job.ttlSecondsAfterFinished) }}
-  ttlSecondsAfterFinished: {{ .Values.migrateChunksToNar.job.ttlSecondsAfterFinished }}
+  {{- if not (kindIs "invalid" .Values.migrateNarToChunks.job.ttlSecondsAfterFinished) }}
+  ttlSecondsAfterFinished: {{ .Values.migrateNarToChunks.job.ttlSecondsAfterFinished }}
   {{- end }}
   template:
     metadata:
       labels:
         {{- include "ncps.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: migrate-chunks-to-nar
+        app.kubernetes.io/component: migrate-nar-to-chunks
     spec:
       restartPolicy: OnFailure
       {{- with .Values.imagePullSecrets }}
@@ -31,22 +31,22 @@ spec:
       serviceAccountName: {{ include "ncps.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- with .Values.migrateChunksToNar.job.nodeSelector }}
+      {{- with .Values.migrateNarToChunks.job.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.migrateChunksToNar.job.affinity }}
+      {{- with .Values.migrateNarToChunks.job.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.migrateChunksToNar.job.tolerations }}
+      {{- with .Values.migrateNarToChunks.job.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: migrate-chunks-to-nar
+        - name: migrate-nar-to-chunks
           securityContext:
-            {{- toYaml .Values.migrateChunksToNar.securityContext | nindent 12 }}
+            {{- toYaml .Values.migrateNarToChunks.securityContext | nindent 12 }}
           image: {{ include "ncps.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
@@ -54,16 +54,13 @@ spec:
           args:
             - --config
             - /etc/ncps/config.yaml
-            - migrate-chunks-to-nar
-            {{- if .Values.migrateChunksToNar.dryRun }}
+            - migrate-nar-to-chunks
+            {{- if .Values.migrateNarToChunks.dryRun }}
             - --dry-run
             {{- end }}
-            {{- if .Values.migrateChunksToNar.forceReclaim }}
-            - --force-reclaim
-            {{- end }}
-            {{- if .Values.migrateChunksToNar.concurrency }}
+            {{- if .Values.migrateNarToChunks.concurrency }}
             - --concurrency
-            - {{ .Values.migrateChunksToNar.concurrency | quote }}
+            - {{ .Values.migrateNarToChunks.concurrency | quote }}
             {{- end }}
           env:
             {{- include "ncps.cacheDatabaseURLEnv" . | nindent 12 }}
@@ -100,7 +97,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           resources:
-            {{- toYaml .Values.migrateChunksToNar.resources | nindent 12 }}
+            {{- toYaml .Values.migrateNarToChunks.resources | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/ncps/config.yaml
