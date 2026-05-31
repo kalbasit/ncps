@@ -639,7 +639,8 @@ fsck:
 # CDC-chunked NARs back into whole files so you can exit CDC. Enable it for the
 # upgrade that runs the migration, then disable it again. Safe to re-run.
 migrateChunksToNar:
-  # Enable the migrate-chunks-to-nar Job. Runs on each install/upgrade while enabled.
+  # Enable the migrate-chunks-to-nar Job. When enabled, ArgoCD/Helm includes it as a regular
+  # release resource. Disable and re-sync once migration is complete.
   enabled: false
 
   # Report what would be migrated without writing whole files, mutating records,
@@ -675,6 +676,51 @@ migrateChunksToNar:
     runAsGroup: 1000
 
   # Job configuration
+  job:
+    # Backoff limit for job retries
+    backoffLimit: 1
+
+    # TTL after job finishes (in seconds). Set to 0 to keep jobs indefinitely.
+    ttlSecondsAfterFinished: 3600
+
+    # Annotations for the job
+    annotations: {}
+
+    # Node selector for the job
+    nodeSelector: {}
+
+    # Tolerations for the job
+    tolerations: []
+
+    # Affinity for the job
+    affinity: {}
+
+migrateNarToChunks:
+  # Enable the migrate-nar-to-chunks Job. When enabled, ArgoCD/Helm includes it as a regular
+  # release resource. Disable and re-sync once migration is complete.
+  enabled: false
+
+  # Report what would be migrated without writing to the chunk store or deleting from storage.
+  dryRun: false
+
+  # Number of concurrent migration workers.
+  concurrency: 10
+
+  # Resources for the migration container/job
+  resources: {}
+    # limits:
+    #   memory: 5Gi
+    # requests:
+    #   cpu: 100m
+    #   memory: 1Gi
+
+  # Security context for the migration container/job
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
   job:
     # Backoff limit for job retries
     backoffLimit: 1

@@ -1,26 +1,26 @@
-suite: test migrate-chunks-to-nar job rendering
+suite: test migrate-nar-to-chunks job rendering
 templates:
-  - migrate-chunks-to-nar-job.yaml
+  - migrate-nar-to-chunks-job.yaml
   - configmap.yaml
   - secret.yaml
 tests:
   - it: should not create the job by default
-    template: migrate-chunks-to-nar-job.yaml
+    template: migrate-nar-to-chunks-job.yaml
     asserts:
       - hasDocuments:
           count: 0
 
   - it: should create a Job when enabled
-    template: migrate-chunks-to-nar-job.yaml
+    template: migrate-nar-to-chunks-job.yaml
     set:
-      migrateChunksToNar.enabled: true
+      migrateNarToChunks.enabled: true
       config.hostname: test.example.com
     asserts:
       - isKind:
           of: Job
       - equal:
           path: metadata.name
-          value: RELEASE-NAME-ncps-migrate-chunks-to-nar
+          value: RELEASE-NAME-ncps-migrate-nar-to-chunks
       - isNull:
           path: metadata.annotations["helm.sh/hook"]
       - equal:
@@ -28,38 +28,37 @@ tests:
           value:
             - --config
             - /etc/ncps/config.yaml
-            - migrate-chunks-to-nar
+            - migrate-nar-to-chunks
             - --concurrency
             - "10"
 
-  - it: should add --force-reclaim when enabled
-    template: migrate-chunks-to-nar-job.yaml
+  - it: should add --dry-run when enabled
+    template: migrate-nar-to-chunks-job.yaml
     set:
-      migrateChunksToNar.enabled: true
-      migrateChunksToNar.forceReclaim: true
+      migrateNarToChunks.enabled: true
+      migrateNarToChunks.dryRun: true
       config.hostname: test.example.com
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
-          content: --force-reclaim
+          content: --dry-run
 
-  - it: should not add --force-reclaim by default
-    template: migrate-chunks-to-nar-job.yaml
+  - it: should not contain --force-reclaim
+    template: migrate-nar-to-chunks-job.yaml
     set:
-      migrateChunksToNar.enabled: true
+      migrateNarToChunks.enabled: true
       config.hostname: test.example.com
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].args
           content: --force-reclaim
 
-  - it: should add --dry-run when enabled
-    template: migrate-chunks-to-nar-job.yaml
+  - it: should set ttlSecondsAfterFinished
+    template: migrate-nar-to-chunks-job.yaml
     set:
-      migrateChunksToNar.enabled: true
-      migrateChunksToNar.dryRun: true
+      migrateNarToChunks.enabled: true
       config.hostname: test.example.com
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --dry-run
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 3600
