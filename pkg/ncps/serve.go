@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"golang.org/x/sync/errgroup"
 
+	entnarfile "github.com/kalbasit/ncps/ent/narfile"
 	s3config "github.com/kalbasit/ncps/pkg/s3"
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
 	storageS3 "github.com/kalbasit/ncps/pkg/storage/s3"
@@ -1089,6 +1090,19 @@ func createCache(
 		return nil, fmt.Errorf("CDC configuration validation failed: %w", err)
 	}
 
+	if !cdcEnabled {
+		chunkedCount, countErr := dbClient.Ent().NarFile.Query().
+			Where(entnarfile.TotalChunksGT(0)).
+			Count(ctx)
+		if countErr != nil {
+			zerolog.Ctx(ctx).Warn().Err(countErr).Msg("failed to count remaining chunked NARs")
+		} else if chunkedCount > 0 {
+			zerolog.Ctx(ctx).Warn().
+				Int("chunked_nar_count", chunkedCount).
+				Msg("CDC is disabled but chunked NARs remain; run 'ncps migrate-chunks-to-nar' to convert")
+		}
+	}
+
 	zerolog.Ctx(ctx).
 		Info().
 		Bool("cdc-enabled", cdcEnabled).
@@ -1255,8 +1269,8 @@ func loadCDCConfigFromDB(
 
 	// CDC is configured in the database.
 	// If the flag wasn't explicitly set on the command line, adopt the database value.
-	// If the user explicitly passed --cache-cdc-enabled=false, keep it as-is and let
-	// ValidateOrStoreCDCConfig return ErrCDCDisabledAfterEnabled.
+	// If the user explicitly passed --cache-cdc-enabled=false, keep it as-is so
+	// ValidateOrStoreCDCConfig will clear the stored config and allow the transition.
 	if !wasExplicitlySet {
 		enabled = true
 	}

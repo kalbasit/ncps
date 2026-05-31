@@ -475,9 +475,29 @@ func testValidateCDCDisableAfterEnabled(factory databaseFactory) func(*testing.T
 		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
 		require.NoError(t, err)
 
-		// Second boot with CDC disabled - should fail
+		// Second boot with CDC disabled - should now succeed (migrate-chunks-to-nar exists)
 		err = c.ValidateOrStoreCDCConfig(ctx, false, 65536, 262144, 1048576)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "CDC cannot be disabled after being enabled")
+		require.NoError(t, err)
+
+		// All four CDC config keys must be cleared from the database
+		_, err = c.GetCDCEnabled(ctx)
+		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_enabled must be cleared")
+
+		_, err = c.GetCDCMin(ctx)
+		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_min must be cleared")
+
+		_, err = c.GetCDCAvg(ctx)
+		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_avg must be cleared")
+
+		_, err = c.GetCDCMax(ctx)
+		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_max must be cleared")
+
+		// Re-enabling with new sizes must succeed (treated as a fresh first boot)
+		err = c.ValidateOrStoreCDCConfig(ctx, true, 32768, 131072, 524288)
+		require.NoError(t, err)
+
+		enabled, err := c.GetCDCEnabled(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "true", enabled)
 	}
 }
