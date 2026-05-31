@@ -29,8 +29,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "ncps.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.migrateChunksToNar.job.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -45,8 +47,11 @@ spec:
       {{- end }}
       containers:
         - name: migrate-chunks-to-nar
+          {{- $ctx := mergeOverwrite (deepCopy (default dict .Values.containerDefaults.securityContext)) (default dict .Values.migrateChunksToNar.securityContext) }}
+          {{- with $ctx }}
           securityContext:
-            {{- toYaml .Values.migrateChunksToNar.securityContext | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           image: {{ include "ncps.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:

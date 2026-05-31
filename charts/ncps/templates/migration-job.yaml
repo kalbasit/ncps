@@ -35,8 +35,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "ncps.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.migration.job.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -64,20 +66,19 @@ spec:
               mountPath: /storage
           resources:
             {{- toYaml .Values.initImage.resources | nindent 12 }}
+          {{- $ctx := mergeOverwrite (deepCopy (default dict .Values.containerDefaults.securityContext)) (default dict .Values.initImage.securityContext) }}
+          {{- with $ctx }}
           securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
       {{- end }}
       containers:
         - name: migration
+          {{- $ctx := mergeOverwrite (deepCopy (default dict .Values.containerDefaults.securityContext)) (default dict .Values.migration.securityContext) }}
+          {{- with $ctx }}
           securityContext:
-            {{- toYaml .Values.migration.securityContext | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           image: {{ include "ncps.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
