@@ -1094,10 +1094,12 @@ func createCache(
 		chunkedCount, countErr := dbClient.Ent().NarFile.Query().
 			Where(entnarfile.TotalChunksGT(0)).
 			Count(ctx)
-		if countErr == nil && chunkedCount > 0 {
+		if countErr != nil {
+			zerolog.Ctx(ctx).Warn().Err(countErr).Msg("failed to count remaining chunked NARs")
+		} else if chunkedCount > 0 {
 			zerolog.Ctx(ctx).Warn().
 				Int("chunked_nar_count", chunkedCount).
-				Msg("CDC is disabled but chunked NARs remain; run 'ncps migrate-chunks-to-nar' to convert them to whole files")
+				Msg("CDC is disabled but chunked NARs remain; run 'ncps migrate-chunks-to-nar' to convert")
 		}
 	}
 

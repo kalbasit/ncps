@@ -21,7 +21,8 @@ CDC (content-defined chunking) is currently a one-way door: once enabled, the se
 
 ## Impact
 
-- `pkg/config/config.go`: Remove `ErrCDCDisabledAfterEnabled` guard; add chunked-NAR count check for the warning.
+- `pkg/config/config.go`: Remove `ErrCDCDisabledAfterEnabled` guard; add `DeleteCDCConfig` helper.
+- `pkg/ncps/serve.go`: Add chunked-NAR count warning when CDC is disabled but chunks remain.
 - `pkg/cache/`: Any code relying on the assumption that `cdc_enabled` stored = current must handle the false→false transition.
 - No API surface changes. No migration required. No performance impact.
 - **Non-goals**: Automatically running `migrate-chunks-to-nar` at startup. Blocking startup when un-migrated chunks exist. Any changes to the CDC chunking write path.
