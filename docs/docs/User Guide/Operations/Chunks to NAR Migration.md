@@ -103,6 +103,47 @@ migrateChunksToNar:
 
 `forceReclaim` maps to `--force-reclaim` and `dryRun` to `--dry-run`. The Job reuses the deployment's database, storage, and Redis configuration. Because it is gated by `migrateChunksToNar.enabled`, nothing is rendered when disabled (the default).
 
+## Exiting CDC
+
+After running `migrate-chunks-to-nar` to completion, disable CDC to stop storing new NARs as chunks:
+
+**1. Confirm no chunked NARs remain** (optional but recommended):
+
+```sql
+-- Should return 0 after a complete migration:
+SELECT count(*) FROM nar_files WHERE total_chunks > 0;
+```
+
+**2. Set `cdc.enabled: false`** in your config or Helm values and restart:
+
+```yaml
+# values.yaml (Helm) — set both in the same upgrade
+config:
+  cdc:
+    enabled: false
+migrateChunksToNar:
+  enabled: false   # turn off the migration job after it has run
+```
+
+Or in the ncps config file:
+
+```yaml
+cache:
+  cdc:
+    enabled: false
+```
+
+**3. Restart the server.** On startup, ncps:
+
+- Clears the stored CDC configuration from the database.
+- Logs a warning if any chunked NARs remain, including the count, so you can decide whether to re-run the migration before traffic ramps up.
+- Starts normally regardless — any remaining chunked NARs are treated as cache misses and re-fetched from upstream on demand.
+
+> [!NOTE]
+> Skipped NARs ("no narinfo NarHash to verify against") are left chunked. If you disable CDC with these remaining, they will be re-fetched from upstream on the next request for each one. This is safe but may result in upstream traffic for those NARs.
+
+**Re-enabling CDC** after disabling it is treated as a fresh first boot — you can change chunk sizes freely.
+
 ## Exit Codes & Failure Isolation
 
 A per-NAR failure (hash mismatch, missing chunk, I/O error) is recorded and does **not** abort the batch — every other NAR is still processed. The command **exits non-zero** if any NAR failed, reporting the count. A NAR that fails verification keeps its chunks and record intact.

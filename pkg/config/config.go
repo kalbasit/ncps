@@ -41,10 +41,6 @@ var (
 	// ErrConfigNotFound is returned if no config with this key was found.
 	ErrConfigNotFound = errors.New("no config was found for this key")
 
-	// ErrCDCDisabledAfterEnabled is returned when attempting to disable CDC after being enabled.
-	ErrCDCDisabledAfterEnabled = errors.New(
-		"CDC cannot be disabled after being enabled; existing chunked NARs would not be reconstructed",
-	)
 	// ErrCDCConfigMismatch is returned when CDC configuration values differ from stored values.
 	ErrCDCConfigMismatch = errors.New(
 		"CDC config changed; different chunk sizes create new chunks without reusing old ones, causing storage duplication",
@@ -202,11 +198,54 @@ func (c *Config) setConfig(ctx context.Context, key, value string) error {
 		Exec(ctx)
 }
 
+// deleteConfig removes a configuration entry by key, acquiring a write lock.
+// Returns nil if the key does not exist.
+func (c *Config) deleteConfig(ctx context.Context, key string) error {
+	lockKey := getLockKey(key)
+
+	if err := c.rwLocker.Lock(ctx, lockKey, lockTTL); err != nil {
+		zerolog.Ctx(ctx).Error().
+			Err(err).
+			Str("key", key).
+			Msg("failed to acquire write lock")
+
+		return fmt.Errorf("failed to acquire write lock: %w", err)
+	}
+
+	defer func() {
+		if err := c.rwLocker.Unlock(ctx, lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("key", key).
+				Msg("failed to release write lock")
+		}
+	}()
+
+	_, err := c.dbClient.Ent().ConfigEntry.Delete().
+		Where(entconfigentry.KeyEQ(key)).
+		Exec(ctx)
+
+	return err
+}
+
+// DeleteCDCConfig removes all four CDC configuration keys from the database.
+// Used when transitioning from CDC-enabled to CDC-disabled so that a future
+// re-enable is treated as a fresh first boot.
+func (c *Config) DeleteCDCConfig(ctx context.Context) error {
+	for _, key := range []string{KeyCDCEnabled, KeyCDCMin, KeyCDCAvg, KeyCDCMax} {
+		if err := c.deleteConfig(ctx, key); err != nil {
+			return fmt.Errorf("failed to delete CDC config key %q: %w", key, err)
+		}
+	}
+
+	return nil
+}
+
 // ValidateOrStoreCDCConfig validates CDC configuration against stored values or stores them if not yet configured.
 // If CDC is disabled and no config exists, returns nil (no-op).
 // If CDC is enabled and no config exists, stores all 4 values.
 // If config exists, validates that enabled flag matches and all values are identical.
-// If CDC was previously enabled (config exists) but now disabled, returns an error.
+// If CDC was previously enabled but now disabled, clears the stored config and returns nil.
 func (c *Config) ValidateOrStoreCDCConfig(
 	ctx context.Context,
 	enabled bool,
@@ -278,13 +317,10 @@ func (c *Config) validateCDCConfig(
 ) error {
 	storedEnabled := storedEnabledStr == "true"
 
-	// Check if user is trying to disable CDC after it was previously enabled
+	// CDC is being disabled after having been enabled — clear stored config so a future
+	// re-enable is treated as a fresh first boot with the new chunk sizes.
 	if storedEnabled && !enabled {
-		return fmt.Errorf(
-			"%w; stored cdc_enabled=%s, current cdc_enabled=%v",
-			ErrCDCDisabledAfterEnabled,
-			storedEnabledStr, enabled,
-		)
+		return c.DeleteCDCConfig(ctx)
 	}
 
 	// Get stored values for comparison
