@@ -189,6 +189,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 		testCDCFirstPullCompletesBeforeChunking(factory))
 	t.Run("GetNar does not panic when CDC is disabled but DB has chunked NARs",
 		testCDCDisabledWithChunkedNARsInDB(factory))
+	t.Run("GetNar serves from chunks in drain mode (cdcEnabled=false, chunkStore≠nil)",
+		testCDCDrainModeGetNarServesFromChunks(factory))
 	t.Run("GetNar with TransparentZstd returns decompressed content from CDC chunks",
 		testCDCGetNarTransparentZstd(factory))
 	t.Run("lazy chunking preserves old nar_file record", testCDCLazyChunkingPreservesOldNarFile(factory))
@@ -1796,9 +1798,10 @@ func testCDCFirstPullCompletesBeforeChunking(factory cacheFactory) func(*testing
 	}
 }
 
-// testCDCDisabledWithChunkedNARsInDB verifies that disabling CDC after NARs have been
-// stored as chunks does not cause a nil pointer panic. When CDC is disabled, GetNar must
-// not attempt to stream from chunks (which would dereference a nil chunkStore).
+// testCDCDisabledWithChunkedNARsInDB verifies drain mode behavior: when CDC writes are
+// disabled (cdcEnabled=false) but the chunk store is still initialized, HasNarInChunks
+// returns true for NARs that remain in chunks, allowing them to continue being served.
+// When the chunk store is cleared entirely, HasNarInChunks returns false (no nil panic).
 func testCDCDisabledWithChunkedNARsInDB(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
@@ -1836,16 +1839,69 @@ func testCDCDisabledWithChunkedNARsInDB(factory cacheFactory) func(*testing.T) {
 		require.NoError(t, err)
 		require.True(t, hasChunks, "HasNarInChunks should return true while CDC is enabled")
 
-		// Step 2: Disable CDC (simulates config change or deployment rollback).
-		// The DB still has total_chunks > 0 for the NAR we stored above.
+		// Step 2: Disable CDC writes (simulates drain mode: cdcEnabled=false, chunkStore still set).
+		// The DB still has total_chunks > 0 for the NAR stored above.
 		err = c.SetCDCConfiguration(false, 0, 0, 0)
 		require.NoError(t, err)
 
-		// Step 3: HasNarInChunks must return false when CDC is disabled,
-		// so the system does not try the chunk path.
+		// Step 3: HasNarInChunks must return true in drain mode (chunk store still initialized)
+		// so that existing chunked NARs continue to be served without re-fetching from upstream.
 		hasChunks, err = c.HasNarInChunks(ctx, nu)
 		require.NoError(t, err)
-		assert.False(t, hasChunks, "HasNarInChunks should return false when CDC is disabled")
+		assert.True(t, hasChunks, "HasNarInChunks should return true in drain mode (chunk store still set)")
+
+		// Step 4: Clearing the chunk store (fully disabled, not drain mode) must prevent
+		// HasNarInChunks from returning true and must not cause any nil pointer panic.
+		c.SetChunkStore(nil)
+
+		hasChunks, err = c.HasNarInChunks(ctx, nu)
+		require.NoError(t, err)
+		assert.False(t, hasChunks, "HasNarInChunks should return false when chunk store is nil")
+	}
+}
+
+// testCDCDrainModeGetNarServesFromChunks verifies the core drain mode contract:
+// GetNar successfully streams a NAR from its chunks when cdcEnabled=false but the
+// chunk store is still initialized. This tests getNarFromChunks using isChunkStoreAvailable
+// instead of isCDCEnabled so reads continue to work throughout the drain period.
+func testCDCDrainModeGetNarServesFromChunks(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c, _, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		// Step 1: Enable full CDC and store a NAR as chunks.
+		chunkStoreDir := filepath.Join(dir, "chunks-store")
+		chunkStore, err := chunk.NewLocalStore(chunkStoreDir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(chunkStore)
+		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
+		require.NoError(t, err)
+
+		content := "drain mode test: this NAR content must be served from chunks after CDC is disabled"
+		nu := nar.URL{Hash: "testnar-drain-mode", Compression: nar.CompressionTypeNone}
+
+		err = c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content)))
+		require.NoError(t, err)
+
+		// Step 2: Enter drain mode — disable CDC writes, keep chunk store.
+		err = c.SetCDCConfiguration(false, 0, 0, 0)
+		require.NoError(t, err)
+
+		// Step 3: GetNar must stream the NAR from its chunks (no whole-file exists).
+		_, size, rc, err := c.GetNar(ctx, nu)
+		require.NoError(t, err, "GetNar must succeed in drain mode for a chunked NAR")
+
+		t.Cleanup(func() { _ = rc.Close() })
+
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		assert.Equal(t, content, string(data), "GetNar must return original content from chunks in drain mode")
+		assert.Equal(t, int64(len(content)), size)
 	}
 }
 

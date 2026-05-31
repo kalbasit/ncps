@@ -1,12 +1,4 @@
-# Capability Spec: CDC Disable
-
-## Purpose
-
-Defines requirements for disabling Content-Defined Chunking (CDC) after it has been
-previously enabled, including the startup drain-mode transition behavior, stored config
-preservation, and how un-migrated chunked NARs are served during the drain period.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: CDC MAY be disabled after being enabled — chunked NARs continue to serve during drain
 

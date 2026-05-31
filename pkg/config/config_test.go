@@ -475,29 +475,33 @@ func testValidateCDCDisableAfterEnabled(factory databaseFactory) func(*testing.T
 		err := c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
 		require.NoError(t, err)
 
-		// Second boot with CDC disabled - should now succeed (migrate-chunks-to-nar exists)
+		// Second boot with CDC disabled - must succeed and leave stored config intact for drain mode
 		err = c.ValidateOrStoreCDCConfig(ctx, false, 65536, 262144, 1048576)
 		require.NoError(t, err)
 
-		// All four CDC config keys must be cleared from the database
-		_, err = c.GetCDCEnabled(ctx)
-		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_enabled must be cleared")
-
-		_, err = c.GetCDCMin(ctx)
-		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_min must be cleared")
-
-		_, err = c.GetCDCAvg(ctx)
-		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_avg must be cleared")
-
-		_, err = c.GetCDCMax(ctx)
-		require.ErrorIs(t, err, config.ErrConfigNotFound, "cdc_max must be cleared")
-
-		// Re-enabling with new sizes must succeed (treated as a fresh first boot)
-		err = c.ValidateOrStoreCDCConfig(ctx, true, 32768, 131072, 524288)
-		require.NoError(t, err)
-
+		// All four CDC config keys must still be present so drain mode and migrate-chunks-to-nar work
 		enabled, err := c.GetCDCEnabled(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, "true", enabled)
+		assert.Equal(t, "true", enabled, "cdc_enabled must be preserved during drain")
+
+		storedMin, err := c.GetCDCMin(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "65536", storedMin, "cdc_min must be preserved during drain")
+
+		storedAvg, err := c.GetCDCAvg(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "262144", storedAvg, "cdc_avg must be preserved during drain")
+
+		storedMax, err := c.GetCDCMax(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "1048576", storedMax, "cdc_max must be preserved during drain")
+
+		// Re-enabling with the same sizes must succeed (stored config still present, values match)
+		err = c.ValidateOrStoreCDCConfig(ctx, true, 65536, 262144, 1048576)
+		require.NoError(t, err)
+
+		// Re-enabling with different sizes must fail (mismatch against preserved config)
+		err = c.ValidateOrStoreCDCConfig(ctx, true, 32768, 131072, 524288)
+		require.ErrorIs(t, err, config.ErrCDCConfigMismatch)
 	}
 }

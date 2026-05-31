@@ -924,6 +924,16 @@ func (c *Cache) isCDCEnabled() bool {
 	return c.cdcEnabled && c.chunkStore != nil
 }
 
+// isChunkStoreAvailable returns true when a chunk store is initialized, regardless of whether CDC
+// writes are enabled. Used to gate read-path operations (serving, HasNarInChunks, GetNarInfo
+// normalization) so chunked NARs continue to be served during drain mode.
+func (c *Cache) isChunkStoreAvailable() bool {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.chunkStore != nil
+}
+
 func (c *Cache) getChunkStore() chunk.Store {
 	c.cdcMu.RLock()
 	defer c.cdcMu.RUnlock()
@@ -3897,7 +3907,7 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 		return true, nil
 	}
 
-	if !c.isCDCEnabled() {
+	if !c.isChunkStoreAvailable() {
 		return false, nil
 	}
 
@@ -6966,7 +6976,7 @@ func derefInt64Ptr(p *int64) int64 {
 // recognized". The DB update happens asynchronously via migrateNarToChunksCleanup;
 // this call makes the in-flight response correct immediately.
 func (c *Cache) maybeCDCNormalizeNarInfoURL(ctx context.Context, narURL nar.URL, narInfo *narinfo.NarInfo) {
-	if !c.isCDCEnabled() {
+	if !c.isChunkStoreAvailable() {
 		return
 	}
 
@@ -6991,7 +7001,7 @@ func (c *Cache) maybeCDCNormalizeNarInfoURL(ctx context.Context, narURL nar.URL,
 
 // HasNarInChunks returns true if the NAR is already in chunks and chunking is complete.
 func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error) {
-	if !c.isCDCEnabled() {
+	if !c.isChunkStoreAvailable() {
 		return false, nil
 	}
 
@@ -7024,10 +7034,11 @@ func (c *Cache) HasNarFileRecord(ctx context.Context, narURL nar.URL) (bool, err
 }
 
 func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, io.ReadCloser, error) {
-	// Guard: if CDC is not configured, we cannot stream from chunks even if DB records exist.
-	// This can happen if CDC was previously enabled and then disabled (config change or rollback).
-	if !c.isCDCEnabled() {
-		return 0, nil, fmt.Errorf("CDC is not enabled, cannot serve NAR from chunks: %w", storage.ErrNotFound)
+	// Guard: chunk store must be initialized to stream from chunks. In drain mode the chunk store
+	// is initialized even though CDC writes are disabled (cdcEnabled=false), so this correctly
+	// allows reads throughout the drain period.
+	if !c.isChunkStoreAvailable() {
+		return 0, nil, fmt.Errorf("chunk store not initialized, cannot serve NAR from chunks: %w", storage.ErrNotFound)
 	}
 
 	ctx, span := tracer.Start(

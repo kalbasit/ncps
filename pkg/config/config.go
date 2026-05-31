@@ -244,8 +244,10 @@ func (c *Config) DeleteCDCConfig(ctx context.Context) error {
 // ValidateOrStoreCDCConfig validates CDC configuration against stored values or stores them if not yet configured.
 // If CDC is disabled and no config exists, returns nil (no-op).
 // If CDC is enabled and no config exists, stores all 4 values.
-// If config exists, validates that enabled flag matches and all values are identical.
-// If CDC was previously enabled but now disabled, clears the stored config and returns nil.
+// If config exists and CDC is still enabled, validates that all four values are identical.
+// If CDC was previously enabled but now disabled (enabled→disabled transition), returns nil and leaves the
+// stored config intact so that drain mode can initialize the chunk store on every subsequent restart and
+// migrate-chunks-to-nar can proceed concurrently.
 func (c *Config) ValidateOrStoreCDCConfig(
 	ctx context.Context,
 	enabled bool,
@@ -317,10 +319,11 @@ func (c *Config) validateCDCConfig(
 ) error {
 	storedEnabled := storedEnabledStr == "true"
 
-	// CDC is being disabled after having been enabled — clear stored config so a future
-	// re-enable is treated as a fresh first boot with the new chunk sizes.
+	// CDC is being disabled after having been enabled — leave the stored config intact so that
+	// drain mode can initialize the chunk store on every restart and migrate-chunks-to-nar can
+	// proceed concurrently. The serve layer will call DeleteCDCConfig when drain completes.
 	if storedEnabled && !enabled {
-		return c.DeleteCDCConfig(ctx)
+		return nil
 	}
 
 	// Get stored values for comparison

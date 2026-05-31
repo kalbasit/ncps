@@ -3022,6 +3022,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfo_CDCNormalizesCompressionWhenChunked", testGetNarInfoCDCNormalizesCompressionWhenChunked(factory))
 	t.Run("GetNarInfo_CDCNoNormalizationWhenNotChunked", testGetNarInfoCDCNoNormalizationWhenNotChunked(factory))
 	t.Run("GetNarInfo_CDCDisabledNoNormalization", testGetNarInfoCDCDisabledNoNormalization(factory))
+	t.Run("GetNarInfo_DrainModeNormalizesChunkedNar", testGetNarInfoDrainModeNormalizesChunkedNar(factory))
 	t.Run("GetNar_CDCXzRequestReturnsErrWhenChunked", testGetNarCDCXzRequestReturnsErrWhenChunked(factory))
 	t.Run("GetNar_CDCXzServesFromStoreWhenBothExist", testGetNarCDCXzServesFromStoreWhenBothExist(factory))
 
@@ -4070,6 +4071,71 @@ func testGetNarInfoCDCDisabledNoNormalization(factory cacheFactory) func(*testin
 			"GetNarInfo should NOT normalize Compression when CDC is disabled")
 		assert.Equal(t, xzURL.String(), ni.URL,
 			"GetNarInfo should NOT normalize URL when CDC is disabled")
+	}
+}
+
+// testGetNarInfoDrainModeNormalizesChunkedNar verifies that in drain mode
+// (chunk store initialized but CDC writes disabled via cdcEnabled=false), GetNarInfo
+// still normalizes the URL for a nar_file with total_chunks > 0.
+// This proves isServable and maybeCDCNormalizeNarInfoURL gate on isChunkStoreAvailable,
+// not isCDCEnabled, so chunked NARs are served correctly during the drain period.
+func testGetNarInfoDrainModeNormalizesChunkedNar(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		// Drain mode: SetChunkStore without SetCDCConfiguration → cdcEnabled=false, chunkStore!=nil.
+		c, dbClient, _, dir, _, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		cs, err := chunk.NewLocalStore(dir)
+		require.NoError(t, err)
+
+		c.SetChunkStore(cs)
+		// Intentionally NOT calling c.SetCDCConfiguration — that leaves cdcEnabled=false.
+
+		// Insert a narinfo with xz compression (as stored before chunking completed).
+		parsed, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+		require.NoError(t, err)
+
+		xzURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeXz}
+
+		_, err = dbClient.Ent().NarInfo.Create().
+			SetHash(testdata.Nar1.NarInfoHash).
+			SetURL(xzURL.String()).
+			SetCompression(xzURL.Compression.String()).
+			SetStorePath(parsed.StorePath).
+			SetNarHash(parsed.NarHash.String()).
+			//nolint:gosec // G115: NarSize is non-negative by spec
+			SetNarSize(int64(parsed.NarSize)).
+			SetFileHash(parsed.FileHash.String()).
+			//nolint:gosec // G115: FileSize is non-negative by spec
+			SetFileSize(int64(parsed.FileSize)).
+			Save(ctx)
+		require.NoError(t, err)
+
+		// Insert a nar_file record with TotalChunks > 0 to simulate a fully chunked NAR.
+		noneURL := nar.URL{Hash: testdata.Nar1.NarHash, Compression: nar.CompressionTypeNone}
+
+		_, err = dbClient.Ent().NarFile.Create().
+			SetHash(noneURL.Hash).
+			SetCompression(noneURL.Compression.String()).
+			SetQuery(noneURL.Query.Encode()).
+			SetFileSize(0).
+			SetTotalChunks(1).
+			Save(ctx)
+		require.NoError(t, err)
+
+		ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+		require.NoError(t, err)
+
+		assert.Equal(t, noneURL.Compression.String(), ni.Compression,
+			"GetNarInfo must normalize Compression to none in drain mode when NAR is in CDC chunks")
+		assert.Equal(t, noneURL.String(), ni.URL,
+			"GetNarInfo must normalize URL to .nar in drain mode when NAR is in CDC chunks")
+		assert.Nil(t, ni.FileHash, "FileHash must be nil for normalized narinfo in drain mode")
+		assert.Equal(t, uint64(0), ni.FileSize, "FileSize must be 0 for normalized narinfo in drain mode")
 	}
 }
 
