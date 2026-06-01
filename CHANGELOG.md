@@ -16,7 +16,7 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - **CDC drain mode.** Disabling CDC (`--cache-cdc-enabled=false`) on a
   deployment that still has chunked NARs in the database no longer makes those
-  NARs cache misses. On startup ncps detects the mismatch, initialises the chunk
+  NARs cache misses. On startup ncps detects the mismatch, initializes the chunk
   store read-only, and continues serving chunked NARs while writes go to whole
   files. Once all chunks have been migrated away the drain completes
   automatically — the next restart starts fully CDC-disabled with no operator
@@ -78,7 +78,7 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   writing chunks with the wrong compressor in some cases, producing corrupt
   reassembly on read. (#1255)
 
-- **PostgreSQL: fsck no longer hits the 65 535-parameter IN-clause cap.** Large
+- **PostgreSQL: fsck no longer hits the 65,535-parameter IN-clause cap.** Large
   databases caused fsck queries to exceed PostgreSQL's bind-parameter limit.
   Queries are now batched. (#1268)
 
@@ -90,7 +90,7 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - **PostgreSQL: concurrent narinfo inserts no longer produce 25P02 errors.**
   Chunk inserts now use `DO NOTHING` with 25P02 (in-failed-transaction) recovery,
-  and concurrent narinfo upserts are serialised correctly. (#1259, #1262)
+  and concurrent narinfo upserts are serialized correctly. (#1259, #1262)
 
 - **Cache: stub narinfo filled correctly under concurrent race.** A race between
   two goroutines resolving the same stub narinfo could leave one with an empty
@@ -104,7 +104,7 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   compressed NAR deletion without operator consent. The default has been
   reverted to `false`; set `--cache-cdc-lazy-chunking-enabled=true` (or
   `cache.cdc.lazyChunkingEnabled: true` in the Helm chart) to restore the
-  previous behaviour. (#1172)
+  previous behavior. (#1172)
 
 - **Helm chart: security context defaults removed; `containerDefaults.securityContext` added.**
   All default values have been removed from `podSecurityContext`, `securityContext`,
