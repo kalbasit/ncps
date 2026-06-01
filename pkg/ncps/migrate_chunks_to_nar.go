@@ -325,8 +325,6 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 		var progressWg sync.WaitGroup
 
 		progressWg.Add(1)
-		defer progressWg.Wait()
-		defer close(progressDone)
 
 		go func() {
 			defer progressWg.Done()
@@ -441,8 +439,16 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 			})
 		}
 
-		if err := g.Wait(); err != nil {
-			return err
+		workerErr := g.Wait()
+
+		// Stop the progress reporter before emitting the final summary or
+		// propagating any worker error, so progress lines never appear after
+		// "migration completed" in the log stream.
+		close(progressDone)
+		progressWg.Wait()
+
+		if workerErr != nil {
+			return workerErr
 		}
 
 		duration := time.Since(startTime)

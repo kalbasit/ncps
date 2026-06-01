@@ -192,6 +192,16 @@ func TestMigrateChunksToNar_CLI_ProgressLogEmitted(t *testing.T) {
 
 	t.Cleanup(func() { *ncps.MigrateChunksToNarProgressIntervalForTest = orig })
 
+	// Run setup before capturing stdout so only migrate-chunks-to-nar output is captured.
+	ctx := context.Background()
+
+	dbClient, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+	configureCDCInDatabase(ctx, t, dbClient)
+
+	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
+	fixupNarHash(ctx, t, dbClient)
+
 	// The CLI's getZeroLogger writes to os.Stdout; capture it via a pipe.
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -204,14 +214,16 @@ func TestMigrateChunksToNar_CLI_ProgressLogEmitted(t *testing.T) {
 		_ = r.Close()
 	})
 
-	ctx := context.Background()
+	// Drain concurrently to prevent deadlock if output exceeds the OS pipe buffer.
+	var logBuf bytes.Buffer
 
-	dbClient, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
-	t.Cleanup(cleanup)
-	configureCDCInDatabase(ctx, t, dbClient)
+	readDone := make(chan struct{})
 
-	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
-	fixupNarHash(ctx, t, dbClient)
+	go func() {
+		_, _ = io.Copy(&logBuf, r)
+
+		close(readDone)
+	}()
 
 	require.NoError(t, app.Run(ctx, []string{
 		"ncps", "migrate-chunks-to-nar",
@@ -220,11 +232,7 @@ func TestMigrateChunksToNar_CLI_ProgressLogEmitted(t *testing.T) {
 	}))
 
 	require.NoError(t, w.Close())
-
-	var logBuf bytes.Buffer
-
-	_, err = io.Copy(&logBuf, r)
-	require.NoError(t, err)
+	<-readDone
 
 	logged := logBuf.String()
 	assert.Contains(t, logged, "migration progress", "expected at least one progress log line")
@@ -236,6 +244,12 @@ func TestMigrateChunksToNar_CLI_ProgressLogEmitted(t *testing.T) {
 	assert.Contains(t, logged, `"percent"`, "progress log must include percent field")
 	assert.Contains(t, logged, `"elapsed"`, "progress log must include elapsed field")
 	assert.Contains(t, logged, `"rate"`, "progress log must include rate field")
+	assert.Less(
+		t,
+		strings.LastIndex(logged, "migration progress"),
+		strings.Index(logged, "migration completed"),
+		"all progress lines must appear before migration completed",
+	)
 }
 
 //nolint:paralleltest // redirects os.Stdout; cannot run in parallel
@@ -252,6 +266,17 @@ func TestMigrateChunksToNar_CLI_NoProgressLogOnEmptyRun(t *testing.T) {
 		_ = r.Close()
 	})
 
+	// Drain concurrently to prevent deadlock if output exceeds the OS pipe buffer.
+	var logBuf bytes.Buffer
+
+	readDone := make(chan struct{})
+
+	go func() {
+		_, _ = io.Copy(&logBuf, r)
+
+		close(readDone)
+	}()
+
 	ctx := context.Background()
 
 	_, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
@@ -267,11 +292,7 @@ func TestMigrateChunksToNar_CLI_NoProgressLogOnEmptyRun(t *testing.T) {
 	}))
 
 	require.NoError(t, w.Close())
-
-	var logBuf bytes.Buffer
-
-	_, err = io.Copy(&logBuf, r)
-	require.NoError(t, err)
+	<-readDone
 
 	assert.NotContains(t, logBuf.String(), "migration progress", "no progress line expected when no chunked NARs exist")
 }
