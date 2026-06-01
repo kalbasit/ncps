@@ -18,7 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           token: ${{ secrets.GHA_PAT_TOKEN }}
       - name: Log current API rate limits
         env:
