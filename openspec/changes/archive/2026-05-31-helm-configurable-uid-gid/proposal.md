@@ -6,8 +6,10 @@ All main/job containers (`securityContext`, `migration.securityContext`, `fsck.s
 
 ## What Changes
 
-- Add `initImage.securityContext` to `values.yaml` with defaults that preserve the current hardened posture (`allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `readOnlyRootFilesystem: true`) — intentionally omitting `runAsUser`/`runAsGroup`/`runAsNonRoot` so they inherit from `podSecurityContext`
-- Replace the hardcoded securityContext block in the `create-db-dir` init container in all four affected templates with `{{- toYaml .Values.initImage.securityContext | nindent <N> }}`
+- Remove all default values from `podSecurityContext`, `securityContext`, and all per-container securityContext blocks (`migration`, `fsck`, `migrateChunksToNar`, `migrateNarToChunks`) — operators explicitly opt in to any security posture
+- Add `containerDefaults.securityContext: {}` as a global fallback applied to every container via deep-merge; per-container values win on conflicts
+- Add `initImage.securityContext: {}` to `values.yaml` (no defaults); deep-merged over `containerDefaults.securityContext` for the `create-db-dir` init container
+- Replace the hardcoded securityContext block in `create-db-dir` in all four templates with the deep-merge pattern: `mergeOverwrite (deepCopy containerDefaults.securityContext) initImage.securityContext`
 
 ## Capabilities
 
