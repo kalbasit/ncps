@@ -7,6 +7,7 @@ package ncps
 //
 //nolint:gochecknoglobals // intentional: see comment above.
 var (
-	QueryCDCNarFilesWithSizeMismatchForTest = queryCDCNarFilesWithSizeMismatch
-	ChunksForNarFileForTest                 = chunksForNarFile
+	QueryCDCNarFilesWithSizeMismatchForTest   = queryCDCNarFilesWithSizeMismatch
+	ChunksForNarFileForTest                   = chunksForNarFile
+	MigrateChunksToNarProgressIntervalForTest = &migrateChunksToNarProgressInterval
 )

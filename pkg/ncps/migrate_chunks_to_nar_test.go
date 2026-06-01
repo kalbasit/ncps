@@ -1,12 +1,15 @@
 package ncps_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/nixhash"
@@ -180,6 +183,97 @@ func TestMigrateChunksToNar_CLI_DryRunMakesNoChanges(t *testing.T) {
 	}))
 
 	assert.Equal(t, before, countChunks(ctx, t, dbClient), "--dry-run must not delete any chunks")
+}
+
+//nolint:paralleltest // redirects os.Stdout and overrides global ticker interval; cannot run in parallel
+func TestMigrateChunksToNar_CLI_ProgressLogEmitted(t *testing.T) {
+	orig := *ncps.MigrateChunksToNarProgressIntervalForTest
+	*ncps.MigrateChunksToNarProgressIntervalForTest = 1 * time.Millisecond
+
+	t.Cleanup(func() { *ncps.MigrateChunksToNarProgressIntervalForTest = orig })
+
+	// The CLI's getZeroLogger writes to os.Stdout; capture it via a pipe.
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	os.Stdout = w
+
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		_ = r.Close()
+	})
+
+	ctx := context.Background()
+
+	dbClient, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+	configureCDCInDatabase(ctx, t, dbClient)
+
+	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
+	fixupNarHash(ctx, t, dbClient)
+
+	require.NoError(t, app.Run(ctx, []string{
+		"ncps", "migrate-chunks-to-nar",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+	}))
+
+	require.NoError(t, w.Close())
+
+	var logBuf bytes.Buffer
+
+	_, err = io.Copy(&logBuf, r)
+	require.NoError(t, err)
+
+	logged := logBuf.String()
+	assert.Contains(t, logged, "migration progress", "expected at least one progress log line")
+	assert.Contains(t, logged, `"total"`, "progress log must include total field")
+	assert.Contains(t, logged, `"processed"`, "progress log must include processed field")
+	assert.Contains(t, logged, `"succeeded"`, "progress log must include succeeded field")
+	assert.Contains(t, logged, `"failed"`, "progress log must include failed field")
+	assert.Contains(t, logged, `"skipped"`, "progress log must include skipped field")
+	assert.Contains(t, logged, `"percent"`, "progress log must include percent field")
+	assert.Contains(t, logged, `"elapsed"`, "progress log must include elapsed field")
+	assert.Contains(t, logged, `"rate"`, "progress log must include rate field")
+}
+
+//nolint:paralleltest // redirects os.Stdout; cannot run in parallel
+func TestMigrateChunksToNar_CLI_NoProgressLogOnEmptyRun(t *testing.T) {
+	// The CLI's getZeroLogger writes to os.Stdout; capture it via a pipe.
+	oldStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+
+	os.Stdout = w
+
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		_ = r.Close()
+	})
+
+	ctx := context.Background()
+
+	_, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+
+	app, err := ncps.New()
+	require.NoError(t, err)
+
+	require.NoError(t, app.Run(ctx, []string{
+		"ncps", "migrate-chunks-to-nar",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+	}))
+
+	require.NoError(t, w.Close())
+
+	var logBuf bytes.Buffer
+
+	_, err = io.Copy(&logBuf, r)
+	require.NoError(t, err)
+
+	assert.NotContains(t, logBuf.String(), "migration progress", "no progress line expected when no chunked NARs exist")
 }
 
 func TestMigrateChunksToNar_CLI_HashMismatchFailsWithoutDestroyingData(t *testing.T) {

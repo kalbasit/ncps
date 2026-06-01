@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,8 @@ import (
 // ErrChunksToNarFailures is returned when one or more NARs failed to migrate
 // back to whole files.
 var ErrChunksToNarFailures = errors.New("one or more nars failed to migrate to whole files")
+
+var migrateChunksToNarProgressInterval = 5 * time.Second //nolint:gochecknoglobals // overrideable in tests
 
 func migrateChunksToNarCommand(
 	flagSources flagSourcesFn,
@@ -312,6 +315,56 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 
 		g, ctx := errgroup.WithContext(ctx)
 		g.SetLimit(concurrency)
+
+		// Progress reporter
+		progressTicker := time.NewTicker(migrateChunksToNarProgressInterval)
+		defer progressTicker.Stop()
+
+		progressDone := make(chan struct{})
+
+		var progressWg sync.WaitGroup
+
+		progressWg.Add(1)
+		defer progressWg.Wait()
+		defer close(progressDone)
+
+		go func() {
+			defer progressWg.Done()
+
+			for {
+				select {
+				case <-progressTicker.C:
+					elapsed := time.Since(startTime)
+					processed := atomic.LoadInt32(&totalProcessed)
+					succeeded := atomic.LoadInt32(&totalSucceeded)
+					failed := atomic.LoadInt32(&totalFailed)
+					skipped := atomic.LoadInt32(&totalSkipped)
+
+					var rate float64
+					if durationInSeconds := elapsed.Seconds(); durationInSeconds > 0 {
+						rate = float64(processed) / durationInSeconds
+					}
+
+					var percent float64
+					if total > 0 {
+						percent = float64(processed) / float64(total) * 100
+					}
+
+					logger.Info().
+						Int64("total", total).
+						Int32("processed", processed).
+						Int32("succeeded", succeeded).
+						Int32("failed", failed).
+						Int32("skipped", skipped).
+						Str("percent", fmt.Sprintf("%.2f%%", percent)).
+						Str("elapsed", elapsed.Round(time.Second).String()).
+						Float64("rate", rate).
+						Msg("migration progress")
+				case <-progressDone:
+					return
+				}
+			}
+		}()
 
 		for _, row := range narFiles {
 			g.Go(func() error {
