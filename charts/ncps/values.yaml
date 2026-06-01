@@ -50,6 +50,9 @@ initImage:
     # requests:
     #   cpu: 10m
     #   memory: 16Mi
+  # Security context for the create-db-dir init container.
+  # Deep-merged over containerDefaults.securityContext (initImage wins on conflicts).
+  securityContext: {}
 
 imagePullSecrets: []
 nameOverride: ""
@@ -66,21 +69,16 @@ serviceAccount:
   # Automatically mount service account token
   automountServiceAccountToken: false
 
-podSecurityContext:
-  seccompProfile:
-    type: RuntimeDefault
-  runAsNonRoot: true
-  runAsUser: 1000
-  runAsGroup: 1000
-  fsGroup: 1000
-  fsGroupChangePolicy: "OnRootMismatch"
+podSecurityContext: {}
 
-securityContext:
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-      - ALL
-  readOnlyRootFilesystem: true
+securityContext: {}
+
+# Global security context applied to every container as a baseline.
+# Per-container securityContext values are deep-merged on top (per-container wins).
+# When both are empty, no securityContext key is rendered and containers inherit
+# from podSecurityContext.
+containerDefaults:
+  securityContext: {}
 
 config:
   # Anonymous usage statistics sent to the project maintainers.
@@ -534,15 +532,7 @@ migration:
     #   memory: 64Mi
 
   # Security context for migration container/job
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    readOnlyRootFilesystem: true
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
+  securityContext: {}
 
   # Job configuration (only applies when mode is "job" or "argocd")
   job:
@@ -600,15 +590,7 @@ fsck:
     #   memory: 128Mi
 
   # Security context for fsck container/job
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    readOnlyRootFilesystem: true
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
+  securityContext: {}
 
   # Job configuration
   job:
@@ -665,15 +647,7 @@ migrateChunksToNar:
     #   memory: 1Gi
 
   # Security context for the migration container/job
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    readOnlyRootFilesystem: true
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
+  securityContext: {}
 
   # Job configuration
   job:
@@ -715,15 +689,7 @@ migrateNarToChunks:
     #   memory: 1Gi
 
   # Security context for the migration container/job
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    readOnlyRootFilesystem: true
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
+  securityContext: {}
 
   job:
     # Backoff limit for job retries

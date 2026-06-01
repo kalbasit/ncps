@@ -143,7 +143,7 @@ tests:
           value: global.registry.io/my-org/ncps:v1.2.3
 
   # Security context tests
-  - it: should set pod security context
+  - it: should not render securityContext when podSecurityContext is empty
     template: deployment.yaml
     set:
       mode: deployment
@@ -154,20 +154,10 @@ tests:
       config.storage.s3.accessKeyId: test-key
       config.storage.s3.secretAccessKey: test-secret
     asserts:
-      - equal:
-          path: spec.template.spec.securityContext.runAsNonRoot
-          value: true
-      - equal:
-          path: spec.template.spec.securityContext.runAsUser
-          value: 1000
-      - equal:
-          path: spec.template.spec.securityContext.runAsGroup
-          value: 1000
-      - equal:
-          path: spec.template.spec.securityContext.fsGroup
-          value: 1000
+      - isNull:
+          path: spec.template.spec.securityContext
 
-  - it: should set container security context
+  - it: should not render container securityContext when containerDefaults and per-container are both empty
     template: deployment.yaml
     set:
       mode: deployment
@@ -178,15 +168,72 @@ tests:
       config.storage.s3.accessKeyId: test-key
       config.storage.s3.secretAccessKey: test-secret
     asserts:
-      - equal:
-          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
-          value: false
+      - isNull:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: should propagate containerDefaults.securityContext to main container
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      containerDefaults.securityContext.readOnlyRootFilesystem: true
+      containerDefaults.securityContext.runAsNonRoot: true
+    asserts:
       - equal:
           path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
           value: true
-      - contains:
-          path: spec.template.spec.containers[0].securityContext.capabilities.drop
-          content: ALL
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+
+  - it: should allow per-container securityContext to override containerDefaults
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      containerDefaults.securityContext.readOnlyRootFilesystem: true
+      securityContext.readOnlyRootFilesystem: false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: false
+
+  - it: should apply initImage.securityContext to create-db-dir overriding containerDefaults
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      migration.enabled: false
+      containerDefaults.securityContext.runAsUser: 1000
+      initImage.securityContext.runAsUser: 2000
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.runAsUser
+          value: 2000
+
+  - it: should fall back to containerDefaults for create-db-dir when initImage.securityContext is empty
+    template: deployment.yaml
+    set:
+      mode: deployment
+      config.hostname: test.example.com
+      config.database.type: sqlite
+      migration.enabled: false
+      containerDefaults.securityContext.runAsUser: 3000
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.runAsUser
+          value: 3000
 
   # Resource tests
   - it: should set resource limits and requests

@@ -8,6 +8,40 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Helm chart: security context defaults removed; `containerDefaults.securityContext` added.**
+  All default values have been removed from `podSecurityContext`, `securityContext`,
+  and all per-container securityContext blocks (`migration`, `fsck`,
+  `migrateChunksToNar`, `migrateNarToChunks`). A new `containerDefaults.securityContext`
+  key provides a global fallback applied to every container via deep-merge
+  (per-container values win). A new `initImage.securityContext` key controls the
+  `create-db-dir` busybox init container, which previously hardcoded
+  `runAsUser/runAsGroup: 1000` and overrode pod-level identity.
+
+  **Breaking change for bare installations.** Containers will run without any
+  hardening constraints unless the operator explicitly sets values. To restore
+  the previous posture, add to your `values.yaml`:
+
+  ```yaml
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+
+  containerDefaults:
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+  ```
+
 - **Database tooling migrated from sqlc + dbmate to Ent + Atlas + Goose.**
   Schemas are now authored under `ent/schema/*.go`, migrations are
   generated from Atlas diffs (used as a Go library) via
