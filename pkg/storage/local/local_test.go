@@ -112,7 +112,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("store/tmp is removed on boot", func(t *testing.T) {
+	t.Run("store/tmp files are preserved on boot", func(t *testing.T) {
 		t.Parallel()
 
 		dir, err := os.MkdirTemp("", "cache-path-")
@@ -130,8 +130,43 @@ func TestNew(t *testing.T) {
 		_, err = local.New(newContext(), dir)
 		require.NoError(t, err)
 
-		assert.NoFileExists(t, f.Name())
+		assert.FileExists(t, f.Name())
 	})
+}
+
+func TestSetupDirsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	_, err = local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	_, err = local.New(newContext(), dir)
+	require.NoError(t, err)
+}
+
+func TestSetupDirsPreservesExistingTmpFiles(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "store", "tmp"), 0o700))
+
+	f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "partial-")
+	require.NoError(t, err)
+	f.Close()
+
+	_, err = local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	assert.FileExists(t, f.Name())
 }
 
 func TestGetSecretKey(t *testing.T) {
