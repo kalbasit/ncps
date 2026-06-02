@@ -126,6 +126,7 @@ func TestNew(t *testing.T) {
 
 		f, err := os.CreateTemp(filepath.Join(dir, "store", "tmp"), "hello")
 		require.NoError(t, err)
+		require.NoError(t, f.Close())
 
 		_, err = local.New(newContext(), dir)
 		require.NoError(t, err)
