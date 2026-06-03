@@ -195,6 +195,128 @@ func TestMigrateChunksToNar_ForceReclaimDeletesOrphans(t *testing.T) {
 	assert.Zero(t, after, "force-reclaim must delete chunks orphaned by de-chunking the only referencing NAR")
 }
 
+// TestPurgeChunkedNar_DeletesLinksChunksAndRecord: PurgeChunkedNar removes all
+// nar_file_chunks links, deletes now-orphaned chunk objects from the chunk store,
+// and deletes the nar_file record so the hash can be re-fetched from upstream.
+func TestPurgeChunkedNar_DeletesLinksChunksAndRecord(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	chunksBefore, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Positive(t, chunksBefore, "precondition: fixture must have created chunks")
+
+	require.NoError(t, c.PurgeChunkedNar(ctx, &noneURL))
+
+	// nar_file record must be gone
+	narFileCount, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.HashEQ(noneURL.Hash)).
+		Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, narFileCount, "PurgeChunkedNar must delete the nar_file record")
+
+	// all chunk links must be gone
+	linkCount, err := dbClient.Ent().NarFileChunk.Query().Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, linkCount, "PurgeChunkedNar must delete all nar_file_chunks links")
+
+	// orphaned chunk objects must be gone
+	chunksAfter, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, chunksAfter, "PurgeChunkedNar must delete orphaned chunk objects")
+}
+
+// TestPurgeChunkedNar_RetainsSharedChunk: a chunk still referenced by a second
+// nar_file must not be deleted (dedup-safe reclamation).
+func TestPurgeChunkedNar_RetainsSharedChunk(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	nf1, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.HashEQ(noneURL.Hash), entnarfile.CompressionEQ(nar.CompressionTypeNone.String())).
+		Only(ctx)
+	require.NoError(t, err)
+
+	links, err := dbClient.Ent().NarFileChunk.Query().
+		Where(entnarfilechunk.NarFileID(nf1.ID)).
+		All(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, links)
+
+	// A second nar_file that shares the same chunks (simulates cross-NAR dedup).
+	nf2, err := dbClient.Ent().NarFile.Create().
+		SetHash("sharedother0000000000000000000000000000000000000000000").
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(nf1.FileSize).
+		SetTotalChunks(int64(len(links))).
+		Save(ctx)
+	require.NoError(t, err)
+
+	for _, l := range links {
+		_, err := dbClient.Ent().NarFileChunk.Create().
+			SetNarFileID(nf2.ID).
+			SetChunkID(l.ChunkID).
+			SetChunkIndex(l.ChunkIndex).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	chunksBefore, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.PurgeChunkedNar(ctx, &noneURL))
+
+	// nf1 nar_file must be gone, nf2 must remain
+	narFileCount, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.HashEQ(noneURL.Hash)).
+		Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, narFileCount, "nar_file for the purged hash must be deleted")
+
+	// shared chunk objects must be retained
+	chunksAfter, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, chunksBefore, chunksAfter,
+		"chunks still referenced by another nar_file must not be deleted")
+}
+
+// TestPurgeChunkedNar_RetainsNarInfoRecord: purging a NAR must leave the linked
+// narinfo record intact so the next GetNarInfo can succeed and trigger a re-fetch.
+func TestPurgeChunkedNar_RetainsNarInfoRecord(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	narInfoBefore, err := dbClient.Ent().NarInfo.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Positive(t, narInfoBefore, "precondition: narinfo must exist")
+
+	require.NoError(t, c.PurgeChunkedNar(ctx, &noneURL))
+
+	narInfoAfter, err := dbClient.Ent().NarInfo.Query().Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, narInfoBefore, narInfoAfter,
+		"PurgeChunkedNar must not delete narinfo records")
+}
+
 // TestMigrateChunksToNar_ForceReclaimRetainsSharedChunks (slice 3): even with
 // forceReclaim, chunks still referenced by another nar_file are NOT deleted
 // (dedup-safe reclamation).

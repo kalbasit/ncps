@@ -15,6 +15,7 @@ const (
 	MigrationResultSuccess = "success"
 	MigrationResultFailure = "failure"
 	MigrationResultSkipped = "skipped"
+	MigrationResultPurged  = "purged"
 
 	// Migration operation constants for metrics.
 	MigrationOperationMigrate = "migrate"

@@ -241,6 +241,7 @@ func TestMigrateChunksToNar_CLI_ProgressLogEmitted(t *testing.T) {
 	assert.Contains(t, logged, `"succeeded"`, "progress log must include succeeded field")
 	assert.Contains(t, logged, `"failed"`, "progress log must include failed field")
 	assert.Contains(t, logged, `"skipped"`, "progress log must include skipped field")
+	assert.Contains(t, logged, `"purged"`, "progress log must include purged field")
 	assert.Contains(t, logged, `"percent"`, "progress log must include percent field")
 	assert.Contains(t, logged, `"elapsed"`, "progress log must include elapsed field")
 	assert.Contains(t, logged, `"rate"`, "progress log must include rate field")
@@ -297,7 +298,11 @@ func TestMigrateChunksToNar_CLI_NoProgressLogOnEmptyRun(t *testing.T) {
 	assert.NotContains(t, logBuf.String(), "migration progress", "no progress line expected when no chunked NARs exist")
 }
 
-func TestMigrateChunksToNar_CLI_HashMismatchFailsWithoutDestroyingData(t *testing.T) {
+// TestMigrateChunksToNar_CLI_HashMismatchPurgesNarAndExitsZero verifies that a
+// NAR whose reconstructed bytes do not match the recorded hash is purged (nar_file
+// record + orphaned chunks deleted) and the command exits 0. The narinfo is left
+// intact so the next GetNar triggers a fresh upstream fetch.
+func TestMigrateChunksToNar_CLI_HashMismatchPurgesNarAndExitsZero(t *testing.T) {
 	t.Parallel()
 
 	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
@@ -306,18 +311,32 @@ func TestMigrateChunksToNar_CLI_HashMismatchFailsWithoutDestroyingData(t *testin
 	configureCDCInDatabase(ctx, t, dbClient)
 
 	// No hash fixup: testdata's literal NarHash does not match the content, so
-	// verification must fail and the NAR must be left chunked.
+	// reconstruction will always produce a hash mismatch.
 	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
 
-	before := countChunks(ctx, t, dbClient)
+	require.Positive(t, countChunks(ctx, t, dbClient), "precondition: chunks must exist")
 
-	err := app.Run(ctx, []string{
+	require.NoError(t, app.Run(ctx, []string{
 		"ncps", "migrate-chunks-to-nar",
 		"--cache-database-url", dbURL,
 		"--cache-storage-local", dir,
-	})
-	require.Error(t, err, "a hash mismatch must make the command exit non-zero")
+	}), "hash-mismatch NARs are purged; the command must exit 0")
 
-	assert.Equal(t, before, countChunks(ctx, t, dbClient),
-		"a NAR that fails verification must NOT have its chunks deleted")
+	// nar_file record must be gone
+	var totalChunks int
+
+	err := dbClient.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM nar_files WHERE hash = ?", testdata.Nar1.NarHash).Scan(&totalChunks)
+	require.NoError(t, err)
+	assert.Zero(t, totalChunks, "nar_file record for the mismatched NAR must be deleted")
+
+	// orphaned chunk objects must be reclaimed
+	assert.Zero(t, countChunks(ctx, t, dbClient),
+		"orphaned chunks for the purged NAR must be deleted")
+
+	// narinfo must remain so the next GetNarInfo can trigger a re-fetch
+	var narInfoCount int
+	require.NoError(t, dbClient.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&narInfoCount))
+	assert.Positive(t, narInfoCount, "narinfo must be retained after purge")
 }
