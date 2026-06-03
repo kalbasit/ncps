@@ -7134,6 +7134,31 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 			}
 		}
 
+		// Completeness guard (completed fast path only). total_chunks is the
+		// completion latch: storeNarWithCDC sets it only after every junction
+		// link is durably committed, so total_chunks > 0 with fewer links is
+		// never a mid-chunking race (including a concurrent HA replica) — it is
+		// genuine post-completion loss, e.g. the nar_file_chunks.chunk_id ->
+		// chunks(id) ON DELETE CASCADE stripping a shared chunk's links without
+		// resetting total_chunks. Detect it here, synchronously, before the
+		// caller hands back a reader, so the request resolves to ErrNotFound
+		// (HTTP 404 -> upstream fallback) instead of committing a 200 that
+		// truncates mid-stream. The progressive path (total_chunks = 0) is
+		// intentionally excluded: it legitimately streams chunks as they appear.
+		if nr.TotalChunks > 0 {
+			links, err := tx.NarFileChunk.Query().
+				Where(entnarfilechunk.NarFileID(nr.ID)).
+				Count(ctx)
+			if err != nil {
+				return fmt.Errorf("error counting chunk links: %w", err)
+			}
+
+			if int64(links) != nr.TotalChunks {
+				return fmt.Errorf("nar %s has %d of %d chunk links: %w",
+					narURL.Hash, links, nr.TotalChunks, storage.ErrNotFound)
+			}
+		}
+
 		return nil
 	})
 	if err != nil {
