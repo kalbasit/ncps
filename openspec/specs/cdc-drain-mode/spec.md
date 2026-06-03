@@ -36,9 +36,9 @@ NARs are stored as chunks.
 
 ### Requirement: The server MUST enter drain mode when `cdc.enabled: false` but chunked NARs may exist
 
-When the server starts with `cdc.enabled: false` and the stored database configuration
-has `cdc_enabled=true` (indicating CDC was previously active and chunked NARs may
-remain), the server SHALL enter drain mode by initializing the chunk store for reads
+The server SHALL enter drain mode when it starts with `cdc.enabled: false` and the
+stored database configuration has `cdc_enabled=true` (indicating CDC was previously
+active and chunked NARs may remain) by initializing the chunk store for reads
 without enabling chunk writes. Drain mode SHALL:
 
 - Initialize the chunk store backend (local or S3) using the same storage flags as

@@ -109,7 +109,7 @@ After running `migrate-chunks-to-nar` to completion, disable CDC to stop storing
 
 **1. Confirm no chunked NARs remain** (optional but recommended):
 
-```sql
+```mariadb
 -- Should return 0 after a complete migration:
 SELECT count(*) FROM nar_files WHERE total_chunks > 0;
 ```
@@ -158,7 +158,7 @@ When OpenTelemetry is enabled (`--otel-enabled`), the process exports:
 
 ## Verification
 
-```mariadb
+```
 -- No chunked NARs should remain after a full migration:
 SELECT count(*) FROM nar_files WHERE total_chunks > 0;
 ```
