@@ -161,6 +161,11 @@ var (
 	// reconstructed from chunks do not match the recorded NarHash or size.
 	ErrNarHashMismatch = errors.New("reconstructed nar does not match recorded hash or size")
 
+	// ErrMissingChunk is returned by MigrateChunksToNar when one or more chunks
+	// referenced by the nar_file are absent from the chunk store or the DB. The
+	// NAR cannot be reconstructed and should be purged so it can be re-fetched.
+	ErrMissingChunk = errors.New("one or more chunks missing from store")
+
 	errMissingChunkEdge = errors.New("nar_file_chunk is missing eager-loaded chunk edge")
 
 	errChunkIDFetchMismatch = errors.New("chunk count mismatch after bulk insert")
@@ -2417,11 +2422,23 @@ func (c *Cache) cleanupStaleLockChunks(ctx context.Context, cs chunk.Store, stal
 		chunkLog := log.With().Str("chunk_hash", hash).Int("chunk_id", oc.ID).Logger()
 		chunkLog.Debug().Msg("immediately cleaning up chunk from stale CDC lock")
 
-		// Delete the DB record first; if this fails, leave the physical file for GC.
-		if _, err := c.dbClient.Ent().Chunk.Delete().
-			Where(entchunk.IDEQ(oc.ID)).
-			Exec(ctx); err != nil {
+		// Delete the DB record, but only when no nar_file has re-linked this chunk
+		// since we took the orphan snapshot. A concurrent GetNar re-fetch can recreate
+		// a nar_file and reuse chunks with matching content hashes before we reach
+		// this point; the HasNarFileLinks predicate makes the delete a no-op in that
+		// case so we never remove a live chunk.
+		deleted, err := c.dbClient.Ent().Chunk.Delete().
+			Where(entchunk.IDEQ(oc.ID), entchunk.Not(entchunk.HasNarFileLinks())).
+			Exec(ctx)
+		if err != nil {
 			chunkLog.Warn().Err(err).Msg("failed to delete orphaned chunk record during stale lock cleanup")
+
+			continue
+		}
+
+		if deleted == 0 {
+			// Chunk was re-linked between the orphan snapshot and this delete; leave it.
+			chunkLog.Debug().Msg("chunk re-linked since orphan snapshot; skipping physical delete")
 
 			continue
 		}
@@ -7635,6 +7652,10 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 	// can verify before committing anything to the store (verified-or-nothing).
 	_, rc, err := c.getNarFromChunks(ctx, &noneURL)
 	if err != nil {
+		if errors.Is(err, chunk.ErrNotFound) || errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("missing chunk for %s: %w", narURL.Hash, ErrMissingChunk)
+		}
+
 		return fmt.Errorf("error reconstructing nar from chunks: %w", err)
 	}
 	defer rc.Close()

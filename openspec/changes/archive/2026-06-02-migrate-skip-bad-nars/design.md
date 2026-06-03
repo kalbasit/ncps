@@ -24,13 +24,15 @@ Keep purge logic in the cache package co-located with `MigrateChunksToNar`. The 
 
 Considered alternative: handle purge directly in the command using raw `dbClient` calls. Rejected: breaks encapsulation; the command already doesn't know about internal DB schema details.
 
-### Purge sequence: links → chunk objects → nar_file record
+### Purge sequence: links + record in one transaction, then orphaned chunk objects
 
-Delete `nar_file_chunks` links first (orphaning the chunk rows), then delete now-unreferenced chunk objects from the chunk store, then delete the `nar_file` record. This order is dedup-safe: a chunk shared with another still-chunked NAR retains its `nar_file_chunks` link and is not deleted.
+`PurgeChunkedNar` deletes `nar_file_chunks` links and the `nar_file` record together in a single database transaction. After that transaction commits, orphaned chunk objects (chunk rows with no remaining `nar_file_chunks` links) are reclaimed from the chunk store. This ordering means the `nar_file` is atomically removed before any chunk objects are touched, so a concurrent `GetNar` that races the purge sees no `nar_file` and falls through to the upstream fetch rather than attempting to serve from a partially-deleted chunk set.
 
-Unlike the normal migration path, the purge always deletes chunk objects immediately (no `--force-reclaim` gating): the NAR is already unserveable, so there is no valid in-flight chunk-serve that could be truncated.
+Chunk object deletion is dedup-safe: the delete is conditioned on `!HasNarFileLinks()` at delete time, so a chunk that was re-linked by a concurrent re-fetch between the orphan snapshot and the delete is not removed.
 
-`PurgeChunkedNar` acquires the same migration lock key as `MigrateChunksToNar` to prevent a concurrent migration from racing the purge.
+Unlike the normal migration path, the purge always reclaims chunk objects immediately (no `--force-reclaim` gating): the NAR was unserveable, so there is no valid in-flight chunk-serve that could be truncated.
+
+`PurgeChunkedNar` acquires the same migration lock key as `MigrateChunksToNar` to prevent a concurrent migration from racing the purge. If the lock is already held by another worker, the purge returns `ErrMigrationInProgress` and the command treats it as a skip (the other worker is handling it).
 
 ### Narinfo record is left intact
 
@@ -38,11 +40,11 @@ The narinfo describes the NAR metadata (store path, references, compression) ind
 
 ### New `totalPurged` counter; exit 0 only when `failed == 0`
 
-Add an `int32` atomic `totalPurged` counter alongside the existing `totalFailed`/`totalSucceeded`. The final summary log line includes `purged`. The command exits 0 when `failed == 0`, regardless of `purged`. Only transient/unexpected errors (non-`ErrNarHashMismatch`) increment `totalFailed` and drive a non-zero exit.
+Add an `int32` atomic `totalPurged` counter alongside the existing `totalFailed`/`totalSucceeded`. The final summary log line includes `purged`. The command exits 0 when `failed == 0`, regardless of `purged`. Only transient/unexpected errors (non-`ErrNarHashMismatch`, non-`ErrMissingChunk`) increment `totalFailed` and drive a non-zero exit.
 
-### Scope: only `ErrNarHashMismatch` triggers purge (for now)
+### Both `ErrNarHashMismatch` and `ErrMissingChunk` trigger purge
 
-Hash/size mismatch is a deterministic, data-level failure that will never self-heal. Other errors (I/O timeouts, lock acquisition failures, query errors) may be transient and should remain failures. Missing-chunk detection is deferred: it requires a new `ErrMissingChunk` sentinel from `getNarFromChunks` and can be added in a follow-on once `ErrNarHashMismatch` is handled.
+Hash/size mismatch (`ErrNarHashMismatch`) and absent chunk objects/DB entries (`ErrMissingChunk`) are both deterministic, data-level failures that will never self-heal. `MigrateChunksToNar` detects missing chunks via `chunk.ErrNotFound` or `storage.ErrNotFound` from `getNarFromChunks` and wraps them as `ErrMissingChunk`. Other errors (I/O timeouts, lock acquisition failures, query errors) may be transient and remain counted as failures.
 
 ## Risks / Trade-offs
 

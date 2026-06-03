@@ -428,13 +428,19 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 					log.Warn().Msg("no narinfo NarHash to verify against; leaving nar chunked")
 					atomic.AddInt32(&totalSkipped, 1)
 					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSkipped)
-				case errors.Is(err, cache.ErrNarHashMismatch):
+				case errors.Is(err, cache.ErrNarHashMismatch), errors.Is(err, cache.ErrMissingChunk):
 					// Permanently broken NAR: purge it so the hash can be re-fetched
 					// from upstream on the next GetNar request.
 					if purgeErr := c.PurgeChunkedNar(ctx, &narURL); purgeErr != nil {
-						log.Error().Err(purgeErr).Msg("failed to purge hash-mismatch nar")
-						atomic.AddInt32(&totalFailed, 1)
-						RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultFailure)
+						if errors.Is(purgeErr, cache.ErrMigrationInProgress) {
+							log.Info().Msg("hash-mismatch nar is already being handled by another worker; skipping")
+							atomic.AddInt32(&totalSkipped, 1)
+							RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSkipped)
+						} else {
+							log.Error().Err(purgeErr).Msg("failed to purge hash-mismatch nar")
+							atomic.AddInt32(&totalFailed, 1)
+							RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultFailure)
+						}
 					} else {
 						log.Info().Msg("purged hash-mismatch nar; will be re-fetched from upstream on next request")
 						atomic.AddInt32(&totalPurged, 1)
