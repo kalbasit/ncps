@@ -60,6 +60,7 @@ func TestGetNarFromChunks_MidChunkingPartialLinksNotFalse404(t *testing.T) {
 	_, rc, err := c.getNarFromChunks(ctx, &narURL)
 	require.NoError(t, err,
 		"mid-chunking (total_chunks=0) must take the progressive path, not be 404'd by the completeness check")
+	require.NotNil(t, rc, "the progressive path must return a reader, not (nil, nil)")
 
 	t.Cleanup(func() { _ = rc.Close() })
 }
