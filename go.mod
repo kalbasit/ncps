@@ -13,7 +13,7 @@ require (
 	github.com/go-redsync/redsync/v4 v4.16.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/kalbasit/fastcdc v1.0.0
 	github.com/klauspost/compress v1.18.6
 	github.com/lib/pq v1.12.3
