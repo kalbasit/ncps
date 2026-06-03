@@ -1182,6 +1182,10 @@ func createCache(
 		}
 
 		c.SetChunkStore(chunkStore)
+
+		if err := c.RecoverOrphanedChunkingOnStartup(ctx); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("startup recovery of orphaned CDC chunking state failed; continuing (stale-lock cleanup remains the backstop)")
+		}
 	} else if storedWasEnabled {
 		if err := initCDCDrainMode(ctx, cmd, locker, c, cfg, dbClient); err != nil {
 			return nil, err

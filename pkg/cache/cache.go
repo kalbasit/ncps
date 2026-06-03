@@ -2224,6 +2224,142 @@ func (c *Cache) storeNarWithCDCFromReader(
 // it is considered stale and a new attempt may clean up the partial state and restart.
 const cdcChunkingLockTTL = time.Hour
 
+// RecoverOrphanedChunkingOnStartup heals CDC nar_file rows left mid-chunking
+// by a previous process crash. At process startup there is no live in-process
+// chunker, so any total_chunks=0 row with chunking_started_at set is orphaned.
+func (c *Cache) RecoverOrphanedChunkingOnStartup(ctx context.Context) error {
+	const batchSize = 1000
+
+	startTime := time.Now()
+	log := zerolog.Ctx(ctx).With().
+		Str("op", "cdc-startup-orphaned-chunking-recovery").
+		Int("batch_size", batchSize).
+		Logger()
+
+	log.Info().Msg("running CDC startup orphaned chunking recovery")
+
+	cursorID := 0
+	recoveredCount := 0
+	recoveredChunkCount := 0
+	skippedCount := 0
+	cs := c.getChunkStore()
+
+	for {
+		orphanedFiles, err := c.dbClient.Ent().NarFile.Query().
+			Where(
+				entnarfile.TotalChunksEQ(0),
+				entnarfile.ChunkingStartedAtNotNil(),
+				entnarfile.IDGT(cursorID),
+			).
+			Order(ent.Asc(entnarfile.FieldID)).
+			Limit(batchSize).
+			All(ctx)
+		if err != nil {
+			log.Error().Err(err).Msg("error getting orphaned CDC chunking rows for startup recovery")
+
+			return err
+		}
+
+		if len(orphanedFiles) == 0 {
+			break
+		}
+
+		cursorID = orphanedFiles[len(orphanedFiles)-1].ID
+
+		var batchStaleLockChunks []*ent.Chunk
+
+		for _, nr := range orphanedFiles {
+			var partialChunks []*ent.Chunk
+
+			recovered := false
+
+			err := c.withEntTransaction(ctx, "RecoverOrphanedChunkingOnStartup", func(tx *ent.Tx) error {
+				// Re-assert the orphan predicate inside the transaction against the
+				// live row, not the snapshot read by the outer batch query. In a
+				// shared-database deployment another instance may have completed
+				// chunking (total_chunks > 0) or cleared the lock between the batch
+				// read and this transaction. Deleting links / clearing state for a
+				// row that is no longer total_chunks=0 + chunking_started_at NOT NULL
+				// would corrupt a now-complete NAR, so the guarded count tells us
+				// whether the row is still recoverable before we mutate anything.
+				stillOrphaned, err := tx.NarFile.Query().
+					Where(
+						entnarfile.IDEQ(nr.ID),
+						entnarfile.TotalChunksEQ(0),
+						entnarfile.ChunkingStartedAtNotNil(),
+					).
+					Count(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to re-check orphan state for nar_file %d: %w", nr.ID, err)
+				}
+
+				if stillOrphaned == 0 {
+					// Row was completed or already healed concurrently; leave it be.
+					return nil
+				}
+
+				partialChunksForNar, err := tx.Chunk.Query().
+					Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
+					All(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get chunks for orphaned nar_file %d: %w", nr.ID, err)
+				}
+				partialChunks = partialChunksForNar
+
+				if _, err := tx.NarFileChunk.Delete().
+					Where(entnarfilechunk.NarFileID(nr.ID)).
+					Exec(ctx); err != nil {
+					return fmt.Errorf("failed to delete partial chunks for orphaned nar_file %d: %w", nr.ID, err)
+				}
+
+				if _, err := tx.NarFile.UpdateOneID(nr.ID).
+					ClearChunkingStartedAt().
+					SetUpdatedAt(time.Now()).
+					Save(ctx); err != nil {
+					return fmt.Errorf("failed to clear chunking_started_at for orphaned nar_file %d: %w", nr.ID, err)
+				}
+
+				recovered = true
+
+				return nil
+			})
+			if err != nil {
+				log.Error().Err(err).Int("nar_file_id", nr.ID).
+					Msg("error recovering orphaned CDC chunking row")
+
+				return err
+			}
+
+			if !recovered {
+				skippedCount++
+
+				continue
+			}
+
+			recoveredCount++
+			recoveredChunkCount += len(partialChunks)
+			batchStaleLockChunks = append(batchStaleLockChunks, partialChunks...)
+		}
+
+		if cs != nil {
+			c.cleanupStaleLockChunks(ctx, cs, batchStaleLockChunks)
+		}
+
+		if len(orphanedFiles) < batchSize {
+			break
+		}
+	}
+
+	log.Info().
+		Int("count", recoveredCount).
+		Int("stale_chunk_count", recoveredChunkCount).
+		Int("skipped_count", skippedCount).
+		Dur("elapsed", time.Since(startTime)).
+		Msg("CDC startup orphaned chunking recovery completed")
+
+	return nil
+}
+
 // findOrCreateNarFileForCDC creates or retrieves a nar_file record for CDC chunking.
 // It returns the narFileID, a list of chunk records that were removed from the junction
 // table during stale lock cleanup (may be orphaned and need immediate cleanup), and an error.
