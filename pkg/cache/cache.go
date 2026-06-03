@@ -4350,6 +4350,17 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 			}
 		}
 
+		// Upload-only reads (/upload route) are non-destructive: report the
+		// missing-NAR narinfo as a cache miss (the sentinel resolves to
+		// storage.ErrNotFound → HTTP 404 via GetNarInfo's upload-only
+		// short-circuit, prompting the client to re-PUT) but do NOT purge.
+		// Purging here would delete a record the client is about to re-upload and
+		// makes the cache's path-validity answer non-monotonic within a single
+		// `nix copy`, aborting the client's reference-verification step.
+		if IsUploadOnly(ctx) {
+			return nil, ErrNarInfoPurged
+		}
+
 		zerolog.Ctx(ctx).
 			Error().
 			Msg("narinfo was found in the database but no nar was found in storage, requesting a purge")
