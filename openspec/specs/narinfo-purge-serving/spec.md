@@ -57,7 +57,7 @@ non-upload (root/substituter) purge-and-re-fetch behavior is unaffected.
 - **WHEN** a client requests `GET /upload/{hash}.narinfo` for a hash whose narinfo
   is in the database but whose NAR is missing from storage and no download is in
   flight
-- **THEN** the purge guard does NOT fire and `purgeNarInfo` is NOT called
+- **THEN** the purge guard's missing-NAR condition is met, but `purgeNarInfo` is NOT called
 - **AND** the narinfo and `nar_file` database records remain present
 - **AND** `GetNarInfo` returns `storage.ErrNotFound`
 - **AND** the client receives `HTTP 404`

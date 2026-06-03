@@ -2,7 +2,6 @@ package cache
 
 import (
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,9 +26,7 @@ func newUploadOnlyPurgeCacheNoSeed(t *testing.T) (*Cache, *database.Client) {
 
 	ctx := newContext()
 
-	dir, err := os.MkdirTemp("", "cache-path-")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	dir := t.TempDir()
 
 	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
 	testhelper.CreateMigrateDatabase(t, dbFile)
