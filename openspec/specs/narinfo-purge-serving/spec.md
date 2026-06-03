@@ -1,7 +1,16 @@
 # narinfo-purge-serving Specification
 
 ## Purpose
-TBD - created by archiving change fix-purged-narinfo-500. Update Purpose after archive.
+
+Defines how the cache serves narinfo requests when the internal purge guard fires
+— a narinfo exists in the database but its backing NAR is absent from storage and
+no download is in flight. A purge is internal cache maintenance, not a server
+fault, so it MUST NOT surface to clients as an HTTP 500. Instead the cache
+re-fetches from upstream and serves HTTP 200 when available, or resolves to HTTP
+404 so Nix falls back to its next substituter. This capability complements
+`narinfo-concurrent-fetch` (the in-flight concurrent case) and
+`nar-cache-miss-recovery` (NAR record handling).
+
 ## Requirements
 ### Requirement: A fired narinfo purge MUST NOT surface to the client as HTTP 500
 
