@@ -7741,6 +7741,91 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 	return nil
 }
 
+// PurgeChunkedNar deletes a permanently broken chunked NAR entry so its hash can
+// be re-fetched from upstream on the next GetNar request. It acquires the same
+// migration lock as MigrateChunksToNar to serialize with concurrent migration
+// attempts on the same hash.
+//
+// Unlike the normal de-chunk path, chunk objects are always reclaimed immediately:
+// the NAR was never serveable (its reconstructed bytes do not match the recorded
+// hash), so there is no valid in-flight chunk-serve that could be truncated.
+// Chunk deletion is dedup-safe: a chunk still referenced by another nar_file is
+// not deleted.
+//
+// The linked narinfo record is left intact so the next GetNarInfo can succeed and
+// trigger a clean upstream re-fetch.
+func (c *Cache) PurgeChunkedNar(ctx context.Context, narURL *nar.URL) error {
+	if !c.isCDCEnabled() {
+		return ErrCDCDisabled
+	}
+
+	lockKey := migrationLockKey(narURL.Hash)
+
+	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
+	if err != nil {
+		return fmt.Errorf("failed to acquire migration lock: %w", err)
+	}
+
+	if !acquired {
+		return ErrMigrationInProgress
+	}
+
+	defer func() {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Str("nar_hash", narURL.Hash).Msg("failed to release migration lock")
+		}
+	}()
+
+	noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, noneURL)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil // already purged or never existed
+		}
+
+		return fmt.Errorf("error looking up nar_file record: %w", err)
+	}
+
+	if nr.TotalChunks == 0 {
+		return ErrNarAlreadyWholeFile
+	}
+
+	// Capture the chunks linked to this nar_file before removing the links so we
+	// can check which become orphaned after deletion (dedup-safe).
+	prevChunks, err := c.dbClient.Ent().Chunk.Query().
+		Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("error listing chunks for nar_file %d: %w", nr.ID, err)
+	}
+
+	// In a single transaction: remove chunk links then delete the nar_file record.
+	if err := c.withEntTransaction(ctx, "PurgeChunkedNar", func(tx *ent.Tx) error {
+		if _, err := tx.NarFileChunk.Delete().
+			Where(entnarfilechunk.NarFileID(nr.ID)).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("error deleting chunk links: %w", err)
+		}
+
+		if _, err := tx.NarFile.Delete().
+			Where(entnarfile.IDEQ(nr.ID)).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("error deleting nar_file record: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Reclaim orphaned chunks immediately. No deferral needed: the NAR was
+	// permanently unserveable so no in-flight chunk-serve can be truncated.
+	c.cleanupStaleLockChunks(ctx, c.chunkStore, prevChunks)
+
+	return nil
+}
+
 // linkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
 // given nar_file, or (nil, nil) when no link exists or the narinfo has no
 // recorded NarHash.

@@ -304,6 +304,7 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 			totalSucceeded int32
 			totalFailed    int32
 			totalSkipped   int32
+			totalPurged    int32
 		)
 
 		// Clamp to >= 1: errgroup.SetLimit(0) makes the first g.Go block forever.
@@ -354,6 +355,7 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 						Int32("succeeded", succeeded).
 						Int32("failed", failed).
 						Int32("skipped", skipped).
+						Int32("purged", atomic.LoadInt32(&totalPurged)).
 						Str("percent", fmt.Sprintf("%.2f%%", percent)).
 						Str("elapsed", elapsed.Round(time.Second).String()).
 						Float64("rate", rate).
@@ -426,6 +428,18 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 					log.Warn().Msg("no narinfo NarHash to verify against; leaving nar chunked")
 					atomic.AddInt32(&totalSkipped, 1)
 					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSkipped)
+				case errors.Is(err, cache.ErrNarHashMismatch):
+					// Permanently broken NAR: purge it so the hash can be re-fetched
+					// from upstream on the next GetNar request.
+					if purgeErr := c.PurgeChunkedNar(ctx, &narURL); purgeErr != nil {
+						log.Error().Err(purgeErr).Msg("failed to purge hash-mismatch nar")
+						atomic.AddInt32(&totalFailed, 1)
+						RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultFailure)
+					} else {
+						log.Info().Msg("purged hash-mismatch nar; will be re-fetched from upstream on next request")
+						atomic.AddInt32(&totalPurged, 1)
+						RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultPurged)
+					}
 				case err != nil:
 					log.Error().Err(err).Msg("failed to migrate chunks to whole nar")
 					atomic.AddInt32(&totalFailed, 1)
@@ -456,6 +470,7 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 		succeeded := atomic.LoadInt32(&totalSucceeded)
 		failed := atomic.LoadInt32(&totalFailed)
 		skipped := atomic.LoadInt32(&totalSkipped)
+		purged := atomic.LoadInt32(&totalPurged)
 
 		logger.Info().
 			Int64("total", total).
@@ -463,6 +478,7 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 			Int32("succeeded", succeeded).
 			Int32("failed", failed).
 			Int32("skipped", skipped).
+			Int32("purged", purged).
 			Str("duration", duration.Round(time.Millisecond).String()).
 			Msg("migration completed")
 
