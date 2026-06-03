@@ -139,8 +139,8 @@ var (
 	// ErrMigrationInProgress is returned if a migration is already in progress.
 	ErrMigrationInProgress = errors.New("migration is already in progress")
 
-	// errNarInfoPurged is returned if the narinfo was purged.
-	errNarInfoPurged = errors.New("the narinfo was purged")
+	// ErrNarInfoPurged is returned if the narinfo was purged.
+	ErrNarInfoPurged = errors.New("the narinfo was purged")
 
 	// ErrCDCDisabled is returned when CDC is required but not enabled.
 	ErrCDCDisabled = errors.New("CDC must be enabled and chunk store configured for migration")
@@ -612,6 +612,8 @@ type contextKey string
 
 const uploadOnlyKey contextKey = "upload_only"
 
+const narPrefetchDisabledKey contextKey = "nar_prefetch_disabled"
+
 // WithUploadOnly returns a context that instructs the cache to skip upstream checks.
 func WithUploadOnly(ctx context.Context) context.Context {
 	return context.WithValue(ctx, uploadOnlyKey, true)
@@ -620,6 +622,23 @@ func WithUploadOnly(ctx context.Context) context.Context {
 // IsUploadOnly checks if the context specifies skipping upstream checks.
 func IsUploadOnly(ctx context.Context) bool {
 	val, ok := ctx.Value(uploadOnlyKey).(bool)
+
+	return ok && val
+}
+
+// withNarPrefetchDisabled returns a context that instructs pullNarInfo to skip
+// the background NAR prefetch. It exists to let tests deterministically
+// reproduce an orphan narinfo (DB row present, backing NAR absent, no download
+// job in flight) — the state that fires the purge guard — without depending on
+// the timing of a background NAR download.
+func withNarPrefetchDisabled(ctx context.Context) context.Context {
+	return context.WithValue(ctx, narPrefetchDisabledKey, true)
+}
+
+// narPrefetchDisabled reports whether the context disables the background NAR
+// prefetch in pullNarInfo.
+func narPrefetchDisabled(ctx context.Context) bool {
+	val, ok := ctx.Value(narPrefetchDisabledKey).(bool)
 
 	return ok && val
 }
@@ -3362,7 +3381,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return narInfo, nil
 	}
 
-	if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
+	if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, ErrNarInfoPurged) {
 		level := errorLogLevelForContextErrors(err)
 
 		zerolog.Ctx(ctx).
@@ -3394,7 +3413,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		}
 
 		// If narinfo was purged, continue to fetch from upstream
-		if !errors.Is(err, errNarInfoPurged) {
+		if !errors.Is(err, ErrNarInfoPurged) {
 			if retryErr := c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs); retryErr != nil {
 				return nil, retryErr
 			}
@@ -3448,6 +3467,17 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	// After pulling from upstream, get the narinfo from the database (where it's now stored)
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
 	if err != nil {
+		// A purge firing on the re-read means the narinfo we just pulled has no
+		// servable backing NAR (the background NAR download failed or was never
+		// tracked under distributed-lock contention). ErrNarInfoPurged is an
+		// internal cache-maintenance signal; it MUST NOT surface to the client as
+		// an HTTP 500. Map it to storage.ErrNotFound so the request resolves to a
+		// 404 and Nix falls back to its next substituter, rather than dead-ending
+		// in a retry-then-fail loop.
+		if errors.Is(err, ErrNarInfoPurged) {
+			err = storage.ErrNotFound
+		}
+
 		level := errorLogLevelForContextErrors(err)
 
 		zerolog.Ctx(ctx).
@@ -3590,7 +3620,12 @@ func (c *Cache) pullNarInfo(
 	// narURL is modified within a background goroutine.
 	narURLForBG := narURL
 
-	c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc, narInfo)
+	// narPrefetchDisabled is a test-only seam: it lets tests deterministically
+	// reproduce an orphan narinfo (backing NAR never lands in storage) without
+	// racing a background NAR download.
+	if !narPrefetchDisabled(ctx) {
+		c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc, narInfo)
+	}
 
 	// For CDC mode, NARs are stored as raw uncompressed chunks.
 	// For Compression:none upstreams, NARs are stored as zstd files and served
@@ -4038,7 +4073,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 				Msg("error purging the narinfo")
 		}
 
-		return nil, errNarInfoPurged
+		return nil, ErrNarInfoPurged
 	}
 
 	ctx = narURL.
@@ -4068,7 +4103,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
 		}
 
-		return nil, errNarInfoPurged
+		return nil, ErrNarInfoPurged
 	}
 
 	err = c.withEntTransaction(ctx, "getNarInfoFromStore", func(tx *ent.Tx) error {
@@ -4323,7 +4358,7 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 			return nil, fmt.Errorf("error purging the narinfo: %w", err)
 		}
 
-		return nil, errNarInfoPurged
+		return nil, ErrNarInfoPurged
 	}
 
 	return ni, nil

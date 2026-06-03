@@ -334,6 +334,22 @@ func (s *Server) getNixCachePublicKey(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// narInfoErrorStatus maps a GetNarInfo error to the HTTP status the narinfo GET
+// handler should return. respond is false when the handler should write nothing
+// (the client is gone). cache.ErrNarInfoPurged is treated as 404 — defense in
+// depth so the internal purge sentinel can never surface to a client as an
+// HTTP 500.
+func narInfoErrorStatus(err error) (status int, respond bool) {
+	switch {
+	case errors.Is(err, storage.ErrNotFound), errors.Is(err, cache.ErrNarInfoPurged):
+		return http.StatusNotFound, true
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return 0, false
+	default:
+		return http.StatusInternalServerError, true
+	}
+}
+
 func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
@@ -358,22 +374,25 @@ func (s *Server) getNarInfo(withBody bool) http.HandlerFunc {
 
 		narInfo, err := s.cache.GetNarInfo(r.Context(), hash)
 		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			status, respond := narInfoErrorStatus(err)
+			if !respond {
+				return
+			}
+
+			if status == http.StatusInternalServerError {
+				zerolog.Ctx(r.Context()).
+					Error().
+					Err(err).
+					Msg("error fetching the narinfo")
+
+				http.Error(w, err.Error(), status)
 
 				return
 			}
 
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-
-			zerolog.Ctx(r.Context()).
-				Error().
-				Err(err).
-				Msg("error fetching the narinfo")
-
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			// For non-500 outcomes (404, including a purged narinfo) write only the
+			// generic status text — never leak an internal error message to the client.
+			http.Error(w, http.StatusText(status), status)
 
 			return
 		}
