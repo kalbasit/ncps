@@ -60,6 +60,26 @@ func chunkedNarFixture(
 	return nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeNone}, entry.NarText
 }
 
+// dropLastChunkLink deletes one nar_file_chunks junction row for narFileID (the
+// highest chunk_index), simulating the production
+// nar_file_chunks.chunk_id -> chunks(id) ON DELETE CASCADE loss that leaves a
+// completed NAR with total_chunks > remaining links.
+func dropLastChunkLink(ctx context.Context, t *testing.T, dbClient *database.Client, narFileID int) {
+	t.Helper()
+
+	links, err := dbClient.Ent().NarFileChunk.Query().
+		Where(entnarfilechunk.NarFileIDEQ(narFileID)).
+		Order(entnarfilechunk.ByChunkIndex()).
+		All(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, links)
+
+	_, err = dbClient.Ent().NarFileChunk.Delete().
+		Where(entnarfilechunk.IDEQ(links[len(links)-1].ID)).
+		Exec(ctx)
+	require.NoError(t, err)
+}
+
 // TestMigrateChunksToNar_ReconstructsVerifiesAndStoresWholeFile is the slice-1
 // tracer bullet: a chunked NAR is reconstructed, its assembled SHA-256 verified
 // against the linked narinfo NarHash, and the whole file written to the store.
@@ -119,6 +139,77 @@ func TestMigrateChunksToNar_ResumesWhenWholeFileAlreadyPresent(t *testing.T) {
 		Only(ctx)
 	require.NoError(t, err)
 	assert.Zero(t, nf.TotalChunks, "the record must still be flipped to whole-file on resume")
+}
+
+// TestMigrateChunksToNar_MissingLinkIsReportedAsMissingChunk verifies the drain
+// hardening: a completed chunked NAR that lost a junction link (the production
+// chunks(id) ON DELETE CASCADE corruption — total_chunks unchanged, links < N)
+// is reported by MigrateChunksToNar as cache.ErrMissingChunk. That is the signal
+// the migrate driver loop uses to purge the NAR and continue (so the hash is
+// re-fetched from upstream), rather than reconstructing a truncated NAR or
+// aborting the run. This exercises the serving-integrity guard end-to-end through
+// the migration path.
+func TestMigrateChunksToNar_MissingLinkIsReportedAsMissingChunk(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	nf, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.HashEQ(noneURL.Hash), entnarfile.CompressionEQ(nar.CompressionTypeNone.String())).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Positive(t, nf.TotalChunks, "fixture must produce a chunked NAR")
+
+	// Simulate the cascade loss: drop one junction link, leaving total_chunks intact.
+	dropLastChunkLink(ctx, t, dbClient, nf.ID)
+
+	err = c.MigrateChunksToNar(ctx, &noneURL, false)
+	require.ErrorIs(t, err, cache.ErrMissingChunk,
+		"a completed chunked NAR missing a junction link must be reported as ErrMissingChunk so the driver purges it")
+}
+
+// TestPurgeChunkedNar_LeavesCleanCacheMissForRefetch verifies the self-heal
+// contract: purging an un-reassemblable chunked NAR removes its nar_file record
+// (and chunk links) so HasNarInChunks/HasNarInStore both report absent — a clean
+// cache miss the next GetNar resolves by refetching from upstream — while leaving
+// the linked narinfo intact so that refetch can proceed.
+func TestPurgeChunkedNar_LeavesCleanCacheMissForRefetch(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	// Drop a junction link so the NAR is permanently un-reassemblable.
+	nf, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.HashEQ(noneURL.Hash), entnarfile.CompressionEQ(nar.CompressionTypeNone.String())).
+		Only(ctx)
+	require.NoError(t, err)
+
+	dropLastChunkLink(ctx, t, dbClient, nf.ID)
+
+	require.NoError(t, c.PurgeChunkedNar(ctx, &noneURL))
+
+	// After purge: not servable from chunks, not in the whole-file store → a clean
+	// cache miss. The linked narinfo remains so a subsequent request refetches.
+	hasChunks, err := c.HasNarInChunks(ctx, noneURL)
+	require.NoError(t, err)
+	assert.False(t, hasChunks, "purged NAR must no longer be servable from chunks")
+	assert.False(t, c.HasNarInStore(ctx, noneURL), "purged NAR must not be in the whole-file store")
+
+	count, err := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.HashEQ(noneURL.Hash)).
+		Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, count, "purged NAR's nar_file record must be deleted so the next GetNar is a cache miss")
 }
 
 // TestMigrateChunksToNar_FlipsRecordToWholeFile (slice 2): the nar_file is

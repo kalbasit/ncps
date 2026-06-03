@@ -198,6 +198,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 		testCDCBackingLessRecordRecoversAfterTransientFailure(factory))
 	t.Run("backing-less record with genuine upstream 404 returns not found",
 		testCDCBackingLessRecordGenuine404ReturnsNotFound(factory))
+	t.Run("completed chunked NAR missing a junction link returns 404, not a truncated 200",
+		testServeCompletedNarMissingLinkReturns404(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
