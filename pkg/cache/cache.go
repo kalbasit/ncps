@@ -3982,6 +3982,27 @@ func (c *Cache) HasNarInStore(ctx context.Context, narURL nar.URL) bool {
 	return present
 }
 
+// IsNarServable reports whether the NAR's actual bytes are present and therefore
+// servable, mirroring how GetNar determines existence — a whole-file in the store
+// or chunks present. It is tri-state, like statNarInStore: a confirmed absence is
+// (false, nil) while an ambiguous/transient storage error is (false, err) so
+// callers do NOT mistake an undeterminable result for "absent". The mere
+// existence of a nar_file row (e.g. GetNarFileSize/HasNarFileRecord) does NOT make
+// a NAR servable; callers gating an existence answer (e.g. the NAR HEAD handler)
+// MUST use this rather than the DB record alone.
+func (c *Cache) IsNarServable(ctx context.Context, narURL nar.URL) (bool, error) {
+	present, err := c.statNarInStore(ctx, narURL)
+	if err != nil {
+		return false, err
+	}
+
+	if present {
+		return true, nil
+	}
+
+	return c.HasNarInChunks(ctx, narURL)
+}
+
 // statNarInStore reports whether the NAR is in storage, distinguishing a
 // confirmed absence (false, nil) from an undeterminable result (false, err).
 // Decision paths that must not treat an ambiguous storage error as "absent"

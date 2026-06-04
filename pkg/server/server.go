@@ -840,14 +840,24 @@ func (s *Server) getNar(withBody bool) http.HandlerFunc {
 			// not an estimate of the compressed output.
 			nu.TransparentZstd = false
 
+			// Only answer 200 from the nar_file record's size when the NAR is
+			// actually servable (bytes present), not from the DB record alone.
+			// A record without backing bytes (a phantom) must NOT HEAD 200, or a
+			// client (e.g. `nix copy`) would skip uploading the NAR and leave a
+			// phantom whose later reference check 404s. When not servable (or the
+			// storage probe is ambiguous), fall through to GetNar, which resolves
+			// upload-only to 404 (so the client re-uploads) and the substituter
+			// path to upstream recovery — consistent with GET.
 			size, err := s.cache.GetNarFileSize(r.Context(), nu)
 			if err == nil && size > 0 {
-				h := w.Header()
-				h.Set(contentType, contentTypeNar)
-				h.Set(contentLength, strconv.FormatInt(size, 10))
-				w.WriteHeader(http.StatusOK)
+				if servable, sErr := s.cache.IsNarServable(r.Context(), nu); sErr == nil && servable {
+					h := w.Header()
+					h.Set(contentType, contentTypeNar)
+					h.Set(contentLength, strconv.FormatInt(size, 10))
+					w.WriteHeader(http.StatusOK)
 
-				return
+					return
+				}
 			}
 		}
 
