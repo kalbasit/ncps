@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage/chunk"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
 )
@@ -146,6 +148,100 @@ func TestGetNarInfoFromDatabase_NonUploadOnly_PreservesNarFileRecord(t *testing.
 		"substituter read must NOT delete the narinfo row (would invalidate the reference)")
 	assert.True(t, narFileExists(ctx, t, c, narHash),
 		"substituter read must NOT delete the nar_file row (would invalidate the reference)")
+}
+
+// TestGetNarInfoFromStore_ChunkBackedNarIsNotAMiss guards the CDC case (PR #1326
+// review): the store-sourced read path must check chunk storage, not only
+// whole-file storage, before declaring a missing-NAR cache miss. A legacy narinfo
+// whose whole-file NAR was replaced by CDC chunks is still locally servable via
+// GetNar and must not be turned into a 404/sentinel.
+func TestGetNarInfoFromStore_ChunkBackedNarIsNotAMiss(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+
+	c, _, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	chunkStore, err := chunk.NewLocalStore(filepath.Join(dir, "chunks-store"))
+	require.NoError(t, err)
+	c.SetChunkStore(chunkStore)
+	require.NoError(t, c.SetCDCConfiguration(true, 1024, 4096, 8192))
+
+	ni, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+	require.NoError(t, err)
+	require.NoError(t, c.narInfoStore.PutNarInfo(ctx, testdata.Nar1.NarInfoHash, ni))
+
+	// Chunked backing (CDC stores chunks under the compression=none key), with no
+	// whole-file NAR in the store.
+	_, err = c.dbClient.Ent().NarFile.Create().
+		SetHash(testdata.Nar1.NarHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(1024).
+		SetTotalChunks(3).
+		Save(ctx)
+	require.NoError(t, err)
+
+	got, err := c.getNarInfoFromStore(ctx, testdata.Nar1.NarInfoHash)
+	require.NotErrorIs(t, err, ErrNarInfoPurged,
+		"a chunk-backed (CDC) narinfo is locally servable and must NOT be treated as a cache miss")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+}
+
+// TestPurgeNarInfo_OrphanedNoneNarReclaimsZstdBytes guards PR #1326 review point:
+// for compression=none NARs the physical object is stored under the .nar.zst
+// variant, so reclaiming an orphaned none nar_file must delete that object, not
+// just the logical .nar path.
+func TestPurgeNarInfo_OrphanedNoneNarReclaimsZstdBytes(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	ctx := newContext()
+
+	hashC := testhelper.MustRandBase32NarHash()
+	narHash := testhelper.MustRandBase32NarHash()
+
+	nf, err := c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(16).
+		SetTotalChunks(0).
+		Save(ctx)
+	require.NoError(t, err)
+
+	niRow, err := c.dbClient.Ent().NarInfo.Create().
+		SetHash(hashC).
+		SetURL("nar/" + narHash + ".nar").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = c.dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(niRow.ID).
+		SetNarFileID(nf.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	noneURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone, Query: url.Values{}}
+	zstdURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeZstd, Query: url.Values{}}
+
+	// none bytes physically live under the .nar.zst variant.
+	_, err = c.narStore.PutNar(ctx, zstdURL, strings.NewReader("dummy-zstd-bytes"), -1)
+	require.NoError(t, err)
+
+	present, err := c.narStore.StatNar(ctx, zstdURL)
+	require.NoError(t, err)
+	require.True(t, present, "precondition: the .nar.zst object exists")
+
+	require.NoError(t, c.purgeNarInfo(ctx, hashC, &noneURL))
+
+	present, err = c.narStore.StatNar(ctx, zstdURL)
+	require.NoError(t, err)
+	assert.False(t, present,
+		"reclaiming an orphaned compression=none nar_file must delete its .nar.zst object")
 }
 
 // TestPurgeNarInfo_SharedNarFileSurvives is the refcount-safety guard the n:1
