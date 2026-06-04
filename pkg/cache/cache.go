@@ -3082,15 +3082,28 @@ func (c *Cache) serveNarFromStorageViaPipe(
 		// stored uncompressed, so a compressed request keeps returning ErrNotFound
 		// (the client then falls back to an upstream that still has the .nar.xz).
 		//
-		// Only adopt the chunk result on success: if chunks are also absent (the
-		// NAR is genuinely gone), keep the original store ErrNotFound so callers
-		// see the same not-found sentinel they always have.
+		// Gated on chunk-store availability (not isCDCEnabled) so the fallback also
+		// applies during drain mode, where CDC writes are disabled but chunked NARs
+		// remain servable — consistent with getNarFromChunks' own guard.
 		if err != nil &&
 			errors.Is(err, storage.ErrNotFound) &&
-			c.isCDCEnabled() &&
+			c.isChunkStoreAvailable() &&
 			narURL.Compression == nar.CompressionTypeNone {
-			if chunkSize, chunkReader, chunkErr := c.getNarFromChunks(ctx, narURL); chunkErr == nil {
+			chunkSize, chunkReader, chunkErr := c.getNarFromChunks(ctx, narURL)
+
+			switch {
+			case chunkErr == nil:
+				// Chunks served the NAR: adopt the chunk result.
 				storageSize, storageReader, err = chunkSize, chunkReader, nil
+			case errors.Is(chunkErr, storage.ErrNotFound) || database.IsNotFoundError(chunkErr):
+				// Chunks are also absent: the NAR is genuinely gone. Keep the
+				// original store ErrNotFound so callers see the same not-found
+				// sentinel they always have.
+			default:
+				// A real chunk-path failure (e.g. DB/storage error). Surface it
+				// instead of masking it as a cache miss — matching how the direct
+				// chunk-serve path above propagates its errors.
+				return 0, nil, fmt.Errorf("fallback to chunk serve failed: %w", chunkErr)
 			}
 		}
 	}

@@ -201,3 +201,41 @@ func TestServeNarFromStorageRaceGenuinelyAbsentReturnsNotFound(t *testing.T) {
 	require.ErrorIs(t, err, storage.ErrNotFound,
 		"a genuinely absent NAR (no whole file, no chunks) must still return not-found")
 }
+
+// TestServeNarFromStorageRaceDrainModeFallsBackToChunks asserts the fallback is
+// gated on chunk-store availability, not on CDC writes being enabled. In drain
+// mode (CDC disabled, chunk store still configured) a whole-file store miss MUST
+// still fall back to chunks, since chunked NARs remain servable throughout drain.
+func TestServeNarFromStorageRaceDrainModeFallsBackToChunks(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+
+	const hash = "33ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27"
+
+	c, dbClient, _ := raceTestCache(t, hash)
+
+	content := strings.Repeat("drain mode race content; ", 256)
+	nu := nar.URL{Hash: hash, Compression: nar.CompressionTypeNone}
+	require.NoError(t, c.PutNar(ctx, nu, io.NopCloser(strings.NewReader(content))))
+
+	committed, err := dbClient.Ent().NarFile.Query().Where(entnarfile.HashEQ(hash)).Only(ctx)
+	require.NoError(t, err)
+	require.Positive(t, committed.TotalChunks, "NAR must be chunked for this test")
+
+	// Enter drain mode: CDC writes disabled, chunk store still available.
+	require.NoError(t, c.SetCDCConfiguration(false, 0, 0, 0))
+
+	// The whole-file read misses (wrapper) but chunks remain reassemblable.
+	size, rc, err := c.serveNarFromStorageViaPipe(ctx, &nu, true)
+	require.NoError(t, err,
+		"drain mode must still fall back to chunks when the whole file is missing")
+	require.NotNil(t, rc)
+
+	defer rc.Close()
+
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Equal(t, content, string(got))
+	require.Equal(t, int64(len(content)), size)
+}

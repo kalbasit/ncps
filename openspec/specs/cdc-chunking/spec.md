@@ -319,11 +319,18 @@ from the store. The synchronous serve that follows MUST NOT surface
 whole file between the time-of-check (`HasNarInStore`) and the time-of-use
 (`getNarFromStore`).
 
-The system SHALL treat a whole-file store read that misses, while CDC is enabled and the
-request is for the uncompressed NAR (`Compression == none`), as a signal that the NAR has
-been migrated, and SHALL fall back to serving the NAR by reassembling it from chunks. Only
-when neither the whole file nor a reassemblable set of chunks exists MAY `GetNar` return
-`storage.ErrNotFound`.
+The system SHALL treat a whole-file store read that misses, whenever a chunk store is
+available (CDC enabled OR drain mode) and the request is for the uncompressed NAR
+(`Compression == none`), as a signal that the NAR has been migrated, and SHALL fall back to
+serving the NAR by reassembling it from chunks. Gating on chunk-store availability rather
+than on CDC writes being enabled ensures the fallback also protects reads during drain mode,
+where chunked NARs remain servable. Only when neither the whole file nor a reassemblable set
+of chunks exists MAY `GetNar` return `storage.ErrNotFound`.
+
+A chunk-path failure that is NOT a not-found result (e.g. a database or storage error) MUST
+be surfaced to the caller rather than masked as the original store not-found, matching how
+the direct chunk-serve path propagates its errors. Both `storage.ErrNotFound` and an ent
+not-found result count as "the NAR is absent" and preserve the original store not-found.
 
 This fallback applies exclusively to the uncompressed serve path. A request for a
 compressed NAR (e.g. `.nar.xz`) whose whole file is gone MUST continue to resolve to
@@ -338,6 +345,14 @@ compressed stream (consistent with the existing chunked-serving rules).
   file from the store before the synchronous `getNarFromStore` opens it
 - **THEN** the serve path detects the store miss and reassembles `H` from its chunks
 - **AND** `GetNar` returns the complete NAR bytes with no error
+- **AND** `storage.ErrNotFound` is NOT surfaced to the caller
+
+#### Scenario: Whole-file store miss in drain mode falls back to chunks
+
+- **GIVEN** a NAR for hash `H` whose chunks are committed and reassemblable
+- **AND** the cache is in drain mode (CDC writes disabled, chunk store still configured)
+- **WHEN** the whole-file store read for `H` misses
+- **THEN** the serve path falls back to reassembling `H` from its chunks
 - **AND** `storage.ErrNotFound` is NOT surfaced to the caller
 
 #### Scenario: Mixed-mode retrieval after enabling CDC always succeeds
