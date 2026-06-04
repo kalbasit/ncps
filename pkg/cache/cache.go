@@ -3073,6 +3073,39 @@ func (c *Cache) serveNarFromStorageViaPipe(
 		storageSize, storageReader, err = c.getNarFromChunks(ctx, narURL)
 	} else {
 		storageSize, storageReader, err = c.getNarFromStore(ctx, narURL)
+
+		// A concurrent background NAR->chunks migration can delete the whole-file
+		// NAR between the total_chunks check above and this store read (TOCTOU).
+		// Because migration commits the chunks before deleting the whole file, the
+		// NAR is still retrievable from chunks. Fall back instead of surfacing a
+		// spurious not-found. Restricted to the uncompressed serve path: chunks are
+		// stored uncompressed, so a compressed request keeps returning ErrNotFound
+		// (the client then falls back to an upstream that still has the .nar.xz).
+		//
+		// Gated on chunk-store availability (not isCDCEnabled) so the fallback also
+		// applies during drain mode, where CDC writes are disabled but chunked NARs
+		// remain servable — consistent with getNarFromChunks' own guard.
+		if err != nil &&
+			errors.Is(err, storage.ErrNotFound) &&
+			c.isChunkStoreAvailable() &&
+			narURL.Compression == nar.CompressionTypeNone {
+			chunkSize, chunkReader, chunkErr := c.getNarFromChunks(ctx, narURL)
+
+			switch {
+			case chunkErr == nil:
+				// Chunks served the NAR: adopt the chunk result.
+				storageSize, storageReader, err = chunkSize, chunkReader, nil
+			case errors.Is(chunkErr, storage.ErrNotFound) || database.IsNotFoundError(chunkErr):
+				// Chunks are also absent: the NAR is genuinely gone. Keep the
+				// original store ErrNotFound so callers see the same not-found
+				// sentinel they always have.
+			default:
+				// A real chunk-path failure (e.g. DB/storage error). Surface it
+				// instead of masking it as a cache miss — matching how the direct
+				// chunk-serve path above propagates its errors.
+				return 0, nil, fmt.Errorf("fallback to chunk serve failed: %w", chunkErr)
+			}
+		}
 	}
 
 	if err != nil {
