@@ -311,7 +311,15 @@ func testCDCMixedMode(factory cacheFactory) func(*testing.T) {
 		nuChunk := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: nar.CompressionTypeNone}
 		require.NoError(t, c.PutNar(ctx, nuChunk, io.NopCloser(strings.NewReader(chunkContent))))
 
-		// 3. Retrieve both
+		// 3. Retrieve both.
+		//
+		// Retrieving nuBlob races a background NAR->chunks migration that GetNar
+		// triggers because the whole file is in the store and CDC is now enabled:
+		// the migration deletes the whole file while the serve path may still be
+		// reading it. This retrieval MUST succeed regardless of that timing — see
+		// TestServeNarFromStorageRaceWithMigrationFallsBackToChunks for the
+		// deterministic regression. Historically this flaked as
+		// "error fetching the nar from the store: not found".
 		_, _, rc1, err := c.GetNar(ctx, nuBlob)
 		require.NoError(t, err)
 

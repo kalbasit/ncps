@@ -3073,6 +3073,26 @@ func (c *Cache) serveNarFromStorageViaPipe(
 		storageSize, storageReader, err = c.getNarFromChunks(ctx, narURL)
 	} else {
 		storageSize, storageReader, err = c.getNarFromStore(ctx, narURL)
+
+		// A concurrent background NAR->chunks migration can delete the whole-file
+		// NAR between the total_chunks check above and this store read (TOCTOU).
+		// Because migration commits the chunks before deleting the whole file, the
+		// NAR is still retrievable from chunks. Fall back instead of surfacing a
+		// spurious not-found. Restricted to the uncompressed serve path: chunks are
+		// stored uncompressed, so a compressed request keeps returning ErrNotFound
+		// (the client then falls back to an upstream that still has the .nar.xz).
+		//
+		// Only adopt the chunk result on success: if chunks are also absent (the
+		// NAR is genuinely gone), keep the original store ErrNotFound so callers
+		// see the same not-found sentinel they always have.
+		if err != nil &&
+			errors.Is(err, storage.ErrNotFound) &&
+			c.isCDCEnabled() &&
+			narURL.Compression == nar.CompressionTypeNone {
+			if chunkSize, chunkReader, chunkErr := c.getNarFromChunks(ctx, narURL); chunkErr == nil {
+				storageSize, storageReader, err = chunkSize, chunkReader, nil
+			}
+		}
 	}
 
 	if err != nil {
