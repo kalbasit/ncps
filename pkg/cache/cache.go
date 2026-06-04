@@ -3043,7 +3043,20 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	// - If hasInStore and not chunked (total_chunks=0): serve raw from store (lazy)
 	// - If hasInStore and chunked (total_chunks>0): serve from chunks (optimized)
 	// - If not in store: serve from chunks (standard CDC path)
-	serveFromChunks := !hasInStore
+	//
+	// The chunk route is gated on chunk-store availability. hasInStore is a stale
+	// time-of-check snapshot from GetNar: it reads HasNarInStore once, then
+	// re-evaluates servability via isServable (which performs its OWN fresh
+	// HasNarInStore). When the whole file lands between those two checks the flag
+	// is stale (false) while the NAR is in fact present. Without this gate the
+	// stale false would route an uncompressed request to getNarFromChunks, which
+	// hard-fails with "chunk store not initialized" when no chunk store exists.
+	// This is the inverse of the migration-race TOCTOU handled by the store->chunks
+	// fallback below (present-at-check, deleted-before-use); here it is
+	// absent-at-check, present-before-use. Gating on isChunkStoreAvailable() (not
+	// isCDCEnabled) keeps drain mode serving chunked NARs, consistent with
+	// getNarFromChunks' own guard.
+	serveFromChunks := !hasInStore && c.isChunkStoreAvailable()
 	if hasInStore && c.isCDCEnabled() {
 		// Check if the nar is chunked by looking at the nar_file record
 		nr, nrErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, *narURL)
