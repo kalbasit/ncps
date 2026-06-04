@@ -821,6 +821,7 @@ func TestGetNar_HeadAmbiguousStorageIsNotFalse200(t *testing.T) {
 
 	dbClient, err := database.Open("sqlite:"+dbFile, nil)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = dbClient.Close() })
 
 	localStore, err := local.New(newContext(), dir)
 	require.NoError(t, err)
@@ -829,6 +830,7 @@ func TestGetNar_HeadAmbiguousStorageIsNotFalse200(t *testing.T) {
 
 	c, err := newTestCache(newContext(), dbClient, localStore, localStore, narStore)
 	require.NoError(t, err)
+	t.Cleanup(c.Close)
 
 	s := server.New(c)
 	s.SetPutPermitted(true)
