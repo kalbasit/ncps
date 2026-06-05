@@ -424,32 +424,38 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 				case errors.Is(err, cache.ErrNarAlreadyWholeFile):
 					atomic.AddInt32(&totalSkipped, 1)
 					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSkipped)
-				case errors.Is(err, cache.ErrNoNarHashToVerify):
-					log.Warn().Msg("no narinfo NarHash to verify against; leaving nar chunked")
-					atomic.AddInt32(&totalSkipped, 1)
-					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSkipped)
-				case errors.Is(err, cache.ErrNarHashMismatch), errors.Is(err, cache.ErrMissingChunk):
-					// Permanently broken NAR: purge it so the hash can be re-fetched
-					// from upstream on the next GetNar request.
+				case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+					// Shutdown/interruption — NOT a bad NAR. Never purge a possibly-healthy
+					// chunked NAR because the run was cancelled; leave it for the next run.
+					log.Warn().Err(err).Msg("migration interrupted; leaving nar chunked")
+					atomic.AddInt32(&totalFailed, 1)
+					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultFailure)
+				case err != nil:
+					// Any error means this NAR cannot be safely de-chunked: no NarHash
+					// to verify against, missing/corrupt chunks, a hash/size mismatch,
+					// or any other reconstruction failure. Purge the chunked nar_file so
+					// the pass drives the chunked count to zero — the narinfo remains and
+					// the NAR re-fetches from upstream on the next request. This keeps CDC
+					// drain self-completing instead of stranding it on residue. (Migration
+					// already returns before this for ErrMigrationInProgress and
+					// ErrNarAlreadyWholeFile, which are handled above as skips.)
+					log.Warn().Err(err).Msg("cannot de-chunk nar; purging so it re-fetches from upstream")
+
 					if purgeErr := c.PurgeChunkedNar(ctx, &narURL); purgeErr != nil {
 						if errors.Is(purgeErr, cache.ErrMigrationInProgress) {
-							log.Info().Msg("hash-mismatch nar is already being handled by another worker; skipping")
+							log.Info().Msg("nar is already being handled by another worker; skipping")
 							atomic.AddInt32(&totalSkipped, 1)
 							RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSkipped)
 						} else {
-							log.Error().Err(purgeErr).Msg("failed to purge hash-mismatch nar")
+							log.Error().Err(purgeErr).Msg("failed to purge un-de-chunkable nar")
 							atomic.AddInt32(&totalFailed, 1)
 							RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultFailure)
 						}
 					} else {
-						log.Info().Msg("purged hash-mismatch nar; will be re-fetched from upstream on next request")
+						log.Info().Msg("purged un-de-chunkable nar; will be re-fetched from upstream on next request")
 						atomic.AddInt32(&totalPurged, 1)
 						RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultPurged)
 					}
-				case err != nil:
-					log.Error().Err(err).Msg("failed to migrate chunks to whole nar")
-					atomic.AddInt32(&totalFailed, 1)
-					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultFailure)
 				default:
 					atomic.AddInt32(&totalSucceeded, 1)
 					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSuccess)

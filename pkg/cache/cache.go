@@ -8065,6 +8065,28 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 			return fmt.Errorf("error flipping nar_file to whole-file: %w", err)
 		}
 
+		// Normalize every narinfo referencing this NAR to the Compression:none URL so
+		// the persisted narinfo matches the new whole-file storage. Without this a
+		// narinfo advertising a different-compression URL (e.g. .nar.xz) would 404
+		// once the NAR is no longer chunked — serve-time normalization only rewrites
+		// while chunks exist. Match by the join link (primary — covers nix-serve-style
+		// prefixed URLs the URL prefix would miss) OR the Compression:none URL prefix
+		// (covers unlinked rows); the trailing "." anchors the fixed-length hash so the
+		// prefix cannot match a different NAR.
+		if _, err := tx.NarInfo.Update().
+			Where(entnarinfo.Or(
+				entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID)),
+				entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			)).
+			SetURL(noneURL.String()).
+			SetCompression(nar.CompressionTypeNone.String()).
+			ClearFileHash().
+			ClearFileSize().
+			SetUpdatedAt(time.Now()).
+			Save(ctx); err != nil {
+			return fmt.Errorf("error normalizing narinfo urls to none for %s: %w", narURL.Hash, err)
+		}
+
 		return nil
 	}); err != nil {
 		return err
@@ -8176,34 +8198,51 @@ func (c *Cache) linkedNarinfoNarHash(
 	narFileID int,
 	narURL nar.URL,
 ) (*nixhash.HashWithEncoding, error) {
+	// Resolve the expected NAR hash from any narinfo referencing this NAR. The hash
+	// is the uncompressed NAR content hash — identical across every narinfo
+	// referencing the NAR regardless of the compression its URL advertises — so any
+	// referencing narinfo is a valid source. De-chunk still content-verifies the
+	// reconstructed bytes against it, so a wrong source would mismatch and purge, not
+	// corrupt. Prefer the join-linked narinfo; fall back to any narinfo whose URL
+	// references the NAR by hash. Only narinfos that carry a NarHash are considered.
 	ni, err := c.dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(narFileID))).
+		Where(
+			entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(narFileID)),
+			entnarinfo.NarHashNotNil(),
+		).
 		First(ctx)
-	if err != nil {
-		if !database.IsNotFoundError(err) {
-			return nil, fmt.Errorf("error resolving linked narinfo for nar_file %d: %w", narFileID, err)
-		}
-
-		// No join link. A known race (the narinfo_nar_files link is created in the
-		// narinfo-write path, decoupled from the async CDC chunking that finalizes
-		// the chunked nar_file) can leave a chunked nar_file unlinked, which would
-		// otherwise strand it as un-de-chunkable. Resolve the narinfo by the NAR's
-		// Compression:none URL instead, so de-chunk can still content-verify and
-		// drain it.
-		noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
-
-		ni, err = c.dbClient.Ent().NarInfo.Query().
-			Where(entnarinfo.URLEQ(noneURL.String())).
-			First(ctx)
-		if err != nil {
-			if database.IsNotFoundError(err) {
-				return nil, nil //nolint:nilnil // no narinfo at all == nothing to verify against
-			}
-
-			return nil, fmt.Errorf("error resolving narinfo by url for nar_file %d: %w", narFileID, err)
-		}
+	if err == nil {
+		return parseNarinfoNarHash(ni)
 	}
 
+	if !database.IsNotFoundError(err) {
+		return nil, fmt.Errorf("error resolving linked narinfo for nar_file %d: %w", narFileID, err)
+	}
+
+	// No NarHash-bearing join-linked narinfo (the link may be missing, or the linked
+	// narinfo may lack a NarHash). Fall back to any narinfo referencing the NAR by
+	// hash, at any compression URL. The trailing "." anchors the fixed-length hash so
+	// the prefix cannot match a different NAR.
+	ni, err = c.dbClient.Ent().NarInfo.Query().
+		Where(
+			entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			entnarinfo.NarHashNotNil(),
+		).
+		First(ctx)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return nil, nil //nolint:nilnil // no narinfo carries a NarHash == nothing to verify against
+		}
+
+		return nil, fmt.Errorf("error resolving narinfo by hash for nar_file %d: %w", narFileID, err)
+	}
+
+	return parseNarinfoNarHash(ni)
+}
+
+// parseNarinfoNarHash parses a narinfo's recorded NarHash, returning (nil, nil) when
+// the narinfo has no usable NarHash to content-verify a reconstructed NAR against.
+func parseNarinfoNarHash(ni *ent.NarInfo) (*nixhash.HashWithEncoding, error) {
 	if ni.NarHash == nil || *ni.NarHash == "" {
 		return nil, nil //nolint:nilnil // narinfo without a NarHash == nothing to verify against
 	}
