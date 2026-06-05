@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -149,4 +150,65 @@ func TestGetNarInfo_Stage1PurgeThenUpstreamUnavailableResolvesToNotFound(t *test
 		"the purge sentinel must never escape GetNarInfo (it would surface as HTTP 500)")
 	require.ErrorIs(t, err, storage.ErrNotFound,
 		"a stage-1 purge with an unavailable upstream must resolve to ErrNotFound (HTTP 404)")
+}
+
+// TestGetNarInfo_SubstituterMissingNarHealsFromUpstreamWithoutPurging covers the
+// narinfo-purge-serving scenario "missing-NAR narinfo still available upstream is
+// served, not 500'd" on the substituter (non-upload) path. A seeded narinfo whose
+// backing NAR is absent fires the missing-NAR guard, which is now NON-DESTRUCTIVE:
+// instead of purging, GetNarInfo re-fetches from upstream and heals the record in
+// place, serving the narinfo. It also exercises the upstream upsert overwriting a
+// stale seeded record (so leaving the record intact does not pin stale data).
+func TestGetNarInfo_SubstituterMissingNarHealsFromUpstreamWithoutPurging(t *testing.T) {
+	t.Parallel()
+
+	ctx := newContext()
+
+	ts := testdata.NewTestServer(t, 40)
+	t.Cleanup(ts.Close)
+
+	dir, err := os.MkdirTemp("", "cache-path-")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	dbFile := filepath.Join(dir, "var", "ncps", "db", "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dbClient.Close() })
+
+	localStore, err := local.New(ctx, dir)
+	require.NoError(t, err)
+
+	c, err := New(ctx, cacheName, dbClient, localStore, localStore, localStore, "",
+		locklocal.NewLocker(), locklocal.NewRWLocker(), downloadLockTTL, downloadPollTimeout, cacheLockTTL)
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
+		PublicKeys: testdata.PublicKeys(),
+	})
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	<-c.GetHealthChecker().Trigger()
+
+	// Seed a complete phantom the way production does: a full narinfo record (all
+	// fields) but with no NAR bytes in storage, so the first database lookup fires
+	// the missing-NAR guard on the substituter path.
+	require.NoError(t, c.PutNarInfo(ctx, testdata.Nar1.NarInfoHash,
+		io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText))))
+
+	ni, err := c.GetNarInfo(ctx, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err,
+		"a missing-NAR narinfo available upstream must be served (healed in place), not purged into a 404")
+	require.NotNil(t, ni)
+
+	// The narinfo row survived the substituter read — healed in place by the
+	// upstream re-fetch, never destructively purged.
+	_, err = fetchNarInfo(ctx, dbClient, testdata.Nar1.NarInfoHash)
+	require.NoError(t, err, "the narinfo row must survive the substituter read")
 }

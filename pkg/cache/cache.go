@@ -3339,28 +3339,6 @@ func (c *Cache) getNarFromUpstream(
 	return resp, nil
 }
 
-func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
-	// create a new context not associated with any request because we don't want
-	// downstream HTTP request to cancel this.
-	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
-
-	if !c.HasNarInStore(ctx, *narURL) {
-		return storage.ErrNotFound
-	}
-
-	if _, err := c.dbClient.Ent().NarFile.Delete().
-		Where(
-			entnarfile.HashEQ(narURL.Hash),
-			entnarfile.CompressionEQ(narURL.Compression.String()),
-			entnarfile.QueryEQ(narURL.Query.Encode()),
-		).
-		Exec(ctx); err != nil {
-		return fmt.Errorf("error deleting narinfo from the database: %w", err)
-	}
-
-	return c.narStore.DeleteNar(ctx, *narURL)
-}
-
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
@@ -4151,7 +4129,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	// .nar.zst fallback for Compression:none) so an ambiguous storage error — a
 	// timed-out or stale stat on a network filesystem — is NOT mistaken for a
 	// confirmed absence and does not drive a destructive purge.
-	hasNarInStore, storeErr := c.statNarInStore(ctx, narURL)
+	hasNar, storeErr := c.statNarInStore(ctx, narURL)
 	if storeErr != nil {
 		zerolog.Ctx(ctx).
 			Warn().
@@ -4161,14 +4139,26 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return ni, nil
 	}
 
-	if !hasNarInStore && !c.hasUpstreamJob(narURL.Hash) {
-		zerolog.Ctx(ctx).
-			Error().
-			Msg("narinfo was found in the store but no nar was found, requesting a purge")
-
-		if err := c.purgeNarInfo(ctx, hash, &narURL); err != nil {
-			return nil, fmt.Errorf("error purging the narinfo: %w", err)
+	// In CDC mode a legacy narinfo's whole-file NAR may have been replaced by
+	// chunks; a chunk-backed NAR is still locally servable via GetNar, so it is
+	// NOT a cache miss. Mirror getNarInfoFromDatabase's chunk fallback.
+	if !hasNar {
+		hasChunks, chunkErr := c.HasNarInChunks(ctx, narURL)
+		if chunkErr != nil {
+			return nil, fmt.Errorf("failed to check if nar exists in chunks: %w", chunkErr)
 		}
+
+		hasNar = hasChunks
+	}
+
+	if !hasNar && !c.hasUpstreamJob(narURL.Hash) {
+		// Missing-NAR cache miss on the store-sourced path. Non-destructive: do NOT
+		// purge. GetNarInfo turns the sentinel into an upstream re-fetch (substituter)
+		// or a 404 (upload-only); the record is healed in place, never deleted out
+		// from under a concurrent upload. See spec: narinfo-purge-serving.
+		zerolog.Ctx(ctx).
+			Debug().
+			Msg("narinfo found in the store but its backing NAR is missing; treating as a cache miss without purging")
 
 		return nil, ErrNarInfoPurged
 	}
@@ -4417,24 +4407,18 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 			}
 		}
 
-		// Upload-only reads (/upload route) are non-destructive: report the
-		// missing-NAR narinfo as a cache miss (the sentinel resolves to
-		// storage.ErrNotFound → HTTP 404 via GetNarInfo's upload-only
-		// short-circuit, prompting the client to re-PUT) but do NOT purge.
-		// Purging here would delete a record the client is about to re-upload and
-		// makes the cache's path-validity answer non-monotonic within a single
-		// `nix copy`, aborting the client's reference-verification step.
-		if IsUploadOnly(ctx) {
-			return nil, ErrNarInfoPurged
-		}
-
+		// Missing-NAR cache miss. This is NON-DESTRUCTIVE on every read path: we
+		// never delete the narinfo or nar_file records here. Returning the sentinel
+		// lets GetNarInfo treat it as a miss — upload-only resolves to HTTP 404
+		// (client re-PUTs); the substituter path re-fetches from upstream and
+		// overwrites the record in place. Deleting here would (a) race a concurrent
+		// `nix copy` reference check across replicas that share one database,
+		// flipping a verified reference 200->404 mid-copy, and (b) with the M:N
+		// narinfo<->nar_file relationship, risk removing a NAR still shared by
+		// another narinfo. See spec: narinfo-purge-serving.
 		zerolog.Ctx(ctx).
-			Error().
-			Msg("narinfo was found in the database but no nar was found in storage, requesting a purge")
-
-		if err := c.purgeNarInfo(ctx, hash, narURL); err != nil {
-			return nil, fmt.Errorf("error purging the narinfo: %w", err)
-		}
+			Debug().
+			Msg("narinfo found in the database but its backing NAR is missing; treating as a cache miss without purging")
 
 		return nil, ErrNarInfoPurged
 	}
@@ -4577,6 +4561,24 @@ func (c *Cache) getNarInfoFromUpstream(
 	return uc, narInfo, nil
 }
 
+// deleteNarBytes removes a NAR's physical bytes from the store. For
+// Compression:none NARs the object is physically stored under the .nar.zst
+// variant (see statNarInStore), so that variant is removed as well; otherwise a
+// reclaimed none NAR would leave its real object orphaned and invisible to
+// normal cleanup/accounting.
+func (c *Cache) deleteNarBytes(ctx context.Context, narURL nar.URL) error {
+	if narURL.Compression == nar.CompressionTypeNone {
+		zstdURL := narURL
+		zstdURL.Compression = nar.CompressionTypeZstd
+
+		if err := c.narStore.DeleteNar(ctx, zstdURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
+			return err
+		}
+	}
+
+	return c.narStore.DeleteNar(ctx, narURL)
+}
+
 func (c *Cache) purgeNarInfo(
 	ctx context.Context,
 	hash string,
@@ -4593,23 +4595,77 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
+	var orphanedNarURLs []nar.URL
+
 	err := c.withEntTransaction(ctx, "purgeNarInfo", func(tx *ent.Tx) error {
+		// Capture the nar_file rows linked to this narinfo via the real
+		// narinfo_nar_files join BEFORE deleting the narinfo (which cascades its
+		// join rows). Using the stored linkage — not a key reconstructed from
+		// narURL — is robust against URL normalization/prefix differences between
+		// the narinfo's URL and the nar_file row written by storeInDatabase.
+		nir, err := tx.NarInfo.Query().
+			Where(entnarinfo.HashEQ(hash)).
+			Only(ctx)
+		if err != nil {
+			if database.IsNotFoundError(err) {
+				return nil
+			}
+
+			return fmt.Errorf("error looking up the narinfo record: %w", err)
+		}
+
+		links, err := tx.NarInfoNarFile.Query().
+			Where(entnarinfonarfile.NarinfoIDEQ(nir.ID)).
+			All(ctx)
+		if err != nil {
+			return fmt.Errorf("error loading nar_file links: %w", err)
+		}
+
 		if _, err := tx.NarInfo.Delete().
 			Where(entnarinfo.HashEQ(hash)).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("error deleting the narinfo record: %w", err)
 		}
 
-		if narURL.Hash != "" {
-			if _, err := tx.NarFile.Delete().
-				Where(
-					entnarfile.HashEQ(narURL.Hash),
-					entnarfile.CompressionEQ(narURL.Compression.String()),
-					entnarfile.QueryEQ(narURL.Query.Encode()),
-				).
-				Exec(ctx); err != nil {
+		// narinfo<->nar_file is M:N (many narinfos may link one NAR). Delete a
+		// nar_file (and, below, reclaim its bytes) only when no OTHER narinfo still
+		// links it, mirroring RunLRU's orphan-only deletion. The narinfo delete
+		// above cascaded this narinfo's join rows.
+		for _, link := range links {
+			nf, err := tx.NarFile.Get(ctx, link.NarFileID)
+			if err != nil {
+				if database.IsNotFoundError(err) {
+					continue
+				}
+
+				return fmt.Errorf("error loading nar_file %d: %w", link.NarFileID, err)
+			}
+
+			hasLinks, err := tx.NarFile.Query().
+				Where(entnarfile.IDEQ(nf.ID), entnarfile.HasNarInfoNarFiles()).
+				Exist(ctx)
+			if err != nil {
+				return fmt.Errorf("error checking nar_file references: %w", err)
+			}
+
+			if hasLinks {
+				continue
+			}
+
+			if err := tx.NarFile.DeleteOne(nf).Exec(ctx); err != nil {
 				return fmt.Errorf("error deleting the nar record: %w", err)
 			}
+
+			q, err := url.ParseQuery(nf.Query)
+			if err != nil {
+				return fmt.Errorf("error parsing nar_file query %q: %w", nf.Query, err)
+			}
+
+			orphanedNarURLs = append(orphanedNarURLs, nar.URL{
+				Hash:        nf.Hash,
+				Compression: nar.CompressionTypeFromString(nf.Compression),
+				Query:       q,
+			})
 		}
 
 		return nil
@@ -4618,15 +4674,17 @@ func (c *Cache) purgeNarInfo(
 		return err
 	}
 
-	// Ignore ErrNotFound: purge is idempotent. A concurrent goroutine may
-	// have already removed the file between the DB transaction above and
-	// the store delete below (TOCTOU), which is fine — the goal is gone.
+	// The narinfo store object is keyed by hash (1:1), so it is always removed.
+	// Ignore ErrNotFound: purge is idempotent (a concurrent goroutine may have
+	// already removed it — TOCTOU).
 	if err := c.deleteNarInfoFromStore(ctx, hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return fmt.Errorf("error removing narinfo from store: %w", err)
 	}
 
-	if narURL.Hash != "" {
-		if err := c.deleteNarFromStore(ctx, narURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
+	// Reclaim the bytes of each now-orphaned nar_file. Another narinfo may still
+	// reference a non-orphaned NAR (n:1), so only orphans reach here.
+	for _, orphanURL := range orphanedNarURLs {
+		if err := c.deleteNarBytes(ctx, orphanURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return fmt.Errorf("error removing nar from store: %w", err)
 		}
 	}
