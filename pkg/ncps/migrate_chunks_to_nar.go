@@ -424,6 +424,12 @@ func migrateChunksToNarAction(registerShutdown registerShutdownFn) cli.ActionFun
 				case errors.Is(err, cache.ErrNarAlreadyWholeFile):
 					atomic.AddInt32(&totalSkipped, 1)
 					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultSkipped)
+				case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+					// Shutdown/interruption — NOT a bad NAR. Never purge a possibly-healthy
+					// chunked NAR because the run was cancelled; leave it for the next run.
+					log.Warn().Err(err).Msg("migration interrupted; leaving nar chunked")
+					atomic.AddInt32(&totalFailed, 1)
+					RecordMigrationObject(ctx, MigrationTypeChunksToNar, MigrationOperationMigrate, MigrationResultFailure)
 				case err != nil:
 					// Any error means this NAR cannot be safely de-chunked: no NarHash
 					// to verify against, missing/corrupt chunks, a hash/size mismatch,

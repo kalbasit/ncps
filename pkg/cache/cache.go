@@ -8069,10 +8069,15 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 		// the persisted narinfo matches the new whole-file storage. Without this a
 		// narinfo advertising a different-compression URL (e.g. .nar.xz) would 404
 		// once the NAR is no longer chunked — serve-time normalization only rewrites
-		// while chunks exist. The trailing "." anchors the fixed-length hash so the
+		// while chunks exist. Match by the join link (primary — covers nix-serve-style
+		// prefixed URLs the URL prefix would miss) OR the Compression:none URL prefix
+		// (covers unlinked rows); the trailing "." anchors the fixed-length hash so the
 		// prefix cannot match a different NAR.
 		if _, err := tx.NarInfo.Update().
-			Where(entnarinfo.URLHasPrefix("nar/" + narURL.Hash + ".")).
+			Where(entnarinfo.Or(
+				entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID)),
+				entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			)).
 			SetURL(noneURL.String()).
 			SetCompression(nar.CompressionTypeNone.String()).
 			ClearFileHash().

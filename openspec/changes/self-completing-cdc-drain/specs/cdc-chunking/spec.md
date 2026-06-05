@@ -2,7 +2,7 @@
 
 ### Requirement: A de-chunked NAR's narinfo MUST be consistent with its whole-file storage
 
-Once a NAR has been converted from chunks to whole-file (`Compression:none`) storage, the persisted narinfo for that NAR SHALL advertise the Compression:none URL (`nar/<H>.nar`) with FileHash null, matching the actual storage. The narinfo SHALL NOT be left advertising a chunk-era or different-compression URL whose servability depended on `maybeCDCNormalizeNarInfoURL` (which only rewrites while the NAR is still chunked).
+Once a NAR has been converted from chunks to whole-file (`Compression:none`) storage, the persisted narinfo for that NAR SHALL advertise the Compression:none URL (`nar/<H>.nar`) with FileHash null and FileSize null, matching the actual storage. The narinfo SHALL NOT be left advertising a chunk-era or different-compression URL whose servability depended on `maybeCDCNormalizeNarInfoURL` (which only rewrites while the NAR is still chunked).
 
 #### Scenario: Serving a de-chunked NAR does not depend on serve-time chunk normalization
 

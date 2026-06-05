@@ -47,7 +47,7 @@ A full `migrate-chunks-to-nar` pass over all chunked `nar_file` rows SHALL leave
 
 ### Requirement: De-chunking MUST normalize the narinfo URL to none
 
-When the de-chunk pass converts a NAR to whole-file (`Compression:none`) storage, it SHALL update every narinfo referencing that NAR to advertise the Compression:none URL (`nar/<H>.nar`, FileHash null), so the persisted narinfo is consistent with the whole-file storage and does not depend on serve-time chunk-based normalization.
+When the de-chunk pass converts a NAR to whole-file (`Compression:none`) storage, it SHALL update every narinfo referencing that NAR to advertise the Compression:none URL (`nar/<H>.nar`, FileHash null, FileSize null), so the persisted narinfo is consistent with the whole-file storage and does not depend on serve-time chunk-based normalization.
 
 #### Scenario: A de-chunked NAR's narinfo advertises none
 
