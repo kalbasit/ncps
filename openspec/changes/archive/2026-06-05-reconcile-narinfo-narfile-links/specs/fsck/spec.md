@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: fsck MUST repair an unlinked narinfo with a backing nar_file instead of deleting it
 
