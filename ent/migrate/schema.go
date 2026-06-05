@@ -187,6 +187,7 @@ var (
 		{Name: "hash", Type: field.TypeString},
 		{Name: "store_path", Type: field.TypeString, Nullable: true},
 		{Name: "url", Type: field.TypeString, Nullable: true},
+		{Name: "upstream_url", Type: field.TypeString, Nullable: true},
 		{Name: "compression", Type: field.TypeString, Nullable: true},
 		{Name: "file_hash", Type: field.TypeString, Nullable: true},
 		{Name: "file_size", Type: field.TypeInt64, Nullable: true},
@@ -211,7 +212,7 @@ var (
 			{
 				Name:    "narinfo_last_accessed_at",
 				Unique:  false,
-				Columns: []*schema.Column{NarinfosColumns[14]},
+				Columns: []*schema.Column{NarinfosColumns[15]},
 			},
 		},
 	}

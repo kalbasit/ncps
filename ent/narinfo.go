@@ -27,6 +27,8 @@ type NarInfo struct {
 	StorePath *string `json:"store_path,omitempty"`
 	// URL holds the value of the "url" field.
 	URL *string `json:"url,omitempty"`
+	// UpstreamURL holds the value of the "upstream_url" field.
+	UpstreamURL *string `json:"upstream_url,omitempty"`
 	// Compression holds the value of the "compression" field.
 	Compression *string `json:"compression,omitempty"`
 	// FileHash holds the value of the "file_hash" field.
@@ -98,7 +100,7 @@ func (*NarInfo) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case narinfo.FieldID, narinfo.FieldFileSize, narinfo.FieldNarSize:
 			values[i] = new(sql.NullInt64)
-		case narinfo.FieldHash, narinfo.FieldStorePath, narinfo.FieldURL, narinfo.FieldCompression, narinfo.FieldFileHash, narinfo.FieldNarHash, narinfo.FieldDeriver, narinfo.FieldSystem, narinfo.FieldCa:
+		case narinfo.FieldHash, narinfo.FieldStorePath, narinfo.FieldURL, narinfo.FieldUpstreamURL, narinfo.FieldCompression, narinfo.FieldFileHash, narinfo.FieldNarHash, narinfo.FieldDeriver, narinfo.FieldSystem, narinfo.FieldCa:
 			values[i] = new(sql.NullString)
 		case narinfo.FieldCreatedAt, narinfo.FieldUpdatedAt, narinfo.FieldLastAccessedAt:
 			values[i] = new(sql.NullTime)
@@ -155,6 +157,13 @@ func (_m *NarInfo) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.URL = new(string)
 				*_m.URL = value.String
+			}
+		case narinfo.FieldUpstreamURL:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_url", values[i])
+			} else if value.Valid {
+				_m.UpstreamURL = new(string)
+				*_m.UpstreamURL = value.String
 			}
 		case narinfo.FieldCompression:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -288,6 +297,11 @@ func (_m *NarInfo) String() string {
 	builder.WriteString(", ")
 	if v := _m.URL; v != nil {
 		builder.WriteString("url=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamURL; v != nil {
+		builder.WriteString("upstream_url=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")

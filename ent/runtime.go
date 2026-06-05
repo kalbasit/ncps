@@ -133,7 +133,7 @@ func init() {
 	// narinfo.HashValidator is a validator for the "hash" field. It is called by the builders before save.
 	narinfo.HashValidator = narinfoDescHash.Validators[0].(func(string) error)
 	// narinfoDescLastAccessedAt is the schema descriptor for last_accessed_at field.
-	narinfoDescLastAccessedAt := narinfoFields[11].Descriptor()
+	narinfoDescLastAccessedAt := narinfoFields[12].Descriptor()
 	// narinfo.DefaultLastAccessedAt holds the default value on creation for the last_accessed_at field.
 	narinfo.DefaultLastAccessedAt = narinfoDescLastAccessedAt.Default.(func() time.Time)
 	narinforeferenceFields := schema.NarInfoReference{}.Fields()

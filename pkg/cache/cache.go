@@ -1460,6 +1460,34 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 // by matching the narinfo that references a nar_file with the given hash.
 // This is used to recover the original upstream URL (with prefix) when fetching from
 // nix-serve style upstreams that use prefixed URLs (e.g., narinfohash-narhash).
+// narInfoStorageKey returns the hash ncps uses as its local storage key when an
+// upstream narinfo URL is opaque. It is the narinfo NarHash re-encoded as a
+// bare 52-char nix32 digest (a valid ncps hash). Returns "" when no NarHash is
+// available, in which case opaque URLs cannot be handled.
+func narInfoStorageKey(ni *narinfo.NarInfo) string {
+	if ni == nil || ni.NarHash == nil {
+		return ""
+	}
+
+	return ni.NarHash.Format(nixhash.NixBase32, false)
+}
+
+// setNarInfoUpstreamURL records the opaque upstream NAR path on the narinfo row
+// so the NAR can be re-fetched from upstream after the local copy is evicted.
+func (c *Cache) setNarInfoUpstreamURL(ctx context.Context, hash, upstreamURL string) error {
+	// A single UPDATE is atomic on all three engines, so no explicit
+	// transaction is needed (mirrors migrateNarToChunksCleanup). The write is
+	// best-effort: the caller logs and continues on error.
+	if _, err := c.dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.HashEQ(hash)).
+		SetUpstreamURL(upstreamURL).
+		Save(ctx); err != nil {
+		return fmt.Errorf("error setting upstream_url for hash %q: %w", hash, err)
+	}
+
+	return nil
+}
+
 func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.URL) nar.URL {
 	ni, err := c.dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HasNarInfoNarFilesWith(
@@ -1482,6 +1510,13 @@ func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.U
 	if ni.URL != nil && *ni.URL != "" {
 		originalURL, parseErr := nar.ParseURL(*ni.URL)
 		if parseErr == nil {
+			// If the upstream URL was opaque (e.g. cachix UUID), restore the
+			// preserved path so the upstream GET targets it rather than ncps's
+			// own hash-named URL (which only exists locally).
+			if ni.UpstreamURL != nil && *ni.UpstreamURL != "" {
+				originalURL = originalURL.WithOpaquePath(*ni.UpstreamURL)
+			}
+
 			return originalURL
 		}
 		// Log if we have a URL in the DB but can't parse it.
@@ -1521,7 +1556,7 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 		return nil, nil
 	}
 
-	originalURL, err := nar.ParseURL(upstreamNarInfo.URL)
+	originalURL, err := nar.ParseUpstreamURL(upstreamNarInfo.URL, narInfoStorageKey(upstreamNarInfo))
 	if err != nil {
 		zerolog.Ctx(ctx).
 			Warn().
@@ -3634,7 +3669,10 @@ func (c *Cache) pullNarInfo(
 		ds.setUpstreamHostname(uc.GetHostname())
 	}
 
-	narURL, err := nar.ParseURL(narInfo.URL)
+	// Tolerate opaque (non hash-named) upstream NAR URLs (e.g. cachix's UUID
+	// NARs): ParseUpstreamURL preserves the original path for the upstream GET
+	// and keys ncps's local storage off the narinfo NarHash instead.
+	narURL, err := nar.ParseUpstreamURL(narInfo.URL, narInfoStorageKey(narInfo))
 	if err != nil {
 		zerolog.Ctx(ctx).
 			Error().
@@ -3646,6 +3684,10 @@ func (c *Cache) pullNarInfo(
 
 		return
 	}
+
+	// Preserve the opaque upstream path (if any) before narURL is potentially
+	// rewritten below, so it can be persisted for re-fetch after eviction.
+	upstreamNarPath := narURL.OpaquePath()
 
 	// Signal that we've successfully fetched the narinfo (no streaming for narinfo)
 	ds.startOnce.Do(func() { close(ds.start) })
@@ -3681,7 +3723,8 @@ func (c *Cache) pullNarInfo(
 	// the pointer in a background goroutine. Instead, build the normalized URL string directly.
 	// Skip normalization when lazy chunking is enabled - preserve original compression
 	// until the NAR is actually chunked.
-	if (c.isCDCEnabled() && !c.GetCDCLazyChunkingEnabled()) || narInfo.Compression == nar.CompressionTypeNone.String() {
+	switch {
+	case (c.isCDCEnabled() && !c.GetCDCLazyChunkingEnabled()) || narInfo.Compression == nar.CompressionTypeNone.String():
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
@@ -3689,6 +3732,13 @@ func (c *Cache) pullNarInfo(
 		// Set the FileHash and FileSize to null, not required for compression=none.
 		narInfo.FileHash = nil
 		narInfo.FileSize = 0
+	case narURL.IsOpaque():
+		// Opaque upstream URL (e.g. cachix UUID): re-serve under ncps's own
+		// hash-named URL keyed off the NarHash, preserving compression. The
+		// opaque path itself is persisted (upstreamNarPath) so the NAR can
+		// still be re-fetched from upstream after the local copy is evicted.
+		rewrittenURL := nar.URL{Hash: narURL.Hash, Compression: narURL.Compression, Query: narURL.Query}
+		narInfo.URL = rewrittenURL.String()
 	}
 
 	if err := c.signNarInfo(ctx, hash, narInfo); err != nil {
@@ -3713,6 +3763,19 @@ func (c *Cache) pullNarInfo(
 		ds.setError(err)
 
 		return
+	}
+
+	// Persist the opaque upstream path so the NAR can be re-fetched from
+	// upstream after the local copy is evicted (the stored narinfo URL is
+	// ncps's own hash-named URL and no longer encodes the opaque path).
+	if upstreamNarPath != "" {
+		if err := c.setNarInfoUpstreamURL(ctx, hash, upstreamNarPath); err != nil {
+			zerolog.Ctx(ctx).
+				Warn().
+				Err(err).
+				Str("upstream_nar_url", upstreamNarPath).
+				Msg("error persisting the opaque upstream nar URL")
+		}
 	}
 
 	// Signal that the asset is now in final storage and the distributed lock

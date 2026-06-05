@@ -51,6 +51,12 @@ func (NarInfo) Fields() []ent.Field {
 		field.String("hash").NotEmpty(),
 		field.String("store_path").Optional().Nillable(),
 		field.String("url").Optional().Nillable(),
+		// upstream_url preserves the original, opaque upstream NAR path (e.g.
+		// cachix's "nar/<uuid>.nar.zst") when it is not hash-named. The `url`
+		// column holds ncps's own hash-named URL; this column lets the NAR be
+		// re-fetched from upstream after the local copy is evicted. NULL for
+		// conventional hash-named upstreams.
+		field.String("upstream_url").Optional().Nillable(),
 		field.String("compression").Optional().Nillable(),
 		field.String("file_hash").Optional().Nillable(),
 		field.Int64("file_size").Optional().Nillable(),
