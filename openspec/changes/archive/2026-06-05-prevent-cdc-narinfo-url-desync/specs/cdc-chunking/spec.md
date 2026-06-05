@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: CDC narinfo URL normalization MUST NOT be predicted at store time
 
