@@ -4018,12 +4018,25 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 // placeholder row (created by a narinfo PUT, bytes_stored_at NULL) is NOT trusted,
 // so this does not resurrect phantoms. Returns false on any lookup error.
 func (c *Cache) narFileBytesStored(ctx context.Context, narURL nar.URL) bool {
-	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
+	// Match the nar_file by hash (+query) regardless of compression. The narinfo URL
+	// may advertise a different compression (commonly "none", a CDC-era URL
+	// normalization residue) than the compression the NAR was actually durably
+	// stored under (e.g. xz). The hash identifies the NAR; bytes_stored_at proves a
+	// PutNar wrote its bytes. A compression-keyed lookup would miss the row and
+	// wrongly 404 a present NAR on the /upload reference check, aborting a concurrent
+	// `nix copy`.
+	ok, err := c.dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(narURL.Hash),
+			entnarfile.QueryEQ(narURL.Query.Encode()),
+			entnarfile.BytesStoredAtNotNil(),
+		).
+		Exist(ctx)
 	if err != nil {
 		return false
 	}
 
-	return nr.BytesStoredAt != nil
+	return ok
 }
 
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.

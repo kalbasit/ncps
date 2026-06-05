@@ -201,6 +201,56 @@ func TestGetNarInfoFromDatabase_TrustsBytesStoredMarker(t *testing.T) {
 	require.NotErrorIs(t, err, ErrNarInfoPurged)
 }
 
+// TestGetNarInfoFromDatabase_BytesStoredMarkerIsCompressionAgnostic covers the prod
+// CDC-residue case: a narinfo advertises url=nar/<hash>.nar (Compression:none) while
+// its backing NAR is durably stored only under a DIFFERENT compression (xz) — a
+// nar_file row keyed by xz with bytes_stored_at set, no compression=none row at all.
+// The /upload presence check must match the nar_file by hash (+query) regardless of
+// compression, so the reference reports present. A compression-keyed lookup misses
+// the xz row and wrongly 404s the NAR, aborting a concurrent `nix copy`.
+func TestGetNarInfoFromDatabase_BytesStoredMarkerIsCompressionAgnostic(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	// The marker is trusted only on the upload (/upload) path.
+	ctx := WithUploadOnly(newContext())
+
+	hashA := testhelper.MustRandBase32NarHash()
+	narHash := testhelper.MustRandBase32NarHash()
+
+	// NAR durably stored under XZ (bytes_stored_at set), with NO compression=none row
+	// and no local bytes — the narinfo URL nevertheless advertises compression=none.
+	nf, err := c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeXz.String()).
+		SetQuery("").
+		SetFileSize(16).
+		SetTotalChunks(0).
+		SetBytesStoredAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	niRow, err := c.dbClient.Ent().NarInfo.Create().
+		SetHash(hashA).
+		SetURL("nar/" + narHash + ".nar"). // Compression:none URL (CDC residue).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = c.dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(niRow.ID).
+		SetNarFileID(nf.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	got, err := c.getNarInfoFromDatabase(ctx, hashA)
+	require.NoError(t, err,
+		"a bytes-stored nar_file must be treated as present even when the narinfo URL "+
+			"advertises a different compression than the stored NAR")
+	require.NotNil(t, got)
+	require.NotErrorIs(t, err, ErrNarInfoPurged)
+}
+
 // TestGetNarInfoFromDatabase_UnverifiedMissingNarIsStillAMiss is the phantom-safety
 // guard: a nar_file row WITHOUT the bytes_stored_at marker (e.g. the placeholder a
 // narinfo PUT creates) and no local bytes MUST still resolve to the missing-NAR
