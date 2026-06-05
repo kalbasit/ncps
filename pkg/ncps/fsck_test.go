@@ -19,6 +19,7 @@ import (
 	entchunk "github.com/kalbasit/ncps/ent/chunk"
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
+	entnarinfonarfile "github.com/kalbasit/ncps/ent/narinfonarfile"
 	locklocal "github.com/kalbasit/ncps/pkg/lock/local"
 	chunkstore "github.com/kalbasit/ncps/pkg/storage/chunk"
 	localstorage "github.com/kalbasit/ncps/pkg/storage/local"
@@ -79,6 +80,8 @@ func runFsckSuite(t *testing.T, setup fsckSetupFn) {
 
 	t.Run("Clean", testFsckClean(setup))
 	t.Run("NarInfosWithoutNarFiles", testFsckNarInfosWithoutNarFiles(setup))
+	t.Run("RepairsUnlinkedNarinfoWithBackingNarFile", testFsckRepairsUnlinkedNarinfoWithBackingNarFile(setup))
+	t.Run("DeletesUnlinkedNarinfoWithNoBackingNarFile", testFsckDeletesUnlinkedNarinfoWithNoBackingNarFile(setup))
 	t.Run("OrphanedNarFilesInDB", testFsckOrphanedNarFilesInDB(setup))
 	t.Run("NarFileMissingInStorage", testFsckNarFileMissingInStorage(setup))
 	t.Run("NarFileMissingInStorageCascadeRepair", testFsckNarFileMissingCascadeRepair(setup))
@@ -192,6 +195,134 @@ func testFsckOrphanedNarFilesInDB(setup fsckSetupFn) func(*testing.T) {
 
 		err = app.Run(ctx, args)
 		assert.ErrorIs(t, err, ncps.ErrFsckIssuesFound)
+	}
+}
+
+// testFsckRepairsUnlinkedNarinfoWithBackingNarFile verifies the core Fix B guarantee:
+// when a narinfo has no narinfo_nar_files link but a nar_file matching its URL (by
+// hash+query, compression-agnostic) DOES exist, --repair RECREATES the missing link
+// instead of destroying the (valid, reachable) narinfo. This models the known CDC race.
+func testFsckRepairsUnlinkedNarinfoWithBackingNarFile(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		dbClient, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		// Seed a narinfo whose URL points at an uncompressed NAR: nar/<HASH>.nar.
+		// Reuse Nar1's hash as the NAR hash but with Compression "none" so the URL has
+		// no extension and ParseURL yields Hash=<HASH>, Query="".
+		narHash := testdata.Nar1.NarHash
+		narInfoText := fmt.Sprintf(
+			"StorePath: /nix/store/%s-relink-test\nURL: nar/%s.nar\nCompression: none\n"+
+				"FileHash: sha256:%s\nFileSize: %d\nNarHash: sha256:%s\nNarSize: %d\n"+
+				"References: %s-relink-test\n",
+			testdata.Nar1.NarInfoHash, narHash, narHash, len(testdata.Nar1.NarText),
+			narHash, len(testdata.Nar1.NarText), testdata.Nar1.NarInfoHash,
+		)
+
+		ni := parseFsckNarInfoText(t, narInfoText)
+
+		narInfo, err := createNarInfoFromParsed(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
+		require.NoError(t, err)
+
+		// Create a matching nar_file (hash=<HASH>, compression=none, query="") but
+		// deliberately create NO narinfo_nar_files link — this is the unlinked state.
+		narURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone}
+
+		narFile, err := dbClient.Ent().NarFile.Create().
+			SetHash(narURL.Hash).
+			SetCompression(narURL.Compression.String()).
+			SetQuery(narURL.Query.Encode()).
+			SetFileSize(uint64(len(testdata.Nar1.NarText))).
+			Save(ctx)
+		require.NoError(t, err)
+
+		// Write the physical NAR file so the missing-in-storage phase does not
+		// independently flag/delete the nar_file (mirrors testFsckOrphanedNarFilesInDB).
+		tfp, err := narURL.ToFilePath()
+		require.NoError(t, err)
+
+		narPath := filepath.Join(dir, "store", "nar", tfp)
+		require.NoError(t, os.MkdirAll(filepath.Dir(narPath), 0o755))
+		require.NoError(t, os.WriteFile(narPath, []byte(testdata.Nar1.NarText), 0o600))
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Repair run (NO --dry-run).
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--repair",
+		}))
+
+		// The narinfo must STILL EXIST (not deleted).
+		_, err = dbClient.Ent().NarInfo.Query().
+			Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+			Only(ctx)
+		require.NoError(t, err, "unlinked narinfo with a backing nar_file must be relinked, not deleted")
+
+		// A narinfo_nar_files link must now exist between the narinfo and the nar_file.
+		linkExists, err := dbClient.Ent().NarInfoNarFile.Query().
+			Where(
+				entnarinfonarfile.NarinfoIDEQ(narInfo.ID),
+				entnarinfonarfile.NarFileIDEQ(narFile.ID),
+			).
+			Exist(ctx)
+		require.NoError(t, err)
+		assert.True(t, linkExists, "repair must recreate the missing narinfo_nar_files link")
+	}
+}
+
+// testFsckDeletesUnlinkedNarinfoWithNoBackingNarFile verifies that the relink fix does
+// NOT regress reclamation of genuinely-orphaned narinfos: when a narinfo has no link AND
+// no nar_file matches its URL, --repair still deletes it.
+func testFsckDeletesUnlinkedNarinfoWithNoBackingNarFile(setup fsckSetupFn) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+		dbClient, _, dir, dbURL, cleanup := setup(t)
+		t.Cleanup(cleanup)
+
+		// Seed a narinfo whose URL points at nar/<HASH>.nar but create NO matching
+		// nar_file anywhere — a genuinely-orphaned narinfo.
+		narHash := testdata.Nar1.NarHash
+		narInfoText := fmt.Sprintf(
+			"StorePath: /nix/store/%s-orphan-test\nURL: nar/%s.nar\nCompression: none\n"+
+				"FileHash: sha256:%s\nFileSize: %d\nNarHash: sha256:%s\nNarSize: %d\n"+
+				"References: %s-orphan-test\n",
+			testdata.Nar1.NarInfoHash, narHash, narHash, len(testdata.Nar1.NarText),
+			narHash, len(testdata.Nar1.NarText), testdata.Nar1.NarInfoHash,
+		)
+
+		ni := parseFsckNarInfoText(t, narInfoText)
+
+		_, err := createNarInfoFromParsed(ctx, dbClient, testdata.Nar1.NarInfoHash, ni)
+		require.NoError(t, err)
+
+		app, err := ncps.New()
+		require.NoError(t, err)
+
+		// Repair run (NO --dry-run).
+		require.NoError(t, app.Run(ctx, []string{
+			"ncps", "fsck",
+			"--cache-database-url", dbURL,
+			"--cache-storage-local", dir,
+			"--repair",
+		}))
+
+		// The narinfo must be deleted — no backing nar_file means nothing to relink to.
+		_, err = dbClient.Ent().NarInfo.Query().
+			Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+			Only(ctx)
+		assert.True(t, database.IsNotFoundError(err),
+			"genuinely-orphaned narinfo (no backing nar_file) must still be deleted")
 	}
 }
 

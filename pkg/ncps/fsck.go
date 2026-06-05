@@ -1220,6 +1220,62 @@ func printFsckSummary(r *fsckResults) {
 	}
 }
 
+// relinkNarInfoToBackingNarFile recreates a missing narinfo_nar_files link when the
+// nar_file the narinfo's URL references is present in the database. It matches the
+// nar_file by hash+query (any compression — the URL may advertise a different
+// compression than the NAR is stored under, e.g. CDC residue). Returns true when a
+// link was (re)created, false when no backing nar_file exists for the URL.
+func relinkNarInfoToBackingNarFile(ctx context.Context, dbClient *database.Client, ni *ent.NarInfo) (bool, error) {
+	if ni.URL == nil || *ni.URL == "" {
+		return false, nil
+	}
+
+	u, err := nar.ParseURL(*ni.URL)
+	if err != nil {
+		// An unparseable URL cannot point us at a nar_file; leave it for deletion.
+		return false, nil //nolint:nilerr // unparseable URL == no backing to relink to
+	}
+
+	// Prefer the nar_file whose compression exactly matches the URL, so linking is
+	// deterministic when several nar_file rows share a hash with different
+	// compressions. Fall back to any compression for CDC residue (the URL may
+	// advertise a different compression than the NAR is actually stored under).
+	nf, err := dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(u.Hash),
+			entnarfile.QueryEQ(u.Query.Encode()),
+			entnarfile.CompressionEQ(u.Compression.String()),
+		).
+		First(ctx)
+	if err != nil {
+		if !database.IsNotFoundError(err) {
+			return false, fmt.Errorf("lookup nar_file for narinfo url %q: %w", *ni.URL, err)
+		}
+
+		nf, err = dbClient.Ent().NarFile.Query().
+			Where(entnarfile.HashEQ(u.Hash), entnarfile.QueryEQ(u.Query.Encode())).
+			First(ctx)
+		if err != nil {
+			if database.IsNotFoundError(err) {
+				return false, nil
+			}
+
+			return false, fmt.Errorf("lookup nar_file for narinfo url %q: %w", *ni.URL, err)
+		}
+	}
+
+	if err := dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(ni.ID).
+		SetNarFileID(nf.ID).
+		OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+		Ignore().
+		Exec(ctx); err != nil {
+		return false, fmt.Errorf("create narinfo_nar_files link for narinfo(%d): %w", ni.ID, err)
+	}
+
+	return true, nil
+}
+
 // repairFsckIssues applies fixes for each category of issue, re-verifying each item before acting.
 func repairFsckIssues(
 	ctx context.Context,
@@ -1230,9 +1286,9 @@ func repairFsckIssues(
 ) error {
 	logger := zerolog.Ctx(ctx)
 
-	// a. Delete narinfos without nar_files
+	// a. Repair or delete narinfos without nar_files
 	for _, ni := range results.narinfosWithoutNarFiles {
-		// Re-verify before deleting
+		// Re-verify before acting
 		hasNarFile, err := dbClient.Ent().NarFile.Query().
 			Where(entnarfile.HasNarInfoNarFilesWith(entnarinfonarfile.NarinfoIDEQ(ni.ID))).
 			Exist(ctx)
@@ -1245,6 +1301,25 @@ func repairFsckIssues(
 			continue
 		}
 
+		// Before deleting, try to REPAIR. A known race — the narinfo_nar_files link
+		// is created in the narinfo-write path, decoupled from the async CDC chunking
+		// that finalizes the nar_file — can leave a perfectly valid, reachable narinfo
+		// unlinked from an EXISTING nar_file. Deleting it would destroy live metadata
+		// and orphan the NAR. If the nar_file the narinfo's URL references is present,
+		// recreate the missing link instead.
+		relinked, err := relinkNarInfoToBackingNarFile(ctx, dbClient, ni)
+		if err != nil {
+			return fmt.Errorf("repair relink narinfo(%d): %w", ni.ID, err)
+		}
+
+		if relinked {
+			logger.Info().Int("narinfo_id", ni.ID).Str("hash", ni.Hash).
+				Msg("repaired missing narinfo<->nar_file link")
+
+			continue
+		}
+
+		// No nar_file backs this narinfo's URL anywhere: it is genuinely orphaned.
 		if err := dbClient.Ent().NarInfo.DeleteOneID(ni.ID).Exec(ctx); err != nil {
 			logger.Error().Err(err).Int("narinfo_id", ni.ID).Msg("failed to delete narinfo without nar_file")
 		} else {
