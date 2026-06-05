@@ -1,7 +1,9 @@
 # upload-reference-presence Specification
 
 ## Purpose
-TBD - created by archiving change upload-reference-presence-marker. Update Purpose after archive.
+
+Defines how the upload-only (`/upload`) path decides a narinfo's backing NAR is present, so a `nix copy --to .../upload` reference check does not 404 a NAR that is durably stored but not yet locally visible. The rules trust a shared-database `bytes_stored_at` marker (set by `PutNar`) over a single replica's local filesystem `stat`, match the NAR compression-agnostically, and exclude byte-less placeholders — without weakening the substituter path, which still self-heals a genuinely missing NAR from upstream.
+
 ## Requirements
 ### Requirement: The /upload path MUST treat a NAR with a durable bytes-stored marker as present
 
