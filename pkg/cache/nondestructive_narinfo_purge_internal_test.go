@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/stretchr/testify/assert"
@@ -148,6 +149,98 @@ func TestGetNarInfoFromDatabase_NonUploadOnly_PreservesNarFileRecord(t *testing.
 		"substituter read must NOT delete the narinfo row (would invalidate the reference)")
 	assert.True(t, narFileExists(ctx, t, c, narHash),
 		"substituter read must NOT delete the nar_file row (would invalidate the reference)")
+}
+
+// TestGetNarInfoFromDatabase_TrustsBytesStoredMarker covers the multi-replica
+// cross-consistency fix: a NAR whose bytes were durably stored by a peer replica
+// is recorded in the shared database (nar_file.bytes_stored_at set by PutNar) before
+// this replica's local filesystem stat observes the write. The /upload narinfo
+// read MUST treat such a row as present — trusting the shared-DB marker over the
+// local stat — so a concurrent `nix copy` reference check does not 404 a NAR
+// another replica just uploaded and abort.
+func TestGetNarInfoFromDatabase_TrustsBytesStoredMarker(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	// The marker is trusted only on the upload (/upload) path — the substituter path
+	// must keep self-healing a genuinely missing NAR via upstream.
+	ctx := WithUploadOnly(newContext())
+
+	hashA := testhelper.MustRandBase32NarHash()
+	narHash := testhelper.MustRandBase32NarHash()
+
+	// nar_file marked bytes-stored (as PutNar does after writing bytes) but with NO
+	// bytes in THIS replica's store — models a peer's upload not yet locally visible.
+	nf, err := c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeXz.String()).
+		SetQuery("").
+		SetFileSize(16).
+		SetTotalChunks(0).
+		SetBytesStoredAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	niRow, err := c.dbClient.Ent().NarInfo.Create().
+		SetHash(hashA).
+		SetURL("nar/" + narHash + ".nar.xz").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = c.dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(niRow.ID).
+		SetNarFileID(nf.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	got, err := c.getNarInfoFromDatabase(ctx, hashA)
+	require.NoError(t, err,
+		"a bytes-stored nar_file must be treated as present even without local bytes")
+	require.NotNil(t, got)
+	require.NotErrorIs(t, err, ErrNarInfoPurged)
+}
+
+// TestGetNarInfoFromDatabase_UnverifiedMissingNarIsStillAMiss is the phantom-safety
+// guard: a nar_file row WITHOUT the bytes_stored_at marker (e.g. the placeholder a
+// narinfo PUT creates) and no local bytes MUST still resolve to the missing-NAR
+// cache-miss sentinel — trusting the marker must not resurrect phantoms.
+func TestGetNarInfoFromDatabase_UnverifiedMissingNarIsStillAMiss(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	// Even on the upload path, an unverified placeholder must not be trusted.
+	ctx := WithUploadOnly(newContext())
+
+	hashA := testhelper.MustRandBase32NarHash()
+	narHash := testhelper.MustRandBase32NarHash()
+
+	// nar_file placeholder: NO verified_at, NO bytes.
+	nf, err := c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeXz.String()).
+		SetQuery("").
+		SetFileSize(16).
+		SetTotalChunks(0).
+		Save(ctx)
+	require.NoError(t, err)
+
+	niRow, err := c.dbClient.Ent().NarInfo.Create().
+		SetHash(hashA).
+		SetURL("nar/" + narHash + ".nar.xz").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = c.dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(niRow.ID).
+		SetNarFileID(nf.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = c.getNarInfoFromDatabase(ctx, hashA)
+	require.ErrorIs(t, err, ErrNarInfoPurged,
+		"an unverified, byte-less nar_file must remain a cache miss (no phantom revival)")
 }
 
 // TestGetNarInfoFromStore_ChunkBackedNarIsNotAMiss guards the CDC case (PR #1326

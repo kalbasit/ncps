@@ -120,6 +120,7 @@ var (
 		{Name: "total_chunks", Type: field.TypeInt64, Default: 0},
 		{Name: "chunking_started_at", Type: field.TypeTime, Nullable: true},
 		{Name: "verified_at", Type: field.TypeTime, Nullable: true},
+		{Name: "bytes_stored_at", Type: field.TypeTime, Nullable: true},
 		{Name: "last_accessed_at", Type: field.TypeTime, Nullable: true, Default: schema.Expr("CURRENT_TIMESTAMP")},
 	}
 	// NarFilesTable holds the schema information for the "nar_files" table.
@@ -136,7 +137,7 @@ var (
 			{
 				Name:    "narfile_last_accessed_at",
 				Unique:  false,
-				Columns: []*schema.Column{NarFilesColumns[10]},
+				Columns: []*schema.Column{NarFilesColumns[11]},
 			},
 		},
 	}

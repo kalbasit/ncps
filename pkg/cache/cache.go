@@ -1557,11 +1557,20 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 		// CreateNarFile+UpdateNarFileFileSize sequence. TotalChunks
 		// stays at its existing value on conflict — only set to 0 on
 		// fresh insert (the Create's default).
+		// bytes_stored_at marks that the NAR's bytes were durably written by PutNar
+		// (as opposed to a narinfo-PUT placeholder, which leaves it NULL). It is a
+		// dedicated marker — distinct from verified_at, which fsck owns as its
+		// integrity-check timestamp — recorded in the shared database so peer
+		// replicas can trust it as proof the NAR exists even before their local
+		// filesystem view observes the write.
+		now := time.Now()
+
 		id, err := tx.NarFile.Create().
 			SetHash(narURL.Hash).
 			SetCompression(narURL.Compression.String()).
 			SetQuery(narURL.Query.Encode()).
 			SetFileSize(fileSize).
+			SetBytesStoredAt(now).
 			OnConflictColumns(
 				entnarfile.FieldHash,
 				entnarfile.FieldCompression,
@@ -1569,7 +1578,8 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 			).
 			Update(func(u *ent.NarFileUpsert) {
 				u.SetFileSize(fileSize)
-				u.SetUpdatedAt(time.Now())
+				u.SetBytesStoredAt(now)
+				u.SetUpdatedAt(now)
 			}).
 			ID(ctx)
 		if err != nil {
@@ -3999,6 +4009,23 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 	return narFileServable(nr), nil
 }
 
+// narFileBytesStored reports whether the shared database records this NAR's bytes
+// as durably stored (nar_file.bytes_stored_at set by PutNar). Because the database
+// is strongly consistent across replicas, this is true as soon as ANY replica has
+// stored the NAR — even before this replica's local filesystem stat observes the
+// write. It lets a reference check on one replica avoid 404-ing a NAR another
+// replica just uploaded (which would abort a concurrent `nix copy`). A bare
+// placeholder row (created by a narinfo PUT, bytes_stored_at NULL) is NOT trusted,
+// so this does not resurrect phantoms. Returns false on any lookup error.
+func (c *Cache) narFileBytesStored(ctx context.Context, narURL nar.URL) bool {
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
+	if err != nil {
+		return false
+	}
+
+	return nr.BytesStoredAt != nil
+}
+
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
 func (c *Cache) HasNarInStore(ctx context.Context, narURL nar.URL) bool {
 	present, _ := c.statNarInStore(ctx, narURL)
@@ -4149,6 +4176,14 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		}
 
 		hasNar = hasChunks
+	}
+
+	// Cross-replica consistency on the UPLOAD path only (see getNarInfoFromDatabase):
+	// trust the shared-database verified marker over the local filesystem stat so a
+	// peer's just-uploaded NAR is not treated as a miss during a `nix copy` reference
+	// check. The substituter path keeps self-healing via upstream re-pull.
+	if !hasNar && IsUploadOnly(ctx) && c.narFileBytesStored(ctx, narURL) {
+		hasNar = true
 	}
 
 	if !hasNar && !c.hasUpstreamJob(narURL.Hash) {
@@ -4344,6 +4379,16 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if nar exists in chunks: %w", err)
 		}
+	}
+
+	// Cross-replica consistency on the UPLOAD path only: a NAR stored by a peer is
+	// recorded as verified in the shared database before this replica's filesystem
+	// stat observes the write. Trust that marker so a `nix copy` reference check does
+	// not 404 a NAR another replica just uploaded (which aborts the copy). Gated to
+	// upload-only requests so the substituter (root) read path keeps self-healing a
+	// genuinely missing NAR via an upstream re-pull rather than trusting a stale row.
+	if !hasNar && IsUploadOnly(ctx) && c.narFileBytesStored(ctx, *narURL) {
+		hasNar = true
 	}
 
 	isBeingDownloadedLocally := c.hasUpstreamJob(narURL.Hash)

@@ -100,6 +100,11 @@ func VerifiedAt(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldEQ(FieldVerifiedAt, v))
 }
 
+// BytesStoredAt applies equality check predicate on the "bytes_stored_at" field. It's identical to BytesStoredAtEQ.
+func BytesStoredAt(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldEQ(FieldBytesStoredAt, v))
+}
+
 // LastAccessedAt applies equality check predicate on the "last_accessed_at" field. It's identical to LastAccessedAtEQ.
 func LastAccessedAt(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldEQ(FieldLastAccessedAt, v))
@@ -568,6 +573,56 @@ func VerifiedAtIsNil() predicate.NarFile {
 // VerifiedAtNotNil applies the NotNil predicate on the "verified_at" field.
 func VerifiedAtNotNil() predicate.NarFile {
 	return predicate.NarFile(sql.FieldNotNull(FieldVerifiedAt))
+}
+
+// BytesStoredAtEQ applies the EQ predicate on the "bytes_stored_at" field.
+func BytesStoredAtEQ(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldEQ(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtNEQ applies the NEQ predicate on the "bytes_stored_at" field.
+func BytesStoredAtNEQ(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldNEQ(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtIn applies the In predicate on the "bytes_stored_at" field.
+func BytesStoredAtIn(vs ...time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldIn(FieldBytesStoredAt, vs...))
+}
+
+// BytesStoredAtNotIn applies the NotIn predicate on the "bytes_stored_at" field.
+func BytesStoredAtNotIn(vs ...time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldNotIn(FieldBytesStoredAt, vs...))
+}
+
+// BytesStoredAtGT applies the GT predicate on the "bytes_stored_at" field.
+func BytesStoredAtGT(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldGT(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtGTE applies the GTE predicate on the "bytes_stored_at" field.
+func BytesStoredAtGTE(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldGTE(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtLT applies the LT predicate on the "bytes_stored_at" field.
+func BytesStoredAtLT(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldLT(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtLTE applies the LTE predicate on the "bytes_stored_at" field.
+func BytesStoredAtLTE(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldLTE(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtIsNil applies the IsNil predicate on the "bytes_stored_at" field.
+func BytesStoredAtIsNil() predicate.NarFile {
+	return predicate.NarFile(sql.FieldIsNull(FieldBytesStoredAt))
+}
+
+// BytesStoredAtNotNil applies the NotNil predicate on the "bytes_stored_at" field.
+func BytesStoredAtNotNil() predicate.NarFile {
+	return predicate.NarFile(sql.FieldNotNull(FieldBytesStoredAt))
 }
 
 // LastAccessedAtEQ applies the EQ predicate on the "last_accessed_at" field.

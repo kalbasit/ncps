@@ -53,6 +53,14 @@ func (NarFile) Fields() []ent.Field {
 		field.Time("verified_at").
 			Optional().
 			Nillable(),
+		// bytes_stored_at records when PutNar durably wrote the NAR's bytes. It is
+		// distinct from verified_at (fsck's integrity-check timestamp): a narinfo-PUT
+		// placeholder leaves it NULL, so it proves "the bytes exist" without claiming
+		// integrity verification. Read across replicas to avoid a stale local stat
+		// 404-ing a NAR a peer just uploaded.
+		field.Time("bytes_stored_at").
+			Optional().
+			Nillable(),
 		field.Time("last_accessed_at").
 			Optional().
 			Nillable().

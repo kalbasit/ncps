@@ -134,6 +134,20 @@ func (_c *NarFileCreate) SetNillableVerifiedAt(v *time.Time) *NarFileCreate {
 	return _c
 }
 
+// SetBytesStoredAt sets the "bytes_stored_at" field.
+func (_c *NarFileCreate) SetBytesStoredAt(v time.Time) *NarFileCreate {
+	_c.mutation.SetBytesStoredAt(v)
+	return _c
+}
+
+// SetNillableBytesStoredAt sets the "bytes_stored_at" field if the given value is not nil.
+func (_c *NarFileCreate) SetNillableBytesStoredAt(v *time.Time) *NarFileCreate {
+	if v != nil {
+		_c.SetBytesStoredAt(*v)
+	}
+	return _c
+}
+
 // SetLastAccessedAt sets the "last_accessed_at" field.
 func (_c *NarFileCreate) SetLastAccessedAt(v time.Time) *NarFileCreate {
 	_c.mutation.SetLastAccessedAt(v)
@@ -322,6 +336,10 @@ func (_c *NarFileCreate) createSpec() (*NarFile, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.VerifiedAt(); ok {
 		_spec.SetField(narfile.FieldVerifiedAt, field.TypeTime, value)
 		_node.VerifiedAt = &value
+	}
+	if value, ok := _c.mutation.BytesStoredAt(); ok {
+		_spec.SetField(narfile.FieldBytesStoredAt, field.TypeTime, value)
+		_node.BytesStoredAt = &value
 	}
 	if value, ok := _c.mutation.LastAccessedAt(); ok {
 		_spec.SetField(narfile.FieldLastAccessedAt, field.TypeTime, value)
@@ -537,6 +555,24 @@ func (u *NarFileUpsert) ClearVerifiedAt() *NarFileUpsert {
 	return u
 }
 
+// SetBytesStoredAt sets the "bytes_stored_at" field.
+func (u *NarFileUpsert) SetBytesStoredAt(v time.Time) *NarFileUpsert {
+	u.Set(narfile.FieldBytesStoredAt, v)
+	return u
+}
+
+// UpdateBytesStoredAt sets the "bytes_stored_at" field to the value that was provided on create.
+func (u *NarFileUpsert) UpdateBytesStoredAt() *NarFileUpsert {
+	u.SetExcluded(narfile.FieldBytesStoredAt)
+	return u
+}
+
+// ClearBytesStoredAt clears the value of the "bytes_stored_at" field.
+func (u *NarFileUpsert) ClearBytesStoredAt() *NarFileUpsert {
+	u.SetNull(narfile.FieldBytesStoredAt)
+	return u
+}
+
 // SetLastAccessedAt sets the "last_accessed_at" field.
 func (u *NarFileUpsert) SetLastAccessedAt(v time.Time) *NarFileUpsert {
 	u.Set(narfile.FieldLastAccessedAt, v)
@@ -744,6 +780,27 @@ func (u *NarFileUpsertOne) UpdateVerifiedAt() *NarFileUpsertOne {
 func (u *NarFileUpsertOne) ClearVerifiedAt() *NarFileUpsertOne {
 	return u.Update(func(s *NarFileUpsert) {
 		s.ClearVerifiedAt()
+	})
+}
+
+// SetBytesStoredAt sets the "bytes_stored_at" field.
+func (u *NarFileUpsertOne) SetBytesStoredAt(v time.Time) *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetBytesStoredAt(v)
+	})
+}
+
+// UpdateBytesStoredAt sets the "bytes_stored_at" field to the value that was provided on create.
+func (u *NarFileUpsertOne) UpdateBytesStoredAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateBytesStoredAt()
+	})
+}
+
+// ClearBytesStoredAt clears the value of the "bytes_stored_at" field.
+func (u *NarFileUpsertOne) ClearBytesStoredAt() *NarFileUpsertOne {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearBytesStoredAt()
 	})
 }
 
@@ -1123,6 +1180,27 @@ func (u *NarFileUpsertBulk) UpdateVerifiedAt() *NarFileUpsertBulk {
 func (u *NarFileUpsertBulk) ClearVerifiedAt() *NarFileUpsertBulk {
 	return u.Update(func(s *NarFileUpsert) {
 		s.ClearVerifiedAt()
+	})
+}
+
+// SetBytesStoredAt sets the "bytes_stored_at" field.
+func (u *NarFileUpsertBulk) SetBytesStoredAt(v time.Time) *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.SetBytesStoredAt(v)
+	})
+}
+
+// UpdateBytesStoredAt sets the "bytes_stored_at" field to the value that was provided on create.
+func (u *NarFileUpsertBulk) UpdateBytesStoredAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.UpdateBytesStoredAt()
+	})
+}
+
+// ClearBytesStoredAt clears the value of the "bytes_stored_at" field.
+func (u *NarFileUpsertBulk) ClearBytesStoredAt() *NarFileUpsertBulk {
+	return u.Update(func(s *NarFileUpsert) {
+		s.ClearBytesStoredAt()
 	})
 }
 

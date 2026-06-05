@@ -32,6 +32,8 @@ const (
 	FieldChunkingStartedAt = "chunking_started_at"
 	// FieldVerifiedAt holds the string denoting the verified_at field in the database.
 	FieldVerifiedAt = "verified_at"
+	// FieldBytesStoredAt holds the string denoting the bytes_stored_at field in the database.
+	FieldBytesStoredAt = "bytes_stored_at"
 	// FieldLastAccessedAt holds the string denoting the last_accessed_at field in the database.
 	FieldLastAccessedAt = "last_accessed_at"
 	// EdgeNarInfoNarFiles holds the string denoting the nar_info_nar_files edge name in mutations.
@@ -68,6 +70,7 @@ var Columns = []string{
 	FieldTotalChunks,
 	FieldChunkingStartedAt,
 	FieldVerifiedAt,
+	FieldBytesStoredAt,
 	FieldLastAccessedAt,
 }
 
@@ -147,6 +150,11 @@ func ByChunkingStartedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByVerifiedAt orders the results by the verified_at field.
 func ByVerifiedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVerifiedAt, opts...).ToFunc()
+}
+
+// ByBytesStoredAt orders the results by the bytes_stored_at field.
+func ByBytesStoredAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBytesStoredAt, opts...).ToFunc()
 }
 
 // ByLastAccessedAt orders the results by the last_accessed_at field.
