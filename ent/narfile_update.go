@@ -174,6 +174,26 @@ func (_u *NarFileUpdate) ClearVerifiedAt() *NarFileUpdate {
 	return _u
 }
 
+// SetBytesStoredAt sets the "bytes_stored_at" field.
+func (_u *NarFileUpdate) SetBytesStoredAt(v time.Time) *NarFileUpdate {
+	_u.mutation.SetBytesStoredAt(v)
+	return _u
+}
+
+// SetNillableBytesStoredAt sets the "bytes_stored_at" field if the given value is not nil.
+func (_u *NarFileUpdate) SetNillableBytesStoredAt(v *time.Time) *NarFileUpdate {
+	if v != nil {
+		_u.SetBytesStoredAt(*v)
+	}
+	return _u
+}
+
+// ClearBytesStoredAt clears the value of the "bytes_stored_at" field.
+func (_u *NarFileUpdate) ClearBytesStoredAt() *NarFileUpdate {
+	_u.mutation.ClearBytesStoredAt()
+	return _u
+}
+
 // SetLastAccessedAt sets the "last_accessed_at" field.
 func (_u *NarFileUpdate) SetLastAccessedAt(v time.Time) *NarFileUpdate {
 	_u.mutation.SetLastAccessedAt(v)
@@ -358,6 +378,12 @@ func (_u *NarFileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.VerifiedAtCleared() {
 		_spec.ClearField(narfile.FieldVerifiedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.BytesStoredAt(); ok {
+		_spec.SetField(narfile.FieldBytesStoredAt, field.TypeTime, value)
+	}
+	if _u.mutation.BytesStoredAtCleared() {
+		_spec.ClearField(narfile.FieldBytesStoredAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.LastAccessedAt(); ok {
 		_spec.SetField(narfile.FieldLastAccessedAt, field.TypeTime, value)
@@ -619,6 +645,26 @@ func (_u *NarFileUpdateOne) ClearVerifiedAt() *NarFileUpdateOne {
 	return _u
 }
 
+// SetBytesStoredAt sets the "bytes_stored_at" field.
+func (_u *NarFileUpdateOne) SetBytesStoredAt(v time.Time) *NarFileUpdateOne {
+	_u.mutation.SetBytesStoredAt(v)
+	return _u
+}
+
+// SetNillableBytesStoredAt sets the "bytes_stored_at" field if the given value is not nil.
+func (_u *NarFileUpdateOne) SetNillableBytesStoredAt(v *time.Time) *NarFileUpdateOne {
+	if v != nil {
+		_u.SetBytesStoredAt(*v)
+	}
+	return _u
+}
+
+// ClearBytesStoredAt clears the value of the "bytes_stored_at" field.
+func (_u *NarFileUpdateOne) ClearBytesStoredAt() *NarFileUpdateOne {
+	_u.mutation.ClearBytesStoredAt()
+	return _u
+}
+
 // SetLastAccessedAt sets the "last_accessed_at" field.
 func (_u *NarFileUpdateOne) SetLastAccessedAt(v time.Time) *NarFileUpdateOne {
 	_u.mutation.SetLastAccessedAt(v)
@@ -833,6 +879,12 @@ func (_u *NarFileUpdateOne) sqlSave(ctx context.Context) (_node *NarFile, err er
 	}
 	if _u.mutation.VerifiedAtCleared() {
 		_spec.ClearField(narfile.FieldVerifiedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.BytesStoredAt(); ok {
+		_spec.SetField(narfile.FieldBytesStoredAt, field.TypeTime, value)
+	}
+	if _u.mutation.BytesStoredAtCleared() {
+		_spec.ClearField(narfile.FieldBytesStoredAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.LastAccessedAt(); ok {
 		_spec.SetField(narfile.FieldLastAccessedAt, field.TypeTime, value)
