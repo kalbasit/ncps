@@ -3689,15 +3689,23 @@ func (c *Cache) pullNarInfo(
 		c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc, narInfo)
 	}
 
-	// For CDC mode, NARs are stored as raw uncompressed chunks.
-	// For Compression:none upstreams, NARs are stored as zstd files and served
-	// as Compression:none with transparent HTTP encoding.
-	// Normalize narInfo to reflect this regardless of upstream compression.
-	// Note: we must NOT modify narURL here since prePullNar may still be using
-	// the pointer in a background goroutine. Instead, build the normalized URL string directly.
-	// Skip normalization when lazy chunking is enabled - preserve original compression
-	// until the NAR is actually chunked.
-	if (c.isCDCEnabled() && !c.GetCDCLazyChunkingEnabled()) || narInfo.Compression == nar.CompressionTypeNone.String() {
+	// For Compression:none upstreams, NARs are stored as zstd files and served as
+	// Compression:none with transparent HTTP encoding, so the narinfo is normalized
+	// to none here. Note: we must NOT modify narURL here since prePullNar may still
+	// be using the pointer in a background goroutine. Instead, build the normalized
+	// URL string directly.
+	//
+	// We deliberately do NOT normalize to none for CDC here. CDC stores the NAR as
+	// raw chunks (compression=none), but that storage happens asynchronously in
+	// prePullNar's background chunking and may not have completed — or may never
+	// complete (process crash/restart between the whole-file write and
+	// SetTotalChunks). Predicting url=none before the chunks exist persists a
+	// narinfo advertising nar/<hash>.nar while the NAR is still stored under its
+	// original compression (e.g. xz), so a GET of the none URL 404s and a `nix copy`
+	// reference check aborts. The persisted URL must stay truthful to actual
+	// storage; serve-time maybeCDCNormalizeNarInfoURL presents url=none only once
+	// the NAR is genuinely chunked (HasNarInChunks), so the happy path is unchanged.
+	if narInfo.Compression == nar.CompressionTypeNone.String() {
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
