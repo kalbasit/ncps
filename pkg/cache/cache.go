@@ -5304,9 +5304,30 @@ func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) e
 		return fmt.Errorf("failed to get narinfo hashes by url: %w", err)
 	}
 
+	// Resolve the backing nar_file so we can reconcile the narinfo_nar_files link.
+	// The link is created in the narinfo-write path (storeInDatabase), decoupled from
+	// the async CDC chunking that finalizes the nar_file. That chunking can race the
+	// narinfo write (or replace the row it linked), leaving the chunked nar_file
+	// unlinked — which strands it as un-de-chunkable (keeping the cache in drain mode)
+	// and exposes it to destructive fsck reclamation. This function runs right after
+	// chunking completes, so reconciling the link here closes that race. The upsert is
+	// a no-op when the link already exists (the common case).
+	nf, nfErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
+
 	var errs []error
 
 	for _, ni := range nis {
+		if nfErr == nil {
+			if err := c.dbClient.Ent().NarInfoNarFile.Create().
+				SetNarinfoID(ni.ID).
+				SetNarFileID(nf.ID).
+				OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+				Ignore().
+				Exec(ctx); err != nil {
+				errs = append(errs, fmt.Errorf("reconcile narinfo<->nar_file link for %s: %w", ni.Hash, err))
+			}
+		}
+
 		if err := c.CheckAndFixNarInfo(ctx, ni.Hash); err != nil {
 			errs = append(errs, err)
 		}
@@ -7932,7 +7953,7 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 
 	// Resolve the expected NAR hash from the linked narinfo. Per policy, refuse to
 	// de-chunk (and later delete chunks for) a NAR we cannot content-verify.
-	expected, err := c.linkedNarinfoNarHash(ctx, nr.ID)
+	expected, err := c.linkedNarinfoNarHash(ctx, nr.ID, noneURL)
 	if err != nil {
 		return err
 	}
@@ -8147,16 +8168,37 @@ func (c *Cache) PurgeChunkedNar(ctx context.Context, narURL *nar.URL) error {
 // linkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
 // given nar_file, or (nil, nil) when no link exists or the narinfo has no
 // recorded NarHash.
-func (c *Cache) linkedNarinfoNarHash(ctx context.Context, narFileID int) (*nixhash.HashWithEncoding, error) {
+func (c *Cache) linkedNarinfoNarHash(
+	ctx context.Context,
+	narFileID int,
+	narURL nar.URL,
+) (*nixhash.HashWithEncoding, error) {
 	ni, err := c.dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(narFileID))).
 		First(ctx)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			return nil, nil //nolint:nilnil // no linked narinfo == nothing to verify against
+		if !database.IsNotFoundError(err) {
+			return nil, fmt.Errorf("error resolving linked narinfo for nar_file %d: %w", narFileID, err)
 		}
 
-		return nil, fmt.Errorf("error resolving linked narinfo for nar_file %d: %w", narFileID, err)
+		// No join link. A known race (the narinfo_nar_files link is created in the
+		// narinfo-write path, decoupled from the async CDC chunking that finalizes
+		// the chunked nar_file) can leave a chunked nar_file unlinked, which would
+		// otherwise strand it as un-de-chunkable. Resolve the narinfo by the NAR's
+		// Compression:none URL instead, so de-chunk can still content-verify and
+		// drain it.
+		noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+
+		ni, err = c.dbClient.Ent().NarInfo.Query().
+			Where(entnarinfo.URLEQ(noneURL.String())).
+			First(ctx)
+		if err != nil {
+			if database.IsNotFoundError(err) {
+				return nil, nil //nolint:nilnil // no narinfo at all == nothing to verify against
+			}
+
+			return nil, fmt.Errorf("error resolving narinfo by url for nar_file %d: %w", narFileID, err)
+		}
 	}
 
 	if ni.NarHash == nil || *ni.NarHash == "" {

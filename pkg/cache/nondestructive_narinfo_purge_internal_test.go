@@ -475,3 +475,46 @@ func TestDeleteNar_ClearsBytesStoredMarker(t *testing.T) {
 	assert.False(t, c.narFileBytesStored(ctx, narURL),
 		"deleting the NAR bytes must clear bytes_stored_at so /upload does not report it present")
 }
+
+// TestCheckAndFixNarInfosForNar_ReconcilesMissingLink is Fix C (the creation-race
+// prevention): when CDC chunking finalizes a nar_file, checkAndFixNarInfosForNar
+// (invoked right after completion) must reconcile the narinfo_nar_files link. The
+// link is normally created in the narinfo-write path, but the async chunking can
+// race it and leave the chunked nar_file unlinked — stranding it as un-de-chunkable
+// (drain mode never exits) and exposing it to destructive fsck reclamation.
+func TestCheckAndFixNarInfosForNar_ReconcilesMissingLink(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	ctx := newContext()
+
+	narHash := testhelper.MustRandBase32NarHash()
+	hashA := testhelper.MustRandBase32NarHash()
+
+	// A finalized chunked (none) nar_file with NO narinfo_nar_files link — the race
+	// residue.
+	_, err := c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(1024).
+		SetTotalChunks(3).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// A narinfo referencing it by its Compression:none URL, also unlinked.
+	_, err = c.dbClient.Ent().NarInfo.Create().
+		SetHash(hashA).
+		SetURL("nar/" + narHash + ".nar").
+		Save(ctx)
+	require.NoError(t, err)
+
+	noneURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone, Query: url.Values{}}
+	require.NoError(t, c.checkAndFixNarInfosForNar(ctx, noneURL))
+
+	n, err := c.dbClient.Ent().NarInfoNarFile.Query().Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n,
+		"chunking-completion reconciliation must create the missing narinfo<->nar_file link")
+}
