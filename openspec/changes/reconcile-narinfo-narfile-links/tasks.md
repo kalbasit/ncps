@@ -23,4 +23,4 @@
 ## 5. Operational remediation (cdc-drain-mode)
 
 - [ ] 5.1 Deploy the image; re-run `migrate-chunks-to-nar` to drain the previously-stranded chunked NARs
-- [ ] 5.2 Confirm the remaining-chunked count reaches zero, then exit drain mode (remove the chunk-store config)
+- [ ] 5.2 Confirm the remaining-chunked count reaches zero (resolve any hard-failed stragglers), then restart the ncps pods so `initCDCDrainMode` auto-completes the drain — it clears the stored CDC config and skips chunk-store init when the chunked count is zero. No config/chart edit is required; the chunk store is auto-derived from `storage.local` only while chunked NARs remain.
