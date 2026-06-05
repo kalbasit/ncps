@@ -5,7 +5,7 @@ go 1.26.3
 tool entgo.io/ent/cmd/ent
 
 require (
-	ariga.io/atlas v1.2.1
+	ariga.io/atlas v1.2.2
 	entgo.io/ent v0.14.6
 	github.com/XSAM/otelsql v0.42.0
 	github.com/andybalholm/brotli v1.2.1
