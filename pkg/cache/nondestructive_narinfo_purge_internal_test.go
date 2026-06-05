@@ -440,3 +440,38 @@ func TestPurgeNarInfo_OrphanedNarFileDeleted(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, present, "the orphaned NAR bytes must be reclaimed")
 }
+
+// TestDeleteNar_ClearsBytesStoredMarker covers the PR review fix: deleting a NAR's
+// bytes MUST clear nar_file.bytes_stored_at, otherwise the sticky marker would make
+// the /upload presence check report an evicted NAR as still present — a
+// false-positive reference check.
+func TestDeleteNar_ClearsBytesStoredMarker(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	ctx := newContext()
+
+	narHash := testhelper.MustRandBase32NarHash()
+	narURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeXz, Query: url.Values{}}
+
+	_, err := c.narStore.PutNar(ctx, narURL, strings.NewReader("dummy-nar-bytes!"), -1)
+	require.NoError(t, err)
+
+	_, err = c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeXz.String()).
+		SetQuery("").
+		SetFileSize(16).
+		SetTotalChunks(0).
+		SetBytesStoredAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	require.True(t, c.narFileBytesStored(ctx, narURL), "precondition: bytes-stored marker present")
+
+	require.NoError(t, c.DeleteNar(ctx, narURL))
+
+	assert.False(t, c.narFileBytesStored(ctx, narURL),
+		"deleting the NAR bytes must clear bytes_stored_at so /upload does not report it present")
+}

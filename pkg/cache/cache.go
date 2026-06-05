@@ -1542,6 +1542,14 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 // ensureNarFileRecord ensures a NarFile record exists with the correct size.
 // It creates the record if it doesn't exist, or updates the size if it's incorrect.
 func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written int64, txName string) error {
+	// Normalize so the nar_file row is keyed the same way storeInDatabase keys it.
+	// Without this a nix-serve-style prefixed URL would create a duplicate prefixed
+	// row carrying bytes_stored_at, while the narinfo stays linked to the normalized
+	// row (marker NULL) — defeating the /upload presence check.
+	if normalized, err := narURL.Normalize(); err == nil {
+		narURL = normalized
+	}
+
 	zerolog.Ctx(ctx).Debug().
 		Str("hash", narURL.Hash).
 		Str("compression", narURL.Compression.String()).
@@ -1721,6 +1729,26 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 
 		if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
 			return err
+		}
+
+		// The bytes are gone; clear the durable bytes-stored marker for this variant
+		// so the /upload presence check (narFileBytesStored) does not report an
+		// evicted NAR as present. Key by the normalized URL to match the row the
+		// marker was written on.
+		clearURL := narURL
+		if normalized, err := narURL.Normalize(); err == nil {
+			clearURL = normalized
+		}
+
+		if _, err := c.dbClient.Ent().NarFile.Update().
+			Where(
+				entnarfile.HashEQ(clearURL.Hash),
+				entnarfile.CompressionEQ(clearURL.Compression.String()),
+				entnarfile.QueryEQ(clearURL.Query.Encode()),
+			).
+			ClearBytesStoredAt().
+			Save(ctx); err != nil {
+			return fmt.Errorf("clearing bytes_stored_at after nar delete: %w", err)
 		}
 
 		zerolog.Ctx(ctx).Debug().Msg("nar deleted from store")
@@ -4018,6 +4046,13 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 // placeholder row (created by a narinfo PUT, bytes_stored_at NULL) is NOT trusted,
 // so this does not resurrect phantoms. Returns false on any lookup error.
 func (c *Cache) narFileBytesStored(ctx context.Context, narURL nar.URL) bool {
+	// Normalize first so the lookup uses the same canonical key storeInDatabase
+	// writes under: a nix-serve-style prefixed URL (narinfohash-narhash) would
+	// otherwise miss the normalized nar_file row.
+	if normalized, err := narURL.Normalize(); err == nil {
+		narURL = normalized
+	}
+
 	// Match the nar_file by hash (+query) regardless of compression. The narinfo URL
 	// may advertise a different compression (commonly "none", a CDC-era URL
 	// normalization residue) than the compression the NAR was actually durably
