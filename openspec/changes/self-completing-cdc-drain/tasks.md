@@ -14,13 +14,13 @@
 - [x] 3.2 Broaden the driver loop (`migrate_chunks_to_nar.go`) so a hard reconstruction failure purges instead of counting `failed`/aborting
 - [x] 3.3 Tests: no-NarHash NAR is purged (not skipped); corrupt-chunk NAR is purged (not failed); a full pass over a mixed fixture leaves `chunked = 0`
 
-## 4. fsck residue repair (D)
+## 4. Verification
 
-- [ ] 4.1 Add an fsck check + `--repair` action for chunked nar_files: relink+normalize when a valid NarHash exists, purge otherwise
-- [ ] 4.2 Tests: fsck normalizes a recoverable inconsistent chunked NAR; fsck purges an un-de-chunkable one
+- [x] 4.1 `task fmt`, `task lint`, `task test` pass
+- [ ] 4.2 Deploy and run against the real production 116 stragglers; confirm `chunked → 0`, drain auto-completes on restart, and the previously-stuck paths serve
+- [ ] 4.3 CDC-lifecycle e2e test exercises enable → drain → complete including residue classes
 
-## 5. Verification
-
-- [ ] 5.1 `task fmt`, `task lint`, `task test` pass
-- [ ] 5.2 Deploy and run against the real production 116 stragglers; confirm `chunked → 0`, drain auto-completes on restart, and the previously-stuck paths serve
-- [ ] 5.3 CDC-lifecycle e2e test exercises enable → drain → complete including residue classes
+> The fsck residue-repair safety net (formerly task group D) is split into its
+> own change — a daily-janitor, grace-period mark-then-purge reclaimer with a
+> persistent mark column. The de-chunk pass above already drives the chunked
+> count to zero on its own.
