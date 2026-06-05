@@ -1236,15 +1236,32 @@ func relinkNarInfoToBackingNarFile(ctx context.Context, dbClient *database.Clien
 		return false, nil //nolint:nilerr // unparseable URL == no backing to relink to
 	}
 
+	// Prefer the nar_file whose compression exactly matches the URL, so linking is
+	// deterministic when several nar_file rows share a hash with different
+	// compressions. Fall back to any compression for CDC residue (the URL may
+	// advertise a different compression than the NAR is actually stored under).
 	nf, err := dbClient.Ent().NarFile.Query().
-		Where(entnarfile.HashEQ(u.Hash), entnarfile.QueryEQ(u.Query.Encode())).
+		Where(
+			entnarfile.HashEQ(u.Hash),
+			entnarfile.QueryEQ(u.Query.Encode()),
+			entnarfile.CompressionEQ(u.Compression.String()),
+		).
 		First(ctx)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			return false, nil
+		if !database.IsNotFoundError(err) {
+			return false, fmt.Errorf("lookup nar_file for narinfo url %q: %w", *ni.URL, err)
 		}
 
-		return false, fmt.Errorf("lookup nar_file for narinfo url %q: %w", *ni.URL, err)
+		nf, err = dbClient.Ent().NarFile.Query().
+			Where(entnarfile.HashEQ(u.Hash), entnarfile.QueryEQ(u.Query.Encode())).
+			First(ctx)
+		if err != nil {
+			if database.IsNotFoundError(err) {
+				return false, nil
+			}
+
+			return false, fmt.Errorf("lookup nar_file for narinfo url %q: %w", *ni.URL, err)
+		}
 	}
 
 	if err := dbClient.Ent().NarInfoNarFile.Create().

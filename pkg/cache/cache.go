@@ -5313,6 +5313,9 @@ func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) e
 	// chunking completes, so reconciling the link here closes that race. The upsert is
 	// a no-op when the link already exists (the common case).
 	nf, nfErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
+	if nfErr != nil && !database.IsNotFoundError(nfErr) {
+		return fmt.Errorf("resolving backing nar_file for link reconciliation: %w", nfErr)
+	}
 
 	var errs []error
 
