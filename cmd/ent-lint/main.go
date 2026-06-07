@@ -586,13 +586,18 @@ func checkA6(schemas []schemaFile) []result {
 			}
 
 			for _, v := range violations {
+				field := v.field
+				if field == "" {
+					field = "<unknown>"
+				}
+
 				out = append(out, result{
 					pass: false, id: "A6",
 					detail: fmt.Sprintf(
-						"%s:%d entsql.Annotation{DefaultExpr: \"CURRENT_TIMESTAMP\"} is forbidden "+
+						"%s:%d field %q: entsql.Annotation{DefaultExpr: \"CURRENT_TIMESTAMP\"} is forbidden "+
 							"(use entsql.Default(\"CURRENT_TIMESTAMP\") — Atlas's SQLite inspector does not "+
 							"round-trip the parenthesized RawExpr; issue #1328)",
-						relPath(sf.path), v,
+						relPath(sf.path), v.line, field,
 					),
 				})
 			}
@@ -602,8 +607,16 @@ func checkA6(schemas []schemaFile) []result {
 	return out
 }
 
-func findDefaultExprCurrentTimestamp(sf schemaFile, fn *ast.FuncDecl) []int {
-	var lines []int
+// a6Violation records one forbidden DefaultExpr annotation: the field it is
+// chained onto (for the diagnostic) and the source line of the offending
+// `DefaultExpr:` element.
+type a6Violation struct {
+	field string
+	line  int
+}
+
+func findDefaultExprCurrentTimestamp(sf schemaFile, fn *ast.FuncDecl) []a6Violation {
+	var violations []a6Violation
 
 	ast.Inspect(fn, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -622,20 +635,61 @@ func findDefaultExprCurrentTimestamp(sf schemaFile, fn *ast.FuncDecl) []int {
 
 		for _, arg := range call.Args {
 			if pos := entsqlAnnotationDefaultExpr(arg); pos != token.NoPos {
-				lines = append(lines, sf.fset.Position(pos).Line)
+				violations = append(violations, a6Violation{
+					field: fieldNameFromChain(sel.X),
+					line:  sf.fset.Position(pos).Line,
+				})
 			}
 		}
 
 		return true
 	})
 
-	return lines
+	return violations
+}
+
+// fieldPkg is the canonical Ent field package import name.
+const fieldPkg = "field"
+
+// fieldNameFromChain walks the receiver chain of a builder expression (the
+// "X" side of `.Annotations(...)`) inward looking for the originating
+// `field.<Type>("name", ...)` call, and returns that field's name (the first
+// string-literal argument). Returns "" if no such call is found.
+func fieldNameFromChain(e ast.Expr) string {
+	for {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return ""
+		}
+
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return ""
+		}
+
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == fieldPkg {
+			if len(call.Args) >= 1 {
+				return stringLitValue(call.Args[0])
+			}
+
+			return ""
+		}
+
+		e = sel.X
+	}
 }
 
 // entsqlAnnotationDefaultExpr reports the position of a
 // `DefaultExpr: "CURRENT_TIMESTAMP"` field inside an `entsql.Annotation{...}`
 // composite literal, or token.NoPos if the expression is not such a literal.
+// The pointer form `&entsql.Annotation{...}` is also accepted by Ent (the
+// value-receiver Name() puts *entsql.Annotation in schema.Annotation's method
+// set), so the address-of operator is unwrapped first.
 func entsqlAnnotationDefaultExpr(e ast.Expr) token.Pos {
+	if unary, ok := e.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		e = unary.X
+	}
+
 	lit, ok := e.(*ast.CompositeLit)
 	if !ok {
 		return token.NoPos

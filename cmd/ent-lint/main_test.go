@@ -27,6 +27,9 @@ func TestEntLint(t *testing.T) {
 		invariant  string
 		wantFail   bool
 		wantInLine string
+		// wantField, when set, must appear on the [FAIL] line — the A6
+		// contract requires the message to name the offending field.
+		wantField string
 	}{
 		{fixture: "a1_good", invariant: "A1", wantFail: false},
 		{fixture: "a1_bad", invariant: "A1", wantFail: true, wantInLine: "entsql.Check"},
@@ -35,7 +38,9 @@ func TestEntLint(t *testing.T) {
 		{fixture: "a4_good", invariant: "A4", wantFail: false},
 		{fixture: "a4_bad", invariant: "A4", wantFail: true, wantInLine: "phantom FK"},
 		{fixture: "a6_good", invariant: "A6", wantFail: false},
-		{fixture: "a6_bad", invariant: "A6", wantFail: true, wantInLine: "entsql.Default"},
+		{fixture: "a6_bad", invariant: "A6", wantFail: true, wantInLine: "entsql.Default", wantField: "last_accessed_at"},
+		// Pointer form (&entsql.Annotation{...}) must also be flagged.
+		{fixture: "a6_bad_pointer", invariant: "A6", wantFail: true, wantField: "last_accessed_at"},
 	}
 
 	for _, tc := range cases {
@@ -54,8 +59,9 @@ func TestEntLint(t *testing.T) {
 			}
 
 			var (
-				sawFail bool
-				sawTok  bool
+				sawFail  bool
+				sawTok   bool
+				sawField bool
 			)
 
 			for _, line := range strings.Split(combined, "\n") {
@@ -69,6 +75,10 @@ func TestEntLint(t *testing.T) {
 
 				if strings.HasPrefix(line, "[FAIL]") {
 					sawFail = true
+
+					if tc.wantField != "" && strings.Contains(line, tc.wantField) {
+						sawField = true
+					}
 				}
 
 				if tc.wantInLine != "" && strings.Contains(line, tc.wantInLine) {
@@ -81,6 +91,11 @@ func TestEntLint(t *testing.T) {
 
 				if tc.wantInLine != "" {
 					assert.True(t, sawTok, "expected a [FAIL] line containing %q; output:\n%s", tc.wantInLine, combined)
+				}
+
+				if tc.wantField != "" {
+					assert.True(t, sawField,
+						"expected a [FAIL] %s line naming the field %q; output:\n%s", tc.invariant, tc.wantField, combined)
 				}
 			} else {
 				assert.False(t, sawFail, "expected no [FAIL] %s lines; output:\n%s", tc.invariant, combined)
