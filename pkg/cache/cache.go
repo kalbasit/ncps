@@ -1746,8 +1746,36 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 
 		zerolog.Ctx(ctx).Debug().Msg("deleting nar from store")
 
-		if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
+		// Remove the physical bytes. A Compression:none NAR's real object is stored
+		// under the .nar.zst variant (statNarInStore mirrors this), so that variant
+		// must be deleted too — deleting only the bare none URL would orphan the
+		// blob while the marker below is cleared, making the /upload presence check
+		// lie. ErrNotFound is returned only when no variant was present, preserving
+		// the established "deleting an absent NAR errors" contract; a real failure
+		// is returned and leaves the marker intact (the NAR stays present).
+		deleted := false
+
+		if narURL.Compression == nar.CompressionTypeNone {
+			zstdURL := narURL
+			zstdURL.Compression = nar.CompressionTypeZstd
+
+			switch err := c.narStore.DeleteNar(ctx, zstdURL); {
+			case err == nil:
+				deleted = true
+			case !errors.Is(err, storage.ErrNotFound):
+				return err
+			}
+		}
+
+		switch err := c.narStore.DeleteNar(ctx, narURL); {
+		case err == nil:
+			deleted = true
+		case !errors.Is(err, storage.ErrNotFound):
 			return err
+		}
+
+		if !deleted {
+			return storage.ErrNotFound
 		}
 
 		// The bytes are gone; clear the durable bytes-stored marker for this variant
