@@ -57,4 +57,5 @@
 
 - [x] 4.1 `task fmt`, `task lint`, `task test` all exit 0.
 - [x] 4.2 `openspec validate cdc-orphan-chunking-recovery --strict` passes.
-- [ ] 4.3 Reply to the three open review threads (B/C/D) on PR #1317 linking the change.
+- [x] 4.3 Posted a maintainer summary comment on PR #1317 covering B/C/D (and the read/write
+      liveness follow-through); updated the PR title/description to match the implementation.
