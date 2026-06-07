@@ -16,6 +16,7 @@ import (
 	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 
 	"github.com/kalbasit/ncps/pkg/nar"
+	"github.com/kalbasit/ncps/pkg/storage"
 	"github.com/kalbasit/ncps/pkg/storage/chunk"
 	"github.com/kalbasit/ncps/testdata"
 	"github.com/kalbasit/ncps/testhelper"
@@ -474,6 +475,79 @@ func TestDeleteNar_ClearsBytesStoredMarker(t *testing.T) {
 
 	assert.False(t, c.narFileBytesStored(ctx, narURL),
 		"deleting the NAR bytes must clear bytes_stored_at so /upload does not report it present")
+}
+
+// TestDeleteNar_RemovesNoneNarZstdVariant covers fix-deletenar-orphaned-bytes:
+// a Compression:none NAR's physical object lives under the .nar.zst variant, so
+// DeleteNar must remove that variant (not just the bare none URL) before clearing
+// bytes_stored_at. Otherwise the real blob is orphaned on disk while the marker
+// is cleared — leaking storage and making the /upload presence check lie (report
+// absent while bytes remain).
+func TestDeleteNar_RemovesNoneNarZstdVariant(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	ctx := newContext()
+
+	narHash := testhelper.MustRandBase32NarHash()
+	noneURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone, Query: url.Values{}}
+	zstdURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeZstd, Query: url.Values{}}
+
+	// A Compression:none NAR is physically stored under the .nar.zst variant.
+	_, err := c.narStore.PutNar(ctx, zstdURL, strings.NewReader("dummy-nar-bytes!"), -1)
+	require.NoError(t, err)
+
+	_, err = c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(16).
+		SetTotalChunks(0).
+		SetBytesStoredAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	require.True(t, c.narStore.HasNar(ctx, zstdURL), "precondition: .nar.zst variant present")
+
+	require.NoError(t, c.DeleteNar(ctx, noneURL))
+
+	assert.False(t, c.narStore.HasNar(ctx, zstdURL),
+		"deleting a Compression:none NAR must remove the underlying .nar.zst object, not orphan it")
+	assert.False(t, c.narFileBytesStored(ctx, noneURL),
+		"the bytes-stored marker must be cleared after deletion")
+}
+
+// TestDeleteNar_AbsentNoneNarReturnsNotFound covers the contract preservation of
+// fix-deletenar-orphaned-bytes: the variant-aware delete must still return
+// ErrNotFound (and leave the bytes-stored marker intact) when neither the
+// .nar.zst variant nor the bare none object is present — matching the established
+// "deleting an absent NAR errors" behavior for explicitly-compressed NARs.
+func TestDeleteNar_AbsentNoneNarReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newUploadOnlyPurgeCacheNoSeed(t)
+
+	ctx := newContext()
+
+	narHash := testhelper.MustRandBase32NarHash()
+	noneURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone, Query: url.Values{}}
+
+	// A nar_file row with a marker but NO physical bytes in the store.
+	_, err := c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(16).
+		SetTotalChunks(0).
+		SetBytesStoredAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	require.ErrorIs(t, c.DeleteNar(ctx, noneURL), storage.ErrNotFound,
+		"deleting a none NAR whose bytes are absent must return ErrNotFound")
+	assert.True(t, c.narFileBytesStored(ctx, noneURL),
+		"the bytes-stored marker must remain set when nothing was deleted")
 }
 
 // TestCheckAndFixNarInfosForNar_ReconcilesMissingLink is Fix C (the creation-race
