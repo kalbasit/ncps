@@ -204,7 +204,7 @@ overhead until cross-pod contention** — it only activates with a distributed
 | `--cache-inflight-staging-retention` | Grace period to retain staging part-objects after the NAR's final representation is committed, so in-flight readers drain before reclamation | `CACHE_INFLIGHT_STAGING_RETENTION` | `5m` |
 | `--cache-inflight-staging-part-size` | Size in bytes of each staging part-object (a transport unit, distinct from CDC chunk sizes) | `CACHE_INFLIGHT_STAGING_PART_SIZE` | `8388608` (8 MiB) |
 
-In-flight staging resolves the cross-pod serve-during-download gap for **all** CDC
+In-flight staging resolves the cross-pod serve-during-download gap for **all**
 modes (non-CDC, lazy-CDC, eager-CDC) — see issue #660.
 
 ## Security & Signing
