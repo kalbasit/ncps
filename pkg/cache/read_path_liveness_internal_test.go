@@ -77,6 +77,43 @@ func TestIsServableFreshInProgressWithHeldLockIsServable(t *testing.T) {
 		"an in-progress row with a live chunker (held migration lock) remains servable")
 }
 
+// A healthy chunker can run longer than cdcChunkingLockTTL for a large NAR; its migration
+// lock is refreshed (still held) but chunking_started_at is written once and goes stale.
+// isServable MUST consult lock liveness regardless of age, so such a row stays servable
+// (peers piggyback on the live producer instead of re-downloading) rather than being
+// treated as dead once the one-time timestamp ages past the TTL.
+func TestIsServableStaleInProgressWithHeldLockIsServable(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c := setupCDCRecoveryFixture(t)
+
+	hash := testhelper.MustRandBase32NarHash()
+	narURL := nar.URL{Hash: hash, Compression: nar.CompressionTypeNone}
+
+	_, err := c.dbClient.Ent().NarFile.Create().
+		SetHash(hash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(4096).
+		SetTotalChunks(0).
+		SetChunkingStartedAt(time.Now().Add(-2 * cdcChunkingLockTTL)). // stale one-time timestamp
+		Save(ctx)
+	require.NoError(t, err)
+
+	// A long-running but live chunker still holds (refreshes) the migration lock.
+	acquired, err := c.downloadLocker.TryLock(ctx, migrationLockKey(hash), c.downloadLockTTL)
+	require.NoError(t, err)
+	require.True(t, acquired)
+	t.Cleanup(func() { _ = c.downloadLocker.Unlock(ctx, migrationLockKey(hash)) })
+
+	servable, err := c.isServable(ctx, narURL)
+	require.NoError(t, err)
+	assert.True(t, servable,
+		"a >TTL in-progress row whose migration lock is still held is a live chunk, not a dead orphan")
+}
+
 // A fully chunked row (total_chunks > 0) is unconditionally servable and must not incur
 // a liveness probe.
 func TestIsServableFullyChunkedIsServable(t *testing.T) {

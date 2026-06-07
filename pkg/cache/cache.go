@@ -4141,22 +4141,6 @@ func (c *Cache) getNarFileFromDB(
 	return nil, err
 }
 
-// narFileServable reports whether an existing nar_file record represents servable
-// backing data: it is fully chunked (TotalChunks > 0) or chunking is actively in
-// progress within cdcChunkingLockTTL. A placeholder record (TotalChunks == 0 with a
-// NULL or stale ChunkingStartedAt) is NOT servable.
-func narFileServable(nr *ent.NarFile) bool {
-	if nr.TotalChunks > 0 {
-		return true
-	}
-
-	if nr.ChunkingStartedAt != nil {
-		return time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL
-	}
-
-	return false
-}
-
 // cdcChunkerLive reports whether a chunker is actively producing chunks for hash, i.e.
 // whether some instance holds the per-hash migration lock (migrationLockKey). A fresh
 // chunking_started_at alone does NOT prove liveness: a crashed chunker leaves the row
@@ -4218,22 +4202,28 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 		return false, fmt.Errorf("failed to look up nar_file record for servability: %w", err)
 	}
 
-	servable := narFileServable(nr)
+	// Servability of an existing nar_file record:
+	//   - total_chunks > 0           → fully chunked, servable (no lock probe on this hot path).
+	//   - chunking_started_at == nil → a bare placeholder (created at narinfo-fetch time or
+	//     left by a failed download), never servable; falls through to a re-download.
+	//   - otherwise (chunking in progress) → servable ONLY if a chunker is actually
+	//     producing its chunks. Liveness is the refreshed per-hash migration lock, NOT the
+	//     age of chunking_started_at (a one-time write): the download-path chunker holds
+	//     migrationLockKey(hash) for the whole operation, so a FREE lock means the producer
+	//     died mid-chunking (issue #1230) and the row is a dead orphan — routing GetNar into
+	//     getNarFromChunks would commit 200 + partial chunks then stall maxWaitPerChunk on a
+	//     chunk that never arrives ("Truncated zstd input"), so report it not-servable and
+	//     let GetNar re-download cleanly. A HELD lock keeps the row servable even for a chunk
+	//     running longer than cdcChunkingLockTTL, so peers piggyback on the live producer.
+	if nr.TotalChunks > 0 {
+		return true, nil
+	}
 
-	// A row that is "servable" only because chunking is in progress (total_chunks == 0
-	// with a non-stale chunking_started_at) is servable ONLY if a chunker is actually
-	// producing its chunks. The download-path chunker holds migrationLockKey(hash) for the
-	// whole operation, so a FREE lock means the producer died mid-chunking (issue #1230):
-	// the row is a dead orphan, not a live chunk. Returning servable here would route
-	// GetNar into getNarFromChunks, which commits 200 + partial chunks then stalls
-	// maxWaitPerChunk on a chunk that never arrives ("Truncated zstd input"). Report it
-	// not-servable so GetNar re-downloads cleanly instead. Scoped to this ambiguous case so
-	// the hot path (whole-file / fully-chunked) never pays for the lock probe.
-	if servable && nr.TotalChunks == 0 && nr.ChunkingStartedAt != nil && !c.cdcChunkerLive(ctx, narURL.Hash) {
+	if nr.ChunkingStartedAt == nil {
 		return false, nil
 	}
 
-	return servable, nil
+	return c.cdcChunkerLive(ctx, narURL.Hash), nil
 }
 
 // narFileBytesStored reports whether the shared database records this NAR's bytes

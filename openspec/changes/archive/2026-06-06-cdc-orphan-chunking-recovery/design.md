@@ -1,15 +1,15 @@
 ## Context
 
 `runCDCLazyRecovery` (cron, serialized by `withTryLock("cdc-lazy-recovery")`) reclaims
-orphaned mid-chunking `nar_file` rows (`total_chunks = 0`, `chunking_started_at` set). PR
-#1317's current implementation selects in-progress orphans only when
+orphaned mid-chunking `nar_file` rows (`total_chunks = 0`, `chunking_started_at` set).
+PR #1317's current implementation selects in-progress orphans only when
 `chunking_started_at < now - cdcChunkingLockTTL` (a 1h age gate) and additionally
 `TryLock`s `migrationLockKey(hash)` per row in `recoverStaleCDCChunkingLock`. The
 download-path chunker now holds that same per-hash migration lock while chunking
 (`storeNarWithCDCFromReaderWithMigrationLock`), so the lock — not age — is the real
-cross-instance liveness signal. The 1h gate is redundant for safety and, per the original
-#1230 intent, harmful: it delays healing fresh orphans for up to an hour while the read
-path serves `Truncated zstd input`.
+cross-instance liveness signal. The 1h gate is redundant for safety and, per the
+original #1230 intent, harmful: it delays healing fresh orphans for up to an hour while
+the read path serves `Truncated zstd input`.
 
 ## Goals / Non-Goals
 
