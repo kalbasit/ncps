@@ -584,6 +584,17 @@ func serveAction(registerShutdown registerShutdownFn) cli.ActionFunc {
 				Msg("Prometheus metrics enabled at /metrics")
 		}
 
+		// Prime all counter instruments to zero now that the global meter
+		// provider is installed, so documented counters (e.g.
+		// ncps_nar_served_total) are exposed at /metrics from startup instead of
+		// only appearing after the first event (GitHub issue #1337). When no
+		// metrics exporter is configured this is a harmless no-op.
+		if cmd.Root().Bool("otel-enabled") || cmd.Root().Bool("prometheus-enabled") {
+			cache.PrimeMetrics(ctx)
+			lock.PrimeMetrics(ctx)
+			PrimeMetrics(ctx)
+		}
+
 		if pprofAddr := cmd.String("pprof-addr"); pprofAddr != "" {
 			pprofMux := http.NewServeMux()
 			pprofMux.HandleFunc("/debug/pprof/", netpprof.Index)
