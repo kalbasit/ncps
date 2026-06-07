@@ -141,6 +141,42 @@ func TestMigrateChunksToNar_CLI_Success(t *testing.T) {
 		"the default run leaves now-orphaned chunks for the GC (no --force-reclaim)")
 }
 
+// TestMigrateChunksToNar_CLI_PurgesUnverifiableNar covers self-completing drain (C):
+// a chunked NAR with no narinfo NarHash to verify against cannot be safely
+// de-chunked, so the pass MUST purge it (not skip/strand it), driving the chunked
+// count to zero. Without this the cache would stay in drain mode forever.
+func TestMigrateChunksToNar_CLI_PurgesUnverifiableNar(t *testing.T) {
+	t.Parallel()
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+	dbClient, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+	configureCDCInDatabase(ctx, t, dbClient)
+
+	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
+
+	// Remove the narinfo's NarHash so there is nothing to content-verify against —
+	// the un-de-chunkable class. (No fixupNarHash.)
+	_, err := dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+		ClearNarHash().
+		Save(ctx)
+	require.NoError(t, err)
+
+	// The pass must SUCCEED (exit 0) and reach a zero chunked count by purging.
+	require.NoError(t, app.Run(ctx, []string{
+		"ncps", "migrate-chunks-to-nar",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+	}), "an un-verifiable chunked NAR must be purged, not left chunked / counted as a failure")
+
+	var stillChunked int
+	require.NoError(t, dbClient.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM nar_files WHERE total_chunks > 0").Scan(&stillChunked))
+	assert.Zero(t, stillChunked,
+		"the un-verifiable chunked nar_file must be purged so drain can auto-complete")
+}
+
 func TestMigrateChunksToNar_CLI_ForceReclaim(t *testing.T) {
 	t.Parallel()
 
@@ -339,4 +375,132 @@ func TestMigrateChunksToNar_CLI_HashMismatchPurgesNarAndExitsZero(t *testing.T) 
 	require.NoError(t, dbClient.DB().QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM narinfos WHERE hash = ?", testdata.Nar1.NarInfoHash).Scan(&narInfoCount))
 	assert.Positive(t, narInfoCount, "narinfo must be retained after purge")
+}
+
+// seedBrokenChunkedNar inserts a COMPLETED chunked NAR (total_chunks=2) that is
+// missing a junction link (only 1 present) — the production
+// nar_file_chunks.chunk_id -> chunks(id) ON DELETE CASCADE corruption — with a
+// linked narinfo carrying a NarHash, so the reverse migration treats it as
+// un-reassemblable (ErrMissingChunk) and purges it rather than reconstructing a
+// truncated NAR. Uses testdata.Nar2's identifiers so it is distinct from the
+// Nar1 fixture.
+func seedBrokenChunkedNar(ctx context.Context, t *testing.T, dbClient *database.Client) {
+	t.Helper()
+
+	sum := sha256.Sum256([]byte(testdata.Nar2.NarText))
+	narHash := nixhash.MustNewHashWithEncoding(nixhash.SHA256, sum[:], nixhash.NixBase32, true).String()
+
+	ni, err := dbClient.Ent().NarInfo.Create().
+		SetHash(testdata.Nar2.NarInfoHash).
+		SetURL("nar/" + testdata.Nar2.NarHash + ".nar").
+		SetNarHash(narHash).
+		Save(ctx)
+	require.NoError(t, err)
+
+	nf, err := dbClient.Ent().NarFile.Create().
+		SetHash(testdata.Nar2.NarHash).
+		SetCompression("none").
+		SetQuery("").
+		SetFileSize(12345).
+		SetTotalChunks(2).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(ni.ID).
+		SetNarFileID(nf.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Only ONE of the two declared chunk links — the gap that makes the NAR
+	// un-reassemblable. No physical blob is needed: the completeness guard fires
+	// on the link-count mismatch before any chunk is read.
+	ch, err := dbClient.Ent().Chunk.Create().
+		SetHash(testhelper.MustRandBase32NarHash()).
+		SetSize(64).
+		SetCompressedSize(64).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = dbClient.Ent().NarFileChunk.Create().
+		SetNarFileID(nf.ID).
+		SetChunkID(ch.ID).
+		SetChunkIndex(0).
+		Save(ctx)
+	require.NoError(t, err)
+}
+
+// TestMigrateChunksToNar_CLI_SkipsBrokenNarMigratesRestAndReports verifies the
+// drain-hardening contract end to end: with a mix of one reassemblable NAR (Nar1,
+// hash fixed up) and one un-reassemblable NAR (Nar2, missing a junction link), the
+// migrate command migrates the good one to a whole file, purges the broken one,
+// continues past the failure (exit 0), and reports the outcome — including the
+// purged NAR by hash — in its summary.
+//
+//nolint:paralleltest // redirects os.Stdout; cannot run in parallel
+func TestMigrateChunksToNar_CLI_SkipsBrokenNarMigratesRestAndReports(t *testing.T) {
+	ctx := context.Background()
+
+	dbClient, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+	configureCDCInDatabase(ctx, t, dbClient)
+
+	// Good NAR (Nar1): valid recorded hash → reconstructs, verifies, migrates.
+	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
+	fixupNarHash(ctx, t, dbClient)
+
+	// Broken NAR (Nar2): completed chunked record missing a junction link → purged.
+	seedBrokenChunkedNar(ctx, t, dbClient)
+
+	// Capture the command's stdout logger (it writes JSON lines to os.Stdout).
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	os.Stdout = w
+
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		_ = r.Close()
+	})
+
+	var logBuf bytes.Buffer
+
+	readDone := make(chan struct{})
+
+	go func() {
+		_, _ = io.Copy(&logBuf, r)
+
+		close(readDone)
+	}()
+
+	runErr := app.Run(ctx, []string{
+		"ncps", "migrate-chunks-to-nar",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+	})
+
+	require.NoError(t, w.Close())
+	<-readDone
+
+	require.NoError(t, runErr, "a broken NAR must be skipped/purged, not abort the run (exit 0)")
+
+	// The reassemblable NAR migrated: its record is flipped to whole-file.
+	var nar1Chunks int
+	require.NoError(t, dbClient.DB().QueryRowContext(ctx,
+		"SELECT total_chunks FROM nar_files WHERE hash = ?", testdata.Nar1.NarHash).Scan(&nar1Chunks))
+	assert.Zero(t, nar1Chunks, "the reassemblable NAR must still be migrated to a whole file")
+
+	// The un-reassemblable NAR was purged so its hash re-fetches from upstream later.
+	var nar2Rows int
+	require.NoError(t, dbClient.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM nar_files WHERE hash = ?", testdata.Nar2.NarHash).Scan(&nar2Rows))
+	assert.Zero(t, nar2Rows, "the un-reassemblable NAR's nar_file record must be purged")
+
+	// The run reports the outcome, including the purged NAR by hash.
+	logged := logBuf.String()
+	assert.Contains(t, logged, "migration completed", "must emit a final summary")
+	assert.Contains(t, logged, `"succeeded":1`, "summary must report one migrated NAR")
+	assert.Contains(t, logged, `"purged":1`, "summary must report one purged NAR")
+	assert.Contains(t, logged, testdata.Nar2.NarHash, "the purged NAR must be reported by hash")
 }

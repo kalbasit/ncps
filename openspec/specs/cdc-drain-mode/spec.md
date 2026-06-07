@@ -7,9 +7,7 @@ enabled to transition to `cdc.enabled: false` while continuing to serve existing
 chunked NARs from the chunk store. Drain mode bridges the gap between disabling CDC
 writes and completing the `migrate-chunks-to-nar` migration, ensuring zero downtime
 and no upstream re-fetches for already-chunked data.
-
 ## Requirements
-
 ### Requirement: Chunk reads MUST be gated on chunk-store availability, not CDC write-enabled state
 
 The system SHALL gate chunk-read operations (servability check, HasNarInChunks, GetNarInfo
@@ -36,9 +34,9 @@ NARs are stored as chunks.
 
 ### Requirement: The server MUST enter drain mode when `cdc.enabled: false` but chunked NARs may exist
 
-When the server starts with `cdc.enabled: false` and the stored database configuration
-has `cdc_enabled=true` (indicating CDC was previously active and chunked NARs may
-remain), the server SHALL enter drain mode by initializing the chunk store for reads
+The server SHALL enter drain mode when it starts with `cdc.enabled: false` and the
+stored database configuration has `cdc_enabled=true` (indicating CDC was previously
+active and chunked NARs may remain) by initializing the chunk store for reads
 without enabling chunk writes. Drain mode SHALL:
 
 - Initialize the chunk store backend (local or S3) using the same storage flags as
@@ -107,3 +105,85 @@ positive, the command SHALL proceed with migration regardless of the value of
 - **WHEN** `migrate-chunks-to-nar` is executed
 - **THEN** it SHALL report that there is nothing to migrate
 - **AND** SHALL exit with status 0
+
+### Requirement: Drain and migrate MUST skip and report un-reassemblable chunked NARs rather than aborting
+
+The system SHALL skip un-reassemblable chunked NARs and continue the migration
+instead of aborting the whole run on the first failure. When `migrate-chunks-to-nar`
+(run standalone or concurrently with a drain-mode server) encounters a chunked NAR
+that cannot be reassembled — because its `nar_file_chunks` links are incomplete
+(`links < total_chunks`) or because a referenced chunk's blob is absent from the
+chunk store — it MUST skip that NAR and continue migrating the remaining NARs. The
+command MUST count and report the un-reassemblable NARs (by hash) at the end of the
+run so the operator can act, and its exit behavior MUST distinguish "all
+reassemblable NARs migrated, some skipped" from "fatal error".
+
+#### Scenario: Migration skips an un-reassemblable NAR and continues
+
+- **GIVEN** drain mode is active and chunked `nar_file` rows exist
+- **AND** one such NAR `H` is missing one or more chunk links or chunk blobs
+- **WHEN** `migrate-chunks-to-nar` is executed
+- **THEN** it SHALL skip `H` without aborting the run
+- **AND** it SHALL continue migrating the other reassemblable NARs to whole files
+- **AND** it SHALL include `H` in a report of skipped/un-reassemblable NARs
+
+#### Scenario: Migration reports the count of skipped NARs
+
+- **GIVEN** `K` chunked NARs cannot be reassembled and the rest can
+- **WHEN** `migrate-chunks-to-nar` completes
+- **THEN** it SHALL report the number of NARs migrated and the number skipped (`K`)
+- **AND** it SHALL list the skipped NAR hashes so they can be purged and refetched
+
+### Requirement: An un-reassemblable chunked NAR MUST be purgeable to a clean cache-miss state
+
+The system SHALL provide a path by which a permanently un-reassemblable chunked NAR
+(missing links or blobs, confirmed not in progress) is removed from the cache —
+deleting its `nar_file` row and chunk links while retaining the linked narinfo —
+so that a subsequent `GetNar` request observes a clean cache miss (the NAR is
+neither servable from chunks nor present as a whole file). The standard
+cache-miss path then refetches `H` from a configured upstream, which makes the 404
+produced by the serving-integrity check self-healing rather than a permanent dead
+end. (The upstream-fetch-and-serve-on-miss behavior itself is the cache's general
+miss path, covered by existing `GetNar` tests; this requirement governs only that
+the purge leaves a clean miss.)
+
+#### Scenario: Purging an un-reassemblable NAR leaves a clean cache miss
+
+- **GIVEN** a completed chunked NAR `H` that cannot be reassembled
+- **WHEN** `H` is purged (via the migrate/drain path or an explicit purge)
+- **THEN** `H`'s `nar_file` record and chunk links SHALL be deleted
+- **AND** the cache SHALL report `H` as neither servable from chunks nor present as a whole file (a cache miss)
+- **AND** the linked narinfo SHALL be retained so the next request can refetch `H` from upstream
+
+### Requirement: Drain completion MUST be reachable for chunked NARs whose join link was never created
+
+Drain mode is exited automatically: `initCDCDrainMode` runs at startup, counts chunked `nar_file` rows, and when the count is zero clears the stored CDC config and does not initialize the chunk store (the drain is complete). A chunked NAR whose `narinfo_nar_files` link was never created MUST NOT be able to permanently block this completion: the de-chunk migration SHALL be able to drain it (resolving its verification NarHash via the narinfo URL), and fsck SHALL repair its missing link rather than deleting the narinfo. The system SHALL NOT silently leave such NARs chunked forever.
+
+#### Scenario: An unlinked chunked NAR does not permanently block drain
+
+- **GIVEN** the cache is in drain mode (`cdcEnabled=false`, chunk store present)
+- **AND** a chunked `nar_file` for hash `H` with intact chunks but no `narinfo_nar_files` link
+- **AND** a narinfo whose URL is `nar/<H>.nar`
+- **WHEN** the `migrate-chunks-to-nar` pass runs
+- **THEN** `H` SHALL be de-chunked to whole-file storage
+- **AND** SHALL count toward drain completion (the remaining-chunked count decreases)
+
+#### Scenario: Drain auto-completes on the next boot once no chunked NARs remain
+
+- **GIVEN** every chunked NAR has been migrated to whole-file storage (chunked count is zero)
+- **WHEN** an ncps instance starts
+- **THEN** `initCDCDrainMode` SHALL clear the stored CDC config
+- **AND** SHALL NOT initialize the chunk store (drain mode is not entered)
+- **AND** no chart/config edit SHALL be required to exit drain mode
+
+### Requirement: A full de-chunk pass MUST leave drain able to auto-complete
+
+After a single `migrate-chunks-to-nar` pass completes over all chunked NARs, no chunked `nar_file` row SHALL remain. Consequently the next ncps startup's `initCDCDrainMode` SHALL observe a zero chunked count and auto-complete the drain (clear the stored CDC config, skip chunk-store init) without any manual data cleanup. CDC residue (mismatched narinfo URLs, missing join links, un-verifiable or unreconstructable chunked NARs) SHALL NOT be able to permanently strand drain mode.
+
+#### Scenario: Drain auto-completes after one de-chunk pass over residue
+
+- **GIVEN** a cache in drain mode whose chunked set includes residue NARs (different-compression narinfo URLs, missing links, corrupt chunks)
+- **WHEN** one `migrate-chunks-to-nar` pass runs to completion
+- **THEN** the chunked `nar_file` count SHALL be zero
+- **AND** the next ncps startup SHALL auto-complete the drain with no manual SQL
+

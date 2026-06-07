@@ -5,7 +5,7 @@ go 1.26.3
 tool entgo.io/ent/cmd/ent
 
 require (
-	ariga.io/atlas v1.2.1
+	ariga.io/atlas v1.2.2
 	entgo.io/ent v0.14.6
 	github.com/XSAM/otelsql v0.42.0
 	github.com/andybalholm/brotli v1.2.1
@@ -17,7 +17,7 @@ require (
 	github.com/kalbasit/fastcdc v1.0.0
 	github.com/klauspost/compress v1.18.6
 	github.com/lib/pq v1.12.3
-	github.com/mattn/go-sqlite3 v1.14.44
+	github.com/mattn/go-sqlite3 v1.14.45
 	github.com/minio/minio-go/v7 v7.2.0
 	github.com/nix-community/go-nix v0.0.0-20250101154619-4bdde671e0a1
 	github.com/pierrec/lz4/v4 v4.1.27

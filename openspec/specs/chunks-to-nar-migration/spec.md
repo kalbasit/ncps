@@ -3,7 +3,6 @@
 ## Purpose
 
 Defines the `migrate-chunks-to-nar` operation — the reverse of `migrate-nar-to-chunks` — which reconstructs CDC-chunked NARs back into verified whole files so a deployment can safely exit CDC, with idempotent/resumable execution and dedup-safe chunk reclamation.
-
 ## Requirements
 ### Requirement: Reconstruct a whole NAR from its chunks, verified against the recorded hash
 
@@ -136,3 +135,83 @@ The Job rendered by `migrateChunksToNar.enabled: true` SHALL carry no `helm.sh/h
 
 - **WHEN** the Job finishes (success or failure)
 - **THEN** Kubernetes SHALL garbage-collect the Job after `migrateChunksToNar.job.ttlSecondsAfterFinished` seconds (default 3600)
+
+### Requirement: De-chunk MUST resolve the verification NarHash via the narinfo URL when no join link exists
+
+When de-chunking a NAR, the system resolves the expected NarHash from the linked narinfo in order to content-verify the reconstruction (verified-or-nothing). When the `narinfo_nar_files` join link is absent — a known race leaves CDC-chunked `nar_file` rows unlinked — the system SHALL fall back to resolving the narinfo by the NAR's `Compression:none` URL (`nar/<hash>.nar`) instead of treating the NAR as un-verifiable and skipping it. Only when no narinfo references the NAR by either the join link or its URL SHALL the de-chunk be skipped for want of a verification hash.
+
+#### Scenario: Unlinked chunked NAR is de-chunked via the URL-resolved NarHash
+
+- **GIVEN** a `nar_file` for hash `H` with `total_chunks > 0` and intact chunk links
+- **AND** a narinfo with URL `nar/<H>.nar` carrying a recorded NarHash
+- **AND** NO `narinfo_nar_files` link between that narinfo and the `nar_file`
+- **WHEN** `MigrateChunksToNar` is invoked for `H`
+- **THEN** the system SHALL resolve the verification NarHash from the narinfo found by URL
+- **AND** SHALL reconstruct the whole NAR from its chunks
+- **AND** SHALL content-verify the reconstruction against that NarHash
+- **AND** SHALL flip the record to whole-file (`total_chunks = 0`)
+
+#### Scenario: NAR with neither a link nor a URL-matched narinfo is skipped
+
+- **GIVEN** a chunked `nar_file` for hash `H` with no `narinfo_nar_files` link
+- **AND** no narinfo whose URL is `nar/<H>.nar`
+- **WHEN** `MigrateChunksToNar` is invoked for `H`
+- **THEN** the system SHALL skip de-chunking (no NarHash to verify against)
+- **AND** SHALL NOT delete or truncate the NAR
+
+### Requirement: De-chunk MUST content-verify the reconstructed NAR before committing
+
+The de-chunk pass SHALL commit a NAR to whole-file storage only after it reconstructs the NAR from its chunks, computes the SHA-256 of the reconstructed bytes, and confirms that digest equals the resolved NarHash. The verification hash is the uncompressed NAR content hash, which is identical across every narinfo referencing the NAR regardless of the compression that narinfo's URL advertises; resolving it from any referencing narinfo (by NAR hash) therefore does NOT weaken verification. On a digest mismatch — or any reconstruction failure — the pass SHALL NOT write the whole file and SHALL NOT flip the record; it SHALL purge the chunked `nar_file` instead. The pass SHALL NEVER persist a de-chunked NAR it did not content-verify.
+
+#### Scenario: Reconstructed-hash mismatch purges, never commits
+
+- **GIVEN** a chunked `nar_file` for hash `H` and a resolved NarHash
+- **WHEN** the reconstructed NAR's SHA-256 does NOT equal the resolved NarHash
+- **THEN** the pass SHALL NOT write a whole file for `H`
+- **AND** SHALL NOT flip `H` to `total_chunks = 0`
+- **AND** SHALL purge the chunked `nar_file` for `H`
+
+#### Scenario: Reconstructed-hash match commits
+
+- **GIVEN** a chunked `nar_file` for hash `H` and a resolved NarHash
+- **WHEN** the reconstructed NAR's SHA-256 equals the resolved NarHash
+- **THEN** the pass SHALL write the whole file and flip `H` to `total_chunks = 0`
+
+### Requirement: The de-chunk pass MUST always drive the chunked count to zero
+
+A full `migrate-chunks-to-nar` pass over all chunked `nar_file` rows SHALL leave no row with `total_chunks > 0`. For every chunked NAR the pass SHALL either de-chunk it to whole-file storage or purge it; it SHALL NOT leave a NAR chunked because it could not resolve a verification hash or could not reconstruct the NAR.
+
+#### Scenario: NarHash is resolved by NAR hash from any referencing narinfo
+
+- **GIVEN** a chunked `nar_file` for hash `H` with no join link
+- **AND** the only narinfo carrying a `nar_hash` for `H` advertises a different-compression URL (e.g. `nar/<H>.nar.xz`), not the bare `nar/<H>.nar`
+- **WHEN** the de-chunk pass processes `H`
+- **THEN** it SHALL resolve the verification NarHash from that narinfo (matched by NAR hash, not by exact URL)
+- **AND** SHALL de-chunk `H` to whole-file storage
+
+#### Scenario: Un-verifiable NAR is purged, not skipped
+
+- **GIVEN** a chunked `nar_file` for hash `H` with no narinfo carrying a resolvable `nar_hash`
+- **WHEN** the de-chunk pass processes `H`
+- **THEN** it SHALL purge the chunked `nar_file` (removing its chunk links so a later request re-pulls from upstream)
+- **AND** SHALL NOT leave `H` chunked
+- **AND** SHALL NOT count `H` as a hard failure that aborts the run
+
+#### Scenario: Hard reconstruction failure is purged, not failed-and-left
+
+- **GIVEN** a chunked `nar_file` for hash `H` whose reconstruction fails (corrupt or missing chunks)
+- **WHEN** the de-chunk pass processes `H`
+- **THEN** it SHALL purge the chunked `nar_file`
+- **AND** SHALL NOT leave `H` chunked
+
+### Requirement: De-chunking MUST normalize the narinfo URL to none
+
+When the de-chunk pass converts a NAR to whole-file (`Compression:none`) storage, it SHALL update every narinfo referencing that NAR to advertise the Compression:none URL (`nar/<H>.nar`, FileHash null, FileSize null), so the persisted narinfo is consistent with the whole-file storage and does not depend on serve-time chunk-based normalization.
+
+#### Scenario: A de-chunked NAR's narinfo advertises none
+
+- **GIVEN** a chunked NAR whose narinfo advertises `nar/<H>.nar.xz`
+- **WHEN** the de-chunk pass de-chunks it to `none/whole`
+- **THEN** the narinfo SHALL be updated to URL `nar/<H>.nar` and Compression none
+- **AND** a subsequent serve of that narinfo SHALL NOT 404 the NAR
+

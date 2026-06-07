@@ -3,6 +3,7 @@ package server_test
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -704,7 +705,7 @@ func newContext() context.Context {
 		WithContext(context.Background())
 }
 
-func TestGetNar_HeadOptimization(t *testing.T) {
+func TestGetNar_HeadBytelessNarIs404(t *testing.T) {
 	t.Parallel()
 
 	// create a temporary directory for the cache
@@ -751,14 +752,112 @@ func TestGetNar_HeadOptimization(t *testing.T) {
 	storePath := filepath.Join(dir, "store", "nar", testdata.Nar1.NarPath)
 	assert.NoFileExists(t, storePath)
 
-	// 3. Make a HEAD request for the NAR. It should return 204 No Content and the correct size.
+	// 3. HEAD the NAR. The nar_file record exists (from the narinfo PUT) but the
+	//    NAR bytes are NOT in storage — a phantom. HEAD MUST NOT report 200 from
+	//    the DB record alone; on the upload path it must be 404 so the client
+	//    (re-)uploads the NAR rather than skipping it and leaving a phantom.
 	narURL := ts.URL + "/upload/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+	req, err = http.NewRequestWithContext(newContext(), http.MethodHead, narURL, nil)
+	require.NoError(t, err)
+	resp, err = ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+
+	// 4. Now upload the NAR bytes. HEAD must then report 200 with the size
+	//    (the fast path is preserved for a genuinely servable NAR).
+	putNar, err := http.NewRequestWithContext(newContext(), http.MethodPut,
+		narURL, strings.NewReader(testdata.Nar1.NarText))
+	require.NoError(t, err)
+	resp, err = ts.Client().Do(putNar)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
 	req, err = http.NewRequestWithContext(newContext(), http.MethodHead, narURL, nil)
 	require.NoError(t, err)
 	resp, err = ts.Client().Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, strconv.Itoa(len(testdata.Nar1.NarText)), resp.Header.Get("Content-Length"))
+	resp.Body.Close()
+}
+
+// errSimulatedAmbiguousStat models an undeterminable storage result (e.g. a
+// timed-out or stale stat on a network filesystem) rather than a clean absence.
+var errSimulatedAmbiguousStat = errors.New("simulated ambiguous storage error")
+
+// flakyStatNarStore wraps a real local store but reports an undeterminable
+// (false, err) result from StatNar for a chosen NAR hash, simulating a flaky
+// network-filesystem stat (timeout / stale handle) rather than a clean absence.
+type flakyStatNarStore struct {
+	*local.Store
+
+	failHash string
+}
+
+func (s *flakyStatNarStore) StatNar(ctx context.Context, narURL nar.URL) (bool, error) {
+	if narURL.Hash == s.failHash {
+		return false, errSimulatedAmbiguousStat
+	}
+
+	return s.Store.StatNar(ctx, narURL)
+}
+
+// TestGetNar_HeadAmbiguousStorageIsNotFalse200 verifies that when the storage
+// presence probe is ambiguous (not a confirmed absence), a NAR HEAD does NOT
+// report a bare 200 from the nar_file record — an ambiguous result must not be
+// mistaken for "present" (which would make a client skip uploading the NAR).
+func TestGetNar_HeadAmbiguousStorageIsNotFalse200(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("", "cache-path-amb-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	dbFile := filepath.Join(dir, "db.sqlite")
+	testhelper.CreateMigrateDatabase(t, dbFile)
+
+	dbClient, err := database.Open("sqlite:"+dbFile, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dbClient.Close() })
+
+	localStore, err := local.New(newContext(), dir)
+	require.NoError(t, err)
+
+	narStore := &flakyStatNarStore{Store: localStore, failHash: testdata.Nar1.NarHash}
+
+	c, err := newTestCache(newContext(), dbClient, localStore, localStore, narStore)
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+
+	s := server.New(c)
+	s.SetPutPermitted(true)
+
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// Put the narinfo so a nar_file record (size > 0) exists; the NAR bytes are
+	// absent and the store stat is ambiguous for this hash.
+	putURL := ts.URL + "/upload/" + testdata.Nar1.NarInfoHash + ".narinfo"
+	req, err := http.NewRequestWithContext(
+		newContext(), http.MethodPut, putURL, strings.NewReader(testdata.Nar1.NarInfoText),
+	)
+	require.NoError(t, err)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	// HEAD must not produce a false 200 from the record under an ambiguous probe.
+	narURL := ts.URL + "/upload/nar/" + testdata.Nar1.NarHash + ".nar.xz"
+	req, err = http.NewRequestWithContext(newContext(), http.MethodHead, narURL, nil)
+	require.NoError(t, err)
+	resp, err = ts.Client().Do(req)
+	require.NoError(t, err)
+	assert.NotEqual(t, http.StatusOK, resp.StatusCode,
+		"an ambiguous storage probe must not yield a 200 from the nar_file record alone")
 	resp.Body.Close()
 }
 

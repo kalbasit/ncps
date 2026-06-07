@@ -53,13 +53,33 @@ func (NarFile) Fields() []ent.Field {
 		field.Time("verified_at").
 			Optional().
 			Nillable(),
+		// bytes_stored_at records when PutNar durably wrote the NAR's bytes. It is
+		// distinct from verified_at (fsck's integrity-check timestamp): a narinfo-PUT
+		// placeholder leaves it NULL, so it proves "the bytes exist" without claiming
+		// integrity verification. Read across replicas to avoid a stale local stat
+		// 404-ing a NAR a peer just uploaded.
+		field.Time("bytes_stored_at").
+			Optional().
+			Nillable(),
+		// dechunk_residue_flagged_at records when fsck first observed this row to be
+		// an un-de-chunkable chunked NAR (CDC residue). NULL means "not flagged". fsck
+		// sets it on first detection, clears it when the row becomes recoverable or is
+		// de-chunked, and uses its age (against a configurable grace window) to decide
+		// deferred reclamation. Independent of verified_at, bytes_stored_at, and
+		// chunking_started_at.
+		field.Time("dechunk_residue_flagged_at").
+			Optional().
+			Nillable(),
 		field.Time("last_accessed_at").
 			Optional().
 			Nillable().
 			Default(time.Now).
-			Annotations(entsql.Annotation{
-				DefaultExpr: "CURRENT_TIMESTAMP",
-			}),
+			// DB default declared via entsql.Default (a string default Atlas's
+			// SQLite inspector round-trips exactly) rather than
+			// entsql.Annotation{DefaultExpr: ...} (a parenthesized RawExpr the
+			// inspector strips, producing a perpetual phantom table rebuild —
+			// issue #1328). Mirrors the Timestamps mixin's created_at.
+			Annotations(entsql.Default("CURRENT_TIMESTAMP")),
 	}
 }
 

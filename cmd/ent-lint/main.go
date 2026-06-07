@@ -11,6 +11,11 @@
 //   - A4: every edge.To declaration in any schema must have a reciprocal
 //     edge.From(...).Ref(...) on the target schema (otherwise Ent fabricates
 //     a phantom FK column on the target).
+//   - A6: a CURRENT_TIMESTAMP DB default declared via
+//     entsql.Annotation{DefaultExpr: "CURRENT_TIMESTAMP"} is forbidden (Ent
+//     emits a parenthesized RawExpr that Atlas's SQLite inspector does not
+//     round-trip, causing a perpetual phantom table rebuild — issue #1328);
+//     use entsql.Default("CURRENT_TIMESTAMP") instead.
 //
 // Future invariants enforced by this binary (tracked in the
 // ent-schema-lint spec but not yet implemented):
@@ -67,6 +72,7 @@ func main() {
 	results = append(results, checkA1(schemas)...)
 	results = append(results, checkA2(schemas)...)
 	results = append(results, checkA4(schemas)...)
+	results = append(results, checkA6(schemas)...)
 
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].id != results[j].id {
@@ -248,7 +254,7 @@ func findFieldEntsqlCheck(sf schemaFile, fn *ast.FuncDecl) []int {
 			return true
 		}
 
-		if sel.Sel.Name != "Annotations" {
+		if sel.Sel.Name != annotationsMethod {
 			return true
 		}
 		// Found a `.Annotations(...)` call; if any argument is `entsql.Check(...)`,
@@ -281,7 +287,7 @@ func isEntsqlCheckCall(e ast.Expr) bool {
 		return false
 	}
 
-	return x.Name == "entsql" && sel.Sel.Name == "Check"
+	return x.Name == entsqlPkg && sel.Sel.Name == "Check"
 }
 
 // ---------- A2: entsql.OnDelete on edge.From is forbidden ----------
@@ -336,7 +342,7 @@ func findEdgeFromOnDelete(sf schemaFile, fn *ast.FuncDecl) []int {
 			return true
 		}
 
-		if sel.Sel.Name != "Annotations" {
+		if sel.Sel.Name != annotationsMethod {
 			return true
 		}
 		// Look at the receiver of .Annotations(...). If anywhere in the
@@ -397,7 +403,7 @@ func isEntsqlOnDeleteCall(e ast.Expr) bool {
 		return false
 	}
 
-	return x.Name == "entsql" && sel.Sel.Name == "OnDelete"
+	return x.Name == entsqlPkg && sel.Sel.Name == "OnDelete"
 }
 
 // ---------- A4: every edge.To needs a reciprocal edge.From().Ref() ----------
@@ -549,6 +555,184 @@ func findInnerEdgeFromTarget(e ast.Expr) string {
 	}
 }
 
+// ---------- A6: entsql.Annotation{DefaultExpr: "CURRENT_TIMESTAMP"} is forbidden ----------
+
+// checkA6 walks each schema's Fields() method body looking for a
+// `.Annotations(entsql.Annotation{DefaultExpr: "CURRENT_TIMESTAMP"})` chain.
+// Ent emits this form as a parenthesized Atlas RawExpr that Atlas's SQLite
+// inspector does not round-trip (it strips the parens), producing a
+// perpetual phantom ModifyColumn (ChangeDefault) and a destructive table
+// rebuild on every generated SQLite migration (issue #1328). The
+// round-trippable form is `entsql.Default("CURRENT_TIMESTAMP")`.
+func checkA6(schemas []schemaFile) []result {
+	var out []result
+
+	for _, sf := range schemas {
+		for _, m := range methodsByName(sf, "Fields") {
+			// Skip top-level helper functions named Fields — only method
+			// receivers can be Ent schema methods.
+			if receiverTypeName(m) == "" {
+				continue
+			}
+
+			violations := findDefaultExprCurrentTimestamp(sf, m)
+			if len(violations) == 0 {
+				out = append(out, result{
+					pass: true, id: "A6",
+					detail: fmt.Sprintf("%s: no DefaultExpr CURRENT_TIMESTAMP (use entsql.Default)", relPath(sf.path)),
+				})
+
+				continue
+			}
+
+			for _, v := range violations {
+				field := v.field
+				if field == "" {
+					field = "<unknown>"
+				}
+
+				out = append(out, result{
+					pass: false, id: "A6",
+					detail: fmt.Sprintf(
+						"%s:%d field %q: entsql.Annotation{DefaultExpr: \"CURRENT_TIMESTAMP\"} is forbidden "+
+							"(use entsql.Default(\"CURRENT_TIMESTAMP\") — Atlas's SQLite inspector does not "+
+							"round-trip the parenthesized RawExpr; issue #1328)",
+						relPath(sf.path), v.line, field,
+					),
+				})
+			}
+		}
+	}
+
+	return out
+}
+
+// a6Violation records one forbidden DefaultExpr annotation: the field it is
+// chained onto (for the diagnostic) and the source line of the offending
+// `DefaultExpr:` element.
+type a6Violation struct {
+	field string
+	line  int
+}
+
+func findDefaultExprCurrentTimestamp(sf schemaFile, fn *ast.FuncDecl) []a6Violation {
+	var violations []a6Violation
+
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+
+		if sel.Sel.Name != annotationsMethod {
+			return true
+		}
+
+		for _, arg := range call.Args {
+			if pos := entsqlAnnotationDefaultExpr(arg); pos != token.NoPos {
+				violations = append(violations, a6Violation{
+					field: fieldNameFromChain(sel.X),
+					line:  sf.fset.Position(pos).Line,
+				})
+			}
+		}
+
+		return true
+	})
+
+	return violations
+}
+
+// fieldPkg is the canonical Ent field package import name.
+const fieldPkg = "field"
+
+// fieldNameFromChain walks the receiver chain of a builder expression (the
+// "X" side of `.Annotations(...)`) inward looking for the originating
+// `field.<Type>("name", ...)` call, and returns that field's name (the first
+// string-literal argument). Returns "" if no such call is found.
+func fieldNameFromChain(e ast.Expr) string {
+	for {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return ""
+		}
+
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return ""
+		}
+
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == fieldPkg {
+			if len(call.Args) >= 1 {
+				return stringLitValue(call.Args[0])
+			}
+
+			return ""
+		}
+
+		e = sel.X
+	}
+}
+
+// entsqlAnnotationDefaultExpr reports the position of a
+// `DefaultExpr: "CURRENT_TIMESTAMP"` field inside an `entsql.Annotation{...}`
+// composite literal, or token.NoPos if the expression is not such a literal.
+// The pointer form `&entsql.Annotation{...}` is also accepted by Ent (the
+// value-receiver Name() puts *entsql.Annotation in schema.Annotation's method
+// set), so the address-of operator is unwrapped first.
+func entsqlAnnotationDefaultExpr(e ast.Expr) token.Pos {
+	if unary, ok := e.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		e = unary.X
+	}
+
+	lit, ok := e.(*ast.CompositeLit)
+	if !ok {
+		return token.NoPos
+	}
+
+	sel, ok := lit.Type.(*ast.SelectorExpr)
+	if !ok {
+		return token.NoPos
+	}
+
+	x, ok := sel.X.(*ast.Ident)
+	if !ok || x.Name != entsqlPkg || sel.Sel.Name != "Annotation" {
+		return token.NoPos
+	}
+
+	for _, el := range lit.Elts {
+		kv, ok := el.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok || key.Name != "DefaultExpr" {
+			continue
+		}
+
+		if isCurrentTimestampLit(kv.Value) {
+			return kv.Pos()
+		}
+	}
+
+	return token.NoPos
+}
+
+func isCurrentTimestampLit(e ast.Expr) bool {
+	bl, ok := e.(*ast.BasicLit)
+	if !ok || bl.Kind != token.STRING {
+		return false
+	}
+
+	return strings.EqualFold(stringLitValue(bl), "CURRENT_TIMESTAMP")
+}
+
 // ---------- helpers ----------
 
 func methodsByName(sf schemaFile, name string) []*ast.FuncDecl {
@@ -570,6 +754,13 @@ func methodsByName(sf schemaFile, name string) []*ast.FuncDecl {
 
 // edgePkg is the canonical Ent edge package import name.
 const edgePkg = "edge"
+
+// entsqlPkg is the canonical Ent entsql package import name; annotationsMethod
+// is the field/edge builder method that attaches schema annotations.
+const (
+	entsqlPkg         = "entsql"
+	annotationsMethod = "Annotations"
+)
 
 // receiverTypeName returns the bare type name of a method's receiver
 // (e.g. "Child" for `func (Child) Edges() ...` or `func (c Child) Edges() ...`).

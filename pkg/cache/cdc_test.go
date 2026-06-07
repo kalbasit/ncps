@@ -198,6 +198,8 @@ func runCDCTestSuite(t *testing.T, factory cacheFactory) {
 		testCDCBackingLessRecordRecoversAfterTransientFailure(factory))
 	t.Run("backing-less record with genuine upstream 404 returns not found",
 		testCDCBackingLessRecordGenuine404ReturnsNotFound(factory))
+	t.Run("completed chunked NAR missing a junction link returns 404, not a truncated 200",
+		testServeCompletedNarMissingLinkReturns404(factory))
 }
 
 func testCDCPutAndGet(factory cacheFactory) func(*testing.T) {
@@ -309,7 +311,15 @@ func testCDCMixedMode(factory cacheFactory) func(*testing.T) {
 		nuChunk := nar.URL{Hash: "00ji9synj1r6h6sjw27wwv8fw98myxsg92q5ma1pvrbmh451kc27", Compression: nar.CompressionTypeNone}
 		require.NoError(t, c.PutNar(ctx, nuChunk, io.NopCloser(strings.NewReader(chunkContent))))
 
-		// 3. Retrieve both
+		// 3. Retrieve both.
+		//
+		// Retrieving nuBlob races a background NAR->chunks migration that GetNar
+		// triggers because the whole file is in the store and CDC is now enabled:
+		// the migration deletes the whole file while the serve path may still be
+		// reading it. This retrieval MUST succeed regardless of that timing — see
+		// TestServeNarFromStorageRaceWithMigrationFallsBackToChunks for the
+		// deterministic regression. Historically this flaked as
+		// "error fetching the nar from the store: not found".
 		_, _, rc1, err := c.GetNar(ctx, nuBlob)
 		require.NoError(t, err)
 
@@ -602,9 +612,14 @@ func testCDCChunksAreCompressed(factory cacheFactory) func(*testing.T) {
 }
 
 // testCDCPullNarInfoNormalizesCompression verifies that when CDC is enabled and
-// a narinfo is pulled from upstream, the narinfo stored in the database has
-// Compression: none and URL without compression extension, regardless of
-// the upstream's compression (xz, zstd via Harmonia, etc.).
+// a narinfo is pulled from upstream, the narinfo and its backing NAR storage
+// never desync. An eager-CDC narinfo is persisted TRUTHFULLY with its upstream
+// compression (e.g. xz) — it is NOT rewritten to url=none at store time. The
+// serve-time normalization presents url=none only once the NAR is genuinely
+// chunked, so at any chunking state the Compression advertised by the narinfo
+// matches the compression extension of its URL, and GetNar on that URL succeeds
+// and reassembles to the original NAR content. The Compression==none (Harmonia)
+// path is unchanged: none stays none.
 func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
@@ -612,7 +627,7 @@ func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, dbClient, _, dir, rebind, cleanup := factory(t)
+		c, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Set up CDC
@@ -623,6 +638,29 @@ func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing
 		c.SetChunkStore(chunkStore)
 		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
 		require.NoError(t, err)
+
+		realChunker, err := chunker.NewCDCChunker(1024, 4096, 8192)
+		require.NoError(t, err)
+		c.SetChunker(realChunker)
+
+		// Serve REAL xz bytes for Nar2's NAR so that GetNar can decompress the
+		// stored xz NAR transparently regardless of chunking state. The narinfo
+		// for Nar2 advertises Compression: xz upstream.
+		originalContent := testhelper.MustRandString(50160)
+		xzContent := compressXz(t, originalContent)
+		narXzPath := "/nar/" + testdata.Nar2.NarHash + ".nar.xz"
+
+		idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path != narXzPath {
+				return false
+			}
+
+			_, _ = io.WriteString(w, xzContent)
+
+			return true
+		})
+
+		t.Cleanup(func() { ts.RemoveMaybeHandler(idx) })
 
 		// Set up upstream cache
 		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -635,32 +673,34 @@ func testCDCPullNarInfoNormalizesCompression(factory cacheFactory) func(*testing
 		// Wait for upstream to become available
 		<-c.GetHealthChecker().Trigger()
 
-		t.Run("xz-compressed upstream narinfo is normalized to none", func(t *testing.T) {
-			// Nar2 has Compression: xz upstream
+		t.Run("xz upstream narinfo is served consistently with its stored NAR", func(t *testing.T) {
+			// Nar2 has Compression: xz upstream. With store-time normalization
+			// removed, the narinfo is persisted truthfully (xz) until the NAR is
+			// genuinely chunked, at which point serve-time normalization presents
+			// url=none. Either way the narinfo and storage stay consistent.
 			ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 			require.NoError(t, err)
 
-			// Verify narinfo returned to client says Compression: none
-			assert.Equal(t, nar.CompressionTypeNone.String(), ni.Compression,
-				"narinfo Compression should be normalized to 'none' for CDC")
-
-			// Verify the URL has no compression extension
-			assert.NotContains(t, ni.URL, ".xz",
-				"narinfo URL should not contain .xz extension for CDC")
-			assert.NotContains(t, ni.URL, ".zst",
-				"narinfo URL should not contain .zst extension for CDC")
-
-			// Verify the narinfo in the database also says Compression: none
-			var compression, url string
-
-			err = dbClient.DB().QueryRowContext(context.Background(),
-				rebind("SELECT compression, url FROM narinfos WHERE hash = ?"),
-				testdata.Nar2.NarInfoHash).Scan(&compression, &url)
+			// Consistency invariant (holds at any chunking state): the advertised
+			// Compression matches the compression named by the URL extension.
+			narURL, err := nar.ParseURL(ni.URL)
 			require.NoError(t, err)
-			assert.Equal(t, nar.CompressionTypeNone.String(), compression,
-				"narinfo in DB should have Compression: none")
-			assert.NotContains(t, url, ".xz",
-				"narinfo URL in DB should not contain .xz extension")
+			assert.Equal(t, ni.Compression, narURL.Compression.String(),
+				"narinfo Compression must match the compression named by its URL")
+
+			// The narinfo must never desync from storage: GetNar on the advertised
+			// URL must succeed and reassemble to the original (decompressed) NAR
+			// content, regardless of whether the NAR is still xz whole-file or has
+			// been chunked to none.
+			_, _, rc, err := c.GetNar(context.Background(), narURL)
+			require.NoError(t, err)
+
+			defer rc.Close()
+
+			body, err := io.ReadAll(rc)
+			require.NoError(t, err)
+			assert.Equal(t, originalContent, string(body),
+				"GetNar must reassemble to the original decompressed NAR content")
 		})
 
 		t.Run("Harmonia narinfo with none compression stays none", func(t *testing.T) {
@@ -905,9 +945,12 @@ func testCDCPutNarInfoNormalizesCompression(factory cacheFactory) func(*testing.
 	}
 }
 
-// testCDCPullNarInfoSetsFileSizeForCDC verifies that when CDC is enabled and
-// a narinfo is pulled from upstream, the FileSize in the narinfo is set to
-// NarSize (uncompressed size), not the upstream's compressed FileSize.
+// testCDCPullNarInfoSetsFileSizeForCDC verifies that when CDC is enabled and an
+// xz-compressed narinfo is pulled from upstream, the narinfo is persisted
+// TRUTHFULLY: its FileHash/FileSize/Compression describe the actual stored NAR
+// rather than being normalized away at store time. The narinfo and its backing
+// storage never desync: the advertised Compression matches the URL extension and
+// GetNar reassembles to the original NAR content at any chunking state.
 func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
@@ -915,7 +958,7 @@ func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T)
 		ts := testdata.NewTestServer(t, 40)
 		t.Cleanup(ts.Close)
 
-		c, dbClient, _, dir, rebind, cleanup := factory(t)
+		c, _, _, dir, _, cleanup := factory(t)
 		t.Cleanup(cleanup)
 
 		// Set up CDC
@@ -926,6 +969,28 @@ func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T)
 		c.SetChunkStore(chunkStore)
 		err = c.SetCDCConfiguration(true, 1024, 4096, 8192)
 		require.NoError(t, err)
+
+		realChunker, err := chunker.NewCDCChunker(1024, 4096, 8192)
+		require.NoError(t, err)
+		c.SetChunker(realChunker)
+
+		// Serve REAL xz bytes for Nar2's NAR so that GetNar can decompress the
+		// stored xz NAR transparently regardless of chunking state.
+		originalContent := testhelper.MustRandString(50160)
+		xzContent := compressXz(t, originalContent)
+		narXzPath := "/nar/" + testdata.Nar2.NarHash + ".nar.xz"
+
+		idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path != narXzPath {
+				return false
+			}
+
+			_, _ = io.WriteString(w, xzContent)
+
+			return true
+		})
+
+		t.Cleanup(func() { ts.RemoveMaybeHandler(idx) })
 
 		// Set up upstream cache
 		uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{
@@ -938,35 +1003,52 @@ func testCDCPullNarInfoSetsFileSizeForCDC(factory cacheFactory) func(*testing.T)
 		// Wait for upstream to become available
 		<-c.GetHealthChecker().Trigger()
 
-		t.Run("upstream compressed FileSize != NarSize, CDC normalizes FileSize to 0 and FileHash to empty",
+		t.Run("xz upstream narinfo is persisted truthfully and stays consistent with its NAR",
 			func(t *testing.T) {
-				// Nar2 has Compression: xz upstream with FileSize != NarSize (compressed vs uncompressed)
+				// Nar2 has Compression: xz upstream with FileSize != NarSize
+				// (compressed vs uncompressed).
 				ni, err := c.GetNarInfo(context.Background(), testdata.Nar2.NarInfoHash)
 				require.NoError(t, err)
 
-				// Verify FileSize == 0 for CDC mode
-				assert.Equal(t, uint64(0), ni.FileSize,
-					"CDC mode should set FileSize == 0, not the compressed upstream size")
-
-				// Verify FileHash == null for CDC mode (compressed upstream FileHash must be null)
-				assert.Empty(t, ni.FileHash,
-					"CDC mode should set FileHash == null, not the compressed upstream hash")
-
-				// Also verify in the database
-				var (
-					fileSize          sql.NullInt64
-					narSize           uint64
-					fileHash, narHash sql.NullString
-				)
-
-				err = dbClient.DB().QueryRowContext(context.Background(),
-					rebind("SELECT file_size, nar_size, file_hash, nar_hash FROM narinfos WHERE hash = ?"),
-					testdata.Nar2.NarInfoHash).Scan(&fileSize, &narSize, &fileHash, &narHash)
+				// Consistency invariant (holds at any chunking state): the
+				// advertised Compression matches the compression named by the URL
+				// extension, and FileHash/FileSize are coherent with that
+				// compression. While the NAR is still served as xz the narinfo
+				// truthfully advertises xz with a non-empty FileHash and a FileSize
+				// equal to the compressed size it names; once the NAR is genuinely
+				// chunked, serve-time normalization presents none (FileSize == 0,
+				// empty FileHash). Either way the narinfo never desyncs from storage.
+				narURL, err := nar.ParseURL(ni.URL)
 				require.NoError(t, err)
-				assert.False(t, fileSize.Valid,
-					"narinfo in DB should have FileSize == NULL for CDC")
-				assert.Equal(t, sql.NullString{}, fileHash,
-					"narinfo in DB should have FileHash == null for CDC")
+				assert.Equal(t, ni.Compression, narURL.Compression.String(),
+					"narinfo Compression must match the compression named by its URL")
+
+				if narURL.Compression == nar.CompressionTypeNone {
+					// Genuinely chunked: serve-time normalization presents none.
+					assert.Equal(t, uint64(0), ni.FileSize,
+						"once chunked, FileSize is normalized to 0")
+					assert.Empty(t, ni.FileHash,
+						"once chunked, FileHash is normalized to empty")
+				} else {
+					// Not yet chunked: truthful xz values from upstream.
+					assert.NotEmpty(t, ni.FileHash,
+						"xz narinfo must carry a truthful (non-empty) FileHash")
+					assert.Positive(t, ni.FileSize,
+						"xz narinfo must carry a truthful (positive) FileSize")
+				}
+
+				// The narinfo must never desync from storage: GetNar on the
+				// advertised URL must succeed and reassemble to the original
+				// (decompressed) NAR content.
+				_, _, rc, err := c.GetNar(context.Background(), narURL)
+				require.NoError(t, err)
+
+				defer rc.Close()
+
+				body, err := io.ReadAll(rc)
+				require.NoError(t, err)
+				assert.Equal(t, originalContent, string(body),
+					"GetNar must reassemble to the original decompressed NAR content")
 			})
 	}
 }

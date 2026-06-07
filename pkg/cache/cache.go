@@ -139,8 +139,8 @@ var (
 	// ErrMigrationInProgress is returned if a migration is already in progress.
 	ErrMigrationInProgress = errors.New("migration is already in progress")
 
-	// errNarInfoPurged is returned if the narinfo was purged.
-	errNarInfoPurged = errors.New("the narinfo was purged")
+	// ErrNarInfoPurged is returned if the narinfo was purged.
+	ErrNarInfoPurged = errors.New("the narinfo was purged")
 
 	// ErrCDCDisabled is returned when CDC is required but not enabled.
 	ErrCDCDisabled = errors.New("CDC must be enabled and chunk store configured for migration")
@@ -612,6 +612,8 @@ type contextKey string
 
 const uploadOnlyKey contextKey = "upload_only"
 
+const narPrefetchDisabledKey contextKey = "nar_prefetch_disabled"
+
 // WithUploadOnly returns a context that instructs the cache to skip upstream checks.
 func WithUploadOnly(ctx context.Context) context.Context {
 	return context.WithValue(ctx, uploadOnlyKey, true)
@@ -620,6 +622,23 @@ func WithUploadOnly(ctx context.Context) context.Context {
 // IsUploadOnly checks if the context specifies skipping upstream checks.
 func IsUploadOnly(ctx context.Context) bool {
 	val, ok := ctx.Value(uploadOnlyKey).(bool)
+
+	return ok && val
+}
+
+// withNarPrefetchDisabled returns a context that instructs pullNarInfo to skip
+// the background NAR prefetch. It exists to let tests deterministically
+// reproduce an orphan narinfo (DB row present, backing NAR absent, no download
+// job in flight) — the state that fires the purge guard — without depending on
+// the timing of a background NAR download.
+func withNarPrefetchDisabled(ctx context.Context) context.Context {
+	return context.WithValue(ctx, narPrefetchDisabledKey, true)
+}
+
+// narPrefetchDisabled reports whether the context disables the background NAR
+// prefetch in pullNarInfo.
+func narPrefetchDisabled(ctx context.Context) bool {
+	val, ok := ctx.Value(narPrefetchDisabledKey).(bool)
 
 	return ok && val
 }
@@ -1523,6 +1542,14 @@ func (c *Cache) lookupPreferredUpstreamURL(ctx context.Context, narURL nar.URL) 
 // ensureNarFileRecord ensures a NarFile record exists with the correct size.
 // It creates the record if it doesn't exist, or updates the size if it's incorrect.
 func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written int64, txName string) error {
+	// Normalize so the nar_file row is keyed the same way storeInDatabase keys it.
+	// Without this a nix-serve-style prefixed URL would create a duplicate prefixed
+	// row carrying bytes_stored_at, while the narinfo stays linked to the normalized
+	// row (marker NULL) — defeating the /upload presence check.
+	if normalized, err := narURL.Normalize(); err == nil {
+		narURL = normalized
+	}
+
 	zerolog.Ctx(ctx).Debug().
 		Str("hash", narURL.Hash).
 		Str("compression", narURL.Compression.String()).
@@ -1538,11 +1565,20 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 		// CreateNarFile+UpdateNarFileFileSize sequence. TotalChunks
 		// stays at its existing value on conflict — only set to 0 on
 		// fresh insert (the Create's default).
+		// bytes_stored_at marks that the NAR's bytes were durably written by PutNar
+		// (as opposed to a narinfo-PUT placeholder, which leaves it NULL). It is a
+		// dedicated marker — distinct from verified_at, which fsck owns as its
+		// integrity-check timestamp — recorded in the shared database so peer
+		// replicas can trust it as proof the NAR exists even before their local
+		// filesystem view observes the write.
+		now := time.Now()
+
 		id, err := tx.NarFile.Create().
 			SetHash(narURL.Hash).
 			SetCompression(narURL.Compression.String()).
 			SetQuery(narURL.Query.Encode()).
 			SetFileSize(fileSize).
+			SetBytesStoredAt(now).
 			OnConflictColumns(
 				entnarfile.FieldHash,
 				entnarfile.FieldCompression,
@@ -1550,7 +1586,8 @@ func (c *Cache) ensureNarFileRecord(ctx context.Context, narURL nar.URL, written
 			).
 			Update(func(u *ent.NarFileUpsert) {
 				u.SetFileSize(fileSize)
-				u.SetUpdatedAt(time.Now())
+				u.SetBytesStoredAt(now)
+				u.SetUpdatedAt(now)
 			}).
 			ID(ctx)
 		if err != nil {
@@ -1692,6 +1729,26 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error {
 
 		if err := c.narStore.DeleteNar(ctx, narURL); err != nil {
 			return err
+		}
+
+		// The bytes are gone; clear the durable bytes-stored marker for this variant
+		// so the /upload presence check (narFileBytesStored) does not report an
+		// evicted NAR as present. Key by the normalized URL to match the row the
+		// marker was written on.
+		clearURL := narURL
+		if normalized, err := narURL.Normalize(); err == nil {
+			clearURL = normalized
+		}
+
+		if _, err := c.dbClient.Ent().NarFile.Update().
+			Where(
+				entnarfile.HashEQ(clearURL.Hash),
+				entnarfile.CompressionEQ(clearURL.Compression.String()),
+				entnarfile.QueryEQ(clearURL.Query.Encode()),
+			).
+			ClearBytesStoredAt().
+			Save(ctx); err != nil {
+			return fmt.Errorf("clearing bytes_stored_at after nar delete: %w", err)
 		}
 
 		zerolog.Ctx(ctx).Debug().Msg("nar deleted from store")
@@ -2280,6 +2337,11 @@ func (c *Cache) storeNarWithCDCFromReader(
 // the implicit lock (chunking_started_at IS NOT NULL, total_chunks = 0) before
 // it is considered stale and a new attempt may clean up the partial state and restart.
 const cdcChunkingLockTTL = time.Hour
+
+// CDCChunkingLockTTL exposes the chunking lock TTL so out-of-package maintenance
+// tooling (fsck's residue reclaimer) can recognise an in-flight chunking operation
+// and leave it untouched rather than mistaking it for residue.
+func CDCChunkingLockTTL() time.Duration { return cdcChunkingLockTTL }
 
 // findOrCreateNarFileForCDC creates or retrieves a nar_file record for CDC chunking.
 // It returns the narFileID, a list of chunk records that were removed from the junction
@@ -3119,7 +3181,20 @@ func (c *Cache) serveNarFromStorageViaPipe(
 	// - If hasInStore and not chunked (total_chunks=0): serve raw from store (lazy)
 	// - If hasInStore and chunked (total_chunks>0): serve from chunks (optimized)
 	// - If not in store: serve from chunks (standard CDC path)
-	serveFromChunks := !hasInStore
+	//
+	// The chunk route is gated on chunk-store availability. hasInStore is a stale
+	// time-of-check snapshot from GetNar: it reads HasNarInStore once, then
+	// re-evaluates servability via isServable (which performs its OWN fresh
+	// HasNarInStore). When the whole file lands between those two checks the flag
+	// is stale (false) while the NAR is in fact present. Without this gate the
+	// stale false would route an uncompressed request to getNarFromChunks, which
+	// hard-fails with "chunk store not initialized" when no chunk store exists.
+	// This is the inverse of the migration-race TOCTOU handled by the store->chunks
+	// fallback below (present-at-check, deleted-before-use); here it is
+	// absent-at-check, present-before-use. Gating on isChunkStoreAvailable() (not
+	// isCDCEnabled) keeps drain mode serving chunked NARs, consistent with
+	// getNarFromChunks' own guard.
+	serveFromChunks := !hasInStore && c.isChunkStoreAvailable()
 	if hasInStore && c.isCDCEnabled() {
 		// Check if the nar is chunked by looking at the nar_file record
 		nr, nrErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, *narURL)
@@ -3149,6 +3224,39 @@ func (c *Cache) serveNarFromStorageViaPipe(
 		storageSize, storageReader, err = c.getNarFromChunks(ctx, narURL)
 	} else {
 		storageSize, storageReader, err = c.getNarFromStore(ctx, narURL)
+
+		// A concurrent background NAR->chunks migration can delete the whole-file
+		// NAR between the total_chunks check above and this store read (TOCTOU).
+		// Because migration commits the chunks before deleting the whole file, the
+		// NAR is still retrievable from chunks. Fall back instead of surfacing a
+		// spurious not-found. Restricted to the uncompressed serve path: chunks are
+		// stored uncompressed, so a compressed request keeps returning ErrNotFound
+		// (the client then falls back to an upstream that still has the .nar.xz).
+		//
+		// Gated on chunk-store availability (not isCDCEnabled) so the fallback also
+		// applies during drain mode, where CDC writes are disabled but chunked NARs
+		// remain servable — consistent with getNarFromChunks' own guard.
+		if err != nil &&
+			errors.Is(err, storage.ErrNotFound) &&
+			c.isChunkStoreAvailable() &&
+			narURL.Compression == nar.CompressionTypeNone {
+			chunkSize, chunkReader, chunkErr := c.getNarFromChunks(ctx, narURL)
+
+			switch {
+			case chunkErr == nil:
+				// Chunks served the NAR: adopt the chunk result.
+				storageSize, storageReader, err = chunkSize, chunkReader, nil
+			case errors.Is(chunkErr, storage.ErrNotFound) || database.IsNotFoundError(chunkErr):
+				// Chunks are also absent: the NAR is genuinely gone. Keep the
+				// original store ErrNotFound so callers see the same not-found
+				// sentinel they always have.
+			default:
+				// A real chunk-path failure (e.g. DB/storage error). Surface it
+				// instead of masking it as a cache miss — matching how the direct
+				// chunk-serve path above propagates its errors.
+				return 0, nil, fmt.Errorf("fallback to chunk serve failed: %w", chunkErr)
+			}
+		}
 	}
 
 	if err != nil {
@@ -3369,28 +3477,6 @@ func (c *Cache) getNarFromUpstream(
 	return resp, nil
 }
 
-func (c *Cache) deleteNarFromStore(ctx context.Context, narURL *nar.URL) error {
-	// create a new context not associated with any request because we don't want
-	// downstream HTTP request to cancel this.
-	ctx = zerolog.Ctx(ctx).WithContext(context.Background())
-
-	if !c.HasNarInStore(ctx, *narURL) {
-		return storage.ErrNotFound
-	}
-
-	if _, err := c.dbClient.Ent().NarFile.Delete().
-		Where(
-			entnarfile.HashEQ(narURL.Hash),
-			entnarfile.CompressionEQ(narURL.Compression.String()),
-			entnarfile.QueryEQ(narURL.Query.Encode()),
-		).
-		Exec(ctx); err != nil {
-		return fmt.Errorf("error deleting narinfo from the database: %w", err)
-	}
-
-	return c.narStore.DeleteNar(ctx, *narURL)
-}
-
 // GetNarInfo returns the narInfo given a hash from the store. If the narInfo
 // is not found in the store, it's pulled from an upstream, stored in the
 // stored and finally returned.
@@ -3457,7 +3543,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		return narInfo, nil
 	}
 
-	if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, errNarInfoPurged) {
+	if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, ErrNarInfoPurged) {
 		level := errorLogLevelForContextErrors(err)
 
 		zerolog.Ctx(ctx).
@@ -3489,7 +3575,7 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		}
 
 		// If narinfo was purged, continue to fetch from upstream
-		if !errors.Is(err, errNarInfoPurged) {
+		if !errors.Is(err, ErrNarInfoPurged) {
 			if retryErr := c.handleStorageFetchError(ctx, hash, err, &narInfo, &metricAttrs); retryErr != nil {
 				return nil, retryErr
 			}
@@ -3543,6 +3629,17 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 	// After pulling from upstream, get the narinfo from the database (where it's now stored)
 	narInfo, err = c.getNarInfoFromDatabase(ctx, hash)
 	if err != nil {
+		// A purge firing on the re-read means the narinfo we just pulled has no
+		// servable backing NAR (the background NAR download failed or was never
+		// tracked under distributed-lock contention). ErrNarInfoPurged is an
+		// internal cache-maintenance signal; it MUST NOT surface to the client as
+		// an HTTP 500. Map it to storage.ErrNotFound so the request resolves to a
+		// 404 and Nix falls back to its next substituter, rather than dead-ending
+		// in a retry-then-fail loop.
+		if errors.Is(err, ErrNarInfoPurged) {
+			err = storage.ErrNotFound
+		}
+
 		level := errorLogLevelForContextErrors(err)
 
 		zerolog.Ctx(ctx).
@@ -3685,17 +3782,30 @@ func (c *Cache) pullNarInfo(
 	// narURL is modified within a background goroutine.
 	narURLForBG := narURL
 
-	c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc, narInfo)
+	// narPrefetchDisabled is a test-only seam: it lets tests deterministically
+	// reproduce an orphan narinfo (backing NAR never lands in storage) without
+	// racing a background NAR download.
+	if !narPrefetchDisabled(ctx) {
+		c.prePullNar(ctx, detachedCtx, &narURLForBG, nil, uc, narInfo)
+	}
 
-	// For CDC mode, NARs are stored as raw uncompressed chunks.
-	// For Compression:none upstreams, NARs are stored as zstd files and served
-	// as Compression:none with transparent HTTP encoding.
-	// Normalize narInfo to reflect this regardless of upstream compression.
-	// Note: we must NOT modify narURL here since prePullNar may still be using
-	// the pointer in a background goroutine. Instead, build the normalized URL string directly.
-	// Skip normalization when lazy chunking is enabled - preserve original compression
-	// until the NAR is actually chunked.
-	if (c.isCDCEnabled() && !c.GetCDCLazyChunkingEnabled()) || narInfo.Compression == nar.CompressionTypeNone.String() {
+	// For Compression:none upstreams, NARs are stored as zstd files and served as
+	// Compression:none with transparent HTTP encoding, so the narinfo is normalized
+	// to none here. Note: we must NOT modify narURL here since prePullNar may still
+	// be using the pointer in a background goroutine. Instead, build the normalized
+	// URL string directly.
+	//
+	// We deliberately do NOT normalize to none for CDC here. CDC stores the NAR as
+	// raw chunks (compression=none), but that storage happens asynchronously in
+	// prePullNar's background chunking and may not have completed — or may never
+	// complete (process crash/restart between the whole-file write and
+	// SetTotalChunks). Predicting url=none before the chunks exist persists a
+	// narinfo advertising nar/<hash>.nar while the NAR is still stored under its
+	// original compression (e.g. xz), so a GET of the none URL 404s and a `nix copy`
+	// reference check aborts. The persisted URL must stay truthful to actual
+	// storage; serve-time maybeCDCNormalizeNarInfoURL presents url=none only once
+	// the NAR is genuinely chunked (HasNarInChunks), so the happy path is unchanged.
+	if narInfo.Compression == nar.CompressionTypeNone.String() {
 		normalizedURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
 		narInfo.Compression = nar.CompressionTypeNone.String()
 		narInfo.URL = normalizedURL.String() // → "nar/hash.nar"
@@ -4035,11 +4145,69 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 	return narFileServable(nr), nil
 }
 
+// narFileBytesStored reports whether the shared database records this NAR's bytes
+// as durably stored (nar_file.bytes_stored_at set by PutNar). Because the database
+// is strongly consistent across replicas, this is true as soon as ANY replica has
+// stored the NAR — even before this replica's local filesystem stat observes the
+// write. It lets a reference check on one replica avoid 404-ing a NAR another
+// replica just uploaded (which would abort a concurrent `nix copy`). A bare
+// placeholder row (created by a narinfo PUT, bytes_stored_at NULL) is NOT trusted,
+// so this does not resurrect phantoms. Returns false on any lookup error.
+func (c *Cache) narFileBytesStored(ctx context.Context, narURL nar.URL) bool {
+	// Normalize first so the lookup uses the same canonical key storeInDatabase
+	// writes under: a nix-serve-style prefixed URL (narinfohash-narhash) would
+	// otherwise miss the normalized nar_file row.
+	if normalized, err := narURL.Normalize(); err == nil {
+		narURL = normalized
+	}
+
+	// Match the nar_file by hash (+query) regardless of compression. The narinfo URL
+	// may advertise a different compression (commonly "none", a CDC-era URL
+	// normalization residue) than the compression the NAR was actually durably
+	// stored under (e.g. xz). The hash identifies the NAR; bytes_stored_at proves a
+	// PutNar wrote its bytes. A compression-keyed lookup would miss the row and
+	// wrongly 404 a present NAR on the /upload reference check, aborting a concurrent
+	// `nix copy`.
+	ok, err := c.dbClient.Ent().NarFile.Query().
+		Where(
+			entnarfile.HashEQ(narURL.Hash),
+			entnarfile.QueryEQ(narURL.Query.Encode()),
+			entnarfile.BytesStoredAtNotNil(),
+		).
+		Exist(ctx)
+	if err != nil {
+		return false
+	}
+
+	return ok
+}
+
 // hasNarInStore checks if the NAR exists in the storage, handling the .nar.zst fallback for CompressionTypeNone.
 func (c *Cache) HasNarInStore(ctx context.Context, narURL nar.URL) bool {
 	present, _ := c.statNarInStore(ctx, narURL)
 
 	return present
+}
+
+// IsNarServable reports whether the NAR's actual bytes are present and therefore
+// servable, mirroring how GetNar determines existence — a whole-file in the store
+// or chunks present. It is tri-state, like statNarInStore: a confirmed absence is
+// (false, nil) while an ambiguous/transient storage error is (false, err) so
+// callers do NOT mistake an undeterminable result for "absent". The mere
+// existence of a nar_file row (e.g. GetNarFileSize/HasNarFileRecord) does NOT make
+// a NAR servable; callers gating an existence answer (e.g. the NAR HEAD handler)
+// MUST use this rather than the DB record alone.
+func (c *Cache) IsNarServable(ctx context.Context, narURL nar.URL) (bool, error) {
+	present, err := c.statNarInStore(ctx, narURL)
+	if err != nil {
+		return false, err
+	}
+
+	if present {
+		return true, nil
+	}
+
+	return c.HasNarInChunks(ctx, narURL)
 }
 
 // statNarInStore reports whether the NAR is in storage, distinguishing a
@@ -4133,7 +4301,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 				Msg("error purging the narinfo")
 		}
 
-		return nil, errNarInfoPurged
+		return nil, ErrNarInfoPurged
 	}
 
 	ctx = narURL.
@@ -4144,7 +4312,7 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 	// .nar.zst fallback for Compression:none) so an ambiguous storage error — a
 	// timed-out or stale stat on a network filesystem — is NOT mistaken for a
 	// confirmed absence and does not drive a destructive purge.
-	hasNarInStore, storeErr := c.statNarInStore(ctx, narURL)
+	hasNar, storeErr := c.statNarInStore(ctx, narURL)
 	if storeErr != nil {
 		zerolog.Ctx(ctx).
 			Warn().
@@ -4154,16 +4322,36 @@ func (c *Cache) getNarInfoFromStore(ctx context.Context, hash string) (*narinfo.
 		return ni, nil
 	}
 
-	if !hasNarInStore && !c.hasUpstreamJob(narURL.Hash) {
-		zerolog.Ctx(ctx).
-			Error().
-			Msg("narinfo was found in the store but no nar was found, requesting a purge")
-
-		if err := c.purgeNarInfo(ctx, hash, &narURL); err != nil {
-			return nil, fmt.Errorf("error purging the narinfo: %w", err)
+	// In CDC mode a legacy narinfo's whole-file NAR may have been replaced by
+	// chunks; a chunk-backed NAR is still locally servable via GetNar, so it is
+	// NOT a cache miss. Mirror getNarInfoFromDatabase's chunk fallback.
+	if !hasNar {
+		hasChunks, chunkErr := c.HasNarInChunks(ctx, narURL)
+		if chunkErr != nil {
+			return nil, fmt.Errorf("failed to check if nar exists in chunks: %w", chunkErr)
 		}
 
-		return nil, errNarInfoPurged
+		hasNar = hasChunks
+	}
+
+	// Cross-replica consistency on the UPLOAD path only (see getNarInfoFromDatabase):
+	// trust the shared-database verified marker over the local filesystem stat so a
+	// peer's just-uploaded NAR is not treated as a miss during a `nix copy` reference
+	// check. The substituter path keeps self-healing via upstream re-pull.
+	if !hasNar && IsUploadOnly(ctx) && c.narFileBytesStored(ctx, narURL) {
+		hasNar = true
+	}
+
+	if !hasNar && !c.hasUpstreamJob(narURL.Hash) {
+		// Missing-NAR cache miss on the store-sourced path. Non-destructive: do NOT
+		// purge. GetNarInfo turns the sentinel into an upstream re-fetch (substituter)
+		// or a 404 (upload-only); the record is healed in place, never deleted out
+		// from under a concurrent upload. See spec: narinfo-purge-serving.
+		zerolog.Ctx(ctx).
+			Debug().
+			Msg("narinfo found in the store but its backing NAR is missing; treating as a cache miss without purging")
+
+		return nil, ErrNarInfoPurged
 	}
 
 	err = c.withEntTransaction(ctx, "getNarInfoFromStore", func(tx *ent.Tx) error {
@@ -4349,6 +4537,16 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 		}
 	}
 
+	// Cross-replica consistency on the UPLOAD path only: a NAR stored by a peer is
+	// recorded as verified in the shared database before this replica's filesystem
+	// stat observes the write. Trust that marker so a `nix copy` reference check does
+	// not 404 a NAR another replica just uploaded (which aborts the copy). Gated to
+	// upload-only requests so the substituter (root) read path keeps self-healing a
+	// genuinely missing NAR via an upstream re-pull rather than trusting a stale row.
+	if !hasNar && IsUploadOnly(ctx) && c.narFileBytesStored(ctx, *narURL) {
+		hasNar = true
+	}
+
 	isBeingDownloadedLocally := c.hasUpstreamJob(narURL.Hash)
 	isBeingDownloadedRemotely := false
 
@@ -4410,15 +4608,20 @@ func (c *Cache) getNarInfoFromDatabase(ctx context.Context, hash string) (*narin
 			}
 		}
 
+		// Missing-NAR cache miss. This is NON-DESTRUCTIVE on every read path: we
+		// never delete the narinfo or nar_file records here. Returning the sentinel
+		// lets GetNarInfo treat it as a miss — upload-only resolves to HTTP 404
+		// (client re-PUTs); the substituter path re-fetches from upstream and
+		// overwrites the record in place. Deleting here would (a) race a concurrent
+		// `nix copy` reference check across replicas that share one database,
+		// flipping a verified reference 200->404 mid-copy, and (b) with the M:N
+		// narinfo<->nar_file relationship, risk removing a NAR still shared by
+		// another narinfo. See spec: narinfo-purge-serving.
 		zerolog.Ctx(ctx).
-			Error().
-			Msg("narinfo was found in the database but no nar was found in storage, requesting a purge")
+			Debug().
+			Msg("narinfo found in the database but its backing NAR is missing; treating as a cache miss without purging")
 
-		if err := c.purgeNarInfo(ctx, hash, narURL); err != nil {
-			return nil, fmt.Errorf("error purging the narinfo: %w", err)
-		}
-
-		return nil, errNarInfoPurged
+		return nil, ErrNarInfoPurged
 	}
 
 	return ni, nil
@@ -4559,6 +4762,24 @@ func (c *Cache) getNarInfoFromUpstream(
 	return uc, narInfo, nil
 }
 
+// deleteNarBytes removes a NAR's physical bytes from the store. For
+// Compression:none NARs the object is physically stored under the .nar.zst
+// variant (see statNarInStore), so that variant is removed as well; otherwise a
+// reclaimed none NAR would leave its real object orphaned and invisible to
+// normal cleanup/accounting.
+func (c *Cache) deleteNarBytes(ctx context.Context, narURL nar.URL) error {
+	if narURL.Compression == nar.CompressionTypeNone {
+		zstdURL := narURL
+		zstdURL.Compression = nar.CompressionTypeZstd
+
+		if err := c.narStore.DeleteNar(ctx, zstdURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
+			return err
+		}
+	}
+
+	return c.narStore.DeleteNar(ctx, narURL)
+}
+
 func (c *Cache) purgeNarInfo(
 	ctx context.Context,
 	hash string,
@@ -4575,23 +4796,77 @@ func (c *Cache) purgeNarInfo(
 	)
 	defer span.End()
 
+	var orphanedNarURLs []nar.URL
+
 	err := c.withEntTransaction(ctx, "purgeNarInfo", func(tx *ent.Tx) error {
+		// Capture the nar_file rows linked to this narinfo via the real
+		// narinfo_nar_files join BEFORE deleting the narinfo (which cascades its
+		// join rows). Using the stored linkage — not a key reconstructed from
+		// narURL — is robust against URL normalization/prefix differences between
+		// the narinfo's URL and the nar_file row written by storeInDatabase.
+		nir, err := tx.NarInfo.Query().
+			Where(entnarinfo.HashEQ(hash)).
+			Only(ctx)
+		if err != nil {
+			if database.IsNotFoundError(err) {
+				return nil
+			}
+
+			return fmt.Errorf("error looking up the narinfo record: %w", err)
+		}
+
+		links, err := tx.NarInfoNarFile.Query().
+			Where(entnarinfonarfile.NarinfoIDEQ(nir.ID)).
+			All(ctx)
+		if err != nil {
+			return fmt.Errorf("error loading nar_file links: %w", err)
+		}
+
 		if _, err := tx.NarInfo.Delete().
 			Where(entnarinfo.HashEQ(hash)).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("error deleting the narinfo record: %w", err)
 		}
 
-		if narURL.Hash != "" {
-			if _, err := tx.NarFile.Delete().
-				Where(
-					entnarfile.HashEQ(narURL.Hash),
-					entnarfile.CompressionEQ(narURL.Compression.String()),
-					entnarfile.QueryEQ(narURL.Query.Encode()),
-				).
-				Exec(ctx); err != nil {
+		// narinfo<->nar_file is M:N (many narinfos may link one NAR). Delete a
+		// nar_file (and, below, reclaim its bytes) only when no OTHER narinfo still
+		// links it, mirroring RunLRU's orphan-only deletion. The narinfo delete
+		// above cascaded this narinfo's join rows.
+		for _, link := range links {
+			nf, err := tx.NarFile.Get(ctx, link.NarFileID)
+			if err != nil {
+				if database.IsNotFoundError(err) {
+					continue
+				}
+
+				return fmt.Errorf("error loading nar_file %d: %w", link.NarFileID, err)
+			}
+
+			hasLinks, err := tx.NarFile.Query().
+				Where(entnarfile.IDEQ(nf.ID), entnarfile.HasNarInfoNarFiles()).
+				Exist(ctx)
+			if err != nil {
+				return fmt.Errorf("error checking nar_file references: %w", err)
+			}
+
+			if hasLinks {
+				continue
+			}
+
+			if err := tx.NarFile.DeleteOne(nf).Exec(ctx); err != nil {
 				return fmt.Errorf("error deleting the nar record: %w", err)
 			}
+
+			q, err := url.ParseQuery(nf.Query)
+			if err != nil {
+				return fmt.Errorf("error parsing nar_file query %q: %w", nf.Query, err)
+			}
+
+			orphanedNarURLs = append(orphanedNarURLs, nar.URL{
+				Hash:        nf.Hash,
+				Compression: nar.CompressionTypeFromString(nf.Compression),
+				Query:       q,
+			})
 		}
 
 		return nil
@@ -4600,15 +4875,17 @@ func (c *Cache) purgeNarInfo(
 		return err
 	}
 
-	// Ignore ErrNotFound: purge is idempotent. A concurrent goroutine may
-	// have already removed the file between the DB transaction above and
-	// the store delete below (TOCTOU), which is fine — the goal is gone.
+	// The narinfo store object is keyed by hash (1:1), so it is always removed.
+	// Ignore ErrNotFound: purge is idempotent (a concurrent goroutine may have
+	// already removed it — TOCTOU).
 	if err := c.deleteNarInfoFromStore(ctx, hash); err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return fmt.Errorf("error removing narinfo from store: %w", err)
 	}
 
-	if narURL.Hash != "" {
-		if err := c.deleteNarFromStore(ctx, narURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
+	// Reclaim the bytes of each now-orphaned nar_file. Another narinfo may still
+	// reference a non-orphaned NAR (n:1), so only orphans reach here.
+	for _, orphanURL := range orphanedNarURLs {
+		if err := c.deleteNarBytes(ctx, orphanURL); err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return fmt.Errorf("error removing nar from store: %w", err)
 		}
 	}
@@ -5127,9 +5404,33 @@ func (c *Cache) checkAndFixNarInfosForNar(ctx context.Context, narURL nar.URL) e
 		return fmt.Errorf("failed to get narinfo hashes by url: %w", err)
 	}
 
+	// Resolve the backing nar_file so we can reconcile the narinfo_nar_files link.
+	// The link is created in the narinfo-write path (storeInDatabase), decoupled from
+	// the async CDC chunking that finalizes the nar_file. That chunking can race the
+	// narinfo write (or replace the row it linked), leaving the chunked nar_file
+	// unlinked — which strands it as un-de-chunkable (keeping the cache in drain mode)
+	// and exposes it to destructive fsck reclamation. This function runs right after
+	// chunking completes, so reconciling the link here closes that race. The upsert is
+	// a no-op when the link already exists (the common case).
+	nf, nfErr := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, narURL)
+	if nfErr != nil && !database.IsNotFoundError(nfErr) {
+		return fmt.Errorf("resolving backing nar_file for link reconciliation: %w", nfErr)
+	}
+
 	var errs []error
 
 	for _, ni := range nis {
+		if nfErr == nil {
+			if err := c.dbClient.Ent().NarInfoNarFile.Create().
+				SetNarinfoID(ni.ID).
+				SetNarFileID(nf.ID).
+				OnConflictColumns(entnarinfonarfile.FieldNarinfoID, entnarinfonarfile.FieldNarFileID).
+				Ignore().
+				Exec(ctx); err != nil {
+				errs = append(errs, fmt.Errorf("reconcile narinfo<->nar_file link for %s: %w", ni.Hash, err))
+			}
+		}
+
 		if err := c.CheckAndFixNarInfo(ctx, ni.Hash); err != nil {
 			errs = append(errs, err)
 		}
@@ -7325,6 +7626,31 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 			}
 		}
 
+		// Completeness guard (completed fast path only). total_chunks is the
+		// completion latch: storeNarWithCDC sets it only after every junction
+		// link is durably committed, so total_chunks > 0 with fewer links is
+		// never a mid-chunking race (including a concurrent HA replica) — it is
+		// genuine post-completion loss, e.g. the nar_file_chunks.chunk_id ->
+		// chunks(id) ON DELETE CASCADE stripping a shared chunk's links without
+		// resetting total_chunks. Detect it here, synchronously, before the
+		// caller hands back a reader, so the request resolves to ErrNotFound
+		// (HTTP 404 -> upstream fallback) instead of committing a 200 that
+		// truncates mid-stream. The progressive path (total_chunks = 0) is
+		// intentionally excluded: it legitimately streams chunks as they appear.
+		if nr.TotalChunks > 0 {
+			links, err := tx.NarFileChunk.Query().
+				Where(entnarfilechunk.NarFileID(nr.ID)).
+				Count(ctx)
+			if err != nil {
+				return fmt.Errorf("error counting chunk links: %w", err)
+			}
+
+			if int64(links) != nr.TotalChunks {
+				return fmt.Errorf("nar %s has %d of %d chunk links: %w",
+					narURL.Hash, links, nr.TotalChunks, storage.ErrNotFound)
+			}
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -7861,7 +8187,7 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 
 	// Resolve the expected NAR hash from the linked narinfo. Per policy, refuse to
 	// de-chunk (and later delete chunks for) a NAR we cannot content-verify.
-	expected, err := c.linkedNarinfoNarHash(ctx, nr.ID)
+	expected, err := c.linkedNarinfoNarHash(ctx, nr.ID, noneURL)
 	if err != nil {
 		return err
 	}
@@ -7970,6 +8296,28 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 			return fmt.Errorf("error flipping nar_file to whole-file: %w", err)
 		}
 
+		// Normalize every narinfo referencing this NAR to the Compression:none URL so
+		// the persisted narinfo matches the new whole-file storage. Without this a
+		// narinfo advertising a different-compression URL (e.g. .nar.xz) would 404
+		// once the NAR is no longer chunked — serve-time normalization only rewrites
+		// while chunks exist. Match by the join link (primary — covers nix-serve-style
+		// prefixed URLs the URL prefix would miss) OR the Compression:none URL prefix
+		// (covers unlinked rows); the trailing "." anchors the fixed-length hash so the
+		// prefix cannot match a different NAR.
+		if _, err := tx.NarInfo.Update().
+			Where(entnarinfo.Or(
+				entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID)),
+				entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			)).
+			SetURL(noneURL.String()).
+			SetCompression(nar.CompressionTypeNone.String()).
+			ClearFileHash().
+			ClearFileSize().
+			SetUpdatedAt(time.Now()).
+			Save(ctx); err != nil {
+			return fmt.Errorf("error normalizing narinfo urls to none for %s: %w", narURL.Hash, err)
+		}
+
 		return nil
 	}); err != nil {
 		return err
@@ -8073,21 +8421,129 @@ func (c *Cache) PurgeChunkedNar(ctx context.Context, narURL *nar.URL) error {
 	return nil
 }
 
-// linkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
-// given nar_file, or (nil, nil) when no link exists or the narinfo has no
-// recorded NarHash.
-func (c *Cache) linkedNarinfoNarHash(ctx context.Context, narFileID int) (*nixhash.HashWithEncoding, error) {
-	ni, err := c.dbClient.Ent().NarInfo.Query().
-		Where(entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(narFileID))).
-		First(ctx)
+// NormalizeChunkedNarInfoURL repairs a recoverable inconsistent chunked NAR: a
+// chunked nar_file whose referencing narinfo carries a valid NarHash but
+// advertises a non-Compression:none URL (e.g. nar/<H>.nar.xz). It relinks (if
+// needed) and rewrites every referencing narinfo's URL to the Compression:none
+// form so the persisted metadata matches the chunk-backed storage. It touches no
+// chunks and leaves the nar_file chunked — it is the safe, CDC-state-independent
+// half of fsck's residue repair, reusing the same narinfo-normalization the CDC
+// drain performs during its de-chunk flip.
+func (c *Cache) NormalizeChunkedNarInfoURL(ctx context.Context, narURL *nar.URL) error {
+	if !c.isCDCEnabled() {
+		return ErrCDCDisabled
+	}
+
+	noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, noneURL)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			return nil, nil //nolint:nilnil // no linked narinfo == nothing to verify against
+		if ent.IsNotFound(err) {
+			return nil // nothing to normalize
 		}
 
+		return fmt.Errorf("error looking up nar_file record: %w", err)
+	}
+
+	return c.withEntTransaction(ctx, "NormalizeChunkedNarInfoURL", func(tx *ent.Tx) error {
+		// Normalize every narinfo referencing this NAR to the Compression:none URL.
+		// Match by the join link (covers nix-serve-style prefixed URLs the prefix
+		// would miss) OR the Compression:none URL prefix (covers unlinked rows); the
+		// trailing "." anchors the fixed-length hash so the prefix cannot match a
+		// different NAR.
+		if _, err := tx.NarInfo.Update().
+			Where(entnarinfo.Or(
+				entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID)),
+				entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			)).
+			SetURL(noneURL.String()).
+			SetCompression(nar.CompressionTypeNone.String()).
+			ClearFileHash().
+			ClearFileSize().
+			SetUpdatedAt(time.Now()).
+			Save(ctx); err != nil {
+			return fmt.Errorf("error normalizing narinfo urls to none for %s: %w", narURL.Hash, err)
+		}
+
+		// Relink any now-normalized narinfo that referenced the NAR only by URL (no
+		// join row yet) so the metadata link matches the storage.
+		if err := c.relinkNarInfosToNarFileWithEntTx(ctx, tx, noneURL, int64(nr.ID)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+// linkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
+// given nar_file, or (nil, nil) when no link exists or the narinfo has no
+// recorded NarHash. It delegates to the package-level LinkedNarinfoNarHash so
+// callers without a *Cache (e.g. fsck's read-only residue classification) can
+// share the exact same de-chunk recoverability resolver.
+func (c *Cache) linkedNarinfoNarHash(
+	ctx context.Context,
+	narFileID int,
+	narURL nar.URL,
+) (*nixhash.HashWithEncoding, error) {
+	return LinkedNarinfoNarHash(ctx, c.dbClient, narFileID, narURL)
+}
+
+// LinkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
+// given nar_file, or (nil, nil) when no link exists or the narinfo has no
+// recorded NarHash. It is the single source of truth for de-chunk recoverability:
+// both the CDC drain and fsck's residue reclaimer use it so they agree on which
+// chunked NARs are verifiable (recoverable) versus un-de-chunkable.
+func LinkedNarinfoNarHash(
+	ctx context.Context,
+	dbClient *database.Client,
+	narFileID int,
+	narURL nar.URL,
+) (*nixhash.HashWithEncoding, error) {
+	// Resolve the expected NAR hash from any narinfo referencing this NAR. The hash
+	// is the uncompressed NAR content hash — identical across every narinfo
+	// referencing the NAR regardless of the compression its URL advertises — so any
+	// referencing narinfo is a valid source. De-chunk still content-verifies the
+	// reconstructed bytes against it, so a wrong source would mismatch and purge, not
+	// corrupt. Prefer the join-linked narinfo; fall back to any narinfo whose URL
+	// references the NAR by hash. Only narinfos that carry a NarHash are considered.
+	ni, err := dbClient.Ent().NarInfo.Query().
+		Where(
+			entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(narFileID)),
+			entnarinfo.NarHashNotNil(),
+		).
+		First(ctx)
+	if err == nil {
+		return parseNarinfoNarHash(ni)
+	}
+
+	if !database.IsNotFoundError(err) {
 		return nil, fmt.Errorf("error resolving linked narinfo for nar_file %d: %w", narFileID, err)
 	}
 
+	// No NarHash-bearing join-linked narinfo (the link may be missing, or the linked
+	// narinfo may lack a NarHash). Fall back to any narinfo referencing the NAR by
+	// hash, at any compression URL. The trailing "." anchors the fixed-length hash so
+	// the prefix cannot match a different NAR.
+	ni, err = dbClient.Ent().NarInfo.Query().
+		Where(
+			entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			entnarinfo.NarHashNotNil(),
+		).
+		First(ctx)
+	if err != nil {
+		if database.IsNotFoundError(err) {
+			return nil, nil //nolint:nilnil // no narinfo carries a NarHash == nothing to verify against
+		}
+
+		return nil, fmt.Errorf("error resolving narinfo by hash for nar_file %d: %w", narFileID, err)
+	}
+
+	return parseNarinfoNarHash(ni)
+}
+
+// parseNarinfoNarHash parses a narinfo's recorded NarHash, returning (nil, nil) when
+// the narinfo has no usable NarHash to content-verify a reconstructed NAR against.
+func parseNarinfoNarHash(ni *ent.NarInfo) (*nixhash.HashWithEncoding, error) {
 	if ni.NarHash == nil || *ni.NarHash == "" {
 		return nil, nil //nolint:nilnil // narinfo without a NarHash == nothing to verify against
 	}
