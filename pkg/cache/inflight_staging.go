@@ -198,7 +198,15 @@ func (c *Cache) produceStagingParts(ctx context.Context, hash string, ds *downlo
 	ds.mu.Lock()
 	assetPath := ds.assetPath
 	compression := ds.tempFileCompression
+	downloadErr := ds.downloadError
 	ds.mu.Unlock()
+
+	// If the download failed to start (e.g. upstream 404 or a connection
+	// timeout), assetPath is empty. Surface the real download error rather than
+	// the generic "no temp file" sentinel, which would otherwise mask the cause.
+	if downloadErr != nil {
+		return downloadErr
+	}
 
 	if assetPath == "" {
 		return errStagingNoTempFile
