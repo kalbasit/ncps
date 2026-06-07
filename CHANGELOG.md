@@ -8,6 +8,21 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **In-flight NAR staging for cross-pod serving during download.** A replica
+  holding a download can now serve the in-flight NAR to other replicas while it
+  is still downloading, by staging it to shared storage as ordered, immutable,
+  fixed-size part-objects once a second replica waits for the same NAR. Waiters
+  tail the parts to reassemble a complete, byte-correct NAR — closing the
+  cross-pod serve-during-download gap for **all** modes (non-CDC, lazy-CDC,
+  eager-CDC) on S3, and superseding the fragile progressive-chunk fallback during
+  the eager-CDC chunking window. It is gated by `--cache-inflight-staging-enabled`
+  (env `CACHE_INFLIGHT_STAGING_ENABLED`, **off by default**), tuned by
+  `--cache-inflight-staging-retention` (GC grace, default `5m`) and
+  `--cache-inflight-staging-part-size` (default 8 MiB), and exposed in the Helm
+  chart as `config.inflightStaging.*`. It only activates with a distributed
+  (Redis) lock and has **zero overhead until a second replica contends** for the
+  same NAR. This makes HA viable without CDC. (#660, #1289)
+
 - **`build-trace-v2` endpoint.** `nix copy` unconditionally PUTs and GETs
   build-trace entries at `/build-trace-v2/{drvName}/{outputName}.doi` for
   content-addressed derivations. Previously ncps had no routes for these paths
@@ -154,8 +169,19 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Removed
 
+- **BREAKING (Helm): `config.cdc.iLoveTimeouts` removed.** The HA-validation
+  bypass flag no longer exists. The `replicaCount > 1` guard is now satisfied by
+  enabling **either** CDC (`config.cdc.enabled=true`) **or** in-flight NAR staging
+  (`config.inflightStaging.enabled=true`). Because in-flight staging is
+  zero-overhead-until-contention, every HA operator can satisfy the guard safely,
+  so the accept-the-risk escape hatch protected no remaining use case. **Migration:**
+  replace `config.cdc.iLoveTimeouts: true` with `config.inflightStaging.enabled: true`
+  (or `config.cdc.enabled: true`). Supplying the now-unrecognized `iLoveTimeouts`
+  has no effect and will not bypass the guard. (#660)
+
 - The `dbmate` and `dbmate-wrapper` binaries are no longer shipped in
   the dev shell or in Docker images.
+
 - The `sqlc` codegen tooling and the generated `pkg/database/*db/`
   wrapper packages have been removed; callers now use the Ent client
   directly via `*database.Client`.
