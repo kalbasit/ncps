@@ -124,6 +124,90 @@ type ChunkWalker interface {
 	WalkChunks(ctx context.Context, fn func(hash string) error) error
 }
 
+// cdcModeReason explains why fsck enabled (or did not enable) CDC-mode checks.
+// Returning the reason rather than a bare bool keeps the decision unit-testable
+// without capturing log output, and lets the caller distinguish the residue case.
+type cdcModeReason int
+
+const (
+	// cdcModeOff means no CDC signal was found; fsck skips all chunk checks.
+	cdcModeOff cdcModeReason = iota
+	// cdcModeFromConfig means cdc_enabled == "true" in DB config (active/draining CDC).
+	cdcModeFromConfig
+	// cdcModeFromChunkedNarFiles means at least one nar_file has total_chunks > 0.
+	cdcModeFromChunkedNarFiles
+	// cdcModeFromChunkResidue means the chunks table is non-empty while signals 1
+	// and 2 are both false — orphaned chunk residue left after CDC was disabled and
+	// every NAR de-chunked. Without this signal such residue is undetectable.
+	cdcModeFromChunkResidue
+)
+
+// enabled reports whether any CDC signal was detected.
+func (r cdcModeReason) enabled() bool { return r != cdcModeOff }
+
+// detectFsckCDCMode decides whether fsck should run CDC/chunk checks. Signals are
+// evaluated in priority order and the first match wins:
+//
+//  1. cdc_enabled == "true" in DB config.
+//  2. any nar_file has total_chunks > 0 (chunked data present).
+//  3. the chunks table is non-empty (orphaned chunk residue: signals 1 and 2 are
+//     both false here because orphaned chunks are referenced by no nar_file).
+//
+// Query errors are logged and treated as "signal absent" so detection degrades to
+// the next signal rather than aborting the run.
+func detectFsckCDCMode(ctx context.Context, dbClient *database.Client, logger zerolog.Logger) cdcModeReason {
+	if dbClient == nil {
+		return cdcModeOff
+	}
+
+	cdcConfig, dbErr := dbClient.Ent().ConfigEntry.Query().
+		Where(entconfigentry.KeyEQ(config.KeyCDCEnabled)).
+		Only(ctx)
+	switch {
+	case dbErr != nil && !ent.IsNotFound(dbErr):
+		logger.Warn().Err(dbErr).Msg(
+			"could not read cdc_enabled from DB config; CDC mode detection will fall back to data-based detection",
+		)
+	case dbErr == nil && cdcConfig.Value == configValueTrue:
+		return cdcModeFromConfig
+	}
+
+	// Fallback: chunked data exists even though the config key is missing (e.g. wrong
+	// DB URL or schema mismatch).
+	hasChunked, checkErr := dbClient.Ent().NarFile.Query().
+		Where(entnarfile.TotalChunksGT(0)).
+		Exist(ctx)
+	switch {
+	case checkErr != nil:
+		logger.Warn().Err(checkErr).Msg("could not check for chunked nar_files")
+	case hasChunked:
+		logger.Warn().Msg(
+			"cdc_enabled not set in DB config but chunked nar_files exist; " +
+				"enabling CDC mode automatically — verify --cache-database-url is correct",
+		)
+
+		return cdcModeFromChunkedNarFiles
+	}
+
+	// Residue: orphaned chunks can remain after CDC is disabled and all NARs are
+	// de-chunked, when neither signal above fires. Without enabling CDC mode here the
+	// chunk store is never initialized and the residue is never reclaimed.
+	hasResidue, residueErr := dbClient.Ent().Chunk.Query().Exist(ctx)
+	switch {
+	case residueErr != nil:
+		logger.Warn().Err(residueErr).Msg("could not check for orphaned chunk residue")
+	case hasResidue:
+		logger.Info().Msg(
+			"chunk residue detected (orphaned chunks remain after CDC was disabled); " +
+				"enabling CDC mode to reclaim them — run with --repair to delete",
+		)
+
+		return cdcModeFromChunkResidue
+	}
+
+	return cdcModeOff
+}
+
 func fsckCommand(
 	flagSources flagSourcesFn,
 	registerShutdown registerShutdownFn,
@@ -386,38 +470,7 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 			}
 
 			// 5. Detect CDC mode
-			cdcMode := false
-
-			cdcConfig, dbErr := dbClient.Ent().ConfigEntry.Query().
-				Where(entconfigentry.KeyEQ(config.KeyCDCEnabled)).
-				Only(ctx)
-			switch {
-			case dbErr != nil && !ent.IsNotFound(dbErr):
-				logger.Warn().Err(dbErr).Msg(
-					"could not read cdc_enabled from DB config; CDC mode detection will fall back to data-based detection",
-				)
-			case dbErr == nil && cdcConfig.Value == configValueTrue:
-				cdcMode = true
-			}
-
-			// Fallback: if CDC not detected from config, check if any nar_file has
-			// total_chunks > 0. This handles cases where the DB config key is missing
-			// but chunked data already exists (e.g. wrong DB URL or schema mismatch).
-			if !cdcMode {
-				hasChunked, checkErr := dbClient.Ent().NarFile.Query().
-					Where(entnarfile.TotalChunksGT(0)).
-					Exist(ctx)
-				if checkErr != nil {
-					logger.Warn().Err(checkErr).Msg("could not check for chunked nar_files")
-				} else if hasChunked {
-					logger.Warn().Msg(
-						"cdc_enabled not set in DB config but chunked nar_files exist; " +
-							"enabling CDC mode automatically — verify --cache-database-url is correct",
-					)
-
-					cdcMode = true
-				}
-			}
+			cdcMode := detectFsckCDCMode(ctx, dbClient, logger).enabled()
 
 			var chunkStore chunk.Store
 
