@@ -7495,26 +7495,19 @@ func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, n
 		}
 	}
 
-	// Every linked narinfo is genuinely gone from every healthy upstream: the NAR
-	// exists nowhere (not locally, not upstream), so these narinfos can only ever be
-	// answered with a 200 narinfo followed by a 404 NAR — which Nix clients have
-	// already cached and will fetch directly, skipping any narinfo re-fetch. Delete the
-	// nar_file AND its linked narinfos atomically so the GC never leaves a dangling
-	// narinfo behind: the nar_file delete cascades the narinfo_nar_files links first,
-	// then the now-unlinked narinfos are removed. See spec: nar-cache-miss-recovery.
-	if err := c.withEntTransaction(ctx, "gcGenuinelyAbsentBackingLessNarFile", func(tx *ent.Tx) error {
-		if err := tx.NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
-			return fmt.Errorf("delete backing-less nar_file(%d): %w", narFileID, err)
-		}
+	// Every linked narinfo in the snapshot is genuinely gone from every healthy
+	// upstream: the NAR exists nowhere (not locally, not upstream), so these narinfos
+	// can only ever be answered with a 200 narinfo followed by a 404 NAR — which Nix
+	// clients have already cached and will fetch directly, skipping any narinfo
+	// re-fetch. Delete them together with the nar_file so the GC never leaves a dangling
+	// narinfo behind. See spec: nar-cache-miss-recovery.
+	niIDs := make([]int, len(nis))
+	for i, ni := range nis {
+		niIDs[i] = ni.ID
+	}
 
-		for _, ni := range nis {
-			if err := tx.NarInfo.DeleteOneID(ni.ID).Exec(ctx); err != nil {
-				return fmt.Errorf("delete dangling narinfo(%d): %w", ni.ID, err)
-			}
-		}
-
-		return nil
-	}); err != nil {
+	narFileDeleted, err := c.gcDeleteAbsentNarInfosAndMaybeNarFile(ctx, narFileID, niIDs)
+	if err != nil {
 		log.Warn().
 			Err(err).
 			Str("hash", narURL.Hash).
@@ -7523,10 +7516,83 @@ func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, n
 		return
 	}
 
+	if !narFileDeleted {
+		// A narinfo was linked to this nar_file after we snapshotted and probed
+		// upstreams; it is unverified, so its link was left intact and keeps the row
+		// referenced. The next sweep re-evaluates with a fresh, fully-verified snapshot.
+		log.Debug().
+			Str("hash", narURL.Hash).
+			Int("narinfo_count", len(nis)).
+			Msg("deleted verified-absent narinfos but kept backing-less nar_file: it was re-linked concurrently")
+
+		return
+	}
+
 	log.Info().
 		Str("hash", narURL.Hash).
 		Int("narinfo_count", len(nis)).
 		Msg("garbage-collected genuinely-absent placeholder nar_file and its unservable narinfos")
+}
+
+// gcDeleteAbsentNarInfosAndMaybeNarFile removes the verified-absent narinfos (and their
+// links to narFileID), then garbage-collects the nar_file ONLY if no links remain. It
+// returns whether the nar_file itself was deleted.
+//
+// verifiedNarInfoIDs is the snapshot whose every narinfo was confirmed genuinely absent
+// from every healthy upstream. The set is captured before the (network-bound) upstream
+// probes, so a concurrent storeInDatabase/repair may link a *new* narinfo to this row
+// afterwards. That new narinfo is NOT in verifiedNarInfoIDs and has not been verified,
+// so its link is left intact: it keeps the nar_file referenced (avoiding a delete that
+// would cascade the link away and orphan the narinfo into a fresh dangling row), and
+// the next sweep re-evaluates the row with a fresh, fully-verified snapshot.
+func (c *Cache) gcDeleteAbsentNarInfosAndMaybeNarFile(
+	ctx context.Context,
+	narFileID int,
+	verifiedNarInfoIDs []int,
+) (bool, error) {
+	var narFileDeleted bool
+
+	if err := c.withEntTransaction(ctx, "gcGenuinelyAbsentBackingLessNarFile", func(tx *ent.Tx) error {
+		// Reset per-attempt: withEntTransaction may retry the closure on a serialization
+		// error, and a stale true from a rolled-back attempt would misreport the result.
+		narFileDeleted = false
+
+		if _, err := tx.NarInfoNarFile.Delete().
+			Where(
+				entnarinfonarfile.NarFileID(narFileID),
+				entnarinfonarfile.NarinfoIDIn(verifiedNarInfoIDs...),
+			).Exec(ctx); err != nil {
+			return fmt.Errorf("delete narinfo links for nar_file(%d): %w", narFileID, err)
+		}
+
+		if _, err := tx.NarInfo.Delete().
+			Where(entnarinfo.IDIn(verifiedNarInfoIDs...)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete dangling narinfos for nar_file(%d): %w", narFileID, err)
+		}
+
+		stillLinked, err := tx.NarInfoNarFile.Query().
+			Where(entnarinfonarfile.NarFileID(narFileID)).
+			Exist(ctx)
+		if err != nil {
+			return fmt.Errorf("re-check links for nar_file(%d): %w", narFileID, err)
+		}
+
+		if stillLinked {
+			return nil
+		}
+
+		if err := tx.NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
+			return fmt.Errorf("delete backing-less nar_file(%d): %w", narFileID, err)
+		}
+
+		narFileDeleted = true
+
+		return nil
+	}); err != nil {
+		return false, err
+	}
+
+	return narFileDeleted, nil
 }
 
 // narInfoGenuinelyAbsentUpstream reports whether EVERY healthy upstream definitively

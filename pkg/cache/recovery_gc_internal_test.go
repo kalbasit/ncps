@@ -189,6 +189,84 @@ func (f *gcTestFixture) narInfoExists(t *testing.T, narInfoHash string) bool {
 	return exists
 }
 
+func (f *gcTestFixture) narFileID(t *testing.T, narHash string) int {
+	t.Helper()
+
+	id, err := f.c.dbClient.Ent().NarFile.Query().Where(entnarfile.HashEQ(narHash)).OnlyID(f.ctx)
+	require.NoError(t, err)
+
+	return id
+}
+
+func (f *gcTestFixture) narInfoID(t *testing.T, narInfoHash string) int {
+	t.Helper()
+
+	id, err := f.c.dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(narInfoHash)).OnlyID(f.ctx)
+	require.NoError(t, err)
+
+	return id
+}
+
+// TestRecoveryGCKeepsNarFileWhenUnverifiedNarInfoRemains is the race guard: if a
+// narinfo links to the nar_file but is NOT in the verified-absent set (e.g. linked by
+// a concurrent storeInDatabase/repair after the GC snapshotted and probed upstreams),
+// the GC deletes only the verified narinfos and KEEPS the nar_file, so the unverified
+// narinfo is never cascade-orphaned into a fresh dangling row.
+func TestRecoveryGCKeepsNarFileWhenUnverifiedNarInfoRemains(t *testing.T) {
+	t.Parallel()
+
+	f := newGCTestFixture(t)
+
+	const narHash = "7lid9xrpirkzcpqsxfq02qwiq0yd70ch"
+
+	verified := gcHash("gcverified1")
+	concurrent := gcHash("gcconcurrent1")
+
+	f.seedBackingLessRowMulti(t, narHash, []string{verified, concurrent}, true)
+
+	// Only `verified` was confirmed genuinely absent upstream; `concurrent` stands in
+	// for a narinfo linked after the verified snapshot and is omitted from the set.
+	deleted, err := f.c.gcDeleteAbsentNarInfosAndMaybeNarFile(
+		f.ctx, f.narFileID(t, narHash), []int{f.narInfoID(t, verified)},
+	)
+	require.NoError(t, err)
+
+	assert.False(t, deleted,
+		"nar_file must be kept while an unverified narinfo still links to it")
+	assert.False(t, f.narInfoExists(t, verified),
+		"the verified-absent narinfo must be deleted")
+	assert.True(t, f.narInfoExists(t, concurrent),
+		"the unverified (concurrently-linked) narinfo must NOT be orphaned or deleted")
+	assert.True(t, f.narFileExists(t, narHash),
+		"the nar_file must survive so the unverified narinfo stays linked, not dangling")
+}
+
+// TestRecoveryGCDeletesNarFileWhenAllVerified exercises the helper's all-verified path:
+// when every linked narinfo is in the verified set, both the narinfos and the nar_file
+// are deleted and the helper reports the nar_file as deleted.
+func TestRecoveryGCDeletesNarFileWhenAllVerified(t *testing.T) {
+	t.Parallel()
+
+	f := newGCTestFixture(t)
+
+	const narHash = "8lid9xrpirkzcpqsxfq02qwiq0yd70ch"
+
+	a := gcHash("gcallverified1")
+	b := gcHash("gcallverified2")
+
+	f.seedBackingLessRowMulti(t, narHash, []string{a, b}, true)
+
+	deleted, err := f.c.gcDeleteAbsentNarInfosAndMaybeNarFile(
+		f.ctx, f.narFileID(t, narHash), []int{f.narInfoID(t, a), f.narInfoID(t, b)},
+	)
+	require.NoError(t, err)
+
+	assert.True(t, deleted, "nar_file must be deleted when every linked narinfo is verified-absent")
+	assert.False(t, f.narInfoExists(t, a), "verified-absent narinfo must be deleted")
+	assert.False(t, f.narInfoExists(t, b), "verified-absent narinfo must be deleted")
+	assert.False(t, f.narFileExists(t, narHash), "nar_file must be deleted when no links remain")
+}
+
 // TestRecoveryGCDeletesGenuinelyAbsentPlaceholder verifies that a backing-less
 // placeholder whose narinfo is a definitive 404 on every healthy upstream is deleted.
 func TestRecoveryGCDeletesGenuinelyAbsentPlaceholder(t *testing.T) {
