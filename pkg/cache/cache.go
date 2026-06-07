@@ -3482,11 +3482,28 @@ func (c *Cache) getNarFromStore(
 	var needsDBRecord bool
 
 	err = c.withEntTransaction(ctx, "getNarFromStore", func(tx *ent.Tx) error {
-		nr, err := c.getNarFileFromDB(ctx, tx.NarFile, *narURL)
+		// Look up the nar_file row for the representation we are ACTUALLY serving.
+		// narURL.Compression already correctly describes the served stream after the
+		// transparent zstd->none branch above (it stays e.g. xz for an xz request;
+		// none for an uncompressed request served transparently from .nar.zst). We
+		// must NOT overwrite it with the compression of whatever row getNarFileFromDB
+		// returns: that helper is CDC-first and, during the lazy-chunking transition
+		// window, returns the coexisting Compression:none chunked row even for an xz
+		// request. Mislabelling an xz body as none made the response advertise
+		// Compression:none with an xz Content-Length (< NarSize), causing nix to fail
+		// with "NAR is incomplete" / "input compression not recognized".
+		nr, err := tx.NarFile.Query().
+			Where(
+				entnarfile.HashEQ(narURL.Hash),
+				entnarfile.CompressionEQ(narURL.Compression.String()),
+				entnarfile.QueryEQ(narURL.Query.Encode()),
+			).
+			Only(ctx)
 		if err != nil {
 			if database.IsNotFoundError(err) {
-				// NAR is in storage but has no DB record — this is an orphan left by a
-				// crash between narStore.PutNar and ensureNarFileRecord. Schedule healing.
+				// No nar_file row for the served representation. The NAR is in storage
+				// but has no DB record for what we serve — an orphan left by a crash
+				// between narStore.PutNar and ensureNarFileRecord. Schedule healing.
 				needsDBRecord = true
 
 				return nil
@@ -3495,11 +3512,8 @@ func (c *Cache) getNarFromStore(
 			return fmt.Errorf("error fetching the nar record: %w", err)
 		}
 
-		// Update narURL.Compression to match the record found in DB.
-		// For CDC mode, if we requested xz but found a none record (common), we must
-		// return none so the caller knows they're receiving uncompressed bytes.
-		narURL.Compression = nar.CompressionType(nr.Compression)
-
+		// Touch the row matching the served representation (gated on that row's own
+		// last_accessed_at) so LRU tracking reflects the bytes we actually streamed.
 		if nr.LastAccessedAt == nil || time.Since(*nr.LastAccessedAt) > c.recordAgeIgnoreTouch {
 			if _, err := tx.NarFile.Update().
 				Where(
