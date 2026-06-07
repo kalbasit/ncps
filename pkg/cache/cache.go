@@ -7565,8 +7565,17 @@ func (c *Cache) gcDeleteAbsentNarInfosAndMaybeNarFile(
 			return fmt.Errorf("delete narinfo links for nar_file(%d): %w", narFileID, err)
 		}
 
+		// Delete only the narinfos that became linkless after unlinking narFileID. The
+		// narinfo<->nar_file relation is M:N: a verified narinfo may still be linked to a
+		// different (still-backed) nar_file variant, and because deleting a narinfo
+		// cascades all of its join rows, an unconditional delete would tear down that
+		// other link and orphan a still-backed row. HasNarInfoNarFiles is evaluated after
+		// the unlink above, so a narinfo with any remaining link is preserved.
 		if _, err := tx.NarInfo.Delete().
-			Where(entnarinfo.IDIn(verifiedNarInfoIDs...)).Exec(ctx); err != nil {
+			Where(
+				entnarinfo.IDIn(verifiedNarInfoIDs...),
+				entnarinfo.Not(entnarinfo.HasNarInfoNarFiles()),
+			).Exec(ctx); err != nil {
 			return fmt.Errorf("delete dangling narinfos for nar_file(%d): %w", narFileID, err)
 		}
 

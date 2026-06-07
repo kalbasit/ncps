@@ -95,9 +95,9 @@ func (f *gcTestFixture) seedBackingLessRow(t *testing.T, narHash, narInfoHash st
 }
 
 // seedBackingLessRowMulti inserts one placeholder nar_file (no whole-file in store)
-// linked to several narinfos — several store paths sharing one NAR — optionally aged
-// past the recovery cutoff.
-func (f *gcTestFixture) seedBackingLessRowMulti(t *testing.T, narHash string, narInfoHashes []string, old bool) {
+// linked to several narinfos — several store paths sharing one NAR — aged past the
+// recovery cutoff so the sweep considers it.
+func (f *gcTestFixture) seedBackingLessRowMulti(t *testing.T, narHash string, narInfoHashes []string) {
 	t.Helper()
 
 	narURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone}
@@ -123,12 +123,10 @@ func (f *gcTestFixture) seedBackingLessRowMulti(t *testing.T, narHash string, na
 			Exec(f.ctx))
 	}
 
-	if old {
-		_, err = f.db.DB().ExecContext(f.ctx,
-			"UPDATE nar_files SET created_at = ? WHERE hash = ?",
-			time.Now().Add(-10*time.Minute), narHash)
-		require.NoError(t, err)
-	}
+	_, err = f.db.DB().ExecContext(f.ctx,
+		"UPDATE nar_files SET created_at = ? WHERE hash = ?",
+		time.Now().Add(-10*time.Minute), narHash)
+	require.NoError(t, err)
 }
 
 // seedBackingLessRowNoNarInfo inserts a placeholder nar_file with NO linked narinfo,
@@ -207,6 +205,55 @@ func (f *gcTestFixture) narInfoID(t *testing.T, narInfoHash string) int {
 	return id
 }
 
+// linkNarInfoToNewNarFile creates a second, distinct nar_file variant and links the
+// existing narinfo to it as well — making the narinfo M:N-linked to two nar_files.
+func (f *gcTestFixture) linkNarInfoToNewNarFile(t *testing.T, narInfoHash, narFileHash string) {
+	t.Helper()
+
+	nf, err := f.c.dbClient.Ent().NarFile.Create().
+		SetHash(narFileHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(2345).
+		Save(f.ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, f.c.dbClient.Ent().NarInfoNarFile.Create().
+		SetNarinfoID(f.narInfoID(t, narInfoHash)).
+		SetNarFileID(nf.ID).
+		Exec(f.ctx))
+}
+
+// TestRecoveryGCKeepsNarInfoLinkedToAnotherNarFile guards the M:N relationship: a
+// verified narinfo that is ALSO linked to a different nar_file variant must NOT be
+// deleted, since deleting it cascades away the other link and orphans that still-backed
+// row. GC may unlink/GC the backing-less row, but the shared narinfo and the other
+// nar_file survive.
+func TestRecoveryGCKeepsNarInfoLinkedToAnotherNarFile(t *testing.T) {
+	t.Parallel()
+
+	f := newGCTestFixture(t)
+
+	const narHash = "9lid9xrpirkzcpqsxfq02qwiq0yd70ch"
+
+	const otherNarHash = "alid9xrpirkzcpqsxfq02qwiq0yd70ch"
+
+	shared := gcHash("gcshared1")
+
+	f.seedBackingLessRowMulti(t, narHash, []string{shared})
+	f.linkNarInfoToNewNarFile(t, shared, otherNarHash)
+
+	_, err := f.c.gcDeleteAbsentNarInfosAndMaybeNarFile(
+		f.ctx, f.narFileID(t, narHash), []int{f.narInfoID(t, shared)},
+	)
+	require.NoError(t, err)
+
+	assert.True(t, f.narInfoExists(t, shared),
+		"a narinfo still linked to another nar_file must NOT be deleted")
+	assert.True(t, f.narFileExists(t, otherNarHash),
+		"the other nar_file variant must remain (its narinfo must not be cascade-orphaned)")
+}
+
 // TestRecoveryGCKeepsNarFileWhenUnverifiedNarInfoRemains is the race guard: if a
 // narinfo links to the nar_file but is NOT in the verified-absent set (e.g. linked by
 // a concurrent storeInDatabase/repair after the GC snapshotted and probed upstreams),
@@ -222,7 +269,7 @@ func TestRecoveryGCKeepsNarFileWhenUnverifiedNarInfoRemains(t *testing.T) {
 	verified := gcHash("gcverified1")
 	concurrent := gcHash("gcconcurrent1")
 
-	f.seedBackingLessRowMulti(t, narHash, []string{verified, concurrent}, true)
+	f.seedBackingLessRowMulti(t, narHash, []string{verified, concurrent})
 
 	// Only `verified` was confirmed genuinely absent upstream; `concurrent` stands in
 	// for a narinfo linked after the verified snapshot and is omitted from the set.
@@ -254,7 +301,7 @@ func TestRecoveryGCDeletesNarFileWhenAllVerified(t *testing.T) {
 	a := gcHash("gcallverified1")
 	b := gcHash("gcallverified2")
 
-	f.seedBackingLessRowMulti(t, narHash, []string{a, b}, true)
+	f.seedBackingLessRowMulti(t, narHash, []string{a, b})
 
 	deleted, err := f.c.gcDeleteAbsentNarInfosAndMaybeNarFile(
 		f.ctx, f.narFileID(t, narHash), []int{f.narInfoID(t, a), f.narInfoID(t, b)},
@@ -307,7 +354,7 @@ func TestRecoveryGCDeletesAllLinkedNarInfosWhenGenuinelyAbsent(t *testing.T) {
 		gcHash("gcmultiabsent3"),
 	}
 
-	f.seedBackingLessRowMulti(t, narHash, narInfoHashes, true)
+	f.seedBackingLessRowMulti(t, narHash, narInfoHashes)
 	require.True(t, f.narFileExists(t, narHash))
 
 	f.runRecovery(t)
