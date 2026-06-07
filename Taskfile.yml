@@ -32,6 +32,10 @@ tasks:
     desc: Start fresh backing services on random ports, run full suite, teardown
     cmds:
       - bash dev-scripts/test-auto.sh
+  test:cdc-lifecycle:
+    desc: "Drive the CDC lifecycle (non-CDC->CDC->drain->non-CDC) e2e; starts fixed-port deps and tears down. Pass-through args, e.g. CLI_ARGS='--db postgres'"
+    cmds:
+      - bash dev-scripts/test-cdc-lifecycle-auto.sh {{.CLI_ARGS}}
   test:deps:start:
     desc: Allocate random ports, start backing services in detached mode, write state file
     cmds:

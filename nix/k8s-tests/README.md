@@ -1,6 +1,6 @@
 # NCPS Kubernetes Integration Testing
 
-A Nix-native tool for comprehensive Kubernetes integration testing of the NCPS Helm chart. Tests 12 different deployment permutations across multiple storage backends, database engines, and high-availability configurations.
+A Nix-native tool for comprehensive Kubernetes integration testing of the NCPS Helm chart. Tests 13 different deployment permutations across multiple storage backends, database engines, and high-availability configurations.
 
 ## Overview
 
@@ -15,7 +15,7 @@ This tool provides a unified CLI (`k8s-tests`) for:
 
 ```
 nix/k8s-tests/
-├── config.nix              # Declarative test permutation definitions (12 scenarios)
+├── config.nix              # Declarative test permutation definitions (13 scenarios)
 ├── flake-module.nix        # Nix package definition (writeShellApplication)
 ├── src/
 │   ├── k8s-tests.sh        # Main CLI implementation
@@ -33,7 +33,7 @@ nix/k8s-tests/
 
 ## Test Permutations
 
-The tool generates 12 test deployment configurations:
+The tool generates 13 test deployment configurations:
 
 ### Single Instance (7 scenarios)
 
@@ -55,6 +55,24 @@ The tool generates 12 test deployment configurations:
 10. **ha-s3-postgres** - 2 replicas + S3 + PostgreSQL + Redis locks
 01. **ha-s3-mariadb** - 2 replicas + S3 + MariaDB + Redis locks
 01. **ha-s3-postgres-cdc** - 2 replicas + S3 + PostgreSQL + Redis + CDC
+
+### CDC Lifecycle (1 scenario)
+
+13. **ha-s3-postgres-cdc-lifecycle** - Same deployment shape as
+    `ha-s3-postgres-cdc`, but driven through the full
+    `non-CDC → CDC → drain → non-CDC` lifecycle. Gated on the
+    `cdc-lifecycle` marker feature, its test body
+    (`k8s_tests_tester._test_cdc_lifecycle`) asserts: CDC chunking active →
+    CDC disabled (ConfigMap patch + rollout restart) still serving from
+    chunks in drain mode → `migrate-chunks-to-nar` (run in-pod, reusing the
+    pod's `--config`) drains all chunks → a final restart clears the stored
+    `cdc_enabled` config key (`initCDCDrainMode` auto-completion).
+
+> **Local counterpart:** for a fast, single-host version of the same
+> lifecycle (logic signal without a cluster), use the dev driver
+> `dev-scripts/test-cdc-lifecycle-e2e.py` via `task test:cdc-lifecycle`.
+> It drives ncps over HTTP + the `ncps` CLI against the fixed-port
+> `nix run .#deps` stack.
 
 ## Database Isolation
 
@@ -106,8 +124,8 @@ This executes:
 
 1. Creates Kind cluster with dependencies
 1. Builds and pushes Docker image
-1. Generates 12 test values files
-1. Installs all 12 deployments
+1. Generates 13 test values files
+1. Installs all 13 deployments
 1. Runs comprehensive tests
 
 ### Individual Steps
@@ -188,7 +206,7 @@ The `generate` command creates files in `charts/ncps/test-values/`:
 
 ```
 charts/ncps/test-values/
-├── single-local-sqlite.yaml       # 12 values files
+├── single-local-sqlite.yaml       # 13 values files
 ├── single-local-postgres.yaml
 ├── ...
 ├── ha-s3-postgres-cdc.yaml
@@ -321,7 +339,7 @@ skopeo copy docker-daemon:ncps:latest docker://127.0.0.1:30000/ncps:test
 
 ### Nix Configuration (`config.nix`)
 
-- Defines 12 test permutations as Nix attribute set
+- Defines 13 test permutations as Nix attribute set
 - Includes composable feature definitions
 - Type-safe via Nix evaluation
 - Easy to query: `nix eval --json --file config.nix permutations`

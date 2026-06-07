@@ -297,6 +297,43 @@ rec {
         "cdc"
       ];
     }
+
+    # ====================================================================
+    # CDC Lifecycle (1 scenario)
+    # ====================================================================
+
+    # 13. HA - S3 + PostgreSQL + Redis + CDC, exercised through the full
+    #     non-CDC -> CDC -> drain -> non-CDC lifecycle. Deployment shape is
+    #     identical to ha-s3-postgres-cdc; the difference is the test body,
+    #     gated on the "cdc-lifecycle" marker feature (see k8s_tests_tester
+    #     ._test_cdc_lifecycle). Topology behaviors (drain auto-exit on pod
+    #     restart, multi-replica shared-DB presence) need >1 replica.
+    {
+      name = "ha-s3-postgres-cdc-lifecycle";
+      description = "HA S3 + PostgreSQL + Redis driven through the CDC lifecycle (non-CDC->CDC->drain->non-CDC)";
+      replicas = 2;
+      mode = "deployment";
+      migration.mode = "job";
+      storage = {
+        type = "s3";
+        # S3 credentials injected at generation time from cluster
+      };
+      database = {
+        type = "postgresql";
+        # Credentials injected at generation time from cluster
+      };
+      redis = {
+        enabled = true;
+        # Redis connection injected at generation time from cluster
+      };
+      features = [
+        "ha"
+        "pod-disruption-budget"
+        "anti-affinity"
+        "cdc"
+        "cdc-lifecycle"
+      ];
+    }
   ];
 
   # Composable feature definitions
@@ -352,6 +389,11 @@ rec {
     existing-secret = {
       # Marker feature for permutations using existing secrets
       # Actual configuration is in the permutation definition
+    };
+
+    cdc-lifecycle = {
+      # Marker feature: the deployment shape is unchanged (it composes with
+      # "cdc"); this flag drives the lifecycle test body in k8s_tests_tester.
     };
   };
 
@@ -619,6 +661,7 @@ rec {
               };
             };
             existing-secret = { };
+            cdc-lifecycle = { };
           };
 
           # Merge features
