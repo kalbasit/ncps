@@ -3,9 +3,7 @@
 ## Purpose
 
 This specification documents the public API of ncps. The API consists of three layers: (1) the Nix-protocol-compatible HTTP endpoints served by `pkg/server`, (2) the `pkg/cache.Cache` domain methods called by the server handlers, and (3) the pluggable storage and chunk backend interfaces in `pkg/storage` and `pkg/storage/chunk`. It also documents the central artifact type `narinfo.NarInfo`, the `pkg/nar` URL type, and the known edge cases and failure modes that the system must handle.
-
 ## Requirements
-
 ### Requirement: NarInfo Data Structure
 
 The system SHALL represent every narinfo as the `narinfo.NarInfo` struct from `github.com/nix-community/go-nix/pkg/narinfo`, and all narinfo operations SHALL revolve around this struct.
@@ -386,12 +384,15 @@ func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error
 The `pkg/cache.Cache` type SHALL expose the core NAR domain methods called by the server handlers.
 
 ```go
-// GetNar streams a NAR to the provided writer.
+// GetNar resolves a NAR and returns the URL it is served under, its size, a
+// reader for the bytes, and an error.
 // Lookup order (CDC disabled): storage → upstream.
 // Lookup order (CDC enabled): chunks (DB) → storage → upstream.
 // An upstream fetch: downloads to temp file, atomically moves to storage,
 // writes DB record, optionally triggers CDC chunking.
-func (c *Cache) GetNar(ctx context.Context, narURL nar.URL, w io.Writer) error
+// The returned size is the concrete nar_files.file_size when served from store
+// or chunks, and -1 (size unknown) when streaming a download still in flight.
+func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.ReadCloser, error)
 
 // PutNar stores a NAR from an io.ReadCloser.
 func (c *Cache) PutNar(ctx context.Context, narURL nar.URL, r io.ReadCloser) error
@@ -499,17 +500,26 @@ The `pkg/storage` package SHALL define the pluggable backend contracts implement
 type NarInfoStore interface {
     HasNarInfo(ctx context.Context, hash string) bool
     GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, error)
-    PutNarInfo(ctx context.Context, hash string, ni *narinfo.NarInfo) error
+    PutNarInfo(ctx context.Context, hash string, narInfo *narinfo.NarInfo) error
     DeleteNarInfo(ctx context.Context, hash string) error
+    WalkNarInfos(ctx context.Context, fn func(hash string) error) error
 }
 
 // NarStore — NAR archive storage (filesystem or S3).
 type NarStore interface {
     HasNar(ctx context.Context, narURL nar.URL) bool
-    GetNar(ctx context.Context, narURL nar.URL) (io.ReadCloser, error)
-    PutNar(ctx context.Context, narURL nar.URL) (io.WriteCloser, error)
+    // StatNar distinguishes a confirmed absence (false, nil) from an
+    // undeterminable result (false, err); callers MUST NOT treat (false, err)
+    // as a confirmed absence.
+    StatNar(ctx context.Context, narURL nar.URL) (bool, error)
+    // GetNar returns the size and a reader for the NAR. The caller MUST close
+    // the returned io.ReadCloser.
+    GetNar(ctx context.Context, narURL nar.URL) (int64, io.ReadCloser, error)
+    // PutNar stores the NAR; size > 0 is the known size, size <= 0 means
+    // unknown (e.g. on-the-fly re-compression). Returns the stored size.
+    PutNar(ctx context.Context, narURL nar.URL, body io.Reader, size int64) (int64, error)
     DeleteNar(ctx context.Context, narURL nar.URL) error
-    GetNarSize(ctx context.Context, narURL nar.URL) (int64, error)
+    WalkNars(ctx context.Context, fn func(narURL nar.URL) error) error
 }
 
 // ConfigStore — deprecated; config is now stored in the database.
@@ -659,3 +669,4 @@ The system SHALL handle the following edge cases and failure modes with the docu
 #### Scenario: Upload-only context skips upstream
 - **WHEN** a request is served under the `/upload` prefix with `cache.WithUploadOnly(ctx)` set
 - **THEN** the cache layer SHALL skip the upstream fetch for PUTs
+
