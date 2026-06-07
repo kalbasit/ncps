@@ -8117,6 +8117,21 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 		return 0, nil, err
 	}
 
+	// During the chunking window (total_chunks == 0), prefer in-flight staging over
+	// progressive chunk streaming: the staged whole-NAR parts are a complete,
+	// ordered representation, so serving from them avoids the fragile
+	// streamProgressiveChunks reassembly that can truncate (#1289). Steady-state
+	// chunk serving (total_chunks > 0) is unaffected — it never reaches this branch.
+	if totalChunks == 0 && c.InflightStagingEnabled() {
+		if info := c.stagingServeReady(ctx, narURL.Hash); info != nil {
+			zerolog.Ctx(ctx).Debug().
+				Str("hash", narURL.Hash).
+				Msg("serving NAR from in-flight staging in preference to progressive chunks")
+
+			return c.serveNarFromStaging(ctx, narURL, info.hash, info.compression)
+		}
+	}
+
 	// Always clear TransparentZstd here so the goroutine uses GetChunk (decompressed
 	// bytes) and the HTTP layer re-encodes everything into a single zstd stream when
 	// the client accepts it.
