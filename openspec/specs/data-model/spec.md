@@ -74,7 +74,7 @@ CREATE TABLE "config" (
 
 ### Requirement: `narinfos` table schema
 
-The system SHALL maintain a `narinfos` table with one row per cached narinfo, storing the narinfo fields denormalized inline for fast lookup. The `url`, `compression`, and related fields MAY be `NULL` for narinfo stubs whose full metadata has not yet been populated.
+The system SHALL maintain a `narinfos` table with one row per cached narinfo, storing the narinfo fields denormalized inline for fast lookup. The `url`, `compression`, and related fields MAY be `NULL` for narinfo stubs whose full metadata has not yet been populated. The `upstream_url` column MAY be `NULL` and SHALL hold the original opaque upstream NAR path (the path before `.nar`, e.g. `nar/<uuid>.nar.zst`) when the upstream narinfo URL was not hash-named; it stays `NULL` for conventional hash-named upstreams.
 
 ```sql
 CREATE TABLE "narinfos" (
@@ -90,6 +90,7 @@ CREATE TABLE "narinfos" (
     "deriver"          TEXT,
     "system"           TEXT,
     "ca"               TEXT,
+    "upstream_url"     TEXT,
     "created_at"       TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     "updated_at"       TIMESTAMP,
     "last_accessed_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -111,6 +112,12 @@ CREATE INDEX idx_narinfos_last_accessed_at ON "narinfos" ("last_accessed_at");
 
 - **WHEN** an insert attempts `file_size = -1`
 - **THEN** the database SHALL reject the row via the CHECK constraint
+
+#### Scenario: Recording an opaque upstream URL
+
+- **WHEN** a narinfo is cached from an upstream whose NAR URL was opaque (not hash-named)
+- **THEN** the `upstream_url` column SHALL hold the original opaque upstream path
+- **AND** for a conventional hash-named upstream the `upstream_url` column SHALL remain NULL
 
 ### Requirement: `narinfo_references` table schema
 
