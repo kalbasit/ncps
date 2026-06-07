@@ -18,4 +18,4 @@
 ## 4. Verify and finalize
 
 - [x] 4.1 `task fmt`/`task lint` clean; the new `checks.docker-image-etc-files` regression check builds GREEN (asserts /etc/passwd + /etc/group are regular files).
-- [ ] 4.2 `openspec validate` the change; sync the delta spec; archive before merge
+- [x] 4.2 `openspec validate` passed; new capability synced to openspec/specs/container-image-etc-files; archived.
