@@ -1182,6 +1182,7 @@ spec:
                     "replicas": perm["replicas"],
                     "mode": "ha" if perm["replicas"] > 1 else "single",
                     "cdc": "cdc" in perm.get("features", []),
+                    "cdc_lifecycle": "cdc-lifecycle" in perm.get("features", []),
                     "migration": {
                         "mode": perm.get("migration", {}).get("mode", "initContainer")
                     },

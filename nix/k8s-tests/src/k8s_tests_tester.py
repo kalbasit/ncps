@@ -175,6 +175,20 @@ class NCPSTester:
         results.append(storage_result)
         self._print_test_result(storage_result)
 
+        # 5. CDC lifecycle (only for permutations with the cdc-lifecycle marker)
+        if deployment_config.get("cdc_lifecycle"):
+            print("🔁 Testing CDC lifecycle (non-CDC->CDC->drain->non-CDC)...")
+            lifecycle_result = self._test_cdc_lifecycle(deployment_config)
+            results.append(lifecycle_result)
+            self._print_test_result(lifecycle_result)
+
+            # 6. Multi-replica topology assertions (cross-replica presence,
+            #    storage-lag / no phantom HEAD). Requires >1 replica.
+            print("🌐 Testing CDC multi-replica topology...")
+            topology_result = self._test_cdc_topology(deployment_config)
+            results.append(topology_result)
+            self._print_test_result(topology_result)
+
         return DeploymentTestResult(name, results)
 
     def _print_test_result(self, result: TestResult):
@@ -1129,7 +1143,7 @@ class NCPSTester:
 
             if cdc_enabled:
                 # List chunks
-                # Chunks are stored in store/chunks/
+                # Chunks are stored in store/chunk/ (singular; see pkg/storage/chunk/s3.go)
                 # For CDC deployments, background downloads happen asynchronously,
                 # so we need to retry with exponential backoff to wait for chunks to be created
                 max_retries = 10
@@ -1138,7 +1152,8 @@ class NCPSTester:
 
                 for attempt in range(max_retries):
                     chunk_objects = s3_client.list_objects_v2(
-                        Bucket=bucket, Prefix="store/chunks/"
+                        Bucket=bucket,
+                        Prefix="store/chunk/",  # singular: see pkg/storage/chunk/s3.go
                     )
                     chunk_count = chunk_objects.get("KeyCount", 0)
 
@@ -1159,7 +1174,7 @@ class NCPSTester:
                     return TestResult(
                         "Storage",
                         False,
-                        "No chunks found in S3 (prefix: store/chunks/)",
+                        "No chunks found in S3 (prefix: store/chunk/)",
                     )
 
                 return TestResult(
@@ -1199,6 +1214,426 @@ class NCPSTester:
             if port_forward:
                 port_forward.terminate()
                 port_forward.wait(timeout=5)
+
+    # ------------------------------------------------------------------
+    # CDC lifecycle (gated on the "cdc-lifecycle" marker feature)
+    # ------------------------------------------------------------------
+
+    def _pg_fetchone(self, deployment_config: dict, sql: str):
+        """Port-forward to the cluster PostgreSQL and run a single query.
+
+        Mirrors _test_postgresql_database's connection setup. Returns the
+        first row tuple, or None.
+        """
+        pg_config = self.config["cluster"]["postgresql"]
+        host_parts = pg_config["host"].split(".")
+        service_name = host_parts[0]
+        namespace = host_parts[1] if len(host_parts) > 1 else "data"
+
+        port_forward = None
+        try:
+            local_port = self._find_free_port()
+            port_forward = subprocess.Popen(
+                [
+                    "kubectl",
+                    "port-forward",
+                    f"svc/{service_name}",
+                    f"{local_port}:{pg_config['port']}",
+                    "-n",
+                    namespace,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            time.sleep(3)
+            db_name = f"ncps_{deployment_config['name'].replace('-', '_')}"
+            conn = psycopg2.connect(
+                host="localhost",
+                port=local_port,
+                database=db_name,
+                user=pg_config["username"],
+                password=pg_config["password"],
+            )
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql)
+                return cursor.fetchone()
+            finally:
+                conn.close()
+        finally:
+            if port_forward:
+                port_forward.terminate()
+                port_forward.wait(timeout=5)
+
+    def _disable_cdc_in_configmap(self, deployment_config: dict):
+        """Flip CDC off the way `helm upgrade --set config.cdc.enabled=false`
+        would: drop the `cache.cdc` block from the rendered config.yaml in the
+        deployment's ConfigMap. The change takes effect on the next pod boot.
+        """
+        name = deployment_config["name"]
+        namespace = deployment_config["namespace"]
+        cm_name = f"ncps-{name}"
+        cm = self.k8s_core_v1.read_namespaced_config_map(cm_name, namespace)
+        rendered = yaml.safe_load(cm.data["config.yaml"])
+        if "cache" in rendered and "cdc" in rendered["cache"]:
+            del rendered["cache"]["cdc"]
+        cm.data["config.yaml"] = yaml.safe_dump(rendered, sort_keys=False)
+        self.k8s_core_v1.replace_namespaced_config_map(cm_name, namespace, cm)
+
+    def _rollout_restart_and_wait(self, deployment_config: dict) -> TestResult:
+        """Restart the ncps Deployment and wait for pods to be ready again."""
+        name = deployment_config["name"]
+        namespace = deployment_config["namespace"]
+        subprocess.run(
+            [
+                "kubectl",
+                "rollout",
+                "restart",
+                f"deployment/ncps-{name}",
+                "-n",
+                namespace,
+            ],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "kubectl",
+                "rollout",
+                "status",
+                f"deployment/ncps-{name}",
+                "-n",
+                namespace,
+                "--timeout=180s",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        # Reuse the pod-readiness gate so subsequent checks see ready pods.
+        return self._test_pods(deployment_config)
+
+    def _drain_chunks_via_exec(self, deployment_config: dict) -> str:
+        """Run `ncps migrate-chunks-to-nar` inside a running pod, reusing the
+        pod's own --config (so DB URL, S3 bucket/endpoint/prefix and the S3
+        credential env vars all match the serving deployment exactly).
+        Returns combined stdout+stderr.
+        """
+        namespace = deployment_config["namespace"]
+        pods = self.k8s_core_v1.list_namespaced_pod(
+            namespace=namespace, label_selector="app.kubernetes.io/name=ncps"
+        )
+        running = [p for p in pods.items if p.status.phase == "Running"]
+        if not running:
+            raise RuntimeError("no running ncps pod to exec migrate-chunks-to-nar")
+        pod_name = running[0].metadata.name
+        result = subprocess.run(
+            [
+                "kubectl",
+                "exec",
+                pod_name,
+                "-n",
+                namespace,
+                "--",
+                "/bin/ncps",
+                "--config",
+                "/etc/ncps/config.yaml",
+                "migrate-chunks-to-nar",
+                "--force-reclaim",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        return result.stdout + result.stderr
+
+    def _serve_check(self, deployment_config: dict) -> bool:
+        """Fetch one test narinfo + its NAR through the Service; return True
+        if both come back 200 with a non-empty NAR body.
+        """
+        namespace = deployment_config["namespace"]
+        service_name = deployment_config.get("service_name", deployment_config["name"])
+        test_hashes = self.config.get("test_data", {}).get("narinfo_hashes", [])
+        if not test_hashes:
+            return True
+        port_forward = None
+        try:
+            local_port = self._find_free_port()
+            port_forward = subprocess.Popen(
+                [
+                    "kubectl",
+                    "port-forward",
+                    f"svc/{service_name}",
+                    f"{local_port}:8501",
+                    "-n",
+                    namespace,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            time.sleep(3)
+            base_url = f"http://localhost:{local_port}"
+            resp = requests.get(
+                f"{base_url}/{test_hashes[0]}.narinfo", timeout=HTTP_TIMEOUT
+            )
+            if resp.status_code != 200:
+                return False
+            url_match = re.search(r"^URL:\s*(.+)$", resp.text, re.MULTILINE)
+            if not url_match:
+                return False
+            nar = requests.get(
+                f"{base_url}/{url_match.group(1).strip()}", timeout=HTTP_TIMEOUT
+            )
+            return nar.status_code == 200 and len(nar.content) > 0
+        except Exception:
+            return False
+        finally:
+            if port_forward:
+                port_forward.terminate()
+                port_forward.wait(timeout=5)
+
+    def _test_cdc_lifecycle(self, deployment_config: dict) -> TestResult:
+        """Drive the non-CDC -> CDC -> drain -> non-CDC lifecycle on the
+        cluster and assert DB + serving invariants at each phase.
+
+        Phases:
+          A. CDC active: chunks present + cdc_enabled config key present.
+          B. Drain: disable CDC in the ConfigMap + restart; chunked NARs
+             still serve (drain mode active).
+          C. Drain complete: migrate-chunks-to-nar leaves zero chunked NARs.
+          D. Auto-completion: a final restart clears the cdc_* config keys
+             (initCDCDrainMode).
+
+        Only PostgreSQL permutations are supported (the standard lifecycle
+        permutation is ha-s3-postgres-cdc-lifecycle).
+        """
+        if deployment_config.get("database", {}).get("type") != "postgresql":
+            return TestResult(
+                "CDC Lifecycle",
+                True,
+                "skipped (lifecycle test implemented for PostgreSQL only)",
+            )
+
+        details = []
+        try:
+            # Phase A — CDC chunking active.
+            chunks = self._pg_fetchone(deployment_config, "SELECT COUNT(*) FROM chunks")
+            if not chunks or chunks[0] == 0:
+                return TestResult(
+                    "CDC Lifecycle", False, "Phase A: no chunks present; CDC not active"
+                )
+            cdc_present = self._pg_fetchone(
+                deployment_config, "SELECT COUNT(*) FROM config WHERE key = 'cdc_enabled'"
+            )
+            if not cdc_present or cdc_present[0] == 0:
+                return TestResult(
+                    "CDC Lifecycle",
+                    False,
+                    "Phase A: cdc_enabled config key missing while CDC active",
+                )
+            details.append(f"Phase A: {chunks[0]} chunks, cdc_enabled present")
+
+            # Phase B — disable CDC, restart, expect drain-mode serving.
+            self._disable_cdc_in_configmap(deployment_config)
+            restart = self._rollout_restart_and_wait(deployment_config)
+            if not restart.passed:
+                return TestResult(
+                    "CDC Lifecycle",
+                    False,
+                    "Phase B: pods not ready after CDC-disable restart",
+                    details=restart.message,
+                )
+            if not self._serve_check(deployment_config):
+                return TestResult(
+                    "CDC Lifecycle",
+                    False,
+                    "Phase B: chunked NAR did not serve in drain mode",
+                )
+            details.append("Phase B: CDC disabled, drain mode serving from chunks")
+
+            # Phase C — drain the chunks back to whole files.
+            out = self._drain_chunks_via_exec(deployment_config)
+            self.log(out, verbose_only=True)
+            chunked = self._pg_fetchone(
+                deployment_config,
+                "SELECT COUNT(*) FROM nar_files WHERE total_chunks > 0",
+            )
+            if chunked is None or chunked[0] != 0:
+                return TestResult(
+                    "CDC Lifecycle",
+                    False,
+                    f"Phase C: {chunked[0] if chunked else '?'} chunked NARs remain after migrate-chunks-to-nar",
+                )
+            details.append("Phase C: migrate-chunks-to-nar drained all chunked NARs")
+
+            # Phase D — restart; initCDCDrainMode clears the stored CDC config.
+            restart = self._rollout_restart_and_wait(deployment_config)
+            if not restart.passed:
+                return TestResult(
+                    "CDC Lifecycle",
+                    False,
+                    "Phase D: pods not ready after drain-completion restart",
+                    details=restart.message,
+                )
+            cdc_after = self._pg_fetchone(
+                deployment_config, "SELECT COUNT(*) FROM config WHERE key = 'cdc_enabled'"
+            )
+            if cdc_after is None or cdc_after[0] != 0:
+                return TestResult(
+                    "CDC Lifecycle",
+                    False,
+                    "Phase D: cdc_enabled not cleared by initCDCDrainMode after drain",
+                )
+            details.append("Phase D: initCDCDrainMode cleared stored CDC config")
+
+            return TestResult(
+                "CDC Lifecycle",
+                True,
+                "non-CDC -> CDC -> drain -> non-CDC lifecycle completed",
+                details="\n".join(details),
+            )
+        except Exception as e:
+            return TestResult(
+                "CDC Lifecycle",
+                False,
+                f"Lifecycle error: {e}",
+                details="\n".join(details),
+            )
+
+    def _pod_presence_ok(self, namespace: str, pod: str, narinfo_hash: str) -> Optional[bool]:
+        """Port-forward to a single pod and check HEAD/GET agreement for the NAR
+        referenced by `narinfo_hash`. Returns:
+          - True  : narinfo + NAR served, and HEAD status == GET status with
+                    a non-empty 200 body (no phantom presence).
+          - False : a phantom was observed (HEAD 200 but GET not-200/empty, or
+                    HEAD/GET disagree) — the bug class this guards against.
+          - None  : the narinfo/NAR is not present on this replica (consistent
+                    absence is handled by the caller's cross-replica check).
+        Retries with bounded backoff to tolerate shared-storage propagation lag.
+        """
+        port_forward = None
+        try:
+            local_port = self._find_free_port()
+            port_forward = subprocess.Popen(
+                [
+                    "kubectl",
+                    "port-forward",
+                    f"pod/{pod}",
+                    f"{local_port}:8501",
+                    "-n",
+                    namespace,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            time.sleep(3)
+            base = f"http://localhost:{local_port}"
+            resp = requests.get(
+                f"{base}/{narinfo_hash}.narinfo", timeout=HTTP_TIMEOUT
+            )
+            if resp.status_code == 404:
+                return None
+            if resp.status_code != 200:
+                return False
+            m = re.search(r"^URL:\s*(.+)$", resp.text, re.MULTILINE)
+            if not m:
+                return False
+            nar = m.group(1).strip()
+            # Bounded retry for storage-lag tolerance.
+            last = False
+            for attempt in range(5):
+                head = requests.head(f"{base}/{nar}", timeout=HTTP_TIMEOUT)
+                get = requests.get(f"{base}/{nar}", timeout=HTTP_TIMEOUT)
+                if head.status_code == 200 and (
+                    get.status_code != 200 or len(get.content) == 0
+                ):
+                    # Phantom: HEAD claims present but bytes are absent.
+                    return False
+                if head.status_code == get.status_code == 200 and len(get.content) > 0:
+                    return True
+                if head.status_code == 404 and get.status_code == 404:
+                    last = None
+                time.sleep(2 * (attempt + 1))
+            return last
+        except Exception:
+            return False
+        finally:
+            if port_forward:
+                port_forward.terminate()
+                port_forward.wait(timeout=5)
+
+    def _test_cdc_topology(self, deployment_config: dict) -> TestResult:
+        """Multi-replica topology assertions (gated on the cdc-lifecycle marker):
+
+          6.2 Multi-replica shared-DB presence — every replica agrees on the
+              presence of the same NAR (no replica is missing what the shared
+              DB/storage says exists).
+          6.3 Storage-lag tolerance / no phantom HEAD — on each replica, a NAR's
+              HEAD never returns 200 while its bytes are absent (HEAD agrees with
+              GET), verified with bounded-backoff retries.
+
+        Requires >1 replica; skips otherwise.
+        """
+        namespace = deployment_config["namespace"]
+        replicas = deployment_config.get("replicas", 1)
+        if replicas < 2:
+            return TestResult(
+                "CDC Topology", True, "skipped (single replica)"
+            )
+        test_hashes = self.config.get("test_data", {}).get("narinfo_hashes", [])
+        if not test_hashes:
+            return TestResult(
+                "CDC Topology", True, "skipped (no test data configured)"
+            )
+
+        narinfo_hash = test_hashes[0]
+        try:
+            pods = self.k8s_core_v1.list_namespaced_pod(
+                namespace=namespace, label_selector="app.kubernetes.io/name=ncps"
+            )
+            running = [p.metadata.name for p in pods.items if p.status.phase == "Running"]
+            if len(running) < 2:
+                return TestResult(
+                    "CDC Topology",
+                    False,
+                    f"expected >= 2 running pods, found {len(running)}",
+                )
+
+            results = {pod: self._pod_presence_ok(namespace, pod, narinfo_hash) for pod in running}
+            details = "\n".join(f"{pod}: {state}" for pod, state in results.items())
+
+            # 6.3: a phantom (False) on any replica is a hard failure.
+            if any(state is False for state in results.values()):
+                return TestResult(
+                    "CDC Topology",
+                    False,
+                    "phantom presence (HEAD 200 with absent bytes) or HEAD/GET disagreement on a replica",
+                    details=details,
+                )
+            # 6.2: replicas must agree — all present, or all absent. A mix means
+            # a replica cannot see what the shared DB/storage holds.
+            states = set(results.values())
+            if len(states) > 1:
+                return TestResult(
+                    "CDC Topology",
+                    False,
+                    "cross-replica presence disagreement (a replica is missing a shared NAR)",
+                    details=details,
+                )
+            if states == {None}:
+                return TestResult(
+                    "CDC Topology",
+                    True,
+                    f"consistent across {len(running)} replicas (NAR absent everywhere; no phantom)",
+                    details=details,
+                )
+            return TestResult(
+                "CDC Topology",
+                True,
+                f"cross-replica presence consistent across {len(running)} replicas; no phantom HEAD",
+                details=details,
+            )
+        except Exception as e:
+            return TestResult("CDC Topology", False, f"Topology error: {e}")
 
     def _find_free_port(self) -> int:
         """Find a free port for port-forwarding"""
