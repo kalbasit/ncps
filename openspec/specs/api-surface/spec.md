@@ -127,21 +127,21 @@ The system SHALL store a narinfo pushed by the client at `PUT /upload/{hash}.nar
 
 **Request:** `Content-Type: text/x-nix-narinfo`, body is narinfo text.
 
-**Response:** `200 OK` on success.
+**Response:** `204 No Content` on success.
 
-**Authorization:** `403 Forbidden` is evaluated by a strict configuration boolean — there is no auth middleware or token validation. `Server.SetPutPermitted(false)` (the default) causes the handler to immediately return `403` before any body is read. There is no per-request authentication.
+**Authorization:** `405 Method Not Allowed` is evaluated by a strict configuration boolean — there is no auth middleware or token validation. `Server.SetPutPermitted(false)` (the default) causes the handler to immediately return `405` before any body is read. There is no per-request authentication.
 
 **Failure modes:**
-- `403 Forbidden` — PUT not permitted (`putPermitted == false`).
+- `405 Method Not Allowed` — PUT not permitted (`putPermitted == false`).
 - `500 Internal Server Error` — parse or storage error.
 
 #### Scenario: Successful narinfo upload
 - **WHEN** `putPermitted == true` and the client sends a valid narinfo body to `PUT /upload/{hash}.narinfo`
-- **THEN** the system SHALL store the narinfo and return `200 OK`
+- **THEN** the system SHALL store the narinfo and return `204 No Content`
 
 #### Scenario: Narinfo upload not permitted
 - **WHEN** `putPermitted == false` (the default)
-- **THEN** the system SHALL return `403 Forbidden` before any body is read
+- **THEN** the system SHALL return `405 Method Not Allowed` before any body is read
 
 #### Scenario: Narinfo upload error
 - **WHEN** a parse or storage error occurs
@@ -151,22 +151,22 @@ The system SHALL store a narinfo pushed by the client at `PUT /upload/{hash}.nar
 
 The system SHALL delete a cached narinfo and its associated nar_file records at `DELETE /{hash}.narinfo`.
 
-**Response:** `200 OK` on success.
+**Response:** `204 No Content` on success.
 
-**Authorization:** Same as PUT — `deletePermitted` is a strict boolean set at startup via `Server.SetDeletePermitted`. No middleware or token evaluation occurs; a `false` value causes an immediate `403` response.
+**Authorization:** Same as PUT — `deletePermitted` is a strict boolean set at startup via `Server.SetDeletePermitted`. No middleware or token evaluation occurs; a `false` value causes an immediate `405` response.
 
 **Failure modes:**
-- `403 Forbidden` — DELETE not permitted (`deletePermitted == false`).
+- `405 Method Not Allowed` — DELETE not permitted (`deletePermitted == false`).
 - `404 Not Found` — hash not found.
 - `500 Internal Server Error` — database or storage error.
 
 #### Scenario: Successful narinfo deletion
 - **WHEN** `deletePermitted == true` and the narinfo exists
-- **THEN** the system SHALL delete the narinfo and its associated nar_file records and return `200 OK`
+- **THEN** the system SHALL delete the narinfo and its associated nar_file records and return `204 No Content`
 
 #### Scenario: Narinfo deletion not permitted
 - **WHEN** `deletePermitted == false`
-- **THEN** the system SHALL return `403 Forbidden` immediately
+- **THEN** the system SHALL return `405 Method Not Allowed` immediately
 
 #### Scenario: Narinfo deletion not found
 - **WHEN** the hash is not found
@@ -239,19 +239,19 @@ The system SHALL store a NAR pushed by the client at `PUT /upload/nar/{hash}.nar
 
 **Request:** `Content-Type: application/x-nix-nar`, body is raw NAR bytes.
 
-**Response:** `200 OK` on success.
+**Response:** `204 No Content` on success.
 
 **Failure modes:**
-- `403 Forbidden` — PUT not permitted.
+- `405 Method Not Allowed` — PUT not permitted.
 - `500 Internal Server Error` — storage error.
 
 #### Scenario: Successful NAR upload
 - **WHEN** PUT is permitted and the client sends raw NAR bytes
-- **THEN** the system SHALL store the NAR and return `200 OK`
+- **THEN** the system SHALL store the NAR and return `204 No Content`
 
 #### Scenario: NAR upload not permitted
 - **WHEN** PUT is not permitted
-- **THEN** the system SHALL return `403 Forbidden`
+- **THEN** the system SHALL return `405 Method Not Allowed`
 
 #### Scenario: NAR upload error
 - **WHEN** a storage error occurs
@@ -261,20 +261,20 @@ The system SHALL store a NAR pushed by the client at `PUT /upload/nar/{hash}.nar
 
 The system SHALL delete a cached NAR from storage and the database at `DELETE /nar/{hash}.nar[.{compression}]`.
 
-**Response:** `200 OK` on success.
+**Response:** `204 No Content` on success.
 
 **Failure modes:**
-- `403 Forbidden` — DELETE not permitted.
+- `405 Method Not Allowed` — DELETE not permitted.
 - `404 Not Found`.
 - `500 Internal Server Error`.
 
 #### Scenario: Successful NAR deletion
 - **WHEN** DELETE is permitted and the NAR exists
-- **THEN** the system SHALL delete the NAR from storage and the database and return `200 OK`
+- **THEN** the system SHALL delete the NAR from storage and the database and return `204 No Content`
 
 #### Scenario: NAR deletion not permitted
 - **WHEN** DELETE is not permitted
-- **THEN** the system SHALL return `403 Forbidden`
+- **THEN** the system SHALL return `405 Method Not Allowed`
 
 #### Scenario: NAR deletion not found
 - **WHEN** the NAR does not exist
