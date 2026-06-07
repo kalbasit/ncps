@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +18,7 @@ import (
 )
 
 // xzCompress compresses data with xz and returns the compressed bytes.
-func xzCompress(t *testing.T, data string) string {
+func xzCompress(t *testing.T, data string) []byte {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -32,7 +31,7 @@ func xzCompress(t *testing.T, data string) string {
 
 	require.NoError(t, xw.Close())
 
-	return buf.String()
+	return buf.Bytes()
 }
 
 // TestCDCWholeFileServeReportsServedCompression reproduces the bug where an xz
@@ -67,7 +66,7 @@ func TestCDCWholeFileServeReportsServedCompression(t *testing.T) {
 	xzURL := nar.URL{Hash: entry.NarHash, Compression: nar.CompressionTypeXz}
 
 	// 1. Store the xz whole-file NAR (CDC disabled at this point).
-	require.NoError(t, c.PutNar(ctx, xzURL, io.NopCloser(strings.NewReader(xzBytes))))
+	require.NoError(t, c.PutNar(ctx, xzURL, io.NopCloser(bytes.NewReader(xzBytes))))
 
 	// 2. Enable CDC with lazy chunking and a LONG delete-delay so the xz whole
 	// file is NOT deleted after migration (reproduces coexistence).
