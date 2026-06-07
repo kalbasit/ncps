@@ -6,7 +6,7 @@
 ## 2. Fix (green)
 
 - [x] 2.1 In `nix/packages/docker.nix`, remove the `etc-passwd`/`etc-group` `writeTextFile` entries from the `buildEnv` `contents`
-- [x] 2.2 Materialize `/etc/passwd` and `/etc/group` as regular files via `dockerTools.buildLayeredImage` `extraCommands` (here-doc; create `etc/` first), keeping identical content (`root` + `ncps` uid/gid 1000)
+- [x] 2.2 Materialize `/etc/passwd` and `/etc/group` as regular files via `dockerTools.buildLayeredImage` `fakeRootCommands` (here-docs; re-materialize the read-only `/etc` as writable first), keeping identical content (`root` + `ncps` uid/gid 1000)
 - [x] 2.3 Rebuild the image; confirm the regression assertion now PASSES (both are regular files with the expected entries)
 - [x] 2.4 Confirm the `disallowedRequisites` guard still holds (no shell/coreutils in closure) and the image still contains cacert + tzdata + ncps
 

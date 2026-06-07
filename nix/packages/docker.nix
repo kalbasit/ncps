@@ -99,12 +99,14 @@
           # create files in it directly — and fakeroot only fakes ownership, not
           # real write perms. Re-materialize /etc as a writable real directory,
           # preserving its existing entries (kept as symlinks via `cp -a`), then
-          # add /etc/passwd and /etc/group as REAL files.
+          # add /etc/passwd and /etc/group as REAL files. Copy *through* the
+          # symlink (`etc/.`) rather than resolving it with readlink, so a failed
+          # readlink can never expand to `cp -a /. etc/` (copying the sandbox root).
           if [ -L etc ]; then
-            etc_src=$(readlink -f etc)
+            mkdir etc.tmp
+            cp -a etc/. etc.tmp/
             rm etc
-            mkdir etc
-            cp -a "$etc_src"/. etc/
+            mv etc.tmp etc
           else
             mkdir -p etc
           fi

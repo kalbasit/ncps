@@ -263,25 +263,49 @@
         # ship /etc/passwd and /etc/group as REGULAR FILES, not store symlinks.
         # An absolute store symlink there makes recent containerd reject the
         # container at creation ("openat etc/passwd: path escapes from parent").
-        # Inspect every embedded layer tar and assert the entry type is a
-        # regular file ('-'), not a symlink ('l').
+        #
+        # Compute the EFFECTIVE final state by replaying the layers in
+        # manifest.json order (base -> top) and applying whiteout semantics
+        # (etc/.wh.passwd deletes etc/passwd), rather than aggregating all
+        # listings — layer order and whiteouts both affect the merged rootfs.
         docker-image-etc-files =
-          pkgs.runCommand "docker-image-etc-files-check" { nativeBuildInputs = [ pkgs.gnutar ]; }
+          pkgs.runCommand "docker-image-etc-files-check"
+            {
+              nativeBuildInputs = [
+                pkgs.gnutar
+                pkgs.jq
+              ];
+            }
             ''
               mkdir -p img && tar xf ${config.packages.docker} -C img
-              : > listings.txt
-              for f in $(find img -type f); do
-                tar tvf "$f" >> listings.txt 2>/dev/null || true
-              done
+              layers=$(jq -r '.[0].Layers[]' img/manifest.json)
+
               for name in passwd group; do
-                line=$(grep -E "[ /]etc/$name(\$| ->)" listings.txt | tail -1 || true)
-                if [ -z "$line" ]; then
-                  echo "FAIL: /etc/$name not found in image" >&2; exit 1
+                state="absent"
+                for layer in $layers; do
+                  listing=$(tar tvf "img/$layer" 2>/dev/null || true)
+                  # Whiteout deletes the path from the merged view.
+                  if printf '%s\n' "$listing" | grep -qE "[ /]etc/\.wh\.$name(\$| )"; then
+                    state="absent"
+                  fi
+                  # A concrete entry in this layer sets the path's type. The
+                  # leading char of `tar tvf` output is the type: '-' regular,
+                  # 'l' symlink, 'd' dir.
+                  line=$(printf '%s\n' "$listing" | grep -E "[ /]etc/$name(\$| ->)" | tail -1 || true)
+                  if [ -n "$line" ]; then
+                    case "$line" in
+                      -*) state="regular" ;;
+                      l*) state="symlink" ;;
+                      *)  state="other" ;;
+                    esac
+                  fi
+                done
+                if [ "$state" = "regular" ]; then
+                  echo "OK: /etc/$name final state is a regular file"
+                else
+                  echo "FAIL: /etc/$name final state is '$state' (expected regular file)" >&2
+                  exit 1
                 fi
-                case "$line" in
-                  -*) echo "OK: /etc/$name is a regular file" ;;
-                  *)  echo "FAIL: /etc/$name is not a regular file (symlink?): $line" >&2; exit 1 ;;
-                esac
               done
               touch "$out"
             '';

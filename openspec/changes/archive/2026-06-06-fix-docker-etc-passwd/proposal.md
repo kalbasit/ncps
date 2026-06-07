@@ -2,7 +2,7 @@
 
 The ncps container image ships `/etc/passwd` and `/etc/group` as **absolute symlinks into the nix store** (verified on the built image: `etc/passwd -> /nix/store/…-passwd/etc/passwd`). Recent container runtimes do a securejoin/`openat` on `etc/passwd` while creating the container and **reject an absolute symlink as escaping the rootfs**, so the container never starts:
 
-```
+```text
 failed to create containerd container: mount callback failed on …:
 openat etc/passwd: path escapes from parent
 ```
@@ -11,7 +11,7 @@ This reproduces on `kindest/node:v1.35.0` and breaks **every** ncps pod — whic
 
 ## What Changes
 
-- Change `nix/packages/docker.nix` so `/etc/passwd` and `/etc/group` are **regular files** in the image rootfs instead of store symlinks. Move them out of the `buildEnv` `contents` (which symlinks them) and materialize them via `dockerTools.buildLayeredImage` `extraCommands` that writes the files directly. Keep identical content (`root` + `ncps` uid/gid 1000) and keep the `disallowedRequisites` guard.
+- Change `nix/packages/docker.nix` so `/etc/passwd` and `/etc/group` are **regular files** in the image rootfs instead of store symlinks. Move them out of the `buildEnv` `contents` (which symlinks them) and materialize them as real files via `dockerTools.buildLayeredImage`'s `fakeRootCommands` (which can rewrite the read-only store-symlinked `/etc` of the customisation layer and write the files directly). Keep identical content (`root` + `ncps` uid/gid 1000) and keep the `disallowedRequisites` guard.
 - Add a packaging regression check asserting `/etc/passwd` and `/etc/group` are regular files (not symlinks) in the built image, with the expected entries.
 
 No application code, DB, or API changes.

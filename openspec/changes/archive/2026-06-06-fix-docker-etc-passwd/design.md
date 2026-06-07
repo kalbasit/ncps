@@ -17,23 +17,23 @@ Recent containerd (kindest/node v1.35.0, and production k8s of similar vintage) 
 
 ## Decisions
 
-**1. Materialize the files via `extraCommands` (not `contents`).**
-`dockerTools.buildLayeredImage` runs `extraCommands` in the image root after `contents` are assembled. Write `etc/passwd` and `etc/group` as real files there, and remove the two `writeTextFile` entries from the `buildEnv`. Real files at the image root are not symlinks, so securejoin passes.
+**1. Materialize the files via `fakeRootCommands` (not `contents`).**
+Write `etc/passwd` and `etc/group` as real files in `dockerTools.buildLayeredImage`'s `fakeRootCommands`, and remove the two `writeTextFile` entries from the `buildEnv`. Real files at the image root are not symlinks, so securejoin passes. `fakeRootCommands` (not `extraCommands`) is required because the customisation-layer working tree already contains a read-only, store-symlinked `/etc` (cacert contributes `/etc/ssl`); `fakeRootCommands` runs under fakeroot in the assembled rootfs, so it can re-materialize `/etc` as a writable real directory and then write the files. (Plain `extraCommands` was tried first and failed with `etc/passwd: Permission denied`.)
 
 - Alternatives considered:
   - `fakeNss` / `shadowSetup`: pulls in extra machinery and changes content/format; heavier than needed.
   - Keep them in `contents` but post-process: fragile (depends on buildEnv symlink layout).
-  - `enableFakechroot` + `fakeRootCommands`: more invasive than `extraCommands` for writing two static files.
-  - Chosen `extraCommands` is the minimal, well-supported path.
+  - Plain `extraCommands`: cannot write into the read-only store-symlinked `/etc` of the customisation layer (`Permission denied`).
+  - Chosen `fakeRootCommands` is the minimal mechanism that can both rewrite the read-only `/etc` and create the real files.
 
-**2. Keep `disallowedRequisites`.** The passwd/group text files are inlined into `extraCommands` (a here-doc), so they add nothing to the closure. The guard stays on the `buildEnv` of the remaining real contents (cacert, tzdata, ncps).
+**2. Keep `disallowedRequisites`.** The passwd/group text files are inlined into `fakeRootCommands` (here-docs), so they add nothing to the closure. The guard stays on the `buildEnv` of the remaining real contents (cacert, tzdata, ncps).
 
 **3. Regression assertion.**
 Add a nix check (or a shell assertion in the existing test surface) that builds the image, extracts the rootfs, and asserts `etc/passwd` and `etc/group` are regular files containing the expected entries. Prefer a `flake check` / `nix build` of a small derivation that inspects `config.packages.docker` so CI catches a regression to symlinks.
 
 ## Risks / Trade-offs
 
-- [extraCommands runs relative to image root with restricted tools] → Use only the shell builtins/`printf`/here-doc available in the dockerTools build sandbox; avoid coreutils so the closure guard is unaffected. Write with the build shell's redirection, create `etc/` first.
+- [fakeRootCommands runs in the assembled rootfs where `/etc` is a read-only store symlink] → Re-materialize `/etc` as a writable real directory first (copy through the symlink), then write the files; use only build-sandbox tools that do not enter the image closure so the guard is unaffected.
 - [Removing entries from buildEnv changes the contents closure hash] → Expected; image content is equivalent. Verify the image still has cacert + tzdata + ncps and starts.
 - [Other store symlinks remain] → Acceptable: `/etc/ssl` etc. are read by the app post-start (normal symlink resolution inside the running container), not by the runtime during creation, so they do not trip securejoin. Out of scope.
 - [openspec-guard blocks merge] → archive this change before merge.
