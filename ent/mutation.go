@@ -2488,32 +2488,33 @@ func (m *ConfigEntryMutation) ResetEdge(name string) error {
 // NarFileMutation represents an operation that mutates the NarFile nodes in the graph.
 type NarFileMutation struct {
 	config
-	op                        Op
-	typ                       string
-	id                        *int
-	created_at                *time.Time
-	updated_at                *time.Time
-	hash                      *string
-	compression               *string
-	file_size                 *uint64
-	addfile_size              *int64
-	query                     *string
-	total_chunks              *int64
-	addtotal_chunks           *int64
-	chunking_started_at       *time.Time
-	verified_at               *time.Time
-	bytes_stored_at           *time.Time
-	last_accessed_at          *time.Time
-	clearedFields             map[string]struct{}
-	nar_info_nar_files        map[int]struct{}
-	removednar_info_nar_files map[int]struct{}
-	clearednar_info_nar_files bool
-	chunk_links               map[int]struct{}
-	removedchunk_links        map[int]struct{}
-	clearedchunk_links        bool
-	done                      bool
-	oldValue                  func(context.Context) (*NarFile, error)
-	predicates                []predicate.NarFile
+	op                         Op
+	typ                        string
+	id                         *int
+	created_at                 *time.Time
+	updated_at                 *time.Time
+	hash                       *string
+	compression                *string
+	file_size                  *uint64
+	addfile_size               *int64
+	query                      *string
+	total_chunks               *int64
+	addtotal_chunks            *int64
+	chunking_started_at        *time.Time
+	verified_at                *time.Time
+	bytes_stored_at            *time.Time
+	dechunk_residue_flagged_at *time.Time
+	last_accessed_at           *time.Time
+	clearedFields              map[string]struct{}
+	nar_info_nar_files         map[int]struct{}
+	removednar_info_nar_files  map[int]struct{}
+	clearednar_info_nar_files  bool
+	chunk_links                map[int]struct{}
+	removedchunk_links         map[int]struct{}
+	clearedchunk_links         bool
+	done                       bool
+	oldValue                   func(context.Context) (*NarFile, error)
+	predicates                 []predicate.NarFile
 }
 
 var _ ent.Mutation = (*NarFileMutation)(nil)
@@ -3066,6 +3067,55 @@ func (m *NarFileMutation) ResetBytesStoredAt() {
 	delete(m.clearedFields, narfile.FieldBytesStoredAt)
 }
 
+// SetDechunkResidueFlaggedAt sets the "dechunk_residue_flagged_at" field.
+func (m *NarFileMutation) SetDechunkResidueFlaggedAt(t time.Time) {
+	m.dechunk_residue_flagged_at = &t
+}
+
+// DechunkResidueFlaggedAt returns the value of the "dechunk_residue_flagged_at" field in the mutation.
+func (m *NarFileMutation) DechunkResidueFlaggedAt() (r time.Time, exists bool) {
+	v := m.dechunk_residue_flagged_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDechunkResidueFlaggedAt returns the old "dechunk_residue_flagged_at" field's value of the NarFile entity.
+// If the NarFile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NarFileMutation) OldDechunkResidueFlaggedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDechunkResidueFlaggedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDechunkResidueFlaggedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDechunkResidueFlaggedAt: %w", err)
+	}
+	return oldValue.DechunkResidueFlaggedAt, nil
+}
+
+// ClearDechunkResidueFlaggedAt clears the value of the "dechunk_residue_flagged_at" field.
+func (m *NarFileMutation) ClearDechunkResidueFlaggedAt() {
+	m.dechunk_residue_flagged_at = nil
+	m.clearedFields[narfile.FieldDechunkResidueFlaggedAt] = struct{}{}
+}
+
+// DechunkResidueFlaggedAtCleared returns if the "dechunk_residue_flagged_at" field was cleared in this mutation.
+func (m *NarFileMutation) DechunkResidueFlaggedAtCleared() bool {
+	_, ok := m.clearedFields[narfile.FieldDechunkResidueFlaggedAt]
+	return ok
+}
+
+// ResetDechunkResidueFlaggedAt resets all changes to the "dechunk_residue_flagged_at" field.
+func (m *NarFileMutation) ResetDechunkResidueFlaggedAt() {
+	m.dechunk_residue_flagged_at = nil
+	delete(m.clearedFields, narfile.FieldDechunkResidueFlaggedAt)
+}
+
 // SetLastAccessedAt sets the "last_accessed_at" field.
 func (m *NarFileMutation) SetLastAccessedAt(t time.Time) {
 	m.last_accessed_at = &t
@@ -3257,7 +3307,7 @@ func (m *NarFileMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *NarFileMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.created_at != nil {
 		fields = append(fields, narfile.FieldCreatedAt)
 	}
@@ -3287,6 +3337,9 @@ func (m *NarFileMutation) Fields() []string {
 	}
 	if m.bytes_stored_at != nil {
 		fields = append(fields, narfile.FieldBytesStoredAt)
+	}
+	if m.dechunk_residue_flagged_at != nil {
+		fields = append(fields, narfile.FieldDechunkResidueFlaggedAt)
 	}
 	if m.last_accessed_at != nil {
 		fields = append(fields, narfile.FieldLastAccessedAt)
@@ -3319,6 +3372,8 @@ func (m *NarFileMutation) Field(name string) (ent.Value, bool) {
 		return m.VerifiedAt()
 	case narfile.FieldBytesStoredAt:
 		return m.BytesStoredAt()
+	case narfile.FieldDechunkResidueFlaggedAt:
+		return m.DechunkResidueFlaggedAt()
 	case narfile.FieldLastAccessedAt:
 		return m.LastAccessedAt()
 	}
@@ -3350,6 +3405,8 @@ func (m *NarFileMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldVerifiedAt(ctx)
 	case narfile.FieldBytesStoredAt:
 		return m.OldBytesStoredAt(ctx)
+	case narfile.FieldDechunkResidueFlaggedAt:
+		return m.OldDechunkResidueFlaggedAt(ctx)
 	case narfile.FieldLastAccessedAt:
 		return m.OldLastAccessedAt(ctx)
 	}
@@ -3431,6 +3488,13 @@ func (m *NarFileMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBytesStoredAt(v)
 		return nil
+	case narfile.FieldDechunkResidueFlaggedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDechunkResidueFlaggedAt(v)
+		return nil
 	case narfile.FieldLastAccessedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -3507,6 +3571,9 @@ func (m *NarFileMutation) ClearedFields() []string {
 	if m.FieldCleared(narfile.FieldBytesStoredAt) {
 		fields = append(fields, narfile.FieldBytesStoredAt)
 	}
+	if m.FieldCleared(narfile.FieldDechunkResidueFlaggedAt) {
+		fields = append(fields, narfile.FieldDechunkResidueFlaggedAt)
+	}
 	if m.FieldCleared(narfile.FieldLastAccessedAt) {
 		fields = append(fields, narfile.FieldLastAccessedAt)
 	}
@@ -3535,6 +3602,9 @@ func (m *NarFileMutation) ClearField(name string) error {
 		return nil
 	case narfile.FieldBytesStoredAt:
 		m.ClearBytesStoredAt()
+		return nil
+	case narfile.FieldDechunkResidueFlaggedAt:
+		m.ClearDechunkResidueFlaggedAt()
 		return nil
 	case narfile.FieldLastAccessedAt:
 		m.ClearLastAccessedAt()
@@ -3576,6 +3646,9 @@ func (m *NarFileMutation) ResetField(name string) error {
 		return nil
 	case narfile.FieldBytesStoredAt:
 		m.ResetBytesStoredAt()
+		return nil
+	case narfile.FieldDechunkResidueFlaggedAt:
+		m.ResetDechunkResidueFlaggedAt()
 		return nil
 	case narfile.FieldLastAccessedAt:
 		m.ResetLastAccessedAt()

@@ -61,6 +61,15 @@ func (NarFile) Fields() []ent.Field {
 		field.Time("bytes_stored_at").
 			Optional().
 			Nillable(),
+		// dechunk_residue_flagged_at records when fsck first observed this row to be
+		// an un-de-chunkable chunked NAR (CDC residue). NULL means "not flagged". fsck
+		// sets it on first detection, clears it when the row becomes recoverable or is
+		// de-chunked, and uses its age (against a configurable grace window) to decide
+		// deferred reclamation. Independent of verified_at, bytes_stored_at, and
+		// chunking_started_at.
+		field.Time("dechunk_residue_flagged_at").
+			Optional().
+			Nillable(),
 		field.Time("last_accessed_at").
 			Optional().
 			Nillable().

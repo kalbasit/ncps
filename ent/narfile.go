@@ -37,6 +37,8 @@ type NarFile struct {
 	VerifiedAt *time.Time `json:"verified_at,omitempty"`
 	// BytesStoredAt holds the value of the "bytes_stored_at" field.
 	BytesStoredAt *time.Time `json:"bytes_stored_at,omitempty"`
+	// DechunkResidueFlaggedAt holds the value of the "dechunk_residue_flagged_at" field.
+	DechunkResidueFlaggedAt *time.Time `json:"dechunk_residue_flagged_at,omitempty"`
 	// LastAccessedAt holds the value of the "last_accessed_at" field.
 	LastAccessedAt *time.Time `json:"last_accessed_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -83,7 +85,7 @@ func (*NarFile) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case narfile.FieldHash, narfile.FieldCompression, narfile.FieldQuery:
 			values[i] = new(sql.NullString)
-		case narfile.FieldCreatedAt, narfile.FieldUpdatedAt, narfile.FieldChunkingStartedAt, narfile.FieldVerifiedAt, narfile.FieldBytesStoredAt, narfile.FieldLastAccessedAt:
+		case narfile.FieldCreatedAt, narfile.FieldUpdatedAt, narfile.FieldChunkingStartedAt, narfile.FieldVerifiedAt, narfile.FieldBytesStoredAt, narfile.FieldDechunkResidueFlaggedAt, narfile.FieldLastAccessedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -169,6 +171,13 @@ func (_m *NarFile) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.BytesStoredAt = new(time.Time)
 				*_m.BytesStoredAt = value.Time
+			}
+		case narfile.FieldDechunkResidueFlaggedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field dechunk_residue_flagged_at", values[i])
+			} else if value.Valid {
+				_m.DechunkResidueFlaggedAt = new(time.Time)
+				*_m.DechunkResidueFlaggedAt = value.Time
 			}
 		case narfile.FieldLastAccessedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -258,6 +267,11 @@ func (_m *NarFile) String() string {
 	builder.WriteString(", ")
 	if v := _m.BytesStoredAt; v != nil {
 		builder.WriteString("bytes_stored_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.DechunkResidueFlaggedAt; v != nil {
+		builder.WriteString("dechunk_residue_flagged_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")

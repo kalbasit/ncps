@@ -194,6 +194,26 @@ func (_u *NarFileUpdate) ClearBytesStoredAt() *NarFileUpdate {
 	return _u
 }
 
+// SetDechunkResidueFlaggedAt sets the "dechunk_residue_flagged_at" field.
+func (_u *NarFileUpdate) SetDechunkResidueFlaggedAt(v time.Time) *NarFileUpdate {
+	_u.mutation.SetDechunkResidueFlaggedAt(v)
+	return _u
+}
+
+// SetNillableDechunkResidueFlaggedAt sets the "dechunk_residue_flagged_at" field if the given value is not nil.
+func (_u *NarFileUpdate) SetNillableDechunkResidueFlaggedAt(v *time.Time) *NarFileUpdate {
+	if v != nil {
+		_u.SetDechunkResidueFlaggedAt(*v)
+	}
+	return _u
+}
+
+// ClearDechunkResidueFlaggedAt clears the value of the "dechunk_residue_flagged_at" field.
+func (_u *NarFileUpdate) ClearDechunkResidueFlaggedAt() *NarFileUpdate {
+	_u.mutation.ClearDechunkResidueFlaggedAt()
+	return _u
+}
+
 // SetLastAccessedAt sets the "last_accessed_at" field.
 func (_u *NarFileUpdate) SetLastAccessedAt(v time.Time) *NarFileUpdate {
 	_u.mutation.SetLastAccessedAt(v)
@@ -384,6 +404,12 @@ func (_u *NarFileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.BytesStoredAtCleared() {
 		_spec.ClearField(narfile.FieldBytesStoredAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.DechunkResidueFlaggedAt(); ok {
+		_spec.SetField(narfile.FieldDechunkResidueFlaggedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DechunkResidueFlaggedAtCleared() {
+		_spec.ClearField(narfile.FieldDechunkResidueFlaggedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.LastAccessedAt(); ok {
 		_spec.SetField(narfile.FieldLastAccessedAt, field.TypeTime, value)
@@ -665,6 +691,26 @@ func (_u *NarFileUpdateOne) ClearBytesStoredAt() *NarFileUpdateOne {
 	return _u
 }
 
+// SetDechunkResidueFlaggedAt sets the "dechunk_residue_flagged_at" field.
+func (_u *NarFileUpdateOne) SetDechunkResidueFlaggedAt(v time.Time) *NarFileUpdateOne {
+	_u.mutation.SetDechunkResidueFlaggedAt(v)
+	return _u
+}
+
+// SetNillableDechunkResidueFlaggedAt sets the "dechunk_residue_flagged_at" field if the given value is not nil.
+func (_u *NarFileUpdateOne) SetNillableDechunkResidueFlaggedAt(v *time.Time) *NarFileUpdateOne {
+	if v != nil {
+		_u.SetDechunkResidueFlaggedAt(*v)
+	}
+	return _u
+}
+
+// ClearDechunkResidueFlaggedAt clears the value of the "dechunk_residue_flagged_at" field.
+func (_u *NarFileUpdateOne) ClearDechunkResidueFlaggedAt() *NarFileUpdateOne {
+	_u.mutation.ClearDechunkResidueFlaggedAt()
+	return _u
+}
+
 // SetLastAccessedAt sets the "last_accessed_at" field.
 func (_u *NarFileUpdateOne) SetLastAccessedAt(v time.Time) *NarFileUpdateOne {
 	_u.mutation.SetLastAccessedAt(v)
@@ -885,6 +931,12 @@ func (_u *NarFileUpdateOne) sqlSave(ctx context.Context) (_node *NarFile, err er
 	}
 	if _u.mutation.BytesStoredAtCleared() {
 		_spec.ClearField(narfile.FieldBytesStoredAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.DechunkResidueFlaggedAt(); ok {
+		_spec.SetField(narfile.FieldDechunkResidueFlaggedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DechunkResidueFlaggedAtCleared() {
+		_spec.ClearField(narfile.FieldDechunkResidueFlaggedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.LastAccessedAt(); ok {
 		_spec.SetField(narfile.FieldLastAccessedAt, field.TypeTime, value)
