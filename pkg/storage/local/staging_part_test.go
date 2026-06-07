@@ -64,3 +64,16 @@ func TestStagingParts_WriteReadDelete(t *testing.T) {
 	// Delete is a no-op when nothing exists.
 	require.NoError(t, s.DeleteStagingParts(ctx, hash))
 }
+
+func TestStagingParts_NegativeIndexRejected(t *testing.T) {
+	t.Parallel()
+
+	s, err := local.New(newContext(), t.TempDir())
+	require.NoError(t, err)
+
+	const hash = "abcdef0123456789abcdef0123456789"
+
+	_, err = s.PutStagingPart(newContext(), hash, -1, strings.NewReader("x"), 1)
+	require.ErrorIs(t, err, storage.ErrInvalidArgument,
+		"a negative part index must be rejected, not written to an invalid path")
+}

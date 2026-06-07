@@ -496,6 +496,10 @@ func (s *Store) PutStagingPart(
 	_, span := tracer.Start(ctx, "local.PutStagingPart", trace.WithSpanKind(trace.SpanKindInternal))
 	defer span.End()
 
+	if index < 0 {
+		return 0, fmt.Errorf("%w: staging part index %d must be >= 0", storage.ErrInvalidArgument, index)
+	}
+
 	partPath := s.stagingPartPath(hash, index)
 
 	if err := os.MkdirAll(filepath.Dir(partPath), dirMode); err != nil {
@@ -516,10 +520,14 @@ func (s *Store) PutStagingPart(
 	}
 
 	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+
 		return 0, fmt.Errorf("error closing the temporary staging part file: %w", err)
 	}
 
 	if err := os.Rename(f.Name(), partPath); err != nil {
+		os.Remove(f.Name())
+
 		return 0, fmt.Errorf("error creating the staging part file %q: %w", partPath, err)
 	}
 

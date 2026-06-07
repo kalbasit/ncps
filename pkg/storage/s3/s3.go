@@ -774,17 +774,26 @@ func (s *Store) PutStagingPart(
 	_, span := tracer.Start(ctx, "s3.PutStagingPart", trace.WithSpanKind(trace.SpanKindInternal))
 	defer span.End()
 
-	objSize := size
-	if objSize <= 0 {
-		objSize = -1
+	key := s.stagingPartKey(hash, index)
+
+	// When the size is unknown, stream via multipart (PartSize set) rather than
+	// PutObject(-1), which buffers the entire part in memory and can OOM the
+	// holder for large parts. Mirrors PutNar's unknown-size path.
+	if size <= 0 {
+		written, err := s.putObjectStream(ctx, key, body, "application/octet-stream")
+		if err != nil {
+			return 0, fmt.Errorf("error putting staging part to S3: %w", err)
+		}
+
+		return written, nil
 	}
 
 	result, err := s.client.PutObject(
 		ctx,
 		s.bucket,
-		s.stagingPartKey(hash, index),
+		key,
 		body,
-		objSize,
+		size,
 		minio.PutObjectOptions{ContentType: "application/octet-stream"},
 	)
 	if err != nil {
@@ -823,14 +832,35 @@ func (s *Store) DeleteStagingParts(ctx context.Context, hash string) error {
 	defer span.End()
 
 	opts := minio.ListObjectsOptions{Prefix: s.stagingPartDirKey(hash), Recursive: true}
-	for object := range s.client.ListObjects(ctx, s.bucket, opts) {
-		if object.Err != nil {
-			return fmt.Errorf("error listing staging parts for %q: %w", hash, object.Err)
-		}
+	objectsCh := make(chan minio.ObjectInfo)
 
-		if err := s.client.RemoveObject(ctx, s.bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-			return fmt.Errorf("error removing staging part %q: %w", object.Key, err)
+	var listErr error
+
+	// Feed the listing into RemoveObjects, which batches deletions (up to 1000 per
+	// request) instead of one HTTP round-trip per part — a large NAR can have many
+	// parts. Listing errors are captured and surfaced after the delete drains.
+	go func() {
+		defer close(objectsCh)
+
+		for object := range s.client.ListObjects(ctx, s.bucket, opts) {
+			if object.Err != nil {
+				listErr = object.Err
+
+				return
+			}
+
+			objectsCh <- object
 		}
+	}()
+
+	for rErr := range s.client.RemoveObjects(ctx, s.bucket, objectsCh, minio.RemoveObjectsOptions{}) {
+		if rErr.Err != nil {
+			return fmt.Errorf("error removing staging part %q: %w", rErr.ObjectName, rErr.Err)
+		}
+	}
+
+	if listErr != nil {
+		return fmt.Errorf("error listing staging parts for %q: %w", hash, listErr)
 	}
 
 	return nil
