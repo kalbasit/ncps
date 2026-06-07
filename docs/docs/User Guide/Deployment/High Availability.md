@@ -58,9 +58,12 @@ Running multiple ncps instances provides:
    - **NOTE: MySQL is only supported for data storage, NOT for distributed locking.**
 1. **Load balancer** to distribute requests
    - nginx, HAProxy, cloud load balancer, etc.
-1. **CDC (Content-Defined Chunking) feature**
-   - **CRITICAL:** You must enable CDC when running multiple replicas. Failure to do so will result in timeouts and instability, as documented in [issue #660](https://github.com/kalbasit/ncps/issues/660).
-   - Enable by setting `config.cdc.enabled=true`.
+1. **A serve-during-download mechanism: CDC _or_ in-flight NAR staging**
+   - **CRITICAL:** When running multiple replicas you must enable **one** of these so a replica can serve a NAR that another replica is still downloading. Without either, a second replica requesting an in-flight NAR waits past client timeouts, causing instability, as documented in [issue #660](https://github.com/kalbasit/ncps/issues/660).
+   - **In-flight NAR staging (recommended default):** set `config.inflightStaging.enabled=true`. It is the lightweight option — zero overhead until a second replica actually contends for the same NAR, no chunking/deduplication CPU cost, and it covers the serve-during-download window for all modes. It activates only with the distributed (Redis) lock.
+   - **CDC (Content-Defined Chunking):** set `config.cdc.enabled=true`. Choose this when you also want chunk-level deduplication across NARs.
+   - Enabling either satisfies the chart's `replicaCount > 1` validation guard. The previous `config.cdc.iLoveTimeouts` bypass has been **removed** — migrate by enabling in-flight staging (or CDC).
+   - **Request-affinity routing** (pinning a NAR's requests to one replica via the load balancer) remains an optional latency optimization, not a correctness requirement.
 
 ### Network Requirements
 
