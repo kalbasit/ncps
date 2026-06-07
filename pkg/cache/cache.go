@@ -6448,10 +6448,44 @@ func (c *Cache) pollForDownloadOrTakeOver(
 				return ds, false
 			}
 
-			// Before re-attempting the lock, see whether the holder has begun
-			// staging the in-flight NAR. If parts are available we serve them
-			// directly (tailing as they land) rather than waiting for the whole
-			// download to finish — the cross-pod fast path for #660 / #1289.
+			// Re-attempt acquisition without blocking, bounded by the give-up
+			// deadline. TryLock is a single non-blocking attempt, so a tick can
+			// never stall the poll loop or outlive deadlineCtx / caller
+			// cancellation (a blocking Lock retries internally and could do
+			// exactly that). Success means the previous holder released the lock
+			// (it finished or failed) without the asset appearing, so we take
+			// over as the sole downloader.
+			//
+			// Takeover is attempted BEFORE serving from staging: an acquirable lock
+			// means the holder is gone (dead/failed), so its staging parts are at
+			// best a truncated prefix. We discard them and restart the download from
+			// zero rather than tailing a producer that will never complete (D5).
+			acquired, lockErr := c.downloadLocker.TryLock(deadlineCtx, lockKey, c.downloadLockTTL)
+			if lockErr == nil && acquired {
+				zerolog.Ctx(ctx).Debug().
+					Str("hash", hash).
+					Str("lock_key", lockKey).
+					Msg("re-acquired download lock, taking over the download")
+
+				if stagingActive {
+					// Discard the dead holder's partial staging so the fresh download
+					// re-stages from zero; a reader is never handed truncated parts.
+					if err := c.reclaimStaging(context.WithoutCancel(coordCtx), hash); err != nil {
+						zerolog.Ctx(ctx).Warn().Err(err).Str("hash", hash).
+							Msg("failed to reset staging on takeover; orphan sweep will reclaim it")
+					}
+				}
+
+				downloadCoordinationFallbackTotal.Add(ctx, 1,
+					metric.WithAttributes(attribute.String("outcome", "take_over")))
+
+				return nil, true
+			}
+
+			// The lock is still held (holder alive): if it has begun staging the
+			// in-flight NAR, serve the parts directly (tailing as they land) rather
+			// than waiting for the whole download to finish — the cross-pod fast path
+			// for #660 / #1289.
 			if stagingActive {
 				if info := c.stagingServeReady(coordCtx, hash); info != nil {
 					zerolog.Ctx(ctx).Debug().
@@ -6470,26 +6504,6 @@ func (c *Cache) pollForDownloadOrTakeOver(
 
 					return ds, false
 				}
-			}
-
-			// Re-attempt acquisition without blocking, bounded by the give-up
-			// deadline. TryLock is a single non-blocking attempt, so a tick can
-			// never stall the poll loop or outlive deadlineCtx / caller
-			// cancellation (a blocking Lock retries internally and could do
-			// exactly that). Success means the previous holder released the lock
-			// (it finished or failed) without the asset appearing, so we take
-			// over as the sole downloader.
-			acquired, lockErr := c.downloadLocker.TryLock(deadlineCtx, lockKey, c.downloadLockTTL)
-			if lockErr == nil && acquired {
-				zerolog.Ctx(ctx).Debug().
-					Str("hash", hash).
-					Str("lock_key", lockKey).
-					Msg("re-acquired download lock, taking over the download")
-
-				downloadCoordinationFallbackTotal.Add(ctx, 1,
-					metric.WithAttributes(attribute.String("outcome", "take_over")))
-
-				return nil, true
 			}
 		case <-deadlineCtx.Done():
 			ds := newDownloadState()
