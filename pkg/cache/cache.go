@@ -1007,8 +1007,8 @@ func (c *Cache) AddCDCDeletedCleanupCronJob(ctx context.Context, schedule cron.S
 	c.cron.Schedule(schedule, cron.FuncJob(c.runCDCDeletedCleanup(ctx)))
 }
 
-// AddCDCLazyRecoveryCronJob adds a periodic job to recover stuck NAR files
-// that failed to chunk due to restart or other issues.
+// AddCDCLazyRecoveryCronJob adds a periodic job to recover CDC rows that failed
+// to chunk due to restart or other issues.
 func (c *Cache) AddCDCLazyRecoveryCronJob(
 	ctx context.Context,
 	schedule cron.Schedule,
@@ -1018,7 +1018,7 @@ func (c *Cache) AddCDCLazyRecoveryCronJob(
 		Info().
 		Time("next-run", schedule.Next(time.Now())).
 		Int("batch_size", batchSize).
-		Msg("adding a cronjob for CDC lazy recovery")
+		Msg("adding a cronjob for CDC recovery")
 
 	c.cron.Schedule(schedule, cron.FuncJob(c.runCDCLazyRecovery(ctx, schedule, batchSize)))
 }
@@ -1952,10 +1952,23 @@ func (c *Cache) storeNarFromTempFile(ctx context.Context, tempPath string, narUR
 	return nil
 }
 
-// storeNarWithCDC stores the NAR from a temporary file using CDC.
-// For CDC mode, NARs are always stored as raw uncompressed chunks.
-// If the input file is compressed, it will be decompressed before chunking.
 func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *nar.URL, onNarFileReady func()) error {
+	return c.withNarMigrationLock(ctx, narURL.Hash, "storeNarWithCDC", func() error {
+		return c.storeNarWithCDCUnlocked(ctx, tempPath, narURL, onNarFileReady)
+	})
+}
+
+// storeNarWithCDCUnlocked stores the NAR from a temporary file using CDC. The caller
+// must already hold migrationLockKey(narURL.Hash).
+//
+// For CDC mode, NARs are always stored as raw uncompressed chunks. If the input file
+// is compressed, it will be decompressed before chunking.
+func (c *Cache) storeNarWithCDCUnlocked(
+	ctx context.Context,
+	tempPath string,
+	narURL *nar.URL,
+	onNarFileReady func(),
+) error {
 	ctx, span := tracer.Start(
 		ctx,
 		"cache.storeNarWithCDC",
@@ -1977,6 +1990,86 @@ func (c *Cache) storeNarWithCDC(ctx context.Context, tempPath string, narURL *na
 	// NarSize, so we skip the size validation (which requires the narinfo's NarSize).
 	// The NarSize is only known at download time (pullNarIntoStore), not here.
 	return c.storeNarWithCDCFromReader(ctx, f, 0, narURL, onNarFileReady)
+}
+
+func (c *Cache) storeNarWithCDCFromReaderWithMigrationLock(
+	ctx context.Context,
+	r io.Reader,
+	fileSize uint64,
+	narURL *nar.URL,
+	onNarFileReady func(),
+) error {
+	return c.withNarMigrationLock(ctx, narURL.Hash, "storeNarWithCDCFromReader", func() error {
+		return c.storeNarWithCDCFromReader(ctx, r, fileSize, narURL, onNarFileReady)
+	})
+}
+
+func (c *Cache) withNarMigrationLock(ctx context.Context, hash string, operation string, fn func() error) error {
+	lockKey := migrationLockKey(hash)
+
+	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
+	if err != nil {
+		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
+	}
+
+	if !acquired {
+		zerolog.Ctx(ctx).Debug().
+			Str("nar_hash", hash).
+			Str("operation", operation).
+			Msg("migration lock already held by another instance")
+
+		return ErrMigrationInProgress
+	}
+
+	defer func() {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
+			zerolog.Ctx(ctx).Error().
+				Err(err).
+				Str("nar_hash", hash).
+				Str("operation", operation).
+				Msg("failed to release migration lock")
+		}
+	}()
+
+	defer lock.StartRefresher(ctx, c.downloadLocker, lockKey, c.downloadLockTTL)()
+
+	return fn()
+}
+
+// reportBackgroundCDCError records the outcome of a background CDC chunking attempt.
+//
+// ErrMigrationInProgress means a peer (another replica, or a concurrent
+// migration/stale-recovery for the same hash) holds the per-hash migration lock. In an
+// HA fleet that is a benign "someone else owns it" outcome: the in-flight client already
+// received the bytes and the lock holder will persist the NAR. It is logged at debug and
+// does NOT call ds.setError, so it neither fails the download nor produces error-level log
+// spam / spurious alerts.
+//
+// Every other error is a genuine failure: it is logged at error level (with errMsg) and
+// recorded via ds.setError.
+func (c *Cache) reportBackgroundCDCError(
+	ctx context.Context,
+	ds *downloadState,
+	cdcErr error,
+	narURL string,
+	errMsg string,
+) {
+	if errors.Is(cdcErr, ErrMigrationInProgress) {
+		zerolog.Ctx(ctx).
+			Debug().
+			Err(cdcErr).
+			Str("nar_url", narURL).
+			Msg("background CDC chunking skipped; another instance holds the migration lock")
+
+		return
+	}
+
+	zerolog.Ctx(ctx).
+		Error().
+		Err(cdcErr).
+		Str("nar_url", narURL).
+		Msg(errMsg)
+	ds.setError(cdcErr)
 }
 
 // maybeDecompressReader wraps r in a decompression reader if compression is not none.
@@ -2359,43 +2452,34 @@ func (c *Cache) findOrCreateNarFileForCDC(
 		// Determine whether chunking has already been completed or is in progress.
 		//
 		//   total_chunks > 0                          → fully chunked, skip
-		//   total_chunks = 0, chunking_started_at set → in progress or interrupted
-		//     └─ lock still fresh (< TTL)             → another goroutine is working, skip
-		//     └─ lock is stale   (≥ TTL)              → previous attempt crashed; clean up and restart
+		//   total_chunks = 0, chunking_started_at set → a PRIOR chunker that is now dead.
+		//     Every caller of findOrCreateNarFileForCDC holds migrationLockKey(hash) for
+		//     the whole operation (withNarMigrationLock / MigrateNarToChunks), so a live
+		//     chunker would still hold the lock and we could never have entered here. The
+		//     lock — not the lock's age — is the liveness signal (issue #1230: a crash
+		//     leaves a FRESH chunking_started_at, which the old age gate wrongly treated as
+		//     a live peer and refused, stranding the orphan). Reclaim the partial chunks
+		//     and take over regardless of age.
 		//   total_chunks = 0, chunking_started_at nil → not yet started, proceed
 		if nr.TotalChunks > 0 {
 			return storage.ErrAlreadyExists
 		}
 
 		if nr.ChunkingStartedAt != nil {
-			age := time.Since(*nr.ChunkingStartedAt)
-			if age < cdcChunkingLockTTL {
-				// Another in-progress attempt is still within the TTL — skip.
-				return storage.ErrAlreadyExists
-			}
-
-			// Lock is stale: a previous attempt was interrupted mid-chunking.
-			// Collect the partial chunk records so we can clean them up after the
-			// transaction commits (chunk files live outside the DB transaction).
-			partialChunks, err := tx.Chunk.Query().
-				Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
-				All(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get chunks for stale nar_file %d: %w", narFileID, err)
-			}
-
-			staleLockChunks = partialChunks
-
 			zerolog.Ctx(ctx).Warn().
-				Dur("age", age).
+				Dur("age", time.Since(*nr.ChunkingStartedAt)).
 				Int64("narFileID", narFileID).
-				Int("stale_chunk_count", len(staleLockChunks)).
-				Msg("stale CDC chunking lock detected; cleaning up partial chunks and restarting")
+				Msg("reclaiming orphaned CDC chunking lock (we hold the migration lock); cleaning up partial chunks and restarting")
 
-			if _, err := tx.NarFileChunk.Delete().
-				Where(entnarfilechunk.NarFileID(nr.ID)).
-				Exec(ctx); err != nil {
-				return fmt.Errorf("failed to delete partial chunks for nar_file %d: %w", narFileID, err)
+			var cleaned bool
+
+			staleLockChunks, cleaned, err = c.clearStaleCDCChunkingLockWithEntTx(ctx, tx, nr, time.Now())
+			if err != nil {
+				return err
+			}
+
+			if !cleaned {
+				return storage.ErrAlreadyExists
 			}
 		}
 
@@ -2415,6 +2499,52 @@ func (c *Cache) findOrCreateNarFileForCDC(
 	}
 
 	return narFileID, staleLockChunks, nil
+}
+
+// clearStaleCDCChunkingLockWithEntTx clears an in-progress orphan row (total_chunks == 0
+// with chunking_started_at set): it deletes the partial nar_file_chunks and clears
+// chunking_started_at, returning the now-orphaned chunks for blob cleanup. It does NOT
+// itself decide whether the chunker is dead — liveness is the CALLER's responsibility:
+//   - findOrCreateNarFileForCDC pre-gates on age >= cdcChunkingLockTTL before calling.
+//   - runCDCLazyRecovery holds the per-hash migration lock (TryLock'd in
+//     recoverStaleCDCChunkingLock), which a live chunker would still hold, so a free lock
+//     proves the chunker is dead regardless of the row's age.
+//
+// It returns (nil, false, nil) only when the row is not an in-progress orphan.
+func (c *Cache) clearStaleCDCChunkingLockWithEntTx(
+	ctx context.Context,
+	tx *ent.Tx,
+	nr *ent.NarFile,
+	now time.Time,
+) ([]*ent.Chunk, bool, error) {
+	if nr.TotalChunks > 0 || nr.ChunkingStartedAt == nil {
+		return nil, false, nil
+	}
+
+	// Lock is being reclaimed: a previous attempt was interrupted mid-chunking. Collect the
+	// partial chunk records so we can clean them up after the transaction commits
+	// (chunk files live outside the DB transaction).
+	partialChunks, err := tx.Chunk.Query().
+		Where(entchunk.HasNarFileLinksWith(entnarfilechunk.NarFileID(nr.ID))).
+		All(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get chunks for stale nar_file %d: %w", nr.ID, err)
+	}
+
+	if _, err := tx.NarFileChunk.Delete().
+		Where(entnarfilechunk.NarFileID(nr.ID)).
+		Exec(ctx); err != nil {
+		return nil, false, fmt.Errorf("failed to delete partial chunks for nar_file %d: %w", nr.ID, err)
+	}
+
+	if _, err := tx.NarFile.UpdateOneID(nr.ID).
+		ClearChunkingStartedAt().
+		SetUpdatedAt(now).
+		Save(ctx); err != nil {
+		return nil, false, fmt.Errorf("failed to clear chunking_started_at for nar_file %d: %w", nr.ID, err)
+	}
+
+	return partialChunks, true, nil
 }
 
 // cleanupStaleLockChunks immediately removes chunk files and database records that became
@@ -2900,14 +3030,21 @@ func (c *Cache) pullNarIntoStore(
 				ds.storedOnce.Do(func() { close(ds.stored) })
 			}
 
-			cdcErr := c.storeNarWithCDCFromReader(ctx, cdcReader, narInfo.NarSize, &narURLForCDC, onNarFileReady)
+			cdcErr := c.storeNarWithCDCFromReaderWithMigrationLock(
+				ctx,
+				cdcReader,
+				narInfo.NarSize,
+				&narURLForCDC,
+				onNarFileReady,
+			)
 			if cdcErr != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(cdcErr).
-					Str("nar_url", narURLForCDC.String()).
-					Msg("CDC chunking failed in background after pullNarIntoStore")
-				ds.setError(cdcErr)
+				c.reportBackgroundCDCError(
+					ctx,
+					ds,
+					cdcErr,
+					narURLForCDC.String(),
+					"CDC chunking failed in background after pullNarIntoStore",
+				)
 
 				return
 			}
@@ -2999,12 +3136,13 @@ func (c *Cache) pullNarIntoStore(
 
 			cdcErr := c.storeNarWithCDC(context.WithoutCancel(ctx), ds.assetPath, narURL, onNarFileReady)
 			if cdcErr != nil {
-				zerolog.Ctx(ctx).
-					Error().
-					Err(cdcErr).
-					Str("nar_url", narURL.String()).
-					Msg("CDC chunking failed in background after pullNarIntoStore (simple path)")
-				ds.setError(cdcErr)
+				c.reportBackgroundCDCError(
+					ctx,
+					ds,
+					cdcErr,
+					narURL.String(),
+					"CDC chunking failed in background after pullNarIntoStore (simple path)",
+				)
 
 				return
 			}
@@ -4003,17 +4141,34 @@ func (c *Cache) getNarFileFromDB(
 	return nil, err
 }
 
-// narFileServable reports whether an existing nar_file record represents servable
-// backing data: it is fully chunked (TotalChunks > 0) or chunking is actively in
-// progress within cdcChunkingLockTTL. A placeholder record (TotalChunks == 0 with a
-// NULL or stale ChunkingStartedAt) is NOT servable.
-func narFileServable(nr *ent.NarFile) bool {
-	if nr.TotalChunks > 0 {
+// cdcChunkerLive reports whether a chunker is actively producing chunks for hash, i.e.
+// whether some instance holds the per-hash migration lock (migrationLockKey). A fresh
+// chunking_started_at alone does NOT prove liveness: a crashed chunker leaves the row
+// in-progress but releases (or lets its TTL expire) the lock. Because the Locker exposes
+// no read-only "is held" query, liveness is probed with a non-blocking TryLock that is
+// released immediately. On a probe error it returns true (fail safe: keep the existing
+// wait behavior rather than discard a possibly-live chunk). Callers MUST restrict this to
+// the ambiguous total_chunks==0 && fresh-lock case to keep it off the hot path.
+func (c *Cache) cdcChunkerLive(ctx context.Context, hash string) bool {
+	lockKey := migrationLockKey(hash)
+
+	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
+	if err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Str("hash", hash).
+			Msg("failed to probe CDC chunker liveness; assuming live")
+
 		return true
 	}
 
-	if nr.ChunkingStartedAt != nil {
-		return time.Since(*nr.ChunkingStartedAt) < cdcChunkingLockTTL
+	if !acquired {
+		// Held by a live producer (download-path chunker, migration, or recovery).
+		return true
+	}
+
+	// Lock was free: no live producer. Release the probe immediately.
+	if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Str("hash", hash).
+			Msg("failed to release CDC chunker liveness probe lock")
 	}
 
 	return false
@@ -4047,7 +4202,28 @@ func (c *Cache) isServable(ctx context.Context, narURL nar.URL) (bool, error) {
 		return false, fmt.Errorf("failed to look up nar_file record for servability: %w", err)
 	}
 
-	return narFileServable(nr), nil
+	// Servability of an existing nar_file record:
+	//   - total_chunks > 0           → fully chunked, servable (no lock probe on this hot path).
+	//   - chunking_started_at == nil → a bare placeholder (created at narinfo-fetch time or
+	//     left by a failed download), never servable; falls through to a re-download.
+	//   - otherwise (chunking in progress) → servable ONLY if a chunker is actually
+	//     producing its chunks. Liveness is the refreshed per-hash migration lock, NOT the
+	//     age of chunking_started_at (a one-time write): the download-path chunker holds
+	//     migrationLockKey(hash) for the whole operation, so a FREE lock means the producer
+	//     died mid-chunking (issue #1230) and the row is a dead orphan — routing GetNar into
+	//     getNarFromChunks would commit 200 + partial chunks then stall maxWaitPerChunk on a
+	//     chunk that never arrives ("Truncated zstd input"), so report it not-servable and
+	//     let GetNar re-download cleanly. A HELD lock keeps the row servable even for a chunk
+	//     running longer than cdcChunkingLockTTL, so peers piggyback on the live producer.
+	if nr.TotalChunks > 0 {
+		return true, nil
+	}
+
+	if nr.ChunkingStartedAt == nil {
+		return false, nil
+	}
+
+	return c.cdcChunkerLive(ctx, narURL.Hash), nil
 }
 
 // narFileBytesStored reports whether the shared database records this NAR's bytes
@@ -6818,7 +6994,7 @@ func (c *Cache) runCDCDeletedCleanup(ctx context.Context) func() {
 // instead of restarting at 0 (which would let a low-id backlog starve higher-id rows).
 const cdcRecoveryCursorKey = "cdc_lazy_recovery_cursor"
 
-// runCDCLazyRecovery runs the CDC lazy recovery job to recover stuck NAR files.
+// runCDCLazyRecovery runs the CDC recovery job to recover stuck NAR files.
 func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, batchSize int) func() {
 	return func() {
 		startTime := time.Now()
@@ -6840,8 +7016,18 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			nextNextRun := schedule.Next(nextRun)
 			interval := nextNextRun.Sub(nextRun)
 
-			// Get stuck NAR files - those that have total_chunks = 0,
-			// chunking_started_at = NULL, and are older than the recovery interval
+			// Get CDC recovery candidates:
+			//   - old placeholder / lazy whole-file rows that have total_chunks=0 and
+			//     no active chunker
+			//   - in-progress chunking rows (chunking_started_at set, total_chunks=0) of
+			//     ANY age. Liveness is NOT inferred from age: total_chunks stays 0 for the
+			//     entire duration of a healthy chunk, so an age gate cannot distinguish a
+			//     crashed chunker from a live peer in a shared-DB fleet. Instead,
+			//     recoverStaleCDCChunkingLock TryLocks the per-hash migration lock the
+			//     download-path chunker holds — a held lock means a live chunker (skip), a
+			//     free lock means a dead one (reap). Acting at any age reclaims a crashed
+			//     chunker's orphan within one recovery interval instead of after a fixed
+			//     1h age gate (which would defeat the point of healing fresh orphans).
 			cutoffTime := startTime.Add(-interval)
 
 			// Ensure batch size is within int32 bounds to avoid overflow
@@ -6852,34 +7038,45 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			// Resume the keyset scan from the persisted cursor so progress survives
 			// restarts and lock handoffs to other instances; a per-process cursor would
 			// restart at 0 and let a low-id backlog (e.g. failed-download placeholders)
-			// starve genuinely re-drivable higher-id rows. Backing-less rows are skipped
-			// without mutation, so this cursor is the only thing advancing past them.
+			// starve genuinely re-drivable higher-id rows. Some backing-less rows are
+			// kept after conservative GC checks, so this cursor is what advances past
+			// rows that remain unchanged.
 			cursorID := c.loadRecoveryCursor(ctx)
 
-			stuckFiles, err := c.dbClient.Ent().NarFile.Query().
+			recoveryQuery := c.dbClient.Ent().NarFile.Query().
 				Where(
 					entnarfile.TotalChunksEQ(0),
+					entnarfile.IDGT(cursorID),
+				)
+
+			recoveryQuery = recoveryQuery.Where(entnarfile.Or(
+				entnarfile.And(
 					entnarfile.ChunkingStartedAtIsNil(),
 					entnarfile.CreatedAtLT(cutoffTime),
-					entnarfile.IDGT(cursorID),
-				).
+				),
+				// In-progress orphans of any age; per-row migration-lock liveness in
+				// recoverStaleCDCChunkingLock decides skip (live) vs reap (dead).
+				entnarfile.ChunkingStartedAtNotNil(),
+			))
+
+			recoveryFiles, err := recoveryQuery.
 				Order(ent.Asc(entnarfile.FieldID)).
 				Limit(batchSize).
 				All(ctx)
 			if err != nil {
-				log.Error().Err(err).Msg("error getting stuck NAR files for recovery")
+				log.Error().Err(err).Msg("error getting CDC recovery candidates")
 
 				return err
 			}
 
-			if len(stuckFiles) == 0 {
+			if len(recoveryFiles) == 0 {
 				// Reached the end of the id space (or there were never any rows past
 				// the cursor); wrap back to the start so the next run rescans from the
 				// beginning and picks up newly-stuck rows.
 				cursorID = 0
 				c.saveRecoveryCursor(ctx, cursorID)
 
-				log.Debug().Msg("no stuck NAR files found for recovery")
+				log.Debug().Msg("no CDC recovery candidates found")
 
 				return nil
 			}
@@ -6887,17 +7084,50 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			// Advance the keyset cursor past the batch we are about to examine so the
 			// next run resumes after it instead of re-fetching the same low-id rows. A
 			// short batch means we hit the end, so wrap back to the start next time.
-			cursorID = stuckFiles[len(stuckFiles)-1].ID
-			if len(stuckFiles) < batchSize {
+			cursorID = recoveryFiles[len(recoveryFiles)-1].ID
+			if len(recoveryFiles) < batchSize {
 				cursorID = 0
 			}
 
 			c.saveRecoveryCursor(ctx, cursorID)
 
-			log.Info().Int("count", len(stuckFiles)).Msg("found stuck NAR files for recovery")
+			log.Info().Int("count", len(recoveryFiles)).Msg("found CDC recovery candidates")
 
-			// Trigger background chunking for each stuck NAR
-			for _, stuckFile := range stuckFiles {
+			var (
+				lazyStuckCount                int
+				staleRecoveredCount           int
+				staleRecoveredChunks          int
+				staleRecoverySkipCount        int
+				lazyChunkingDisabledSkipCount int
+			)
+
+			for _, stuckFile := range recoveryFiles {
+				if stuckFile.ChunkingStartedAt != nil {
+					recovered, chunkCount, err := c.recoverStaleCDCChunkingLock(ctx, stuckFile, &log)
+					if err != nil {
+						log.Error().
+							Err(err).
+							Int("nar_file_id", stuckFile.ID).
+							Str("hash", stuckFile.Hash).
+							Msg("error recovering stale CDC chunking lock")
+
+						return err
+					}
+
+					if !recovered {
+						staleRecoverySkipCount++
+
+						continue
+					}
+
+					staleRecoveredCount++
+					staleRecoveredChunks += chunkCount
+
+					continue
+				}
+
+				lazyStuckCount++
+
 				// Parse the query string from the database
 				parsedQuery, err := url.ParseQuery(stuckFile.Query)
 				if err != nil {
@@ -6925,6 +7155,16 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 					continue
 				}
 
+				if !c.GetCDCLazyChunkingEnabled() {
+					// Distinct from staleRecoverySkipCount (a live-chunker lock-held skip):
+					// this candidate is a whole-file-backed lazy placeholder we decline to
+					// re-drive only because lazy chunking is off. Folding it into the stale
+					// metric would make stale_recovery_skip_count misleading.
+					lazyChunkingDisabledSkipCount++
+
+					continue
+				}
+
 				// Trigger background migration - this uses distributed locking internally
 				// to prevent duplicate processing across instances
 				c.BackgroundMigrateNarToChunks(ctx, narURL)
@@ -6936,9 +7176,14 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			}
 
 			log.Info().
-				Int("count", len(stuckFiles)).
+				Int("count", len(recoveryFiles)).
+				Int("lazy_stuck_count", lazyStuckCount).
+				Int("stale_recovered_count", staleRecoveredCount).
+				Int("stale_recovered_chunk_count", staleRecoveredChunks).
+				Int("stale_recovery_skip_count", staleRecoverySkipCount).
+				Int("lazy_chunking_disabled_skip_count", lazyChunkingDisabledSkipCount).
 				Dur("elapsed", time.Since(startTime)).
-				Msg("CDC lazy recovery completed")
+				Msg("CDC recovery completed")
 
 			return nil
 		})
@@ -6948,6 +7193,79 @@ func (c *Cache) runCDCLazyRecovery(ctx context.Context, schedule cron.Schedule, 
 			zerolog.Ctx(ctx).Debug().Msg("another instance is running CDC lazy recovery, skipping")
 		}
 	}
+}
+
+func (c *Cache) recoverStaleCDCChunkingLock(
+	ctx context.Context,
+	staleFile *ent.NarFile,
+	log *zerolog.Logger,
+) (bool, int, error) {
+	lockKey := migrationLockKey(staleFile.Hash)
+
+	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
+	if err != nil {
+		return false, 0, fmt.Errorf("failed to acquire migration lock for stale CDC recovery: %w", err)
+	}
+
+	if !acquired {
+		log.Debug().
+			Int("nar_file_id", staleFile.ID).
+			Str("hash", staleFile.Hash).
+			Msg("skipping stale CDC chunking row; another instance holds the migration lock")
+
+		return false, 0, nil
+	}
+
+	defer func() {
+		if err := c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey); err != nil {
+			log.Error().
+				Err(err).
+				Int("nar_file_id", staleFile.ID).
+				Str("hash", staleFile.Hash).
+				Msg("failed to release migration lock after stale CDC recovery")
+		}
+	}()
+
+	defer lock.StartRefresher(ctx, c.downloadLocker, lockKey, c.downloadLockTTL)()
+
+	var (
+		staleLockChunks []*ent.Chunk
+		recovered       bool
+	)
+
+	err = c.withEntTransaction(ctx, "recoverStaleCDCChunkingLock", func(tx *ent.Tx) error {
+		current, err := tx.NarFile.Get(ctx, staleFile.ID)
+		if err != nil {
+			if database.IsNotFoundError(err) {
+				return nil
+			}
+
+			return fmt.Errorf("failed to re-check nar_file %d for stale CDC recovery: %w", staleFile.ID, err)
+		}
+
+		staleLockChunks, recovered, err = c.clearStaleCDCChunkingLockWithEntTx(ctx, tx, current, time.Now())
+
+		return err
+	})
+	if err != nil {
+		return false, 0, err
+	}
+
+	if !recovered {
+		return false, 0, nil
+	}
+
+	if cs := c.getChunkStore(); cs != nil {
+		c.cleanupStaleLockChunks(ctx, cs, staleLockChunks)
+	}
+
+	log.Info().
+		Int("nar_file_id", staleFile.ID).
+		Str("hash", staleFile.Hash).
+		Int("stale_chunk_count", len(staleLockChunks)).
+		Msg("recovered stale CDC chunking lock")
+
+	return true, len(staleLockChunks), nil
 }
 
 // loadRecoveryCursor reads the persisted CDC lazy-recovery keyset cursor, returning 0
@@ -8362,6 +8680,8 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 		}
 	}()
 
+	defer lock.StartRefresher(ctx, c.downloadLocker, lockKey, c.downloadLockTTL)()
+
 	// 1. Check if already chunked (Double-check after lock)
 	hasChunks, err := c.HasNarInChunks(ctx, *narURL)
 	if err != nil {
@@ -8417,7 +8737,7 @@ func (c *Cache) MigrateNarToChunks(ctx context.Context, narURL *nar.URL) error {
 	// Save original URL and compression before storeNarWithCDC normalizes narURL.Compression to "none".
 	originalNarURL := *narURL // value copy — storeNarWithCDC mutates narURL.Compression in-place
 
-	if err = c.storeNarWithCDC(ctx, tempPath, narURL, nil); err != nil {
+	if err = c.storeNarWithCDCUnlocked(ctx, tempPath, narURL, nil); err != nil {
 		return fmt.Errorf("error storing nar with CDC: %w", err)
 	}
 

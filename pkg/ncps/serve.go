@@ -75,8 +75,9 @@ var (
 	ErrCDCCleanupScheduleRequired = errors.New("--cache-cdc-lazy-cleanup-schedule is required when CDC lazy chunking is enabled")
 
 	// ErrCDCLazyRecoveryScheduleRequired is returned when CDC lazy recovery schedule is not provided.
-	//nolint:lll
-	ErrCDCLazyRecoveryScheduleRequired = errors.New("--cache-cdc-lazy-recovery-schedule is required when CDC lazy chunking is enabled")
+	ErrCDCLazyRecoveryScheduleRequired = errors.New(
+		"--cache-cdc-lazy-recovery-schedule is required when CDC is enabled",
+	)
 )
 
 const (
@@ -215,7 +216,7 @@ func serveCommand(
 			},
 			&cli.StringFlag{
 				Name:    "cache-cdc-lazy-recovery-schedule",
-				Usage:   "Cron schedule for recovering stuck NARs in lazy chunking mode (default: @every 5m)",
+				Usage:   "Cron schedule for recovering stuck CDC NARs (default: @every 5m)",
 				Sources: flagSources("cache.cdc.lazy-recovery-schedule", "CACHE_CDC_LAZY_RECOVERY_SCHEDULE"),
 				Value:   "@every 5m",
 				Validator: func(s string) error {
@@ -1263,35 +1264,60 @@ func createCache(
 			Msg("setting up cleanup cron job")
 
 		c.AddCDCDeletedCleanupCronJob(ctx, cdcCleanupSchedule)
+	}
 
-		// Add CDC lazy recovery cron job to recover stuck NARs
-		lazyRecoveryScheduleStr := cmd.String("cache-cdc-lazy-recovery-schedule")
-
-		if lazyRecoveryScheduleStr == "" {
-			return nil, ErrCDCLazyRecoveryScheduleRequired
-		}
-
-		lazyRecoverySchedule, err := cron.ParseStandard(lazyRecoveryScheduleStr)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing CDC lazy recovery cron spec: %w", err)
-		}
-
-		lazyRecoveryBatchSize := cmd.Int("cache-cdc-lazy-recovery-batch-size")
-
-		zerolog.Ctx(ctx).
-			Info().
-			Str("recovery-schedule", lazyRecoveryScheduleStr).
-			Int("batch-size", lazyRecoveryBatchSize).
-			Msg("setting up recovery cron job")
-
-		// Calculate the interval from the cron schedule for cutoff time calculation
-		// We use the interval between scheduled runs as the age cutoff
-		c.AddCDCLazyRecoveryCronJob(ctx, lazyRecoverySchedule, lazyRecoveryBatchSize)
+	if err := addCDCRecoveryCronJob(ctx, cmd, c, cdcEnabled, cdcLazyChunkingEnabled); err != nil {
+		return nil, err
 	}
 
 	c.StartCron(ctx)
 
 	return c, nil
+}
+
+func addCDCRecoveryCronJob(
+	ctx context.Context,
+	cmd *cli.Command,
+	c *cache.Cache,
+	cdcEnabled bool,
+	cdcLazyChunkingEnabled bool,
+) error {
+	if !cdcEnabled {
+		return nil
+	}
+
+	// Recover lazy whole-file rows and stale in-progress CDC chunking rows without
+	// blocking startup. Some non-server CLI commands reuse createCache but do not
+	// define this serve-only schedule flag, so skip the cron unless configured.
+	lazyRecoveryScheduleStr := cmd.String("cache-cdc-lazy-recovery-schedule")
+	if lazyRecoveryScheduleStr == "" {
+		if cdcLazyChunkingEnabled {
+			return ErrCDCLazyRecoveryScheduleRequired
+		}
+
+		zerolog.Ctx(ctx).
+			Debug().
+			Msg("CDC recovery cron schedule is not configured; skipping recovery cron job")
+
+		return nil
+	}
+
+	lazyRecoverySchedule, err := cron.ParseStandard(lazyRecoveryScheduleStr)
+	if err != nil {
+		return fmt.Errorf("error parsing CDC lazy recovery cron spec: %w", err)
+	}
+
+	lazyRecoveryBatchSize := cmd.Int("cache-cdc-lazy-recovery-batch-size")
+
+	zerolog.Ctx(ctx).
+		Info().
+		Str("recovery-schedule", lazyRecoveryScheduleStr).
+		Int("batch-size", lazyRecoveryBatchSize).
+		Msg("setting up CDC recovery cron job")
+
+	c.AddCDCLazyRecoveryCronJob(ctx, lazyRecoverySchedule, lazyRecoveryBatchSize)
+
+	return nil
 }
 
 func loadCDCConfigFromDB(

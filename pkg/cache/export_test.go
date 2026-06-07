@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -14,6 +15,21 @@ import (
 	"github.com/kalbasit/ncps/pkg/chunker"
 	"github.com/kalbasit/ncps/pkg/zstd"
 )
+
+// AcquireMigrationLockForTest acquires the per-hash CDC migration lock so external
+// (cache_test) tests can simulate an in-flight background chunker holding it — production
+// holds it for the chunk's whole duration via withNarMigrationLock. It returns a release
+// function and whether the lock was acquired.
+func (c *Cache) AcquireMigrationLockForTest(ctx context.Context, hash string) (func(), bool) {
+	lockKey := migrationLockKey(hash)
+
+	acquired, err := c.downloadLocker.TryLock(ctx, lockKey, c.downloadLockTTL)
+	if err != nil || !acquired {
+		return func() {}, false
+	}
+
+	return func() { _ = c.downloadLocker.Unlock(context.WithoutCancel(ctx), lockKey) }, true
+}
 
 // BuildTraceFingerprint is a test-only export of buildTraceFingerprint.
 func BuildTraceFingerprint(e BuildTraceEntryJSON) (string, error) {
