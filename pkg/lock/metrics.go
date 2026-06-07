@@ -98,6 +98,29 @@ func init() {
 	}
 }
 
+// PrimeMetrics records a zero-valued measurement on every counter instrument in
+// this package so the corresponding time series are exported from startup
+// rather than only appearing after the first real event (GitHub issue #1337).
+//
+// It must be called after the global OTel meter provider has been installed;
+// when no provider is configured the measurements are dropped, making this a
+// harmless no-op. Adding zero never inflates the counts.
+func PrimeMetrics(ctx context.Context) {
+	counters := []metric.Int64Counter{
+		lockAcquisitionsTotal,
+		lockFailuresTotal,
+		lockRetryAttemptsTotal,
+	}
+
+	for _, c := range counters {
+		if c == nil {
+			continue
+		}
+
+		c.Add(ctx, 0)
+	}
+}
+
 // RecordLockAcquisition records a lock acquisition attempt.
 // lockType should be one of LockType* constants.
 // mode should be one of LockMode* constants.

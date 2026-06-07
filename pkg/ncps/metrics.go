@@ -78,6 +78,21 @@ func init() {
 	}
 }
 
+// PrimeMetrics records a zero-valued measurement on every counter instrument in
+// this package so the corresponding time series are exported from startup
+// rather than only appearing after the first real event (GitHub issue #1337).
+//
+// It must be called after the global OTel meter provider has been installed;
+// when no provider is configured the measurements are dropped, making this a
+// harmless no-op. Adding zero never inflates the counts.
+func PrimeMetrics(ctx context.Context) {
+	if migrationObjectsTotal == nil {
+		return
+	}
+
+	migrationObjectsTotal.Add(ctx, 0)
+}
+
 // RecordMigrationObject records an object migration operation.
 // migrationType should be one of MigrationType* constants.
 // operation should be one of MigrationOperation* constants.

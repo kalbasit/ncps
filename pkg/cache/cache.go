@@ -414,6 +414,38 @@ func init() {
 	}
 }
 
+// PrimeMetrics records a zero-valued measurement on every counter instrument in
+// this package so the corresponding time series are exported from startup,
+// rather than only appearing after the first real event. Without this, an idle
+// instance scraped at /metrics is missing documented counters such as
+// ncps_nar_served_total and ncps_narinfo_served_total (GitHub issue #1337).
+//
+// It must be called after the global OTel meter provider has been installed;
+// when no provider is configured the measurements are dropped, making this a
+// harmless no-op. Adding zero never inflates the counts: the first real event
+// still advances the counter from 0 to 1.
+func PrimeMetrics(ctx context.Context) {
+	counters := []metric.Int64Counter{
+		narServedCount,
+		narInfoServedCount,
+		lruCleanupRunsTotal,
+		lruNarInfosEvictedTotal,
+		lruNarFilesEvictedTotal,
+		lruChunksEvictedTotal,
+		lruBytesFreedTotal,
+		backgroundMigrationObjectsTotal,
+		downloadCoordinationFallbackTotal,
+	}
+
+	for _, c := range counters {
+		if c == nil {
+			continue
+		}
+
+		c.Add(ctx, 0)
+	}
+}
+
 // Cache represents the main cache service.
 type Cache struct {
 	hostName      string
