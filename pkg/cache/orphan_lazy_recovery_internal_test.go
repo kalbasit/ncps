@@ -45,25 +45,46 @@ func TestRunCDCLazyRecoveryClearsStaleCDCChunkingLock(t *testing.T) {
 	assert.Zero(t, countChunkLinks(ctx, t, c, stale.ID))
 }
 
-func TestRunCDCLazyRecoveryLeavesFreshAndCompletedChunkingRowsUntouched(t *testing.T) {
+func TestRunCDCLazyRecoveryReapsFreshInProgressOrphanWithFreeLock(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 
 	c := setupCDCRecoveryFixture(t)
 
-	freshStartedAt := time.Now()
+	// A fresh orphan: chunking_started_at is recent (well under cdcChunkingLockTTL),
+	// total_chunks=0, partial chunk links — left behind by a crashed chunker. No peer
+	// holds the migration lock, so recovery MUST reap it without waiting for an age gate.
 	fresh, err := c.dbClient.Ent().NarFile.Create().
 		SetHash(testhelper.MustRandBase32NarHash()).
 		SetCompression(nar.CompressionTypeNone.String()).
 		SetQuery("").
-		SetFileSize(1024).
+		SetFileSize(4096).
 		SetTotalChunks(0).
-		SetChunkingStartedAt(freshStartedAt).
+		SetChunkingStartedAt(time.Now()).
 		Save(ctx)
 	require.NoError(t, err)
-	seedChunkLinks(ctx, t, c, fresh.ID, 1)
 
+	seedChunkLinks(ctx, t, c, fresh.ID, 3)
+
+	runCDCRecoveryForTest(ctx, t, c)
+
+	healed, err := c.dbClient.Ent().NarFile.Get(ctx, fresh.ID)
+	require.NoError(t, err)
+	assert.Nil(t, healed.ChunkingStartedAt)
+	assert.Equal(t, int64(0), healed.TotalChunks)
+	assert.Zero(t, countChunkLinks(ctx, t, c, fresh.ID))
+}
+
+func TestRunCDCLazyRecoveryLeavesCompletedChunkingRowUntouched(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c := setupCDCRecoveryFixture(t)
+
+	// A completed row (total_chunks > 0) is not an orphan and MUST never be touched by
+	// recovery, regardless of how old its chunking_started_at is.
 	completedStartedAt := time.Now().Add(-2 * cdcChunkingLockTTL)
 	completed, err := c.dbClient.Ent().NarFile.Create().
 		SetHash(testhelper.MustRandBase32NarHash()).
@@ -77,13 +98,6 @@ func TestRunCDCLazyRecoveryLeavesFreshAndCompletedChunkingRowsUntouched(t *testi
 	seedChunkLinks(ctx, t, c, completed.ID, 2)
 
 	runCDCRecoveryForTest(ctx, t, c)
-
-	freshAfter, err := c.dbClient.Ent().NarFile.Get(ctx, fresh.ID)
-	require.NoError(t, err)
-	require.NotNil(t, freshAfter.ChunkingStartedAt)
-	assert.Equal(t, freshStartedAt.Unix(), freshAfter.ChunkingStartedAt.Unix())
-	assert.Equal(t, int64(0), freshAfter.TotalChunks)
-	assert.Equal(t, 1, countChunkLinks(ctx, t, c, fresh.ID))
 
 	completedAfter, err := c.dbClient.Ent().NarFile.Get(ctx, completed.ID)
 	require.NoError(t, err)

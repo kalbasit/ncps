@@ -375,6 +375,12 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// Simulate instance A actively chunking: a real chunker holds migrationLockKey(hash)
+	// for the whole operation (withNarMigrationLock), which is the liveness signal
+	// isServable probes to distinguish a live chunk from a dead orphan (#1230).
+	releaseLock, locked := c.AcquireMigrationLockForTest(ctx, nu.Hash)
+	require.True(t, locked)
+
 	// Start a goroutine that will "complete" the chunking after a delay
 	// This simulates the scenario where instance A is still chunking while instance B streams
 	go func() {
@@ -385,6 +391,9 @@ func TestProgressiveStreamingWithPrefetch(t *testing.T) {
 			"UPDATE nar_files SET total_chunks = ? WHERE id = ?",
 			totalChunks, narFile.ID,
 		)
+
+		// Chunking completed: release the lock, mirroring withNarMigrationLock.
+		releaseLock()
 	}()
 
 	// Reset call counter
@@ -556,6 +565,11 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// Simulate instance A actively chunking by holding migrationLockKey(hash), the
+	// liveness signal isServable probes (#1230).
+	releaseLock, locked := c.AcquireMigrationLockForTest(ctx, nu.Hash)
+	require.True(t, locked)
+
 	// Start a goroutine that will "abort" the chunking after a short delay
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -567,6 +581,9 @@ func TestProgressiveStreamingAborted(t *testing.T) {
 		); err != nil {
 			t.Logf("failed to abort chunking in background goroutine: %v", err)
 		}
+
+		// Chunking aborted: release the lock, mirroring withNarMigrationLock.
+		releaseLock()
 	}()
 
 	// Now retrieve the NAR - should use progressive streaming and fail fast when aborted
