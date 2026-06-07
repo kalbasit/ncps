@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -193,14 +194,41 @@ func testInflightStagingCrossPodServe(factory distributedDBFactory) func(*testin
 			narPath += "." + largeNarEntry.NarCompression.ToFileExtension()
 		}
 
-		// A longer artificial delay so peers arrive and staging activates (the
-		// holder's ~1s activation ticker) while the download is still in flight.
-		handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
-			if r.URL.Path == narPath && r.Method == http.MethodGet {
-				time.Sleep(2 * time.Second)
+		// Stream the NAR body slowly (in chunks, with a pause between each) rather
+		// than delaying only the start of the response. Trickling the bytes gives
+		// the holder's staging producer a real in-flight window: it tails the temp
+		// file and publishes part-objects progressively while peers tail them. A
+		// start-only delay would not exercise this — no bytes would have reached the
+		// temp file yet, so parts_available would stay 0 until the whole NAR landed
+		// at once. The handler fully owns the NAR response (returns true), serving
+		// the exact uncompressed NarText so the hash still verifies.
+		narBody := []byte(largeNarEntry.NarText)
+		handlerID := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path != narPath || r.Method != http.MethodGet {
+				return false
 			}
 
-			return false
+			w.Header().Set("Content-Length", strconv.Itoa(len(narBody)))
+			w.WriteHeader(http.StatusOK)
+
+			flusher, _ := w.(http.Flusher)
+
+			const chunkSize = 16 * 1024
+			for off := 0; off < len(narBody); off += chunkSize {
+				end := min(off+chunkSize, len(narBody))
+
+				if _, err := w.Write(narBody[off:end]); err != nil {
+					return true
+				}
+
+				if flusher != nil {
+					flusher.Flush()
+				}
+
+				time.Sleep(80 * time.Millisecond)
+			}
+
+			return true
 		})
 
 		t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
@@ -249,6 +277,11 @@ func testInflightStagingCrossPodServe(factory distributedDBFactory) func(*testin
 				30*time.Minute,
 			)
 			require.NoError(t, err)
+
+			// Close each cache at test end so the staging retention-grace reclaim
+			// goroutines (scheduled with a 5-minute grace) are interrupted via
+			// shutdownCh rather than leaking for the full grace.
+			t.Cleanup(c.Close)
 
 			// Enable in-flight staging with the distributed locker; small parts so a
 			// 256KiB NAR spans many part-objects exercised by the tailing reader.
