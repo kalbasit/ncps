@@ -59,14 +59,14 @@ data:
         chunk-wait-timeout: {{ .Values.config.cdc.chunkWaitTimeout | quote }}
         {{- end }}
       {{- end }}
-      {{- if .Values.config.inflightStaging.enabled }}
+      {{- if and .Values.config.inflightStaging .Values.config.inflightStaging.enabled }}
       inflight-staging:
         enabled: true
         {{- if .Values.config.inflightStaging.retention }}
         retention: {{ .Values.config.inflightStaging.retention | quote }}
         {{- end }}
         {{- if .Values.config.inflightStaging.partSize }}
-        part-size: {{ printf "%.0f" (.Values.config.inflightStaging.partSize | float64) }}
+        part-size: {{ .Values.config.inflightStaging.partSize | int }}
         {{- end }}
       {{- end }}
 

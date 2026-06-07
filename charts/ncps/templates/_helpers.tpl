@@ -191,7 +191,7 @@ This function will fail the template rendering if invalid configurations are det
   {{- end -}}
 
   {{- /* HA serve-during-download validation: CDC or in-flight staging */ -}}
-  {{- if and (gt (int .Values.replicaCount) 1) (not .Values.config.cdc.enabled) (not .Values.config.inflightStaging.enabled) -}}
+  {{- if and (gt (int .Values.replicaCount) 1) (not .Values.config.cdc.enabled) (not (and .Values.config.inflightStaging .Values.config.inflightStaging.enabled)) -}}
     {{- fail "High availability mode (replicaCount > 1) requires either CDC (config.cdc.enabled=true) or in-flight NAR staging (config.inflightStaging.enabled=true) so NARs can be served across replicas during download. In-flight staging is the lightweight default (zero overhead until contention). See https://github.com/kalbasit/ncps/issues/660." -}}
   {{- end -}}
 {{- end -}}
