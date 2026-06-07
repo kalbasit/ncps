@@ -8,7 +8,7 @@ Defines requirements for initializing the local store directory structure on sta
 
 ### Requirement: Local store directory setup is idempotent
 
-`setupDirs()` must succeed regardless of whether the `store/tmp` directory already exists on disk, so that rolling updates on shared PVCs do not crash the incoming pod.
+`setupDirs()` MUST succeed regardless of whether the `store/tmp` directory already exists on disk, so that rolling updates on shared PVCs do not crash the incoming pod.
 
 #### Scenario: First startup (no existing directories)
 - **WHEN** `setupDirs()` is called and no store directories exist yet

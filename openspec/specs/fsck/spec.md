@@ -33,8 +33,8 @@ The `totalIssues()` method SHALL include `len(narFilesWithSizeMismatch)` in its 
 - **THEN** it is excluded from `GetCDCNarFilesWithSizeMismatch` regardless of file_size
 
 ### Requirement: Fsck --repair MUST delete size-mismatched CDC NARs
-When `ncps fsck --repair` (or interactive repair) is executed and size-mismatched CDC
-rows are present, the system SHALL delete those `nar_file` rows and cascade cleanup
+The system SHALL, when `ncps fsck --repair` (or interactive repair) is executed and
+size-mismatched CDC rows are present, delete those `nar_file` rows and cascade cleanup
 using the same repair path as `narFilesWithChunkIssues`:
 1. Delete the `nar_file` row (cascades `nar_file_chunks`).
 2. Delete any narinfos that become orphaned as a result.
@@ -131,8 +131,7 @@ When `--verify-content` is active, the fsck CDC summary section SHALL include tw
 
 ### Requirement: Fsck CDC size-mismatch detection MUST scale beyond database driver parameter limits
 
-The implementation of CDC size-mismatch detection (currently
-`queryCDCNarFilesWithSizeMismatch`) SHALL NOT issue any single SQL statement whose
+The implementation of CDC size-mismatch detection (currently `queryCDCNarFilesWithSizeMismatch`) SHALL NOT issue any single SQL statement whose
 bound-parameter count grows unboundedly with the number of CDC `nar_file` rows or
 their joined `narinfo_nar_files`/`narinfos` rows. In particular, it MUST NOT produce
 an `IN ($1...$N)` predicate (whether emitted directly or via an ORM eager-load) where
@@ -170,8 +169,7 @@ strategy changes.
 
 ### Requirement: Fsck chunk-walk MUST scale beyond database driver parameter limits
 
-The implementation that resolves the chunk rows linked to a single `nar_file` (currently
-`chunksForNarFile`) SHALL NOT issue any single SQL statement whose bound-parameter
+The implementation that resolves the chunk rows linked to a single `nar_file` (currently `chunksForNarFile`) SHALL NOT issue any single SQL statement whose bound-parameter
 count grows unboundedly with the number of chunks belonging to that NAR. In particular,
 it MUST NOT produce an `IN ($1...$M)` predicate on chunk IDs (whether emitted directly
 or via an ORM eager-load) where M can exceed 65535.
@@ -188,8 +186,7 @@ the returned slice length equals the link count.
 
 ### Requirement: Fsck MUST NOT introduce other unbounded IN-clause queries
 
-Any future or existing fsck query that materializes a list of IDs (or composite keys)
-and then performs a secondary `In(...)` / `IN (...)` lookup keyed on that list SHALL
+Any future or existing fsck query that materializes a list of IDs (or composite keys) and then performs a secondary `In(...)` / `IN (...)` lookup keyed on that list SHALL
 use the same bounded-batch helper used by the CDC size-mismatch path, or an
 equivalent streaming approach. New code in `pkg/ncps/fsck.go` MUST NOT regress to
 unbounded `With*` eager-loads or unbounded `In(...)` predicates on collections that

@@ -12,7 +12,7 @@ sub-commands so developers and CI have a single, discoverable entry point.
 ## Requirements
 
 ### Requirement: Taskfile exists at repo root
-A `Taskfile.yml` must exist at the repository root. Running `task` with no arguments must print a list of available tasks.
+A `Taskfile.yml` MUST exist at the repository root. Running `task` with no arguments MUST print a list of available tasks.
 
 #### Scenario: Default task lists available tasks
 - **WHEN** a developer runs `task` (or `task default`) in the repo root
@@ -21,7 +21,7 @@ A `Taskfile.yml` must exist at the repository root. Running `task` with no argum
 ---
 
 ### Requirement: `task fmt` formats all project files
-Running `task fmt` must format all project files by delegating to `nix fmt`.
+Running `task fmt` MUST format all project files by delegating to `nix fmt`.
 
 #### Scenario: Formatting succeeds
 - **WHEN** a developer runs `task fmt`
@@ -34,7 +34,7 @@ Running `task fmt` must format all project files by delegating to `nix fmt`.
 ---
 
 ### Requirement: `task lint` lints Go code
-Running `task lint` must run `golangci-lint run` and exit non-zero if any lint issues are found.
+Running `task lint` MUST run `golangci-lint run` and exit non-zero if any lint issues are found.
 
 #### Scenario: Clean code passes lint
 - **WHEN** a developer runs `task lint` on code with no lint issues
@@ -47,7 +47,7 @@ Running `task lint` must run `golangci-lint run` and exit non-zero if any lint i
 ---
 
 ### Requirement: `task lint:fix` auto-fixes lint issues
-Running `task lint:fix` must run `golangci-lint run --fix` to automatically apply fixable lint corrections.
+Running `task lint:fix` MUST run `golangci-lint run --fix` to automatically apply fixable lint corrections.
 
 #### Scenario: Auto-fixable issues are resolved
 - **WHEN** a developer runs `task lint:fix` with auto-fixable lint issues present
@@ -56,7 +56,7 @@ Running `task lint:fix` must run `golangci-lint run --fix` to automatically appl
 ---
 
 ### Requirement: `task test` runs unit tests without backend services
-Running `task test` must run `go test -race ./...` without requiring any external services (no S3/PostgreSQL/MySQL/Redis).
+Running `task test` MUST run `go test -race ./...` without requiring any external services (no S3/PostgreSQL/MySQL/Redis).
 
 #### Scenario: Unit tests pass
 - **WHEN** a developer runs `task test` with no backend services running
@@ -69,7 +69,7 @@ Running `task test` must run `go test -race ./...` without requiring any externa
 ---
 
 ### Requirement: `task test:integration` runs full test suite with deps pre-started
-Running `task test:integration` must enable all integration env vars and run the full test suite, assuming backing services are already running.
+Running `task test:integration` MUST enable all integration env vars and run the full test suite, assuming backing services are already running.
 
 #### Scenario: Full suite runs when services are available
 - **WHEN** a developer runs `task test:integration` with `nix run .#deps` already running
@@ -131,7 +131,7 @@ call `process-compose down -p $TEST_PC_PORT` to stop the process-compose instanc
 ---
 
 ### Requirement: `task ent:generate` regenerates the Ent client
-Running `task ent:generate` must run `go generate ./ent/...` to regenerate the Ent client from schemas.
+Running `task ent:generate` MUST run `go generate ./ent/...` to regenerate the Ent client from schemas.
 
 #### Scenario: Generate succeeds
 - **WHEN** a developer runs `task ent:generate` after editing an Ent schema
@@ -140,7 +140,7 @@ Running `task ent:generate` must run `go generate ./ent/...` to regenerate the E
 ---
 
 ### Requirement: `task ent:lint` lints Ent schemas
-Running `task ent:lint` must run `go run ./cmd/ent-lint --root .` to enforce the five codegen invariants.
+Running `task ent:lint` MUST run `go run ./cmd/ent-lint --root .` to enforce the five codegen invariants.
 
 #### Scenario: Schemas with no invariant violations pass
 - **WHEN** `task ent:lint` is run on valid schemas
@@ -149,7 +149,7 @@ Running `task ent:lint` must run `go run ./cmd/ent-lint --root .` to enforce the
 ---
 
 ### Requirement: `task ent:check` validates Ent is up to date
-Running `task ent:check` must regenerate the Ent client and then lint it, failing if schemas are out of sync or violate invariants.
+Running `task ent:check` MUST regenerate the Ent client and then lint it, failing if schemas are out of sync or violate invariants.
 
 #### Scenario: Up-to-date clean schemas pass
 - **WHEN** `task ent:check` is run with the generated client in sync with schemas
@@ -158,7 +158,7 @@ Running `task ent:check` must regenerate the Ent client and then lint it, failin
 ---
 
 ### Requirement: `task migrations:gen` generates Atlas migrations
-Running `task migrations:gen NAME=<name>` must run `go run ./cmd/generate-migrations --name=<name>` to emit per-dialect SQL files.
+Running `task migrations:gen NAME=<name>` MUST run `go run ./cmd/generate-migrations --name=<name>` to emit per-dialect SQL files.
 
 #### Scenario: Migration generation with a valid name
 - **WHEN** a developer runs `task migrations:gen NAME=add_foo_column`
@@ -167,7 +167,7 @@ Running `task migrations:gen NAME=<name>` must run `go run ./cmd/generate-migrat
 ---
 
 ### Requirement: `task migrations:sql` generates an empty SQL migration stub
-Running `task migrations:sql NAME=<name>` must run `go run ./cmd/generate-migrations --sql-only --name=<name>`.
+Running `task migrations:sql NAME=<name>` MUST run `go run ./cmd/generate-migrations --sql-only --name=<name>`.
 
 #### Scenario: SQL-only stub created
 - **WHEN** a developer runs `task migrations:sql NAME=backfill_foo`
@@ -176,7 +176,7 @@ Running `task migrations:sql NAME=<name>` must run `go run ./cmd/generate-migrat
 ---
 
 ### Requirement: CLAUDE.md is concise
-`CLAUDE.md` must be reduced to at most ~150 lines, containing only: project overview, prerequisites, quick-start commands (via `task`), architecture package-structure summary, and pointers to `.claude/rules/` and `.agent/skills/`.
+`CLAUDE.md` MUST be reduced to at most ~150 lines, containing only: project overview, prerequisites, quick-start commands (via `task`), architecture package-structure summary, and pointers to `.claude/rules/` and `.agent/skills/`.
 
 #### Scenario: CLAUDE.md fits within 150 lines
 - **WHEN** the updated `CLAUDE.md` is committed

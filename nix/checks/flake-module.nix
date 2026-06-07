@@ -434,6 +434,48 @@
           '';
         };
 
+        # openspec-validate-check runs `openspec validate --specs` against the
+        # committed openspec/ tree and fails the build if any capability spec is
+        # malformed (missing Purpose/Requirements, a requirement without a
+        # SHALL/MUST statement, or a requirement with no scenario). This is the
+        # spec-health counterpart to the change-archival guard: it keeps the
+        # canonical specs under openspec/specs/ structurally valid so they remain
+        # machine-checkable. Narrow src (only the openspec/ tree); openspec is a
+        # standalone CLI from nixpkgs, so no Go toolchain is needed at check time.
+        # See the flake-check-topology spec, "Canonical specs are validated in CI".
+        openspec-validate-check = pkgs.stdenvNoCC.mkDerivation {
+          name = "openspec-validate-check";
+          src = lib.fileset.toSource {
+            fileset = ../../openspec;
+            root = ../..;
+          };
+          dontUnpack = false;
+          dontConfigure = true;
+          dontBuild = false;
+          nativeBuildInputs = [ pkgs.openspec ];
+          # --no-interactive is mandatory here. `openspec validate --specs`
+          # otherwise starts an `ora` progress spinner, and that interactive
+          # code path blocks forever inside the Nix build sandbox (stdout is a
+          # pipe, not a TTY) — the build hangs until CI cancels the job rather
+          # than ever running the validation. --no-interactive disables the
+          # spinner and the command exits cleanly. OPENSPEC_TELEMETRY=0 keeps
+          # the build hermetic (no telemetry POST to edge.openspec.dev, which is
+          # unreachable in the sandbox), and HOME points at a writable temp dir
+          # because the sandbox HOME is read-only.
+          OPENSPEC_TELEMETRY = "0";
+          buildPhase = ''
+            runHook preBuild
+            export HOME="$TMPDIR"
+            openspec validate --specs --no-interactive
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            touch $out
+            runHook postInstall
+          '';
+        };
+
         # Helm chart unit tests via helm-unittest.
         # Skipped on all platforms: the helm-unittest plugin in nixpkgs-26.05
         # ships neither untt-linux-amd64 nor untt-linux-arm64, so the check

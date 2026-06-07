@@ -53,9 +53,10 @@ sequential runs.
 ---
 
 ### Requirement: `enable-s3-tests` emits endpoint URL using current `NCPS_TEST_S3_PORT`
-When `eval "$(enable-s3-tests)"` is called in a shell where `NCPS_TEST_S3_PORT` is already
-exported, the script SHALL emit `export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:$NCPS_TEST_S3_PORT"`.
-When `NCPS_TEST_S3_PORT` is not set, it SHALL fall back to port 9000.
+The `enable-s3-tests` script SHALL emit
+`export NCPS_TEST_S3_ENDPOINT="http://127.0.0.1:$NCPS_TEST_S3_PORT"` when
+`eval "$(enable-s3-tests)"` is called in a shell where `NCPS_TEST_S3_PORT` is already
+exported. When `NCPS_TEST_S3_PORT` is not set, it SHALL fall back to port 9000.
 
 #### Scenario: Dynamic port already exported
 - **WHEN** `NCPS_TEST_S3_PORT=19000` is set in the shell and `eval "$(enable-s3-tests)"` is run
@@ -68,9 +69,9 @@ When `NCPS_TEST_S3_PORT` is not set, it SHALL fall back to port 9000.
 ---
 
 ### Requirement: `enable-postgres-tests` emits connection URL using current `PGPORT`
-When `eval "$(enable-postgres-tests)"` is called in a shell where `PGPORT` is already
-exported, the script SHALL emit a connection URL referencing that port.
-When `PGPORT` is not set, it SHALL fall back to port 5432.
+The `enable-postgres-tests` script SHALL emit a connection URL referencing `PGPORT` when
+`eval "$(enable-postgres-tests)"` is called in a shell where `PGPORT` is already
+exported. When `PGPORT` is not set, it SHALL fall back to port 5432.
 
 #### Scenario: Dynamic port already exported
 - **WHEN** `PGPORT=15432` is set in the shell and `eval "$(enable-postgres-tests)"` is run
@@ -83,9 +84,9 @@ When `PGPORT` is not set, it SHALL fall back to port 5432.
 ---
 
 ### Requirement: `enable-mysql-tests` emits connection URL using current `MYSQL_TCP_PORT`
-When `eval "$(enable-mysql-tests)"` is called in a shell where `MYSQL_TCP_PORT` is already
-exported, the script SHALL emit a connection URL referencing that port.
-When `MYSQL_TCP_PORT` is not set, it SHALL fall back to port 3306.
+The `enable-mysql-tests` script SHALL emit a connection URL referencing `MYSQL_TCP_PORT` when
+`eval "$(enable-mysql-tests)"` is called in a shell where `MYSQL_TCP_PORT` is already
+exported. When `MYSQL_TCP_PORT` is not set, it SHALL fall back to port 3306.
 
 #### Scenario: Dynamic port already exported
 - **WHEN** `MYSQL_TCP_PORT=13306` is set and `eval "$(enable-mysql-tests)"` is run
