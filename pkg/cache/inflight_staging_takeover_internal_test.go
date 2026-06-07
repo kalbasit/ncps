@@ -49,10 +49,17 @@ func TestPollTakeover_DiscardsStaleStaging(t *testing.T) {
 	// The new owner now holds the lock; release it.
 	require.NoError(t, c.downloadLocker.Unlock(ctx, lockKey))
 
-	// The dead holder's partial staging was discarded.
+	// coordinateDownload runs the staging reset after the lock refresher is active;
+	// invoke it directly here to exercise the takeover cleanup.
+	require.NoError(t, c.resetStagingForTakeover(ctx, hash))
+
+	// The dead holder's partial parts are discarded, but the staging_state row is
+	// preserved (reset to "requested") so a persisting cross-pod waiter is re-served.
 	st, err := c.getStagingState(ctx, hash)
 	require.NoError(t, err)
-	assert.Nil(t, st, "staging_state must be reset on takeover")
+	require.NotNil(t, st, "the request marker must survive takeover")
+	assert.Equal(t, int64(0), st.PartsAvailable, "reset rewinds progress to zero")
+	assert.Equal(t, stagingStatusRequested, st.Status, "reset preserves the request for re-staging")
 
 	_, err = store.GetStagingPart(ctx, hash, 0)
 	require.ErrorIs(t, err, storage.ErrNotFound, "partial parts must be discarded on takeover")
@@ -94,7 +101,10 @@ func TestStagingTakeover_NoTruncatedServeAcrossDeath(t *testing.T) {
 	require.NotErrorIs(t, readErr, io.EOF)
 	assert.Equal(t, "abcd", string(body), "the partial prefix is delivered, but not as success")
 
-	// Takeover discards the truncated parts so a fresh download re-stages cleanly.
+	// Takeover re-acquires the lock; coordinateDownload then runs resetStagingForTakeover
+	// once the lock refresher is active. The reset discards the truncated parts so a
+	// fresh download re-stages cleanly, while preserving the staging_state row at
+	// "requested" so a persisting cross-pod waiter is re-served.
 	_, tookOver := c.pollForDownloadOrTakeOver(
 		ctx, ctx, lockKey, hash, true, storage.ErrNotFound,
 		func(context.Context) bool { return false },
@@ -102,6 +112,14 @@ func TestStagingTakeover_NoTruncatedServeAcrossDeath(t *testing.T) {
 	require.True(t, tookOver)
 	require.NoError(t, c.downloadLocker.Unlock(ctx, lockKey))
 
+	require.NoError(t, c.resetStagingForTakeover(ctx, hash))
+
 	_, err := store.GetStagingPart(ctx, hash, 0)
-	require.ErrorIs(t, err, storage.ErrNotFound)
+	require.ErrorIs(t, err, storage.ErrNotFound, "truncated parts must be discarded on takeover")
+
+	st, err := c.getStagingState(ctx, hash)
+	require.NoError(t, err)
+	require.NotNil(t, st, "the waiter's request marker must survive takeover")
+	assert.Equal(t, int64(0), st.PartsAvailable, "reset rewinds progress to zero")
+	assert.Equal(t, stagingStatusRequested, st.Status, "reset preserves the request for re-staging")
 }

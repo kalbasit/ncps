@@ -6255,6 +6255,11 @@ func (c *Cache) coordinateDownload(
 
 	c.upstreamJobsMu.Unlock()
 
+	// tookOverDownload records whether we reached the post-lock path by taking over
+	// a dead holder's lock (vs. acquiring a free lock), so the staging reset runs
+	// only on a genuine takeover.
+	tookOverDownload := false
+
 	// Acquire lock with retry (handled internally by Redis locker)
 	if err := c.downloadLocker.Lock(ctx, lockKey, c.downloadLockTTL); err != nil {
 		zerolog.Ctx(ctx).Warn().
@@ -6273,10 +6278,24 @@ func (c *Cache) coordinateDownload(
 
 		// Fell through: we re-acquired the lock and now own the download.
 		// Continue into the normal post-lock path below.
+		tookOverDownload = true
 	}
 
 	// Start a background goroutine to refresh the lock TTL periodically.
 	stopRefresher := lock.StartRefresher(ctx, c.downloadLocker, lockKey, c.downloadLockTTL)
+
+	// On takeover the previous holder died: discard its partial (truncated)
+	// staging parts and reset staging_state to "requested" so this fresh download
+	// re-stages from zero if a cross-pod waiter still wants it. Done AFTER the
+	// refresher is running so the storage+DB cleanup cannot outlive the lock TTL
+	// and let yet another replica take over mid-cleanup. ctx is the detached
+	// background context, so the reset is not tied to caller cancellation.
+	if tookOverDownload && allowStaging && c.InflightStagingEnabled() {
+		if err := c.resetStagingForTakeover(ctx, hash); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Str("hash", hash).
+				Msg("failed to reset staging on takeover; orphan sweep will reclaim it")
+		}
+	}
 
 	// Double check local jobs and asset presence under lock
 	if hasAsset(ctx) {
@@ -6458,23 +6477,15 @@ func (c *Cache) pollForDownloadOrTakeOver(
 			//
 			// Takeover is attempted BEFORE serving from staging: an acquirable lock
 			// means the holder is gone (dead/failed), so its staging parts are at
-			// best a truncated prefix. We discard them and restart the download from
-			// zero rather than tailing a producer that will never complete (D5).
+			// best a truncated prefix. The caller discards them and restarts the
+			// download from zero (after the lock refresher is running) rather than
+			// tailing a producer that will never complete (D5).
 			acquired, lockErr := c.downloadLocker.TryLock(deadlineCtx, lockKey, c.downloadLockTTL)
 			if lockErr == nil && acquired {
 				zerolog.Ctx(ctx).Debug().
 					Str("hash", hash).
 					Str("lock_key", lockKey).
 					Msg("re-acquired download lock, taking over the download")
-
-				if stagingActive {
-					// Discard the dead holder's partial staging so the fresh download
-					// re-stages from zero; a reader is never handed truncated parts.
-					if err := c.reclaimStaging(context.WithoutCancel(coordCtx), hash); err != nil {
-						zerolog.Ctx(ctx).Warn().Err(err).Str("hash", hash).
-							Msg("failed to reset staging on takeover; orphan sweep will reclaim it")
-					}
-				}
 
 				downloadCoordinationFallbackTotal.Add(ctx, 1,
 					metric.WithAttributes(attribute.String("outcome", "take_over")))
