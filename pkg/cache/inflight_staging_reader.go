@@ -92,6 +92,11 @@ func (c *Cache) newStagingPartReader(ctx context.Context, hash string) *stagingP
 // Read implements io.Reader, draining each part-object in order and advancing to
 // the next once the current one is exhausted.
 func (r *stagingPartReader) Read(p []byte) (int, error) {
+	// Fail fast if the caller's context is already done, before any part I/O.
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+
 	for {
 		if r.cur == nil {
 			rc, err := r.openPart(r.index)
@@ -161,6 +166,10 @@ func (r *stagingPartReader) openPart(index int64) (io.ReadCloser, error) {
 	for {
 		st, err := r.c.getStagingState(r.ctx, r.hash)
 		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+
 			return nil, fmt.Errorf("staging reader: read staging_state for %q: %w", r.hash, err)
 		}
 
@@ -178,6 +187,10 @@ func (r *stagingPartReader) openPart(index int64) (io.ReadCloser, error) {
 			// A marker can momentarily lead the object's visibility; treat
 			// not-found as transient and keep polling within the bound.
 			if !errors.Is(err, storage.ErrNotFound) {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return nil, err
+				}
+
 				return nil, fmt.Errorf("staging reader: get part %d for %q: %w", index, r.hash, err)
 			}
 		case st.Status == stagingStatusComplete:

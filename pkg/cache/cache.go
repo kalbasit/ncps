@@ -405,7 +405,7 @@ func init() {
 		"ncps_download_coordination_fallback_total",
 		metric.WithDescription(
 			"Counts download-lock contention fallbacks by outcome "+
-				"(served_by_peer, take_over, give_up, caller_canceled).",
+				"(served_by_peer, served_from_staging, take_over, give_up, caller_canceled).",
 		),
 		metric.WithUnit("{event}"),
 	)
