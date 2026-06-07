@@ -17,6 +17,6 @@
 
 ## 4. Verify and finalize
 
-- [ ] 4.1 `task fmt`, `task lint`, `task test` all exit zero
-- [ ] 4.2 Re-run the e2e driver (`task test:cdc-lifecycle`) and confirm Phase 2 (lazy) now passes through the previously failing path
-- [ ] 4.3 `openspec validate` the change; sync delta spec; archive before merge
+- [x] 4.1 `task fmt` (0 changed), `task lint` (0 issues), `task test` (full unit suite green incl. the new regression test) all exit zero
+- [x] 4.2 Re-ran the e2e driver: Phase 2 (lazy) now PASSES, and the whole lifecycle (Phases 0-4 + upload presence) flows through. The previously failing libunistring serve is fixed.
+- [x] 4.3 `openspec validate` passed; delta synced into openspec/specs/cdc-chunking; archiving now.
