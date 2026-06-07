@@ -259,6 +259,33 @@
         # tiny stdenvNoCC checks that consume them.
         inherit (config.packages) ncps-checktools;
 
+        # Regression guard for change fix-docker-etc-passwd: the OCI image MUST
+        # ship /etc/passwd and /etc/group as REGULAR FILES, not store symlinks.
+        # An absolute store symlink there makes recent containerd reject the
+        # container at creation ("openat etc/passwd: path escapes from parent").
+        # Inspect every embedded layer tar and assert the entry type is a
+        # regular file ('-'), not a symlink ('l').
+        docker-image-etc-files =
+          pkgs.runCommand "docker-image-etc-files-check" { nativeBuildInputs = [ pkgs.gnutar ]; }
+            ''
+              mkdir -p img && tar xf ${config.packages.docker} -C img
+              : > listings.txt
+              for f in $(find img -type f); do
+                tar tvf "$f" >> listings.txt 2>/dev/null || true
+              done
+              for name in passwd group; do
+                line=$(grep -E "[ /]etc/$name(\$| ->)" listings.txt | tail -1 || true)
+                if [ -z "$line" ]; then
+                  echo "FAIL: /etc/$name not found in image" >&2; exit 1
+                fi
+                case "$line" in
+                  -*) echo "OK: /etc/$name is a regular file" ;;
+                  *)  echo "FAIL: /etc/$name is not a regular file (symlink?): $line" >&2; exit 1 ;;
+                esac
+              done
+              touch "$out"
+            '';
+
         # Per-backend Go test cohorts (see mkCohort above). Each backend
         # cohort starts its backend and runs `go test ./pkg/... ./internal/...
         # ./migrations/... ./testhelper/...`; test bodies gate per-backend

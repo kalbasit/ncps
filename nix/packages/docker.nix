@@ -11,23 +11,15 @@
 
         contents =
           let
-            etc-passwd = pkgs.writeTextFile {
-              name = "passwd";
-              text = ''
-                root:x:0:0:Super User:/homeless-shelter:/dev/null
-                ncps:x:1000:1000:NCPS:/homeless-shelter:/dev/null
-              '';
-              destination = "/etc/passwd";
-            };
-
-            etc-group = pkgs.writeTextFile {
-              name = "group";
-              text = ''
-                root:x:0:
-                ncps:x:1000:
-              '';
-              destination = "/etc/group";
-            };
+            # NOTE: /etc/passwd and /etc/group are intentionally NOT placed in the
+            # buildEnv below. buildEnv combines paths by symlinking, which makes
+            # them absolute symlinks into the nix store in the layered image
+            # (e.g. /etc/passwd -> /nix/store/...-passwd/etc/passwd). Recent
+            # container runtimes securejoin/openat etc/passwd during container
+            # creation and reject the absolute symlink as escaping the rootfs
+            # ("openat etc/passwd: path escapes from parent"), so the container
+            # never starts. They are materialized as REAL files via
+            # `extraCommands` below instead. See change fix-docker-etc-passwd.
 
             # Wrap all your contents in a buildEnv to assert disallowedRequisites
             # securely before they are processed by the Docker tools.
@@ -35,10 +27,6 @@
               (pkgs.buildEnv {
                 name = "ncps-contents";
                 paths = [
-                  # required for Open-Telemetry auto-detection of process information
-                  etc-passwd
-                  etc-group
-
                   # required for TLS certificate validation
                   pkgs.cacert
 
@@ -93,10 +81,42 @@
           };
         };
 
+        # Materialize /etc/passwd and /etc/group as REAL files (not store
+        # symlinks) so the container starts on runtimes that strictly securejoin
+        # etc/passwd during container creation. Content matches the previous
+        # writeTextFile entries (root + ncps uid/gid 1000). Done under fakeroot
+        # (in the assembled rootfs) so the writes succeed regardless of the
+        # contents layer's directory permissions. These commands run at
+        # image-build time only; the tools do not enter the image closure, so
+        # the disallowedRequisites guard on imageContents still holds.
         fakeRootCommands = ''
           #!${pkgs.runtimeShell}
           mkdir -p tmp
           chmod -R 1777 tmp
+
+          # /etc arrives from the contents layer as a symlink into the
+          # read-only nix store (e.g. cacert contributes /etc/ssl), so we cannot
+          # create files in it directly — and fakeroot only fakes ownership, not
+          # real write perms. Re-materialize /etc as a writable real directory,
+          # preserving its existing entries (kept as symlinks via `cp -a`), then
+          # add /etc/passwd and /etc/group as REAL files.
+          if [ -L etc ]; then
+            etc_src=$(readlink -f etc)
+            rm etc
+            mkdir etc
+            cp -a "$etc_src"/. etc/
+          else
+            mkdir -p etc
+          fi
+          chmod -R u+w etc
+          printf '%s\n' \
+            'root:x:0:0:Super User:/homeless-shelter:/dev/null' \
+            'ncps:x:1000:1000:NCPS:/homeless-shelter:/dev/null' \
+            > etc/passwd
+          printf '%s\n' \
+            'root:x:0:' \
+            'ncps:x:1000:' \
+            > etc/group
         '';
       };
 
