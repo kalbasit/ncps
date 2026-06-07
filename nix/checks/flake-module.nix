@@ -259,6 +259,57 @@
         # tiny stdenvNoCC checks that consume them.
         inherit (config.packages) ncps-checktools;
 
+        # Regression guard for change fix-docker-etc-passwd: the OCI image MUST
+        # ship /etc/passwd and /etc/group as REGULAR FILES, not store symlinks.
+        # An absolute store symlink there makes recent containerd reject the
+        # container at creation ("openat etc/passwd: path escapes from parent").
+        #
+        # Compute the EFFECTIVE final state by replaying the layers in
+        # manifest.json order (base -> top) and applying whiteout semantics
+        # (etc/.wh.passwd deletes etc/passwd), rather than aggregating all
+        # listings — layer order and whiteouts both affect the merged rootfs.
+        docker-image-etc-files =
+          pkgs.runCommand "docker-image-etc-files-check"
+            {
+              nativeBuildInputs = [
+                pkgs.gnutar
+                pkgs.jq
+              ];
+            }
+            ''
+              mkdir -p img && tar xf ${config.packages.docker} -C img
+              layers=$(jq -r '.[0].Layers[]' img/manifest.json)
+
+              for name in passwd group; do
+                state="absent"
+                for layer in $layers; do
+                  listing=$(tar tvf "img/$layer" 2>/dev/null || true)
+                  # Whiteout deletes the path from the merged view.
+                  if printf '%s\n' "$listing" | grep -qE "[ /]etc/\.wh\.$name(\$| )"; then
+                    state="absent"
+                  fi
+                  # A concrete entry in this layer sets the path's type. The
+                  # leading char of `tar tvf` output is the type: '-' regular,
+                  # 'l' symlink, 'd' dir.
+                  line=$(printf '%s\n' "$listing" | grep -E "[ /]etc/$name(\$| ->)" | tail -1 || true)
+                  if [ -n "$line" ]; then
+                    case "$line" in
+                      -*) state="regular" ;;
+                      l*) state="symlink" ;;
+                      *)  state="other" ;;
+                    esac
+                  fi
+                done
+                if [ "$state" = "regular" ]; then
+                  echo "OK: /etc/$name final state is a regular file"
+                else
+                  echo "FAIL: /etc/$name final state is '$state' (expected regular file)" >&2
+                  exit 1
+                fi
+              done
+              touch "$out"
+            '';
+
         # Per-backend Go test cohorts (see mkCohort above). Each backend
         # cohort starts its backend and runs `go test ./pkg/... ./internal/...
         # ./migrations/... ./testhelper/...`; test bodies gate per-backend
