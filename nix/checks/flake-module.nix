@@ -449,14 +449,25 @@
             fileset = ../../openspec;
             root = ../..;
           };
+          dontUnpack = false;
           dontConfigure = true;
-          dontBuild = true;
+          dontBuild = false;
           nativeBuildInputs = [ pkgs.openspec ];
-          doCheck = true;
-          checkPhase = ''
-            runHook preCheck
-            openspec validate --specs
-            runHook postCheck
+          # --no-interactive is mandatory here. `openspec validate --specs`
+          # otherwise starts an `ora` progress spinner, and that interactive
+          # code path blocks forever inside the Nix build sandbox (stdout is a
+          # pipe, not a TTY) — the build hangs until CI cancels the job rather
+          # than ever running the validation. --no-interactive disables the
+          # spinner and the command exits cleanly. OPENSPEC_TELEMETRY=0 keeps
+          # the build hermetic (no telemetry POST to edge.openspec.dev, which is
+          # unreachable in the sandbox), and HOME points at a writable temp dir
+          # because the sandbox HOME is read-only.
+          OPENSPEC_TELEMETRY = "0";
+          buildPhase = ''
+            runHook preBuild
+            export HOME="$TMPDIR"
+            openspec validate --specs --no-interactive
+            runHook postBuild
           '';
           installPhase = ''
             runHook preInstall
