@@ -526,7 +526,12 @@ Sig: cache.nixos.org-1:eGSj5WPpZRjwzx7eWpCyZdNsFHjhtGTZF8T4FccYXjHNkTOZoGPfplgFP
 
 	got, err := io.ReadAll(rc)
 	require.NoError(t, err)
-	assert.Equal(t, int64(len(narBody)), size)
+	// The first fetch may serve from store (size known) or stream from the
+	// in-flight upstream download (size reported as unknown/-1), depending on
+	// whether the download completes before GetNar picks its path. Accept either
+	// and assert correctness on the bytes themselves, which are correct on both.
+	assert.True(t, size == int64(len(narBody)) || size == -1,
+		"size should be the NAR file size (%d) or -1 (streaming); got %d", len(narBody), size)
 	assert.Equal(t, []byte(narBody), got)
 
 	// Evict the local NAR bytes (keeping the DB records) and confirm a subsequent
