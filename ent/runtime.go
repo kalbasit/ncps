@@ -15,6 +15,7 @@ import (
 	"github.com/kalbasit/ncps/ent/narinfosignature"
 	"github.com/kalbasit/ncps/ent/pinnedclosure"
 	"github.com/kalbasit/ncps/ent/schema"
+	"github.com/kalbasit/ncps/ent/stagingstate"
 )
 
 // The init function reads all schema descriptors with runtime code
@@ -161,4 +162,29 @@ func init() {
 	pinnedclosureDescHash := pinnedclosureFields[0].Descriptor()
 	// pinnedclosure.HashValidator is a validator for the "hash" field. It is called by the builders before save.
 	pinnedclosure.HashValidator = pinnedclosureDescHash.Validators[0].(func(string) error)
+	stagingstateMixin := schema.StagingState{}.Mixin()
+	stagingstateMixinFields0 := stagingstateMixin[0].Fields()
+	_ = stagingstateMixinFields0
+	stagingstateFields := schema.StagingState{}.Fields()
+	_ = stagingstateFields
+	// stagingstateDescCreatedAt is the schema descriptor for created_at field.
+	stagingstateDescCreatedAt := stagingstateMixinFields0[0].Descriptor()
+	// stagingstate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	stagingstate.DefaultCreatedAt = stagingstateDescCreatedAt.Default.(func() time.Time)
+	// stagingstateDescHash is the schema descriptor for hash field.
+	stagingstateDescHash := stagingstateFields[0].Descriptor()
+	// stagingstate.HashValidator is a validator for the "hash" field. It is called by the builders before save.
+	stagingstate.HashValidator = stagingstateDescHash.Validators[0].(func(string) error)
+	// stagingstateDescPartsAvailable is the schema descriptor for parts_available field.
+	stagingstateDescPartsAvailable := stagingstateFields[2].Descriptor()
+	// stagingstate.DefaultPartsAvailable holds the default value on creation for the parts_available field.
+	stagingstate.DefaultPartsAvailable = stagingstateDescPartsAvailable.Default.(int64)
+	// stagingstateDescCompression is the schema descriptor for compression field.
+	stagingstateDescCompression := stagingstateFields[3].Descriptor()
+	// stagingstate.DefaultCompression holds the default value on creation for the compression field.
+	stagingstate.DefaultCompression = stagingstateDescCompression.Default.(string)
+	// stagingstateDescStatus is the schema descriptor for status field.
+	stagingstateDescStatus := stagingstateFields[4].Descriptor()
+	// stagingstate.DefaultStatus holds the default value on creation for the status field.
+	stagingstate.DefaultStatus = stagingstateDescStatus.Default.(string)
 }

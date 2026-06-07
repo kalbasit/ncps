@@ -38,3 +38,6 @@ type NarInfoSignature func(*sql.Selector)
 
 // PinnedClosure is the predicate function for pinnedclosure builders.
 type PinnedClosure func(*sql.Selector)
+
+// StagingState is the predicate function for stagingstate builders.
+type StagingState func(*sql.Selector)

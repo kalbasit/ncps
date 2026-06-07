@@ -85,6 +85,18 @@ cache:
     # below your reverse-proxy gateway timeout so a stalled chunk on high-latency
     # storage surfaces as a retryable error to the client rather than a gateway 504.
     chunk-wait-timeout: 30s
+  # In-flight NAR staging: serve a NAR cross-pod while it is still downloading by
+  # staging it to shared storage as part-objects once another replica waits for it.
+  # An HA-safe alternative to CDC. Only active with a distributed (Redis) lock.
+  inflight-staging:
+    # Enable in-flight staging (default: false)
+    enabled: false
+    # Grace period to retain staging part-objects after the NAR's final
+    # representation is committed, so in-flight readers drain first (default: 5m)
+    retention: 5m
+    # Size in bytes of each staging part-object, a transport unit distinct from
+    # CDC chunk sizes (default: 8388608 = 8 MiB)
+    part-size: 8388608
   # The maximum size of the store. It can be given with units such as 5K, 10G
   # etc. Supported units: B, K, M, G, T
   max-size: 100G

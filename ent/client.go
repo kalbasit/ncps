@@ -26,6 +26,7 @@ import (
 	"github.com/kalbasit/ncps/ent/narinforeference"
 	"github.com/kalbasit/ncps/ent/narinfosignature"
 	"github.com/kalbasit/ncps/ent/pinnedclosure"
+	"github.com/kalbasit/ncps/ent/stagingstate"
 )
 
 // Client is the client that holds all ent builders.
@@ -55,6 +56,8 @@ type Client struct {
 	NarInfoSignature *NarInfoSignatureClient
 	// PinnedClosure is the client for interacting with the PinnedClosure builders.
 	PinnedClosure *PinnedClosureClient
+	// StagingState is the client for interacting with the StagingState builders.
+	StagingState *StagingStateClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -77,6 +80,7 @@ func (c *Client) init() {
 	c.NarInfoReference = NewNarInfoReferenceClient(c.config)
 	c.NarInfoSignature = NewNarInfoSignatureClient(c.config)
 	c.PinnedClosure = NewPinnedClosureClient(c.config)
+	c.StagingState = NewStagingStateClient(c.config)
 }
 
 type (
@@ -180,6 +184,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		NarInfoReference:    NewNarInfoReferenceClient(cfg),
 		NarInfoSignature:    NewNarInfoSignatureClient(cfg),
 		PinnedClosure:       NewPinnedClosureClient(cfg),
+		StagingState:        NewStagingStateClient(cfg),
 	}, nil
 }
 
@@ -210,6 +215,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		NarInfoReference:    NewNarInfoReferenceClient(cfg),
 		NarInfoSignature:    NewNarInfoSignatureClient(cfg),
 		PinnedClosure:       NewPinnedClosureClient(cfg),
+		StagingState:        NewStagingStateClient(cfg),
 	}, nil
 }
 
@@ -241,7 +247,7 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.BuildTraceEntry, c.BuildTraceSignature, c.Chunk, c.ConfigEntry, c.NarFile,
 		c.NarFileChunk, c.NarInfo, c.NarInfoNarFile, c.NarInfoReference,
-		c.NarInfoSignature, c.PinnedClosure,
+		c.NarInfoSignature, c.PinnedClosure, c.StagingState,
 	} {
 		n.Use(hooks...)
 	}
@@ -253,7 +259,7 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.BuildTraceEntry, c.BuildTraceSignature, c.Chunk, c.ConfigEntry, c.NarFile,
 		c.NarFileChunk, c.NarInfo, c.NarInfoNarFile, c.NarInfoReference,
-		c.NarInfoSignature, c.PinnedClosure,
+		c.NarInfoSignature, c.PinnedClosure, c.StagingState,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -284,6 +290,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.NarInfoSignature.mutate(ctx, m)
 	case *PinnedClosureMutation:
 		return c.PinnedClosure.mutate(ctx, m)
+	case *StagingStateMutation:
+		return c.StagingState.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
 	}
@@ -1976,16 +1984,149 @@ func (c *PinnedClosureClient) mutate(ctx context.Context, m *PinnedClosureMutati
 	}
 }
 
+// StagingStateClient is a client for the StagingState schema.
+type StagingStateClient struct {
+	config
+}
+
+// NewStagingStateClient returns a client for the StagingState from the given config.
+func NewStagingStateClient(c config) *StagingStateClient {
+	return &StagingStateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `stagingstate.Hooks(f(g(h())))`.
+func (c *StagingStateClient) Use(hooks ...Hook) {
+	c.hooks.StagingState = append(c.hooks.StagingState, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `stagingstate.Intercept(f(g(h())))`.
+func (c *StagingStateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.StagingState = append(c.inters.StagingState, interceptors...)
+}
+
+// Create returns a builder for creating a StagingState entity.
+func (c *StagingStateClient) Create() *StagingStateCreate {
+	mutation := newStagingStateMutation(c.config, OpCreate)
+	return &StagingStateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of StagingState entities.
+func (c *StagingStateClient) CreateBulk(builders ...*StagingStateCreate) *StagingStateCreateBulk {
+	return &StagingStateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *StagingStateClient) MapCreateBulk(slice any, setFunc func(*StagingStateCreate, int)) *StagingStateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &StagingStateCreateBulk{err: fmt.Errorf("calling to StagingStateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*StagingStateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &StagingStateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for StagingState.
+func (c *StagingStateClient) Update() *StagingStateUpdate {
+	mutation := newStagingStateMutation(c.config, OpUpdate)
+	return &StagingStateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *StagingStateClient) UpdateOne(_m *StagingState) *StagingStateUpdateOne {
+	mutation := newStagingStateMutation(c.config, OpUpdateOne, withStagingState(_m))
+	return &StagingStateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *StagingStateClient) UpdateOneID(id int) *StagingStateUpdateOne {
+	mutation := newStagingStateMutation(c.config, OpUpdateOne, withStagingStateID(id))
+	return &StagingStateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for StagingState.
+func (c *StagingStateClient) Delete() *StagingStateDelete {
+	mutation := newStagingStateMutation(c.config, OpDelete)
+	return &StagingStateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *StagingStateClient) DeleteOne(_m *StagingState) *StagingStateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *StagingStateClient) DeleteOneID(id int) *StagingStateDeleteOne {
+	builder := c.Delete().Where(stagingstate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &StagingStateDeleteOne{builder}
+}
+
+// Query returns a query builder for StagingState.
+func (c *StagingStateClient) Query() *StagingStateQuery {
+	return &StagingStateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeStagingState},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a StagingState entity by its id.
+func (c *StagingStateClient) Get(ctx context.Context, id int) (*StagingState, error) {
+	return c.Query().Where(stagingstate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *StagingStateClient) GetX(ctx context.Context, id int) *StagingState {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *StagingStateClient) Hooks() []Hook {
+	return c.hooks.StagingState
+}
+
+// Interceptors returns the client interceptors.
+func (c *StagingStateClient) Interceptors() []Interceptor {
+	return c.inters.StagingState
+}
+
+func (c *StagingStateClient) mutate(ctx context.Context, m *StagingStateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&StagingStateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&StagingStateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&StagingStateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&StagingStateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown StagingState mutation op: %q", m.Op())
+	}
+}
+
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
 		BuildTraceEntry, BuildTraceSignature, Chunk, ConfigEntry, NarFile, NarFileChunk,
-		NarInfo, NarInfoNarFile, NarInfoReference, NarInfoSignature,
-		PinnedClosure []ent.Hook
+		NarInfo, NarInfoNarFile, NarInfoReference, NarInfoSignature, PinnedClosure,
+		StagingState []ent.Hook
 	}
 	inters struct {
 		BuildTraceEntry, BuildTraceSignature, Chunk, ConfigEntry, NarFile, NarFileChunk,
-		NarInfo, NarInfoNarFile, NarInfoReference, NarInfoSignature,
-		PinnedClosure []ent.Interceptor
+		NarInfo, NarInfoNarFile, NarInfoReference, NarInfoSignature, PinnedClosure,
+		StagingState []ent.Interceptor
 	}
 )

@@ -23,6 +23,7 @@ import (
 	"github.com/kalbasit/ncps/ent/narinforeference"
 	"github.com/kalbasit/ncps/ent/narinfosignature"
 	"github.com/kalbasit/ncps/ent/pinnedclosure"
+	"github.com/kalbasit/ncps/ent/stagingstate"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -94,6 +95,7 @@ func checkColumn(t, c string) error {
 			narinforeference.Table:    narinforeference.ValidColumn,
 			narinfosignature.Table:    narinfosignature.ValidColumn,
 			pinnedclosure.Table:       pinnedclosure.ValidColumn,
+			stagingstate.Table:        stagingstate.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

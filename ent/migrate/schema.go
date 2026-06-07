@@ -345,6 +345,35 @@ var (
 			},
 		},
 	}
+	// StagingStatesColumns holds the columns for the "staging_states" table.
+	StagingStatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP"},
+		{Name: "updated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "hash", Type: field.TypeString},
+		{Name: "requested_at", Type: field.TypeTime, Nullable: true},
+		{Name: "parts_available", Type: field.TypeInt64, Default: 0},
+		{Name: "compression", Type: field.TypeString, Default: ""},
+		{Name: "status", Type: field.TypeString, Default: "requested"},
+	}
+	// StagingStatesTable holds the schema information for the "staging_states" table.
+	StagingStatesTable = &schema.Table{
+		Name:       "staging_states",
+		Columns:    StagingStatesColumns,
+		PrimaryKey: []*schema.Column{StagingStatesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "stagingstate_hash",
+				Unique:  true,
+				Columns: []*schema.Column{StagingStatesColumns[3]},
+			},
+			{
+				Name:    "stagingstate_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{StagingStatesColumns[1]},
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		BuildTraceEntriesTable,
@@ -358,6 +387,7 @@ var (
 		NarinfoReferencesTable,
 		NarinfoSignaturesTable,
 		PinnedClosuresTable,
+		StagingStatesTable,
 	}
 )
 
@@ -407,5 +437,11 @@ func init() {
 	}
 	PinnedClosuresTable.Annotation = &entsql.Annotation{
 		Table: "pinned_closures",
+	}
+	StagingStatesTable.Annotation = &entsql.Annotation{
+		Table: "staging_states",
+	}
+	StagingStatesTable.Annotation.Checks = map[string]string{
+		"staging_states_parts_available_nonneg": "parts_available >= 0",
 	}
 }

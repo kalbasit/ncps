@@ -34,6 +34,8 @@ type Tx struct {
 	NarInfoSignature *NarInfoSignatureClient
 	// PinnedClosure is the client for interacting with the PinnedClosure builders.
 	PinnedClosure *PinnedClosureClient
+	// StagingState is the client for interacting with the StagingState builders.
+	StagingState *StagingStateClient
 
 	// lazily loaded.
 	client     *Client
@@ -176,6 +178,7 @@ func (tx *Tx) init() {
 	tx.NarInfoReference = NewNarInfoReferenceClient(tx.config)
 	tx.NarInfoSignature = NewNarInfoSignatureClient(tx.config)
 	tx.PinnedClosure = NewPinnedClosureClient(tx.config)
+	tx.StagingState = NewStagingStateClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.
