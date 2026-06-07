@@ -40,7 +40,7 @@ If `fileSize == 0`, the validation MUST be skipped (narinfo with unknown declare
 
 ### Requirement: GetNarInfo MUST normalize compression in-memory during lazy-chunking transition
 
-When lazy CDC chunking is enabled, narinfos are initially stored in the DB with the
+When lazy CDC chunking is enabled, `GetNarInfo` MUST normalize the narinfo in-memory. Narinfos are initially stored in the DB with the
 upstream compression (e.g., `Compression: xz`) while the NAR is chunked in the
 background. After chunking completes, the DB update is asynchronous. During this window,
 `GetNarInfo` MUST normalize the narinfo in-memory before returning so that clients
@@ -82,7 +82,7 @@ The normalization SHALL:
 
 ### Requirement: GetNar MUST return 404 for compressed URL when NAR exists only as chunks
 
-When CDC is enabled and a client requests a NAR by its compressed URL (e.g.,
+The system SHALL return 404 for a compressed URL when the NAR exists only as chunks. When CDC is enabled and a client requests a NAR by its compressed URL (e.g.,
 `nar/hash.nar.xz`), but the NAR exists only as CDC chunks (no whole-file in storage),
 the system SHALL return `storage.ErrNotFound` rather than attempting to serve
 uncompressed chunk data as compressed content. Serving chunk data with mismatched
@@ -107,7 +107,7 @@ compression would cause Nix to fail with "input compression not recognized".
 
 ### Requirement: CDC chunk insert MUST use ignore-on-conflict, not upsert
 
-When recording a batch of chunks in `recordChunkBatch`, each chunk insert
+CDC chunk inserts SHALL use ignore-on-conflict, not upsert. When recording a batch of chunks in `recordChunkBatch`, each chunk insert
 into the `chunks` table SHALL use `ON CONFLICT (hash) DO NOTHING` (not
 `DO UPDATE`). Chunks are content-addressed immutable blobs; an existing
 chunk with the same hash is already correct and MUST NOT be touched.
@@ -141,7 +141,7 @@ pre-existed.
 
 ### Requirement: Transaction failure MUST NOT leave connections in aborted state
 
-After any transaction in `withEntTransactionRetry` fails (whether immediately
+A transaction failure MUST NOT leave connections in an aborted state. After any transaction in `withEntTransactionRetry` fails (whether immediately
 or after all retry attempts are exhausted), the system SHALL ensure the
 database connection is returned to the pool in a clean, non-aborted state.
 
@@ -200,7 +200,7 @@ simple-path copy.
 
 ### Requirement: Placeholder nar_file records MUST NOT be treated as servable
 
-A `nar_file` row with `total_chunks = 0` and `chunking_started_at` NULL is a **placeholder**
+Placeholder `nar_file` records MUST NOT be treated as servable. A `nar_file` row with `total_chunks = 0` and `chunking_started_at` NULL is a **placeholder**
 created by `storeInDatabase` at narinfo-fetch time before any NAR bytes have been downloaded or
 chunked. Such a placeholder SHALL NOT be considered servable by any read path. Specifically:
 
@@ -264,7 +264,7 @@ eligible for recovery.
 
 ### Requirement: CDC startup validation MUST allow enabled→disabled transition
 
-When CDC configuration is validated at startup via `ValidateOrStoreCDCConfig`, the
+CDC startup validation MUST allow the enabled→disabled transition. When CDC configuration is validated at startup via `ValidateOrStoreCDCConfig`, the
 system SHALL permit the transition from a stored `cdc_enabled=true` to a current
 `enabled=false`. The system SHALL return nil without modifying any stored configuration
 keys. The four stored CDC config keys (`cdc_enabled`, `cdc_min`, `cdc_avg`, `cdc_max`)

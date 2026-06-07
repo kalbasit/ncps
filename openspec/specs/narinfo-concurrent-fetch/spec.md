@@ -11,7 +11,7 @@ caused by the purge guard firing while a NAR download job is still in-flight.
 
 ### Requirement: Concurrent narinfo requests for the same hash must not produce 404 responses
 
-When multiple requests arrive concurrently for a narinfo hash that is being fetched from upstream for the first time, all requests must eventually receive the narinfo (or a valid error), and none must receive a 404 caused by a spurious purge of the narinfo from the database.
+When multiple requests arrive concurrently for a narinfo hash that is being fetched from upstream for the first time, all requests MUST eventually receive the narinfo (or a valid error), and none MUST receive a 404 caused by a spurious purge of the narinfo from the database.
 
 #### Scenario: Two concurrent requests for the same narinfo hash — second request must not get 404
 
@@ -51,18 +51,26 @@ When multiple requests arrive concurrently for a narinfo hash that is being fetc
 
 ### Requirement: The fix must not affect the common (cache-warm) case latency
 
-**Given** narinfo for hash `H` is already stored in the database and NAR is already in the store
-**When** a request for hash `H` arrives
-**Then** `getNarInfoFromDatabase` returns the narinfo directly without any additional synchronization overhead
-**And** no upstream fetch is triggered
+The fix MUST NOT affect the common (cache-warm) case latency: when narinfo for a hash is already stored and the NAR is already in the store, `getNarInfoFromDatabase` SHALL return the narinfo directly without additional synchronization overhead and without triggering an upstream fetch.
+
+#### Scenario: Cache-warm request returns narinfo with no extra overhead
+
+- **WHEN** narinfo for hash `H` is already stored in the database and NAR is already in the store
+- **AND** a request for hash `H` arrives
+- **THEN** `getNarInfoFromDatabase` returns the narinfo directly without any additional synchronization overhead
+- **AND** no upstream fetch is triggered
 
 ### Requirement: The fix must not alter behavior for single-hash sequential requests
 
-**Given** narinfo for hash `H` is fetched by a single request (no concurrency)
-**When** the fetch completes (narinfo stored, NAR downloaded)
-**And** subsequent requests arrive after the job has been removed from `upstreamJobs`
-**Then** `getNarInfoFromDatabase` behaves identically to before the fix
-**And** `HasNarInStore` returns true (NAR is in store) so the purge guard is not triggered
+The fix MUST NOT alter behavior for single-hash sequential requests: after a single request completes a fetch (narinfo stored, NAR downloaded) and the job is removed from `upstreamJobs`, `getNarInfoFromDatabase` SHALL behave identically to before the fix and the purge guard SHALL NOT trigger because the NAR is in store.
+
+#### Scenario: Sequential request after job removal behaves identically to before the fix
+
+- **WHEN** narinfo for hash `H` is fetched by a single request (no concurrency)
+- **AND** the fetch completes (narinfo stored, NAR downloaded)
+- **AND** subsequent requests arrive after the job has been removed from `upstreamJobs`
+- **THEN** `getNarInfoFromDatabase` behaves identically to before the fix
+- **AND** `HasNarInStore` returns true (NAR is in store) so the purge guard is not triggered
 
 ### Requirement: A lock-losing replica MUST NOT return HTTP 500 from narinfo coordination
 

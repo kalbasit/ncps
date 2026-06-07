@@ -44,7 +44,7 @@ When this transition is detected at startup, the system SHALL:
 
 ### Requirement: Chunked NARs are served from the chunk store during drain, not treated as cache misses
 
-**Replaces**: "Chunked NARs become cache misses when CDC is disabled" (removed).
+This requirement SHALL replace "Chunked NARs become cache misses when CDC is disabled" (removed).
 
 After CDC is disabled with chunked NARs remaining, those NARs SHALL be served from the
 chunk store until they are migrated to whole files by `migrate-chunks-to-nar`. The chunk

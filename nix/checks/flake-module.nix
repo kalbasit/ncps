@@ -434,6 +434,37 @@
           '';
         };
 
+        # openspec-validate-check runs `openspec validate --specs` against the
+        # committed openspec/ tree and fails the build if any capability spec is
+        # malformed (missing Purpose/Requirements, a requirement without a
+        # SHALL/MUST statement, or a requirement with no scenario). This is the
+        # spec-health counterpart to the change-archival guard: it keeps the
+        # canonical specs under openspec/specs/ structurally valid so they remain
+        # machine-checkable. Narrow src (only the openspec/ tree); openspec is a
+        # standalone CLI from nixpkgs, so no Go toolchain is needed at check time.
+        # See the flake-check-topology spec, "Canonical specs are validated in CI".
+        openspec-validate-check = pkgs.stdenvNoCC.mkDerivation {
+          name = "openspec-validate-check";
+          src = lib.fileset.toSource {
+            fileset = ../../openspec;
+            root = ../..;
+          };
+          dontConfigure = true;
+          dontBuild = true;
+          nativeBuildInputs = [ pkgs.openspec ];
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            openspec validate --specs
+            runHook postCheck
+          '';
+          installPhase = ''
+            runHook preInstall
+            touch $out
+            runHook postInstall
+          '';
+        };
+
         # Helm chart unit tests via helm-unittest.
         # Skipped on all platforms: the helm-unittest plugin in nixpkgs-26.05
         # ships neither untt-linux-amd64 nor untt-linux-arm64, so the check

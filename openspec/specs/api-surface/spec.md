@@ -1,18 +1,16 @@
 # API Surface Specification
 
-## Overview
+## Purpose
 
-The public API of ncps consists of three layers:
+This specification documents the public API of ncps. The API consists of three layers: (1) the Nix-protocol-compatible HTTP endpoints served by `pkg/server`, (2) the `pkg/cache.Cache` domain methods called by the server handlers, and (3) the pluggable storage and chunk backend interfaces in `pkg/storage` and `pkg/storage/chunk`. It also documents the central artifact type `narinfo.NarInfo`, the `pkg/nar` URL type, and the known edge cases and failure modes that the system must handle.
 
-1. **HTTP endpoints** — the Nix-protocol-compatible REST API served by `pkg/server`.
-2. **`pkg/cache.Cache` methods** — the core domain interface called by the server handlers.
-3. **Storage and chunk interfaces** — the pluggable backend contracts in `pkg/storage` and `pkg/storage/chunk`.
+## Requirements
 
----
+### Requirement: NarInfo Data Structure
 
-## Core Data Structure: `narinfo.NarInfo`
+The system SHALL represent every narinfo as the `narinfo.NarInfo` struct from `github.com/nix-community/go-nix/pkg/narinfo`, and all narinfo operations SHALL revolve around this struct.
 
-The central artifact type is `narinfo.NarInfo` from `github.com/nix-community/go-nix/pkg/narinfo`. All narinfo operations revolve around this struct:
+The central artifact type is `narinfo.NarInfo`:
 
 ```go
 // NarInfo represents a Nix narinfo file — the metadata record for a single
@@ -38,24 +36,36 @@ Key invariants:
 - `References` elements are bare base names (no `/nix/store/` prefix), stored one-per-row in `narinfo_references`.
 - `Signatures` are stored one-per-row in `narinfo_signatures` and re-attached on read.
 
----
+#### Scenario: URL normalization on serve
+- **WHEN** a narinfo is read for serving
+- **THEN** the system SHALL normalize the `URL` field via `nar.URL.Normalize()`, stripping any narinfo-hash prefix
 
-## HTTP Endpoints
+#### Scenario: References and signatures persisted per-row
+- **WHEN** a narinfo is stored
+- **THEN** the system SHALL store `References` as bare base names one-per-row in `narinfo_references` and `Signatures` one-per-row in `narinfo_signatures`, re-attaching the signatures on read
 
-All endpoints are registered on a `chi.Mux` router in `pkg/server.Server.createRouter()`.
+### Requirement: Infrastructure Routes
 
-### Infrastructure Routes
+The system SHALL register infrastructure routes on a `chi.Mux` router in `pkg/server.Server.createRouter()`.
 
 | Method | Path | Handler | Notes |
 |---|---|---|---|
 | `GET` | `/healthz` | chi `middleware.Heartbeat` | Returns `200 OK` with body `"."`. Never traced. |
 | `GET` | `/metrics` | `promhttp.HandlerFor` | Only registered when a Prometheus gatherer is configured. Never traced. |
 
-### Nix Cache Protocol Routes
+#### Scenario: Health check
+- **WHEN** a client sends `GET /healthz`
+- **THEN** the system SHALL return `200 OK` with body `"."` and SHALL NOT emit a trace
 
-#### `GET /nix-cache-info`
+#### Scenario: Metrics endpoint
+- **WHEN** a Prometheus gatherer is configured and a client sends `GET /metrics`
+- **THEN** the system SHALL serve the Prometheus metrics via `promhttp.HandlerFor` and SHALL NOT emit a trace
+- **WHEN** no Prometheus gatherer is configured
+- **THEN** the system SHALL NOT register the `/metrics` route
 
-Returns the Nix cache configuration text.
+### Requirement: GET /nix-cache-info
+
+The system SHALL return the Nix cache configuration text at `GET /nix-cache-info`.
 
 **Response:** `200 OK`, `Content-Type: text/plain`
 
@@ -65,19 +75,23 @@ WantMassQuery: 1
 Priority: 10
 ```
 
-#### `GET /pubkey`
+#### Scenario: Cache info served
+- **WHEN** a client sends `GET /nix-cache-info`
+- **THEN** the system SHALL return `200 OK` with `Content-Type: text/plain` and a body declaring `StoreDir: /nix/store`, `WantMassQuery: 1`, and `Priority: 10`
 
-Returns the cache's Ed25519 public key (used for narinfo signature verification by Nix clients).
+### Requirement: GET /pubkey
+
+The system SHALL return the cache's Ed25519 public key at `GET /pubkey`, used for narinfo signature verification by Nix clients.
 
 **Response:** `200 OK`, `Content-Type: text/plain`, body is the base64-encoded public key.
 
----
+#### Scenario: Public key served
+- **WHEN** a client sends `GET /pubkey`
+- **THEN** the system SHALL return `200 OK` with `Content-Type: text/plain` and a body containing the base64-encoded Ed25519 public key
 
-#### `HEAD /{hash}.narinfo`
+### Requirement: HEAD and GET /{hash}.narinfo
 
-#### `GET /{hash}.narinfo`
-
-Fetch narinfo metadata for a store path hash.
+The system SHALL serve narinfo metadata for a store path hash at `HEAD /{hash}.narinfo` and `GET /{hash}.narinfo`.
 
 - `hash` must match `narinfo.HashPattern` (Nix base32).
 - `HEAD` returns headers only (no body).
@@ -91,11 +105,25 @@ The NAR URL in the returned narinfo is always normalized (any narinfo-hash prefi
 - `404 Not Found` — hash not in database, storage, or any upstream cache.
 - `500 Internal Server Error` — database error or signature validation failure.
 
----
+#### Scenario: Successful narinfo fetch
+- **WHEN** a client sends `GET /{hash}.narinfo` for a hash matching `narinfo.HashPattern` that is available in database, storage, or an upstream cache
+- **THEN** the system SHALL return `200 OK` with `Content-Type: text/x-nix-narinfo` and the full narinfo text, with the NAR URL normalized
 
-#### `PUT /upload/{hash}.narinfo`
+#### Scenario: HEAD returns headers only
+- **WHEN** a client sends `HEAD /{hash}.narinfo` for an available narinfo
+- **THEN** the system SHALL return `200 OK` with the narinfo headers and no body
 
-Store a narinfo pushed by the client. Only available under `/upload` prefix.
+#### Scenario: Narinfo not found
+- **WHEN** the hash is not present in the database, storage, or any upstream cache
+- **THEN** the system SHALL return `404 Not Found`
+
+#### Scenario: Narinfo server error
+- **WHEN** a database error or signature validation failure occurs
+- **THEN** the system SHALL return `500 Internal Server Error`
+
+### Requirement: PUT /upload/{hash}.narinfo
+
+The system SHALL store a narinfo pushed by the client at `PUT /upload/{hash}.narinfo`, available only under the `/upload` prefix.
 
 **Request:** `Content-Type: text/x-nix-narinfo`, body is narinfo text.
 
@@ -107,11 +135,21 @@ Store a narinfo pushed by the client. Only available under `/upload` prefix.
 - `403 Forbidden` — PUT not permitted (`putPermitted == false`).
 - `500 Internal Server Error` — parse or storage error.
 
----
+#### Scenario: Successful narinfo upload
+- **WHEN** `putPermitted == true` and the client sends a valid narinfo body to `PUT /upload/{hash}.narinfo`
+- **THEN** the system SHALL store the narinfo and return `200 OK`
 
-#### `DELETE /{hash}.narinfo`
+#### Scenario: Narinfo upload not permitted
+- **WHEN** `putPermitted == false` (the default)
+- **THEN** the system SHALL return `403 Forbidden` before any body is read
 
-Delete a cached narinfo and its associated nar_file records.
+#### Scenario: Narinfo upload error
+- **WHEN** a parse or storage error occurs
+- **THEN** the system SHALL return `500 Internal Server Error`
+
+### Requirement: DELETE /{hash}.narinfo
+
+The system SHALL delete a cached narinfo and its associated nar_file records at `DELETE /{hash}.narinfo`.
 
 **Response:** `200 OK` on success.
 
@@ -122,17 +160,25 @@ Delete a cached narinfo and its associated nar_file records.
 - `404 Not Found` — hash not found.
 - `500 Internal Server Error` — database or storage error.
 
----
+#### Scenario: Successful narinfo deletion
+- **WHEN** `deletePermitted == true` and the narinfo exists
+- **THEN** the system SHALL delete the narinfo and its associated nar_file records and return `200 OK`
 
-#### `HEAD /nar/{hash}.nar`
+#### Scenario: Narinfo deletion not permitted
+- **WHEN** `deletePermitted == false`
+- **THEN** the system SHALL return `403 Forbidden` immediately
 
-#### `GET /nar/{hash}.nar`
+#### Scenario: Narinfo deletion not found
+- **WHEN** the hash is not found
+- **THEN** the system SHALL return `404 Not Found`
 
-#### `HEAD /nar/{hash}.nar.{compression}`
+#### Scenario: Narinfo deletion error
+- **WHEN** a database or storage error occurs
+- **THEN** the system SHALL return `500 Internal Server Error`
 
-#### `GET /nar/{hash}.nar.{compression}`
+### Requirement: HEAD and GET /nar/{hash}.nar[.{compression}]
 
-Fetch a NAR archive. Supports uncompressed (`.nar`) and compressed (`.nar.xz`, `.nar.zst`, etc.) variants.
+The system SHALL serve a NAR archive at `HEAD`/`GET /nar/{hash}.nar` and `HEAD`/`GET /nar/{hash}.nar.{compression}`, supporting uncompressed (`.nar`) and compressed (`.nar.xz`, `.nar.zst`, etc.) variants.
 
 - `hash` must match `nar.NormalizedHashPattern`.
 - `compression` is optional; omitting it serves the raw NAR stream.
@@ -155,11 +201,41 @@ Fetch a NAR archive. Supports uncompressed (`.nar`) and compressed (`.nar.xz`, `
 - `500 Internal Server Error` — I/O error, upstream failure, or hash mismatch.
 - Connection reset / partial response — client disconnected; upstream fetch aborted (see above).
 
----
+#### Scenario: Serve NAR from chunks
+- **WHEN** CDC is enabled and the NAR is stored as chunks
+- **THEN** the system SHALL return `200 OK` with `Content-Type: application/x-nix-nar`, streaming chunks progressively as they become available, with `Content-Length` from the `nar_files.file_size` record
 
-#### `PUT /upload/nar/{hash}.nar[.{compression}]`
+#### Scenario: Serve NAR from whole file
+- **WHEN** the NAR is stored as a whole file
+- **THEN** the system SHALL return `200 OK` with `Content-Type: application/x-nix-nar`, piping directly from storage, with `Content-Length` from the `nar_files.file_size` record
 
-Store a NAR pushed by the client.
+#### Scenario: Transparent zstd re-compression
+- **WHEN** the client sends `Accept-Encoding: zstd` and the stored NAR is uncompressed
+- **THEN** the system SHALL transparently zstd-compress the response on the fly using a pooled `zstd.Writer`
+
+#### Scenario: Client disconnects while serving from storage or chunks
+- **WHEN** the client drops the connection while the system is serving from storage or chunks
+- **THEN** the system SHALL abort the pipe/stream immediately and SHALL NOT continue any background work
+
+#### Scenario: Client disconnects during upstream fetch
+- **WHEN** the client drops the connection while an upstream fetch is in progress
+- **THEN** the system SHALL exit the download loop on `ctx` cancellation, discard the partial temp file, write no DB record or storage file, and not cache the NAR
+
+#### Scenario: Client disconnects after lazy CDC dispatch
+- **WHEN** the client disconnects after the whole-file NAR was written to `narStore` and the lazy CDC background goroutine was already dispatched
+- **THEN** the background goroutine SHALL run to completion using a detached `context.Background()`, fully chunking and caching the NAR despite the cancelled triggering request
+
+#### Scenario: NAR not found
+- **WHEN** the NAR is not in storage, chunks, or any upstream
+- **THEN** the system SHALL return `404 Not Found`
+
+#### Scenario: NAR serving error
+- **WHEN** an I/O error, upstream failure, or hash mismatch occurs
+- **THEN** the system SHALL return `500 Internal Server Error`
+
+### Requirement: PUT /upload/nar/{hash}.nar[.{compression}]
+
+The system SHALL store a NAR pushed by the client at `PUT /upload/nar/{hash}.nar[.{compression}]`.
 
 **Request:** `Content-Type: application/x-nix-nar`, body is raw NAR bytes.
 
@@ -169,11 +245,21 @@ Store a NAR pushed by the client.
 - `403 Forbidden` — PUT not permitted.
 - `500 Internal Server Error` — storage error.
 
----
+#### Scenario: Successful NAR upload
+- **WHEN** PUT is permitted and the client sends raw NAR bytes
+- **THEN** the system SHALL store the NAR and return `200 OK`
 
-#### `DELETE /nar/{hash}.nar[.{compression}]`
+#### Scenario: NAR upload not permitted
+- **WHEN** PUT is not permitted
+- **THEN** the system SHALL return `403 Forbidden`
 
-Delete a cached NAR from storage and the database.
+#### Scenario: NAR upload error
+- **WHEN** a storage error occurs
+- **THEN** the system SHALL return `500 Internal Server Error`
+
+### Requirement: DELETE /nar/{hash}.nar[.{compression}]
+
+The system SHALL delete a cached NAR from storage and the database at `DELETE /nar/{hash}.nar[.{compression}]`.
 
 **Response:** `200 OK` on success.
 
@@ -182,25 +268,37 @@ Delete a cached NAR from storage and the database.
 - `404 Not Found`.
 - `500 Internal Server Error`.
 
----
+#### Scenario: Successful NAR deletion
+- **WHEN** DELETE is permitted and the NAR exists
+- **THEN** the system SHALL delete the NAR from storage and the database and return `200 OK`
 
-#### `HEAD /build-trace-v2/{drvName}/{outputName}.doi`
+#### Scenario: NAR deletion not permitted
+- **WHEN** DELETE is not permitted
+- **THEN** the system SHALL return `403 Forbidden`
 
-Returns `200 OK` if the build trace entry exists or `404 Not Found` if it does not. No body is returned.
+#### Scenario: NAR deletion not found
+- **WHEN** the NAR does not exist
+- **THEN** the system SHALL return `404 Not Found`
 
-##### Scenario: Entry exists
+#### Scenario: NAR deletion error
+- **WHEN** a storage or database error occurs
+- **THEN** the system SHALL return `500 Internal Server Error`
+
+### Requirement: HEAD /build-trace-v2/{drvName}/{outputName}.doi
+
+The system SHALL return `200 OK` if the build trace entry exists or `404 Not Found` if it does not at `HEAD /build-trace-v2/{drvName}/{outputName}.doi`. No body is returned.
+
+#### Scenario: Entry exists
 - **WHEN** a client sends `HEAD /build-trace-v2/{drvName}/{outputName}.doi` for a stored entry
 - **THEN** the system SHALL return `200 OK` with no body
 
-##### Scenario: Entry does not exist
+#### Scenario: Entry does not exist
 - **WHEN** a client sends `HEAD /build-trace-v2/{drvName}/{outputName}.doi` for an unknown entry
 - **THEN** the system SHALL return `404 Not Found`
 
----
+### Requirement: GET /build-trace-v2/{drvName}/{outputName}.doi
 
-#### `GET /build-trace-v2/{drvName}/{outputName}.doi`
-
-Returns the stored build trace entry as JSON.
+The system SHALL return the stored build trace entry as JSON at `GET /build-trace-v2/{drvName}/{outputName}.doi`.
 
 **Response:** `Content-Type: application/json`, body is the build trace v3 JSON object with `key` and `value` fields, `value.signatures` containing all stored signatures including ncps's own.
 
@@ -208,19 +306,21 @@ Returns the stored build trace entry as JSON.
 - `404 Not Found` — entry not found.
 - `500 Internal Server Error` — database error.
 
-##### Scenario: Successful GET
+#### Scenario: Successful GET
 - **WHEN** a client sends `GET /build-trace-v2/{drvName}/{outputName}.doi` and the entry exists
 - **THEN** the system SHALL return `200 OK` with a JSON body containing `key` and `value` fields
 
-##### Scenario: Not found
+#### Scenario: Not found
 - **WHEN** a client sends `GET /build-trace-v2/{drvName}/{outputName}.doi` for an unknown entry
 - **THEN** the system SHALL return `404 Not Found`
 
----
+#### Scenario: Build trace GET error
+- **WHEN** a database error occurs
+- **THEN** the system SHALL return `500 Internal Server Error`
 
-#### `PUT /upload/build-trace-v2/{drvName}/{outputName}.doi`
+### Requirement: PUT /upload/build-trace-v2/{drvName}/{outputName}.doi
 
-Stores a build trace entry. Only available under the `/upload` prefix. Authorization follows the same `putPermitted` boolean gate used by narinfo and NAR uploads.
+The system SHALL store a build trace entry at `PUT /upload/build-trace-v2/{drvName}/{outputName}.doi`, available only under the `/upload` prefix. Authorization follows the same `putPermitted` boolean gate used by narinfo and NAR uploads.
 
 **Request:** `Content-Type: application/json`, body is a build trace v3 JSON object.
 
@@ -233,23 +333,21 @@ Stores a build trace entry. Only available under the `/upload` prefix. Authoriza
 - `405 Method Not Allowed` — PUT not permitted.
 - `500 Internal Server Error` — database error.
 
-##### Scenario: Successful PUT
+#### Scenario: Successful PUT
 - **WHEN** `putPermitted == true` and the client sends a valid build trace JSON body
 - **THEN** the system SHALL return `204 No Content`
 
-##### Scenario: PUT not permitted
+#### Scenario: PUT not permitted
 - **WHEN** `putPermitted == false`
 - **THEN** the system SHALL return `405 Method Not Allowed`
 
-##### Scenario: Invalid body
+#### Scenario: Invalid body
 - **WHEN** the body is not valid JSON or missing required fields
 - **THEN** the system SHALL return `400 Bad Request`
 
----
+### Requirement: Cache NarInfo Operations
 
-## `pkg/cache.Cache` — Core Methods
-
-### NarInfo Operations
+The `pkg/cache.Cache` type SHALL expose the core narinfo domain methods called by the server handlers.
 
 ```go
 // GetNarInfo returns narinfo for the given hash.
@@ -267,7 +365,25 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 func (c *Cache) DeleteNarInfo(ctx context.Context, hash string) error
 ```
 
-### NAR Operations
+#### Scenario: GetNarInfo lookup order
+- **WHEN** `GetNarInfo` is called for a hash
+- **THEN** the system SHALL look up the narinfo in order database → storage (legacy) → upstream
+- **WHEN** the database misses but storage hits
+- **THEN** the system SHALL spawn a background DB migration goroutine
+- **WHEN** the database hits and the NAR is CDC eligible
+- **THEN** the system SHALL spawn `maybeBackgroundMigrateNarToChunks`
+
+#### Scenario: PutNarInfo persistence
+- **WHEN** `PutNarInfo` is called with a narinfo reader
+- **THEN** the system SHALL parse and validate the narinfo and store it in the database (narinfos + references + signatures + narinfo_nar_files)
+
+#### Scenario: DeleteNarInfo removal
+- **WHEN** `DeleteNarInfo` is called for a hash
+- **THEN** the system SHALL remove the narinfo from the database and storage
+
+### Requirement: Cache NAR Operations
+
+The `pkg/cache.Cache` type SHALL expose the core NAR domain methods called by the server handlers.
 
 ```go
 // GetNar streams a NAR to the provided writer.
@@ -287,7 +403,29 @@ func (c *Cache) DeleteNar(ctx context.Context, narURL nar.URL) error
 func (c *Cache) HasNarInChunks(ctx context.Context, narURL nar.URL) (bool, error)
 ```
 
-### CDC Configuration
+#### Scenario: GetNar lookup order
+- **WHEN** `GetNar` is called with CDC disabled
+- **THEN** the system SHALL look up the NAR in order storage → upstream
+- **WHEN** `GetNar` is called with CDC enabled
+- **THEN** the system SHALL look up the NAR in order chunks (DB) → storage → upstream
+
+#### Scenario: GetNar upstream fetch
+- **WHEN** `GetNar` must fetch from upstream
+- **THEN** the system SHALL download to a temp file, atomically move it to storage, write the DB record, and optionally trigger CDC chunking
+
+#### Scenario: PutNar and DeleteNar
+- **WHEN** `PutNar` is called
+- **THEN** the system SHALL store the NAR from the reader
+- **WHEN** `DeleteNar` is called
+- **THEN** the system SHALL remove the NAR from storage and the database
+
+#### Scenario: HasNarInChunks check
+- **WHEN** `HasNarInChunks` is called
+- **THEN** the system SHALL check the database for CDC chunk records and return whether they exist
+
+### Requirement: Cache CDC Configuration
+
+The `pkg/cache.Cache` type SHALL expose methods to configure Content-Defined Chunking (CDC).
 
 ```go
 // SetCDCConfiguration enables CDC and sets chunker parameters.
@@ -305,7 +443,21 @@ func (c *Cache) SetCDCLazyChunking(enabled bool, workers int)
 func (c *Cache) SetCDCDeleteDelay(delay time.Duration)
 ```
 
-### Lifecycle
+#### Scenario: Configure CDC parameters
+- **WHEN** `SetCDCConfiguration` is called
+- **THEN** the system SHALL enable CDC and set the chunker `minSize`, `avgSize`, and `maxSize` parameters in bytes
+
+#### Scenario: Inject chunk store and lazy chunking
+- **WHEN** `SetChunkStore` is called
+- **THEN** the system SHALL inject the chunk storage backend
+- **WHEN** `SetCDCLazyChunking` is called
+- **THEN** the system SHALL toggle lazy background chunking with the given worker pool size
+- **WHEN** `SetCDCDeleteDelay` is called
+- **THEN** the system SHALL set the delay before deleting whole-file NARs after chunking
+
+### Requirement: Cache Lifecycle Operations
+
+The `pkg/cache.Cache` type SHALL expose lifecycle methods for cron scheduling, sizing, and upstream registration.
 
 ```go
 // SetupCron initializes the cron runner with the given timezone.
@@ -324,9 +476,23 @@ func (c *Cache) SetMaxSize(maxSize uint64)
 func (c *Cache) AddUpstreamCaches(...)
 ```
 
----
+#### Scenario: Cron setup and jobs
+- **WHEN** `SetupCron` is called with a timezone
+- **THEN** the system SHALL initialize the cron runner with that timezone
+- **WHEN** `AddLRUCronJob` is called
+- **THEN** the system SHALL register an LRU eviction job on the given schedule
+- **WHEN** `AddCDCDeletedCleanupCronJob` is called
+- **THEN** the system SHALL register a CDC orphan-cleanup job on the given schedule
 
-## `pkg/storage` — Storage Interfaces
+#### Scenario: Sizing and upstream registration
+- **WHEN** `SetMaxSize` is called
+- **THEN** the system SHALL set the maximum cache size in bytes for LRU eviction
+- **WHEN** `AddUpstreamCaches` is called
+- **THEN** the system SHALL register the given upstream caches and their trusted public keys
+
+### Requirement: Storage Interfaces
+
+The `pkg/storage` package SHALL define the pluggable backend contracts implemented by the filesystem and S3 backends.
 
 ```go
 // NarInfoStore — narinfo metadata storage (filesystem or S3).
@@ -359,9 +525,19 @@ Sentinel errors:
 - `storage.ErrNotFound` — returned when a narinfo or NAR does not exist.
 - `storage.ErrAlreadyExists` — returned when attempting to overwrite an existing file.
 
----
+#### Scenario: Backends implement storage interfaces
+- **WHEN** a storage backend is selected (filesystem or S3)
+- **THEN** the backend SHALL implement `NarInfoStore` and `NarStore` (and the deprecated `ConfigStore`)
 
-## `pkg/storage/chunk` — Chunk Store Interface
+#### Scenario: Storage sentinel errors
+- **WHEN** a narinfo or NAR does not exist
+- **THEN** the store SHALL return `storage.ErrNotFound`
+- **WHEN** an attempt is made to overwrite an existing file
+- **THEN** the store SHALL return `storage.ErrAlreadyExists`
+
+### Requirement: Chunk Store Interface
+
+The `pkg/storage/chunk` package SHALL define the `Store` interface for CDC chunk storage, implemented by `chunk.NewLocalStore(baseDir)` and `chunk.NewS3Store(ctx, cfg, locker)`.
 
 ```go
 type Store interface {
@@ -377,11 +553,23 @@ type Store interface {
 }
 ```
 
-Implementations: `chunk.NewLocalStore(baseDir)`, `chunk.NewS3Store(ctx, cfg, locker)`.
+#### Scenario: Chunk retrieval variants
+- **WHEN** `GetChunk` is called
+- **THEN** the store SHALL decompress the chunk before returning it
+- **WHEN** `GetRawChunk` is called
+- **THEN** the store SHALL return the compressed bytes without decompression
 
----
+#### Scenario: Chunk storage result
+- **WHEN** `PutChunk` is called
+- **THEN** the store SHALL store the chunk and return `(isNew, compressedSize, error)`
 
-## `pkg/nar` — NAR URL Type
+#### Scenario: Chunk store implementations
+- **WHEN** a chunk store is constructed via `chunk.NewLocalStore(baseDir)` or `chunk.NewS3Store(ctx, cfg, locker)`
+- **THEN** the resulting value SHALL implement the `Store` interface
+
+### Requirement: NAR URL Type
+
+The `pkg/nar` package SHALL define the `URL` type and parsing functions that represent and normalize narinfo URL fields.
 
 ```go
 type URL struct {
@@ -400,9 +588,17 @@ func ParseURL(u string) (URL, error)
 func (u URL) Normalize() URL
 ```
 
----
+#### Scenario: ParseURL validation and prefix stripping
+- **WHEN** `ParseURL` is called with a narinfo URL field
+- **THEN** the system SHALL validate the hash against `nar.NormalizedHashPattern` and strip any narinfo-hash prefix (e.g., `"prefix-actualhash"` → `"actualhash"`)
 
-## Known Edge Cases and Failure Modes
+#### Scenario: Normalize strips embedded prefix
+- **WHEN** `Normalize` is called on a `URL`
+- **THEN** the system SHALL return a `URL` with any embedded narinfo-hash prefix stripped
+
+### Requirement: Known Edge Cases and Failure Modes
+
+The system SHALL handle the following edge cases and failure modes with the documented behavior.
 
 | Scenario | Behavior |
 |---|---|
@@ -419,3 +615,47 @@ func (u URL) Normalize() URL
 | SQLite write contention | WAL mode + `busy_timeout=10s` retries; `MaxOpenConns=1` serializes writes. |
 | Storage `ErrAlreadyExists` on `PutNarInfo` | Treated as a no-op success (idempotent). |
 | Upload-only context (`/upload` prefix) | `cache.WithUploadOnly(ctx)` is set; cache layer skips upstream fetch for PUTs. |
+
+#### Scenario: Upstream cache miss
+- **WHEN** all upstream caches return 404
+- **THEN** `GetNarInfo` / `GetNar` SHALL return `storage.ErrNotFound` and the server SHALL respond `404`
+
+#### Scenario: Upstream fetch failure
+- **WHEN** an upstream fetch times out, errors on the network, or the NAR hash mismatches after download
+- **THEN** the system SHALL propagate the error (discarding any partial download) and the server SHALL respond `500`
+
+#### Scenario: Concurrent narinfo writes
+- **WHEN** a `PutNarInfo` races with a background migration for the same hash
+- **THEN** the system SHALL handle the duplicate key error gracefully, the first commit SHALL win, and the second SHALL receive `storage.ErrAlreadyExists`
+
+#### Scenario: Thundering herd on GetNarInfo
+- **WHEN** multiple concurrent `GetNarInfo` calls target the same hash
+- **THEN** `downloadState` SHALL serialize them so only the first goroutine fetches from upstream and the others wait and receive the result via broadcast
+
+#### Scenario: CDC chunking in progress
+- **WHEN** a client requests a NAR while CDC chunking is in progress for it
+- **THEN** the system SHALL serve the client from whole-file storage during chunking, and the background goroutine SHALL be unaffected by the client's context
+
+#### Scenario: Stale CDC lock recovery
+- **WHEN** `chunking_started_at` age is ≥ 1h after a process crash mid-chunk
+- **THEN** the system SHALL trigger stale-lock recovery: `DeleteNarFileChunksByNarFileID` removes junction records, `cleanupStaleLockChunks` removes orphaned chunk files and records, and chunking restarts
+
+#### Scenario: NarInfo present but NAR missing
+- **WHEN** a narinfo exists in the database but the NAR is not in storage or chunks
+- **THEN** `GetNar` SHALL fall through to an upstream fetch, re-downloading and re-storing the NAR
+
+#### Scenario: NarInfo url field is NULL
+- **WHEN** the narinfo `url` field is `NULL` in the database
+- **THEN** `getNarInfoFromDatabase` SHALL treat the record as incomplete and fall through to storage lookup
+
+#### Scenario: SQLite write contention
+- **WHEN** concurrent writes contend on SQLite
+- **THEN** the system SHALL use WAL mode with `busy_timeout=10s` retries and `MaxOpenConns=1` to serialize writes
+
+#### Scenario: Idempotent PutNarInfo
+- **WHEN** `PutNarInfo` receives `storage.ErrAlreadyExists`
+- **THEN** the system SHALL treat it as a no-op success (idempotent)
+
+#### Scenario: Upload-only context skips upstream
+- **WHEN** a request is served under the `/upload` prefix with `cache.WithUploadOnly(ctx)` set
+- **THEN** the cache layer SHALL skip the upstream fetch for PUTs

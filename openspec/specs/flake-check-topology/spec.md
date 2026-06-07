@@ -99,7 +99,8 @@ that don't carry the tag.
 
 ### Requirement: Lint and drift checks reuse pre-built helper binaries
 
-Checks that only invoke a small in-tree helper binary
+Checks that only invoke a small in-tree helper binary SHALL behave as follows.
+A check that invokes such a helper
 (`cmd/ent-lint`, `cmd/atlas-sum-check`) SHALL consume that binary from
 a single shared `packages.ncps-checktools` derivation (or equivalent
 `passthru`) instead of each re-vendoring Go and re-running
@@ -152,7 +153,8 @@ starting any backend service.
 
 ### Requirement: Coverage is produced by a dedicated derivation
 
-A separate `packages.ncps.coverage` (or `packages.ncps-coverage`)
+A separate coverage derivation SHALL exist as described here.
+This `packages.ncps.coverage` (or `packages.ncps-coverage`)
 derivation SHALL produce a merged `coverage.txt` containing the union
 of profiles from the unit-test and per-backend-cohort test
 derivations. This derivation MUST NOT be a member of the `checks`
@@ -189,8 +191,25 @@ distinct quality property.
 - **AND** there is no `// self'.packages` or `// self'.devShells`
   merge in the expression
 
+### Requirement: Canonical specs are validated in CI
+
+The `checks` attrset SHALL include an `openspec-validate-check` derivation that runs `openspec validate --specs` against the committed `openspec/` tree and fails the build if any canonical capability spec under `openspec/specs/` is structurally invalid (missing `## Purpose`/`## Requirements`, a requirement whose statement lacks a `SHALL`/`MUST` keyword, or a requirement with no `#### Scenario:`). The check SHALL use a narrow source containing only the `openspec/` tree and the `openspec` CLI from nixpkgs, and SHALL NOT require the Go toolchain. This is the spec-health guard that keeps the canonical specs machine-checkable, complementing the change-archival guard.
+
+#### Scenario: A malformed canonical spec fails CI
+
+- **WHEN** a spec under `openspec/specs/` is edited to drop its `## Purpose` section, remove a requirement's `SHALL`/`MUST`, or leave a requirement without a scenario
+- **AND** `nix build .#checks.<system>.openspec-validate-check` (or `nix flake check`) runs
+- **THEN** the build SHALL fail with the `openspec validate --specs` error output
+
+#### Scenario: Well-formed specs pass CI
+
+- **WHEN** every spec under `openspec/specs/` is structurally valid
+- **AND** `nix build .#checks.<system>.openspec-validate-check` runs
+- **THEN** the check SHALL succeed
+
 ### Requirement: Shared helper for database-backed checks
 
+Spinning up backend services for a check SHALL be centralized as described here.
 Spinning up backend services (Postgres, MySQL, Redis, Garage) for a
 check SHALL go through a single Nix helper (`mkCohort`, or an
 equivalent successor) that takes the list of required backends and
@@ -297,8 +316,9 @@ cache.
 
 ### Requirement: Integration cohorts validated on a single CI architecture
 
-Every workflow that validates the integration test suite (`nix flake check`,
-i.e. the backend cohorts and coverage) — both the CI workflow (PRs/pushes) and
+Every workflow that validates the integration test suite SHALL scope it as described here.
+Each such workflow that validates `nix flake check`
+(i.e. the backend cohorts and coverage) — both the CI workflow (PRs/pushes) and
 the release workflow (tag builds) — SHALL run it on exactly one canonical
 architecture (`x86_64-linux`). Non-canonical architectures in the build matrix
 (`aarch64-linux`) MUST NOT run `nix flake check` or build coverage; they MUST
