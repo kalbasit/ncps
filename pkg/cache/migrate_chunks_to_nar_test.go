@@ -113,6 +113,124 @@ func TestMigrateChunksToNar_ReconstructsVerifiesAndStoresWholeFile(t *testing.T)
 	assert.Equal(t, content, string(data))
 }
 
+// TestMigrateChunksToNar_NormalizesNarinfoURLToNoneOnDeChunk covers class (B): when
+// a NAR is de-chunked to none/whole, its narinfo URL must be normalized to the
+// Compression:none form. Otherwise a narinfo advertising .nar.xz would 404 once the
+// NAR is no longer chunked (serve-time normalization only fires while chunks exist).
+func TestMigrateChunksToNar_NormalizesNarinfoURLToNoneOnDeChunk(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	// The narinfo advertises a different-compression URL with a stale file_hash.
+	_, err := dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+		SetURL("nar/" + noneURL.Hash + ".nar.xz").
+		SetCompression(nar.CompressionTypeXz.String()).
+		SetFileHash("sha256:staleXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX").
+		Save(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false))
+
+	row, err := dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).Only(ctx)
+	require.NoError(t, err)
+
+	require.NotNil(t, row.URL)
+	assert.Equal(t, "nar/"+noneURL.Hash+".nar", *row.URL,
+		"de-chunk must normalize the narinfo URL to the Compression:none form")
+	require.NotNil(t, row.Compression)
+	assert.Equal(t, nar.CompressionTypeNone.String(), *row.Compression,
+		"de-chunk must set the narinfo compression to none")
+	assert.Nil(t, row.FileHash, "a Compression:none narinfo must have a null file_hash")
+}
+
+// TestMigrateChunksToNar_DeChunksWhenNarinfoURLHasDifferentCompression covers the
+// self-completing-drain class (A): a chunked NAR whose only NarHash-bearing narinfo
+// advertises a DIFFERENT-compression URL (nar/<hash>.nar.xz) than the bare none URL,
+// with no join link. The verify NarHash must be resolved by NAR hash from that
+// narinfo (the hash is the uncompressed content hash, identical across compressions),
+// so the NAR is reconstructed, content-verified, and de-chunked instead of skipped.
+func TestMigrateChunksToNar_DeChunksWhenNarinfoURLHasDifferentCompression(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, content := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	// The only NarHash-bearing narinfo advertises .nar.xz (not the bare none URL),
+	// and there is no join link — exactly the stranded production class.
+	_, err := dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+		SetURL("nar/" + noneURL.Hash + ".nar.xz").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = dbClient.Ent().NarInfoNarFile.Delete().Exec(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false),
+		"a chunked NAR whose only NarHash-bearing narinfo is at a different-compression URL must still de-chunk")
+
+	assert.True(t, c.HasNarInStore(ctx, noneURL),
+		"the whole NAR must be present after de-chunking the different-compression-URL NAR")
+
+	_, _, rc, err := c.GetNar(ctx, noneURL)
+	require.NoError(t, err)
+
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(data), "reconstruction must be content-verified and correct")
+}
+
+// TestMigrateChunksToNar_DeChunksUnlinkedNarViaURLFallback is Fix A for the
+// drain-mode stuck NARs: a completed chunked NAR whose narinfo_nar_files join link
+// was never created (a known race between the narinfo-write link creation and the
+// async CDC chunking that finalizes the nar_file) must still be de-chunked. The
+// verify NarHash is resolved via the narinfo's Compression:none URL instead of the
+// missing link, so the NAR is drained rather than skipped forever (which would keep
+// the cache stuck in drain mode).
+func TestMigrateChunksToNar_DeChunksUnlinkedNarViaURLFallback(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, content := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	// Sever the join link — model the production race that left the chunked
+	// nar_file unlinked from its (still-present, NarHash-bearing) narinfo.
+	_, err := dbClient.Ent().NarInfoNarFile.Delete().Exec(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false),
+		"an unlinked chunked NAR must still de-chunk via the url-based NarHash fallback")
+
+	assert.True(t, c.HasNarInStore(ctx, noneURL),
+		"the whole NAR must be present in the store after de-chunking the unlinked NAR")
+
+	_, _, rc, err := c.GetNar(ctx, noneURL)
+	require.NoError(t, err)
+
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(data), "reconstruction of the unlinked NAR must be correct")
+}
+
 // TestMigrateChunksToNar_ResumesWhenWholeFileAlreadyPresent: an interrupted
 // prior run may have written the (verified) whole file but crashed before the
 // record flip. Re-running must treat the already-present object as resumable —

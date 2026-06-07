@@ -141,6 +141,42 @@ func TestMigrateChunksToNar_CLI_Success(t *testing.T) {
 		"the default run leaves now-orphaned chunks for the GC (no --force-reclaim)")
 }
 
+// TestMigrateChunksToNar_CLI_PurgesUnverifiableNar covers self-completing drain (C):
+// a chunked NAR with no narinfo NarHash to verify against cannot be safely
+// de-chunked, so the pass MUST purge it (not skip/strand it), driving the chunked
+// count to zero. Without this the cache would stay in drain mode forever.
+func TestMigrateChunksToNar_CLI_PurgesUnverifiableNar(t *testing.T) {
+	t.Parallel()
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+	dbClient, _, dir, dbURL, cleanup := setupNarToChunksMigrationSQLite(t)
+	t.Cleanup(cleanup)
+	configureCDCInDatabase(ctx, t, dbClient)
+
+	app := setupChunkedNar(ctx, t, dbClient, dir, dbURL)
+
+	// Remove the narinfo's NarHash so there is nothing to content-verify against —
+	// the un-de-chunkable class. (No fixupNarHash.)
+	_, err := dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+		ClearNarHash().
+		Save(ctx)
+	require.NoError(t, err)
+
+	// The pass must SUCCEED (exit 0) and reach a zero chunked count by purging.
+	require.NoError(t, app.Run(ctx, []string{
+		"ncps", "migrate-chunks-to-nar",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+	}), "an un-verifiable chunked NAR must be purged, not left chunked / counted as a failure")
+
+	var stillChunked int
+	require.NoError(t, dbClient.DB().QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM nar_files WHERE total_chunks > 0").Scan(&stillChunked))
+	assert.Zero(t, stillChunked,
+		"the un-verifiable chunked nar_file must be purged so drain can auto-complete")
+}
+
 func TestMigrateChunksToNar_CLI_ForceReclaim(t *testing.T) {
 	t.Parallel()
 

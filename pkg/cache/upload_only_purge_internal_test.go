@@ -115,25 +115,29 @@ func TestGetNarInfo_UploadOnlyPhantomIsMonotonic(t *testing.T) {
 	}
 }
 
-// TestGetNarInfoFromDatabase_NonUploadOnlyStillPurges guards the regression
-// boundary: the upload-only carve-out must NOT disable the purge guard on the
-// normal (root/substituter) read path. A confirmed missing-NAR narinfo on a
-// non-upload-only request is still destructively purged.
-func TestGetNarInfoFromDatabase_NonUploadOnlyStillPurges(t *testing.T) {
+// TestGetNarInfoFromDatabase_NonUploadOnlyDoesNotPurge asserts the substituter
+// (root) read path is now NON-DESTRUCTIVE too: a missing-NAR narinfo reports the
+// cache-miss sentinel (which GetNarInfo turns into an upstream re-fetch) WITHOUT
+// deleting the narinfo row. Deleting here would race a concurrent `nix copy`
+// reference check across replicas that share one database, flipping a verified
+// reference 200->404 mid-copy. The record is healed in place by the upstream
+// re-fetch, not by a destructive purge-then-recreate.
+func TestGetNarInfoFromDatabase_NonUploadOnlyDoesNotPurge(t *testing.T) {
 	t.Parallel()
 
 	c, dbClient := newUploadOnlyPurgeCache(t)
 
-	// No WithUploadOnly: this is the normal read path.
+	// No WithUploadOnly: this is the normal/substituter read path.
 	ctx := newContext()
 
 	ni, err := c.getNarInfoFromDatabase(ctx, testdata.Nar1.NarInfoHash)
 	require.ErrorIs(t, err, ErrNarInfoPurged)
 	require.Nil(t, ni)
 
-	// The narinfo row MUST be gone — the guard purged it.
+	// The narinfo row MUST still exist — the substituter read is non-destructive
+	// and relies on the upstream re-fetch to overwrite it in place.
 	_, err = fetchNarInfo(ctx, dbClient, testdata.Nar1.NarInfoHash)
-	require.Error(t, err, "non-upload-only confirmed-absence read must purge the narinfo row")
+	require.NoError(t, err, "substituter read must NOT purge the narinfo row")
 }
 
 // TestGetNarInfo_UploadOnlyPhantomRepairedByPut covers the spec scenario "a

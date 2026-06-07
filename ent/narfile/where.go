@@ -100,6 +100,16 @@ func VerifiedAt(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldEQ(FieldVerifiedAt, v))
 }
 
+// BytesStoredAt applies equality check predicate on the "bytes_stored_at" field. It's identical to BytesStoredAtEQ.
+func BytesStoredAt(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldEQ(FieldBytesStoredAt, v))
+}
+
+// DechunkResidueFlaggedAt applies equality check predicate on the "dechunk_residue_flagged_at" field. It's identical to DechunkResidueFlaggedAtEQ.
+func DechunkResidueFlaggedAt(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldEQ(FieldDechunkResidueFlaggedAt, v))
+}
+
 // LastAccessedAt applies equality check predicate on the "last_accessed_at" field. It's identical to LastAccessedAtEQ.
 func LastAccessedAt(v time.Time) predicate.NarFile {
 	return predicate.NarFile(sql.FieldEQ(FieldLastAccessedAt, v))
@@ -568,6 +578,106 @@ func VerifiedAtIsNil() predicate.NarFile {
 // VerifiedAtNotNil applies the NotNil predicate on the "verified_at" field.
 func VerifiedAtNotNil() predicate.NarFile {
 	return predicate.NarFile(sql.FieldNotNull(FieldVerifiedAt))
+}
+
+// BytesStoredAtEQ applies the EQ predicate on the "bytes_stored_at" field.
+func BytesStoredAtEQ(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldEQ(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtNEQ applies the NEQ predicate on the "bytes_stored_at" field.
+func BytesStoredAtNEQ(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldNEQ(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtIn applies the In predicate on the "bytes_stored_at" field.
+func BytesStoredAtIn(vs ...time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldIn(FieldBytesStoredAt, vs...))
+}
+
+// BytesStoredAtNotIn applies the NotIn predicate on the "bytes_stored_at" field.
+func BytesStoredAtNotIn(vs ...time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldNotIn(FieldBytesStoredAt, vs...))
+}
+
+// BytesStoredAtGT applies the GT predicate on the "bytes_stored_at" field.
+func BytesStoredAtGT(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldGT(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtGTE applies the GTE predicate on the "bytes_stored_at" field.
+func BytesStoredAtGTE(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldGTE(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtLT applies the LT predicate on the "bytes_stored_at" field.
+func BytesStoredAtLT(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldLT(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtLTE applies the LTE predicate on the "bytes_stored_at" field.
+func BytesStoredAtLTE(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldLTE(FieldBytesStoredAt, v))
+}
+
+// BytesStoredAtIsNil applies the IsNil predicate on the "bytes_stored_at" field.
+func BytesStoredAtIsNil() predicate.NarFile {
+	return predicate.NarFile(sql.FieldIsNull(FieldBytesStoredAt))
+}
+
+// BytesStoredAtNotNil applies the NotNil predicate on the "bytes_stored_at" field.
+func BytesStoredAtNotNil() predicate.NarFile {
+	return predicate.NarFile(sql.FieldNotNull(FieldBytesStoredAt))
+}
+
+// DechunkResidueFlaggedAtEQ applies the EQ predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtEQ(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldEQ(FieldDechunkResidueFlaggedAt, v))
+}
+
+// DechunkResidueFlaggedAtNEQ applies the NEQ predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtNEQ(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldNEQ(FieldDechunkResidueFlaggedAt, v))
+}
+
+// DechunkResidueFlaggedAtIn applies the In predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtIn(vs ...time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldIn(FieldDechunkResidueFlaggedAt, vs...))
+}
+
+// DechunkResidueFlaggedAtNotIn applies the NotIn predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtNotIn(vs ...time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldNotIn(FieldDechunkResidueFlaggedAt, vs...))
+}
+
+// DechunkResidueFlaggedAtGT applies the GT predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtGT(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldGT(FieldDechunkResidueFlaggedAt, v))
+}
+
+// DechunkResidueFlaggedAtGTE applies the GTE predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtGTE(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldGTE(FieldDechunkResidueFlaggedAt, v))
+}
+
+// DechunkResidueFlaggedAtLT applies the LT predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtLT(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldLT(FieldDechunkResidueFlaggedAt, v))
+}
+
+// DechunkResidueFlaggedAtLTE applies the LTE predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtLTE(v time.Time) predicate.NarFile {
+	return predicate.NarFile(sql.FieldLTE(FieldDechunkResidueFlaggedAt, v))
+}
+
+// DechunkResidueFlaggedAtIsNil applies the IsNil predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtIsNil() predicate.NarFile {
+	return predicate.NarFile(sql.FieldIsNull(FieldDechunkResidueFlaggedAt))
+}
+
+// DechunkResidueFlaggedAtNotNil applies the NotNil predicate on the "dechunk_residue_flagged_at" field.
+func DechunkResidueFlaggedAtNotNil() predicate.NarFile {
+	return predicate.NarFile(sql.FieldNotNull(FieldDechunkResidueFlaggedAt))
 }
 
 // LastAccessedAtEQ applies the EQ predicate on the "last_accessed_at" field.

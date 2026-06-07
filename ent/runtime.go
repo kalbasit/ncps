@@ -116,7 +116,7 @@ func init() {
 	// narfile.DefaultTotalChunks holds the default value on creation for the total_chunks field.
 	narfile.DefaultTotalChunks = narfileDescTotalChunks.Default.(int64)
 	// narfileDescLastAccessedAt is the schema descriptor for last_accessed_at field.
-	narfileDescLastAccessedAt := narfileFields[7].Descriptor()
+	narfileDescLastAccessedAt := narfileFields[9].Descriptor()
 	// narfile.DefaultLastAccessedAt holds the default value on creation for the last_accessed_at field.
 	narfile.DefaultLastAccessedAt = narfileDescLastAccessedAt.Default.(func() time.Time)
 	narinfoMixin := schema.NarInfo{}.Mixin()

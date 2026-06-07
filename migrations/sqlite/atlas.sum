@@ -1,4 +1,4 @@
-h1:qIP0Dol/dw4XNfq1MFYzshKCmooKgebTnBaht5Fif8M=
+h1:BUC0csvPzmpMHmVyyRWcyTvm1JBXVcI1xsEGbQt+Ga4=
 20241210054814_create-narinfos-table.sql h1:e8MnIArqBCoUNv8/b0yDnx6ikbaSoPuMp3+j+C/cIPk=
 20241210054829_create-nars-table.sql h1:odrcFJuEF0MT6AIEa5Vn8ghpHV7EhIwfOjsIal1ZUW0=
 20241213014846_add-query-to-nars-table.sql h1:gFPvhup77Qua+8KlsWxqRLQqbXSr1IZSnpVDOFlR5cM=
@@ -15,4 +15,7 @@ h1:qIP0Dol/dw4XNfq1MFYzshKCmooKgebTnBaht5Fif8M=
 20260318053903_add_pinned_closures_table.sql h1:9rWx0agGLMR6TDaq1jKPZNKlch4LOnKjb/OaHO5nPmI=
 20260521021523_ent_baseline.sql h1:PkCUJB7uREMN8ERWLxSj3msPhjXZYTU3E6PUSmNOGBI=
 20260525175108_add_build_trace_entries.sql h1:w416Kn6T/oGdR1VMg3AnszTj7c57H0hUQtykNyB+YN0=
-20260605033958_add_narinfo_upstream_url.sql h1:CwxtPlHne2xRDk3QQvZ2ooKS9tC3C4mAAX9Z5T8OSEU=
+20260605021047_add_bytes_stored_at_to_nar_files.sql h1:Z++j2y5hL8N68xNTl6e8rzKVlfmQx2mJPK8cVS4U13U=
+20260605045447_repair_url_none_xz_narinfos.sql h1:PtAUtCYWG1/45c2LRXPlL6nyy0tp2dkaqKeDPIWaHow=
+20260605211804_add_dechunk_residue_flagged_at_to_nar_files.sql h1:uRfitvFatgcU+YfYwEhV+xmOL3vs7pMx2R2yxf+seaw=
+20260607034027_add_narinfo_upstream_url.sql h1:bAOzHW/bT4jZNfQL0UgahBtyaLnbJuSsdXwHkRLP+QM=

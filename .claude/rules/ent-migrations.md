@@ -87,6 +87,29 @@ This is enforced at the source level (AST check on the schema file) by
 `task uar:ent:lint`. The `Sensitive()` annotation is a schema-only metadata
 change; it does NOT alter the SQL column definition and requires no migration.
 
+### 6. `CURRENT_TIMESTAMP` DB defaults MUST use `entsql.Default(...)`, never `DefaultExpr`
+
+A DB-level `CURRENT_TIMESTAMP` default MUST be declared via
+`entsql.Default("CURRENT_TIMESTAMP")` (which Ent emits as a string default that
+Atlas's SQLite inspector round-trips exactly). It MUST NOT be declared via
+`entsql.Annotation{DefaultExpr: "CURRENT_TIMESTAMP"}`: Ent emits that form as a
+parenthesized Atlas `RawExpr`, but Atlas's SQLite inspector strips the parens on
+readback, so the desired (`(CURRENT_TIMESTAMP)`) and inspected
+(`CURRENT_TIMESTAMP`) values never compare equal. The result is a perpetual
+phantom `ModifyColumn` (ChangeDefault) that rebuilds the whole table on **every**
+generated SQLite migration (GitHub issue #1328).
+
+```go
+field.Time("last_accessed_at").
+    Optional().
+    Nillable().
+    Default(time.Now).
+    Annotations(entsql.Default("CURRENT_TIMESTAMP")), // NOT entsql.Annotation{DefaultExpr: ...}
+```
+
+This is enforced at the source level (AST check, invariant A6) by `cmd/ent-lint`.
+It is a schema-representation-only change; the emitted SQL DDL (`DEFAULT (CURRENT_TIMESTAMP)`) is unchanged, so it requires no migration.
+
 ## Snake_case enum types
 
 When a `field.Enum(...)` field generates a Postgres ENUM type, give it an
