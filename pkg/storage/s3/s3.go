@@ -749,6 +749,93 @@ func (s *Store) narPath(narURL nar.URL) (string, error) {
 	return s.prefix + "/store/nar/" + tfp, nil
 }
 
+// stagingPartDirKey is the key prefix holding all staging part-objects for hash.
+func (s *Store) stagingPartDirKey(hash string) string {
+	if s.prefix == "" {
+		return "store/staging/" + hash + "/"
+	}
+
+	return s.prefix + "/store/staging/" + hash + "/"
+}
+
+// stagingPartKey is the object key of one staging part-object.
+func (s *Store) stagingPartKey(hash string, index int64) string {
+	return fmt.Sprintf("%s%020d.part", s.stagingPartDirKey(hash), index)
+}
+
+// PutStagingPart writes one immutable in-flight staging part-object.
+func (s *Store) PutStagingPart(
+	ctx context.Context,
+	hash string,
+	index int64,
+	body io.Reader,
+	size int64,
+) (int64, error) {
+	_, span := tracer.Start(ctx, "s3.PutStagingPart", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
+	objSize := size
+	if objSize <= 0 {
+		objSize = -1
+	}
+
+	result, err := s.client.PutObject(
+		ctx,
+		s.bucket,
+		s.stagingPartKey(hash, index),
+		body,
+		objSize,
+		minio.PutObjectOptions{ContentType: "application/octet-stream"},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("error putting staging part to S3: %w", err)
+	}
+
+	return result.Size, nil
+}
+
+// GetStagingPart opens a staging part-object for reading.
+func (s *Store) GetStagingPart(ctx context.Context, hash string, index int64) (io.ReadCloser, error) {
+	_, span := tracer.Start(ctx, "s3.GetStagingPart", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
+	obj, err := s.client.GetObject(ctx, s.bucket, s.stagingPartKey(hash, index), minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("error getting staging part from S3: %w", err)
+	}
+
+	if _, err := obj.Stat(); err != nil {
+		obj.Close()
+
+		if minio.ToErrorResponse(err).Code == s3NoSuchKey {
+			return nil, storage.ErrNotFound
+		}
+
+		return nil, fmt.Errorf("error stat'ing staging part from S3: %w", err)
+	}
+
+	return obj, nil
+}
+
+// DeleteStagingParts removes all staging part-objects for hash.
+func (s *Store) DeleteStagingParts(ctx context.Context, hash string) error {
+	_, span := tracer.Start(ctx, "s3.DeleteStagingParts", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
+	opts := minio.ListObjectsOptions{Prefix: s.stagingPartDirKey(hash), Recursive: true}
+	for object := range s.client.ListObjects(ctx, s.bucket, opts) {
+		if object.Err != nil {
+			return fmt.Errorf("error listing staging parts for %q: %w", hash, object.Err)
+		}
+
+		if err := s.client.RemoveObject(ctx, s.bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
+			return fmt.Errorf("error removing staging part %q: %w", object.Key, err)
+		}
+	}
+
+	return nil
+}
+
 func testBucketAccess(ctx context.Context, client *minio.Client, bucket string) error {
 	log := zerolog.Ctx(ctx)
 

@@ -93,4 +93,19 @@ type NarStore interface {
 
 	// WalkNars walks all NAR files in the store and calls fn for each one.
 	WalkNars(ctx context.Context, fn func(narURL nar.URL) error) error
+
+	// PutStagingPart writes one in-flight staging part-object for a NAR hash at
+	// the given zero-based index. Parts are immutable once written. If size > 0
+	// it is the known byte length of body. It returns the number of bytes written.
+	// See change serve-whole-nar-in-flight.
+	PutStagingPart(ctx context.Context, hash string, index int64, body io.Reader, size int64) (int64, error)
+
+	// GetStagingPart opens the staging part-object for hash at index for reading.
+	// The caller must close the returned io.ReadCloser. A missing part returns
+	// storage.ErrNotFound.
+	GetStagingPart(ctx context.Context, hash string, index int64) (io.ReadCloser, error)
+
+	// DeleteStagingParts removes all staging part-objects for hash. It is a no-op
+	// when none exist.
+	DeleteStagingParts(ctx context.Context, hash string) error
 }
