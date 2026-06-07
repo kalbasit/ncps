@@ -2281,6 +2281,11 @@ func (c *Cache) storeNarWithCDCFromReader(
 // it is considered stale and a new attempt may clean up the partial state and restart.
 const cdcChunkingLockTTL = time.Hour
 
+// CDCChunkingLockTTL exposes the chunking lock TTL so out-of-package maintenance
+// tooling (fsck's residue reclaimer) can recognise an in-flight chunking operation
+// and leave it untouched rather than mistaking it for residue.
+func CDCChunkingLockTTL() time.Duration { return cdcChunkingLockTTL }
+
 // findOrCreateNarFileForCDC creates or retrieves a nar_file record for CDC chunking.
 // It returns the narFileID, a list of chunk records that were removed from the junction
 // table during stale lock cleanup (may be orphaned and need immediate cleanup), and an error.
@@ -8190,11 +8195,81 @@ func (c *Cache) PurgeChunkedNar(ctx context.Context, narURL *nar.URL) error {
 	return nil
 }
 
+// NormalizeChunkedNarInfoURL repairs a recoverable inconsistent chunked NAR: a
+// chunked nar_file whose referencing narinfo carries a valid NarHash but
+// advertises a non-Compression:none URL (e.g. nar/<H>.nar.xz). It relinks (if
+// needed) and rewrites every referencing narinfo's URL to the Compression:none
+// form so the persisted metadata matches the chunk-backed storage. It touches no
+// chunks and leaves the nar_file chunked — it is the safe, CDC-state-independent
+// half of fsck's residue repair, reusing the same narinfo-normalization the CDC
+// drain performs during its de-chunk flip.
+func (c *Cache) NormalizeChunkedNarInfoURL(ctx context.Context, narURL *nar.URL) error {
+	if !c.isCDCEnabled() {
+		return ErrCDCDisabled
+	}
+
+	noneURL := nar.URL{Hash: narURL.Hash, Compression: nar.CompressionTypeNone, Query: narURL.Query}
+
+	nr, err := c.getNarFileFromDB(ctx, c.dbClient.Ent().NarFile, noneURL)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil // nothing to normalize
+		}
+
+		return fmt.Errorf("error looking up nar_file record: %w", err)
+	}
+
+	return c.withEntTransaction(ctx, "NormalizeChunkedNarInfoURL", func(tx *ent.Tx) error {
+		// Normalize every narinfo referencing this NAR to the Compression:none URL.
+		// Match by the join link (covers nix-serve-style prefixed URLs the prefix
+		// would miss) OR the Compression:none URL prefix (covers unlinked rows); the
+		// trailing "." anchors the fixed-length hash so the prefix cannot match a
+		// different NAR.
+		if _, err := tx.NarInfo.Update().
+			Where(entnarinfo.Or(
+				entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID)),
+				entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			)).
+			SetURL(noneURL.String()).
+			SetCompression(nar.CompressionTypeNone.String()).
+			ClearFileHash().
+			ClearFileSize().
+			SetUpdatedAt(time.Now()).
+			Save(ctx); err != nil {
+			return fmt.Errorf("error normalizing narinfo urls to none for %s: %w", narURL.Hash, err)
+		}
+
+		// Relink any now-normalized narinfo that referenced the NAR only by URL (no
+		// join row yet) so the metadata link matches the storage.
+		if err := c.relinkNarInfosToNarFileWithEntTx(ctx, tx, noneURL, int64(nr.ID)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // linkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
 // given nar_file, or (nil, nil) when no link exists or the narinfo has no
-// recorded NarHash.
+// recorded NarHash. It delegates to the package-level LinkedNarinfoNarHash so
+// callers without a *Cache (e.g. fsck's read-only residue classification) can
+// share the exact same de-chunk recoverability resolver.
 func (c *Cache) linkedNarinfoNarHash(
 	ctx context.Context,
+	narFileID int,
+	narURL nar.URL,
+) (*nixhash.HashWithEncoding, error) {
+	return LinkedNarinfoNarHash(ctx, c.dbClient, narFileID, narURL)
+}
+
+// LinkedNarinfoNarHash returns the parsed NarHash of the narinfo linked to the
+// given nar_file, or (nil, nil) when no link exists or the narinfo has no
+// recorded NarHash. It is the single source of truth for de-chunk recoverability:
+// both the CDC drain and fsck's residue reclaimer use it so they agree on which
+// chunked NARs are verifiable (recoverable) versus un-de-chunkable.
+func LinkedNarinfoNarHash(
+	ctx context.Context,
+	dbClient *database.Client,
 	narFileID int,
 	narURL nar.URL,
 ) (*nixhash.HashWithEncoding, error) {
@@ -8205,7 +8280,7 @@ func (c *Cache) linkedNarinfoNarHash(
 	// reconstructed bytes against it, so a wrong source would mismatch and purge, not
 	// corrupt. Prefer the join-linked narinfo; fall back to any narinfo whose URL
 	// references the NAR by hash. Only narinfos that carry a NarHash are considered.
-	ni, err := c.dbClient.Ent().NarInfo.Query().
+	ni, err := dbClient.Ent().NarInfo.Query().
 		Where(
 			entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(narFileID)),
 			entnarinfo.NarHashNotNil(),
@@ -8223,7 +8298,7 @@ func (c *Cache) linkedNarinfoNarHash(
 	// narinfo may lack a NarHash). Fall back to any narinfo referencing the NAR by
 	// hash, at any compression URL. The trailing "." anchors the fixed-length hash so
 	// the prefix cannot match a different NAR.
-	ni, err = c.dbClient.Ent().NarInfo.Query().
+	ni, err = dbClient.Ent().NarInfo.Query().
 		Where(
 			entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
 			entnarinfo.NarHashNotNil(),

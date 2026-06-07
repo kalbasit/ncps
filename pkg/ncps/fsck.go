@@ -86,6 +86,17 @@ type fsckResults struct {
 	// narFilesWithHashMismatch: CDC nar_files whose assembled chunk stream does not
 	// match the narinfo NarHash (SHA-256 in nix-base32).
 	narFilesWithHashMismatch []*ent.NarFile
+
+	// recoverableChunkedNarFiles: chunked nar_files with a resolvable narinfo NarHash
+	// but an inconsistent (non-Compression:none) narinfo URL. fsck --repair normalizes
+	// these in place without touching chunks.
+	recoverableChunkedNarFiles []*ent.NarFile
+
+	// reclaimableChunkedResidue: un-de-chunkable chunked nar_files that have been
+	// flagged (dechunk_residue_flagged_at) longer ago than the grace window and are
+	// still un-de-chunkable. fsck --repair purges these; the narinfo remains and
+	// re-pulls from upstream on next access.
+	reclaimableChunkedResidue []*ent.NarFile
 }
 
 func (r *fsckResults) totalIssues() int {
@@ -98,7 +109,9 @@ func (r *fsckResults) totalIssues() int {
 		len(r.narFilesWithSizeMismatch) +
 		len(r.orphanedChunksInStorage) +
 		len(r.narFilesWithCorruptChunks) +
-		len(r.narFilesWithHashMismatch)
+		len(r.narFilesWithHashMismatch) +
+		len(r.recoverableChunkedNarFiles) +
+		len(r.reclaimableChunkedResidue)
 }
 
 // NarWalker is implemented by storage backends that support walking NAR files.
@@ -147,6 +160,14 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				Name: "verify-content",
 				Usage: "Read and hash each CDC chunk's decompressed content to detect corruption " +
 					"(expensive: reads all chunk bytes from storage; use --verified-since to limit scope)",
+			},
+			&cli.DurationFlag{
+				Name: "dechunk-residue-grace",
+				Usage: "Grace window before an un-de-chunkable chunked NAR (CDC residue) is reclaimed: " +
+					"fsck --repair flags it on first detection and only purges it on a later run once the " +
+					"flag has aged past this window and the NAR is still un-de-chunkable",
+				Sources: flagSources("cache.fsck.dechunk-residue-grace", "CACHE_FSCK_DECHUNK_RESIDUE_GRACE"),
+				Value:   defaultDechunkResidueGrace,
 			},
 
 			// Storage Flags
@@ -300,6 +321,11 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 
 			verifiedSince := cmd.Duration("verified-since")
 
+			dechunkResidueGrace := cmd.Duration("dechunk-residue-grace")
+			if dechunkResidueGrace <= 0 {
+				dechunkResidueGrace = defaultDechunkResidueGrace
+			}
+
 			// 1. Setup Database
 			dbClient, err := createDatabaseClient(cmd)
 			if err != nil {
@@ -422,8 +448,65 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 				return fmt.Errorf("error re-verifying suspects: %w", err)
 			}
 
+			// 7b. Classify chunked-NAR residue (read-only) so the summary and exit code
+			// reflect recoverable inconsistencies (which --repair normalizes) and
+			// grace-elapsed reclaimable residue (which --repair purges). This never
+			// mutates and never reports an un-de-chunkable row that is unflagged or still
+			// within its grace window, so dry-run / monitoring runs raise no false
+			// positives on transient or legitimately chunked NARs.
+			if cdcMode {
+				if err := collectChunkedResidueSuspects(ctx, dbClient, dechunkResidueGrace, results); err != nil {
+					return fmt.Errorf("error collecting chunked-residue suspects: %w", err)
+				}
+			}
+
 			// 8. Print summary
 			printFsckSummary(results)
+
+			// repairChunkedResidue mutates: it normalizes recoverable inconsistencies,
+			// flags newly-detected un-de-chunkable rows, clears the flag on recovered rows,
+			// and purges rows aged past the grace window. It is invoked once per run when
+			// the operator has consented to mutation (either --repair or an interactive
+			// "yes"); the guards below ensure it never runs twice.
+			repairChunkedResidue := func() error {
+				c, cacheErr := createCache(ctx, cmd, dbClient, locker, rwLocker, nil)
+				if cacheErr != nil {
+					return fmt.Errorf("error creating cache for chunked-residue repair: %w", cacheErr)
+				}
+
+				// Don't kick off lazy re-chunking while we reconcile residue.
+				c.SetCDCLazyChunking(false, 0)
+
+				stats, recErr := reconcileChunkedResidue(ctx, c, dbClient, dechunkResidueGrace, &logger)
+
+				c.Close()
+
+				if recErr != nil {
+					return fmt.Errorf("error reconciling chunked residue: %w", recErr)
+				}
+
+				logger.Info().
+					Int("normalized", stats.normalized).
+					Int("flagged", stats.flagged).
+					Int("unflagged", stats.unflagged).
+					Int("purged", stats.purged).
+					Msg("chunked-residue reconcile complete")
+
+				return nil
+			}
+
+			// 8b. CDC residue janitor. Under --repair, reconcile regardless of other issue
+			// counts: first-detection flagging, recoverable normalization, became-recoverable
+			// unflagging, and grace-windowed reclamation are routine maintenance that may be
+			// needed even when totalIssues() == 0 (e.g. a fresh un-de-chunkable row must be
+			// flagged on this run so a later run can reclaim it). Non-repair runs only report
+			// (above); they never mutate here. The interactive-approval path below covers the
+			// !repair "yes" case.
+			if repair && cdcMode && chunkStore != nil {
+				if err := repairChunkedResidue(); err != nil {
+					return err
+				}
+			}
 
 			if results.totalIssues() == 0 {
 				return nil
@@ -460,6 +543,15 @@ Use --repair to automatically fix detected issues, or --dry-run to preview what 
 
 			// 10. Phase 3: Repair
 			logger.Info().Msg("phase 3: repairing issues")
+
+			// Reconcile chunked residue on the interactive-approval path. Skipped when
+			// --repair is set, because the janitor above already ran; this guard prevents a
+			// double reconcile.
+			if !repair && cdcMode && chunkStore != nil {
+				if err := repairChunkedResidue(); err != nil {
+					return err
+				}
+			}
 
 			if err := repairFsckIssues(ctx, dbClient, narStore, chunkStore, results); err != nil {
 				return fmt.Errorf("error repairing issues: %w", err)
@@ -1134,6 +1226,12 @@ func printFsckSummary(r *fsckResults) {
 				fsckRow{"NAR files w/ hash mismatch:", len(r.narFilesWithHashMismatch)},
 			)
 		}
+
+		dataRows = append(
+			dataRows,
+			fsckRow{"Recoverable chunked residue:", len(r.recoverableChunkedNarFiles)},
+			fsckRow{"Reclaimable chunked residue:", len(r.reclaimableChunkedResidue)},
+		)
 	}
 
 	total := r.totalIssues()
@@ -1205,6 +1303,9 @@ func printFsckSummary(r *fsckResults) {
 			row("NAR files w/ corrupt chunks:", len(r.narFilesWithCorruptChunks))
 			row("NAR files w/ hash mismatch:", len(r.narFilesWithHashMismatch))
 		}
+
+		row("Recoverable chunked residue:", len(r.recoverableChunkedNarFiles))
+		row("Reclaimable chunked residue:", len(r.reclaimableChunkedResidue))
 	}
 
 	fmt.Println(sep)
