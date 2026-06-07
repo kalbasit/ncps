@@ -8476,15 +8476,21 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 		// the persisted narinfo matches the new whole-file storage. Without this a
 		// narinfo advertising a different-compression URL (e.g. .nar.xz) would 404
 		// once the NAR is no longer chunked — serve-time normalization only rewrites
-		// while chunks exist. Match by the join link (primary — covers nix-serve-style
-		// prefixed URLs the URL prefix would miss) OR the Compression:none URL prefix
-		// (covers unlinked rows); the trailing "." anchors the fixed-length hash so the
-		// prefix cannot match a different NAR.
+		// while chunks exist. Match by the join link (primary) OR a hash-aware URL
+		// match (covers unlinked rows, including nix-serve-style prefixed URLs that a
+		// raw "nar/<hash>." prefix would miss).
+		ids, err := narInfoIDsByNormalizedURL(ctx, tx.NarInfo, noneURL)
+		if err != nil {
+			return err
+		}
+
+		match := entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID))
+		if len(ids) > 0 {
+			match = entnarinfo.Or(match, entnarinfo.IDIn(ids...))
+		}
+
 		if _, err := tx.NarInfo.Update().
-			Where(entnarinfo.Or(
-				entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID)),
-				entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
-			)).
+			Where(match).
 			SetURL(noneURL.String()).
 			SetCompression(nar.CompressionTypeNone.String()).
 			ClearFileHash().
@@ -8623,15 +8629,21 @@ func (c *Cache) NormalizeChunkedNarInfoURL(ctx context.Context, narURL *nar.URL)
 
 	return c.withEntTransaction(ctx, "NormalizeChunkedNarInfoURL", func(tx *ent.Tx) error {
 		// Normalize every narinfo referencing this NAR to the Compression:none URL.
-		// Match by the join link (covers nix-serve-style prefixed URLs the prefix
-		// would miss) OR the Compression:none URL prefix (covers unlinked rows); the
-		// trailing "." anchors the fixed-length hash so the prefix cannot match a
-		// different NAR.
+		// Match by the join link (primary) OR a hash-aware URL match (covers unlinked
+		// rows, including nix-serve-style prefixed URLs that a raw "nar/<hash>."
+		// prefix would miss).
+		ids, err := narInfoIDsByNormalizedURL(ctx, tx.NarInfo, noneURL)
+		if err != nil {
+			return err
+		}
+
+		match := entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID))
+		if len(ids) > 0 {
+			match = entnarinfo.Or(match, entnarinfo.IDIn(ids...))
+		}
+
 		if _, err := tx.NarInfo.Update().
-			Where(entnarinfo.Or(
-				entnarinfo.HasNarInfoNarFilesWith(entnarinfonarfile.NarFileIDEQ(nr.ID)),
-				entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
-			)).
+			Where(match).
 			SetURL(noneURL.String()).
 			SetCompression(nar.CompressionTypeNone.String()).
 			ClearFileHash().
@@ -8698,23 +8710,33 @@ func LinkedNarinfoNarHash(
 
 	// No NarHash-bearing join-linked narinfo (the link may be missing, or the linked
 	// narinfo may lack a NarHash). Fall back to any narinfo referencing the NAR by
-	// hash, at any compression URL. The trailing "." anchors the fixed-length hash so
-	// the prefix cannot match a different NAR.
-	ni, err = dbClient.Ent().NarInfo.Query().
+	// hash, at any compression URL. The match is hash-aware (URL normalized to the
+	// NAR hash) so it also covers nix-serve-style prefixed URLs
+	// (nar/<narinfoHash>-<hash>.nar.xz) that a raw "nar/<hash>." prefix would miss.
+	cands, err := dbClient.Ent().NarInfo.Query().
 		Where(
-			entnarinfo.URLHasPrefix("nar/"+narURL.Hash+"."),
+			entnarinfo.URLContains(narURL.Hash),
 			entnarinfo.NarHashNotNil(),
 		).
-		First(ctx)
+		All(ctx)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			return nil, nil //nolint:nilnil // no narinfo carries a NarHash == nothing to verify against
-		}
-
 		return nil, fmt.Errorf("error resolving narinfo by hash for nar_file %d: %w", narFileID, err)
 	}
 
-	return parseNarinfoNarHash(ni)
+	// The verification NarHash is the uncompressed NAR content hash, identical
+	// across every narinfo referencing the NAR regardless of the query its URL
+	// carries — so match by hash only here (de-chunk still content-verifies).
+	for _, cand := range cands {
+		if cand.URL == nil {
+			continue
+		}
+
+		if n, ok := normalizedURL(*cand.URL); ok && n.Hash == narURL.Hash {
+			return parseNarinfoNarHash(cand)
+		}
+	}
+
+	return nil, nil //nolint:nilnil // no narinfo carries a NarHash == nothing to verify against
 }
 
 // parseNarinfoNarHash parses a narinfo's recorded NarHash, returning (nil, nil) when
@@ -8730,6 +8752,59 @@ func parseNarinfoNarHash(ni *ent.NarInfo) (*nixhash.HashWithEncoding, error) {
 	}
 
 	return expected, nil
+}
+
+// normalizedURL returns the normalized form of a narinfo URL (narinfo-hash prefix
+// stripped), and false when the URL cannot be parsed/normalized (treated as
+// non-matching). Unlike a raw "nar/<hash>." prefix test, this recognizes both
+// canonical URLs and nix-serve-style prefixed URLs (nar/<narinfoHash>-<hash>.nar.xz)
+// because URL.Normalize strips the optional narinfo-hash prefix.
+func normalizedURL(rawURL string) (nar.URL, bool) {
+	u, err := nar.ParseURL(rawURL)
+	if err != nil {
+		return nar.URL{}, false
+	}
+
+	normalized, err := u.Normalize()
+	if err != nil {
+		return nar.URL{}, false
+	}
+
+	return normalized, true
+}
+
+// narInfoIDsByNormalizedURL returns the IDs of narinfos whose URL normalizes to
+// the same (hash, query) as target. The candidate set is narrowed in SQL by
+// URLContains(target.Hash) — the 52/64-char hash is highly selective — and
+// confirmed in Go via normalizedURL, so it matches unlinked nix-serve-style
+// prefixed URLs that a raw URLHasPrefix match would miss. The query is matched too
+// because nar_file rows are keyed by (hash, compression, query): a same-hash but
+// different-query narinfo is a distinct variant and MUST NOT be rewritten here.
+// q may be a *ent.Tx's NarInfo client or the cache's.
+func narInfoIDsByNormalizedURL(ctx context.Context, q *ent.NarInfoClient, target nar.URL) ([]int, error) {
+	cands, err := q.Query().
+		Where(entnarinfo.URLContains(target.Hash)).
+		Select(entnarinfo.FieldID, entnarinfo.FieldURL).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error querying candidate narinfos for hash %q: %w", target.Hash, err)
+	}
+
+	wantQuery := target.Query.Encode()
+
+	ids := make([]int, 0, len(cands))
+
+	for _, ni := range cands {
+		if ni.URL == nil || *ni.URL == "" {
+			continue
+		}
+
+		if n, ok := normalizedURL(*ni.URL); ok && n.Hash == target.Hash && n.Query.Encode() == wantQuery {
+			ids = append(ids, ni.ID)
+		}
+	}
+
+	return ids, nil
 }
 
 // MigrateNarToChunks migrates a traditional NAR blob to content-defined chunks.
