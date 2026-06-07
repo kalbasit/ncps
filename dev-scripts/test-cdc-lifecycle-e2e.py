@@ -43,12 +43,17 @@ Results are written to .e2e-results/cdc/<timestamp>/ (under the already
 gitignored .e2e-results/ path shared with test-migration-e2e.py).
 
 Backends (Garage/S3, PostgreSQL, MariaDB, Redis) must already be running —
-use `task test:deps:start` or `nix run .#deps`. The wrapping task target
-(`task test:cdc-lifecycle`) starts and stops them automatically.
+use `nix run .#deps` (fixed ports). The wrapping task target
+(`task test:cdc-lifecycle`) starts and stops them automatically. Note:
+`task test:deps:start` allocates RANDOM ports and is NOT compatible with this
+fixed-port driver.
 """
 
 import argparse
+import hashlib
+import io
 import json
+import lzma
 import os
 import signal
 import socket
@@ -300,6 +305,29 @@ def fetch_nar_bytes(narinfo_fields):
     return body
 
 
+def served_nar_digest(narinfo_fields):
+    """Return (sha256_of_decompressed_NAR, served_byte_len) for a narinfo.
+
+    The same store path is re-served with different compression across the
+    lifecycle (xz whole file, none reassembled-from-chunks, none whole file),
+    so comparing the DECOMPRESSED content digest proves byte-identity across
+    those representations — catching same-size corruption a length check misses.
+    """
+    raw = fetch_nar_bytes(narinfo_fields)
+    comp = narinfo_fields.get("Compression", "none")
+    if comp in ("none", ""):
+        data = raw
+    elif comp == "xz":
+        data = lzma.decompress(raw)
+    elif comp in ("zst", "zstd"):
+        import zstandard
+
+        data = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)).read()
+    else:
+        raise RuntimeError(f"served_nar_digest: unsupported compression {comp!r}")
+    return hashlib.sha256(data).hexdigest(), len(raw)
+
+
 # ---------------------------------------------------------------------------
 # Cache seeding (build a package through ncps, mirroring test-migration-e2e.py)
 # ---------------------------------------------------------------------------
@@ -383,8 +411,9 @@ def migrate_chunks_to_nar(db, storage, *, dry_run=False, force_reclaim=False):
     if force_reclaim:
         extra.append("--force-reclaim")
     rc, out = run_cli("migrate-chunks-to-nar", db, storage, extra, with_temp=True)
-    if rc != 0 and not dry_run:
-        raise RuntimeError(f"migrate-chunks-to-nar failed (exit {rc})\n{out}")
+    if rc != 0:
+        mode = "--dry-run" if dry_run else "migrate"
+        raise RuntimeError(f"migrate-chunks-to-nar {mode} failed (exit {rc})\n{out}")
     return out
 
 
@@ -508,6 +537,9 @@ def phase_cdc_eager(state, db, storage, sdir):
 
     nar = fetch_nar_bytes(fields)
     check(len(nar) == int(fields["NarSize"]), "served NAR size matches narinfo NarSize")
+    # Capture the decompressed-content digest so later rereads (drain/restart/
+    # fsck) can prove byte-identity, not just size.
+    state["eager_digest"], _ = served_nar_digest(fields)
     after = chunked_nar_count(db)
     check(after > before, f"new chunked NAR recorded ({before} -> {after})")
 
@@ -525,13 +557,15 @@ def phase_cdc_lazy(state, db, storage, sdir):
     fields = parse_narinfo(ni_text)
     nar = fetch_nar_bytes(fields)
     check(len(nar) == int(fields["NarSize"]), "lazy-phase served NAR size matches narinfo")
-    # Re-read the baseline whole-file NAR to drive the lazy path over it.
+    state["lazy_digest"], _ = served_nar_digest(fields)
+    # Re-read the baseline whole-file NAR to drive the lazy path over it; assert
+    # the decompressed content is byte-identical to the baseline capture.
     base_ni = fetch_narinfo(state["baseline_hash"])
     check(base_ni is not None, "baseline narinfo still served under lazy CDC")
-    base_nar = fetch_nar_bytes(parse_narinfo(base_ni))
+    digest, _ = served_nar_digest(parse_narinfo(base_ni))
     check(
-        len(base_nar) == state["baseline_nar_len"],
-        "baseline NAR identical length when read under lazy CDC",
+        digest == state["baseline_digest"],
+        "baseline NAR content identical when read under lazy CDC",
     )
 
 
@@ -541,11 +575,15 @@ def phase_drain(state, db, storage, sdir):
     check(remaining > 0, f"chunked NARs exist before drain ({remaining})")
 
     restart(state, db, storage, os.path.join(sdir, "p3-drain.log"), cdc=False)
-    # Drain mode active: chunked NARs must still serve from chunks.
+    # Drain mode active: the chunked NAR must still serve from chunks, with
+    # content byte-identical to what was stored under eager CDC.
     ni = fetch_narinfo(state["eager_hash"])
     check(ni is not None, "chunked NAR still served in drain mode")
-    nar = fetch_nar_bytes(parse_narinfo(ni))
-    check(len(nar) > 0, "drain-mode NAR served with non-empty body")
+    digest, _ = served_nar_digest(parse_narinfo(ni))
+    check(
+        digest == state["eager_digest"],
+        "drain-mode NAR content identical (served from chunks)",
+    )
 
     # Stop the server before mutating chunks (force-reclaim is drain-only).
     stop_ncps(state.get("srv"), state.get("f"))
@@ -574,11 +612,15 @@ def phase_restart_autocomplete(state, db, storage, sdir):
         "drain" in boot_log.lower(),
         "boot log mentions drain completion",
     )
-    # All previously chunked NARs still serve as whole files.
+    # The previously chunked NAR now serves as a whole file, byte-identical to
+    # what was stored under eager CDC.
     ni = fetch_narinfo(state["eager_hash"])
     check(ni is not None, "drained NAR serves as whole file after restart")
-    nar = fetch_nar_bytes(parse_narinfo(ni))
-    check(len(nar) > 0, "post-drain NAR served with non-empty body")
+    digest, _ = served_nar_digest(parse_narinfo(ni))
+    check(
+        digest == state["eager_digest"],
+        "post-drain NAR content identical to the eager-CDC original",
+    )
 
 
 def phase_cross_cutting(state, db, storage, sdir):
@@ -612,15 +654,18 @@ def phase_cross_cutting(state, db, storage, sdir):
     check(rc == 0, f"fsck --repair exited cleanly (rc={rc})")
     after = total_nar_count(db)
     log(f"  fsck --repair: nar_files {before} -> {after} (orphan reclaim is OK)", B)
-    for label, key in (
-        ("baseline", "baseline_hash"),
-        ("eager", "eager_hash"),
-        ("lazy", "lazy_hash"),
+    for label, hash_key, digest_key in (
+        ("baseline", "baseline_hash", "baseline_digest"),
+        ("eager", "eager_hash", "eager_digest"),
+        ("lazy", "lazy_hash", "lazy_digest"),
     ):
-        ni = fetch_narinfo(state[key])
+        ni = fetch_narinfo(state[hash_key])
         check(ni is not None, f"{label} narinfo still served after fsck --repair")
-        nar = fetch_nar_bytes(parse_narinfo(ni))
-        check(len(nar) > 0, f"{label} NAR still served (non-empty) after fsck --repair")
+        digest, _ = served_nar_digest(parse_narinfo(ni))
+        check(
+            digest == state[digest_key],
+            f"{label} NAR content unchanged after fsck --repair",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -651,8 +696,11 @@ def run_lifecycle(db, storage, results_dir):
         state["baseline_hash"] = store_hash_of(PKG_BASELINE)
         base_ni = fetch_narinfo(state["baseline_hash"])
         check(base_ni is not None, "baseline narinfo served after clean start")
-        base_nar = fetch_nar_bytes(parse_narinfo(base_ni))
-        state["baseline_nar_len"] = len(base_nar)
+        base_fields = parse_narinfo(base_ni)
+        base_nar = fetch_nar_bytes(base_fields)
+        check(len(base_nar) > 0, "baseline NAR served with non-empty body")
+        # Decompressed-content digest; later phases assert byte-identity against it.
+        state["baseline_digest"], _ = served_nar_digest(base_fields)
         check(chunked_nar_count(db) == 0, "DB shows zero chunked NARs at baseline")
 
         phase_cdc_eager(state, db, storage, sdir)
@@ -670,10 +718,15 @@ def run_lifecycle(db, storage, results_dir):
         result["error"] = str(e)
         log(f"❌ LIFECYCLE FAIL: {label}: {e}", R)
     finally:
+        # Don't swallow cleanup failures: a leaked ncps still bound to :8501
+        # would make the next --keep-going DB run fail for the wrong reason.
         try:
             stop_ncps(state.get("srv"), state.get("f"))
-        except Exception:
-            pass
+        except Exception as e:
+            msg = f"cleanup stop_ncps failed: {e}"
+            log(f"❌ {msg}", R)
+            result["status"] = "fail"
+            result["error"] = f"{result['error']}; {msg}" if result["error"] else msg
         with open(os.path.join(sdir, "result.json"), "w") as rf:
             json.dump(result, rf, indent=2, default=str)
     return result

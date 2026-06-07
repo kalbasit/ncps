@@ -12,7 +12,7 @@ The project SHALL provide a local end-to-end test (a sibling to `dev-scripts/tes
 
 #### Scenario: Driver runs against the shared dependency harness
 
-- **WHEN** the e2e driver is invoked (e.g. via a `task` target) with backing services already started by `task test:deps:start`
+- **WHEN** the e2e driver is invoked via `task test:cdc-lifecycle` (the fixed-port wrapper around `nix run .#deps`)
 - **THEN** it connects to those services, runs every lifecycle phase in order, and reports per-phase pass/fail with an overall non-zero exit on any failure
 
 #### Scenario: Driver cleans up on failure

@@ -182,12 +182,15 @@ class NCPSTester:
             results.append(lifecycle_result)
             self._print_test_result(lifecycle_result)
 
-            # 6. Multi-replica topology assertions (cross-replica presence,
-            #    storage-lag / no phantom HEAD). Requires >1 replica.
-            print("🌐 Testing CDC multi-replica topology...")
-            topology_result = self._test_cdc_topology(deployment_config)
-            results.append(topology_result)
-            self._print_test_result(topology_result)
+        # 6. Multi-replica topology assertions (cross-replica presence,
+        #    storage-lag / no phantom HEAD). Not gated on cdc-lifecycle:
+        #    _test_cdc_topology self-skips single-replica / no-test-data
+        #    deployments, so every multi-replica deployment exercises these
+        #    phantom/cross-replica checks.
+        print("🌐 Testing multi-replica topology...")
+        topology_result = self._test_cdc_topology(deployment_config)
+        results.append(topology_result)
+        self._print_test_result(topology_result)
 
         return DeploymentTestResult(name, results)
 
@@ -1600,7 +1603,8 @@ class NCPSTester:
                 port_forward.wait(timeout=5)
 
     def _test_cdc_topology(self, deployment_config: dict) -> TestResult:
-        """Multi-replica topology assertions (gated on the cdc-lifecycle marker):
+        """Multi-replica topology assertions (run for every multi-replica
+        deployment; self-skips single-replica / no-test-data):
 
           6.2 Multi-replica shared-DB presence — every replica agrees on the
               presence of the same NAR (no replica is missing what the shared
@@ -1647,8 +1651,8 @@ class NCPSTester:
                     "phantom presence (HEAD 200 with absent bytes) or HEAD/GET disagreement on a replica",
                     details=details,
                 )
-            # 6.2: replicas must agree — all present, or all absent. A mix means
-            # a replica cannot see what the shared DB/storage holds.
+            # 6.2: replicas must agree. A mix means a replica cannot see what
+            # the shared DB/storage holds.
             states = set(results.values())
             if len(states) > 1:
                 return TestResult(
@@ -1657,11 +1661,15 @@ class NCPSTester:
                     "cross-replica presence disagreement (a replica is missing a shared NAR)",
                     details=details,
                 )
+            # The test hash was already fetched via _test_http_endpoints, so it
+            # must be present on every replica. "absent everywhere" means no
+            # replica can serve it anymore — a real failure, not a pass.
             if states == {None}:
                 return TestResult(
                     "CDC Topology",
-                    True,
-                    f"consistent across {len(running)} replicas (NAR absent everywhere; no phantom)",
+                    False,
+                    f"NAR {narinfo_hash} absent on all {len(running)} replicas "
+                    "(was served earlier via the Service)",
                     details=details,
                 )
             return TestResult(
