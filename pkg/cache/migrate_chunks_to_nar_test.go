@@ -231,6 +231,101 @@ func TestMigrateChunksToNar_DeChunksUnlinkedNarViaURLFallback(t *testing.T) {
 	assert.Equal(t, content, string(data), "reconstruction of the unlinked NAR must be correct")
 }
 
+// TestMigrateChunksToNar_DeChunksUnlinkedPrefixedNarinfoURL covers
+// fix-dechunk-unlinked-narinfo-url-match: an unlinked narinfo whose URL is the
+// nix-serve-style prefixed form (nar/<narinfoHash>-<H>.nar.xz) must be matched
+// hash-aware. The old raw URLHasPrefix("nar/"+H+".") fallback missed it, so the
+// verify NarHash could not be resolved (NAR purged / drain stuck) and the narinfo
+// URL was left unnormalized (→ later 404). The hash-aware match normalizes the
+// candidate URL's embedded hash and recognizes it as referencing the NAR.
+func TestMigrateChunksToNar_DeChunksUnlinkedPrefixedNarinfoURL(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, content := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	// The only NarHash-bearing narinfo advertises a nix-serve-style PREFIXED URL
+	// (narinfoHash prepended to the nar hash), and there is no join link — the
+	// stranded class the raw prefix match misses.
+	prefixedURL := "nar/" + testdata.Nar1.NarInfoHash + "-" + noneURL.Hash + ".nar.xz"
+
+	_, err := dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+		SetURL(prefixedURL).
+		SetCompression(nar.CompressionTypeXz.String()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = dbClient.Ent().NarInfoNarFile.Delete().Exec(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false),
+		"an unlinked prefixed-URL narinfo must be matched hash-aware and the NAR de-chunked")
+
+	assert.True(t, c.HasNarInStore(ctx, noneURL),
+		"the whole NAR must be present after de-chunking via the hash-aware match")
+
+	row, err := dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).Only(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, row.URL)
+	assert.Equal(t, "nar/"+noneURL.Hash+".nar", *row.URL,
+		"the prefixed-URL narinfo must be normalized to the Compression:none URL on de-chunk")
+	require.NotNil(t, row.Compression)
+	assert.Equal(t, nar.CompressionTypeNone.String(), *row.Compression)
+
+	_, _, rc, err := c.GetNar(ctx, noneURL)
+	require.NoError(t, err)
+
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(data), "reconstruction of the unlinked prefixed-URL NAR must be correct")
+}
+
+// TestNormalizeChunkedNarInfoURL_MatchesUnlinkedPrefixedURL covers the
+// NormalizeChunkedNarInfoURL site of fix-dechunk-unlinked-narinfo-url-match: the
+// fsck residue repair must normalize an unlinked narinfo with a nix-serve-style
+// prefixed URL via the hash-aware match (leaving the NAR chunked), where the old
+// raw URLHasPrefix fallback left it stranded.
+func TestNormalizeChunkedNarInfoURL_MatchesUnlinkedPrefixedURL(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	prefixedURL := "nar/" + testdata.Nar1.NarInfoHash + "-" + noneURL.Hash + ".nar.xz"
+
+	_, err := dbClient.Ent().NarInfo.Update().
+		Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).
+		SetURL(prefixedURL).
+		SetCompression(nar.CompressionTypeXz.String()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = dbClient.Ent().NarInfoNarFile.Delete().Exec(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.NormalizeChunkedNarInfoURL(ctx, &noneURL),
+		"an unlinked prefixed-URL narinfo must be matched hash-aware and normalized")
+
+	row, err := dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(testdata.Nar1.NarInfoHash)).Only(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, row.URL)
+	assert.Equal(t, "nar/"+noneURL.Hash+".nar", *row.URL,
+		"NormalizeChunkedNarInfoURL must normalize an unlinked prefixed-URL narinfo to none")
+	require.NotNil(t, row.Compression)
+	assert.Equal(t, nar.CompressionTypeNone.String(), *row.Compression)
+}
+
 // TestMigrateChunksToNar_ResumesWhenWholeFileAlreadyPresent: an interrupted
 // prior run may have written the (verified) whole file but crashed before the
 // record flip. Re-running must treat the already-present object as resumable —
