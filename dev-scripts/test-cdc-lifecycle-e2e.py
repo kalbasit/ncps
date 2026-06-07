@@ -155,12 +155,15 @@ def start_ncps(db, storage, log_path, *, clean=False, cdc=False, lazy=False):
     mode = "lazy-cdc" if lazy else ("cdc" if cdc else "no-cdc")
     log(f"start_ncps: db={db} storage={storage} mode={mode} clean={clean}", G)
     f = open(log_path, "w")
+    # start_new_session=True puts the child in its own session/process group
+    # (like os.setsid) so stop_ncps can kill the whole group via os.killpg —
+    # the modern, fork-safe replacement for preexec_fn=os.setsid.
     p = subprocess.Popen(
         args,
         cwd=REPO_ROOT,
         stdout=f,
         stderr=subprocess.STDOUT,
-        preexec_fn=os.setsid,
+        start_new_session=True,
     )
     return p, f
 
@@ -606,6 +609,7 @@ def phase_cross_cutting(state, db, storage, sdir):
     rc, out = fsck(db, storage, repair=True)
     with open(os.path.join(sdir, "fsck-repair.txt"), "w") as fp:
         fp.write(out)
+    check(rc == 0, f"fsck --repair exited cleanly (rc={rc})")
     after = total_nar_count(db)
     log(f"  fsck --repair: nar_files {before} -> {after} (orphan reclaim is OK)", B)
     for label, key in (

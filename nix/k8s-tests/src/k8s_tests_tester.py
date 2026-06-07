@@ -1274,6 +1274,8 @@ class NCPSTester:
         namespace = deployment_config["namespace"]
         cm_name = f"ncps-{name}"
         cm = self.k8s_core_v1.read_namespaced_config_map(cm_name, namespace)
+        if not cm.data or "config.yaml" not in cm.data:
+            raise RuntimeError(f"ConfigMap {cm_name} does not contain config.yaml")
         rendered = yaml.safe_load(cm.data["config.yaml"])
         if "cache" in rendered and "cdc" in rendered["cache"]:
             del rendered["cache"]["cdc"]
@@ -1344,17 +1346,46 @@ class NCPSTester:
             text=True,
             timeout=600,
         )
-        return result.stdout + result.stderr
+        out = result.stdout + result.stderr
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"migrate-chunks-to-nar failed in pod {pod_name} "
+                f"(exit {result.returncode}):\n{out}"
+            )
+        return out
 
-    def _serve_check(self, deployment_config: dict) -> bool:
-        """Fetch one test narinfo + its NAR through the Service; return True
-        if both come back 200 with a non-empty NAR body.
+    def _chunked_narinfo_hash(self, deployment_config: dict) -> Optional[str]:
+        """Return a narinfo hash whose NAR is stored as chunks (total_chunks > 0),
+        or None if none can be determined. Used so the drain-mode serve check
+        exercises an actually-chunked NAR rather than an arbitrary test hash.
+        Postgres only (the lifecycle permutation is postgres-backed).
+        """
+        if deployment_config.get("database", {}).get("type") != "postgresql":
+            return None
+        row = self._pg_fetchone(
+            deployment_config,
+            "SELECT n.hash FROM narinfos n "
+            "JOIN narinfo_nar_files l ON l.narinfo_id = n.id "
+            "JOIN nar_files f ON f.id = l.nar_file_id "
+            "WHERE f.total_chunks > 0 LIMIT 1",
+        )
+        return row[0] if row else None
+
+    def _serve_check(
+        self, deployment_config: dict, narinfo_hash: Optional[str] = None
+    ) -> bool:
+        """Fetch a narinfo + its NAR through the Service; return True if both
+        come back 200 with a non-empty NAR body. When narinfo_hash is given it
+        is used directly (e.g. a proven-chunked hash for drain-mode checks);
+        otherwise the first configured test hash is used.
         """
         namespace = deployment_config["namespace"]
         service_name = deployment_config.get("service_name", deployment_config["name"])
-        test_hashes = self.config.get("test_data", {}).get("narinfo_hashes", [])
-        if not test_hashes:
-            return True
+        if narinfo_hash is None:
+            test_hashes = self.config.get("test_data", {}).get("narinfo_hashes", [])
+            if not test_hashes:
+                return True
+            narinfo_hash = test_hashes[0]
         port_forward = None
         try:
             local_port = self._find_free_port()
@@ -1373,7 +1404,7 @@ class NCPSTester:
             time.sleep(3)
             base_url = f"http://localhost:{local_port}"
             resp = requests.get(
-                f"{base_url}/{test_hashes[0]}.narinfo", timeout=HTTP_TIMEOUT
+                f"{base_url}/{narinfo_hash}.narinfo", timeout=HTTP_TIMEOUT
             )
             if resp.status_code != 200:
                 return False
@@ -1430,7 +1461,14 @@ class NCPSTester:
                     False,
                     "Phase A: cdc_enabled config key missing while CDC active",
                 )
-            details.append(f"Phase A: {chunks[0]} chunks, cdc_enabled present")
+            # Capture a narinfo whose NAR is actually chunked, so Phase B's
+            # drain-mode serve check exercises chunked serving (not an arbitrary
+            # hash that might be a whole file).
+            chunked_hash = self._chunked_narinfo_hash(deployment_config)
+            details.append(
+                f"Phase A: {chunks[0]} chunks, cdc_enabled present"
+                + (f", chunked narinfo {chunked_hash}" if chunked_hash else "")
+            )
 
             # Phase B — disable CDC, restart, expect drain-mode serving.
             self._disable_cdc_in_configmap(deployment_config)
@@ -1442,7 +1480,7 @@ class NCPSTester:
                     "Phase B: pods not ready after CDC-disable restart",
                     details=restart.message,
                 )
-            if not self._serve_check(deployment_config):
+            if not self._serve_check(deployment_config, chunked_hash):
                 return TestResult(
                     "CDC Lifecycle",
                     False,

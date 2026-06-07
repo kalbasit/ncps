@@ -17,6 +17,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
+# Bootstrap direnv so `nix`/`python3` see the devshell environment when this
+# script is run standalone in a non-interactive shell (see .claude/rules/
+# env-execution.md). A no-op when invoked via `task` inside the dev shell.
+direnv status | grep -q "Found RC allowed 0" || direnv allow .
+unset DIRENV_DIR DIRENV_FILE DIRENV_WATCHES DIRENV_DIFF && eval "$(direnv export bash)"
+
 # Dedicated process-compose control port (avoids ncps :8501 / pprof :7501).
 PC_PORT="${NCPS_CDC_PC_PORT:-8511}"
 
