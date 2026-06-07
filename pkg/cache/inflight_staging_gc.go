@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,14 +12,42 @@ import (
 	"github.com/kalbasit/ncps/pkg/analytics"
 )
 
-// reclaimStaging deletes the staging part-objects and the staging_state record
-// for hash. It is idempotent: deleting absent parts / records is a no-op.
+// shutdownContext returns a context that is cancelled when the cache's Close()
+// runs (shutdownCh closed), so background DB/storage cleanup cannot outlive
+// shutdown and block Close() indefinitely. The caller MUST invoke the returned
+// cancel to release the watcher goroutine. When shutdownCh is nil (a Cache built
+// without New()), it degrades to a plain cancellable context.
+func (c *Cache) shutdownContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if c.shutdownCh == nil {
+		return ctx, cancel
+	}
+
+	go func() {
+		select {
+		case <-c.shutdownCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	return ctx, cancel
+}
+
+// reclaimStaging is terminal cleanup: it deletes the staging part-objects AND the
+// staging_state record for hash. It is used by the GC sweep and the
+// post-completion reclaim, where the staging lifecycle is over, so the row must be
+// removed (resetting it to "requested" instead would make the sweep resurrect it
+// forever). The takeover path uses resetStagingState instead, which preserves the
+// row so a persisting cross-pod waiter is re-served. It is idempotent: deleting
+// absent parts / records is a no-op.
 func (c *Cache) reclaimStaging(ctx context.Context, hash string) error {
 	if err := c.narStore.DeleteStagingParts(ctx, hash); err != nil {
 		return fmt.Errorf("reclaim staging parts for %q: %w", hash, err)
 	}
 
-	if err := c.resetStagingState(ctx, hash); err != nil {
+	if err := c.deleteStagingState(ctx, hash); err != nil {
 		return fmt.Errorf("reclaim staging state for %q: %w", hash, err)
 	}
 
@@ -38,18 +67,28 @@ func (c *Cache) scheduleStagingReclaim(hash string) {
 	analytics.SafeGo(context.Background(), func() {
 		defer c.backgroundWG.Done()
 
+		// A shutdown-bound context interrupts both the grace wait and the reclaim
+		// itself, so a stalled DeleteStagingParts/resetStagingState cannot keep
+		// Close() blocked on backgroundWG.
+		ctx, cancel := c.shutdownContext()
+		defer cancel()
+
 		if grace > 0 {
 			timer := time.NewTimer(grace)
 			defer timer.Stop()
 
 			select {
 			case <-timer.C:
-			case <-c.shutdownCh:
+			case <-ctx.Done():
 				return
 			}
 		}
 
-		if err := c.reclaimStaging(context.Background(), hash); err != nil {
+		if err := c.reclaimStaging(ctx, hash); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+
 			zerolog.Ctx(context.Background()).Warn().
 				Err(err).
 				Str("hash", hash).
@@ -125,32 +164,45 @@ func (c *Cache) stagingOrphanAge() time.Duration {
 	return bound + c.InflightStagingRetention()
 }
 
-// AddInflightStagingGCCronJob registers the periodic staging GC sweep.
+// AddInflightStagingGCCronJob registers the periodic staging GC sweep. It binds
+// only the logger from ctx, not ctx itself: each sweep derives a fresh
+// shutdown-bound context, so a request/startup-scoped registration ctx being
+// cancelled can never silently disable later sweeps.
 func (c *Cache) AddInflightStagingGCCronJob(ctx context.Context, schedule cron.Schedule) {
-	zerolog.Ctx(ctx).
-		Info().
+	log := zerolog.Ctx(ctx)
+
+	log.Info().
 		Time("next-run", schedule.Next(time.Now())).
 		Msg("adding a cronjob for in-flight staging GC")
 
-	c.cron.Schedule(schedule, cron.FuncJob(c.runStagingGC(ctx)))
+	c.cron.Schedule(schedule, cron.FuncJob(c.runStagingGC(log)))
 }
 
-// runStagingGC returns the cron job body for the periodic staging sweep.
-func (c *Cache) runStagingGC(ctx context.Context) func() {
+// runStagingGC returns the cron job body for the periodic staging sweep. It
+// creates a fresh shutdown-bound context per run rather than closing over a
+// caller context that may later be cancelled.
+func (c *Cache) runStagingGC(log *zerolog.Logger) func() {
 	return func() {
 		if !c.InflightStagingEnabled() {
 			return
 		}
 
+		ctx, cancel := c.shutdownContext()
+		defer cancel()
+
 		n, err := c.sweepStagingGC(ctx, c.InflightStagingRetention(), c.stagingOrphanAge())
 		if err != nil {
-			zerolog.Ctx(ctx).Warn().Err(err).Msg("in-flight staging GC sweep failed")
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+
+			log.Warn().Err(err).Msg("in-flight staging GC sweep failed")
 
 			return
 		}
 
 		if n > 0 {
-			zerolog.Ctx(ctx).Info().Int("reclaimed", n).Msg("in-flight staging GC sweep reclaimed records")
+			log.Info().Int("reclaimed", n).Msg("in-flight staging GC sweep reclaimed records")
 		}
 	}
 }

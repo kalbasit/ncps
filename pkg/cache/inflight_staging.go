@@ -312,3 +312,18 @@ func (c *Cache) resetStagingState(ctx context.Context, hash string) error {
 
 	return nil
 }
+
+// deleteStagingState removes the staging_state row for hash entirely. It is the
+// terminal counterpart to resetStagingState, used by reclaimStaging once the
+// staging lifecycle is over (completed-and-reclaimed, or orphan-swept). Deleting
+// an absent row is a no-op.
+func (c *Cache) deleteStagingState(ctx context.Context, hash string) error {
+	_, err := c.dbClient.Ent().StagingState.Delete().
+		Where(stagingstate.HashEQ(hash)).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("delete staging state for %q: %w", hash, err)
+	}
+
+	return nil
+}
