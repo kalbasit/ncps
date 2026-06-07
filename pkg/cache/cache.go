@@ -826,6 +826,17 @@ func (c *Cache) SetInflightStaging(enabled bool, retention time.Duration, partSi
 	c.cdcMu.Lock()
 	defer c.cdcMu.Unlock()
 
+	// Defensive clamp so a caller that bypasses serve.go's validation can never
+	// install nonsensical runtime state (a non-positive part size would stall the
+	// producer; a negative retention would reclaim parts immediately).
+	if retention < 0 {
+		retention = 0
+	}
+
+	if partSize <= 0 {
+		partSize = 8 << 20 // 8 MiB, matching the --cache-inflight-staging-part-size default.
+	}
+
 	c.inflightStagingFlag = enabled
 	c.inflightStagingRetention = retention
 	c.inflightStagingPartSize = partSize

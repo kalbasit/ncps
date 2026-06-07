@@ -84,12 +84,19 @@ func (c *Cache) advanceStagingParts(ctx context.Context, hash string, partsAvail
 	return nil
 }
 
-// resetStagingState removes the staging_state row for hash so a takeover can
-// re-stage from a clean slate.
+// resetStagingState rewinds the staging_state row for hash to a clean,
+// pre-staging state (parts_available=0, status="requested") so a takeover holder
+// re-stages from zero. It deliberately preserves the row rather than deleting it:
+// the row is the cross-pod "a waiter wants this staged" signal, so deleting it
+// would strand any other replica still waiting (it recorded its request once,
+// before its poll loop) until the full re-download completes. Keeping the row at
+// "requested" lets the new holder re-stage if contention persists (D5).
 func (c *Cache) resetStagingState(ctx context.Context, hash string) error {
-	_, err := c.dbClient.Ent().StagingState.Delete().
+	_, err := c.dbClient.Ent().StagingState.Update().
 		Where(stagingstate.HashEQ(hash)).
-		Exec(ctx)
+		SetPartsAvailable(0).
+		SetStatus(stagingStatusRequested).
+		Save(ctx)
 	if err != nil {
 		return fmt.Errorf("reset staging state for %q: %w", hash, err)
 	}

@@ -78,6 +78,14 @@ var (
 	ErrCDCLazyRecoveryScheduleRequired = errors.New(
 		"--cache-cdc-lazy-recovery-schedule is required when CDC is enabled",
 	)
+
+	// ErrStagingRetentionNonPositive is returned when in-flight staging is enabled
+	// with a non-positive retention grace period.
+	ErrStagingRetentionNonPositive = errors.New("--cache-inflight-staging-retention must be greater than 0")
+
+	// ErrStagingPartSizeNonPositive is returned when in-flight staging is enabled
+	// with a non-positive part size.
+	ErrStagingPartSizeNonPositive = errors.New("--cache-inflight-staging-part-size must be greater than 0")
 )
 
 const (
@@ -1210,19 +1218,34 @@ func createCache(
 	stagingBackend, _ := determineEffectiveLockBackend(cmd)
 	stagingDistributed := stagingBackend == lockBackendRedis
 	inflightStagingEnabled := cmd.Bool("cache-inflight-staging-enabled")
+	stagingRetention := cmd.Duration("cache-inflight-staging-retention")
+	stagingPartSize := cmd.Int("cache-inflight-staging-part-size")
+
+	// Fail fast on invalid staging parameters rather than booting with a
+	// nonsensical configuration. Only enforced when the feature is enabled, so
+	// disabled deployments are unaffected by the flag defaults.
+	if inflightStagingEnabled {
+		if stagingRetention <= 0 {
+			return nil, ErrStagingRetentionNonPositive
+		}
+
+		if stagingPartSize <= 0 {
+			return nil, ErrStagingPartSizeNonPositive
+		}
+	}
 
 	zerolog.Ctx(ctx).
 		Info().
 		Bool("inflight-staging-enabled", inflightStagingEnabled).
 		Bool("distributed-lock", stagingDistributed).
-		Dur("inflight-staging-retention", cmd.Duration("cache-inflight-staging-retention")).
-		Int("inflight-staging-part-size", cmd.Int("cache-inflight-staging-part-size")).
+		Dur("inflight-staging-retention", stagingRetention).
+		Int("inflight-staging-part-size", stagingPartSize).
 		Msg("configuring in-flight NAR staging")
 
 	c.SetInflightStaging(
 		inflightStagingEnabled,
-		cmd.Duration("cache-inflight-staging-retention"),
-		int64(cmd.Int("cache-inflight-staging-part-size")),
+		stagingRetention,
+		int64(stagingPartSize),
 		stagingDistributed,
 	)
 

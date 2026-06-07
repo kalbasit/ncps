@@ -99,5 +99,7 @@ func TestStagingState_AdvancePartsAndReset(t *testing.T) {
 
 	got, err := c.getStagingState(ctx, hash)
 	require.NoError(t, err)
-	assert.Nil(t, got, "reset must remove the staging_state row for a clean takeover")
+	require.NotNil(t, got, "reset must preserve the row so a persisting waiter's request survives takeover")
+	assert.Equal(t, int64(0), got.PartsAvailable, "reset must rewind progress to zero")
+	assert.Equal(t, stagingStatusRequested, got.Status, "reset must move status back to requested for a clean re-stage")
 }
