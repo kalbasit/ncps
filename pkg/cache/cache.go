@@ -1456,10 +1456,6 @@ func (c *Cache) GetNarFileSize(ctx context.Context, nu nar.URL) (int64, error) {
 	return int64(nr.FileSize), nil
 }
 
-// lookupOriginalNarURL looks up the original (potentially prefixed) NAR URL from the database
-// by matching the narinfo that references a nar_file with the given hash.
-// This is used to recover the original upstream URL (with prefix) when fetching from
-// nix-serve style upstreams that use prefixed URLs (e.g., narinfohash-narhash).
 // narInfoStorageKey returns the hash ncps uses as its local storage key when an
 // upstream narinfo URL is opaque. It is the narinfo NarHash re-encoded as a
 // bare 52-char nix32 digest (a valid ncps hash). Returns "" when no NarHash is
@@ -1488,6 +1484,10 @@ func (c *Cache) setNarInfoUpstreamURL(ctx context.Context, hash, upstreamURL str
 	return nil
 }
 
+// lookupOriginalNarURL looks up the original (potentially prefixed) NAR URL from the database
+// by matching the narinfo that references a nar_file with the given hash.
+// This is used to recover the original upstream URL (with prefix) when fetching from
+// nix-serve style upstreams that use prefixed URLs (e.g., narinfohash-narhash).
 func (c *Cache) lookupOriginalNarURL(ctx context.Context, normalizedNarURL nar.URL) nar.URL {
 	ni, err := c.dbClient.Ent().NarInfo.Query().
 		Where(entnarinfo.HasNarInfoNarFilesWith(
