@@ -519,6 +519,12 @@ type Cache struct {
 
 	// Wait group to track background operations
 	backgroundWG sync.WaitGroup
+
+	// shutdownCh is closed by Close() to interrupt background sleeps (e.g. the
+	// in-flight staging retention grace) so shutdown is not blocked for the full
+	// grace duration. Work skipped on shutdown is reclaimed by the periodic sweep.
+	shutdownCh   chan struct{}
+	shutdownOnce sync.Once
 }
 
 type downloadState struct {
@@ -723,6 +729,7 @@ func New(
 		upstreamJobs:         make(map[string]*downloadState),
 		upstreamCaches:       make([]*upstream.Cache, 0),
 		recordAgeIgnoreTouch: recordAgeIgnoreTouch,
+		shutdownCh:           make(chan struct{}),
 	}
 
 	if err := c.validateHostname(hostName); err != nil {
@@ -1133,6 +1140,14 @@ func (c *Cache) StartCron(ctx context.Context) {
 
 // Close waits for all background operations to complete.
 func (c *Cache) Close() {
+	// Signal background sleeps (e.g. the in-flight staging retention grace) to wake
+	// and exit so shutdown is not blocked for the full grace duration.
+	c.shutdownOnce.Do(func() {
+		if c.shutdownCh != nil {
+			close(c.shutdownCh)
+		}
+	})
+
 	// Stop the cron first and wait for any in-flight scheduled job (e.g. CDC lazy
 	// recovery) to return: cron.Stop() prevents new scheduling and returns a context
 	// that completes once running jobs finish. This guarantees no scheduled job can

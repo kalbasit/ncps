@@ -134,7 +134,13 @@ func (c *Cache) stageInflightNar(ctx context.Context, hash string, ds *downloadS
 			Err(err).
 			Str("hash", hash).
 			Msg("in-flight staging producer stopped with error; staging parts left for GC/takeover")
+
+		return
 	}
+
+	// Staging is complete and the final representation is committed: reclaim the
+	// staging artifacts after the retention grace, letting cross-pod readers drain.
+	c.scheduleStagingReclaim(hash)
 }
 
 // waitForStagingRequest polls staging_state on a coarse ticker until a cross-pod
