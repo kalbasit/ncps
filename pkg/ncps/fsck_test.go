@@ -1971,3 +1971,61 @@ func TestChunksForNarFile_LargePostgreSQL(t *testing.T) {
 		assert.Equal(t, chunks[i].ID, ch.ID, "chunk at index %d must be in chunk_index order", i)
 	}
 }
+
+// TestFsckReclaimsOrphanedChunkResiduePostDrain validates the post-drain fix
+// end-to-end through the real fsck command. With NO cdc_enabled config and NO
+// chunked nar_files — the state after a CDC→whole migration fully drains — an
+// orphaned chunk row must still be detected (dry-run) and reclaimed (--repair).
+// Before the residue-detection signal, fsck ran in non-CDC mode here and silently
+// ignored the chunk, stranding it forever.
+func TestFsckReclaimsOrphanedChunkResiduePostDrain(t *testing.T) {
+	t.Parallel()
+
+	ctx := zerolog.New(os.Stderr).WithContext(context.Background())
+
+	dbClient, _, dir, dbURL, cleanup := setupFsckSQLite(t)
+	t.Cleanup(cleanup)
+
+	// Post-drain residue: a chunk row referenced by no nar_file, with no CDC config.
+	const chunkHash = "residuechunkhashpostdrainaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	_, err := dbClient.Ent().Chunk.Create().
+		SetHash(chunkHash).
+		SetSize(10).
+		SetCompressedSize(5).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Dry-run: the orphaned residue must be reported as an issue, proving CDC mode
+	// was enabled by residue detection alone (no config, no chunked nar_files).
+	app, err := ncps.New()
+	require.NoError(t, err)
+
+	dryRunErr := app.Run(ctx, []string{
+		"ncps", "fsck",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+		"--dry-run",
+	})
+	require.ErrorIs(t, dryRunErr, ncps.ErrFsckIssuesFound)
+
+	// Dry-run reports but must NOT delete: the chunk row is still present.
+	afterDryRun, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, afterDryRun, "dry-run must not delete the orphaned chunk")
+
+	// Repair: the orphaned chunk row must be reclaimed.
+	app, err = ncps.New()
+	require.NoError(t, err)
+
+	require.NoError(t, app.Run(ctx, []string{
+		"ncps", "fsck",
+		"--cache-database-url", dbURL,
+		"--cache-storage-local", dir,
+		"--repair",
+	}))
+
+	count, err := dbClient.Ent().Chunk.Query().Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, count, "orphaned chunk residue must be deleted after fsck --repair")
+}
