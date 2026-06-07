@@ -34,10 +34,14 @@ Phases (each asserts serving AND database invariants):
 Cross-cutting checks (run within the phases above):
 
   A. Upload reference presence — HEAD/GET presence agrees with stored bytes.
-  B. Non-destructive narinfo purge — purging one of two narinfos sharing a
-     NAR leaves the shared bytes serving.
-  C. fsck repair-not-delete — a broken narinfo<->nar_file link is repaired,
-     not deleted.
+  B. fsck no-data-loss — fsck --repair preserves every still-referenced NAR
+     (decompressed-content digest unchanged) while reclaiming orphans.
+
+The non-destructive narinfo purge invariant (purging one of two narinfos
+sharing a NAR leaves the shared bytes serving) is NOT exercised here: real
+nix packages essentially never share a NAR, so it cannot be set up
+deterministically end-to-end. It is covered by the unit tests in
+pkg/cache/nondestructive_narinfo_purge_internal_test.go.
 
 Results are written to .e2e-results/cdc/<timestamp>/ (under the already
 gitignored .e2e-results/ path shared with test-migration-e2e.py).
@@ -55,6 +59,7 @@ import io
 import json
 import lzma
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -399,7 +404,12 @@ def run_cli(subcmd, db, storage, extra=None, timeout=300, with_temp=False):
     cmd += storage_flags(storage)
     if extra:
         cmd += extra
-    log(f"run_cli: {' '.join(cmd)}", G)
+    # Redact the S3 secret access key before logging the command.
+    redacted = [
+        "--cache-storage-s3-secret-access-key=***" if a.startswith("--cache-storage-s3-secret-access-key=") else a
+        for a in cmd
+    ]
+    log(f"run_cli: {' '.join(redacted)}", G)
     r = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=timeout)
     return r.returncode, r.stdout + r.stderr
 
@@ -592,6 +602,10 @@ def phase_drain(state, db, storage, sdir):
     dry = migrate_chunks_to_nar(db, storage, dry_run=True)
     with open(os.path.join(sdir, "migrate-dry-run.txt"), "w") as fp:
         fp.write(dry)
+    # The dry-run must actually report drain candidates, not silently no-op.
+    m = re.search(r'total["\s:=]+(\d+)', dry, re.IGNORECASE)
+    candidates = int(m.group(1)) if m else 0
+    check(candidates > 0, f"dry-run reports drain candidates (total={candidates})")
     check(chunked_nar_count(db) > 0, "dry-run did not mutate; chunks still present")
 
     out = migrate_chunks_to_nar(db, storage, force_reclaim=True)
@@ -605,13 +619,19 @@ def phase_restart_autocomplete(state, db, storage, sdir):
     restart(state, db, storage, os.path.join(sdir, "p4-autocomplete.log"), cdc=False)
     check(cdc_config_keys_present(db) == [], "initCDCDrainMode cleared cdc_* config keys")
 
+    # Poll for the drain-completion log line: wait_ready() only proves
+    # /nix-cache-info is live, and the startup log write can lag the HTTP
+    # readiness, so a single read can race it.
     log_path = os.path.join(sdir, "p4-autocomplete.log")
-    with open(log_path) as fp:
-        boot_log = fp.read()
-    check(
-        "drain" in boot_log.lower(),
-        "boot log mentions drain completion",
-    )
+    deadline = time.time() + 30
+    saw_drain = False
+    while time.time() < deadline:
+        with open(log_path) as fp:
+            if "drain" in fp.read().lower():
+                saw_drain = True
+                break
+        time.sleep(1)
+    check(saw_drain, "boot log mentions drain completion")
     # The previously chunked NAR now serves as a whole file, byte-identical to
     # what was stored under eager CDC.
     ni = fetch_narinfo(state["eager_hash"])
@@ -629,7 +649,11 @@ def phase_cross_cutting(state, db, storage, sdir):
     # A. Upload reference presence: every NAR referenced by a served narinfo
     #    must agree between HEAD and GET (no phantom presence -> no nix-copy
     #    missing-reference aborts).
-    for label, h in (("baseline", "baseline_hash"), ("eager", "eager_hash")):
+    for label, h in (
+        ("baseline", "baseline_hash"),
+        ("eager", "eager_hash"),
+        ("lazy", "lazy_hash"),
+    ):
         ni = fetch_narinfo(state[h])
         check(ni is not None, f"{label} narinfo present for presence check")
         fields = parse_narinfo(ni)

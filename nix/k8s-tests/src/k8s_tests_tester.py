@@ -1418,9 +1418,10 @@ class NCPSTester:
                 f"{base_url}/{url_match.group(1).strip()}", timeout=HTTP_TIMEOUT
             )
             return nar.status_code == 200 and len(nar.content) > 0
-        except Exception:
-            return False
         finally:
+            # Transport/setup errors (port-forward, requests) propagate to the
+            # caller so the TestResult points at the real infrastructure error
+            # rather than a misleading "did not serve" semantic failure.
             if port_forward:
                 port_forward.terminate()
                 port_forward.wait(timeout=5)
@@ -1595,9 +1596,9 @@ class NCPSTester:
                     last = None
                 time.sleep(2 * (attempt + 1))
             return last
-        except Exception:
-            return False
         finally:
+            # Let transport/setup errors propagate so the caller reports the
+            # real infrastructure failure instead of a false "phantom HEAD".
             if port_forward:
                 port_forward.terminate()
                 port_forward.wait(timeout=5)
