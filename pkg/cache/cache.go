@@ -2969,6 +2969,21 @@ func (c *Cache) pullNarIntoStore(
 	// CDC chunking is in progress. The CDC goroutine is responsible for cleanup.
 	keepJobAlive := false
 
+	// In-flight staging producer: once a cross-pod waiter is detected for this NAR
+	// hash, stage the in-flight bytes to shared storage as part-objects so other
+	// replicas can serve a complete NAR during the download (closes #660 / #1289).
+	// It is a no-op until the feature is enabled (with a distributed locker) AND a
+	// waiter appears, so the common single-reader download pays nothing.
+	if c.InflightStagingEnabled() {
+		c.backgroundWG.Add(1)
+
+		analytics.SafeGo(ctx, func() {
+			defer c.backgroundWG.Done()
+
+			c.stageInflightNar(ctx, narURL.Hash, ds)
+		})
+	}
+
 	defer func() {
 		if keepJobAlive {
 			// CDC goroutine will handle job removal and ds.done closing.
