@@ -1468,22 +1468,6 @@ func narInfoStorageKey(ni *narinfo.NarInfo) string {
 	return ni.NarHash.Format(nixhash.NixBase32, false)
 }
 
-// setNarInfoUpstreamURL records the opaque upstream NAR path on the narinfo row
-// so the NAR can be re-fetched from upstream after the local copy is evicted.
-func (c *Cache) setNarInfoUpstreamURL(ctx context.Context, hash, upstreamURL string) error {
-	// A single UPDATE is atomic on all three engines, so no explicit
-	// transaction is needed (mirrors migrateNarToChunksCleanup). The write is
-	// best-effort: the caller logs and continues on error.
-	if _, err := c.dbClient.Ent().NarInfo.Update().
-		Where(entnarinfo.HashEQ(hash)).
-		SetUpstreamURL(upstreamURL).
-		Save(ctx); err != nil {
-		return fmt.Errorf("error setting upstream_url for hash %q: %w", hash, err)
-	}
-
-	return nil
-}
-
 // lookupOriginalNarURL looks up the original (potentially prefixed) NAR URL from the database
 // by matching the narinfo that references a nar_file with the given hash.
 // This is used to recover the original upstream URL (with prefix) when fetching from
@@ -3921,7 +3905,11 @@ func (c *Cache) pullNarInfo(
 	// The storage backend (S3/filesystem) is used only for NAR files.
 	// Legacy narinfos in storage are handled by background migration during GetNarInfo.
 
-	if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
+	// Persist the opaque upstream path (if any) atomically with the narinfo so
+	// the NAR can always be re-fetched from upstream after the local copy is
+	// evicted (the stored narinfo URL is ncps's own hash-named URL and no
+	// longer encodes the opaque path).
+	if err := c.storeInDatabase(ctx, hash, narInfo, upstreamNarPath); err != nil {
 		zerolog.Ctx(ctx).
 			Error().
 			Err(err).
@@ -3930,19 +3918,6 @@ func (c *Cache) pullNarInfo(
 		ds.setError(err)
 
 		return
-	}
-
-	// Persist the opaque upstream path so the NAR can be re-fetched from
-	// upstream after the local copy is evicted (the stored narinfo URL is
-	// ncps's own hash-named URL and no longer encodes the opaque path).
-	if upstreamNarPath != "" {
-		if err := c.setNarInfoUpstreamURL(ctx, hash, upstreamNarPath); err != nil {
-			zerolog.Ctx(ctx).
-				Warn().
-				Err(err).
-				Str("upstream_nar_url", upstreamNarPath).
-				Msg("error persisting the opaque upstream nar URL")
-		}
 	}
 
 	// Signal that the asset is now in final storage and the distributed lock
@@ -4021,7 +3996,8 @@ func (c *Cache) PutNarInfo(ctx context.Context, hash string, r io.ReadCloser) er
 		// Narinfos are now stored ONLY in the database, not in the storage backend.
 		// The storage backend (S3/filesystem) is used only for NAR files.
 		// Legacy narinfos in storage are handled by background migration during GetNarInfo.
-		if err := c.storeInDatabase(ctx, hash, narInfo); err != nil {
+		// Client uploads have no upstream, so there is no opaque upstream path to persist.
+		if err := c.storeInDatabase(ctx, hash, narInfo, ""); err != nil {
 			return fmt.Errorf("error storing in database: %w", err)
 		}
 
@@ -5037,10 +5013,18 @@ func (c *Cache) purgeNarInfo(
 	return nil
 }
 
+// storeInDatabase persists the narinfo, its references/signatures, and the
+// associated nar_file link inside a single transaction. When upstreamURL is
+// non-empty (the upstream NAR URL was opaque, e.g. cachix's UUID NARs) it is
+// persisted on the narinfo row in the SAME transaction: it is the only path
+// that can re-fetch an evicted opaque NAR, so it must land atomically with the
+// row rather than as a best-effort follow-up that could leave the row without
+// it. Pass "" for conventional hash-named upstreams.
 func (c *Cache) storeInDatabase(
 	ctx context.Context,
 	hash string,
 	narInfo *narinfo.NarInfo,
+	upstreamURL string,
 ) error {
 	ctx, span := tracer.Start(
 		ctx,
@@ -5060,6 +5044,15 @@ func (c *Cache) storeInDatabase(
 		nir, err := upsertNarInfoFromParsed(ctx, tx, hash, narInfo)
 		if err != nil {
 			return err
+		}
+
+		// Persist the opaque upstream path atomically with the narinfo row.
+		if upstreamURL != "" {
+			if _, err := tx.NarInfo.UpdateOneID(nir.ID).
+				SetUpstreamURL(upstreamURL).
+				Save(ctx); err != nil {
+				return fmt.Errorf("error setting upstream_url for hash %q: %w", hash, err)
+			}
 		}
 
 		if err := addNarInfoReferences(ctx, tx, nir.ID, narInfo.References); err != nil {
