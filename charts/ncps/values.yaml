@@ -10,8 +10,11 @@ global:
 # Number of replicas
 # For HA mode, set to 2 or more
 # For single instance, set to 1
-# WARNING: If setting replicaCount > 1, you MUST also enable CDC (config.cdc.enabled: true)
-# to prevent data corruption. See https://github.com/kalbasit/ncps/issues/660
+# WARNING: If setting replicaCount > 1, you MUST enable either CDC
+# (config.cdc.enabled: true) or in-flight NAR staging
+# (config.inflightStaging.enabled: true) so NARs can be served across replicas
+# during download. In-flight staging is the lightweight default (zero overhead
+# until contention). See https://github.com/kalbasit/ncps/issues/660
 replicaCount: 1
 
 # Deployment mode: "deployment" or "statefulset"
@@ -168,8 +171,9 @@ config:
   # Chunks are stored in the same backend as NAR files (different prefix/directory)
   cdc:
     # Enable CDC for deduplication (experimental)
-    # REQUIRED for HA deployments (replicaCount > 1) to prevent timeouts and instability.
-    # See https://github.com/kalbasit/ncps/issues/660
+    # One of CDC or in-flight staging (config.inflightStaging.enabled) is required
+    # for HA deployments (replicaCount > 1) to serve NARs across replicas during
+    # download. See https://github.com/kalbasit/ncps/issues/660
     enabled: false
     min: 16384
     avg: 65536
@@ -202,10 +206,22 @@ config:
     # avoiding spurious 504s. Leave null to use the server default (30s).
     chunkWaitTimeout: null
 
-    # Bypass flag for HA validation without CDC
-    # Use with EXTREME CAUTION. Doing so may result in timeouts and instability.
-    # See https://github.com/kalbasit/ncps/issues/660 for more details.
-    iLoveTimeouts: false
+  # In-flight NAR staging: serve a NAR cross-pod while it is still downloading by
+  # staging it to shared storage as part-objects once another replica waits for it.
+  # An HA-safe alternative to CDC that satisfies the replicaCount > 1 guard. Off by
+  # default; only active with a distributed (Redis) lock and zero overhead until a
+  # second replica contends for the same NAR. See
+  # https://github.com/kalbasit/ncps/issues/660
+  inflightStaging:
+    enabled: false
+
+    # Grace period to retain staging part-objects after the NAR's final
+    # representation is committed, so in-flight readers drain before reclamation.
+    retention: 5m
+
+    # Size in bytes of each staging part-object (a transport unit, distinct from
+    # CDC chunk sizes). Default 8 MiB.
+    partSize: 8388608
 
   # Storage backend (choose ONE)
   storage:

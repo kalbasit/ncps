@@ -254,7 +254,7 @@ tests:
       - isKind:
           of: ConfigMap
 
-  - it: should fail HA without CDC enabled
+  - it: should fail HA with neither CDC nor in-flight staging
     set:
       config.hostname: test.example.com
       replicaCount: 2
@@ -268,15 +268,16 @@ tests:
       config.storage.s3.accessKeyId: test-key
       config.storage.s3.secretAccessKey: test-secret
       config.cdc.enabled: false
+      config.inflightStaging.enabled: false
       config.redis.enabled: true
       config.redis.addresses:
         - redis:6379
       migration.mode: job
     asserts:
       - failedTemplate:
-          errorMessage: "High availability mode (replicaCount > 1) requires CDC to be enabled (config.cdc.enabled=true) to prevent timeouts and instability. See https://github.com/kalbasit/ncps/issues/660. Set config.cdc.iLoveTimeouts to true if you accept this risk."
+          errorMessage: "High availability mode (replicaCount > 1) requires either CDC (config.cdc.enabled=true) or in-flight NAR staging (config.inflightStaging.enabled=true) so NARs can be served across replicas during download. In-flight staging is the lightweight default (zero overhead until contention). See https://github.com/kalbasit/ncps/issues/660."
 
-  - it: should pass HA without CDC but with bypass flag
+  - it: should still fail HA when a (now-removed) iLoveTimeouts bypass is supplied
     set:
       config.hostname: test.example.com
       replicaCount: 2
@@ -290,7 +291,54 @@ tests:
       config.storage.s3.accessKeyId: test-key
       config.storage.s3.secretAccessKey: test-secret
       config.cdc.enabled: false
+      config.inflightStaging.enabled: false
       config.cdc.iLoveTimeouts: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - failedTemplate:
+          errorMessage: "High availability mode (replicaCount > 1) requires either CDC (config.cdc.enabled=true) or in-flight NAR staging (config.inflightStaging.enabled=true) so NARs can be served across replicas during download. In-flight staging is the lightweight default (zero overhead until contention). See https://github.com/kalbasit/ncps/issues/660."
+
+  - it: should pass HA with in-flight staging and no CDC
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: false
+      config.inflightStaging.enabled: true
+      config.redis.enabled: true
+      config.redis.addresses:
+        - redis:6379
+      migration.mode: job
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: should pass HA with CDC and no in-flight staging
+    set:
+      config.hostname: test.example.com
+      replicaCount: 2
+      mode: deployment
+      config.database.type: postgresql
+      config.database.postgresql.host: postgres
+      config.database.postgresql.password: test123
+      config.storage.type: s3
+      config.storage.s3.bucket: my-bucket
+      config.storage.s3.endpoint: https://s3.amazonaws.com
+      config.storage.s3.accessKeyId: test-key
+      config.storage.s3.secretAccessKey: test-secret
+      config.cdc.enabled: true
+      config.inflightStaging.enabled: false
       config.redis.enabled: true
       config.redis.addresses:
         - redis:6379

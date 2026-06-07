@@ -222,7 +222,7 @@ rec {
       name = "ha-s3-postgres";
       description = "High availability with S3 storage, PostgreSQL, and Redis locks";
       replicas = 2;
-      cdc.iLoveTimeouts = true;
+      inflightStaging.enabled = true;
       mode = "deployment";
       migration.mode = "job";
       storage = {
@@ -249,7 +249,7 @@ rec {
       name = "ha-s3-mariadb";
       description = "High availability with S3 storage, MariaDB, and Redis locks";
       replicas = 2;
-      cdc.iLoveTimeouts = true;
+      inflightStaging.enabled = true;
       mode = "deployment";
       migration.mode = "job";
       storage = {
@@ -609,11 +609,11 @@ rec {
                     enabled = false;
                   };
 
-              # CDC Configuration
-              cdc = {
-                # Enabled is set by features ("cdc"), but we default strictly here
-                # iLoveTimeouts logic:
-                iLoveTimeouts = perm.cdc.iLoveTimeouts or false;
+              # In-flight NAR staging: an HA-safe alternative to CDC. Enabled per
+              # permutation — the HA permutations that previously set
+              # cdc.iLoveTimeouts now exercise real staging instead.
+              inflightStaging = {
+                enabled = perm.inflightStaging.enabled or false;
               };
             };
           };
