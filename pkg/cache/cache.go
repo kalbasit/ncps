@@ -8128,6 +8128,11 @@ func (c *Cache) getNarFromChunks(ctx context.Context, narURL *nar.URL) (int64, i
 				Str("hash", narURL.Hash).
 				Msg("serving NAR from in-flight staging in preference to progressive chunks")
 
+			// serveNarFromStaging sets narURL.Compression to what it actually
+			// serves; clear TransparentZstd so the HTTP layer never expects a zstd
+			// stream when the staged bytes are decompressed (or non-zstd).
+			narURL.TransparentZstd = false
+
 			return c.serveNarFromStaging(ctx, narURL, info.hash, info.compression)
 		}
 	}
