@@ -105,6 +105,26 @@ func (_u *NarInfoUpdate) ClearURL() *NarInfoUpdate {
 	return _u
 }
 
+// SetUpstreamURL sets the "upstream_url" field.
+func (_u *NarInfoUpdate) SetUpstreamURL(v string) *NarInfoUpdate {
+	_u.mutation.SetUpstreamURL(v)
+	return _u
+}
+
+// SetNillableUpstreamURL sets the "upstream_url" field if the given value is not nil.
+func (_u *NarInfoUpdate) SetNillableUpstreamURL(v *string) *NarInfoUpdate {
+	if v != nil {
+		_u.SetUpstreamURL(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamURL clears the value of the "upstream_url" field.
+func (_u *NarInfoUpdate) ClearUpstreamURL() *NarInfoUpdate {
+	_u.mutation.ClearUpstreamURL()
+	return _u
+}
+
 // SetCompression sets the "compression" field.
 func (_u *NarInfoUpdate) SetCompression(v string) *NarInfoUpdate {
 	_u.mutation.SetCompression(v)
@@ -482,6 +502,12 @@ func (_u *NarInfoUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.URLCleared() {
 		_spec.ClearField(narinfo.FieldURL, field.TypeString)
 	}
+	if value, ok := _u.mutation.UpstreamURL(); ok {
+		_spec.SetField(narinfo.FieldUpstreamURL, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamURLCleared() {
+		_spec.ClearField(narinfo.FieldUpstreamURL, field.TypeString)
+	}
 	if value, ok := _u.mutation.Compression(); ok {
 		_spec.SetField(narinfo.FieldCompression, field.TypeString, value)
 	}
@@ -768,6 +794,26 @@ func (_u *NarInfoUpdateOne) SetNillableURL(v *string) *NarInfoUpdateOne {
 // ClearURL clears the value of the "url" field.
 func (_u *NarInfoUpdateOne) ClearURL() *NarInfoUpdateOne {
 	_u.mutation.ClearURL()
+	return _u
+}
+
+// SetUpstreamURL sets the "upstream_url" field.
+func (_u *NarInfoUpdateOne) SetUpstreamURL(v string) *NarInfoUpdateOne {
+	_u.mutation.SetUpstreamURL(v)
+	return _u
+}
+
+// SetNillableUpstreamURL sets the "upstream_url" field if the given value is not nil.
+func (_u *NarInfoUpdateOne) SetNillableUpstreamURL(v *string) *NarInfoUpdateOne {
+	if v != nil {
+		_u.SetUpstreamURL(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamURL clears the value of the "upstream_url" field.
+func (_u *NarInfoUpdateOne) ClearUpstreamURL() *NarInfoUpdateOne {
+	_u.mutation.ClearUpstreamURL()
 	return _u
 }
 
@@ -1177,6 +1223,12 @@ func (_u *NarInfoUpdateOne) sqlSave(ctx context.Context) (_node *NarInfo, err er
 	}
 	if _u.mutation.URLCleared() {
 		_spec.ClearField(narinfo.FieldURL, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamURL(); ok {
+		_spec.SetField(narinfo.FieldUpstreamURL, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamURLCleared() {
+		_spec.ClearField(narinfo.FieldUpstreamURL, field.TypeString)
 	}
 	if value, ok := _u.mutation.Compression(); ok {
 		_spec.SetField(narinfo.FieldCompression, field.TypeString, value)

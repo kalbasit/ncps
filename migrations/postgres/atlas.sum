@@ -1,4 +1,4 @@
-h1:gU8DvMptgCoNHVks36ZOgzjkVBg/qI4J9QWmax4HKuw=
+h1:6BbOSZyTtYjlXjm/u1JQLOw4hPcPSKKSkk7kFJo7dD8=
 20260101000000_init_schema.sql h1:iedAD2OJAMzrmUpAUO8zhQCuLu5qe5Faz3Tp1qVfVgY=
 20260117195000_add_narinfo_de_normalized.sql h1:p1+8hB881Dg9E0XmzJVJUFic/kI9rLUzJrDRUhu8UPM=
 20260127223000_allow_multiple_nar_representations.sql h1:cys3Xi4rBtMzSeKR7iRNGaoOilKYrC0nqrJ2vuNDMN0=
@@ -13,3 +13,4 @@ h1:gU8DvMptgCoNHVks36ZOgzjkVBg/qI4J9QWmax4HKuw=
 20260605021047_add_bytes_stored_at_to_nar_files.sql h1:VhOy2AFS4eZ+hvdYcVcZHde79Fh0Ay7A9I1IEg6rWas=
 20260605045447_repair_url_none_xz_narinfos.sql h1:8iIDY+0oThQT/gyo2XbVp761qgzGfoWhXyh3/yVN6aU=
 20260605211804_add_dechunk_residue_flagged_at_to_nar_files.sql h1:dYUA7RUyieOjTtTMGbcrkuGj4pB5xDNNhJ+K2WHUjaE=
+20260607034027_add_narinfo_upstream_url.sql h1:k5Dof0dw5+/Ha8blC+QxtqjUc0GHpp2qLhT+CDAjxos=

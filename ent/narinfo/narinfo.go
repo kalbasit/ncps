@@ -24,6 +24,8 @@ const (
 	FieldStorePath = "store_path"
 	// FieldURL holds the string denoting the url field in the database.
 	FieldURL = "url"
+	// FieldUpstreamURL holds the string denoting the upstream_url field in the database.
+	FieldUpstreamURL = "upstream_url"
 	// FieldCompression holds the string denoting the compression field in the database.
 	FieldCompression = "compression"
 	// FieldFileHash holds the string denoting the file_hash field in the database.
@@ -81,6 +83,7 @@ var Columns = []string{
 	FieldHash,
 	FieldStorePath,
 	FieldURL,
+	FieldUpstreamURL,
 	FieldCompression,
 	FieldFileHash,
 	FieldFileSize,
@@ -142,6 +145,11 @@ func ByStorePath(opts ...sql.OrderTermOption) OrderOption {
 // ByURL orders the results by the url field.
 func ByURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldURL, opts...).ToFunc()
+}
+
+// ByUpstreamURL orders the results by the upstream_url field.
+func ByUpstreamURL(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamURL, opts...).ToFunc()
 }
 
 // ByCompression orders the results by the compression field.

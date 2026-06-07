@@ -4348,6 +4348,7 @@ type NarInfoMutation struct {
 	hash                      *string
 	store_path                *string
 	url                       *string
+	upstream_url              *string
 	compression               *string
 	file_hash                 *string
 	file_size                 *int64
@@ -4689,6 +4690,55 @@ func (m *NarInfoMutation) URLCleared() bool {
 func (m *NarInfoMutation) ResetURL() {
 	m.url = nil
 	delete(m.clearedFields, narinfo.FieldURL)
+}
+
+// SetUpstreamURL sets the "upstream_url" field.
+func (m *NarInfoMutation) SetUpstreamURL(s string) {
+	m.upstream_url = &s
+}
+
+// UpstreamURL returns the value of the "upstream_url" field in the mutation.
+func (m *NarInfoMutation) UpstreamURL() (r string, exists bool) {
+	v := m.upstream_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamURL returns the old "upstream_url" field's value of the NarInfo entity.
+// If the NarInfo object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NarInfoMutation) OldUpstreamURL(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamURL: %w", err)
+	}
+	return oldValue.UpstreamURL, nil
+}
+
+// ClearUpstreamURL clears the value of the "upstream_url" field.
+func (m *NarInfoMutation) ClearUpstreamURL() {
+	m.upstream_url = nil
+	m.clearedFields[narinfo.FieldUpstreamURL] = struct{}{}
+}
+
+// UpstreamURLCleared returns if the "upstream_url" field was cleared in this mutation.
+func (m *NarInfoMutation) UpstreamURLCleared() bool {
+	_, ok := m.clearedFields[narinfo.FieldUpstreamURL]
+	return ok
+}
+
+// ResetUpstreamURL resets all changes to the "upstream_url" field.
+func (m *NarInfoMutation) ResetUpstreamURL() {
+	m.upstream_url = nil
+	delete(m.clearedFields, narinfo.FieldUpstreamURL)
 }
 
 // SetCompression sets the "compression" field.
@@ -5370,7 +5420,7 @@ func (m *NarInfoMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *NarInfoMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, narinfo.FieldCreatedAt)
 	}
@@ -5385,6 +5435,9 @@ func (m *NarInfoMutation) Fields() []string {
 	}
 	if m.url != nil {
 		fields = append(fields, narinfo.FieldURL)
+	}
+	if m.upstream_url != nil {
+		fields = append(fields, narinfo.FieldUpstreamURL)
 	}
 	if m.compression != nil {
 		fields = append(fields, narinfo.FieldCompression)
@@ -5431,6 +5484,8 @@ func (m *NarInfoMutation) Field(name string) (ent.Value, bool) {
 		return m.StorePath()
 	case narinfo.FieldURL:
 		return m.URL()
+	case narinfo.FieldUpstreamURL:
+		return m.UpstreamURL()
 	case narinfo.FieldCompression:
 		return m.Compression()
 	case narinfo.FieldFileHash:
@@ -5468,6 +5523,8 @@ func (m *NarInfoMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldStorePath(ctx)
 	case narinfo.FieldURL:
 		return m.OldURL(ctx)
+	case narinfo.FieldUpstreamURL:
+		return m.OldUpstreamURL(ctx)
 	case narinfo.FieldCompression:
 		return m.OldCompression(ctx)
 	case narinfo.FieldFileHash:
@@ -5529,6 +5586,13 @@ func (m *NarInfoMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetURL(v)
+		return nil
+	case narinfo.FieldUpstreamURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamURL(v)
 		return nil
 	case narinfo.FieldCompression:
 		v, ok := value.(string)
@@ -5659,6 +5723,9 @@ func (m *NarInfoMutation) ClearedFields() []string {
 	if m.FieldCleared(narinfo.FieldURL) {
 		fields = append(fields, narinfo.FieldURL)
 	}
+	if m.FieldCleared(narinfo.FieldUpstreamURL) {
+		fields = append(fields, narinfo.FieldUpstreamURL)
+	}
 	if m.FieldCleared(narinfo.FieldCompression) {
 		fields = append(fields, narinfo.FieldCompression)
 	}
@@ -5709,6 +5776,9 @@ func (m *NarInfoMutation) ClearField(name string) error {
 	case narinfo.FieldURL:
 		m.ClearURL()
 		return nil
+	case narinfo.FieldUpstreamURL:
+		m.ClearUpstreamURL()
+		return nil
 	case narinfo.FieldCompression:
 		m.ClearCompression()
 		return nil
@@ -5758,6 +5828,9 @@ func (m *NarInfoMutation) ResetField(name string) error {
 		return nil
 	case narinfo.FieldURL:
 		m.ResetURL()
+		return nil
+	case narinfo.FieldUpstreamURL:
+		m.ResetUpstreamURL()
 		return nil
 	case narinfo.FieldCompression:
 		m.ResetCompression()

@@ -80,6 +80,11 @@ func URL(v string) predicate.NarInfo {
 	return predicate.NarInfo(sql.FieldEQ(FieldURL, v))
 }
 
+// UpstreamURL applies equality check predicate on the "upstream_url" field. It's identical to UpstreamURLEQ.
+func UpstreamURL(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldEQ(FieldUpstreamURL, v))
+}
+
 // Compression applies equality check predicate on the "compression" field. It's identical to CompressionEQ.
 func Compression(v string) predicate.NarInfo {
 	return predicate.NarInfo(sql.FieldEQ(FieldCompression, v))
@@ -428,6 +433,81 @@ func URLEqualFold(v string) predicate.NarInfo {
 // URLContainsFold applies the ContainsFold predicate on the "url" field.
 func URLContainsFold(v string) predicate.NarInfo {
 	return predicate.NarInfo(sql.FieldContainsFold(FieldURL, v))
+}
+
+// UpstreamURLEQ applies the EQ predicate on the "upstream_url" field.
+func UpstreamURLEQ(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldEQ(FieldUpstreamURL, v))
+}
+
+// UpstreamURLNEQ applies the NEQ predicate on the "upstream_url" field.
+func UpstreamURLNEQ(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldNEQ(FieldUpstreamURL, v))
+}
+
+// UpstreamURLIn applies the In predicate on the "upstream_url" field.
+func UpstreamURLIn(vs ...string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldIn(FieldUpstreamURL, vs...))
+}
+
+// UpstreamURLNotIn applies the NotIn predicate on the "upstream_url" field.
+func UpstreamURLNotIn(vs ...string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldNotIn(FieldUpstreamURL, vs...))
+}
+
+// UpstreamURLGT applies the GT predicate on the "upstream_url" field.
+func UpstreamURLGT(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldGT(FieldUpstreamURL, v))
+}
+
+// UpstreamURLGTE applies the GTE predicate on the "upstream_url" field.
+func UpstreamURLGTE(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldGTE(FieldUpstreamURL, v))
+}
+
+// UpstreamURLLT applies the LT predicate on the "upstream_url" field.
+func UpstreamURLLT(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldLT(FieldUpstreamURL, v))
+}
+
+// UpstreamURLLTE applies the LTE predicate on the "upstream_url" field.
+func UpstreamURLLTE(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldLTE(FieldUpstreamURL, v))
+}
+
+// UpstreamURLContains applies the Contains predicate on the "upstream_url" field.
+func UpstreamURLContains(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldContains(FieldUpstreamURL, v))
+}
+
+// UpstreamURLHasPrefix applies the HasPrefix predicate on the "upstream_url" field.
+func UpstreamURLHasPrefix(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldHasPrefix(FieldUpstreamURL, v))
+}
+
+// UpstreamURLHasSuffix applies the HasSuffix predicate on the "upstream_url" field.
+func UpstreamURLHasSuffix(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldHasSuffix(FieldUpstreamURL, v))
+}
+
+// UpstreamURLIsNil applies the IsNil predicate on the "upstream_url" field.
+func UpstreamURLIsNil() predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldIsNull(FieldUpstreamURL))
+}
+
+// UpstreamURLNotNil applies the NotNil predicate on the "upstream_url" field.
+func UpstreamURLNotNil() predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldNotNull(FieldUpstreamURL))
+}
+
+// UpstreamURLEqualFold applies the EqualFold predicate on the "upstream_url" field.
+func UpstreamURLEqualFold(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldEqualFold(FieldUpstreamURL, v))
+}
+
+// UpstreamURLContainsFold applies the ContainsFold predicate on the "upstream_url" field.
+func UpstreamURLContainsFold(v string) predicate.NarInfo {
+	return predicate.NarInfo(sql.FieldContainsFold(FieldUpstreamURL, v))
 }
 
 // CompressionEQ applies the EQ predicate on the "compression" field.

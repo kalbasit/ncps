@@ -87,6 +87,20 @@ func (_c *NarInfoCreate) SetNillableURL(v *string) *NarInfoCreate {
 	return _c
 }
 
+// SetUpstreamURL sets the "upstream_url" field.
+func (_c *NarInfoCreate) SetUpstreamURL(v string) *NarInfoCreate {
+	_c.mutation.SetUpstreamURL(v)
+	return _c
+}
+
+// SetNillableUpstreamURL sets the "upstream_url" field if the given value is not nil.
+func (_c *NarInfoCreate) SetNillableUpstreamURL(v *string) *NarInfoCreate {
+	if v != nil {
+		_c.SetUpstreamURL(*v)
+	}
+	return _c
+}
+
 // SetCompression sets the "compression" field.
 func (_c *NarInfoCreate) SetCompression(v string) *NarInfoCreate {
 	_c.mutation.SetCompression(v)
@@ -363,6 +377,10 @@ func (_c *NarInfoCreate) createSpec() (*NarInfo, *sqlgraph.CreateSpec) {
 		_spec.SetField(narinfo.FieldURL, field.TypeString, value)
 		_node.URL = &value
 	}
+	if value, ok := _c.mutation.UpstreamURL(); ok {
+		_spec.SetField(narinfo.FieldUpstreamURL, field.TypeString, value)
+		_node.UpstreamURL = &value
+	}
 	if value, ok := _c.mutation.Compression(); ok {
 		_spec.SetField(narinfo.FieldCompression, field.TypeString, value)
 		_node.Compression = &value
@@ -562,6 +580,24 @@ func (u *NarInfoUpsert) UpdateURL() *NarInfoUpsert {
 // ClearURL clears the value of the "url" field.
 func (u *NarInfoUpsert) ClearURL() *NarInfoUpsert {
 	u.SetNull(narinfo.FieldURL)
+	return u
+}
+
+// SetUpstreamURL sets the "upstream_url" field.
+func (u *NarInfoUpsert) SetUpstreamURL(v string) *NarInfoUpsert {
+	u.Set(narinfo.FieldUpstreamURL, v)
+	return u
+}
+
+// UpdateUpstreamURL sets the "upstream_url" field to the value that was provided on create.
+func (u *NarInfoUpsert) UpdateUpstreamURL() *NarInfoUpsert {
+	u.SetExcluded(narinfo.FieldUpstreamURL)
+	return u
+}
+
+// ClearUpstreamURL clears the value of the "upstream_url" field.
+func (u *NarInfoUpsert) ClearUpstreamURL() *NarInfoUpsert {
+	u.SetNull(narinfo.FieldUpstreamURL)
 	return u
 }
 
@@ -858,6 +894,27 @@ func (u *NarInfoUpsertOne) UpdateURL() *NarInfoUpsertOne {
 func (u *NarInfoUpsertOne) ClearURL() *NarInfoUpsertOne {
 	return u.Update(func(s *NarInfoUpsert) {
 		s.ClearURL()
+	})
+}
+
+// SetUpstreamURL sets the "upstream_url" field.
+func (u *NarInfoUpsertOne) SetUpstreamURL(v string) *NarInfoUpsertOne {
+	return u.Update(func(s *NarInfoUpsert) {
+		s.SetUpstreamURL(v)
+	})
+}
+
+// UpdateUpstreamURL sets the "upstream_url" field to the value that was provided on create.
+func (u *NarInfoUpsertOne) UpdateUpstreamURL() *NarInfoUpsertOne {
+	return u.Update(func(s *NarInfoUpsert) {
+		s.UpdateUpstreamURL()
+	})
+}
+
+// ClearUpstreamURL clears the value of the "upstream_url" field.
+func (u *NarInfoUpsertOne) ClearUpstreamURL() *NarInfoUpsertOne {
+	return u.Update(func(s *NarInfoUpsert) {
+		s.ClearUpstreamURL()
 	})
 }
 
@@ -1349,6 +1406,27 @@ func (u *NarInfoUpsertBulk) UpdateURL() *NarInfoUpsertBulk {
 func (u *NarInfoUpsertBulk) ClearURL() *NarInfoUpsertBulk {
 	return u.Update(func(s *NarInfoUpsert) {
 		s.ClearURL()
+	})
+}
+
+// SetUpstreamURL sets the "upstream_url" field.
+func (u *NarInfoUpsertBulk) SetUpstreamURL(v string) *NarInfoUpsertBulk {
+	return u.Update(func(s *NarInfoUpsert) {
+		s.SetUpstreamURL(v)
+	})
+}
+
+// UpdateUpstreamURL sets the "upstream_url" field to the value that was provided on create.
+func (u *NarInfoUpsertBulk) UpdateUpstreamURL() *NarInfoUpsertBulk {
+	return u.Update(func(s *NarInfoUpsert) {
+		s.UpdateUpstreamURL()
+	})
+}
+
+// ClearUpstreamURL clears the value of the "upstream_url" field.
+func (u *NarInfoUpsertBulk) ClearUpstreamURL() *NarInfoUpsertBulk {
+	return u.Update(func(s *NarInfoUpsert) {
+		s.ClearUpstreamURL()
 	})
 }
 

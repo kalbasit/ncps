@@ -956,7 +956,7 @@ func testStoreInDatabaseDuplicateDetection(factory cacheFactory) func(*testing.T
 		require.NoError(t, err)
 
 		// First insert should succeed
-		err = c.storeInDatabase(newContext(), testdata.Nar1.NarInfoHash, narInfo)
+		err = c.storeInDatabase(newContext(), testdata.Nar1.NarInfoHash, narInfo, "")
 		require.NoError(t, err, "first insert should succeed")
 
 		// Verify the record was created
@@ -964,7 +964,7 @@ func testStoreInDatabaseDuplicateDetection(factory cacheFactory) func(*testing.T
 		require.NoError(t, err, "record should exist in database")
 
 		// Second insert of the same narinfo should succeed (UPSERT)
-		err = c.storeInDatabase(newContext(), testdata.Nar1.NarInfoHash, narInfo)
+		err = c.storeInDatabase(newContext(), testdata.Nar1.NarInfoHash, narInfo, "")
 		require.NoError(t, err, "duplicate insert should succeed with UPSERT")
 
 		// Verify the record persists and ID is consistent
@@ -1292,7 +1292,7 @@ func testMigrationDataIntegrity(factory cacheFactory) func(*testing.T) {
 		narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
-		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo, "")
 		require.NoError(t, err)
 
 		// Verify it exists and has the correct URL
@@ -1307,7 +1307,7 @@ func testMigrationDataIntegrity(factory cacheFactory) func(*testing.T) {
 		modifiedNarInfo.Deriver = "damaging-change-deriver"
 
 		// This call should succeed (idempotent) but NOT update the DB record because it's already valid
-		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, &modifiedNarInfo)
+		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, &modifiedNarInfo, "")
 		require.NoError(t, err)
 
 		// 3. Verification: Verify the DB record is UNTOUCHED
@@ -1340,7 +1340,7 @@ func testMigrationSuccess(factory cacheFactory) func(*testing.T) {
 		narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
-		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo, "")
 		require.NoError(t, err)
 
 		// 3. Verification: Verify the DB record IS updated
@@ -1368,7 +1368,7 @@ func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 		narInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 		require.NoError(t, err)
 
-		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo, "")
 		require.NoError(t, err)
 
 		// 2. Action: concurrent writes to trigger potential race/locking issues
@@ -1405,7 +1405,7 @@ func testMigrationUpsertIdempotency(factory cacheFactory) func(*testing.T) {
 		// But `storeInDatabase` (the high level function) specifically failed because it tried to recover.
 
 		// Let's test `storeInDatabase` directly as that's what we care about.
-		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo, "")
 		assert.NoError(t, err, "storeInDatabase should allow re-storing existing records safely")
 	}
 }
@@ -1449,7 +1449,7 @@ func testMigrationPartialRecordWithExistingReferences(factory cacheFactory) func
 
 		// 5. Now attempt full migration via storeInDatabase (which includes all references)
 		// This should handle duplicate references gracefully
-		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo)
+		err = c.storeInDatabase(ctx, testdata.Nar1.NarInfoHash, narInfo, "")
 		require.NoError(t, err, "Migration should succeed even with existing references")
 
 		// 6. Verify the record is now complete
@@ -1615,7 +1615,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 			attemptInsert: func(t *testing.T, c *Cache, ctx context.Context, hash string, narInfo *narinfo.NarInfo) {
 				t.Helper()
 
-				err := c.storeInDatabase(ctx, hash, narInfo)
+				err := c.storeInDatabase(ctx, hash, narInfo, "")
 				require.NoError(t, err)
 			},
 			validateResult: func(t *testing.T, c *Cache, ctx context.Context, hash string, expectedURL string) {
@@ -1634,7 +1634,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 				// Insert full record first
 				originalNarInfo, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
 				require.NoError(t, err)
-				err = c.storeInDatabase(ctx, hash, originalNarInfo)
+				err = c.storeInDatabase(ctx, hash, originalNarInfo, "")
 				require.NoError(t, err)
 			},
 			attemptInsert: func(t *testing.T, c *Cache, ctx context.Context, hash string, narInfo *narinfo.NarInfo) {
@@ -1642,7 +1642,7 @@ func TestMigration_DatabaseBehaviorConsistency(t *testing.T) {
 				// Try to insert different data
 				modifiedNarInfo := *narInfo
 				modifiedNarInfo.Deriver = "should-not-appear"
-				err := c.storeInDatabase(ctx, hash, &modifiedNarInfo)
+				err := c.storeInDatabase(ctx, hash, &modifiedNarInfo, "")
 				require.NoError(t, err) // Should succeed but not update
 			},
 			validateResult: func(t *testing.T, c *Cache, ctx context.Context, hash string, expectedURL string) {

@@ -432,6 +432,122 @@ func testGetNarInfoWithoutSignature(factory cacheFactory) func(*testing.T) {
 	}
 }
 
+// TestGetNarInfoOpaqueUpstreamURL exercises ncps #1: an upstream narinfo whose
+// URL: field is opaque (not hash-named — e.g. cachix's UUID NARs) must be
+// proxied successfully rather than failing with HTTP 500 "invalid nar hash".
+// ncps keys its storage off the narinfo NarHash, re-serves the NAR under its
+// own hash-named URL, and persists the opaque path so the NAR can be re-fetched
+// from upstream after eviction.
+func TestGetNarInfoOpaqueUpstreamURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		narInfoHash = "0123456789abcdfghijklmnpqrsvwxyz"
+		// The narinfo NarHash — a valid 52-char nix32 hash. ncps derives its
+		// storage key from this when the URL is opaque.
+		narHash    = "188g68hrjilbsjifcj70k8729zqhm9sl1q336vg5wxwzw0qp0sk4"
+		fileHash   = "1xqqdh1yn5sz3d6wcz3qz3azm5mbypwq6mv8g2dal1v042h0sprf"
+		fileSize   = 50308
+		opaqueURL  = "nar/d0c36585-67ac-4e1e-8747-3af0cbc09b90.nar.zst"
+		opaquePath = "/" + opaqueURL
+	)
+
+	narInfoText := fmt.Sprintf(`StorePath: /nix/store/%s-opaque-1.0
+URL: %s
+Compression: zstd
+FileHash: sha256:%s
+FileSize: %d
+NarHash: sha256:%s
+NarSize: 226560
+References: %s-opaque-1.0
+Sig: cache.nixos.org-1:eGSj5WPpZRjwzx7eWpCyZdNsFHjhtGTZF8T4FccYXjHNkTOZoGPfplgFP1w5bEST0/FtfV7f3AmQUVEv1NAEDg==
+`, narInfoHash, opaqueURL, fileHash, fileSize, narHash, narInfoHash)
+
+	narBody := testhelper.MustRandString(fileSize)
+
+	ts := testdata.NewTestServer(t, 40)
+	t.Cleanup(ts.Close)
+
+	ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/" + narInfoHash + ".narinfo":
+			_, _ = w.Write([]byte(narInfoText))
+
+			return true
+		case opaquePath:
+			w.Header().Set("Content-Length", strconv.Itoa(len(narBody)))
+			_, _ = w.Write([]byte(narBody))
+
+			return true
+		}
+
+		return false
+	})
+
+	c, dbClient, localStore, _, rebind, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	// Register the upstream WITHOUT public keys so the crafted (unsigned-for-our-key)
+	// narinfo is accepted; the bug under test is in URL parsing, not signatures.
+	uc, err := upstream.New(newContext(), testhelper.MustParseURL(t, ts.URL), &upstream.Options{})
+	require.NoError(t, err)
+
+	c.AddUpstreamCaches(newContext(), uc)
+	c.SetRecordAgeIgnoreTouch(0)
+
+	<-c.GetHealthChecker().Trigger()
+
+	ni, err := c.GetNarInfo(context.Background(), narInfoHash)
+	require.NoError(t, err, "opaque upstream URL must not fail with 500")
+
+	// ncps re-serves the NAR under its own hash-named URL keyed off the NarHash.
+	wantURL := "nar/" + narHash + ".nar.zst"
+	assert.Equal(t, wantURL, ni.URL, "served narinfo URL should be ncps's own hash-named URL")
+
+	// The opaque upstream path is persisted so the NAR can be re-fetched later.
+	var upstreamURL sql.NullString
+
+	err = dbClient.DB().QueryRowContext(context.Background(),
+		rebind("SELECT upstream_url FROM narinfos WHERE hash = ?"), narInfoHash).
+		Scan(&upstreamURL)
+	require.NoError(t, err)
+	assert.True(t, upstreamURL.Valid, "upstream_url should be persisted")
+	assert.Equal(t, opaqueURL, upstreamURL.String)
+
+	// The NAR is fetched from the opaque upstream path and served back under the
+	// hash-named URL.
+	narURL, err := nar.ParseURL(ni.URL)
+	require.NoError(t, err)
+
+	_, size, rc, err := c.GetNar(context.Background(), narURL)
+	require.NoError(t, err, "the NAR should be fetchable via the opaque upstream path")
+
+	defer rc.Close()
+
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(narBody)), size)
+	assert.Equal(t, []byte(narBody), got)
+
+	// Evict the local NAR bytes (keeping the DB records) and confirm a subsequent
+	// request re-fetches it from upstream via the persisted opaque path. The
+	// upstream only serves the NAR at the opaque path, so this fails unless the
+	// opaque path was restored from upstream_url.
+	require.NoError(t, localStore.DeleteNar(context.Background(), narURL))
+	require.False(t, c.HasNarInStore(context.Background(), narURL))
+
+	_, _, rc2, err := c.GetNar(context.Background(), narURL)
+	require.NoError(t, err, "evicted NAR must be re-fetchable via the persisted opaque upstream path")
+
+	defer rc2.Close()
+
+	// The re-fetch streams from upstream (size is reported as unknown/-1), so we
+	// assert on the bytes themselves rather than the reported size.
+	got2, err := io.ReadAll(rc2)
+	require.NoError(t, err)
+	assert.Equal(t, []byte(narBody), got2)
+}
+
 func testGetNarInfo(factory cacheFactory) func(*testing.T) {
 	return func(t *testing.T) {
 		ts := testdata.NewTestServer(t, 40)
