@@ -124,8 +124,8 @@ func (f *gcTestFixture) seedBackingLessRowMulti(t *testing.T, narHash string, na
 	}
 
 	_, err = f.db.DB().ExecContext(f.ctx,
-		"UPDATE nar_files SET created_at = ? WHERE hash = ?",
-		time.Now().Add(-10*time.Minute), narHash)
+		"UPDATE nar_files SET created_at = ? WHERE id = ?",
+		time.Now().Add(-10*time.Minute), nf.ID)
 	require.NoError(t, err)
 }
 
