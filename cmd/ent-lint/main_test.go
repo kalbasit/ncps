@@ -34,6 +34,8 @@ func TestEntLint(t *testing.T) {
 		{fixture: "a2_bad", invariant: "A2", wantFail: true, wantInLine: "OnDelete"},
 		{fixture: "a4_good", invariant: "A4", wantFail: false},
 		{fixture: "a4_bad", invariant: "A4", wantFail: true, wantInLine: "phantom FK"},
+		{fixture: "a6_good", invariant: "A6", wantFail: false},
+		{fixture: "a6_bad", invariant: "A6", wantFail: true, wantInLine: "entsql.Default"},
 	}
 
 	for _, tc := range cases {

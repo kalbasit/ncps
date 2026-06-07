@@ -65,9 +65,12 @@ func (NarFile) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Default(time.Now).
-			Annotations(entsql.Annotation{
-				DefaultExpr: "CURRENT_TIMESTAMP",
-			}),
+			// DB default declared via entsql.Default (a string default Atlas's
+			// SQLite inspector round-trips exactly) rather than
+			// entsql.Annotation{DefaultExpr: ...} (a parenthesized RawExpr the
+			// inspector strips, producing a perpetual phantom table rebuild —
+			// issue #1328). Mirrors the Timestamps mixin's created_at.
+			Annotations(entsql.Default("CURRENT_TIMESTAMP")),
 	}
 }
 

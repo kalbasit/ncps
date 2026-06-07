@@ -55,6 +55,71 @@ func TestSQLOnlyEmitsThreeDialects(t *testing.T) {
 	assert.Equal(t, stamps[1], stamps[2], "timestamp prefixes must match across dialects")
 }
 
+// TestSQLiteNoPhantomDiff pins issue #1328: generating a SQLite migration
+// against the committed Ent schema with no field change MUST be a no-op.
+// Before the fix, `last_accessed_at`'s `entsql.Annotation{DefaultExpr:
+// "CURRENT_TIMESTAMP"}` made Atlas emit a perpetual ModifyColumn
+// (ChangeDefault) for narinfos and nar_files — a full table rebuild on
+// every migration. The diff must be empty, so no new .sql file is written.
+func TestSQLiteNoPhantomDiff(t *testing.T) {
+	t.Parallel()
+
+	binary := buildGenerateMigrations(t)
+
+	// Replay needs the real committed migration history; copy the SQLite
+	// dialect dir into an isolated root so the probe never pollutes the repo.
+	root := t.TempDir()
+	srcDir := filepath.Join("..", "..", "migrations", "sqlite")
+	dstDir := filepath.Join(root, "migrations", "sqlite")
+	require.NoError(t, copyDir(srcDir, dstDir))
+
+	before, err := filepath.Glob(filepath.Join(dstDir, "*.sql"))
+	require.NoError(t, err)
+
+	out, err := exec.CommandContext(t.Context(), binary,
+		"--name=phantom_probe", "--skip=postgres,mysql", "--root="+root).
+		CombinedOutput()
+	require.NoErrorf(t, err, "generate-migrations failed; output:\n%s", string(out))
+
+	after, err := filepath.Glob(filepath.Join(dstDir, "*.sql"))
+	require.NoError(t, err)
+
+	assert.Lenf(t, after, len(before),
+		"expected no new SQLite migration for an unchanged schema (issue #1328 phantom diff); "+
+			"before=%d after=%d; output:\n%s", len(before), len(after), string(out))
+}
+
+// copyDir copies every regular file directly under src into dst (one level;
+// the migration dirs are flat).
+func copyDir(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+
+		b, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			return err
+		}
+
+		//nolint:gosec // G703: dst is a t.TempDir()-rooted, test-controlled path
+		if err := os.WriteFile(filepath.Join(dst, e.Name()), b, 0o600); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // TestNameValidation pins the placeholder-name rejection contract.
 func TestNameValidation(t *testing.T) {
 	t.Parallel()
