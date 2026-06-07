@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	entnarfile "github.com/kalbasit/ncps/ent/narfile"
+	entnarinfo "github.com/kalbasit/ncps/ent/narinfo"
 
 	"github.com/kalbasit/ncps/pkg/cache/upstream"
 	"github.com/kalbasit/ncps/pkg/database"
@@ -93,6 +94,74 @@ func (f *gcTestFixture) seedBackingLessRow(t *testing.T, narHash, narInfoHash st
 	}
 }
 
+// seedBackingLessRowMulti inserts one placeholder nar_file (no whole-file in store)
+// linked to several narinfos — several store paths sharing one NAR — optionally aged
+// past the recovery cutoff.
+func (f *gcTestFixture) seedBackingLessRowMulti(t *testing.T, narHash string, narInfoHashes []string, old bool) {
+	t.Helper()
+
+	narURL := nar.URL{Hash: narHash, Compression: nar.CompressionTypeNone}
+
+	nf, err := f.c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(1234).
+		Save(f.ctx)
+	require.NoError(t, err)
+
+	for _, narInfoHash := range narInfoHashes {
+		ni, err := f.c.dbClient.Ent().NarInfo.Create().
+			SetHash(narInfoHash).
+			SetURL(narURL.String()).
+			Save(f.ctx)
+		require.NoError(t, err)
+
+		require.NoError(t, f.c.dbClient.Ent().NarInfoNarFile.Create().
+			SetNarinfoID(ni.ID).
+			SetNarFileID(nf.ID).
+			Exec(f.ctx))
+	}
+
+	if old {
+		_, err = f.db.DB().ExecContext(f.ctx,
+			"UPDATE nar_files SET created_at = ? WHERE hash = ?",
+			time.Now().Add(-10*time.Minute), narHash)
+		require.NoError(t, err)
+	}
+}
+
+// seedBackingLessRowNoNarInfo inserts a placeholder nar_file with NO linked narinfo,
+// optionally aged past the recovery cutoff.
+func (f *gcTestFixture) seedBackingLessRowNoNarInfo(t *testing.T, narHash string, old bool) {
+	t.Helper()
+
+	_, err := f.c.dbClient.Ent().NarFile.Create().
+		SetHash(narHash).
+		SetCompression(nar.CompressionTypeNone.String()).
+		SetQuery("").
+		SetFileSize(1234).
+		Save(f.ctx)
+	require.NoError(t, err)
+
+	if old {
+		_, err = f.db.DB().ExecContext(f.ctx,
+			"UPDATE nar_files SET created_at = ? WHERE hash = ?",
+			time.Now().Add(-10*time.Minute), narHash)
+		require.NoError(t, err)
+	}
+}
+
+// gcHash pads seed to a 32-character store-path hash for test rows.
+func gcHash(seed string) string {
+	const want = 32
+	if len(seed) >= want {
+		return seed[:want]
+	}
+
+	return seed + strings.Repeat("0", want-len(seed))
+}
+
 func (f *gcTestFixture) runRecovery(t *testing.T) {
 	t.Helper()
 
@@ -106,6 +175,15 @@ func (f *gcTestFixture) narFileExists(t *testing.T, narHash string) bool {
 	t.Helper()
 
 	exists, err := f.c.dbClient.Ent().NarFile.Query().Where(entnarfile.HashEQ(narHash)).Exist(f.ctx)
+	require.NoError(t, err)
+
+	return exists
+}
+
+func (f *gcTestFixture) narInfoExists(t *testing.T, narInfoHash string) bool {
+	t.Helper()
+
+	exists, err := f.c.dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(narInfoHash)).Exist(f.ctx)
 	require.NoError(t, err)
 
 	return exists
@@ -130,6 +208,58 @@ func TestRecoveryGCDeletesGenuinelyAbsentPlaceholder(t *testing.T) {
 
 	assert.False(t, f.narFileExists(t, narHash),
 		"a genuinely-absent backing-less placeholder must be garbage-collected")
+	assert.False(t, f.narInfoExists(t, absentNarInfoHash),
+		"the narinfo of a genuinely-absent placeholder must be deleted, not left dangling")
+}
+
+// TestRecoveryGCDeletesAllLinkedNarInfosWhenGenuinelyAbsent verifies that when several
+// store paths share one genuinely-absent backing-less NAR, GC deletes the nar_file AND
+// every linked narinfo, leaving none dangling.
+func TestRecoveryGCDeletesAllLinkedNarInfosWhenGenuinelyAbsent(t *testing.T) {
+	t.Parallel()
+
+	f := newGCTestFixture(t)
+
+	const narHash = "5lid9xrpirkzcpqsxfq02qwiq0yd70ch"
+
+	// None of these narinfo hashes are served by the testdata upstream → all 404 → absent.
+	narInfoHashes := []string{
+		gcHash("gcmultiabsent1"),
+		gcHash("gcmultiabsent2"),
+		gcHash("gcmultiabsent3"),
+	}
+
+	f.seedBackingLessRowMulti(t, narHash, narInfoHashes, true)
+	require.True(t, f.narFileExists(t, narHash))
+
+	f.runRecovery(t)
+
+	assert.False(t, f.narFileExists(t, narHash),
+		"a genuinely-absent backing-less placeholder must be garbage-collected")
+
+	for _, narInfoHash := range narInfoHashes {
+		assert.False(t, f.narInfoExists(t, narInfoHash),
+			"every narinfo linked to a genuinely-absent placeholder must be deleted")
+	}
+}
+
+// TestRecoveryGCDeletesOrphanPlaceholderWithoutNarInfo verifies the unchanged
+// zero-linked-narinfo branch: a backing-less placeholder with no linked narinfo is
+// still garbage-collected.
+func TestRecoveryGCDeletesOrphanPlaceholderWithoutNarInfo(t *testing.T) {
+	t.Parallel()
+
+	f := newGCTestFixture(t)
+
+	const narHash = "6lid9xrpirkzcpqsxfq02qwiq0yd70ch"
+
+	f.seedBackingLessRowNoNarInfo(t, narHash, true)
+	require.True(t, f.narFileExists(t, narHash))
+
+	f.runRecovery(t)
+
+	assert.False(t, f.narFileExists(t, narHash),
+		"a backing-less placeholder with no linked narinfo must be garbage-collected")
 }
 
 // TestRecoveryGCKeepsPlaceholderPresentUpstream verifies that a placeholder whose
@@ -148,6 +278,8 @@ func TestRecoveryGCKeepsPlaceholderPresentUpstream(t *testing.T) {
 
 	assert.True(t, f.narFileExists(t, narHash),
 		"a placeholder whose NAR is still available upstream must NOT be deleted")
+	assert.True(t, f.narInfoExists(t, testdata.Nar1.NarInfoHash),
+		"the narinfo must NOT be deleted while it is still present upstream")
 }
 
 // TestRecoveryGCKeepsPlaceholderOnTransientProbe verifies that an inconclusive
@@ -180,6 +312,8 @@ func TestRecoveryGCKeepsPlaceholderOnTransientProbe(t *testing.T) {
 
 	assert.True(t, f.narFileExists(t, narHash),
 		"a transient/unknown upstream probe must NOT delete the placeholder")
+	assert.True(t, f.narInfoExists(t, narInfoHash),
+		"the narinfo must NOT be deleted on a transient/unknown upstream probe")
 }
 
 // TestRecoveryGCSkipsFreshPlaceholder verifies that a backing-less placeholder newer

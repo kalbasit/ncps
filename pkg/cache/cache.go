@@ -7495,11 +7495,30 @@ func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, n
 		}
 	}
 
-	if err := c.dbClient.Ent().NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
+	// Every linked narinfo is genuinely gone from every healthy upstream: the NAR
+	// exists nowhere (not locally, not upstream), so these narinfos can only ever be
+	// answered with a 200 narinfo followed by a 404 NAR — which Nix clients have
+	// already cached and will fetch directly, skipping any narinfo re-fetch. Delete the
+	// nar_file AND its linked narinfos atomically so the GC never leaves a dangling
+	// narinfo behind: the nar_file delete cascades the narinfo_nar_files links first,
+	// then the now-unlinked narinfos are removed. See spec: nar-cache-miss-recovery.
+	if err := c.withEntTransaction(ctx, "gcGenuinelyAbsentBackingLessNarFile", func(tx *ent.Tx) error {
+		if err := tx.NarFile.DeleteOneID(narFileID).Exec(ctx); err != nil {
+			return fmt.Errorf("delete backing-less nar_file(%d): %w", narFileID, err)
+		}
+
+		for _, ni := range nis {
+			if err := tx.NarInfo.DeleteOneID(ni.ID).Exec(ctx); err != nil {
+				return fmt.Errorf("delete dangling narinfo(%d): %w", ni.ID, err)
+			}
+		}
+
+		return nil
+	}); err != nil {
 		log.Warn().
 			Err(err).
 			Str("hash", narURL.Hash).
-			Msg("failed to garbage-collect genuinely-absent placeholder nar_file")
+			Msg("failed to garbage-collect genuinely-absent placeholder nar_file and its narinfos")
 
 		return
 	}
@@ -7507,7 +7526,7 @@ func (c *Cache) gcOrSkipBackingLessNarFile(ctx context.Context, narFileID int, n
 	log.Info().
 		Str("hash", narURL.Hash).
 		Int("narinfo_count", len(nis)).
-		Msg("garbage-collected genuinely-absent placeholder nar_file")
+		Msg("garbage-collected genuinely-absent placeholder nar_file and its unservable narinfos")
 }
 
 // narInfoGenuinelyAbsentUpstream reports whether EVERY healthy upstream definitively
