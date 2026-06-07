@@ -201,7 +201,7 @@ A full `migrate-chunks-to-nar` pass over all chunked `nar_file` rows SHALL leave
 - **THEN** it SHALL resolve the verification NarHash from that narinfo (matched by NAR hash, not by exact URL)
 - **AND** SHALL de-chunk `H` to whole-file storage
 
-#### Scenario: Un-verifiable NAR is purged by the pass, not left chunked
+#### Scenario: Unverifiable NAR is purged by the pass, not left chunked
 
 - **GIVEN** a chunked `nar_file` for hash `H` with no narinfo carrying a resolvable `nar_hash`
 - **WHEN** the de-chunk pass processes `H` (the single operation signals `ErrNoNarHashToVerify`)

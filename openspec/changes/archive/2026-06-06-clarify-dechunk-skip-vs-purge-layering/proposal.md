@@ -1,11 +1,11 @@
 ## Why
 
-The `chunks-to-nar-migration` spec reads as self-contradictory: one requirement says an un-verifiable chunked NAR (no linked/hash-matched narinfo NarHash) SHALL be **skipped** and SHALL NOT be deleted or truncated, while another says the de-chunk pass SHALL **purge** un-verifiable NARs and MUST drive the chunked count to zero. A reviewer (CodeRabbit, PR #1342) flagged this as ambiguous.
+The `chunks-to-nar-migration` spec reads as self-contradictory: one requirement says an unverifiable chunked NAR (no linked/hash-matched narinfo NarHash) SHALL be **skipped** and SHALL NOT be deleted or truncated, while another says the de-chunk pass SHALL **purge** unverifiable NARs and MUST drive the chunked count to zero. A reviewer (CodeRabbit, PR #1342) flagged this as ambiguous.
 
 Tracing the code shows there is **no behavioral conflict** — the two requirements describe two different layers, and the spec just fails to say so:
 
-- `Cache.MigrateChunksToNar` (the single-NAR operation) returns `ErrNoNarHashToVerify` and **leaves the NAR chunked**, never deleting what it cannot content-verify (`pkg/cache/cache.go:8371-8377`). That is the "skip" behavior — verified-or-nothing.
-- The batch pass (`pkg/ncps/migrate_chunks_to_nar.go:433-458`) catches that error and calls `PurgeChunkedNar`, so the **pass** drives the chunked count to zero. That is the "purge" behavior.
+- `Cache.MigrateChunksToNar` (the single-NAR operation) returns `ErrNoNarHashToVerify` and **leaves the NAR chunked**, never deleting what it cannot content-verify (`pkg/cache/cache.go:8398-8408`). That is the "skip" behavior — verified-or-nothing.
+- The batch pass (`pkg/ncps/migrate_chunks_to_nar.go:419-462`) catches that error and calls `PurgeChunkedNar`, so the **pass** drives the chunked count to zero. That is the "purge" behavior.
 
 ## What Changes
 

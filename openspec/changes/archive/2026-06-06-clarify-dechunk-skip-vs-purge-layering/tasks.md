@@ -1,6 +1,6 @@
 ## 1. Confirm the authoritative behavior
 
-- [x] 1.1 Re-confirm the single operation `Cache.MigrateChunksToNar` returns `ErrNoNarHashToVerify` and leaves the NAR chunked (no delete/truncate) when no NarHash resolves (`pkg/cache/cache.go:8364-8377`)
+- [x] 1.1 Re-confirm the single operation `Cache.MigrateChunksToNar` returns `ErrNoNarHashToVerify` and leaves the NAR chunked (no delete/truncate) when no NarHash resolves (`pkg/cache/cache.go:8398-8408`)
 - [x] 1.2 Re-confirm the batch pass purges on `err != nil` (incl. `ErrNoNarHashToVerify`) and leaves the NAR chunked on context cancellation (`pkg/ncps/migrate_chunks_to_nar.go:419-462`)
 
 ## 2. Reconcile the spec wording

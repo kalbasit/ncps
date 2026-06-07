@@ -39,4 +39,4 @@ Spec-only; no migration, no deploy concern. Rollback is reverting the spec edit.
 
 ## Open Questions
 
-None — the authoritative policy was determined from the code (`pkg/cache/cache.go:8364-8377`, `pkg/ncps/migrate_chunks_to_nar.go:419-462`).
+None — the authoritative policy was determined from the code (`pkg/cache/cache.go:8398-8408`, `pkg/ncps/migrate_chunks_to_nar.go:419-462`).
