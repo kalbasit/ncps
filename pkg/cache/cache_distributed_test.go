@@ -1,6 +1,7 @@
 package cache_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -156,6 +157,190 @@ func runDistributedTestSuite(t *testing.T, factory distributedDBFactory) {
 	t.Run("PutNarInfoConcurrentSharedNar", testPutNarInfoConcurrentSharedNar(factory))
 	t.Run("LargeNARConcurrentDownload", testDistributedLargeNARConcurrentDownload(factory))
 	t.Run("CDCProgressiveStreamingDuringChunking", testCDCProgressiveStreamingDuringChunking(factory))
+	t.Run("InflightStagingCrossPodServe", testInflightStagingCrossPodServe(factory))
+}
+
+// testInflightStagingCrossPodServe verifies the cross-pod fast path (#660 / #1289):
+// with in-flight NAR staging enabled (non-CDC), multiple replicas concurrently
+// pulling the same large NAR during its download each receive a complete,
+// byte-correct NAR — served from staging while the holder is still downloading —
+// with no truncation.
+func testInflightStagingCrossPodServe(factory distributedDBFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Parallel()
+
+		ctx := newContext()
+
+		dbClient, sharedDir, cleanup := factory(t)
+		t.Cleanup(cleanup)
+
+		const largeNARSize = 256 * 1024
+
+		narData := make([]byte, largeNARSize)
+		_, err := rand.Read(narData)
+		require.NoError(t, err)
+
+		ts := testdata.NewTestServer(t, 40)
+		t.Cleanup(ts.Close)
+
+		largeNarEntry, err := testdata.GenerateEntry(t, narData)
+		require.NoError(t, err)
+
+		ts.AddEntry(largeNarEntry)
+
+		narPath := "/nar/" + largeNarEntry.NarHash + ".nar"
+		if largeNarEntry.NarCompression != nar.CompressionTypeNone {
+			narPath += "." + largeNarEntry.NarCompression.ToFileExtension()
+		}
+
+		// A longer artificial delay so peers arrive and staging activates (the
+		// holder's ~1s activation ticker) while the download is still in flight.
+		handlerID := ts.AddMaybeHandler(func(_ http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path == narPath && r.Method == http.MethodGet {
+				time.Sleep(2 * time.Second)
+			}
+
+			return false
+		})
+
+		t.Cleanup(func() { ts.RemoveMaybeHandler(handlerID) })
+
+		sharedStore, err := local.New(ctx, sharedDir)
+		require.NoError(t, err)
+
+		redisAddrs := []string{"localhost:6379"}
+		if envAddrs := os.Getenv("NCPS_TEST_REDIS_ADDRS"); envAddrs != "" {
+			redisAddrs = []string{envAddrs}
+		}
+
+		testPrefix := fmt.Sprintf("ncps:test:staging:%s:", t.Name())
+		redisCfg := redis.Config{Addrs: redisAddrs, KeyPrefix: testPrefix}
+		retryCfg := lock.RetryConfig{
+			MaxAttempts:  3,
+			InitialDelay: 100 * time.Millisecond,
+			MaxDelay:     2 * time.Second,
+			Jitter:       true,
+		}
+
+		caches := make([]*cache.Cache, 0, numInstances)
+
+		for i := range numInstances {
+			downloadLocker, err := redis.NewLocker(ctx, redisCfg, retryCfg, false)
+			require.NoError(t, err)
+
+			cacheLocker, err := redis.NewRWLocker(ctx, redisCfg, retryCfg, false)
+			require.NoError(t, err)
+
+			uc, err := upstream.New(ctx, testhelper.MustParseURL(t, ts.URL), nil)
+			require.NoError(t, err)
+
+			c, err := cache.New(
+				ctx,
+				fmt.Sprintf("staging-instance-%d", i),
+				dbClient,
+				sharedStore,
+				sharedStore,
+				sharedStore,
+				"",
+				downloadLocker,
+				cacheLocker,
+				5*time.Minute,
+				120*time.Second,
+				30*time.Minute,
+			)
+			require.NoError(t, err)
+
+			// Enable in-flight staging with the distributed locker; small parts so a
+			// 256KiB NAR spans many part-objects exercised by the tailing reader.
+			c.SetInflightStaging(true, 5*time.Minute, 32*1024, true)
+
+			c.AddUpstreamCaches(ctx, uc)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			<-c.GetHealthChecker().Trigger()
+
+			caches = append(caches, c)
+		}
+
+		var (
+			successfulGets atomic.Int32
+			failedGets     atomic.Int32
+			mu             sync.Mutex
+			downloadErrors []error
+			wg             sync.WaitGroup
+		)
+
+		for i, c := range caches {
+			wg.Add(1)
+
+			go func(instanceNum int, cacheInstance *cache.Cache) {
+				defer wg.Done()
+
+				requestCtx, cancel := context.WithTimeout(ctx, 150*time.Second)
+				defer cancel()
+
+				narURL := nar.URL{
+					Hash:        largeNarEntry.NarHash,
+					Compression: largeNarEntry.NarCompression,
+				}
+
+				_, _, reader, err := cacheInstance.GetNar(requestCtx, narURL)
+				if err != nil {
+					mu.Lock()
+
+					downloadErrors = append(downloadErrors, fmt.Errorf("instance %d: %w", instanceNum, err))
+
+					mu.Unlock()
+
+					failedGets.Add(1)
+
+					return
+				}
+
+				data, err := io.ReadAll(reader)
+				_ = reader.Close()
+
+				if err != nil {
+					mu.Lock()
+
+					downloadErrors = append(downloadErrors, fmt.Errorf("instance %d read: %w", instanceNum, err))
+
+					mu.Unlock()
+
+					failedGets.Add(1)
+
+					return
+				}
+
+				// Byte-correctness: the cross-pod serve must reassemble the exact NAR.
+				if !bytes.Equal(data, narData) {
+					mu.Lock()
+
+					downloadErrors = append(downloadErrors,
+						fmt.Errorf("instance %d: byte mismatch (got %d of %d bytes): %w",
+							instanceNum, len(data), largeNARSize, io.ErrUnexpectedEOF))
+
+					mu.Unlock()
+
+					failedGets.Add(1)
+
+					return
+				}
+
+				successfulGets.Add(1)
+			}(i, c)
+		}
+
+		wg.Wait()
+
+		for _, err := range downloadErrors {
+			t.Logf("  - %v", err)
+		}
+
+		assert.Equal(t, int32(numInstances), successfulGets.Load(),
+			"all %d instances must retrieve a complete, byte-correct NAR with staging enabled", numInstances)
+		assert.Equal(t, int32(0), failedGets.Load(), "no instance may receive a truncated or failed NAR")
+	}
 }
 
 // testDistributedDownloadDeduplication verifies that when multiple cache instances
