@@ -326,6 +326,46 @@ func TestNormalizeChunkedNarInfoURL_MatchesUnlinkedPrefixedURL(t *testing.T) {
 	assert.Equal(t, nar.CompressionTypeNone.String(), *row.Compression)
 }
 
+// TestMigrateChunksToNar_DoesNotRewriteDifferentQueryVariant covers the
+// query-scoping fix (CodeRabbit, PR #1342): nar_file rows are keyed by
+// (hash, compression, query), so de-chunking the (H, query="") variant MUST NOT
+// rewrite the URL of a narinfo for the SAME hash but a DIFFERENT query — that is
+// a distinct variant, and a hash-only match would clobber its query.
+func TestMigrateChunksToNar_DoesNotRewriteDifferentQueryVariant(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, dbClient, _, dir, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	noneURL, _ := chunkedNarFixture(ctx, t, c, dbClient, dir)
+
+	// A separate, unlinked narinfo for the SAME nar hash but a DIFFERENT query.
+	const otherNarInfoHash = "0123456789abcdfghijklmnpqrsvwxyz"
+
+	otherURL := "nar/" + noneURL.Hash + ".nar.xz?foo=bar"
+
+	sum := sha256.Sum256([]byte("other-variant"))
+	otherNarHash := nixhash.MustNewHashWithEncoding(nixhash.SHA256, sum[:], nixhash.NixBase32, true).String()
+
+	_, err := dbClient.Ent().NarInfo.Create().
+		SetHash(otherNarInfoHash).
+		SetURL(otherURL).
+		SetCompression(nar.CompressionTypeXz.String()).
+		SetNarHash(otherNarHash).
+		Save(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.MigrateChunksToNar(ctx, &noneURL, false))
+
+	row, err := dbClient.Ent().NarInfo.Query().Where(entnarinfo.HashEQ(otherNarInfoHash)).Only(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, row.URL)
+	assert.Equal(t, otherURL, *row.URL,
+		"de-chunking the empty-query variant must not rewrite a different-query variant's narinfo URL")
+}
+
 // TestMigrateChunksToNar_ResumesWhenWholeFileAlreadyPresent: an interrupted
 // prior run may have written the (verified) whole file but crashed before the
 // record flip. Re-running must treat the already-present object as resumable —

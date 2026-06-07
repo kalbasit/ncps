@@ -8479,7 +8479,7 @@ func (c *Cache) MigrateChunksToNar(ctx context.Context, narURL *nar.URL, forceRe
 		// while chunks exist. Match by the join link (primary) OR a hash-aware URL
 		// match (covers unlinked rows, including nix-serve-style prefixed URLs that a
 		// raw "nar/<hash>." prefix would miss).
-		ids, err := narInfoIDsByNormalizedHash(ctx, tx.NarInfo, narURL.Hash)
+		ids, err := narInfoIDsByNormalizedURL(ctx, tx.NarInfo, noneURL)
 		if err != nil {
 			return err
 		}
@@ -8632,7 +8632,7 @@ func (c *Cache) NormalizeChunkedNarInfoURL(ctx context.Context, narURL *nar.URL)
 		// Match by the join link (primary) OR a hash-aware URL match (covers unlinked
 		// rows, including nix-serve-style prefixed URLs that a raw "nar/<hash>."
 		// prefix would miss).
-		ids, err := narInfoIDsByNormalizedHash(ctx, tx.NarInfo, narURL.Hash)
+		ids, err := narInfoIDsByNormalizedURL(ctx, tx.NarInfo, noneURL)
 		if err != nil {
 			return err
 		}
@@ -8723,8 +8723,15 @@ func LinkedNarinfoNarHash(
 		return nil, fmt.Errorf("error resolving narinfo by hash for nar_file %d: %w", narFileID, err)
 	}
 
+	// The verification NarHash is the uncompressed NAR content hash, identical
+	// across every narinfo referencing the NAR regardless of the query its URL
+	// carries — so match by hash only here (de-chunk still content-verifies).
 	for _, cand := range cands {
-		if cand.URL != nil && normalizedURLHash(*cand.URL) == narURL.Hash {
+		if cand.URL == nil {
+			continue
+		}
+
+		if n, ok := normalizedURL(*cand.URL); ok && n.Hash == narURL.Hash {
 			return parseNarinfoNarHash(cand)
 		}
 	}
@@ -8747,38 +8754,43 @@ func parseNarinfoNarHash(ni *ent.NarInfo) (*nixhash.HashWithEncoding, error) {
 	return expected, nil
 }
 
-// normalizedURLHash returns the normalized NAR hash embedded in a narinfo URL, or
-// "" when the URL cannot be parsed/normalized (treated as non-matching). Unlike a
-// raw "nar/<hash>." prefix test, this recognizes both canonical URLs and
-// nix-serve-style prefixed URLs (nar/<narinfoHash>-<hash>.nar.xz) because
-// URL.Normalize strips the optional narinfo-hash prefix.
-func normalizedURLHash(rawURL string) string {
+// normalizedURL returns the normalized form of a narinfo URL (narinfo-hash prefix
+// stripped), and false when the URL cannot be parsed/normalized (treated as
+// non-matching). Unlike a raw "nar/<hash>." prefix test, this recognizes both
+// canonical URLs and nix-serve-style prefixed URLs (nar/<narinfoHash>-<hash>.nar.xz)
+// because URL.Normalize strips the optional narinfo-hash prefix.
+func normalizedURL(rawURL string) (nar.URL, bool) {
 	u, err := nar.ParseURL(rawURL)
 	if err != nil {
-		return ""
+		return nar.URL{}, false
 	}
 
 	normalized, err := u.Normalize()
 	if err != nil {
-		return ""
+		return nar.URL{}, false
 	}
 
-	return normalized.Hash
+	return normalized, true
 }
 
-// narInfoIDsByNormalizedHash returns the IDs of narinfos whose URL normalizes to
-// narHash. The candidate set is narrowed in SQL by URLContains(narHash) — the
-// 52/64-char hash is highly selective — and confirmed in Go via normalizedURLHash,
-// so it matches unlinked nix-serve-style prefixed URLs that a raw URLHasPrefix
-// match would miss. q may be a *ent.Tx's NarInfo client or the cache's.
-func narInfoIDsByNormalizedHash(ctx context.Context, q *ent.NarInfoClient, narHash string) ([]int, error) {
+// narInfoIDsByNormalizedURL returns the IDs of narinfos whose URL normalizes to
+// the same (hash, query) as target. The candidate set is narrowed in SQL by
+// URLContains(target.Hash) — the 52/64-char hash is highly selective — and
+// confirmed in Go via normalizedURL, so it matches unlinked nix-serve-style
+// prefixed URLs that a raw URLHasPrefix match would miss. The query is matched too
+// because nar_file rows are keyed by (hash, compression, query): a same-hash but
+// different-query narinfo is a distinct variant and MUST NOT be rewritten here.
+// q may be a *ent.Tx's NarInfo client or the cache's.
+func narInfoIDsByNormalizedURL(ctx context.Context, q *ent.NarInfoClient, target nar.URL) ([]int, error) {
 	cands, err := q.Query().
-		Where(entnarinfo.URLContains(narHash)).
+		Where(entnarinfo.URLContains(target.Hash)).
 		Select(entnarinfo.FieldID, entnarinfo.FieldURL).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error querying candidate narinfos for hash %q: %w", narHash, err)
+		return nil, fmt.Errorf("error querying candidate narinfos for hash %q: %w", target.Hash, err)
 	}
+
+	wantQuery := target.Query.Encode()
 
 	ids := make([]int, 0, len(cands))
 
@@ -8787,7 +8799,7 @@ func narInfoIDsByNormalizedHash(ctx context.Context, q *ent.NarInfoClient, narHa
 			continue
 		}
 
-		if normalizedURLHash(*ni.URL) == narHash {
+		if n, ok := normalizedURL(*ni.URL); ok && n.Hash == target.Hash && n.Query.Encode() == wantQuery {
 			ids = append(ids, ni.ID)
 		}
 	}

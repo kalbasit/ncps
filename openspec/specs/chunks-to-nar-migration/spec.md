@@ -215,7 +215,7 @@ A full `migrate-chunks-to-nar` pass over all chunked `nar_file` rows SHALL leave
 
 ### Requirement: De-chunking MUST normalize the narinfo URL to none
 
-When the de-chunk pass converts a NAR to whole-file (`Compression:none`) storage, it SHALL update every narinfo referencing that NAR to advertise the Compression:none URL (`nar/<H>.nar`, FileHash null, FileSize null), so the persisted narinfo is consistent with the whole-file storage and does not depend on serve-time chunk-based normalization. "Every narinfo referencing that NAR" SHALL be identified by the `narinfo_nar_files` join link OR, for unlinked rows, by a **hash-aware** URL match (the candidate URL parsed and normalized to the same NAR hash) — covering both canonical and nix-serve-style prefixed URLs — not by a raw URL prefix that would miss prefixed URLs.
+When the de-chunk pass converts a NAR to whole-file (`Compression:none`) storage, it SHALL update every narinfo referencing that NAR to advertise the Compression:none URL (`nar/<H>.nar`, FileHash null, FileSize null), so the persisted narinfo is consistent with the whole-file storage and does not depend on serve-time chunk-based normalization. "Every narinfo referencing that NAR" SHALL be identified by the `narinfo_nar_files` join link OR, for unlinked rows, by a **hash-aware** URL match (the candidate URL parsed and normalized to the same NAR hash **and query**) — covering both canonical and nix-serve-style prefixed URLs — not by a raw URL prefix that would miss prefixed URLs. Because `nar_file` rows are keyed by `(hash, compression, query)`, a narinfo whose URL normalizes to the same hash but a **different query** is a distinct variant and SHALL NOT be rewritten by this normalization.
 
 #### Scenario: A de-chunked NAR's narinfo advertises none
 
@@ -231,4 +231,11 @@ When the de-chunk pass converts a NAR to whole-file (`Compression:none`) storage
 - **WHEN** the de-chunk pass normalizes referencing narinfos
 - **THEN** the prefixed-URL narinfo SHALL be updated to URL `nar/<H>.nar` and Compression none
 - **AND** a subsequent serve of that narinfo SHALL NOT 404 the NAR
+
+#### Scenario: A same-hash, different-query narinfo is not rewritten
+
+- **GIVEN** a de-chunked NAR for hash `H` with query `""`
+- **AND** a narinfo for the same hash but a different query (URL `nar/<H>.nar.xz?foo=bar`), referencing a distinct `nar_file` variant
+- **WHEN** the de-chunk pass normalizes referencing narinfos
+- **THEN** the different-query narinfo's URL SHALL be left unchanged (its query SHALL NOT be clobbered)
 
