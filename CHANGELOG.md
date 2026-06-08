@@ -56,6 +56,55 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `migrate-chunks-to-nar` Jobs are disabled by default (`enabled: false`) and
   auto-cleanup via `ttlSecondsAfterFinished: 3600`. (#1306)
 
+- **`ncps fsck` command.** A new top-level command that walks the database and
+  storage backend to detect and repair inconsistencies (orphaned chunks,
+  dangling narinfos, NAR rows with missing bytes, and stale state). Supports
+  progress reporting, a `verified_at` watermark to skip recently-checked rows
+  via `--verified-at`, and deep `--verify-content` verification that re-hashes
+  stored NARs. Exposed in the Helm chart as a periodic **fsck CronJob**
+  (`fsck.enabled`, disabled by default) with a configurable schedule,
+  resources, security context, and concurrency policy. (#975, #996, #998,
+  #999, #1000, #1004, #1006, #1176)
+
+- **Closure pinning.** Narinfos (and their full closure) can now be pinned to
+  protect them from LRU eviction. New HTTP endpoints: `POST /pin/{hash}.narinfo`
+  to pin, `DELETE /pin/{hash}.narinfo` to unpin, and `GET /pins` to list pinned
+  closures. Pinned closures are skipped by the LRU cleanup. (#1108)
+
+- **pprof profiling server.** A new optional pprof endpoint for live profiling,
+  enabled via `--pprof-addr` (env `PPROF_ADDR`, e.g. `:6060`); empty (the
+  default) leaves it disabled. (#1063)
+
+- **CDC lazy chunking.** NARs can be served and stored as whole compressed
+  files immediately and chunked lazily in the background, with delayed deletion
+  of the compressed copy, reducing time-to-first-byte. Gated by
+  `--cache-cdc-lazy-chunking-enabled` and tuned by
+  `--cache-cdc-lazy-cleanup-schedule`, with a background recovery cron that
+  re-drives interrupted lazy chunking. Exposed in the Helm chart under
+  `cache.cdc.*`. (See also the default-changed note below.) (#1082, #1083,
+  #1089, #1096)
+
+- **Helm: automatic `GOMEMLIMIT` from the memory limit.** When
+  `resources.limits.memory` is set and `GOMEMLIMIT` is not already defined in
+  the pod env, the chart now derives `GOMEMLIMIT` from the container memory
+  limit so the Go runtime respects the cgroup ceiling. (#1061)
+
+- **Helm: configurable temporary-directory volume.** The download/scratch
+  directory (`tempPath`, default `/tmp/ncps`) now has a configurable
+  `tempVolume`, including support for a `volumeClaimTemplate` in the
+  StatefulSet deployment mode. (#1074, #1077)
+
+- **Helm: `Recreate` deployment strategy for SQLite.** Deployments backed by
+  SQLite are now forced to `strategy: type: Recreate` to avoid two pods sharing
+  a single-writer database file across a rolling update. (#1012)
+
+- **Startup storage reporting and migration warning.** ncps now reports the
+  active storage type and mode at startup, and warns when narinfo storage is in
+  the deprecated layout and must be migrated. (#959, #961)
+
+- **`docker-dev` image.** A new development image plus an `update-cu-base`
+  script supporting container-use workflows. (#1097)
+
 ### Fixed
 
 - **Compressed upstream narinfos that omit `FileSize`/`FileHash` are no longer
@@ -121,6 +170,42 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   two goroutines resolving the same stub narinfo could leave one with an empty
   result. (#1263)
 
+- **Storage: `store/tmp` is no longer wiped on startup.** The `local` backend
+  previously cleared its store/tmp scratch directory on boot, which could
+  discard in-progress or shared data on a restart. (#1313)
+
+- **NAR hash verification uses `nix-hash` for nix32 conversion.** NAR content
+  hashes are now verified using `nix-hash`-compatible nix32 encoding, fixing
+  spurious verification mismatches. (#1101)
+
+- **Prometheus metrics are exported from startup.** OTEL counters
+  (`ncps_nar_served_total`, etc.) were not exported until their first
+  increment, so freshly-started or idle instances exposed nothing despite the
+  documented metrics. Counters are now primed at startup. (#1337, #1343)
+
+- **Un-reassemblable chunked NARs return 404, not a truncated 200.** A chunked
+  NAR that cannot be fully reassembled now fails cleanly with 404 instead of
+  streaming a truncated body with a 200 status. (#1319)
+
+- **A purged narinfo is never surfaced as HTTP 500.** Concurrent purge of a
+  narinfo during a read no longer returns a 500 to the client. (#1318)
+
+- **Fail-fast boot validation for the storage tmp directory.** ncps now
+  validates that its temporary storage directory is writable at startup and
+  fails fast with a clear error instead of failing later mid-request. (#1086)
+
+- **Additional CDC/cache reliability fixes.**
+
+  - Heal orphaned mid-chunking NAR state via migration-lock liveness. (#1317)
+  - Serve a whole-file NAR with its true compression under CDC instead of
+    relabeling it. (#1346)
+  - Delete the stored variant (not just the DB row) on NAR eviction. (#1341)
+  - Match unlinked prefixed narinfo URLs hash-aware. (#1342)
+  - Tolerate opaque (non-hash) upstream NAR URLs. (#1331)
+  - Docker: ship `/etc/passwd` and `/etc/group` as regular files so the image
+    runs under restrictive runtimes that reject symlinked identity files.
+    (#1347)
+
 ### Changed
 
 - **CDC lazy chunking is now opt-in (default: `false`).** In v0.9, lazy
@@ -130,6 +215,11 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   reverted to `false`; set `--cache-cdc-lazy-chunking-enabled=true` (or
   `cache.cdc.lazyChunkingEnabled: true` in the Helm chart) to restore the
   previous behavior. (#1172)
+
+- **CDC configuration is now persisted in the database config table.** The
+  active CDC settings are stored in the `config` table so they survive restarts
+  and stay consistent across replicas, rather than being derived from flags
+  alone on every boot. (#971)
 
 - **Helm chart: security context defaults removed; `containerDefaults.securityContext` added.**
   All default values have been removed from `podSecurityContext`, `securityContext`,
