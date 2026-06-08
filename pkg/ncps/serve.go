@@ -78,6 +78,14 @@ var (
 	ErrCDCLazyRecoveryScheduleRequired = errors.New(
 		"--cache-cdc-lazy-recovery-schedule is required when CDC is enabled",
 	)
+
+	// ErrStagingRetentionNonPositive is returned when in-flight staging is enabled
+	// with a non-positive retention grace period.
+	ErrStagingRetentionNonPositive = errors.New("--cache-inflight-staging-retention must be greater than 0")
+
+	// ErrStagingPartSizeNonPositive is returned when in-flight staging is enabled
+	// with a non-positive part size.
+	ErrStagingPartSizeNonPositive = errors.New("--cache-inflight-staging-part-size must be greater than 0")
 )
 
 const (
@@ -420,6 +428,29 @@ func serveCommand(
 					"high-latency storage surfaces as a retryable error instead of a gateway 504.",
 				Sources: flagSources("cache.cdc.chunk-wait-timeout", "CACHE_CDC_CHUNK_WAIT_TIMEOUT"),
 				Value:   30 * time.Second,
+			},
+			// In-flight NAR staging flags (change serve-whole-nar-in-flight).
+			&cli.BoolFlag{
+				Name: "cache-inflight-staging-enabled",
+				Usage: "Serve a NAR cross-pod while it is still downloading by staging it to shared " +
+					"storage as part-objects once another replica waits for it. Off by default; only " +
+					"active with a distributed (Redis) lock. An HA-safe alternative to CDC.",
+				Sources: flagSources("cache.inflight-staging.enabled", "CACHE_INFLIGHT_STAGING_ENABLED"),
+				Value:   false,
+			},
+			&cli.DurationFlag{
+				Name: "cache-inflight-staging-retention",
+				Usage: "Grace period to retain in-flight staging part-objects after the NAR's final " +
+					"representation is committed, so in-flight readers drain before reclamation.",
+				Sources: flagSources("cache.inflight-staging.retention", "CACHE_INFLIGHT_STAGING_RETENTION"),
+				Value:   5 * time.Minute,
+			},
+			&cli.IntFlag{
+				Name: "cache-inflight-staging-part-size",
+				Usage: "Size in bytes of each in-flight staging part-object (transport unit, distinct " +
+					"from CDC chunk sizes).",
+				Sources: flagSources("cache.inflight-staging.part-size", "CACHE_INFLIGHT_STAGING_PART_SIZE"),
+				Value:   8 << 20,
 			},
 			&cli.IntFlag{
 				Name:    flagNameLockMaxRetries,
@@ -1180,6 +1211,43 @@ func createCache(
 		Msg("configuring lazy Content-Defined-Chunking (CDC)")
 
 	c.SetCDCLazyChunking(cdcLazyChunkingEnabled, cdcBackgroundWorkers)
+
+	// Configure in-flight NAR staging (change serve-whole-nar-in-flight). Staging
+	// is only meaningful with a distributed locker, since a single-instance
+	// deployment can never have a cross-pod waiter; the cache guards on this too.
+	stagingBackend, _ := determineEffectiveLockBackend(cmd)
+	stagingDistributed := stagingBackend == lockBackendRedis
+	inflightStagingEnabled := cmd.Bool("cache-inflight-staging-enabled")
+	stagingRetention := cmd.Duration("cache-inflight-staging-retention")
+	stagingPartSize := cmd.Int("cache-inflight-staging-part-size")
+
+	// Fail fast on invalid staging parameters rather than booting with a
+	// nonsensical configuration. Only enforced when the feature is enabled, so
+	// disabled deployments are unaffected by the flag defaults.
+	if inflightStagingEnabled {
+		if stagingRetention <= 0 {
+			return nil, ErrStagingRetentionNonPositive
+		}
+
+		if stagingPartSize <= 0 {
+			return nil, ErrStagingPartSizeNonPositive
+		}
+	}
+
+	zerolog.Ctx(ctx).
+		Info().
+		Bool("inflight-staging-enabled", inflightStagingEnabled).
+		Bool("distributed-lock", stagingDistributed).
+		Dur("inflight-staging-retention", stagingRetention).
+		Int("inflight-staging-part-size", stagingPartSize).
+		Msg("configuring in-flight NAR staging")
+
+	c.SetInflightStaging(
+		inflightStagingEnabled,
+		stagingRetention,
+		int64(stagingPartSize),
+		stagingDistributed,
+	)
 
 	// Configure Chunk Store.
 	//

@@ -23,6 +23,7 @@ import (
 	"github.com/kalbasit/ncps/ent/narinfosignature"
 	"github.com/kalbasit/ncps/ent/pinnedclosure"
 	"github.com/kalbasit/ncps/ent/predicate"
+	"github.com/kalbasit/ncps/ent/stagingstate"
 )
 
 const (
@@ -45,6 +46,7 @@ const (
 	TypeNarInfoReference    = "NarInfoReference"
 	TypeNarInfoSignature    = "NarInfoSignature"
 	TypePinnedClosure       = "PinnedClosure"
+	TypeStagingState        = "StagingState"
 )
 
 // BuildTraceEntryMutation represents an operation that mutates the BuildTraceEntry nodes in the graph.
@@ -7810,4 +7812,731 @@ func (m *PinnedClosureMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *PinnedClosureMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown PinnedClosure edge %s", name)
+}
+
+// StagingStateMutation represents an operation that mutates the StagingState nodes in the graph.
+type StagingStateMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int
+	created_at         *time.Time
+	updated_at         *time.Time
+	hash               *string
+	requested_at       *time.Time
+	parts_available    *int64
+	addparts_available *int64
+	compression        *string
+	status             *string
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*StagingState, error)
+	predicates         []predicate.StagingState
+}
+
+var _ ent.Mutation = (*StagingStateMutation)(nil)
+
+// stagingstateOption allows management of the mutation configuration using functional options.
+type stagingstateOption func(*StagingStateMutation)
+
+// newStagingStateMutation creates new mutation for the StagingState entity.
+func newStagingStateMutation(c config, op Op, opts ...stagingstateOption) *StagingStateMutation {
+	m := &StagingStateMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeStagingState,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withStagingStateID sets the ID field of the mutation.
+func withStagingStateID(id int) stagingstateOption {
+	return func(m *StagingStateMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *StagingState
+		)
+		m.oldValue = func(ctx context.Context) (*StagingState, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().StagingState.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withStagingState sets the old StagingState of the mutation.
+func withStagingState(node *StagingState) stagingstateOption {
+	return func(m *StagingStateMutation) {
+		m.oldValue = func(context.Context) (*StagingState, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m StagingStateMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m StagingStateMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *StagingStateMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *StagingStateMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().StagingState.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *StagingStateMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *StagingStateMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the StagingState entity.
+// If the StagingState object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StagingStateMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *StagingStateMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *StagingStateMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *StagingStateMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the StagingState entity.
+// If the StagingState object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StagingStateMutation) OldUpdatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (m *StagingStateMutation) ClearUpdatedAt() {
+	m.updated_at = nil
+	m.clearedFields[stagingstate.FieldUpdatedAt] = struct{}{}
+}
+
+// UpdatedAtCleared returns if the "updated_at" field was cleared in this mutation.
+func (m *StagingStateMutation) UpdatedAtCleared() bool {
+	_, ok := m.clearedFields[stagingstate.FieldUpdatedAt]
+	return ok
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *StagingStateMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+	delete(m.clearedFields, stagingstate.FieldUpdatedAt)
+}
+
+// SetHash sets the "hash" field.
+func (m *StagingStateMutation) SetHash(s string) {
+	m.hash = &s
+}
+
+// Hash returns the value of the "hash" field in the mutation.
+func (m *StagingStateMutation) Hash() (r string, exists bool) {
+	v := m.hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHash returns the old "hash" field's value of the StagingState entity.
+// If the StagingState object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StagingStateMutation) OldHash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHash: %w", err)
+	}
+	return oldValue.Hash, nil
+}
+
+// ResetHash resets all changes to the "hash" field.
+func (m *StagingStateMutation) ResetHash() {
+	m.hash = nil
+}
+
+// SetRequestedAt sets the "requested_at" field.
+func (m *StagingStateMutation) SetRequestedAt(t time.Time) {
+	m.requested_at = &t
+}
+
+// RequestedAt returns the value of the "requested_at" field in the mutation.
+func (m *StagingStateMutation) RequestedAt() (r time.Time, exists bool) {
+	v := m.requested_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestedAt returns the old "requested_at" field's value of the StagingState entity.
+// If the StagingState object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StagingStateMutation) OldRequestedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestedAt: %w", err)
+	}
+	return oldValue.RequestedAt, nil
+}
+
+// ClearRequestedAt clears the value of the "requested_at" field.
+func (m *StagingStateMutation) ClearRequestedAt() {
+	m.requested_at = nil
+	m.clearedFields[stagingstate.FieldRequestedAt] = struct{}{}
+}
+
+// RequestedAtCleared returns if the "requested_at" field was cleared in this mutation.
+func (m *StagingStateMutation) RequestedAtCleared() bool {
+	_, ok := m.clearedFields[stagingstate.FieldRequestedAt]
+	return ok
+}
+
+// ResetRequestedAt resets all changes to the "requested_at" field.
+func (m *StagingStateMutation) ResetRequestedAt() {
+	m.requested_at = nil
+	delete(m.clearedFields, stagingstate.FieldRequestedAt)
+}
+
+// SetPartsAvailable sets the "parts_available" field.
+func (m *StagingStateMutation) SetPartsAvailable(i int64) {
+	m.parts_available = &i
+	m.addparts_available = nil
+}
+
+// PartsAvailable returns the value of the "parts_available" field in the mutation.
+func (m *StagingStateMutation) PartsAvailable() (r int64, exists bool) {
+	v := m.parts_available
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPartsAvailable returns the old "parts_available" field's value of the StagingState entity.
+// If the StagingState object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StagingStateMutation) OldPartsAvailable(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPartsAvailable is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPartsAvailable requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPartsAvailable: %w", err)
+	}
+	return oldValue.PartsAvailable, nil
+}
+
+// AddPartsAvailable adds i to the "parts_available" field.
+func (m *StagingStateMutation) AddPartsAvailable(i int64) {
+	if m.addparts_available != nil {
+		*m.addparts_available += i
+	} else {
+		m.addparts_available = &i
+	}
+}
+
+// AddedPartsAvailable returns the value that was added to the "parts_available" field in this mutation.
+func (m *StagingStateMutation) AddedPartsAvailable() (r int64, exists bool) {
+	v := m.addparts_available
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPartsAvailable resets all changes to the "parts_available" field.
+func (m *StagingStateMutation) ResetPartsAvailable() {
+	m.parts_available = nil
+	m.addparts_available = nil
+}
+
+// SetCompression sets the "compression" field.
+func (m *StagingStateMutation) SetCompression(s string) {
+	m.compression = &s
+}
+
+// Compression returns the value of the "compression" field in the mutation.
+func (m *StagingStateMutation) Compression() (r string, exists bool) {
+	v := m.compression
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompression returns the old "compression" field's value of the StagingState entity.
+// If the StagingState object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StagingStateMutation) OldCompression(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompression is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompression requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompression: %w", err)
+	}
+	return oldValue.Compression, nil
+}
+
+// ResetCompression resets all changes to the "compression" field.
+func (m *StagingStateMutation) ResetCompression() {
+	m.compression = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *StagingStateMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *StagingStateMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the StagingState entity.
+// If the StagingState object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StagingStateMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *StagingStateMutation) ResetStatus() {
+	m.status = nil
+}
+
+// Where appends a list predicates to the StagingStateMutation builder.
+func (m *StagingStateMutation) Where(ps ...predicate.StagingState) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the StagingStateMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *StagingStateMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.StagingState, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *StagingStateMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *StagingStateMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (StagingState).
+func (m *StagingStateMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *StagingStateMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.created_at != nil {
+		fields = append(fields, stagingstate.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, stagingstate.FieldUpdatedAt)
+	}
+	if m.hash != nil {
+		fields = append(fields, stagingstate.FieldHash)
+	}
+	if m.requested_at != nil {
+		fields = append(fields, stagingstate.FieldRequestedAt)
+	}
+	if m.parts_available != nil {
+		fields = append(fields, stagingstate.FieldPartsAvailable)
+	}
+	if m.compression != nil {
+		fields = append(fields, stagingstate.FieldCompression)
+	}
+	if m.status != nil {
+		fields = append(fields, stagingstate.FieldStatus)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *StagingStateMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case stagingstate.FieldCreatedAt:
+		return m.CreatedAt()
+	case stagingstate.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case stagingstate.FieldHash:
+		return m.Hash()
+	case stagingstate.FieldRequestedAt:
+		return m.RequestedAt()
+	case stagingstate.FieldPartsAvailable:
+		return m.PartsAvailable()
+	case stagingstate.FieldCompression:
+		return m.Compression()
+	case stagingstate.FieldStatus:
+		return m.Status()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *StagingStateMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case stagingstate.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case stagingstate.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case stagingstate.FieldHash:
+		return m.OldHash(ctx)
+	case stagingstate.FieldRequestedAt:
+		return m.OldRequestedAt(ctx)
+	case stagingstate.FieldPartsAvailable:
+		return m.OldPartsAvailable(ctx)
+	case stagingstate.FieldCompression:
+		return m.OldCompression(ctx)
+	case stagingstate.FieldStatus:
+		return m.OldStatus(ctx)
+	}
+	return nil, fmt.Errorf("unknown StagingState field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *StagingStateMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case stagingstate.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case stagingstate.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case stagingstate.FieldHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHash(v)
+		return nil
+	case stagingstate.FieldRequestedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestedAt(v)
+		return nil
+	case stagingstate.FieldPartsAvailable:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPartsAvailable(v)
+		return nil
+	case stagingstate.FieldCompression:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompression(v)
+		return nil
+	case stagingstate.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	}
+	return fmt.Errorf("unknown StagingState field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *StagingStateMutation) AddedFields() []string {
+	var fields []string
+	if m.addparts_available != nil {
+		fields = append(fields, stagingstate.FieldPartsAvailable)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *StagingStateMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case stagingstate.FieldPartsAvailable:
+		return m.AddedPartsAvailable()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *StagingStateMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case stagingstate.FieldPartsAvailable:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPartsAvailable(v)
+		return nil
+	}
+	return fmt.Errorf("unknown StagingState numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *StagingStateMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(stagingstate.FieldUpdatedAt) {
+		fields = append(fields, stagingstate.FieldUpdatedAt)
+	}
+	if m.FieldCleared(stagingstate.FieldRequestedAt) {
+		fields = append(fields, stagingstate.FieldRequestedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *StagingStateMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *StagingStateMutation) ClearField(name string) error {
+	switch name {
+	case stagingstate.FieldUpdatedAt:
+		m.ClearUpdatedAt()
+		return nil
+	case stagingstate.FieldRequestedAt:
+		m.ClearRequestedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown StagingState nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *StagingStateMutation) ResetField(name string) error {
+	switch name {
+	case stagingstate.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case stagingstate.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case stagingstate.FieldHash:
+		m.ResetHash()
+		return nil
+	case stagingstate.FieldRequestedAt:
+		m.ResetRequestedAt()
+		return nil
+	case stagingstate.FieldPartsAvailable:
+		m.ResetPartsAvailable()
+		return nil
+	case stagingstate.FieldCompression:
+		m.ResetCompression()
+		return nil
+	case stagingstate.FieldStatus:
+		m.ResetStatus()
+		return nil
+	}
+	return fmt.Errorf("unknown StagingState field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *StagingStateMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *StagingStateMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *StagingStateMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *StagingStateMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *StagingStateMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *StagingStateMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *StagingStateMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown StagingState unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *StagingStateMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown StagingState edge %s", name)
 }

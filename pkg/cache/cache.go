@@ -475,6 +475,16 @@ type Cache struct {
 	cdcBackgroundWorkers   int
 	cdcDeleteDelay         time.Duration
 
+	// In-flight NAR staging configuration (guarded by cdcMu). When enabled and
+	// the locker is distributed, a download holder stages the in-flight NAR to
+	// shared storage as fixed-size part-objects once a cross-pod waiter appears,
+	// so other replicas can serve it during the download. See change
+	// serve-whole-nar-in-flight.
+	inflightStagingFlag      bool
+	inflightStagingRetention time.Duration
+	inflightStagingPartSize  int64
+	lockerIsDistributed      bool
+
 	// Should the cache sign the narinfos?
 	shouldSignNarinfo bool
 
@@ -806,6 +816,57 @@ func (c *Cache) GetCDCDeleteDelay() time.Duration {
 	defer c.cdcMu.RUnlock()
 
 	return c.cdcDeleteDelay
+}
+
+// SetInflightStaging configures in-flight NAR staging. partSize is the size of
+// each staging part-object in bytes. distributed reports whether the configured
+// download locker is distributed (Redis); staging is only meaningful in that
+// case, because a single-instance deployment can never have a cross-pod waiter.
+func (c *Cache) SetInflightStaging(enabled bool, retention time.Duration, partSize int64, distributed bool) {
+	c.cdcMu.Lock()
+	defer c.cdcMu.Unlock()
+
+	// Defensive clamp so a caller that bypasses serve.go's validation can never
+	// install nonsensical runtime state (a non-positive part size would stall the
+	// producer; a negative retention would reclaim parts immediately).
+	if retention < 0 {
+		retention = 0
+	}
+
+	if partSize <= 0 {
+		partSize = 8 << 20 // 8 MiB, matching the --cache-inflight-staging-part-size default.
+	}
+
+	c.inflightStagingFlag = enabled
+	c.inflightStagingRetention = retention
+	c.inflightStagingPartSize = partSize
+	c.lockerIsDistributed = distributed
+}
+
+// InflightStagingEnabled reports whether in-flight NAR staging is active. It is
+// true only when the feature flag is set AND the locker is distributed.
+func (c *Cache) InflightStagingEnabled() bool {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.inflightStagingFlag && c.lockerIsDistributed
+}
+
+// InflightStagingRetention returns the grace period before staging part-objects
+// are reclaimed after the final representation is committed.
+func (c *Cache) InflightStagingRetention() time.Duration {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.inflightStagingRetention
+}
+
+// InflightStagingPartSize returns the size in bytes of each staging part-object.
+func (c *Cache) InflightStagingPartSize() int64 {
+	c.cdcMu.RLock()
+	defer c.cdcMu.RUnlock()
+
+	return c.inflightStagingPartSize
 }
 
 func (c *Cache) setupMetricCallbacks() error {
