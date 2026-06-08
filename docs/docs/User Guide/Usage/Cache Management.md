@@ -69,13 +69,9 @@ Trigger cleanup manually (not implemented via API, use systemctl/docker restart 
 
 ### Protecting Paths from Eviction
 
-LRU cleanup will evict any path once it becomes the least recently used, even one
-you want to keep. To exempt specific store paths — and their entire closure —
-from eviction, **pin** them. Pinned closures are excluded from LRU cleanup until
-you unpin them.
+LRU cleanup will evict any path once it becomes the least recently used, even one you want to keep. To exempt specific store paths — and their entire closure — from eviction, **pin** them. Pinned closures are excluded from LRU cleanup until you unpin them.
 
-See <a class="reference-link" href="../Features/Pinning.md">Pinning</a> for the
-pin, unpin, and list endpoints.
+See <a class="reference-link" href="../Features/Pinning.md">Pinning</a> for the pin, unpin, and list endpoints.
 
 ## Monitoring
 
