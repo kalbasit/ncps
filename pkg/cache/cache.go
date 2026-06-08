@@ -3019,10 +3019,16 @@ func (c *Cache) pullNarIntoStore(
 	if c.InflightStagingEnabled() {
 		c.backgroundWG.Add(1)
 
-		analytics.SafeGo(ctx, func() {
+		// Snapshot ctx for the staging goroutine: the parent reassigns the ctx
+		// variable below (tracer.Start), and a closure reading the reassigned
+		// variable concurrently is a data race. The producer is a background op,
+		// so the pre-span ctx is the correct parent anyway.
+		stagingCtx := ctx
+
+		analytics.SafeGo(stagingCtx, func() {
 			defer c.backgroundWG.Done()
 
-			c.stageInflightNar(ctx, narURL.Hash, ds)
+			c.stageInflightNar(stagingCtx, narURL.Hash, ds)
 		})
 	}
 
