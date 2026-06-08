@@ -189,10 +189,7 @@ Configuration for the temporary directory used for downloads and transient opera
 
 ### In-flight NAR Staging Configuration
 
-In-flight NAR staging is an HA-safe alternative to CDC: it serves a NAR across
-replicas while it is still downloading. Enabling it (or CDC) satisfies the
-`replicaCount > 1` validation guard. It has zero overhead until a second replica
-contends for the same NAR and only activates with a distributed (Redis) lock.
+In-flight NAR staging is an HA-safe alternative to CDC: it serves a NAR across replicas while it is still downloading. Enabling it (or CDC) satisfies the `replicaCount > 1` validation guard. It has zero overhead until a second replica contends for the same NAR and only activates with a distributed (Redis) lock.
 
 | Parameter | Description | Default |
 | --- | --- | --- |
