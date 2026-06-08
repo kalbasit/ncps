@@ -60,7 +60,7 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   storage backend to detect and repair inconsistencies (orphaned chunks,
   dangling narinfos, NAR rows with missing bytes, and stale state). Supports
   progress reporting, a `verified_at` watermark to skip recently-checked rows
-  via `--verified-at`, and deep `--verify-content` verification that re-hashes
+  via `--verified-since`, and deep `--verify-content` verification that re-hashes
   stored NARs. Exposed in the Helm chart as a periodic **fsck CronJob**
   (`fsck.enabled`, disabled by default) with a configurable schedule,
   resources, security context, and concurrency policy. (#975, #996, #998,
