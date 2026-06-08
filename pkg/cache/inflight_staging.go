@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"time"
 
@@ -238,7 +237,7 @@ func (c *Cache) produceStagingParts(ctx context.Context, hash string, ds *downlo
 		// the NAR is committed to shared storage and cross-pod waiters serve it
 		// from there. There is nothing to stage — a clean no-op, not a failure.
 		// Any other open error is a genuine fault and still propagates.
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) {
 			zerolog.Ctx(ctx).Debug().
 				Str("hash", hash).
 				Msg("in-flight staging skipped: download completed before staging began")

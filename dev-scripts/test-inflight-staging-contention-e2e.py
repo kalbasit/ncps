@@ -122,6 +122,20 @@ def check(cond, msg):
 # ---------------------------------------------------------------------------
 
 
+def redact_url(url):
+    """Strip any userinfo/query (possible credentials) from a URL for logging."""
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        netloc = parts.hostname or ""
+        if parts.port:
+            netloc += f":{parts.port}"
+        return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    except Exception:  # noqa: BLE001 — logging helper must never raise
+        return "<redacted>"
+
+
 def ports_for(replicas):
     return [BASE_PORT + i for i in range(replicas)]
 
@@ -157,12 +171,23 @@ def start_cluster(db, storage, replicas, log_path, *, cdc=False):
     #   NCPS_E2E_UPSTREAM_KEY=cache-name:base64key
     upstream_url = os.environ.get("NCPS_E2E_UPSTREAM_URL")
     upstream_key = os.environ.get("NCPS_E2E_UPSTREAM_KEY")
-    if upstream_url and upstream_key:
+    upstream_active = bool(upstream_url) and bool(upstream_key)
+    if bool(upstream_url) != bool(upstream_key):
+        # Partial config is almost always a mistake; surface it loudly rather than
+        # silently falling back to run.py's default upstream (a confusing failure).
+        log(
+            "WARNING: only one of NCPS_E2E_UPSTREAM_URL / NCPS_E2E_UPSTREAM_KEY is "
+            "set — both are required to override the upstream. Ignoring the partial "
+            "override and using run.py's default upstream.",
+            Y,
+        )
+    if upstream_active:
         args += ["--cache-url", upstream_url, "--cache-public-key", upstream_key]
     log(
         f"start_cluster: db={db} storage={storage} replicas={replicas} "
         f"cdc={cdc} locker=redis inflight-staging=on"
-        + (f" upstream={upstream_url}" if upstream_url and upstream_key else ""),
+        # Redact any userinfo/query (possible credentials) before logging the URL.
+        + (f" upstream={redact_url(upstream_url)}" if upstream_active else ""),
         G,
     )
     f = open(log_path, "w", encoding="utf-8")

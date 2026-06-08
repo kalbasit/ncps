@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -253,20 +254,15 @@ func TestProduceStagingParts_NoOpWhenDownloadAlreadyCompleted(t *testing.T) {
 
 	const hash = "aaaabbbbccccddddeeeeffff22223333"
 
-	// Create then remove a temp file so ds.assetPath points at a path that no
-	// longer exists — exactly what the post-completion cleanup leaves behind.
-	f, err := os.CreateTemp(dir, "gone-*.nar")
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-	require.NoError(t, os.Remove(f.Name()))
-
+	// A path under the temp dir that was never created — exactly what the
+	// post-completion cleanup leaves behind once it removes ds.assetPath.
 	ds := newDownloadState()
-	ds.assetPath = f.Name()
+	ds.assetPath = filepath.Join(dir, "gone.nar")
 	ds.finalSize = 10
 	ds.startOnce.Do(func() { close(ds.start) })
 	ds.doneOnce.Do(func() { close(ds.done) })
 
-	err = c.produceStagingParts(ctx, hash, ds)
+	err := c.produceStagingParts(ctx, hash, ds)
 	require.NoError(t, err,
 		"a missing temp file means the download already completed; staging must "+
 			"no-op, not error")
