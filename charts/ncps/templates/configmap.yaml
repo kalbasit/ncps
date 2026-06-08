@@ -59,6 +59,16 @@ data:
         chunk-wait-timeout: {{ .Values.config.cdc.chunkWaitTimeout | quote }}
         {{- end }}
       {{- end }}
+      {{- if and .Values.config.inflightStaging .Values.config.inflightStaging.enabled }}
+      inflight-staging:
+        enabled: true
+        {{- if .Values.config.inflightStaging.retention }}
+        retention: {{ .Values.config.inflightStaging.retention | quote }}
+        {{- end }}
+        {{- if .Values.config.inflightStaging.partSize }}
+        part-size: {{ .Values.config.inflightStaging.partSize | int }}
+        {{- end }}
+      {{- end }}
 
       {{- if and (or (eq .Values.config.database.type "postgresql") (eq .Values.config.database.type "mysql")) (or .Values.config.database.pool.maxOpenConns .Values.config.database.pool.maxIdleConns) }}
       database:
