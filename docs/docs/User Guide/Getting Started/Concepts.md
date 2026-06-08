@@ -272,6 +272,7 @@ Plan storage based on usage:
 - **Medium team (10-50 users)**: 50-200GB
 - **Large team (50+ users)**: 200GB-1TB+
 - **LRU cleanup**: Automatically manages size with `--cache-max-size`
+- **Pinning**: Protect specific closures from LRU eviction — see <a class="reference-link" href="../Features/Pinning.md">Pinning</a>
 
 ## Next Steps
 

@@ -1863,6 +1863,34 @@
                                     "format": "markdown",
                                     "dataFileName": "CDC.md",
                                     "attachments": []
+                                },
+                                {
+                                    "isClone": false,
+                                    "noteId": "Pn1ngClsrDoc",
+                                    "notePath": [
+                                        "C3Wj5rq7ksjn",
+                                        "0RC0xXheV6Ng",
+                                        "MOpVLDkI8rwp",
+                                        "Pn1ngClsrDoc"
+                                    ],
+                                    "title": "Pinning",
+                                    "notePosition": 20,
+                                    "prefix": null,
+                                    "isExpanded": false,
+                                    "type": "text",
+                                    "mime": "text/html",
+                                    "attributes": [
+                                        {
+                                            "type": "label",
+                                            "name": "shareAlias",
+                                            "value": "pinning",
+                                            "isInheritable": false,
+                                            "position": 10
+                                        }
+                                    ],
+                                    "format": "markdown",
+                                    "dataFileName": "Pinning.md",
+                                    "attachments": []
                                 }
                             ]
                         },
