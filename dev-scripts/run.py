@@ -631,15 +631,24 @@ def main():
     # Determine instance count
     num_instances = args.replicas
 
+    # In-flight staging only engages with a distributed locker; the Go-side
+    # InflightStagingEnabled() guard keeps it dormant otherwise. Reflect that
+    # *effective* state in the banner and state.json so test drivers aren't
+    # misled by a bare --inflight-staging on a local locker.
+    staging_active = args.inflight_staging and args.locker == "redis"
+    if not args.inflight_staging:
+        staging_banner = "disabled"
+    elif staging_active:
+        staging_banner = "enabled"
+    else:
+        staging_banner = "dormant (requires redis locker)"
+
     log(f"\nStarting {num_instances} instance(s)...", BLUE)
     log(f"  Mode:    {'ha' if is_ha else 'single'}", BLUE)
     log(f"  DB:      {args.db}", BLUE)
     log(f"  Storage: {args.storage}", BLUE)
     log(f"  Locker:  {args.locker}", BLUE)
-    log(
-        f"  Inflight staging: {'enabled' if args.inflight_staging else 'disabled'}",
-        BLUE,
-    )
+    log(f"  Inflight staging: {staging_banner}", BLUE)
     print("")
 
     use_tmux_split = is_ha and TmuxManager.is_in_tmux()
@@ -790,7 +799,7 @@ def main():
 
     state_config = {
         "cdc": args.enable_cdc,
-        "inflight_staging": args.inflight_staging,
+        "inflight_staging": staging_active,
         "db": args.db,
         "db_url": db_url,
         "storage": args.storage,
