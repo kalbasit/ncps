@@ -54,6 +54,23 @@ func (c *Cache) reclaimStaging(ctx context.Context, hash string) error {
 	return nil
 }
 
+// resetStagingForTakeover discards a dead holder's partial (truncated) staging
+// part-objects and resets staging_state to "requested" so the taking-over holder
+// re-stages from zero if a cross-pod waiter still wants it. Unlike reclaimStaging
+// it preserves the row: deleting it would drop the waiter's request marker (the
+// waiter records it once, before its poll loop) and strand it on a full re-download.
+func (c *Cache) resetStagingForTakeover(ctx context.Context, hash string) error {
+	if err := c.narStore.DeleteStagingParts(ctx, hash); err != nil {
+		return fmt.Errorf("reset staging parts on takeover for %q: %w", hash, err)
+	}
+
+	if err := c.resetStagingState(ctx, hash); err != nil {
+		return fmt.Errorf("reset staging state on takeover for %q: %w", hash, err)
+	}
+
+	return nil
+}
+
 // scheduleStagingReclaim reclaims the staging artifacts for hash after the
 // retention grace elapses, giving any in-flight cross-pod readers time to drain.
 // It is the event-driven path, launched once the holder finishes staging (the
