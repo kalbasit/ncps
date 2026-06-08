@@ -490,6 +490,11 @@ def main():
         help="Enable the lazy CDC feature",
     )
     parser.add_argument(
+        "--inflight-staging",
+        action="store_true",
+        help="Enable in-flight NAR staging (only engages with a distributed locker, e.g. --locker redis)",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["debug", "info", "warn", "error", "fatal", "panic"],
         default="debug",
@@ -631,6 +636,10 @@ def main():
     log(f"  DB:      {args.db}", BLUE)
     log(f"  Storage: {args.storage}", BLUE)
     log(f"  Locker:  {args.locker}", BLUE)
+    log(
+        f"  Inflight staging: {'enabled' if args.inflight_staging else 'disabled'}",
+        BLUE,
+    )
     print("")
 
     use_tmux_split = is_ha and TmuxManager.is_in_tmux()
@@ -727,6 +736,11 @@ def main():
                 cmd_app.append("--cache-cdc-lazy-recovery-schedule='@every 1m'")
                 cmd_app.append("--cache-cdc-delete-delay=1m")
                 cmd_app.append("--cache-cdc-lazy-cleanup-schedule='@every 1m'")
+        if args.inflight_staging:
+            # Only the enabled toggle is exposed; retention (5m) and part-size
+            # (8 MiB) keep their Go defaults. The feature self-disables unless the
+            # locker is distributed (see InflightStagingEnabled() guard).
+            cmd_app.append("--cache-inflight-staging-enabled")
         if args.storage == "local":
             cmd_app.extend(["--cache-storage-local", local_storage_path])
         else:
@@ -776,6 +790,7 @@ def main():
 
     state_config = {
         "cdc": args.enable_cdc,
+        "inflight_staging": args.inflight_staging,
         "db": args.db,
         "db_url": db_url,
         "storage": args.storage,
