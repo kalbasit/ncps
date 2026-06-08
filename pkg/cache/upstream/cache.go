@@ -465,14 +465,13 @@ func (c *Cache) GetNarInfo(ctx context.Context, hash string) (*narinfo.NarInfo, 
 		}
 	}
 
-	if ni.FileSize == 0 {
-		if ni.Compression != nar.CompressionTypeNone.String() {
-			// TODO: Realistically this can be determined by looking at the NAR
-			// when it arrives but ncps is undergoing a lot of changes currently
-			// and since this is async it breaks a lot of tests.
-			return nil, fmt.Errorf("%w: FileSize is missing for a compressed NAR", ErrInvalidNarInfo)
-		}
-
+	// Some upstreams (niks3, nix-serve) omit the optional FileHash/FileSize on
+	// compressed NARs (issue #1314). For Compression:none we can safely fall
+	// back to NarSize. For compressed NARs we leave FileSize/FileHash unset
+	// here; the cache layer computes and backfills them from the actual
+	// compressed bytes as the NAR is pulled, since the compressed file size and
+	// hash differ from NarSize/NarHash and are not knowable from the narinfo alone.
+	if ni.FileSize == 0 && ni.Compression == nar.CompressionTypeNone.String() {
 		ni.FileSize = ni.NarSize
 	}
 

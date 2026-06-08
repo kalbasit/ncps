@@ -255,6 +255,56 @@ func TestGetNarInfo(t *testing.T) {
 	})
 }
 
+// TestGetNarInfoCompressedMissingFileSize covers issue #1314: some upstreams
+// (niks3, nix-serve) emit narinfos that declare a non-none Compression but omit
+// the optional FileHash/FileSize fields. ncps MUST tolerate them rather than
+// rejecting with "FileSize is missing for a compressed NAR".
+func TestGetNarInfoCompressedMissingFileSize(t *testing.T) {
+	t.Parallel()
+
+	ts := testdata.NewTestServer(t, 40)
+	t.Cleanup(ts.Close)
+
+	c, err := upstream.New(
+		newContext(),
+		testhelper.MustParseURL(t, ts.URL),
+		&upstream.Options{PublicKeys: testdata.PublicKeys()},
+	)
+	require.NoError(t, err)
+
+	hash := "missingfs-" + testdata.Nar1.NarInfoHash
+
+	idx := ts.AddMaybeHandler(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/"+hash+".narinfo" {
+			return false
+		}
+
+		// Serve Nar1's narinfo with the optional FileHash/FileSize lines stripped.
+		var sb strings.Builder
+
+		for _, line := range strings.Split(testdata.Nar1.NarInfoText, "\n") {
+			if strings.HasPrefix(line, "FileHash:") || strings.HasPrefix(line, "FileSize:") {
+				continue
+			}
+
+			sb.WriteString(line)
+			sb.WriteString("\n")
+		}
+
+		if _, err := w.Write([]byte(sb.String())); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		return true
+	})
+
+	t.Cleanup(func() { ts.RemoveMaybeHandler(idx) })
+
+	ni, err := c.GetNarInfo(context.Background(), hash)
+	require.NoError(t, err, "compressed narinfo without FileSize/FileHash must be tolerated")
+	assert.NotEqual(t, nar.CompressionTypeNone.String(), ni.Compression)
+}
+
 func TestHasNarInfo(t *testing.T) {
 	t.Parallel()
 
