@@ -165,9 +165,13 @@ func (c *Cache) waitForStagingRequest(ctx context.Context, hash string, ds *down
 	}
 }
 
-// stagingRequested reports whether a staging_state row exists for hash. A read
-// error is treated as "not requested" so a transient DB hiccup never spuriously
-// activates staging.
+// stagingRequested reports whether hash has a staging_state row in the
+// "requested" status — the holder's activation signal. A read error is treated
+// as "not requested" so a transient DB hiccup never spuriously activates
+// staging. A row left in a terminal/in-progress status (staging/complete) from
+// an earlier cycle must NOT re-activate a later holder: that would re-stage with
+// no active waiter and duplicate immutable part uploads. A takeover reset rewinds
+// the row to "requested" (see resetStagingState), which re-arms activation.
 func (c *Cache) stagingRequested(ctx context.Context, hash string) bool {
 	st, err := c.getStagingState(ctx, hash)
 	if err != nil {
@@ -179,7 +183,7 @@ func (c *Cache) stagingRequested(ctx context.Context, hash string) bool {
 		return false
 	}
 
-	return st != nil
+	return st != nil && st.Status == stagingStatusRequested
 }
 
 // produceStagingParts tails the holder's temp file from offset zero and writes it
