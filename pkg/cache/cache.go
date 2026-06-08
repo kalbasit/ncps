@@ -1229,6 +1229,20 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 			}
 		}
 
+		// An actively-chunking NAR (servable but not yet finished) is stored only as
+		// decompressed chunks, so it cannot satisfy a compressed request: serving it
+		// from chunks would 404 (serveNarFromStorageViaPipe -> serveFromChunks). For a
+		// cross-pod reader (no local download job) that short-circuit also skips
+		// download coordination entirely, so the waiter never records an in-flight
+		// staging request and never serves from staging. Treat such a request as
+		// not-servable here so it falls through to prePullNar -> coordination, where it
+		// records a staging request and serves from in-flight staging (transcoding to
+		// the requested compression). The uncompressed progressive-chunk path and
+		// finished NARs are unaffected (closes the chunking-window cross-pod 404, #1289).
+		if hasNar && narURL.Compression != nar.CompressionTypeNone && !c.hasFinishedNar(ctx, narURL) {
+			hasNar = false
+		}
+
 		if hasNar {
 			if hasNarInStore {
 				c.maybeBackgroundMigrateNarToChunks(ctx, narURL)
