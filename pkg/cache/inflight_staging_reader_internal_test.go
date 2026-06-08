@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kalbasit/ncps/pkg/nar"
-	"github.com/kalbasit/ncps/pkg/storage/local"
+	"github.com/kalbasit/ncps/pkg/storage"
 )
 
 // putStagingParts splits content into partSize-byte part-objects and writes them
 // for hash, returning the number of parts written.
-func putStagingParts(t *testing.T, store *local.Store, hash, content string, partSize int) int64 {
+func putStagingParts(t *testing.T, store storage.NarStore, hash, content string, partSize int) int64 {
 	t.Helper()
 
 	ctx := context.Background()
