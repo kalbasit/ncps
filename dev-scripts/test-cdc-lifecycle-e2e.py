@@ -2,9 +2,7 @@
 """
 test-cdc-lifecycle-e2e.py — End-to-end test of the CDC lifecycle.
 
-Successor to test-migration-e2e.py. Where that script exercises the
-dbmate->Ent migration, this one drives the full content-defined-chunking
-lifecycle:
+Drives the full content-defined-chunking lifecycle:
 
     non-CDC  ->  CDC (eager + lazy)  ->  drain  ->  non-CDC
 
@@ -44,7 +42,7 @@ deterministically end-to-end. It is covered by the unit tests in
 pkg/cache/nondestructive_narinfo_purge_internal_test.go.
 
 Results are written to .e2e-results/cdc/<timestamp>/ (under the already
-gitignored .e2e-results/ path shared with test-migration-e2e.py).
+gitignored .e2e-results/ path).
 
 Backends (Garage/S3, PostgreSQL, MariaDB, Redis) must already be running —
 use `nix run .#deps` (fixed ports). The wrapping task target
@@ -72,7 +70,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VAR_NCPS = os.path.join(REPO_ROOT, "var", "ncps")
 # Results live OUTSIDE var/ncps so run.py --clean can wipe var/ncps on the
 # first start without taking the result logs with it. Nested under the
-# already-gitignored .e2e-results/ path (shared with test-migration-e2e.py).
+# already-gitignored .e2e-results/ path.
 RESULTS_ROOT = os.path.join(REPO_ROOT, ".e2e-results", "cdc")
 
 # run.py starts the first (and only, in single mode) instance on BASE_PORT.
@@ -141,7 +139,7 @@ def check(cond, msg):
 
 
 # ---------------------------------------------------------------------------
-# Server lifecycle (via run.py, mirroring test-migration-e2e.py)
+# Server lifecycle (via run.py)
 # ---------------------------------------------------------------------------
 
 
@@ -334,7 +332,7 @@ def served_nar_digest(narinfo_fields):
 
 
 # ---------------------------------------------------------------------------
-# Cache seeding (build a package through ncps, mirroring test-migration-e2e.py)
+# Cache seeding (build a package through ncps)
 # ---------------------------------------------------------------------------
 
 
