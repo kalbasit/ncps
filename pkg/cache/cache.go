@@ -405,7 +405,7 @@ func init() {
 		"ncps_download_coordination_fallback_total",
 		metric.WithDescription(
 			"Counts download-lock contention fallbacks by outcome "+
-				"(served_by_peer, take_over, give_up, caller_canceled).",
+				"(served_by_peer, served_from_staging, take_over, give_up, caller_canceled).",
 		),
 		metric.WithUnit("{event}"),
 	)
@@ -542,6 +542,12 @@ type downloadState struct {
 
 	// Track which upstream served this download (for metrics)
 	upstreamHostname string
+
+	// stagingServe, when non-nil, is not a real local download but a directive to
+	// serve the NAR from cross-pod in-flight staging part-objects. It is set by
+	// pollForDownloadOrTakeOver when a lock-losing waiter detects available staging
+	// parts, and consumed by GetNar to stream from staging instead of storage.
+	stagingServe *stagingServeInfo
 
 	// Channel to signal starting the pull and its completion
 	done   chan struct{} // Signals download fully complete (including database updates)
@@ -1252,6 +1258,27 @@ func (c *Cache) GetNar(ctx context.Context, narURL nar.URL) (nar.URL, int64, io.
 		detachedCtx := context.WithoutCancel(ctx)
 		narURLCopy := narURL
 		ds := c.prePullNar(ctx, detachedCtx, &narURLCopy, preferredUpstreamURL, nil, ni)
+
+		// A lock-losing waiter that detected in-flight staging parts serves them
+		// directly: it tails the parts (transcoding to the requested compression if
+		// needed) rather than waiting for the holder's download to finish (#660 /
+		// #1289). This is the cross-pod fast path during the active-download window.
+		if ds.stagingServe != nil {
+			metricAttrs = append(
+				metricAttrs,
+				attribute.String("result", "staging"),
+				attribute.String("status", "success"),
+			)
+
+			var serveErr error
+
+			size, reader, serveErr = c.serveNarFromStaging(ctx, &narURL, ds.stagingServe.hash, ds.stagingServe.compression)
+			if serveErr != nil {
+				metricAttrs = append(metricAttrs, attribute.String("status", "error"))
+			}
+
+			return serveErr
+		}
 
 		// Check if download is complete (closed=true) before adding to WaitGroup
 		// This prevents race with cleanup goroutine calling ds.wg.Wait()
@@ -4225,6 +4252,7 @@ func (c *Cache) prePullNarInfo(ctx context.Context, hash string) *downloadState 
 		narInfoJobKey(hash),
 		hash,
 		true,
+		false, // narinfo downloads are not staged (staging is NAR-only)
 		func(ctx context.Context) bool {
 			if _, err := c.getNarInfoFromDatabase(ctx, hash); err == nil {
 				return true
@@ -4266,6 +4294,7 @@ func (c *Cache) prePullNar(
 		narJobKey(narURL.Hash),
 		narURL.Hash,
 		false,
+		true, // NAR downloads may serve cross-pod waiters from in-flight staging
 		func(ctx context.Context) bool {
 			// A placeholder nar_file row (created by storeInDatabase before chunking
 			// starts, or left by a failed download) must NOT count as an available
@@ -6181,6 +6210,7 @@ func (c *Cache) coordinateDownload(
 	lockKey string,
 	hash string,
 	waitForStorage bool,
+	allowStaging bool,
 	hasAsset func(context.Context) bool,
 	startJob func(*downloadState),
 ) *downloadState {
@@ -6221,7 +6251,7 @@ func (c *Cache) coordinateDownload(
 		// Another server holds the lock. Rather than dead-ending in an HTTP 500,
 		// poll storage for the asset while periodically re-attempting lock
 		// acquisition so we can take over if the holder finishes or fails.
-		ds, tookOver := c.pollForDownloadOrTakeOver(coordCtx, ctx, lockKey, hash, err, hasAsset)
+		ds, tookOver := c.pollForDownloadOrTakeOver(coordCtx, ctx, lockKey, hash, allowStaging, err, hasAsset)
 		if !tookOver {
 			return ds
 		}
@@ -6352,10 +6382,24 @@ func (c *Cache) pollForDownloadOrTakeOver(
 	ctx context.Context,
 	lockKey string,
 	hash string,
+	allowStaging bool,
 	initialErr error,
 	hasAsset func(context.Context) bool,
 ) (*downloadState, bool) {
 	const pollInterval = 200 * time.Millisecond
+
+	// Signal the holder that a cross-pod waiter wants the NAR staged so it can be
+	// served during the active-download window (closes #660 / #1289). Idempotent
+	// and free of churn: it is a one-shot marker the holder reads on its own loop.
+	stagingActive := allowStaging && c.InflightStagingEnabled()
+	if stagingActive {
+		if err := c.markStagingRequested(coordCtx, hash); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Str("hash", hash).
+				Msg("failed to record in-flight staging request; falling back to wait-for-asset")
+
+			stagingActive = false
+		}
+	}
 
 	giveUpBound := c.downloadLockTTL
 	if c.downloadPollTimeout > giveUpBound {
@@ -6387,6 +6431,30 @@ func (c *Cache) pollForDownloadOrTakeOver(
 				ds.doneOnce.Do(func() { close(ds.done) })
 
 				return ds, false
+			}
+
+			// Before re-attempting the lock, see whether the holder has begun
+			// staging the in-flight NAR. If parts are available we serve them
+			// directly (tailing as they land) rather than waiting for the whole
+			// download to finish — the cross-pod fast path for #660 / #1289.
+			if stagingActive {
+				if info := c.stagingServeReady(coordCtx, hash); info != nil {
+					zerolog.Ctx(ctx).Debug().
+						Str("hash", hash).
+						Msg("in-flight staging parts available, serving from staging while peer downloads")
+
+					downloadCoordinationFallbackTotal.Add(ctx, 1,
+						metric.WithAttributes(attribute.String("outcome", "served_from_staging")))
+
+					ds := newDownloadState()
+					ds.closed = true
+					ds.stagingServe = info
+					ds.startOnce.Do(func() { close(ds.start) })
+					ds.storedOnce.Do(func() { close(ds.stored) })
+					ds.doneOnce.Do(func() { close(ds.done) })
+
+					return ds, false
+				}
 			}
 
 			// Re-attempt acquisition without blocking, bounded by the give-up
