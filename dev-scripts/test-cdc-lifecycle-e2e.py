@@ -493,11 +493,25 @@ def total_nar_count(db):
     return rows[0][0] if rows else 0
 
 
+def quote_ident(db, name):
+    """Quote a SQL identifier for the given dialect.
+
+    `key` is a reserved word in MySQL/MariaDB and must be backtick-quoted;
+    sqlite and postgres accept the SQL-standard double-quote form.
+    """
+    if db == "mysql":
+        return f"`{name}`"
+    return f'"{name}"'
+
+
 def cdc_config_keys_present(db):
     """Which cdc_* keys are present in the config table."""
     placeholders = ",".join("?" for _ in CDC_KEYS)
+    key = quote_ident(db, "key")
     rows = db_query(
-        db, f"SELECT key FROM config WHERE key IN ({placeholders})", tuple(CDC_KEYS)
+        db,
+        f"SELECT {key} FROM config WHERE {key} IN ({placeholders})",
+        tuple(CDC_KEYS),
     )
     return sorted(r[0] for r in rows)
 

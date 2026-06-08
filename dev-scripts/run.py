@@ -416,41 +416,49 @@ def perform_clean():
             except subprocess.TimeoutExpired:
                 log(f"  Warning: {engine} cleanup timed out", RED)
 
-    # 3. Remove all s3 files
-    if shutil.which("mc"):
-        log("  Cleaning S3 storage...", YELLOW)
-        endpoint = S3_CONFIG["endpoint"]
-        access_key = S3_CONFIG["access_key"]
-        secret_key = S3_CONFIG["secret_key"]
+    # 3. Empty the S3 bucket's objects (keep the bucket itself).
+    #
+    # Uses boto3 — declared in the devshell (nix/devshells/flake-module.nix)
+    # and already used by the k8s-tests — rather than the MinIO client `mc`,
+    # which is NOT provided by the flake (it only happens to be on a
+    # developer's global PATH) and whose long-term maintenance is uncertain.
+    #
+    # We delete objects rather than the bucket: the dev Garage access key is
+    # scoped to the pre-provisioned `test-bucket` and lacks global
+    # createBucket permission, so deleting + recreating the bucket fails
+    # (Forbidden) and silently bricks S3 for the rest of the session.
+    log("  Cleaning S3 storage...", YELLOW)
+    try:
+        import boto3
+        from botocore.config import Config as BotoConfig
+
         bucket = S3_CONFIG["bucket"]
-        mc_env = os.environ.copy()
-        # Construct MC_HOST_clean env var. Note: we use a specific alias 'clean'
-        # The format for MC_HOST_<alias> is http(s)://ACCESS_KEY:SECRET_KEY@HOST:PORT
-        parsed_endpoint = urlparse(endpoint)
-        mc_url = parsed_endpoint._replace(
-            netloc=f"{access_key}:{secret_key}@{parsed_endpoint.hostname}:{parsed_endpoint.port}"
-        ).geturl()
-        mc_env["MC_HOST_clean"] = mc_url
-        try:
-            subprocess.run(
-                ["mc", "rb", "--force", f"clean/{bucket}"],
-                env=mc_env,
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-            )
-            # Re-create the bucket
-            subprocess.run(
-                ["mc", "mb", f"clean/{bucket}"],
-                env=mc_env,
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=5,
-            )
-        except subprocess.TimeoutExpired:
-            log("  Warning: S3 cleanup timed out", RED)
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=S3_CONFIG["endpoint"],
+            aws_access_key_id=S3_CONFIG["access_key"],
+            aws_secret_access_key=S3_CONFIG["secret_key"],
+            region_name=S3_CONFIG["region"],
+            config=BotoConfig(
+                s3={"addressing_style": "path"},
+                signature_version="s3v4",
+                connect_timeout=5,
+                read_timeout=15,
+                retries={"max_attempts": 2},
+            ),
+        )
+        paginator = s3.get_paginator("list_objects_v2")
+        batch = []
+        for page in paginator.paginate(Bucket=bucket):
+            for obj in page.get("Contents", []):
+                batch.append({"Key": obj["Key"]})
+                if len(batch) == 1000:  # S3 delete_objects caps at 1000 keys
+                    s3.delete_objects(Bucket=bucket, Delete={"Objects": batch})
+                    batch = []
+        if batch:
+            s3.delete_objects(Bucket=bucket, Delete={"Objects": batch})
+    except Exception as e:  # noqa: BLE001 — cleanup is best-effort
+        log(f"  Warning: S3 cleanup failed: {e}", RED)
 
     # 4. Delete all redis keys
     if shutil.which("redis-cli"):

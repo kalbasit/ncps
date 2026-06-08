@@ -149,27 +149,39 @@ def reset_everything():
             timeout=15,
         )
 
-    log("reset: recreating S3 bucket", Y)
-    mc_env = os.environ.copy()
-    parsed = urlparse(S3["endpoint"])
-    mc_env["MC_HOST_e2e"] = (
-        f"http://{S3['access_key']}:{S3['secret_key']}"
-        f"@{parsed.hostname}:{parsed.port}"
+    # Empty the S3 bucket's objects (keep the bucket itself). Uses boto3 —
+    # declared in the devshell — rather than the MinIO client `mc`, which is
+    # not provided by the flake. The dev Garage access key is scoped to the
+    # pre-provisioned bucket and lacks createBucket permission, so deleting +
+    # recreating the bucket fails (Forbidden); emptying objects is equivalent.
+    log("reset: emptying S3 bucket", Y)
+    import boto3
+    from botocore.config import Config as BotoConfig
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=S3["endpoint"],
+        aws_access_key_id=S3["access_key"],
+        aws_secret_access_key=S3["secret_key"],
+        region_name=S3.get("region", "us-east-1"),
+        config=BotoConfig(
+            s3={"addressing_style": "path"},
+            signature_version="s3v4",
+            connect_timeout=5,
+            read_timeout=15,
+            retries={"max_attempts": 2},
+        ),
     )
-    subprocess.run(
-        ["mc", "rb", "--force", f"e2e/{S3['bucket']}"],
-        env=mc_env,
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=15,
-    )
-    subprocess.run(
-        ["mc", "mb", f"e2e/{S3['bucket']}"],
-        env=mc_env,
-        check=True,
-        timeout=15,
-    )
+    paginator = s3.get_paginator("list_objects_v2")
+    batch = []
+    for page in paginator.paginate(Bucket=S3["bucket"]):
+        for obj in page.get("Contents", []):
+            batch.append({"Key": obj["Key"]})
+            if len(batch) == 1000:  # S3 delete_objects caps at 1000 keys
+                s3.delete_objects(Bucket=S3["bucket"], Delete={"Objects": batch})
+                batch = []
+    if batch:
+        s3.delete_objects(Bucket=S3["bucket"], Delete={"Objects": batch})
 
     log("reset: flushing Redis", Y)
     subprocess.run(

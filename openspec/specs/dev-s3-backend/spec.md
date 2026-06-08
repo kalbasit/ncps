@@ -3,12 +3,10 @@
 ## Purpose
 
 Defines the S3-compatible object storage backend used for local development, `nix flake check`, and Kubernetes integration tests, including the env var contract tests and scripts depend on.
-
 ## Requirements
-
 ### Requirement: Dev S3 backend SHALL be Garage
 
-Local development and `nix flake check` SHALL use [Garage](https://garagehq.deuxfleurs.fr/) (`pkgs.garage`) as the S3-compatible object store. MinIO (`pkgs.minio`, `pkgs.minio-client`) SHALL NOT be referenced in the dev shell, process-compose services, Nix package `preCheck`, or k8s integration tests.
+Local development and `nix flake check` SHALL use [Garage](https://garagehq.deuxfleurs.fr/) (`pkgs.garage`) as the S3-compatible object store. MinIO (`pkgs.minio`, `pkgs.minio-client`) SHALL NOT be referenced in the dev shell, process-compose services, Nix package `preCheck`, the dev/test helper scripts under `dev-scripts/`, or k8s integration tests. Dev/test scripts that manipulate the S3 backend (e.g. resetting the bucket between runs) SHALL use the S3 SDK already provided by the dev shell (`boto3`), not the MinIO client `mc`.
 
 #### Scenario: Dev shell exposes Garage, not MinIO
 
@@ -29,6 +27,13 @@ Local development and `nix flake check` SHALL use [Garage](https://garagehq.deux
 - **THEN** the `preCheck` phase SHALL start a Garage server
 - **AND** integration tests gated by `NCPS_TEST_S3_*` env vars SHALL run against Garage
 - **AND** all S3 integration tests SHALL pass
+
+#### Scenario: Dev/test scripts reset the bucket via the S3 SDK, not `mc`
+
+- **WHEN** a dev/test helper script under `dev-scripts/` resets the S3 bucket between runs
+- **THEN** it SHALL empty the bucket's objects using `boto3` (the S3 SDK in the dev shell)
+- **AND** it SHALL NOT invoke `mc` (the MinIO client) or assume `mc` is on `PATH`
+- **AND** it SHALL NOT delete-and-recreate the bucket, because the dev access key is scoped to the pre-provisioned bucket and cannot create buckets
 
 ### Requirement: Dev S3 backend SHALL expose a backend-neutral env var contract
 
@@ -97,3 +102,4 @@ The Kind-based integration test harness (`nix/k8s-tests/`) SHALL deploy Garage a
 - **WHEN** `k8s-tests cluster create` provisions the Kind cluster
 - **THEN** the Garage container image SHALL be pre-loaded into Kind nodes (matching how MinIO was loaded previously)
 - **AND** image pulls SHALL NOT depend on Docker Hub at test time
+
