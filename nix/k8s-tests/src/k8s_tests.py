@@ -96,6 +96,40 @@ class K8sTestsCLI:
         except FileNotFoundError:
             self.error(f"Command not found: {cmd[0]}")
 
+    def run_cmd_with_retry(self, cmd: List[str], attempts: int = 6, delay: int = 20):
+        """Run a command, retrying on non-zero exit.
+
+        Helm fetches operator charts from GitHub release assets whose CDN
+        intermittently returns `504 Gateway Timeout`. A single transient fetch
+        failure should not abort the entire cluster bring-up, so retry a few
+        times before surfacing the error the way `run_cmd` would.
+        """
+        result = None
+        for attempt in range(1, attempts + 1):
+            result = self.run_cmd(cmd, capture_output=True, check=False)
+            if result.returncode == 0:
+                # capture_output swallows stdout; surface it in verbose mode so a
+                # successful (possibly retried) install is still visible.
+                if self.verbose and result.stdout:
+                    self.log(result.stdout.strip())
+                return result
+            if attempt < attempts:
+                last_line = ""
+                if result.stderr:
+                    lines = result.stderr.strip().splitlines()
+                    last_line = lines[-1] if lines else ""
+                self.log(
+                    f"   ⚠️  '{cmd[0]}' failed (attempt {attempt}/{attempts}), "
+                    f"retrying in {delay}s: {last_line}"
+                )
+                time.sleep(delay)
+        err_msg = f"Command failed after {attempts} attempts: {' '.join(cmd)}"
+        if result is not None and result.stdout:
+            err_msg += f"\nSTDOUT: {result.stdout.strip()}"
+        if result is not None and result.stderr:
+            err_msg += f"\nSTDERR: {result.stderr.strip()}"
+        self.error(err_msg)
+
     # --- Cluster Management ---
 
     def cmd_cluster_create(self):
@@ -399,9 +433,11 @@ spec:
             ]
         )
 
-        # Operators
+        # Operators. Retry each install: these charts are fetched from GitHub
+        # release assets, whose CDN intermittently returns 504 (see
+        # run_cmd_with_retry).
         self.log("   - Installing Operators...")
-        self.run_cmd(
+        self.run_cmd_with_retry(
             [
                 "helm",
                 "upgrade",
@@ -414,7 +450,7 @@ spec:
                 "--wait",
             ]
         )
-        self.run_cmd(
+        self.run_cmd_with_retry(
             [
                 "helm",
                 "upgrade",
@@ -427,7 +463,7 @@ spec:
                 "--wait",
             ]
         )
-        self.run_cmd(
+        self.run_cmd_with_retry(
             [
                 "helm",
                 "upgrade",
@@ -442,7 +478,7 @@ spec:
                 "--wait",
             ]
         )
-        self.run_cmd(
+        self.run_cmd_with_retry(
             [
                 "helm",
                 "upgrade",

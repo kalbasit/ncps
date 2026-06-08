@@ -686,7 +686,12 @@ class NCPSTester:
                     "--image=nouchka/sqlite3:latest",
                     "-it=false",
                     "--quiet",
-                    "--profile=restricted",
+                    # No --profile=restricted: it sets runAsNonRoot on the
+                    # ephemeral container, which the kubelet rejects because the
+                    # nouchka/sqlite3 image runs as root ("container has
+                    # runAsNonRoot and image will run as root" -> the debug
+                    # container never starts and the probe times out). Match the
+                    # storage probe, which uses the default profile.
                     "--",
                     "sh",
                     "-c",
@@ -727,7 +732,12 @@ class NCPSTester:
                     "--image=nouchka/sqlite3:latest",
                     "-it=false",
                     "--quiet",
-                    "--profile=restricted",
+                    # No --profile=restricted: it sets runAsNonRoot on the
+                    # ephemeral container, which the kubelet rejects because the
+                    # nouchka/sqlite3 image runs as root ("container has
+                    # runAsNonRoot and image will run as root" -> the debug
+                    # container never starts and the probe times out). Match the
+                    # storage probe, which uses the default profile.
                     "--",
                     "sh",
                     "-c",
