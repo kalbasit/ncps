@@ -186,7 +186,19 @@ Configuration for the temporary directory used for downloads and transient opera
 | `config.cdc.backgroundWorkers` | Number of background workers for lazy chunking | `null` (server default: number of CPUs) |
 | `config.cdc.deleteDelay` | Delay before deleting compressed NAR files after chunking completes | `24h` |
 | `config.cdc.chunkWaitTimeout` | Maximum time to wait for a single chunk during progressive CDC streaming. Align with your gateway timeout on high-latency storage. | `null` (server default: `30s`) |
-| `config.cdc.iLoveTimeouts` | Bypass flag for HA validation without CDC | `false` |
+
+### In-flight NAR Staging Configuration
+
+In-flight NAR staging is an HA-safe alternative to CDC: it serves a NAR across
+replicas while it is still downloading. Enabling it (or CDC) satisfies the
+`replicaCount > 1` validation guard. It has zero overhead until a second replica
+contends for the same NAR and only activates with a distributed (Redis) lock.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `config.inflightStaging.enabled` | Serve a NAR cross-pod while it is still downloading by staging it to shared storage as part-objects | `false` |
+| `config.inflightStaging.retention` | Grace period to retain staging part-objects after the NAR's final representation is committed | `5m` |
+| `config.inflightStaging.partSize` | Size in bytes of each staging part-object | `8388608` (8 MiB) |
 
 ### Database Configuration
 
