@@ -108,6 +108,10 @@ class K8sTestsCLI:
         for attempt in range(1, attempts + 1):
             result = self.run_cmd(cmd, capture_output=True, check=False)
             if result.returncode == 0:
+                # capture_output swallows stdout; surface it in verbose mode so a
+                # successful (possibly retried) install is still visible.
+                if self.verbose and result.stdout:
+                    self.log(result.stdout.strip())
                 return result
             if attempt < attempts:
                 last_line = ""

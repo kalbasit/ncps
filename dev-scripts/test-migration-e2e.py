@@ -54,8 +54,12 @@ NEW_PACKAGE = "nixpkgs#jq"
 S3 = {
     "endpoint": "http://127.0.0.1:9000",
     "bucket": "test-bucket",
-    "access_key": "test-access-key",
-    "secret_key": "test-secret-key",
+    "region": "us-east-1",
+    # Real dev Garage credentials (provisioned by nix/process-compose, and
+    # used by dev-scripts/run.py). The previous "test-access-key" placeholders
+    # are not provisioned on the Garage server, so boto3 auth would fail.
+    "access_key": "GK1234567890abcdef12345678",
+    "secret_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 }
 
 DB_URLS = {
