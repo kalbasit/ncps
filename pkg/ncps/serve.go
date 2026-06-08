@@ -1349,6 +1349,17 @@ func createCache(
 		return nil, err
 	}
 
+	// Periodic in-flight staging GC: reclaims completed staging past its retention
+	// grace and orphaned staging whose holder died. Only meaningful when staging is
+	// active (enabled + distributed locker).
+	if inflightStagingEnabled && stagingDistributed {
+		zerolog.Ctx(ctx).
+			Info().
+			Msg("setting up in-flight staging GC cron job")
+
+		c.AddInflightStagingGCCronJob(ctx, cron.Every(time.Minute))
+	}
+
 	c.StartCron(ctx)
 
 	return c, nil

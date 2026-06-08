@@ -134,7 +134,13 @@ func (c *Cache) stageInflightNar(ctx context.Context, hash string, ds *downloadS
 			Err(err).
 			Str("hash", hash).
 			Msg("in-flight staging producer stopped with error; staging parts left for GC/takeover")
+
+		return
 	}
+
+	// Staging is complete and the final representation is committed: reclaim the
+	// staging artifacts after the retention grace, letting cross-pod readers drain.
+	c.scheduleStagingReclaim(hash)
 }
 
 // waitForStagingRequest polls staging_state on a coarse ticker until a cross-pod
@@ -302,6 +308,21 @@ func (c *Cache) resetStagingState(ctx context.Context, hash string) error {
 		Save(ctx)
 	if err != nil {
 		return fmt.Errorf("reset staging state for %q: %w", hash, err)
+	}
+
+	return nil
+}
+
+// deleteStagingState removes the staging_state row for hash entirely. It is the
+// terminal counterpart to resetStagingState, used by reclaimStaging once the
+// staging lifecycle is over (completed-and-reclaimed, or orphan-swept). Deleting
+// an absent row is a no-op.
+func (c *Cache) deleteStagingState(ctx context.Context, hash string) error {
+	_, err := c.dbClient.Ent().StagingState.Delete().
+		Where(stagingstate.HashEQ(hash)).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("delete staging state for %q: %w", hash, err)
 	}
 
 	return nil
