@@ -36,12 +36,13 @@ the `Compression` advertised to downstream clients.
 - **AND** the served narinfo SHALL report a `FileHash` equal to the SHA-256 digest of the stored compressed NAR, formatted as `sha256:<nixbase32>`
 - **AND** the `NarHash`, `NarSize`, and `Compression` SHALL be unchanged from upstream
 
-#### Scenario: Upstream-provided FileSize/FileHash are preserved, not recomputed
+#### Scenario: Upstream-provided FileHash is preserved, not recomputed
 
-- **GIVEN** an upstream narinfo with `Compression: zstd` that already provides both `FileSize` and `FileHash`
+- **GIVEN** an upstream narinfo with `Compression: zstd` that already provides a `FileHash`
 - **WHEN** the narinfo is fetched and the NAR is served
-- **THEN** the served narinfo SHALL carry the upstream `FileSize` and `FileHash` verbatim
-- **AND** ncps SHALL NOT recompute them
+- **THEN** the served narinfo SHALL carry the upstream `FileHash` verbatim
+- **AND** ncps SHALL NOT recompute it
+- **AND** the `FileSize` SHALL be preserved when it matches the stored compressed bytes (an inconsistent `FileSize` is reconciled to the stored size)
 
 #### Scenario: Uncompressed narinfos are unaffected
 

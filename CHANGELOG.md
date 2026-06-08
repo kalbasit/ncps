@@ -65,7 +65,8 @@ project loosely follows [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   making the upstream unusable. ncps now accepts these narinfos and, for compressed
   NARs served whole, computes the correct `FileSize` and `FileHash` itself from the
   stored compressed bytes (a single streaming SHA-256 pass) and backfills them into
-  the served narinfo. Upstream-provided values are preserved unchanged. (#1314)
+  the persisted narinfo record, which subsequent narinfo responses then reflect.
+  Upstream-provided values are preserved unchanged. (#1314)
 
 - **Helm: migration Job no longer mounts storage or tmp volumes for non-SQLite
   databases.** The migration Job was unconditionally mounting the storage PVC and
