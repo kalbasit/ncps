@@ -20,7 +20,7 @@ Introduce a **contention-activated in-flight staging copy** of the NAR in shared
 
 ### New Capabilities
 - `inflight-nar-staging`: the enable flag (off by default), contention-activated staging of an in-flight NAR to shared storage as sequential part-objects, cross-pod progressive tailing, read-path precedence, and retention-gated GC.
-- `helm-ha-staging-validation`: the chart's HA (`replicaCount > 1`) guard is satisfied by CDC **or** in-flight staging; `iLoveTimeouts` stays as the risk-accept bypass.
+- `helm-ha-staging-validation`: the chart's HA (`replicaCount > 1`) guard is satisfied by CDC **or** in-flight staging, with no bypass (`iLoveTimeouts` is removed).
 
 ### Modified Capabilities
 - `nar-concurrent-streaming`: a lock-losing replica MUST serve from in-flight staging when active, else bounded-wait + clean handoff — never HTTP 500; cross-pod progressive reads MUST reassemble a complete, non-truncated NAR.

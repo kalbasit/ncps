@@ -70,7 +70,7 @@ A waiting replica that observes available staging parts SHALL tail them to reass
 
 ### Requirement: Staging part-objects are reclaimed after completion plus a configurable grace period
 
-Staging part-objects and their `staging_state` record SHALL be garbage-collected once the NAR's final representation (whole file or chunks, per mode) is committed, plus a configurable retention grace period set by `--cache-inflight-staging-retention`, draining in-flight readers before deletion. A periodic sweep SHALL reclaim staging records whose holder died and were never taken over, keyed off `staging_state.created_at` and `status`.
+Staging part-objects and their `staging_state` record SHALL be garbage-collected once the NAR's final representation (whole file or chunks, per mode) is committed, plus a configurable retention grace period set by `--cache-inflight-staging-retention`, draining in-flight readers before deletion. A periodic sweep SHALL reclaim staging records whose holder died and were never taken over, detected by `staging_state.updated_at` staleness (falling back to `staging_state.created_at` when `updated_at` is absent) together with `status`.
 
 #### Scenario: Reclaim after grace
 
