@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"time"
 
@@ -16,10 +17,16 @@ import (
 )
 
 // stagingActivationPollInterval is how often the holder's staging producer reads
-// staging_state looking for a cross-pod waiter before staging activates (D10). It
-// is coarse on purpose: backfill-from-zero makes late activation harmless, so this
-// only needs to be cheap, not low-latency.
-const stagingActivationPollInterval = time.Second
+// staging_state looking for a cross-pod waiter before staging activates (D10).
+// Staging requests are recorded only by cross-pod waiters (markStagingRequested
+// is called solely from pollForDownloadOrTakeOver), so the holder learns of a
+// waiter only by this poll — there is no in-process signal to wake on. It must be
+// short enough that the holder observes the request while the download is still in
+// flight; otherwise a fast download finishes first and staging never engages (the
+// temp file is gone before the producer can tail it). It matches the waiter's own
+// 200ms pollInterval (see pollForDownloadOrTakeOver). The poll is holder-only and
+// stops on the first observed request, so the steady-state cost is near zero.
+const stagingActivationPollInterval = 200 * time.Millisecond
 
 // defaultInflightStagingPartSize is the fallback staging part size (8 MiB, the
 // conventional S3 multipart part size) used when the configured part size is unset
@@ -224,6 +231,21 @@ func (c *Cache) produceStagingParts(ctx context.Context, hash string, ds *downlo
 
 	f, err := os.Open(assetPath)
 	if err != nil {
+		// ds.assetPath is only ever removed by the post-completion cleanup
+		// goroutine (cache.go), which runs after the download and all readers
+		// finish. So a not-exist error here means the download already completed
+		// before staging began (the cross-pod request was observed at completion):
+		// the NAR is committed to shared storage and cross-pod waiters serve it
+		// from there. There is nothing to stage — a clean no-op, not a failure.
+		// Any other open error is a genuine fault and still propagates.
+		if errors.Is(err, fs.ErrNotExist) {
+			zerolog.Ctx(ctx).Debug().
+				Str("hash", hash).
+				Msg("in-flight staging skipped: download completed before staging began")
+
+			return nil
+		}
+
 		return fmt.Errorf("staging producer: open temp file %q: %w", assetPath, err)
 	}
 	defer f.Close()
