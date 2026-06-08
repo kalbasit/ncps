@@ -5682,10 +5682,98 @@ func (c *Cache) CheckAndFixNarInfo(ctx context.Context, hash string) error {
 			Int64("actual_size", size).
 			Msg("mismatch detected, fixing narinfo file size")
 
-		return c.fixNarInfoFileSize(ctx, hash, size)
+		if err := c.fixNarInfoFileSize(ctx, hash, size); err != nil {
+			return err
+		}
+	}
+
+	// Issue #1314: some upstreams (niks3, nix-serve) omit the optional FileHash on
+	// compressed NARs. FileHash is the hash of the compressed file and is not
+	// knowable from the narinfo alone, so compute it from the stored compressed
+	// bytes and backfill it when absent. Only whole-file storage carries the
+	// compressed bytes (CDC narinfos are normalized to Compression:none and handled
+	// above), so this is gated on the NAR being present in the store.
+	if hasNarInStore && (niRow.FileHash == nil || *niRow.FileHash == "") {
+		fileHash, err := c.computeStoredNarFileHash(ctx, nu)
+		if err != nil {
+			return err
+		}
+
+		if fileHash != "" {
+			zerolog.Ctx(ctx).
+				Info().
+				Str("file_hash", fileHash).
+				Msg("missing FileHash detected, backfilling narinfo file hash")
+
+			return c.fixNarInfoFileHash(ctx, hash, fileHash)
+		}
 	}
 
 	return nil
+}
+
+// computeStoredNarFileHash streams the stored compressed NAR through a SHA-256
+// hasher and returns the result formatted as a nix `sha256:<nixbase32>` hash, the
+// representation used for a narinfo FileHash. It performs a single streaming pass
+// (constant memory, no full-file buffering).
+func (c *Cache) computeStoredNarFileHash(ctx context.Context, nu nar.URL) (string, error) {
+	_, r, err := c.narStore.GetNar(ctx, nu)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("failed to read stored nar for file hash: %w", err)
+	}
+
+	defer func() {
+		//nolint:errcheck
+		io.Copy(io.Discard, r)
+
+		r.Close()
+	}()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return "", fmt.Errorf("failed to hash stored nar: %w", err)
+	}
+
+	var sum [sha256.Size]byte
+
+	return nixhash.MustNewHashWithEncoding(nixhash.SHA256, h.Sum(sum[:0]), nixhash.NixBase32, true).String(), nil
+}
+
+// fixNarInfoFileHash updates the narinfo file_hash column in the database.
+func (c *Cache) fixNarInfoFileHash(
+	ctx context.Context,
+	hash string,
+	fileHash string,
+) error {
+	ctx, span := tracer.Start(
+		ctx,
+		"cache.fixNarInfoFileHash",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("narinfo_hash", hash),
+			attribute.String("file_hash", fileHash),
+		),
+	)
+	defer span.End()
+
+	zerolog.Ctx(ctx).
+		Info().
+		Str("file_hash", fileHash).
+		Msg("updating narinfo file hash in the database")
+
+	return c.withEntTransaction(ctx, "fixNarInfoFileHash", func(tx *ent.Tx) error {
+		_, err := tx.NarInfo.Update().
+			Where(entnarinfo.HashEQ(hash)).
+			SetFileHash(fileHash).
+			SetUpdatedAt(time.Now()).
+			Save(ctx)
+
+		return err
+	})
 }
 
 func (c *Cache) checkAndFixNarInfoNoCompression(ctx context.Context, hash string, niRow *ent.NarInfo) error {

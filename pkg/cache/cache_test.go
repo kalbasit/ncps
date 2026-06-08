@@ -3,6 +3,7 @@ package cache_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/nix-community/go-nix/pkg/narinfo"
 	"github.com/nix-community/go-nix/pkg/narinfo/signature"
+	"github.com/nix-community/go-nix/pkg/nixhash"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -3129,6 +3131,7 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 	t.Run("GetNarInfoRaceWithPutNarInfoDeterministic", testGetNarInfoRaceWithPutNarInfoDeterministic(factory))
 	t.Run("GetNarInfoConcurrentColdCacheFetch", testGetNarInfoConcurrentColdCacheFetch(factory))
 	t.Run("testNarInfoFileSizeFix", testNarInfoFileSizeFix(factory))
+	t.Run("testNarInfoFileHashFix", testNarInfoFileHashFix(factory))
 	t.Run("testCheckAndFixNarInfo", testCheckAndFixNarInfo(factory))
 	t.Run("HasNarFileRecord", testHasNarFileRecord(factory))
 	t.Run("BackgroundMigrateNarToChunksAfterCancellation", testBackgroundMigrateNarToChunksAfterCancellation(factory))
@@ -3149,6 +3152,122 @@ func runCacheTestSuite(t *testing.T, factory cacheFactory) {
 
 	// Build trace tests
 	t.Run("BuildTrace", testBuildTrace(factory))
+}
+
+// testNarInfoFileHashFix covers issue #1314: some upstreams (niks3, nix-serve)
+// omit the optional FileHash/FileSize on compressed narinfos. Once the NAR is
+// stored, ncps MUST compute and backfill both FileSize (= compressed byte length)
+// and FileHash (= sha256 of the compressed bytes) so the served narinfo is complete.
+func testNarInfoFileHashFix(factory cacheFactory) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Run("PutNarInfo missing FileHash/FileSize then PutNar backfills both", func(t *testing.T) {
+			c, dbClient, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// 1. Put a compressed (xz) narinfo with the optional FileHash/FileSize
+			//    lines stripped, mirroring a niks3/nix-serve upstream.
+			var newLines []string
+
+			for _, line := range strings.Split(testdata.Nar1.NarInfoText, "\n") {
+				if strings.HasPrefix(line, "FileHash:") ||
+					strings.HasPrefix(line, "FileSize:") ||
+					strings.HasPrefix(line, "Sig:") {
+					continue
+				}
+
+				newLines = append(newLines, line)
+			}
+
+			strippedNarInfoText := strings.Join(newLines, "\n")
+
+			require.NoError(t, c.PutNarInfo(
+				context.Background(),
+				testdata.Nar1.NarInfoHash,
+				io.NopCloser(strings.NewReader(strippedNarInfoText)),
+			))
+
+			// Both file_hash and file_size start NULL.
+			var (
+				dbFileHash sql.NullString
+				dbFileSize sql.NullInt64
+			)
+
+			err := dbClient.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_hash, file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&dbFileHash, &dbFileSize)
+			require.NoError(t, err)
+			assert.False(t, dbFileHash.Valid, "file_hash should start NULL")
+			assert.False(t, dbFileSize.Valid, "file_size should start NULL")
+
+			// 2. Store the compressed NAR bytes.
+			niValid, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, err)
+
+			nu, err := nar.ParseURL(niValid.URL)
+			require.NoError(t, err)
+
+			someContent := []byte("some arbitrary compressed content")
+			require.NoError(t, c.PutNar(
+				context.Background(),
+				nu,
+				io.NopCloser(bytes.NewReader(someContent)),
+			))
+
+			// 3. Both file_size and file_hash must now be backfilled from the bytes.
+			sum := sha256.Sum256(someContent)
+			wantHash := nixhash.MustNewHashWithEncoding(nixhash.SHA256, sum[:], nixhash.NixBase32, true).String()
+
+			err = dbClient.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_hash, file_size FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&dbFileHash, &dbFileSize)
+			require.NoError(t, err)
+
+			assert.Equal(t, int64(len(someContent)), dbFileSize.Int64,
+				"FileSize should be backfilled to the compressed byte length")
+			assert.Equal(t, wantHash, dbFileHash.String,
+				"FileHash should be backfilled to sha256 of the compressed bytes")
+		})
+
+		t.Run("upstream-provided FileHash is preserved, not recomputed", func(t *testing.T) {
+			c, dbClient, _, _, rebind, cleanup := factory(t)
+			t.Cleanup(cleanup)
+			c.SetRecordAgeIgnoreTouch(0)
+
+			// 1. Put Nar1's narinfo verbatim — it carries a FileHash.
+			niValid, err := narinfo.Parse(strings.NewReader(testdata.Nar1.NarInfoText))
+			require.NoError(t, err)
+			require.NotNil(t, niValid.FileHash)
+
+			upstreamFileHash := niValid.FileHash.String()
+
+			require.NoError(t, c.PutNarInfo(
+				context.Background(),
+				testdata.Nar1.NarInfoHash,
+				io.NopCloser(strings.NewReader(testdata.Nar1.NarInfoText)),
+			))
+
+			// 2. Store NAR bytes that do NOT match the upstream FileHash.
+			nu, err := nar.ParseURL(niValid.URL)
+			require.NoError(t, err)
+
+			require.NoError(t, c.PutNar(
+				context.Background(),
+				nu,
+				io.NopCloser(bytes.NewReader([]byte("totally different content"))),
+			))
+
+			// 3. The upstream FileHash must be preserved verbatim (no recompute).
+			var dbFileHash sql.NullString
+
+			err = dbClient.DB().QueryRowContext(context.Background(),
+				rebind("SELECT file_hash FROM narinfos WHERE hash = ?"),
+				testdata.Nar1.NarInfoHash).Scan(&dbFileHash)
+			require.NoError(t, err)
+			assert.Equal(t, upstreamFileHash, dbFileHash.String,
+				"upstream-provided FileHash must not be recomputed")
+		})
+	}
 }
 
 func testCheckAndFixNarInfo(factory cacheFactory) func(*testing.T) {
