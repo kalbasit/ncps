@@ -11,15 +11,15 @@ For a compressed NAR served under its original compression (i.e. not normalized 
 `Compression: none` and not stored as CDC chunks), the system SHALL ensure the narinfo it
 serves downstream carries a correct `FileSize` and `FileHash`. When upstream supplies them,
 the system SHALL preserve the upstream values unchanged. When upstream omits either, the
-system SHALL compute the missing value(s) itself from the compressed NAR bytes as they pass
-through during the NAR fetch: `FileSize` SHALL be the byte length of the stored compressed
-NAR, and `FileHash` SHALL be the SHA-256 digest of the stored compressed NAR (formatted as
-a nix `sha256:<nixbase32>` hash). The computed values SHALL be backfilled into the persisted
+system SHALL compute the missing value(s) itself from the stored compressed NAR bytes once
+the NAR is stored: `FileSize` SHALL be the byte length of the stored compressed NAR, and
+`FileHash` SHALL be the SHA-256 digest of the stored compressed NAR (formatted as a nix
+`sha256:<nixbase32>` hash). The computed values SHALL be backfilled into the persisted
 narinfo so subsequent narinfo responses carry them.
 
-The computation SHALL tap the existing NAR byte stream (no additional download or
-full-file buffering) and SHALL NOT alter the NAR bytes, the `NarHash`, the `NarSize`, or
-the `Compression` advertised to downstream clients.
+The computation SHALL stream the stored compressed NAR through a hasher (constant memory, no
+full-file buffering; it MUST NOT re-download the NAR) and SHALL NOT alter the NAR bytes, the
+`NarHash`, the `NarSize`, or the `Compression` advertised to downstream clients.
 
 #### Scenario: Compressed narinfo without FileSize/FileHash is accepted
 
