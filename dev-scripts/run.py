@@ -498,6 +498,11 @@ def main():
         help="Enable the lazy CDC feature",
     )
     parser.add_argument(
+        "--inflight-staging",
+        action="store_true",
+        help="Enable in-flight NAR staging (only engages with a distributed locker, e.g. --locker redis)",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["debug", "info", "warn", "error", "fatal", "panic"],
         default="debug",
@@ -634,11 +639,24 @@ def main():
     # Determine instance count
     num_instances = args.replicas
 
+    # In-flight staging only engages with a distributed locker; the Go-side
+    # InflightStagingEnabled() guard keeps it dormant otherwise. Reflect that
+    # *effective* state in the banner and state.json so test drivers aren't
+    # misled by a bare --inflight-staging on a local locker.
+    staging_active = args.inflight_staging and args.locker == "redis"
+    if not args.inflight_staging:
+        staging_banner = "disabled"
+    elif staging_active:
+        staging_banner = "enabled"
+    else:
+        staging_banner = "dormant (requires redis locker)"
+
     log(f"\nStarting {num_instances} instance(s)...", BLUE)
     log(f"  Mode:    {'ha' if is_ha else 'single'}", BLUE)
     log(f"  DB:      {args.db}", BLUE)
     log(f"  Storage: {args.storage}", BLUE)
     log(f"  Locker:  {args.locker}", BLUE)
+    log(f"  Inflight staging: {staging_banner}", BLUE)
     print("")
 
     use_tmux_split = is_ha and TmuxManager.is_in_tmux()
@@ -735,6 +753,11 @@ def main():
                 cmd_app.append("--cache-cdc-lazy-recovery-schedule='@every 1m'")
                 cmd_app.append("--cache-cdc-delete-delay=1m")
                 cmd_app.append("--cache-cdc-lazy-cleanup-schedule='@every 1m'")
+        if args.inflight_staging:
+            # Only the enabled toggle is exposed; retention (5m) and part-size
+            # (8 MiB) keep their Go defaults. The feature self-disables unless the
+            # locker is distributed (see InflightStagingEnabled() guard).
+            cmd_app.append("--cache-inflight-staging-enabled")
         if args.storage == "local":
             cmd_app.extend(["--cache-storage-local", local_storage_path])
         else:
@@ -784,6 +807,7 @@ def main():
 
     state_config = {
         "cdc": args.enable_cdc,
+        "inflight_staging": staging_active,
         "db": args.db,
         "db_url": db_url,
         "storage": args.storage,
