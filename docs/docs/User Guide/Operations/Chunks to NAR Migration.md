@@ -109,7 +109,7 @@ After running `migrate-chunks-to-nar` to completion, disable CDC to stop storing
 
 **1. Confirm no chunked NARs remain** (optional but recommended):
 
-```mariadb
+```
 -- Should return 0 after a complete migration:
 SELECT count(*) FROM nar_files WHERE total_chunks > 0;
 ```
