@@ -152,16 +152,21 @@ def start_cluster(db, storage, replicas, log_path, *, cdc=False):
         f"cdc={cdc} locker=redis inflight-staging=on",
         G,
     )
-    f = open(log_path, "w")
+    f = open(log_path, "w", encoding="utf-8")
     # start_new_session=True isolates the child in its own process group so
-    # stop_cluster can kill the whole tree via os.killpg.
-    p = subprocess.Popen(
-        args,
-        cwd=REPO_ROOT,
-        stdout=f,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
+    # stop_cluster can kill the whole tree via os.killpg. Close the log file if
+    # Popen raises so the handle never leaks.
+    try:
+        p = subprocess.Popen(
+            args,
+            cwd=REPO_ROOT,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except BaseException:
+        f.close()
+        raise
     return p, f
 
 
@@ -229,7 +234,7 @@ def wait_port_close(port, timeout=15):
 
 
 def read_state():
-    with open(STATE_FILE) as fp:
+    with open(STATE_FILE, encoding="utf-8") as fp:
         return json.load(fp)
 
 
@@ -380,7 +385,13 @@ def scan_logs(ports, needle):
     hits = []
     for port in ports:
         try:
-            with open(os.path.join(LOG_DIR, f"ncps-{port}.log")) as fp:
+            # errors="replace": ncps logs can carry non-UTF-8 bytes from Nix
+            # build output / package descriptions; never crash the scan on them.
+            with open(
+                os.path.join(LOG_DIR, f"ncps-{port}.log"),
+                encoding="utf-8",
+                errors="replace",
+            ) as fp:
                 if needle in fp.read():
                     hits.append(port)
         except FileNotFoundError:
