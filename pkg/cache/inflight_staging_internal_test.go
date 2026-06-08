@@ -103,3 +103,44 @@ func TestStagingState_AdvancePartsAndReset(t *testing.T) {
 	assert.Equal(t, int64(0), got.PartsAvailable, "reset must rewind progress to zero")
 	assert.Equal(t, stagingStatusRequested, got.Status, "reset must move status back to requested for a clean re-stage")
 }
+
+// TestStagingState_RequestedOnlyActivatesOnRequested verifies that the holder's
+// activation signal fires only while a row is in the "requested" status. A row
+// left in a terminal/in-progress status (staging/complete) from an earlier cycle
+// must NOT re-activate a later holder, otherwise the holder would re-stage with
+// no active waiter and duplicate immutable part uploads. A subsequent reset back
+// to "requested" (takeover) must re-arm activation.
+func TestStagingState_RequestedOnlyActivatesOnRequested(t *testing.T) {
+	t.Parallel()
+
+	c, _, _, _, _, cleanup := setupSQLiteFactory(t)
+	t.Cleanup(cleanup)
+
+	ctx := context.Background()
+
+	const hash = "1234567890abcdef1234567890abcdef"
+
+	// No row yet: not requested.
+	assert.False(t, c.stagingRequested(ctx, hash),
+		"no staging_state row must read as not requested")
+
+	// Fresh request: activation fires.
+	require.NoError(t, c.markStagingRequested(ctx, hash))
+	assert.True(t, c.stagingRequested(ctx, hash),
+		"a requested row must activate staging")
+
+	// Holder began staging: a later holder must not re-activate.
+	require.NoError(t, c.advanceStagingParts(ctx, hash, 1, nar.CompressionTypeXz.String()))
+	assert.False(t, c.stagingRequested(ctx, hash),
+		"a row in the staging status must not re-activate a later holder")
+
+	// Staging finished (terminal): still must not re-activate.
+	require.NoError(t, c.markStagingComplete(ctx, hash))
+	assert.False(t, c.stagingRequested(ctx, hash),
+		"a completed row must not re-activate a later holder with no waiter")
+
+	// Takeover reset re-arms the request.
+	require.NoError(t, c.resetStagingState(ctx, hash))
+	assert.True(t, c.stagingRequested(ctx, hash),
+		"a reset row must re-activate staging for a takeover holder")
+}
