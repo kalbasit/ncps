@@ -18,6 +18,10 @@ var (
 	// ErrAlreadyExists is returned the store already has a file with the
 	// same name.
 	ErrAlreadyExists = errors.New("file already exists")
+
+	// ErrInvalidArgument is returned when a store method is called with an
+	// argument that violates its documented contract (e.g. a negative index).
+	ErrInvalidArgument = errors.New("invalid argument")
 )
 
 // ConfigStore represents a store for the ncps to use for storing
@@ -93,4 +97,23 @@ type NarStore interface {
 
 	// WalkNars walks all NAR files in the store and calls fn for each one.
 	WalkNars(ctx context.Context, fn func(narURL nar.URL) error) error
+
+	// PutStagingPart writes one in-flight staging part-object for a NAR hash at
+	// the given zero-based index, which MUST be >= 0 (a negative index returns
+	// ErrInvalidArgument). Parts are immutable by protocol: the producer writes
+	// each index exactly once, so backends do not need to guard against rewrites
+	// (a duplicate write of the same (hash, index) overwrites idempotently rather
+	// than erroring). If size > 0 it is the known byte length of body; if size <= 0
+	// the length is unknown and body is streamed to EOF. It returns the number of
+	// bytes written. See change serve-whole-nar-in-flight.
+	PutStagingPart(ctx context.Context, hash string, index int64, body io.Reader, size int64) (int64, error)
+
+	// GetStagingPart opens the staging part-object for hash at index for reading.
+	// The caller must close the returned io.ReadCloser. A missing part returns
+	// storage.ErrNotFound.
+	GetStagingPart(ctx context.Context, hash string, index int64) (io.ReadCloser, error)
+
+	// DeleteStagingParts removes all staging part-objects for hash. It is a no-op
+	// when none exist.
+	DeleteStagingParts(ctx context.Context, hash string) error
 }

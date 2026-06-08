@@ -485,6 +485,86 @@ func (s *Store) PutNar(ctx context.Context, narURL nar.URL, body io.Reader, _ in
 	return written, os.Chmod(narPath, fileMode)
 }
 
+// PutStagingPart writes one immutable in-flight staging part-object.
+func (s *Store) PutStagingPart(
+	ctx context.Context,
+	hash string,
+	index int64,
+	body io.Reader,
+	_ int64,
+) (int64, error) {
+	_, span := tracer.Start(ctx, "local.PutStagingPart", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
+	if index < 0 {
+		return 0, fmt.Errorf("%w: staging part index %d must be >= 0", storage.ErrInvalidArgument, index)
+	}
+
+	partPath := s.stagingPartPath(hash, index)
+
+	if err := os.MkdirAll(filepath.Dir(partPath), dirMode); err != nil {
+		return 0, fmt.Errorf("error creating staging dir for %q: %w", partPath, err)
+	}
+
+	f, err := os.CreateTemp(s.storeTMPPath(), hash+"-*.part")
+	if err != nil {
+		return 0, fmt.Errorf("error creating the temporary staging part file: %w", err)
+	}
+
+	written, err := io.Copy(f, body)
+	if err != nil {
+		f.Close()
+		os.Remove(f.Name())
+
+		return 0, fmt.Errorf("error writing the staging part to the temporary file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+
+		return 0, fmt.Errorf("error closing the temporary staging part file: %w", err)
+	}
+
+	if err := os.Rename(f.Name(), partPath); err != nil {
+		os.Remove(f.Name())
+
+		return 0, fmt.Errorf("error creating the staging part file %q: %w", partPath, err)
+	}
+
+	return written, os.Chmod(partPath, fileMode)
+}
+
+// GetStagingPart opens a staging part-object for reading.
+func (s *Store) GetStagingPart(ctx context.Context, hash string, index int64) (io.ReadCloser, error) {
+	_, span := tracer.Start(ctx, "local.GetStagingPart", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
+	partPath := s.stagingPartPath(hash, index)
+
+	f, err := os.Open(partPath)
+	if os.IsNotExist(err) {
+		return nil, storage.ErrNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("error opening the staging part file %q: %w", partPath, err)
+	}
+
+	return f, nil
+}
+
+// DeleteStagingParts removes all staging part-objects for hash.
+func (s *Store) DeleteStagingParts(ctx context.Context, hash string) error {
+	_, span := tracer.Start(ctx, "local.DeleteStagingParts", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
+	if err := os.RemoveAll(s.stagingPartDir(hash)); err != nil {
+		return fmt.Errorf("error deleting staging parts for %q: %w", hash, err)
+	}
+
+	return nil
+}
+
 // DeleteNar deletes the nar from the store.
 func (s *Store) DeleteNar(ctx context.Context, narURL nar.URL) error {
 	// Normalize the NAR URL to handle URLs with embedded narinfo hash prefix
@@ -623,6 +703,17 @@ func (s *Store) storePath() string        { return filepath.Join(s.path, "store"
 func (s *Store) storeNarInfoPath() string { return filepath.Join(s.storePath(), "narinfo") }
 func (s *Store) storeNarPath() string     { return filepath.Join(s.storePath(), "nar") }
 func (s *Store) storeTMPPath() string     { return filepath.Join(s.storePath(), "tmp") }
+func (s *Store) storeStagingPath() string { return filepath.Join(s.storePath(), "staging") }
+
+// stagingPartDir is the directory holding all part-objects for one NAR hash.
+func (s *Store) stagingPartDir(hash string) string {
+	return filepath.Join(s.storeStagingPath(), hash)
+}
+
+// stagingPartPath is the on-disk path of one staging part-object.
+func (s *Store) stagingPartPath(hash string, index int64) string {
+	return filepath.Join(s.stagingPartDir(hash), fmt.Sprintf("%020d.part", index))
+}
 
 func (s *Store) setupDirs() error {
 	allPaths := []string{
