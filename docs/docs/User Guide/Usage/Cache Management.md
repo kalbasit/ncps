@@ -67,6 +67,12 @@ cache:
 
 Trigger cleanup manually (not implemented via API, use systemctl/docker restart with updated config).
 
+### Protecting Paths from Eviction
+
+LRU cleanup will evict any path once it becomes the least recently used, even one you want to keep. To exempt specific store paths — and their entire closure — from eviction, **pin** them. Pinned closures are excluded from LRU cleanup until you unpin them.
+
+See <a class="reference-link" href="../Features/Pinning.md">Pinning</a> for the pin, unpin, and list endpoints.
+
 ## Monitoring
 
 ### Cache Statistics
@@ -245,6 +251,7 @@ nix copy --to http://your-ncps-hostname:8501/upload ./your-package
 
 ## Related Documentation
 
+- <a class="reference-link" href="../Features/Pinning.md">Pinning</a> - Protect closures from LRU eviction
 - <a class="reference-link" href="../Configuration/Storage.md">Storage</a> - Storage backends
 - <a class="reference-link" href="../Operations/Monitoring.md">Monitoring</a> - Monitor cache metrics
 - <a class="reference-link" href="../Operations/Troubleshooting.md">Troubleshooting</a> - Solve issues
