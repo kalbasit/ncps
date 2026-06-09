@@ -36,6 +36,10 @@ tasks:
     desc: "Drive the CDC lifecycle (non-CDC->CDC->drain->non-CDC) e2e; starts fixed-port deps and tears down. Pass-through args, e.g. CLI_ARGS='--db postgres'"
     cmds:
       - bash dev-scripts/test-cdc-lifecycle-auto.sh {{.CLI_ARGS}}
+  test:inflight-staging-contention:
+    desc: "Drive in-flight NAR staging under multi-replica contention e2e; starts fixed-port deps (incl. Redis) and tears down. Pass-through args, e.g. CLI_ARGS='--storage s3 --window download'"
+    cmds:
+      - bash dev-scripts/test-inflight-staging-contention-auto.sh {{.CLI_ARGS}}
   test:deps:start:
     desc: Allocate random ports, start backing services in detached mode, write state file
     cmds:
